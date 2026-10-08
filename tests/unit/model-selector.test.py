@@ -127,11 +127,6 @@ class TestOllamaCloudIdShapes(unittest.TestCase):
         self.assertIsNotNone(m, "%s must match %s" % (entry["label"], model_id))
         return sm._parse_version(m.group(1))
 
-    def test_deepseek_pro_slot_resolves_to_v41_flash(self):
-        # KEF001: V4 Pro is retired; the legacy PRO slot is the V4.1 Flash entry.
-        self.assertEqual(
-            self._version(sm.DEEPSEEK_PRO_OLLAMA, "ollama/deepseek-v4.1-flash:cloud"), (4, 1))
-
     def test_date_tagged_kimi(self):
         self.assertEqual(
             self._version(sm.KIMI_OLLAMA, "ollama/kimi-k2.6:0711-cloud"), (2, 6))
@@ -175,12 +170,13 @@ class TestOllamaCloudIdShapes(unittest.TestCase):
 
     def test_real_fleet_inventory_resolves_every_tier(self):
         inv = ["ollama/kimi-k2.6:0711-cloud", "ollama/deepseek-v4.1-flash:cloud",
-               "ollama/deepseek-v4.1-flash:cloud", "ollama/minimax-m3:cloud",
+               "ollama/minimax-m3:cloud",
                "ollama/glm-5.3:cloud", "ollama/kimi-k2.7-code:cloud"]
         heavy = sm._best_match_in_position(inv, sm.CHAINS["heavy"]["normal"][0])
         mid = sm._best_match_in_position(inv, sm.CHAINS["mid"]["normal"][0])
         fast = sm._best_match_in_position(inv, sm.CHAINS["fast"]["normal"][0])
-        self.assertEqual(heavy, "ollama/deepseek-v4.1-flash:cloud")
+        # KEF001: the retired V4 Pro slot is gone, so heavy leads with Kimi.
+        self.assertEqual(heavy, "ollama/kimi-k2.6:0711-cloud")
         self.assertEqual(mid, "ollama/minimax-m3:cloud")
         self.assertEqual(fast, "ollama/deepseek-v4.1-flash:cloud")
         self.assertNotEqual(heavy, mid)   # HEAVY-WRITER and JUDGE stay independent

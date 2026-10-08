@@ -231,7 +231,7 @@ def _route_for(model_id: str) -> str:
 # requires (deepseek-v4.1-flash -> deepseek/deepseek-v4.1-flash). This helper is now
 # the ONLY sanctioned conversion for every call_openrouter model argument.
 # Vendor pairs mirror shared-utils/select_model.py's chain patterns
-# (DEEPSEEK_PRO_OPENROUTER / DEEPSEEK_FLASH_OPENROUTER / KIMI_OPENROUTER).
+# (DEEPSEEK_FLASH_OPENROUTER / KIMI_OPENROUTER).
 _OLLAMA_OR_VENDOR_RULES = [
     (re.compile(r"^deepseek-v[\d.]+-(?:pro|flash)$"), "deepseek"),
     (re.compile(r"^kimi-k[\d.]+$"), "moonshotai"),

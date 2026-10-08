@@ -369,10 +369,8 @@ DEEPSEEK_FLASH_OLLAMA     = {"label": "Ollama Cloud DeepSeek V*-flash",
 DEEPSEEK_FLASH_OPENROUTER = {"label": "OpenRouter DeepSeek V*-flash",
                              "family": "deepseek-flash",
                              "pattern": re.compile(r"^(?:openrouter/)?deepseek/deepseek-v(\d+(?:\.\d+)*)-flash$")}
-# KEF001: DeepSeek V4 Pro no longer exists. The "PRO" slots are kept as names so the
-# chains below stay readable, but they resolve to the V4.1 Flash entries.
-DEEPSEEK_PRO_OLLAMA     = DEEPSEEK_FLASH_OLLAMA
-DEEPSEEK_PRO_OPENROUTER = DEEPSEEK_FLASH_OPENROUTER
+# KEF001: DeepSeek V4 Pro no longer exists; its chain slots were removed. Flash (V4.1, 1M ctx)
+# serves the large/huge-context chains.
 GEMINI_FLASH_LITE         = {"label": "OpenRouter Gemini Flash Lite",
                              "family": "gemini-flash-lite",
                              "pattern": re.compile(r"^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-flash-lite(?:-preview)?$")}
@@ -398,32 +396,32 @@ CHAINS = {
         # Default heavy reasoning — Ollama DeepSeek V4.1 Flash and Kimi 2.6 first,
         # then OpenRouter versions of the same models, then OAuth GPT.
         "normal": [
-            DEEPSEEK_PRO_OLLAMA, KIMI_OLLAMA,           # Ollama Cloud preferred (same models)
-            DEEPSEEK_PRO_OPENROUTER, KIMI_OPENROUTER,   # Same models via OpenRouter as fallback
+            KIMI_OLLAMA,           # Ollama Cloud preferred (same models)
+            KIMI_OPENROUTER,   # Same models via OpenRouter as fallback
             OAUTH_GPT,                                  # Last resort
             MIMO_OPENROUTER, GLM_OPENROUTER,            # Mid-cost OR alternates only if Kimi/DeepSeek missing
         ],
         # Large input (800K-3M chars): DeepSeek V4.1 Flash's 1M context required
         "large": [
-            DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER,
+            DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER,
             OAUTH_GPT,
             KIMI_OLLAMA, KIMI_OPENROUTER,  # last resort; 262K may fail on big input
         ],
         # Huge input (>3M chars): DeepSeek V4.1 Flash is the only model with enough context
         "huge": [
-            DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER,
+            DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER,
             OAUTH_GPT,
         ],
     },
     "mid": {
         "normal": [MINIMAX_OLLAMA, GLM_OLLAMA, MIMO_OPENROUTER, GLM_OPENROUTER],
         "large":  [MINIMAX_OLLAMA, GLM_OLLAMA, MIMO_OPENROUTER, GLM_OPENROUTER],
-        "huge":   [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
+        "huge":   [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, OAUTH_GPT],
     },
     "fast": {
         "normal": [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_FLASH_LITE],
         "large":  [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_FLASH_LITE],
-        "huge":   [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER],
+        "huge":   [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER],
     },
 
     # ─── v10.9.0 P1-C: PRD §5 role-specific chains ────────────────────────
@@ -442,8 +440,8 @@ CHAINS = {
             GEMINI_FLASH_LITE,          # 4. Gemini Flash Lite — cheaper last resort
             OAUTH_GPT,
         ],
-        "large": [KIMI_OLLAMA, KIMI_OPENROUTER, GEMINI_PRO, DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, OAUTH_GPT],
-        "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
+        "large": [KIMI_OLLAMA, KIMI_OPENROUTER, GEMINI_PRO, DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, OAUTH_GPT],
+        "huge":  [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
     },
 
     # §5.2 Installer sub-agent — needs DeepSeek V4.1 Flash's 1M context for big
@@ -451,14 +449,12 @@ CHAINS = {
     #   1. ollama/deepseek-v*-flash:cloud  →  2. openrouter/deepseek/...  →  3. Gemini 3.1 Pro
     "installer-subagent": {
         "normal": [
-            DEEPSEEK_PRO_OLLAMA,        # 1. Ollama Cloud DeepSeek V4.1 Flash
-            DEEPSEEK_PRO_OPENROUTER,    # 2. OpenRouter DeepSeek V4.1 Flash
             GEMINI_PRO,                 # 3. Gemini 3.1 Pro — PRD §5.2 explicit fallback
             GEMINI_FLASH_LITE,          # 4. Cheaper last resort
             OAUTH_GPT,
         ],
-        "large": [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
-        "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
+        "large": [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
+        "huge":  [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
     },
 
     # §5.3 QC sub-agent — cheap+capable; Kimi for reasoning, Flash Lite for
@@ -470,8 +466,8 @@ CHAINS = {
             KIMI_OPENROUTER,            # 2. OpenRouter Kimi
             GEMINI_FLASH_LITE,          # 3. OpenRouter Gemini Flash Lite (cheap last resort)
         ],
-        "large": [KIMI_OLLAMA, KIMI_OPENROUTER, DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER],
-        "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER],
+        "large": [KIMI_OLLAMA, KIMI_OPENROUTER, DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER],
+        "huge":  [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER],
     },
 
     # §5.4 Book-to-Persona pipeline — Trevor 2026-06-01: DeepSeek V4.1 Flash FIRST
@@ -480,14 +476,12 @@ CHAINS = {
     #   1. DeepSeek cloud -> 2. DeepSeek OR -> 3. Kimi cloud -> 4. Kimi OR -> 5. Gemini Flash Lite
     "book-to-persona": {
         "normal": [
-            DEEPSEEK_PRO_OLLAMA,        # 1. Ollama Cloud DeepSeek V4.1 Flash (latest, preferred)
-            DEEPSEEK_PRO_OPENROUTER,    # 2. OpenRouter DeepSeek V4.1 Flash (fallback)
             KIMI_OLLAMA,                # 3. Ollama Cloud Kimi
             KIMI_OPENROUTER,            # 4. OpenRouter Kimi
             GEMINI_FLASH_LITE,          # 5. Cheapest fallback
         ],
-        "large": [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, KIMI_OLLAMA, KIMI_OPENROUTER, GEMINI_FLASH_LITE],
-        "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, GEMINI_FLASH_LITE],
+        "large": [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, KIMI_OLLAMA, KIMI_OPENROUTER, GEMINI_FLASH_LITE],
+        "huge":  [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_FLASH_LITE],
     },
 }
 
