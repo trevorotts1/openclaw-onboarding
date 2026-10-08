@@ -1,3 +1,5 @@
+## [v26.4.7]  -  2026-10-08  -  fix(drama-song): H14 delivery folder carries the finished song as MP3 320 + WAV (+ instrumental), listed in receipt and README, QC song_files check
+
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
