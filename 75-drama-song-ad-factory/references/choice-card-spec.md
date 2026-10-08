@@ -120,7 +120,7 @@ Decision 27 and decision 31, plan 6.12 and 6.12.1:
 
 | Value on the card | What it means |
 |---|---|
-| **All Suno** (default) | Every line - sung and spoken - is made by Suno. Spoken lines play over the music bed only. No singing-underneath layer. |
+| **All Suno** (default) | Every line - sung and spoken - is made by Suno. Spoken words are performed inside the one Suno track. No separate spoken takes. |
 | **Velvet Voiceover** | The Suno song is made as usual; spoken lines are voiced with Google text-to-speech, one distinct voice per character matching their gender; the song's sung version of that line keeps playing softly underneath with the music bed dipped so the words stay clear. **No echo effect, no reverb** - a plain voiceover over the song. |
 
 - The option was renamed from its earlier echo-flavoured name to **Velvet

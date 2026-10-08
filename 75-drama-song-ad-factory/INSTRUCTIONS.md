@@ -235,15 +235,22 @@ card shows only what changed.
   close-ups.
 - **Music styles:** Soul Ballad (default), R&B Flow, Soul Rise. The song
   brief, the Suno style prompt and the spoken/sung balance follow the choice.
-- **Voice:** All Suno (default) makes every line with Suno and plays spoken
-  lines over the music bed only - no singing-underneath layer. **Velvet
-  Voiceover** voices the spoken lines with Google text-to-speech, one
-  distinct voice per character, with the sung version of each line playing
-  softly underneath and the music bed dipped: **no echo effect, no reverb**.
-  It is the only exception to the all-Suno rule, and the option was renamed
-  from its earlier echo-flavoured spelling, which must not appear anywhere.
-- **Per-character voice packs:** no two characters share a voice, in any
-  look or music style.
+- **Voice (F1, one track):** ONE Suno generation makes the whole soundtrack.
+  1. Write every spoken passage into the song's own lyrics, tagged as
+     spoken (`[Spoken]` plus the character's voice tag), so Suno performs
+     the spoken words over the music inside the same track.
+  2. No separate spoken takes, no gaps in the song for takes to sit in,
+     no added music bed. The old voice-pack spoken-take route is
+     superseded.
+  3. Record the one generation id in the receipt; a failed take is redone
+     as a whole track.
+  **Velvet Voiceover** remains the one exception: it voices the spoken
+  lines with Google text-to-speech, one distinct voice per character,
+  with the sung version of each line playing softly underneath and the
+  music bed dipped: **no echo effect, no reverb**. It was renamed from
+  its earlier echo-flavoured spelling, which must not appear anywhere.
+- **Per-character voice registry:** no two characters share a voice, in any
+  look or music style. Distinctness still holds inside the one track.
 - **Lip-sync (decision 33):** selected lines only - the pain peak, the
   product line, the call to action and the chorus hook; three to four lines,
   about 15 to 20 seconds, listed on the approval card. Model order is
