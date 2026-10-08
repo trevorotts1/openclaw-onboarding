@@ -290,6 +290,8 @@ _mutation_case no-pin \
 #   ""            fully correct: pm2 online, crontab probe line present
 #   "pm2-down"    pm2 does not know the app, and there is no systemd unit
 #   "cron-store"  no crontab entry, but the OpenClaw cron store has the probe
+#   "other-home"  app online, but only under ANOTHER user's PM2_HOME (UPF002/U5)
+#   "other-home-empty"  a live pm2 daemon elsewhere, but it does NOT hold the app
 _make_linux_box() {
   local mut="${1:-}" tmp
   tmp="$(mktemp -d)"
@@ -320,6 +322,8 @@ EOF
 case "\$1" in
   describe)
     [ "${mut}" = "pm2-down" ] && exit 1
+    [ "${mut}" = "other-home-empty" ] && exit 1
+    [ "${mut}" = "other-home" ] && [ "\${PM2_HOME:-}" != "$tmp/other/.pm2" ] && exit 1
     exit 0 ;;
   jlist)
     [ "${mut}" = "pm2-down" ] && { printf '[]\n'; exit 0; }
@@ -347,6 +351,13 @@ fi
 exit 0
 EOF
   chmod +x "$tmp/bin/crontab"
+
+  # ps stub: a live pm2 daemon under another home (as root's would be for node).
+  case "$mut" in other-home*)
+    mkdir -p "$tmp/other/.pm2"; echo 1 > "$tmp/other/.pm2/pm2.pid"
+    printf '#!/usr/bin/env bash\necho "PM2 v6.0.0: God Daemon (%s)"\n' "$tmp/other/.pm2" > "$tmp/bin/ps"
+    chmod +x "$tmp/bin/ps" ;;
+  esac
 
   # ── openclaw stub: the cron STORE, which is where autostart registers the
   #    probe on a container with no usable crontab.
@@ -404,6 +415,25 @@ if [ "$RC" = "1" ] && printf '%s' "$OUT" | grep -qF 'nothing supervises it'; the
 else
   fail "(L4) an unsupervised linux-home box returned rc=$RC without the expected diagnosis"
   printf '%s\n' "$OUT" | grep -F '[ghl-mcp-runtime] FAIL' | sed 's/^/        /'
+fi
+rm -rf "$BOX"
+
+BOX="$(_make_linux_box other-home)"
+RES="$(_run_linux_gate "$BOX")"; RC="${RES%%|*}"; OUT="${RES#*|}"
+if [ "$RC" = "0" ] && printf '%s' "$OUT" | grep -qF 'pm2 app found under PM2_HOME='; then
+  pass "(L6) app online under a different pm2 home (root's) is found and PASSES (UPF002/U5)"
+else
+  fail "(L6) app under another pm2 home was not found (rc=$RC)"
+  printf '%s\n' "$OUT" | grep -F '[ghl-mcp-runtime] FAIL' | sed 's/^/        /'
+fi
+rm -rf "$BOX"
+
+BOX="$(_make_linux_box other-home-empty)"
+RES="$(_run_linux_gate "$BOX")"; RC="${RES%%|*}"; OUT="${RES#*|}"
+if [ "$RC" = "1" ] && printf '%s' "$OUT" | grep -qF 'nothing supervises it'; then
+  pass "(L7) another pm2 home that does NOT hold the app still FAILS (check not weakened)"
+else
+  fail "(L7) unsupervised box with a foreign pm2 daemon returned rc=$RC"
 fi
 rm -rf "$BOX"
 

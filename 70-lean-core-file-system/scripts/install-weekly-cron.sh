@@ -117,6 +117,7 @@ try:
 except Exception as exc:
     print("ERROR=models list output is not JSON (%s)" % type(exc).__name__); sys.exit(0)
 ids = set()
+default_id = [None]
 ID_RE = re.compile(r"^[A-Za-z0-9._-]+/\S+$")
 def walk(o):
     if isinstance(o, dict):
@@ -124,6 +125,8 @@ def walk(o):
             v = o.get(k)
             if isinstance(v, str) and ID_RE.match(v.strip()):
                 ids.add(v.strip())
+        if isinstance(o.get("tags"), list) and "default" in o["tags"] and isinstance(o.get("key"), str):
+            default_id[0] = o["key"].strip()
         prov, mid = o.get("provider"), o.get("id") or o.get("model")
         if isinstance(prov, str) and isinstance(mid, str) and not mid.startswith(prov + "/"):
             ids.add(prov + "/" + mid)
@@ -156,11 +159,24 @@ print(pick(os.environ.get("PRIMARY_OVERRIDE", ""),
            r"(ollama|ollama-cloud)/deepseek-v4\.1-flash(:cloud)?", "PRIMARY"))
 print(pick(os.environ.get("FALLBACK_OVERRIDE", ""),
            r"openrouter/deepseek/deepseek-v4\.1-flash", "FALLBACK"))
+if default_id[0] and not banned.search(default_id[0]):
+    print("DEFAULT=" + default_id[0])
 PY
 )"
 PRIMARY="$(printf '%s\n' "$SEL" | sed -n 's/^PRIMARY=//p')"
 FALLBACK="$(printf '%s\n' "$SEL" | sed -n 's/^FALLBACK=//p')"
-if [ -z "$PRIMARY" ] || [ -z "$FALLBACK" ]; then
+# UPF002/U3: client boxes rarely carry the exact DeepSeek pair (they run their own
+# providers), which made this installer exit 4 on every box and withheld .wired.
+# With no explicit override, degrade to the box's own default model (never an
+# Anthropic/Claude id; filtered above) and drop the fallback instead of refusing.
+DEFAULT_M="$(printf '%s\n' "$SEL" | sed -n 's/^DEFAULT=//p')"
+if [ -z "$PRIMARY" ] && [ -z "$PRIMARY_OVERRIDE" ] && [ -n "$DEFAULT_M" ]; then
+  PRIMARY="$DEFAULT_M"; echo "[$PROG] DeepSeek V4.1 Flash not on this box's list; using the box default model $PRIMARY"
+fi
+if [ -z "$FALLBACK" ] && [ -z "$FALLBACK_OVERRIDE" ] && [ -n "$PRIMARY" ]; then
+  FB_NONE=1; echo "[$PROG] no fallback model provable on this box; job created without --fallbacks"
+fi
+if [ -z "$PRIMARY" ] || { [ -z "$FALLBACK" ] && [ -z "${FB_NONE:-}" ]; }; then
   echo "REFUSED [$PROG]: the model identifiers could not be proven on this box, so no job was created or changed:" >&2
   printf '%s\n' "$SEL" | grep -v -E '^(PRIMARY|FALLBACK)=' | sed 's/^/  /' >&2
   echo "  Add the missing model to this box's configured models (the operator decides), or pass --primary/--fallback with an id that is on the list." >&2
@@ -198,7 +214,7 @@ print("ID=%s" % j.get("id")); print("KIND=%s" % p.get("kind"))
 fb = p.get("fallbacks")
 want = {
     "model": (p.get("model"), os.environ["W_MODEL"]),
-    "fallbacks": (list(fb) if isinstance(fb, list) else fb, [os.environ["W_FB"]]),
+    "fallbacks": (list(fb) if isinstance(fb, list) else (fb or []), [os.environ["W_FB"]] if os.environ["W_FB"] else []),
     "thinking": (p.get("thinking"), os.environ["W_THINK"]),
     "schedule": (s.get("expr"), os.environ["W_EXPR"]),
     "session": (j.get("sessionTarget"), "isolated"),
@@ -217,7 +233,7 @@ COUNT="$(state_val COUNT)"; JOB_ID="$(state_val ID)"; KIND="$(state_val KIND)"; 
 
 echo "[$PROG] job '$JOB_NAME' agent=$AGENT schedule='$SCHEDULE' session=isolated thinking=$THINKING delivery=none"
 echo "[$PROG] primary model:  $PRIMARY"
-echo "[$PROG] fallback model: $FALLBACK"
+echo "[$PROG] fallback model: ${FALLBACK:-none}"
 echo "[$PROG] existing jobs with this name: ${COUNT:-0}${DIFF:+ (drifted: $DIFF)}"
 
 if [ "${COUNT:-0}" -gt 1 ]; then
@@ -230,7 +246,7 @@ if [ "$MODE" = "check" ]; then
   echo "FAIL [$PROG]: job missing or drifted; run with --apply" >&2; exit 1
 fi
 
-COMMON="--cron|$SCHEDULE|--agent|$AGENT|--session|isolated|--message|$MSG|--model|$PRIMARY|--fallbacks|$FALLBACK|--thinking|$THINKING|--timeout-seconds|$TIMEOUT_S|--no-deliver|--description|$DESC"
+COMMON="--cron|$SCHEDULE|--agent|$AGENT|--session|isolated|--message|$MSG|--model|$PRIMARY${FALLBACK:+|--fallbacks|$FALLBACK}|--thinking|$THINKING|--timeout-seconds|$TIMEOUT_S|--no-deliver|--description|$DESC"
 if [ "$MODE" = "dry-run" ]; then
   if [ "${COUNT:-0}" = "0" ]; then echo "PLAN [$PROG]: would ADD the job (dry run; pass --apply to create it)"
   elif [ -n "$DIFF" ]; then echo "PLAN [$PROG]: would EDIT job $JOB_ID in place ($DIFF) (dry run)"

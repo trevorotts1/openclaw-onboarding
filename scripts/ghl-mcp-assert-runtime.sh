@@ -200,7 +200,25 @@ done
 _HAVE_MAC_SVC=0; [ -f "$PLIST" ] && _HAVE_MAC_SVC=1
 _HAVE_SYSTEMD=0; [ -f "$SYSTEMD_UNIT" ] && _HAVE_SYSTEMD=1
 _HAVE_PM2=0
-if command -v pm2 >/dev/null 2>&1 && pm2 describe ghl-community-mcp >/dev/null 2>&1; then _HAVE_PM2=1; fi
+if command -v pm2 >/dev/null 2>&1; then
+  if pm2 describe ghl-community-mcp >/dev/null 2>&1; then _HAVE_PM2=1
+  else
+    # UPF002/U5: pm2 keeps one process list per PM2_HOME AND per user. When pm2 was
+    # started as root (/root/.pm2) but this gate runs as node, the default home says
+    # "app not found" about an app that is online. Look for a LIVE pm2 daemon (it
+    # advertises its home in the process title, and keeps pm2.pid) and ask it. A box
+    # where the app is genuinely unsupervised has no daemon registering it, so it
+    # still fails.
+    for _h in $(ps -eo args 2>/dev/null | sed -n 's/.*God Daemon (\(.*\))$/\1/p') \
+              /root/.pm2 /home/*/.pm2 /data/.pm2 "${OC_ROOT:-}/.pm2"; do
+      [ -r "$_h/pm2.pid" ] || continue
+      [ "$_h" = "${PM2_HOME:-}" ] && continue
+      if PM2_HOME="$_h" pm2 describe ghl-community-mcp >/dev/null 2>&1; then
+        export PM2_HOME="$_h"; _HAVE_PM2=1; _info "pm2 app found under PM2_HOME=$_h (not this user's default home)"; break
+      fi
+    done
+  fi
+fi
 _HAVE_ECO=0; [ -f "$PM2_ECOSYSTEM" ] && _HAVE_ECO=1
 
 if [ "$_HAVE_MAC_SVC" = "0" ] && [ "$_HAVE_SYSTEMD" = "0" ] && [ "$_HAVE_PM2" = "0" ] \
