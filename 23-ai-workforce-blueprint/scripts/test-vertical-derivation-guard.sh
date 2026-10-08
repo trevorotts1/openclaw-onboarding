@@ -574,6 +574,28 @@ grep -q "RESIDUE INVENTORY" "$TMP/i9.stderr" \
   && ok "(i9) human output prints the RESIDUE INVENTORY summary line" \
   || bad "(i9) rc=0 run printed no residue inventory summary"
 
+# STD001 placeholder exemption: (a) active+listed -> rc0 grandfathered; (b) not listed -> rc3;
+# (c) superseded -> rc3; (d) --check-add still refuses.
+DD_SP="$(mk_departments_dir stdsp listings)"
+sp_run() { # <build-state json> -> prints rc, writes $TMP/sp.json
+  printf '%s' "$1" > "$TMP/bs-sp.json"
+  python3 "$GUARD" --departments-dir "$DD_SP" --build-state "$TMP/bs-sp.json" --naming-map "$NAMING_MAP" --out "$TMP/sp.json" >/dev/null 2>&1
+  echo $?
+}
+SP_ACT='{"companyMode":"standard-placeholder","verticalPacks":{"detectedPacks":[]},"standardPlaceholder":{"status":"active","appliedAt":"2026-10-08T00:00:00Z","preexistingVerticalDepartments":["listings"]}}'
+RC=$(sp_run "$SP_ACT")
+if [ "$RC" = 0 ] && python3 -c "
+import json;r=json.load(open('$TMP/sp.json'));g=r['grandfatheredDepartments']
+assert [x['id'] for x in g]==['listings'] and g[0]['witness']['strength']=='placeholder-snapshot', g"; then
+  ok "(sp-a) active placeholder + listed residue -> rc 0, listings in grandfatheredDepartments"
+else bad "(sp-a) expected rc 0 + grandfathered listings, got rc $RC"; fi
+RC=$(sp_run '{"companyMode":"standard-placeholder","verticalPacks":{"detectedPacks":[]},"standardPlaceholder":{"status":"active","preexistingVerticalDepartments":[]}}')
+[ "$RC" = 3 ] && ok "(sp-b) active placeholder, dept NOT in recorded list -> rc 3" || bad "(sp-b) expected rc 3, got $RC"
+RC=$(sp_run '{"companyMode":"interview","verticalPacks":{"detectedPacks":[]},"standardPlaceholder":{"status":"superseded","preexistingVerticalDepartments":["listings"]}}')
+[ "$RC" = 3 ] && ok "(sp-c) superseded placeholder -> guard re-armed, rc 3" || bad "(sp-c) expected rc 3, got $RC"
+python3 "$GUARD" --check-add listings --declared "sales-ops" --naming-map "$NAMING_MAP" >/dev/null 2>&1
+[ "$?" -ne 0 ] && ok "(sp-d) --check-add listings still refused" || bad "(sp-d) --check-add was not refused"
+
 echo ""
 echo "--------------------------------------------"
 echo "RESULT: $PASS passed, $FAIL failed"
