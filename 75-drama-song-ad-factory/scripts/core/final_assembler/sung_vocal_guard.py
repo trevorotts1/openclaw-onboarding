@@ -68,7 +68,7 @@ except ImportError:                      # pragma: no cover
     from .. import spoken_share as _SS
 
 TOOL_NAME = "final_assembler.sung_vocal_guard"
-TOOL_VERSION = "1.1.0"
+TOOL_VERSION = "1.2.0"
 
 #: Trevor (2026-10-08): "It's not an absolute 55% or 20% ... within about 5
 #: percentage points" and "Once you get past 10%, it's got to be redone."
@@ -293,10 +293,19 @@ def vocal_presence(stderr_text, floor_lufs=None):
 # ----------------------------------------------------------------- check ----
 def check_sung_vocal(timing=None, runtime_s=None, profile=None,
                      master_path=None, scan_stderr=None,
-                     spoken_section_ids=None, target=None):
+                     spoken_section_ids=None, target=None, segments=None):
     """E7 verdict: the master is sung (All Suno) or has its bed (Velvet).
 
-    Primary path  -- ``timing``: 12.4 map -> sung coverage ratio.
+    Primary path  -- ``segments`` (G8 / review G1): the singing detector's
+                     OWN output on the vocal stem, every segment carrying
+                     source="measured" (+ detector version and stem id).
+                     Coverage = sung / (sung + spoken) over those seconds;
+                     a label-built list is refused with
+                     LABELS_NOT_MEASURED -- shares come from audio, never
+                     from section labels. ``share_basis`` is "measured".
+    Second path   -- ``timing``: 12.4 map -> sung coverage ratio, marked
+                     ``share_basis="planned"`` (label timeline, planning
+                     evidence, never a measured share).
                      no sung stretch of 6 s  -> FAIL VOCAL_MISSING
                      within 5 points of the ad's target   -> PASS
                      (sung share of VOICE time, sung / (sung + spoken);
@@ -321,7 +330,79 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
            "target": round(target, 4), "evidence_path": None,
            "sung_coverage": None, "outcome": "FAIL", "reason_code": None,
            "next_action": None, "flags": []}
-    # ---- primary: the timing map ----
+    # ---- primary (G8): measured segments from the vocal-stem detector ----
+    if segments is not None:
+        if _SS.segment_basis(segments) != _SS.MEASURED_SOURCE:
+            ver["outcome"] = "UNAVAILABLE"
+            ver["reason_code"] = "LABELS_NOT_MEASURED"
+            ver["next_action"] = (
+                "segments are built from lyric labels, not measured; feed "
+                "the detector output (source=\"measured\", detector version "
+                "and stem id)")
+            return ver
+        m = _SS.measure_share(segments, basis=_SS.BASIS_MEASURED)
+        if m["sung_seconds"] + m["spoken_style_seconds"] <= 0:
+            ver["evidence_path"] = "measured_segments"
+            ver["share_basis"] = "measured"
+            ver["sung_coverage"] = 0.0
+            ver["measured_over"] = "voice_time"
+            ver["outcome"] = "FAIL"
+            ver["reason_code"] = "VOCAL_MISSING"
+            ver["next_action"] = (
+                "detector measured no vocal seconds on the stem: 0 s sung, "
+                "0 s spoken; no real singing")
+            return ver
+        ratio = m["sung_seconds"] / (m["sung_seconds"] + m["spoken_style_seconds"])
+        ver["evidence_path"] = "measured_segments"
+        ver["share_basis"] = "measured"
+        ver["sung_coverage"] = round(ratio, 4)
+        ver["measured_over"] = "voice_time"
+        ver["detector"] = m.get("detector")
+        ver["detector_version"] = m.get("detector_version")
+        ver["stem_id"] = m.get("stem_id")
+        if mode == VELVET:
+            if ratio <= 0.0:
+                ver["outcome"] = "FAIL"
+                ver["reason_code"] = "VOCAL_MISSING"
+                ver["next_action"] = (
+                    "Velvet Voiceover master has no song bed: the detector "
+                    "measured 0 s of sung seconds on the stem")
+                return ver
+            ver["outcome"] = "PASS"
+            ver["reason_code"] = "VELVET_BED_PRESENT"
+            ver["next_action"] = ("song bed present under voiceover per the "
+                                  "measured vocal stem")
+            return ver
+        stretch = _SS.longest_sung_stretch_s(segments)
+        ver["longest_sung_stretch_s"] = stretch
+        if stretch + 1e-9 < _SS.NO_REAL_SINGING_STRETCH_S:
+            ver["outcome"] = "FAIL"
+            ver["reason_code"] = "VOCAL_MISSING"
+            ver["next_action"] = (
+                "no real singing: longest measured sung stretch %.1f s, "
+                "needs %.0f s; re-cut with the Suno song master"
+                % (stretch, _SS.NO_REAL_SINGING_STRETCH_S))
+            return ver
+        j = _SS.judge_gap(ratio * 100.0, target * 100.0)
+        ver["gap_pts"] = j["gap_pts"]
+        if j["verdict"] == _SS.VERDICT_FAIL:
+            ver["outcome"] = "FAIL"
+            ver["reason_code"] = "SUNG_COVERAGE_LOW"
+            ver["next_action"] = (
+                "measured sung %.2f%% of voice time is %.1f points from the "
+                "%g%% target, past %d: redo" % (ratio * 100.0, j["gap_pts"],
+                                                target * 100.0, _SS.FLAG_PTS))
+            return ver
+        ver["outcome"] = "PASS"
+        ver["reason_code"] = "SUNG_COVERAGE_OK"
+        if j["verdict"] == _SS.VERDICT_FLAG:
+            ver["flags"] = [
+                "measured sung %.2f%% of voice time is %.1f points from the "
+                "%g%% target: accepted with a flag"
+                % (ratio * 100.0, j["gap_pts"], target * 100.0)]
+        ver["next_action"] = "final QC continues"
+        return ver
+    # ---- second: the label timeline (planning evidence, never measured) ----
     if timing is not None:
         try:
             ratio, dur = sung_coverage_from_timing(
@@ -332,6 +413,7 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
             ver["next_action"] = str(exc)
             return ver
         ver["evidence_path"] = "timing_map"
+        ver["share_basis"] = "planned"
         ver["sung_coverage"] = round(ratio, 4)
         ver["measured_over"] = "voice_time"
         if mode == VELVET:
@@ -379,6 +461,7 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
         return ver
     # ---- secondary: vocal-presence signal on the assembled master ----
     ver["evidence_path"] = "vocal_presence"
+    ver["share_basis"] = None
     if isinstance(scan_stderr, str) and scan_stderr:
         present = vocal_presence(scan_stderr)
     elif master_path is not None:

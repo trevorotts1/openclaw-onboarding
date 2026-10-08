@@ -292,12 +292,28 @@ def _segment_seconds(seg):
     return delivery.strip().lower(), secs
 
 
-def measure_share(segments):
-    """Spoken-style share of runtime from timing segments.
+def segment_basis(segments):
+    """G8: "measured" only when every segment is detector output carrying
+    source="measured"; a list built from lyric/section labels is "planned"."""
+    if not isinstance(segments, list) or not segments:
+        return _SS.BASIS_PLANNED
+    for seg in segments:
+        if not isinstance(seg, dict) or seg.get("source") != _SS.MEASURED_SOURCE:
+            return _SS.BASIS_PLANNED
+    return _SS.BASIS_MEASURED
+
+def measure_share(segments, basis=_SS.BASIS_MEASURED):
+    """Spoken-style share of runtime from timing segments (G8: AUDIO, never
+    labels).
 
     A segment is {"delivery": "spoken"|"rap"|"sung", "seconds": n} or
     {"delivery": ..., "start": a, "end": b}. Rap is spoken-style, so it is
     counted -- that is the rule that catches a rap-heavy R&B cut.
+
+    basis="measured" (default) accepts only detector segments carrying
+    source="measured"; label-built lists are refused with
+    LABELS_NOT_MEASURED ("labels, not measured"). basis="planned" is the
+    planner's own timeline and the result names itself planned.
 
     Returns spoken/rap/sung/total seconds and share as a fraction of total.
     Total 0 is refused rather than reported as 0%.
@@ -305,6 +321,12 @@ def measure_share(segments):
     if not isinstance(segments, list) or not segments:
         raise MusicStyleError("BAD_SEGMENTS",
                               "segments must be a non-empty list")
+    if basis == _SS.BASIS_MEASURED and segment_basis(segments) != _SS.BASIS_MEASURED:
+        raise MusicStyleError(
+            "LABELS_NOT_MEASURED",
+            "measure_share: segments are built from lyric labels, not "
+            "measured; feed the detector output (source=\"measured\", "
+            "detector version and stem id), or pass basis=\"planned\"")
     seconds = dict.fromkeys(DELIVERIES, 0.0)
     for seg in segments:
         delivery, secs = _segment_seconds(seg)
@@ -328,6 +350,11 @@ def measure_share(segments):
         "spoken_style_seconds": round(spoken_style, 6),
         "share": round(spoken_style / total, 6),
         "rap_counts_as_spoken": True,
+        "basis": segment_basis(segments),
+        "share_source": segment_basis(segments),
+        "detector": (segments[0] or {}).get("detector"),
+        "detector_version": (segments[0] or {}).get("detector_version"),
+        "stem_id": (segments[0] or {}).get("stem_id"),
     }
 
 
@@ -336,7 +363,7 @@ def share_pct(share):
     return round(float(share) * 100.0, 1)
 
 
-def check_share(style_id, length, share, segments=None):
+def check_share(style_id, length, share, segments=None, basis=_SS.BASIS_MEASURED):
     """Enforce the D15 band on one style at one length. Never raises on a
     share that is merely out of band -- that is a FAIL verdict, not an error.
 
@@ -358,7 +385,7 @@ def check_share(style_id, length, share, segments=None):
                               % (share,))
     measured = None
     if segments is not None:
-        measured = measure_share(segments)
+        measured = measure_share(segments, basis)
         if abs(measured["share"] - share) > 1e-6:
             return {
                 "verdict": "FAIL",
@@ -410,13 +437,13 @@ def check_share(style_id, length, share, segments=None):
     }
 
 
-def refusal(style_id, length, share, segments=None):
+def refusal(style_id, length, share, segments=None, basis=_SS.BASIS_MEASURED):
     """Compact refusal text for a FAILED share; empty string when it passes.
 
     Lets a caller refuse early with one readable sentence instead of
     re-deriving the reason list.
     """
-    result = check_share(style_id, length, share, segments)
+    result = check_share(style_id, length, share, segments, basis)
     if result["verdict"] == "PASS":
         return ""
     return "REFUSED %s at %ss: %s" % (result["style_id"],

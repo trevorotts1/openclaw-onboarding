@@ -282,7 +282,7 @@ def measure_candidate(candidate, measure=None):
                                      confidence=out.get("confidence"))
     timing = candidate.get("timing")
     if isinstance(timing, list) and timing:
-        measured = _SS.measure_share(timing)
+        measured = _SS.measure_share(timing, basis=_SS.BASIS_PLANNED)
         return normalize_metrics(
             {"spoken_share": measured["share"],
              "sung_share": measured["sung_share"],

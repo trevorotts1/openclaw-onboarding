@@ -166,15 +166,15 @@ class ConstantsTests(unittest.TestCase):
 class MeasurementTests(unittest.TestCase):
     def test_spoken_and_rap_both_count_sung_does_not(self):
         lines = [seg("spoken", 10), seg("rap", 5), seg("sung", 80)]
-        self.assertEqual(M.measure_share(lines)["spoken_style_seconds"], 15.0)
+        self.assertEqual(M.measure_share(lines, "planned")["spoken_style_seconds"], 15.0)
 
     def test_share_is_a_percent_of_runtime_at_one_decimal(self):
         lines, _duration = in_band_ad()
-        self.assertEqual(M.measure_share(lines)["share_pct"], 22.5)
+        self.assertEqual(M.measure_share(lines, "planned")["share_pct"], 22.5)
         self.assertEqual(M.measure_share(
-            [seg("spoken", 1), seg("sung", 3)])["share_pct"], 25.0)
+            [seg("spoken", 1), seg("sung", 3)], "planned")["share_pct"], 25.0)
         self.assertEqual(M.measure_share(
-            [seg("spoken", 1), seg("sung", 2)])["share_pct"], 33.3)
+            [seg("spoken", 1), seg("sung", 2)], "planned")["share_pct"], 33.3)
 
     def test_fail_closed_measurements(self):
         with self.assertRaises(M.SpokenShareError) as ctx:
@@ -281,7 +281,7 @@ class ShareCheckTests(unittest.TestCase):
         lines = [seg("spoken", 5, 0.0), seg("sung", 40, 5.0),
                  seg("rap", 15, 45.0), seg("spoken", 5, 60.0),
                  seg("sung", 35, 65.0)]
-        measured = M.measure_share(lines)
+        measured = M.measure_share(lines, "planned")
         self.assertEqual(measured["spoken_style_seconds"], 25.0)
         self.assertEqual(measured["share_pct"], 25.0)
         self.assertEqual(M.check_share(measured["share"])["verdict"], "PASS")
@@ -289,7 +289,7 @@ class ShareCheckTests(unittest.TestCase):
         no_rap = [lines[0], lines[1],
                   {"delivery": "sung", "seconds": 15, "start": 45},
                   lines[3], lines[4]]
-        below = M.check_share(M.measure_share(no_rap)["share"])
+        below = M.check_share(M.measure_share(no_rap, "planned")["share"])
         self.assertEqual(below["verdict"], "FAIL")
         self.assertTrue(any("redo" in r for r in below["reasons"]),
                         below["reasons"])
