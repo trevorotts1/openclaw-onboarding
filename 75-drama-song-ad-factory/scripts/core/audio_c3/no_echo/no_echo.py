@@ -89,6 +89,23 @@ BRIEF_NEGATIVE_TAGS = (
 #: D22a: three style words a spoken part never uses.
 SPOKEN_BANNED_STYLE_WORDS = ("spacious", "cinematic", "choir")
 
+#: G1 (owner order 2026-10-08 11:35, part G): wording a sung style's style
+#: text never contains, and the negative tags that carry the prohibition
+#: instead. Sourced from core/music_styles (single point), never a second
+#: copy. Spoken lines are carried only by their lyric tags.
+try:
+    import music_styles as _MS                  # core/ on sys.path
+except ImportError:                             # loaded outside core/
+    import os as _os
+    import sys as _sys
+    _sys.path.insert(0, _os.path.abspath(
+        _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                      "..", "..")))
+    import music_styles as _MS
+
+SUNG_BANNED_STYLE_WORDS = _MS.SUNG_BANNED_STYLE_WORDS
+SUNG_NEGATIVE_TAGS = _MS.SUNG_NEGATIVE_TAGS
+
 #: Rendered once, derived, so no surface can drift from NEGATIVE_TAGS.
 TAG_LIST_TEXT = ", ".join(NEGATIVE_TAGS)
 
@@ -283,7 +300,8 @@ def _check_declared_transport(request: Dict[str, Any]) -> None:
 def stamp(request: Any = None, *, kind: Optional[str] = None,
           style_text: Optional[str] = None,
           spoken_style: Optional[str] = None,
-          spoken_parts: Optional[list] = None) -> Dict[str, Any]:
+          spoken_parts: Optional[list] = None,
+          sung: Optional[bool] = None) -> Dict[str, Any]:
     """Copy ``request`` with the D22a rule written on it.
 
     Refuses (``NoEchoError``) when any spoken part names a banned style
@@ -291,6 +309,12 @@ def stamp(request: Any = None, *, kind: Optional[str] = None,
     payload already names a second producer or a non-Skill-74 KIE path — the
     rule is never written over a contradicting payload. The caller's
     dictionary is never mutated.
+
+    G1: with ``sung=True`` every style/prompt surface is refused when it
+    contains spoken-word wording (spoken word / speech / narration / rap /
+    talk) and the payload carries the ``sung_negative_tags`` ("spoken
+    word, rap") alongside the D22a tags. Spoken lines are carried only by
+    their lyric tags.
     """
     if request is None:
         request = {}
@@ -318,6 +342,19 @@ def stamp(request: Any = None, *, kind: Optional[str] = None,
     out = copy.deepcopy(request)
     _check_declared_transport(out)
 
+    if sung:
+        extra = [((), style_text)] if isinstance(style_text, str) else []
+        for path, text in _style_surfaces(out) + extra:
+            hits = _MS.sung_style_words(text or "")
+            if hits:
+                raise NoEchoError(
+                    "SUNG_STYLE_WORD",
+                    "%s: a sung style's style text never contains %r (G1: "
+                    "spoken lines ride their lyric tags only; negative tags "
+                    "%s carry the ban)"
+                    % (".".join(str(p) for p in path) or "style_text",
+                       hits[0], ", ".join(SUNG_NEGATIVE_TAGS)))
+
     out.setdefault("schema_version", SCHEMA_VERSION)
     out.setdefault("tool_version", TOOL_VERSION)
     out.setdefault("rule_id", RULE_ID)
@@ -344,6 +381,16 @@ def stamp(request: Any = None, *, kind: Optional[str] = None,
     out["negative_tags"] = list(NEGATIVE_TAGS)
     out["negative_tags_extended"] = list(BRIEF_NEGATIVE_TAGS)
     out["style_words_banned"] = list(SPOKEN_BANNED_STYLE_WORDS)
+    if sung:
+        out["sung"] = True
+        tags = out["negative_tags"]
+        for tag in SUNG_NEGATIVE_TAGS:
+            if tag not in tags:
+                tags.append(tag)
+        ext = out["negative_tags_extended"]
+        for tag in SUNG_NEGATIVE_TAGS:
+            if tag not in ext:
+                ext.append(tag)
     out["rule"] = RULE_TEXT
     out["card_line"] = CARD_LINE
     out["docs_line"] = DOCS_LINE
@@ -356,7 +403,8 @@ def stamp(request: Any = None, *, kind: Optional[str] = None,
 
 def _build(kind: str, request: Any, style_text: Optional[str],
            spoken_style: Optional[str], spoken_parts: Optional[list],
-           request_id: Optional[str]) -> Dict[str, Any]:
+           request_id: Optional[str],
+           sung: Optional[bool] = None) -> Dict[str, Any]:
     """Shared builder for both payload kinds. Envelope, never an exception."""
     if request is None:
         request = {}
@@ -386,7 +434,8 @@ def _build(kind: str, request: Any, style_text: Optional[str],
             refused_words=banned)
     try:
         stamped = stamp(request, kind=kind, style_text=style_text,
-                        spoken_style=spoken_style, spoken_parts=spoken_parts)
+                        spoken_style=spoken_style, spoken_parts=spoken_parts,
+                        sung=sung)
     except NoEchoError as exc:
         return _envelope("rejected", exc.code.lower(), [str(exc)],
                          request_kind=kind, request=None,
@@ -400,15 +449,22 @@ def _build(kind: str, request: Any, style_text: Optional[str],
 def song_request(request: Any = None, *, style_text: Optional[str] = None,
                  spoken_style: Optional[str] = None,
                  spoken_parts: Optional[list] = None,
-                 request_id: Optional[str] = None) -> Dict[str, Any]:
+                 request_id: Optional[str] = None,
+                 sung: Optional[bool] = None) -> Dict[str, Any]:
     """The song payload, D22a stamped. Envelope, never an exception.
 
     Hand it the payload the song builder produced (for example the
     current-envelope generate payload) and it comes back carrying the dry
     rule, the seven negative tags and the spoken-part ban.
+
+    G1: ``sung=True`` marks the request as a sung style (Soul Ballad,
+    Soul Rise, every sung delivery). The style text is then refused when
+    it contains spoken-word wording, and the payload carries
+    "spoken word, rap" as negative tags. Spoken lines are carried only by
+    their lyric tags.
     """
     return _build(KIND_SONG, request, style_text, spoken_style,
-                  spoken_parts, request_id)
+                  spoken_parts, request_id, sung=sung)
 
 
 def voice_pack_request(request: Any = None, *, prompt: Optional[str] = None,
@@ -474,6 +530,24 @@ def check(request: Any) -> Dict[str, Any]:
         if word not in guards:
             errors.append("MISSING_BANNED_STYLE_WORD_GUARD:%s" % word)
 
+    # G1: a payload marked sung=True is checked both ways. Its style text
+    # must carry no spoken-word wording, and it must set the sung negative
+    # tags — so a hand-built payload cannot skip the ban either direction.
+    sung_banned: List[str] = []
+    if request.get("sung") is True:
+        for path, text in surfaces:
+            for word in _MS.sung_style_words(text):
+                if word not in sung_banned:
+                    sung_banned.append(word)
+                errors.append(
+                    "SUNG_STYLE_WORD_IN_TEXT:%s (a sung style's style text "
+                    "never contains %r: G1)"
+                    % (".".join(str(p) for p in path), word))
+        sung_tags = [t for t in tags if isinstance(t, str)]
+        for tag in SUNG_NEGATIVE_TAGS:
+            if tag not in sung_tags:
+                errors.append("MISSING_SUNG_NEGATIVE_TAG:%s" % tag)
+
     banned: List[str] = []
     try:
         texts = _payload_spoken_texts(request)
@@ -502,8 +576,10 @@ def check(request: Any) -> Dict[str, Any]:
 
     if errors:
         reason = ("banned-spoken-style-word" if banned
+                  else "sung-style-word" if sung_banned
                   else "no-echo-rule-incomplete")
-        return _envelope("rejected", reason, errors, request=request)
+        return _envelope("rejected", reason, errors, request=request,
+                         refused_words=banned + sung_banned)
     return _envelope("ok", "", [], request=request)
 
 

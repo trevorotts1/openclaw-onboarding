@@ -23,9 +23,12 @@ from .music_styles import (
     SOURCE_D18,
     SPOKEN_STYLE_DELIVERIES,
     STYLES,
+    SUNG_BANNED_STYLE_WORDS,
+    SUNG_NEGATIVE_TAGS,
     TOOL_NAME,
     TOOL_VERSION,
     MusicStyleError,
+    assert_sung_style_text,
     check_first_sung,
     check_share,
     d15_range,
@@ -38,6 +41,7 @@ from .music_styles import (
     style,
     style_ids,
     style_prompt,
+    sung_style_words,
 )
 
 __all__ = [
@@ -52,9 +56,12 @@ __all__ = [
     "SOURCE_D18",
     "SPOKEN_STYLE_DELIVERIES",
     "STYLES",
+    "SUNG_BANNED_STYLE_WORDS",
+    "SUNG_NEGATIVE_TAGS",
     "TOOL_NAME",
     "TOOL_VERSION",
     "MusicStyleError",
+    "assert_sung_style_text",
     "check_first_sung",
     "check_share",
     "d15_range",
@@ -67,4 +74,5 @@ __all__ = [
     "style",
     "style_ids",
     "style_prompt",
+    "sung_style_words",
 ]

@@ -15,8 +15,18 @@ Enforcement lives here: check_share() refuses any spoken share outside
 from core/spoken_share (the single source for the retarget), never kept as
 a second copy here. Voice gender is NOT ours -- that is V2B-AUDIO-U1
 (core/audio_c3), so prompts say "lead vocal" only.
+
+G1 (owner order 2026-10-08 11:35, part G): a sung style's style text never
+contains spoken-word wording ("spoken word", "speech", "narration",
+"rap", "talk"); the Suno request instead carries "spoken word, rap" as
+negative tags. Spoken lines are carried ONLY by their lyric tags (G2's
+job), never by the style text. Enforced at this single rendering point
+(style_prompt + assert_sung_style_text) and stamped on every Suno song
+payload by core/audio_c3 no_echo (song_request, sung=True).
 """
 from __future__ import annotations
+
+import re
 
 from math import isfinite
 
@@ -60,6 +70,24 @@ DELIVERIES = ("spoken", "rap", "sung")
 #: Rap is spoken-style delivery (D18 table, R&B Flow note). Counting it is
 #: what stops a rap-heavy cut from measuring under the cap by accident.
 SPOKEN_STYLE_DELIVERIES = frozenset({"spoken", "rap"})
+
+#: G1 (owner order 2026-10-08): words a sung style's style text never
+#: contains. Word-boundary match, case-insensitive. "Rap" and "talk" are
+#: banned word-uses in style text, not in lyrics: a sung style tells Suno
+#: what to SING, spoken lines ride their lyric tags only. The remaining
+#: two D18 styles are rap/sung hybrids by design, so this ban applies to a
+#: style only when it is rendered as sung (assert_sung_style_text).
+SUNG_BANNED_STYLE_WORDS = (
+    "spoken word",
+    "speech",
+    "narration",
+    "rap",
+    "talk",
+)
+
+#: G1: negative tags set on every sung-style Suno request, so the ban never
+#: has to appear as prose in the style text.
+SUNG_NEGATIVE_TAGS = ("spoken word", "rap")
 
 SOURCE_D18 = "Owner D18 2026-10-07, plan 6.7"
 SOURCE_D15 = "Owner D15 retarget 2026-10-07, Decision log 37; plan 6.7"
@@ -132,6 +160,42 @@ STYLES = {
 
 #: Recommended Suno section tags for the arc, keyed by style. Advisory only:
 #: the lyric writer owns line text, this owns the style field.
+_SUNG_WORD_PATTERNS = tuple(
+    (word, re.compile(r"\b%s\b" % re.escape(word), re.IGNORECASE))
+    for word in SUNG_BANNED_STYLE_WORDS
+)
+
+
+def sung_style_words(text):
+    """Which banned sung-style words this style text contains.
+
+    Case-insensitive whole-word ("rap" matches "rap" but not "wraps"; the
+    phrase "spoken word" matches across a hyphen or comma too). Empty list
+    means clean.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return []
+    return [word for word, pattern in _SUNG_WORD_PATTERNS
+            if pattern.search(text)]
+
+
+def assert_sung_style_text(style_id, text):
+    """Raise MusicStyleError(SUNG_STYLE_WORD) if a sung style text carries
+    spoken-word wording. This is the G1 gate every sung-style request
+    passes; the negative tags (SUNG_NEGATIVE_TAGS) carry the prohibition
+    to Suno instead.
+    """
+    hits = sung_style_words(text)
+    if hits:
+        raise MusicStyleError(
+            "SUNG_STYLE_WORD",
+            "%r: a sung style's style text never contains %r (G1: spoken "
+            "lines are carried only by their lyric tags; negative tags %s "
+            "carry the ban)"
+            % (style_id, hits[0], ", ".join(SUNG_NEGATIVE_TAGS)))
+    return text
+
+
 SECTION_HINTS = {
     "soul-ballad": "[Verse] slow and close, [Pre-Chorus] lift, "
                    "[Chorus] full voice, [Bridge] stripped back",
@@ -194,13 +258,23 @@ def style(style_id):
     return dict(STYLES[_style_key(style_id)])
 
 
-def style_prompt(style_id):
+def style_prompt(style_id, sung=None):
     """Suno style-field text for one style (id or label accepted).
 
     Contract consumed by core/style_defaults (V2B-AUDIO-U5): returns a
     non-empty str, raises only on an unknown style id.
+
+    G1: with sung=True the text is run through assert_sung_style_text --
+    no spoken-word wording. sung=None (default) keeps the historical
+    contract for existing callers; the sung-side enforcement lives in the
+    Suno request builders (no_echo song_request with sung=True), which
+    know the delivery choice, this prompt function does not.
     """
-    return STYLES[_style_key(style_id)]["suno_style_prompt"]
+    sid = _style_key(style_id)
+    text = STYLES[sid]["suno_style_prompt"]
+    if sung:
+        assert_sung_style_text(sid, text)
+    return text
 
 
 def section_hint(style_id):
