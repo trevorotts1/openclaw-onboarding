@@ -19,6 +19,14 @@ from .shot_planner import (
     validate_contract,
     load_timing_map,
     bind_plan as _bind_plan,
+    TARGET_SHOT_SECONDS,
+    E4_REASONS,
+    E4_GATE_STEPS,
+    validate_no_reuse,
+    plan_generation_count,
+    validate_story_order,
+    e4_final_checks,
+    to_e4_qc_record,
 )
 
 try:
@@ -74,4 +82,7 @@ __all__ = [
     "TREATMENTS", "SCHEMA_VERSION", "TOOL_VERSION", "PlanError",
     "validate_shot", "validate_contract", "load_timing_map", "bind_plan",
     "intake_image_prompt", "intake_shot_prompts", "require_compiled",
+    "TARGET_SHOT_SECONDS", "E4_REASONS", "E4_GATE_STEPS",
+    "validate_no_reuse", "plan_generation_count", "validate_story_order",
+    "e4_final_checks", "to_e4_qc_record",
 ]

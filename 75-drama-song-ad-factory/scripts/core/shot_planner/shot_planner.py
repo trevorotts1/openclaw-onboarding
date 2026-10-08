@@ -4,8 +4,18 @@ Every shot carries all 14.2 fields and binds to lyric_line_ids from the
 W2-08 timing map (directive 12.4 shape; fixture timing.json acceptable).
 bind_plan() fails closed: empty plans, duplicate ids, unbound lines and
 windows that do not cover their lines are rejected, never coerced.
+
+Part E E4 (fix wave): no reused source clips (validate_no_reuse ->
+CLIP_REUSED), generation count sized to the ad length
+(plan_generation_count), and storyboard scene order preserved on the
+timeline (validate_story_order -> SCENE_ORDER_BACKWARDS). The E4 QC steps
+ride the shared final-gate path via E4_GATE_STEPS (the assembler's gate
+loop imports the step tuple; helpers are _e4_-prefixed to avoid collisions
+with the other W-E units' wiring in the same modules).
 """
 from __future__ import annotations
+
+import math
 
 SCHEMA_VERSION = "1.0.0"
 TOOL_VERSION = "1.0.0"
@@ -54,6 +64,11 @@ PRODUCT_VISIBILITY = frozenset({"none", "background", "featured", "hero", "packs
 STATUSES = frozenset({"draft", "planned", "storyboard_approved", "parked", "rejected"})
 
 PRODUCT_SHOT_VISIBILITY = frozenset({"featured", "hero", "packshot"})
+
+# Part E E4: generation count sizing default (manual 02 Part E E4; a 60 s
+# ad at a 4 s target shot = 15 generated shots, all new footage).
+TARGET_SHOT_SECONDS = 4.0
+E4_REASONS = frozenset({"CLIP_REUSED", "SCENE_ORDER_BACKWARDS"})
 
 
 class PlanError(Exception):
@@ -213,3 +228,182 @@ def bind_plan(shots, timing, contracts=None):
     return {"outcome": "ok", "reason_code": "plan-bound",
             "shots": [s["shot_id"] for s in shots], "bindings": bindings,
             "duration_seconds": t["duration_seconds"]}
+
+
+# --- Part E E4: no reused clips, generation count, story order --------------
+#
+# The reuse hole let a timeline splice one generated clip twice (callback
+# style) because nothing on the planner side counted source clip ids across
+# segments. E4 makes reuse an explicit, per-clip decision:
+#   - every timeline segment names its generated source clip (source_clip_id,
+#     falling back to src);
+#   - one source clip may appear at most once, unless the storyboard entry
+#     for that clip sets allow_reuse: true (a deliberate callback);
+#   - the number of generated shots is sized from the ad length
+#     (plan_generation_count), so the timeline fills with NEW footage
+#     instead of repeats;
+#   - segments keep storyboard scene order (validate_story_order ->
+#     SCENE_ORDER_BACKWARDS when a segment's scene index goes backwards).
+
+
+def _e4_clip_of(segment):
+    """Source clip id of one timeline segment (source_clip_id, else src)."""
+    if not isinstance(segment, dict):
+        return None
+    cid = segment.get("source_clip_id", segment.get("src"))
+    return cid if isinstance(cid, str) and cid.strip() else None
+
+
+def _e4_reusable(segment, reusable):
+    """Storyboard clip entries may mark allow_reuse: true (deliberate callback)."""
+    for entry in (segment.get("storyboard") or {} if isinstance(segment, dict) else {},
+                  segment.get("storyboard_entry") or {} if isinstance(segment, dict) else {}):
+        if isinstance(entry, dict) and entry.get("allow_reuse") is True:
+            return True
+    for entry_id in (segment.get("storyboard_entry_id"),
+                     segment.get("storyboard_clip_id")):
+        if isinstance(entry_id, str) and entry_id.strip() and entry_id in reusable:
+            return True
+    story = segment.get("storyboard") if isinstance(segment, dict) else None
+    if isinstance(story, dict):
+        clipped = story.get("clips")
+        if isinstance(clipped, list):
+            for entry in clipped:
+                if isinstance(entry, dict) and entry.get("allow_reuse") is True:
+                    return True
+    return False
+
+
+def validate_no_reuse(timeline, reusable_clip_ids=None):
+    """Reject any timeline where a source clip appears twice (Part E E4).
+
+    Each generated source clip may appear at most once; the only exception
+    is a clip the storyboard explicitly marks reusable (allow_reuse: true
+    on the clip entry — a deliberate callback, never an accidental splice).
+    Raises PlanError CLIP_REUSED on the second occurrence; returns the
+    timeline unchanged on a clean pass.
+    """
+    reusable = set()
+    if isinstance(reusable_clip_ids, (list, tuple, set, frozenset)):
+        reusable.update(str(x) for x in reusable_clip_ids)
+    elif isinstance(reusable_clip_ids, dict):
+        reusable.update(
+            str(k) for k, v in reusable_clip_ids.items() if v is True)
+    segments = (timeline or {}).get("segments") if isinstance(timeline, dict) else None
+    if not isinstance(segments, list):
+        raise PlanError("BAD_TIMELINE_SHAPE", "timeline needs a segments list")
+    seen = set()
+    for i, seg in enumerate(segments):
+        cid = _e4_clip_of(seg)
+        if not cid:
+            continue
+        if cid in seen and not (cid in reusable or _e4_reusable(seg, reusable)):
+            raise PlanError("CLIP_REUSED",
+                            "segment %d reuses source clip %s; mark allow_reuse: true"
+                            " on the storyboard clip entry to allow a callback" % (i, cid))
+        seen.add(cid)
+    return timeline
+
+
+def plan_generation_count(total_length_s, target_shot_seconds=TARGET_SHOT_SECONDS):
+    """Shot-count sizing: ceil(total_length / target_shot_seconds) (Part E E4).
+
+    The planner uses this when sizing the shot list so the timeline fills
+    with NEW footage instead of repeats (a 60 s ad at a 4 s target = 15
+    generated shots). Raises PlanError COUNT_UNBOUNDED on non-positive
+    lengths or targets.
+    """
+    if not _is_num(total_length_s) or total_length_s <= 0:
+        raise PlanError("COUNT_UNBOUNDED", "total_length_s must be positive")
+    if not _is_num(target_shot_seconds) or target_shot_seconds <= 0:
+        raise PlanError("COUNT_UNBOUNDED", "target_shot_seconds must be positive")
+    return int(math.ceil(float(total_length_s) / float(target_shot_seconds)))
+
+
+def validate_story_order(timeline):
+    """Timeline must keep storyboard scene order (Part E E4).
+
+    Each segment carries its storyboard scene index (scene_index, falling
+    back to scene); any index lower than the previous segment's is a
+    backwards jump. Raises PlanError SCENE_ORDER_BACKWARDS; returns the
+    timeline unchanged on a clean pass.
+    """
+    segments = (timeline or {}).get("segments") if isinstance(timeline, dict) else None
+    if not isinstance(segments, list):
+        raise PlanError("BAD_TIMELINE_SHAPE", "timeline needs a segments list")
+    prev = None
+    for i, seg in enumerate(segments):
+        if not isinstance(seg, dict):
+            continue
+        idx = seg.get("scene_index", seg.get("scene"))
+        if not _is_num(idx):
+            continue
+        if prev is not None and idx < prev:
+            raise PlanError("SCENE_ORDER_BACKWARDS",
+                            "segment %d scene index %s precedes previous %s"
+                            % (i, idx, prev))
+        prev = idx
+    return timeline
+
+
+E4_GATE_STEPS = (
+    ("no_reuse", validate_no_reuse),
+    ("story_order", validate_story_order),
+)
+
+
+def e4_final_checks(timeline):
+    """Run every Part E E4 QC step over a built timeline, in order.
+
+    Same seam the other W-E units wire into (a shared final-gate loop
+    imports each unit's step tuple and runs it before release). Returns
+    {outcome, reason_code, reasons, steps} — PASS with an empty reasons
+    list, or rejected with the first raised reason: outcome/reason_code
+    shape mirrors qc_gate.evaluate so the gate's verdict record carries it.
+    """
+    reasons = []
+    for name, step in E4_GATE_STEPS:
+        try:
+            step(timeline)
+        except PlanError as exc:
+            if exc.code not in E4_REASONS:
+                raise
+            reasons.append({"step": name, "code": exc.code,
+                            "detail": str(exc)})
+    return {"outcome": "ok" if not reasons else "rejected",
+            "reason_code": "E4_GATES_PASS" if not reasons
+            else "+".join([r["code"] for r in reasons]),
+            "reasons": reasons, "steps": [n for n, _ in E4_GATE_STEPS]}
+
+
+def _e4_verdict_summary(result):
+    """One-line evidence summary for the E4 gate record."""
+    return "E4 %s: %d check(s)%s" % (
+        result["outcome"], len(result["steps"]),
+        "" if result["outcome"] == "ok"
+        else " [%s]" % ", ".join(r["code"] for r in result["reasons"]))
+
+
+def to_e4_qc_record(timeline, reviewer, run_id, stage="final_edit",
+                    check_id="e4-clip-reuse", checker_version=TOOL_VERSION):
+    """qc-schema 1.0.0 verdict record (check=timeline) for core/qc_gate.py.
+
+    reviewer must carry identity/session/authority and differ from the
+    maker of the plan (17.6); the gate binds independence itself.
+    """
+    if not isinstance(reviewer, dict):
+        raise PlanError("BAD_INPUT", "reviewer must be an object")
+    result = e4_final_checks(timeline)
+    check = "timeline"
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "check_id": check_id,
+        "run_id": run_id,
+        "stage": stage,
+        "check": check,
+        "verdict": "PASS" if result["outcome"] == "ok" else "FAIL",
+        "evidence": {"summary": _e4_verdict_summary(result), "refs": []},
+        "reason_code": result["reason_code"],
+        "checker_version": checker_version,
+        "reviewer": reviewer,
+    }
