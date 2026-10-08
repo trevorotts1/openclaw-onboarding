@@ -24,6 +24,7 @@ name: rescue-rangers-rr028-gates
 
 on:
   push:
+    branches: [main]
     paths:
       - "shared-utils/rr-readiness.sh"
       - "65-rescue-receiver/wire.sh"
@@ -47,6 +48,10 @@ on:
       - "tests/rescue/RR-028/**"
       - "tests/unit/rr027-*.test.sh"
       - ".github/workflows/rescue-rangers-rr028-gates.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   rescue-rangers-rr028-gates:

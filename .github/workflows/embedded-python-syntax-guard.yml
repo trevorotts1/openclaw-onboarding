@@ -46,6 +46,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   embedded-python-syntax:
     name: "ONB-STATE-001: every embedded Python program compiles"

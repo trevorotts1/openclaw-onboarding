@@ -104,6 +104,10 @@ on:
       - ".github/workflows/podcast-engine-fail-closed-guard.yml"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   podcast-engine-fail-closed:
     name: Channel scoping + loudness + webhook ordering + ledger linkage + smoke-test blindness
