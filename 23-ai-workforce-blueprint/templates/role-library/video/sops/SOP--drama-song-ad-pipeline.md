@@ -282,29 +282,33 @@ without an identity lock.
 
 ### DS-9 -- QC gates
 
-**When to run:** Before every guarded stage transition.
-**Frequency:** Per stage, per shape, per variant.
+**When to run:** At the four gates below, after the stage that produces the
+checked output.
+**Frequency:** Four gates per shape (Script, Song, Shots, Final).
 
-**Steps:**
+A maker is never the only judge of its own output (17.6). Every gate records
+PASS / FAIL / UNAVAILABLE with evidence; UNAVAILABLE can never become PASS, and
+no aggregate may erase a critical identity, lyrics, offer, claim, product or
+CTA defect (17.8).
 
-1. A maker is never the only judge of its own output (17.6).
-2. Every mandatory check records PASS / FAIL / UNAVAILABLE with evidence;
-   UNAVAILABLE can never become PASS, and no aggregate may erase a critical
-   identity, lyrics, offer, claim, product or CTA defect (17.8).
-3. **Voice QC:** measured pitch in the character's gender range; same-gender
-   characters measurably different.
-4. **Picture QC:** the character visible during a spoken line matches the
-   speaker, or shows the voice source.
-5. **Lip-sync QC:** flagged lines must show mouth movement matching the sung
-   words; every other shot still fails on accidental mouth movement.
-6. **Look QC:** hybrid switches hold at least 3 seconds, dissolve 0.3-0.4 s,
-   no flicker, identity locked; expression matches the beat's assigned
-   emotion.
-7. Repair the failing unit only, with its own attempt ID (17.7). Never
-   regenerate approved assets or rewrite an accepted contract to make a check
-   pass.
+| Gate | When | Who checks | What fails it |
+|---|---|---|---|
+| 1. Script | After lyrics | One independent judge (different agent AND model from the writer) | Missing or reordered beat (`story_arc` checks this already), claim not supported by the brief, wrong call-to-action text, offer name wrong |
+| 2. Song | After the master and timing map | Code only: `timing_guard`, `qc_reverb_tail`, `pitch_ban`, length window | Length outside the window, lyric coverage gap, reverb or echo found, pitch out of band |
+| 3. Shots | After generation | Code first (duration, aspect ratio, black frames via ffprobe). Then one independent visual checker, **only** for lip-sync shots (3 to 4) and the product and call-to-action shots | Wrong speaker on a lip-sync line, product or label wrong, accidental mouth movement on a narrator line |
+| 4. Final | After assembly, per shape | One independent checker plus code (loudness -14 LUFS, duration, file opens) | Any critical defect from the existing critical list |
 
-**Outputs:** Per-check PASS/FAIL/UNAVAILABLE records with evidence.
+Repair rules:
+
+- Repair only the failed unit, with its own attempt ID (17.7). Never
+  regenerate approved assets or rewrite an accepted contract to make a check
+  pass.
+- At most 2 repair attempts per unit, then park with a plain message and the
+  spend so far.
+- Never re-run a passed gate.
+- "Unavailable" never counts as a pass.
+
+**Outputs:** Per-gate PASS/FAIL/UNAVAILABLE records with evidence.
 **Hand to:** DS-10 or back to the failing stage.
 **Failure mode:** A self-approved PASS, or an UNAVAILABLE reported as a pass.
 
