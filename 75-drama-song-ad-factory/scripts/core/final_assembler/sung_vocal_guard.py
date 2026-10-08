@@ -293,7 +293,8 @@ def vocal_presence(stderr_text, floor_lufs=None):
 # ----------------------------------------------------------------- check ----
 def check_sung_vocal(timing=None, runtime_s=None, profile=None,
                      master_path=None, scan_stderr=None,
-                     spoken_section_ids=None, target=None):
+                     spoken_section_ids=None, target=None,
+                     detector_share=None):
     """E7 verdict: the master is sung (All Suno) or has its bed (Velvet).
 
     Primary path  -- ``timing``: 12.4 map -> sung coverage ratio.
@@ -313,6 +314,12 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
                      UNAVAILABLE (17.8: missing evidence never passes).
 
     Returns the verdict dict (record_for_gate builds the qc record from it).
+
+    G3-WIRE: ``detector_share`` is the measured record from
+    ``singing_detector.share_for_stem(vocal stem)`` (share_source
+    "measured"). It is the detector provenance record_for_gate prints and
+    core/qc_gate requires on a PASS sung claim; the verdict itself still
+    judges Trevor's band on the timing-map coverage (SPK001).
     """
     mode, defaulted = resolve_voice_mode(profile)
     target = resolve_sung_target(profile, target)
@@ -320,7 +327,9 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
            "voice_mode": mode, "voice_mode_defaulted": defaulted,
            "target": round(target, 4), "evidence_path": None,
            "sung_coverage": None, "outcome": "FAIL", "reason_code": None,
-           "next_action": None, "flags": []}
+           "next_action": None, "flags": [],
+           "detector_share": (detector_share
+                              if isinstance(detector_share, dict) else None)}
     # ---- primary: the timing map ----
     if timing is not None:
         try:
@@ -423,13 +432,30 @@ def record_for_gate(verdict, run_id, stage, reviewer_identity,
             "24.4: record_for_gate needs reviewer_session and "
             "reviewer_authority (a blank record can never advance a stage)")
     reason = verdict.get("reason_code") or "SUNG_GUARD"
+    # G3-WIRE: provenance for the sung number. A measured share prints the
+    # detector name core/qc_gate requires on a PASS sung claim; without one
+    # the record says so, and the gate fails it closed (SUNG_CLAIM_UNMEASURED).
+    share = verdict.get("detector_share")
+    share = share if isinstance(share, dict) else {}
+    if share.get("detector") == "singing_detector" \
+            and share.get("share_source") == "measured":
+        prov = (" | detector=singing_detector v%s share_source=measured "
+                "sung_share=%.1f%%"
+                % (share.get("detector_version") or "?",
+                   float(share.get("sung_pct") or 0.0)))
+    else:
+        prov = " | share_source=%s (unmeasured)" % (
+            share.get("share_source")
+            if share.get("share_source")
+            else (verdict.get("evidence_path") or "timing_map"))
     if verdict["outcome"] == "PASS":
-        summary = ("sung_vocal_guard %s: %s (mode=%s, sung_coverage=%s)%s"
+        summary = ("sung_vocal_guard %s: %s (mode=%s, sung_coverage=%s)%s%s"
                    % (TOOL_VERSION, reason, verdict.get("voice_mode"),
                       verdict.get("sung_coverage"),
-                      "".join(" FLAG: " + f for f in verdict.get("flags", []))))
+                      "".join(" FLAG: " + f for f in verdict.get("flags", [])),
+                      prov))
     else:
-        summary = ("%s: %s" % (reason, verdict.get("next_action")))
+        summary = ("%s: %s%s" % (reason, verdict.get("next_action"), prov))
     rec = {"schema_version": "1.0.0", "check_id": "final:audio:sung_vocal",
            "run_id": run_id, "stage": stage, "check": "audio",
            "verdict": "PASS" if verdict["outcome"] == "PASS" else "FAIL",

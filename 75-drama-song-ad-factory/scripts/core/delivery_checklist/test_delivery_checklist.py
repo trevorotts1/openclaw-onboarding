@@ -257,6 +257,39 @@ class G7DoneWhen(unittest.TestCase):
         self.assertFalse(res["pass"])
         self.assertIn("SUNG", res["repair_scope"])
 
+    # ---- G3-WIRE: sung claims flow through core/singing_detector --------
+    def test_q1_detector_must_be_the_singing_detector(self):
+        """A named-but-wrong instrument (labels) is the fake-number path."""
+        for bad in ("section labels", "verse/chorus time", "manual listen",
+                    "vocal-stem astats"):
+            receipt = full_answered_receipt()
+            receipt["SUNG"]["detector"] = bad
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"], bad)
+            self.assertIn("SUNG", res["repair_scope"], bad)
+
+    def test_q1_accepts_every_singing_detector_spelling(self):
+        for good in ("singing_detector", "singing-detector(vocal-stem)",
+                     "singing detector v2.0.0", "SingingDetector"):
+            receipt = full_answered_receipt()
+            receipt["SUNG"]["detector"] = good
+            res = dc.evaluate(receipt)
+            self.assertTrue(res["pass"], (good, res["detail"]))
+
+    def test_q1_share_source_must_be_measured(self):
+        receipt = full_answered_receipt()
+        receipt["SUNG"]["share_source"] = "planned"
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("SUNG", res["repair_scope"])
+
+    def test_q9_detector_must_be_the_singing_detector(self):
+        receipt = full_answered_receipt()
+        receipt["FIRST_SUNG"]["detector"] = "section labels"
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("FIRST_SUNG", res["repair_scope"])
+
     def test_music_broken_fails(self):
         receipt = full_answered_receipt()
         receipt["VOICE_MUSIC"]["music_gaps_s"] = 2.5

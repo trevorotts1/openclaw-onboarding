@@ -6,6 +6,26 @@ frontmatter `version:` field).
 
 ---
 
+## v2.8.3 - 2026-10-08 - G3-WIRE: sung claims flow through the detector
+
+The G3b detector (v2.0.0) was on main but nothing in QC or the receipts called it, so a
+receipt could still assert a label-derived "sung 61.0%" and the gate would advance it.
+Wiring only (the detector short-line fix stays with the operator). Skill bump v2.8.2 to
+v2.8.3.
+
+- `core/qc_gate`: a PASS record whose `evidence.summary` asserts a sung/first-sung share
+  must name `singing_detector` (`SUNG_CLAIM_UNMEASURED`, structural -> BLOCKED; FAIL never
+  advanced anyway). Helpers `sung_claim` / `sung_claim_measured`, `SUNG_DETECTOR`.
+- `final_assembler/sung_vocal_guard`: `check_sung_vocal(detector_share=)` carries the
+  measured `share_for_stem` record; `record_for_gate` prints
+  `detector=singing_detector ... share_source=measured` (or honestly
+  `share_source=<path> (unmeasured)`, which the gate then blocks on a PASS).
+- `delivery_checklist`: Q1 SUNG and Q9 FIRST_SUNG require the detector to BE the singing
+  detector (any separator spelling); Q1 also rejects `share_source != measured`.
+- Tests: `core/test_g3_sung_claim_gate.py`, `final_assembler/test_sung_vocal_e7.py`
+  (detector_share wiring), `delivery_checklist/test_delivery_checklist.py` (label
+  detector rejected).
+
 ## v2.8.2 - 2026-10-08 - G3b: sung detector v2
 
 The sung detector no longer reads gap-free speech as sung (unit #1666). Skill bump v2.8.1 to v2.8.2.
