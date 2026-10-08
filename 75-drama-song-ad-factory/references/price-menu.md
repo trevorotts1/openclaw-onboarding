@@ -165,7 +165,9 @@ the per-second models, 8-second clips for Veo, 10-second clips for Gemini.
 ## 3. Lip-sync close-ups
 
 Lip-sync runs on three to four selected lines per ad, about 15 to 20 seconds
-of footage per shape (choice card section 3.6).
+of footage per shape (choice card section 3.6). Enforced at the final edit
+QC gate (Part E E6): at least 3 lip-sync lines, at least 15 s of lip-sync in
+a 60-90 s ad, scaling to at least 12% of runtime for longer or shorter ads.
 
 | Order | Model (KIE id) | Rate | Snapshot for one ad, one shape |
 |---|---|---|---|

@@ -17,6 +17,14 @@ from .assembler import (
     size_ffmpeg,
     validate_lipsync_atomic,
 )
+from .lipsync_coverage import (
+    CHECK,
+    COVERAGE_SHORT as LIPSYNC_COVERAGE_SHORT,
+    LINES_TOO_FEW as LIPSYNC_LINES_TOO_FEW,
+    TOOL_VERSION as LIPSYNC_TOOL_VERSION,
+    check_lipsync_coverage,
+    to_qc_record,
+)
 
 __all__ = [
     "DEFAULT_TRANSITION",
@@ -30,9 +38,14 @@ __all__ = [
     "TRANSITION_DURATION",
     "assemble",
     "build_argv",
+    "check_lipsync_coverage",
     "load_timeline",
+    "LIPSYNC_COVERAGE_SHORT",
+    "LIPSYNC_LINES_TOO_FEW",
+    "LIPSYNC_TOOL_VERSION",
     "plan_timeline",
     "qc_transitions",
     "size_ffmpeg",
+    "to_qc_record",
     "validate_lipsync_atomic",
 ]
