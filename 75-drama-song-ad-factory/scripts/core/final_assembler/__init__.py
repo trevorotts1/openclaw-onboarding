@@ -17,6 +17,13 @@ from .assembler import (
     size_ffmpeg,
     validate_lipsync_atomic,
 )
+from .frame_text import (
+    GARBLED_TEXT_FRAME,
+    TOOL_NAME as FRAME_TEXT_TOOL_NAME,
+    TOOL_VERSION as FRAME_TEXT_TOOL_VERSION,
+    register_extractor,
+    sample_frames_for_text,
+)
 from .lipsync_coverage import (
     CHECK,
     COVERAGE_SHORT as LIPSYNC_COVERAGE_SHORT,
@@ -29,6 +36,9 @@ from .lipsync_coverage import (
 __all__ = [
     "DEFAULT_TRANSITION",
     "EXIT",
+    "FRAME_TEXT_TOOL_NAME",
+    "FRAME_TEXT_TOOL_VERSION",
+    "GARBLED_TEXT_FRAME",
     "HARD_CUT_UNMARKED",
     "NICE_LEVEL",
     "SCHEMA_VERSION",
@@ -45,6 +55,8 @@ __all__ = [
     "LIPSYNC_TOOL_VERSION",
     "plan_timeline",
     "qc_transitions",
+    "register_extractor",
+    "sample_frames_for_text",
     "size_ffmpeg",
     "to_qc_record",
     "validate_lipsync_atomic",

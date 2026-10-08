@@ -251,6 +251,40 @@ def lipsync_gate(plan):
     return _fail(res["reason_code"], next_action=res["detail"],
                  evidence=res["evidence"])
 
+# F9 frame-text check: sampled frames per lip-sync clip, extractor stub
+# default (OCR optional; register_extractor installs it). No ffmpeg needed
+# on the stub path, so dry runs and tests run it too -- the done-when is
+# "a frame check runs on every lip-sync clip and the receipt shows it".
+try:                                    # F9 sibling module (this package)
+    from .frame_text import GARBLED_TEXT_FRAME, clip_rows as _frame_rows
+except ImportError:                     # direct script run from this dir
+    from frame_text import (            # type: ignore
+        GARBLED_TEXT_FRAME, clip_rows as _frame_rows)
+
+def frame_text_gate(plan, ffmpeg=None, dry_run=False, frame_count=3,
+                    extractor=None):
+    """F9: one frame-text row per lip-sync clip, plus the gate result.
+
+    Returns (rows, fail): rows always carry every lip-sync clip (stub mode
+    names the extractor, so a dry-run receipt still shows the check ran);
+    fail is the _fail receipt when a sampled readable-text frame flags
+    GARBLED_TEXT_FRAME (no render spend), else None.
+    """
+    marked = [s for s in plan["segments"]
+              if s.get("lip_sync") or s.get("lip_sync_line_ids")]
+    rows = _frame_rows(
+        marked, ffmpeg=("ffmpeg" if (ffmpeg and not dry_run) else None),
+        frame_count=frame_count, extractor=extractor)
+    for r in rows:
+        if r["text_frames"]:
+            return rows, _fail(GARBLED_TEXT_FRAME, next_action=(
+                "lip-sync clip %s shows readable invented text in sampled "
+                "frame(s) %s; regenerate that clip (no OCR text is allowed "
+                "in lip-sync close-ups)"
+                % (r["clip"], r["text_frames"])),
+                evidence={"frame_text": rows})
+    return rows, None
+
 
 def load_timeline(path):
     """Load + validate timeline.json. Returns dict or raises ValueError.
@@ -700,21 +734,36 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     # E6 lip-sync coverage result rides in every receipt; only a FAIL
     # blocks the render. The dry-run receipt exists for exactly this.
     cov = lipsync_gate(plan)
+    # F9 frame-text check runs on EVERY lip-sync clip (stub mode when
+    # there is no real ffmpeg or on dry runs; extract mode on real
+    # renders). Rows ride the receipt either way; only a flagged row
+    # blocks, with no render spend.
+    try:
+        frows, ffail = frame_text_gate(plan, ffmpeg=ffmpeg, dry_run=dry_run)
+    except Exception as exc:            # fail closed on extractor/setup
+        msg = str(exc)
+        return _fail(getattr(exc, "code", "FRAME_EXTRACT_UNAVAILABLE"),
+                     next_action=msg, evidence={})
     if dry_run:
         out = {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
                "tool_version": TOOL_VERSION, "command": "assemble",
                "outcome": "ok", "reason_code": "DRY_RUN",
                "next_action": "rerun without dry_run to render",
                "evidence": {"argv": argv, "plan": plan,
-                            "timeout_s": timeout, "lipsync": cov},
+                            "timeout_s": timeout, "lipsync": cov,
+                            "frame_text": frows},
                "state_version": 0}
-        if cov is not None:  # blocked before spend, but evidence stays
+        blocked = cov if cov is not None else ffail
+        if blocked is not None:  # blocked before spend, but evidence stays
             out["outcome"] = "error"
-            out["reason_code"] = cov["reason_code"]
-            out["next_action"] = cov["next_action"]
+            out["reason_code"] = blocked["reason_code"]
+            out["next_action"] = blocked["next_action"]
+            out.setdefault("evidence", {}).setdefault("gate_evidence", {})
+            out["evidence"]["gate_evidence"] = blocked["evidence"]
         return out
-    if cov is not None:   # gate FAIL: no render spend (17.5 fail-closed)
-        return cov
+    for blocked in (cov, ffail):   # gate FAILs: no render spend (17.5)
+        if blocked is not None:
+            return blocked
     try:
         proc = _run(argv, timeout)
     except RuntimeError as exc:
@@ -741,6 +790,7 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     # where interpolation was owed) and the render is refused.
     dup_pct = fps_conform.mpdecimate_dup_ratio(proc.stderr or "")
     evid["dup_frame_pct"] = dup_pct
+    evid["frame_text"] = frows   # F9: one row per lip-sync clip, in receipt
     try:
         fps_conform.assert_no_dupe_frames(dup_pct)
         evid["dup_frame_gate"] = "PASS"
