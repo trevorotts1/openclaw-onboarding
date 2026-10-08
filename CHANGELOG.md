@@ -1,4 +1,12 @@
-## [v26.4.8]  -  2026-10-08  -  ci(CIO002): each check once per commit - push triggers main-only, per-PR concurrency, 93 fast guards folded into one fast-guards job
+## [v26.4.8]  -  2026-10-08  -  Merge train: #1653 ci(CIO002): each check once per commit - push main-only, per-PR…; #1654 LPC001: lip-sync close-up in every reference set (skill 75 v2.8.1)
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1653 — [v26.4.8]  -  2026-10-08  -  ci(CIO002): each check once per commit - push triggers main-only, per-PR concurrency, 93 fast guards folded into one fast-guards job
+
+### #1654 — LPC001: lip-sync close-up in every reference set (skill 75 v2.8.1)
+
+(This pull request carried no CHANGELOG entry of its own.)
 
 ## [v26.4.7]  -  2026-10-08  -  batch: mega MGB001 (24 units; skill 75 v2.8.0)
 
