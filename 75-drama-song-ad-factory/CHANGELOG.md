@@ -6,7 +6,11 @@ frontmatter `version:` field).
 
 ---
 
-## v2.8.1 - 2026-10-08 - Lip-sync close-up in every reference set (LPC001)
+## v2.8.1 - 2026-10-08 - Batch MGB002: LPC001, BND001, W-G-003 (G3), SPK001
+
+One combined release of four units (#1654, #1655, #1656, #1659), one skill bump from v2.8.0 to v2.8.1. Each unit's own entry follows.
+
+### Lip-sync close-up in every reference set (LPC001)
 
 Same change as 999-setup drama-song-ad-factory 2.7.13. Owner order (Trevor, 2026-10-08): every
 character gets a close-up where the lips can clearly be seen, because the lip-sync step works
@@ -19,7 +23,8 @@ best from it.
   or one whose mouth is not clear, fails.
 - SKILL.md rule; test `lip_sync/lip_gate/test_lipsync_closeup.py` (mocked, $0);
   `catalog_calculator/test_image_plan_i3.py` updated.
-## v2.8.2 - 2026-10-08 - SPK001: spoken share cut to 20-25%, singing judged against voice time (builds on BND001 / #1655)
+
+### SPK001: spoken share cut to 20-25%, singing judged against voice time (builds on BND001 / #1655)
 
 Trevor, 2026-10-08: "Okay, let's go to your recommendation that cut it to about 20-25%." Why: Suno turns spoken lyric lines into long talking, and the old targets did not add up (spoken 35-40% of runtime plus a music-only intro and end card left at most about 50% for singing, never the 55-60% goal). Six chapter songs came back 15-30% sung.
 
@@ -29,7 +34,8 @@ Trevor, 2026-10-08: "Okay, let's go to your recommendation that cut it to about 
 - Trevor's band on both numbers: within 5 accept, 5 to 10 accept with a flag, over 10 redo. Hard reject only: no sung stretch of 6 s.
 - Tests: spoken 22% accept / 31% flag / 37% redo; sung of voice 76% accept / 69% flag / 60% redo; a 10 s intro plus 5 s end card is not penalized. Same rule in 999-setup drama-song-ad-factory 2.7.17.
 
-## v2.8.1 - 2026-10-08 - BND001: sung share judged only by Trevor's band; H6 first real singing 15% (supersedes #1637)
+
+### BND001: sung share judged only by Trevor's band; H6 first real singing 15% (supersedes #1637)
 
 Trevor, 2026-10-08: "It's not an absolute 55% or 20% ... within about 5 percentage points" and "We always want to try to be within 5% of the goal. Once you get past 5%, 5% to 7% gets a flag. Once you get past 10%, it's got to be redone." Batch #1652 had kept a hard 55% sung floor (E7-AMEND); that contradicted him.
 
@@ -37,7 +43,8 @@ Trevor, 2026-10-08: "It's not an absolute 55% or 20% ... within about 5 percenta
 - `core/spoken_share`: one G10 constants block holds the target and band numbers (`ACCEPT_PTS`, `FLAG_PTS`, `FIRST_SUNG_TARGET_PCT`, `SUNG_TARGET_PCT`, `NO_REAL_SINGING_STRETCH_S`).
 - H6 (#1637) merged with H8: `check_first_sung` measures the first real singing (first sung stretch of 6 s or more) as a share of runtime against the 15% target with the same band (accept 10-20%); `FIRST_SUNG_WITHIN_SECONDS` is retired. Adds `steer_first_sung`, `segments_from_sung_stretches`, `lyric_writer.steer_opening`, and the card and docs wording.
 - Tests: 50 vs target 60 flag, 48 vs 60 redo, 57 vs 60 accept, no floor, no 6 s sung stretch redo, first sung 18% accept / 22% flag / 27% redo.
-## v2.8.1 - 2026-10-08 - W-G-003 (G3) calibrated sung detector
+
+### W-G-003 (G3) calibrated sung detector
 
 - Added `scripts/core/singing_detector/` (detector, `__init__`, self-test): measures sung seconds per second and per line from the isolated vocal stem (pitch stability, voicing continuity, note alignment; ffmpeg + numpy, no ASR, no spend, Part D load guard). Every share it returns carries `source: measured` and is never computed from section labels. Calibrated against the reference fixtures (bsw sung lines, O3 spoken lines). Test: `scripts/core/singing_detector/test_singing_detector.py`.
 
