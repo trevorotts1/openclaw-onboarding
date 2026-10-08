@@ -113,10 +113,9 @@ RECEIPT_ENV_VAR = "CANVAS_3D_VERSION_E_RECEIPT"
 RECEIPT_FILENAME = "final-9x16-h3-spoken-E-hybrid3d.mp4.receipt.json"
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))          # .../canvas_to_3d
-FACTORY_ROOT = os.path.expanduser(os.path.join("~", "drama-song-factory-build"))
-PACKET_ROOT = os.path.expanduser(os.path.join(
-    "~", "Downloads", "CLAUDE_NINE_DRAMA_SONG_AD_FACTORY_V2_PACKET"))
-ADS_ROOT = os.path.expanduser(os.path.join("~", "Downloads", "Drama Song Ads"))
+# C3: operator-Mac home-folder defaults are gone from shipped code. This look
+# never reads realism-cinematic.md (realism is banned here); its candidate
+# search is for the Version E receipt only.
 
 _STYLE_BLOCK_RE = re.compile(r"\[STYLE\][^\[]*?\[/STYLE\]", re.DOTALL)
 _CROSSFADE_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*s\s+alpha\s+crossfade",
@@ -603,6 +602,10 @@ def receipt_candidate_paths(explicit=None, lane_dir=None):
 
     An explicit path is authoritative: it is the only candidate, so a pinned
     receipt that is absent refuses instead of silently loading another file.
+    Otherwise C3 order: the skill's own folder first (receipt-shaped
+    candidates only — realism-cinematic.md is a different file and this look
+    bans realism), then an env override, then a lane fixture, then a walk up
+    from this module. Operator-Mac defaults are not searched.
     """
     out = []
 
@@ -611,25 +614,27 @@ def receipt_candidate_paths(explicit=None, lane_dir=None):
         if path not in out:
             out.append(path)
 
+    def add_receipt_roots(roots):
+        for root in roots:
+            add(os.path.join(root, RECEIPT_FILENAME))
+            add(os.path.join(root, "creative-fidelity-h3", RECEIPT_FILENAME))
+
     if explicit:
         add(explicit)
         return out
     env = os.environ.get(RECEIPT_ENV_VAR)
     if env:
         add(env)
-    lane = os.path.abspath(lane_dir) if lane_dir else None
+    if lane_dir:
+        add_receipt_roots([os.path.abspath(lane_dir)])
+    # Walk up from this module: canvas_to_3d/ -> style_bibles/ -> core/ ->
+    # scripts/ -> skill root and any further ancestors.
     parents = []
     p = MODULE_DIR
-    for _ in range(3):                       # canvas_to_3d/, style_bibles/, core/
+    for _ in range(6):
         p = os.path.dirname(p)
         parents.append(p)
-    roots = ([lane] if lane else []) + parents + [FACTORY_ROOT, PACKET_ROOT,
-                                                  ADS_ROOT]
-    for root in roots:
-        add(os.path.join(root, RECEIPT_FILENAME))
-        add(os.path.join(root, "creative-fidelity-h3", RECEIPT_FILENAME))
-        add(os.path.join(root, "Drama Song Ads", "creative-fidelity-h3",
-                         RECEIPT_FILENAME))
+    add_receipt_roots(parents)
     return out
 
 
