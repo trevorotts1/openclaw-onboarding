@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.5.0
+version: v2.6.0
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -111,6 +111,16 @@ ceiling first (no recorded ceiling = no paid call), keeps
 reserved/submitted/unknown/reconciled protocol, and never auto-resubmits an
 uncertain outcome. Always show the client the sentence from
 `references/client-messages.md`, never the reason code.
+
+- **All ready KIE clips go out at once (Part F F5):** once reference images
+  and keyframes exist, EVERY ready clip is submitted together in one pass —
+  no "test batch first" unless the owner orders it. Stage order stays
+  reference images → keyframes → clips; the clips stage is the single
+  all-ready pass. `core/kie_dispatch/kie_dispatch.py::submit_all_ready(jobs,
+  max_concurrency=None)` runs it and the receipt carries
+  `max_at_once = len(submitted)` (or the provider cap, named in
+  `capped_by`, when that binds). Never submit clips in dribbles or wait for
+  one clip before sending the next.
 
 ## Shared canonical core (read, never duplicate)
 

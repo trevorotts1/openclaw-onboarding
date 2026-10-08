@@ -31,6 +31,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
 SKILL = os.path.dirname(CORE)
 REPO = os.path.dirname(SKILL)
+# realpath: on macOS /tmp is a symlink to /private/tmp, so sys.path (python
+# invocation) and abspath HERE can disagree by the symlink, leaving the
+# script's own dir on sys.path and letting catalog_calculator.py shadow the
+# namespace package off CORE.
+CORE = os.path.realpath(CORE)
+HERE = os.path.realpath(HERE)
 if CORE not in sys.path:
     sys.path.insert(0, CORE)
 
@@ -54,7 +60,7 @@ check("calculator-shipped", os.path.isfile(CALC), CALC)
 # script copy itself is loaded BY PATH, never as a shadowing module.
 if CORE not in sys.path:
     sys.path.insert(0, CORE)
-for stale in [p for p in sys.path if p.rstrip(os.sep) == HERE]:
+for stale in [p for p in sys.path if p.rstrip(os.sep) == HERE or os.path.realpath(p) == HERE]:
     sys.path.remove(stale)
 _spec = importlib.util.spec_from_file_location(
     "w2_c_u1_catalog_calculator", CALC)

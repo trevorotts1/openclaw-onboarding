@@ -1,6 +1,6 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v26.4.5 — Skill 76 local embedder hardened (QC fixes).** A fresh install on a client Mac no longer fails after switching memory search: every Ollama, model and cloud-protection check now passes before the config is written. Re-index and brew calls are time-bounded, memory search keeps one vector space (fallback `none`), the Ollama app is stopped with SIGTERM, and per-agent memory overrides are reported, never rewritten. Builds on v26.1.0 (Skill 76). Paired Command Center: **v7.6.110**.
+> **v26.4.5 — Skill 76 local embedder hardened (QC fixes).** A fresh install on a client Mac no longer fails after switching memory search: every Ollama, model and cloud-protection check now passes before the config is written. Re-index and brew calls are time-bounded, memory search keeps one vector space (fallback `none`), the Ollama app is stopped with SIGTERM, and per-agent memory overrides are reported, never rewritten. Builds on v26.1.0 (Skill 76). Paired Command Center: **v7.6.111**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
 > **Version:** see `/version` - this repo at v26.4.5.
