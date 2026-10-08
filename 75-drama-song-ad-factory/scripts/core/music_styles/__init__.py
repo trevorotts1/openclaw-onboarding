@@ -2,9 +2,9 @@
 
 The three styles offered on the approval card, each with its Suno style
 prompt, its song-brief sound description, and the spoken-share target it
-carries (D15 retarget: target 45% of runtime, hard band 40-55%, identical
+carries (D15 retarget: target 22.5% of runtime (20-25), redo past 10 points, identical
 for every length and every style, rap counted as spoken-style delivery;
-first sung line within about 10 seconds). The earlier 40-70% band and the
+first real singing targeted at 15% of runtime). The earlier 40-70% band and the
 per-length targets are retired -- the numbers come from core/spoken_share.
 stdlib only, no network, no paid calls.
 
@@ -13,7 +13,7 @@ Voice gender is not decided here: that is core/audio_c3 (V2B-AUDIO-U1).
 """
 from .music_styles import (
     DELIVERIES,
-    FIRST_SUNG_WITHIN_SECONDS,
+    FIRST_SUNG_TARGET_PCT,
     SCHEMA_VERSION,
     SPOKEN_SHARE_MAX,
     SPOKEN_SHARE_MIN,
@@ -42,7 +42,7 @@ from .music_styles import (
 
 __all__ = [
     "DELIVERIES",
-    "FIRST_SUNG_WITHIN_SECONDS",
+    "FIRST_SUNG_TARGET_PCT",
     "SCHEMA_VERSION",
     "SPOKEN_SHARE_MAX",
     "SPOKEN_SHARE_MIN",

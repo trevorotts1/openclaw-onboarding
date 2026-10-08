@@ -508,6 +508,43 @@ def test_canonical_alias_map_spot_checks_match_command_center():
         )
 
 
+def test_every_alias_pair_matches_both_ways_inf002():
+    """INF002 F: the parity guard matches board slug <-> registered runtime id in BOTH
+    directions for EVERY pair in canonical_slug.ALIAS_MAP, not just legal. A board row
+    named by the canonical slug or by an alias must pass against a runtime registered as
+    the canonical slug or as any alias, bare or dept-prefixed; an unrelated runtime still
+    fails (no false pass)."""
+    from canonical_slug import ALIAS_MAP
+    guard = _guard
+    assert ALIAS_MAP, "ALIAS_MAP unexpectedly empty"
+    failures = []
+    for alias, canon in ALIAS_MAP.items():
+        for board in (canon, alias):
+            for rid in (canon, "dept-" + canon, alias, "dept-" + alias):
+                _n, miss = guard.check_parity(
+                    [{"id": "x", "slug": board, "name": board, "agents": []}], {rid})
+                if miss:
+                    failures.append(f"board={board!r} runtime={rid!r}")
+        _n, miss = guard.check_parity(
+            [{"id": "x", "slug": canon, "name": canon, "agents": []}], {"dept-unrelated-zzz"})
+        if not miss:
+            failures.append(f"false pass: board={canon!r} vs an unrelated runtime")
+    assert not failures, "alias pairs not matched both ways: " + "; ".join(failures[:10])
+
+
+def test_legal_board_alias_with_canonical_runtime_passes_inf002():
+    """The inverse of SHR002 through the real CLI: board row named by the ALIAS
+    (`legal-compliance`), runtime registered as the canonical `dept-legal`."""
+    depts = [{"slug": "legal-compliance", "name": "Legal Compliance"}]
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = _make_db(tmp, depts)
+        for ids in (["dept-legal"], ["legal"], ["dept-compliance"], ["dept-legal-compliance"]):
+            res = _run(db_path, _make_config(tmp, ids))
+            assert res.returncode == EX_OK, f"{ids}: exit {res.returncode}\n{res.stdout}\n{res.stderr}"
+        res = _run(db_path, _make_config(tmp, ["dept-sales"]))
+        assert res.returncode == EX_MISMATCH, f"false pass\n{res.stdout}"
+
+
 def _main():
     failures = 0
     for name, fn in sorted(globals().items()):

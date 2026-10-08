@@ -33,7 +33,7 @@ What the engine does, in the order the flow asks it:
    warning, never a raise.
 
 Dependencies (train resolve wires both):
-  - core/spoken_share is on main: the target constants (45 / 40 / 55) and
+  - core/spoken_share is on main: the target constants (22.5 target, 12.5 / 32.5 redo edges) and
     the timing-map measurement come from it. GRACE_PCT lands there with the
     W-F-U16 spoken-grace branch; until it resolves, ``getattr`` supplies 5.
   - core/singing_detector is unit W-G-003's planned module: imported
@@ -65,9 +65,9 @@ SOURCE = ("Owner order 2026-10-08 11:35 (Part G, G4); grace from the "
 # ---- the one constants module ---------------------------------------------
 # The numbers live in core/spoken_share and are read, never copied. G4 adds
 # no second grace constant and no second band.
-SPOKEN_TARGET_PCT = _SS.SPOKEN_TARGET_PCT   # 45
-SPOKEN_MIN_PCT = _SS.SPOKEN_MIN_PCT         # 40
-SPOKEN_MAX_PCT = _SS.SPOKEN_MAX_PCT         # 55
+SPOKEN_TARGET_PCT = _SS.SPOKEN_TARGET_PCT   # 22.5
+SPOKEN_MIN_PCT = _SS.SPOKEN_MIN_PCT         # 12.5
+SPOKEN_MAX_PCT = _SS.SPOKEN_MAX_PCT         # 32.5
 TARGET = _SS.TARGET
 FLOOR = _SS.FLOOR
 CAP = _SS.CAP
@@ -109,7 +109,7 @@ class TargetEngineError(ValueError):
 
 def targets(spoken_target=None, length_target_s=None, extra=None):
     """The target set for one run. The share target defaults to the
-    spoken_share D15 target (45%); the length target is optional. Extra
+    spoken_share target (22.5%, SPK001); the length target is optional. Extra
     numeric targets are allowed; keys ending in ``_share`` must be
     fractions 0..1 like the built-ins. Malformed input raises (caller bug).
     """

@@ -64,6 +64,13 @@ fi
 # Default unset vars to empty so set -u doesn't blow up
 : "${GOHIGHLEVEL_API_KEY:=}"
 : "${GOHIGHLEVEL_LOCATION_ID:=}"
+# Shared credential lookup (INF002): location id under every name in every store; else the
+# Convert and Flow private integration token -> its location through the GHL API; neither
+# -> the skill installs with a note (below), never a failure.
+for _g in "$(dirname "$0")/../shared-utils/ghl-creds.sh" "$HOME/.openclaw/skills/shared-utils/ghl-creds.sh" "/data/.openclaw/skills/shared-utils/ghl-creds.sh"; do
+  [ -f "$_g" ] && { . "$_g"; break; }
+done
+set +u; command -v ghl_creds_resolve >/dev/null 2>&1 && ghl_creds_resolve; set -u
 : "${KIE_API_KEY:=}"
 # Credential stores: secrets/.env was the only one read; also read ~/.openclaw/.env and openclaw.json env.vars.
 if declare -F oc_fill_from_env_stores >/dev/null 2>&1; then oc_fill_from_env_stores KIE_API_KEY; fi
@@ -138,6 +145,15 @@ fi
 
 echo ""
 echo "── Section B: GHL credentials (canonical names) ──"
+# Neither a location id nor a pit- token exists (or the token's location is unreadable):
+# the skill is installed, with ONE note naming what is needed. The checks below need an
+# account, so they are skipped rather than failed.
+if [ "${GHL_CREDS_STATUS:-}" = "missing" ] || [ "${GHL_CREDS_STATUS:-}" = "unresolved" ]; then
+  yellow "  ⚠ WARN — $GHL_CREDS_NOTE"; WARN=$((WARN+1))
+  echo ""
+  echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
+  [ $FAIL -gt 0 ] && { red "Skill 35 QC FAILED"; exit 1; } || { green "Skill 35 QC PASS (installed with a note)"; exit 0; }
+fi
 assert "GOHIGHLEVEL_API_KEY (PIT) is set"     "[ -n \"${GOHIGHLEVEL_API_KEY:-}\" ]"
 assert "GOHIGHLEVEL_API_KEY starts with pit-" "[[ \"${GOHIGHLEVEL_API_KEY:-}\" == pit-* ]]"
 assert "GOHIGHLEVEL_LOCATION_ID is set"       "[ -n \"${GOHIGHLEVEL_LOCATION_ID:-}\" ]"
@@ -202,8 +218,7 @@ assert "PIT not present in any workspace .md file" "! grep -rE 'pit-[a-f0-9]{8}-
 
 echo ""
 echo "── Section I: Fix assertions (v2.9.4) ──"
-SKILL35_DIR="$HOME/.openclaw/skills/35-social-media-planner"
-[ ! -d "$SKILL35_DIR" ] && SKILL35_DIR="$(dirname "$0")"
+SKILL35_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # FIX #1: connection-status rule (live GHL query, no guessing) present in INSTRUCTIONS.md
 assert "INSTRUCTIONS.md contains live-GHL-check connection-status rule (Fix #1)" \
@@ -234,6 +249,37 @@ assert "INSTALL.md does NOT contain ungated Saturday HEARTBEAT.md task block (Fi
 # FIX #3 corollary: INSTALL.md Step 9 instructs to register the cron, NOT write to HEARTBEAT.md
 assert "INSTALL.md Step 9 directs cron registration (not HEARTBEAT.md write) (Fix #3)" \
   "grep -qE 'FURNACE RULE|do NOT write to HEARTBEAT|openclaw cron add' \"$SKILL35_DIR/INSTALL.md\" 2>/dev/null"
+
+echo ""
+echo "── Section J: weekly drama-song integration (plan 6.15 / D27+D35) ──"
+# Static and offline. These checks read the staged docs only: no KIE call, no
+# network, no spend, and they never execute the weekly step.
+assert "SKILL.md names the weekly drama-song module (core/smp/weekly_step/)" \
+  "grep -q 'core/smp/weekly_step' \"$SKILL35_DIR/SKILL.md\" 2>/dev/null"
+assert "SKILL.md declares Skill 74 (74-kie-live-adapter) as the only KIE path" \
+  "grep -q '74-kie-live-adapter' \"$SKILL35_DIR/SKILL.md\" 2>/dev/null"
+assert "INSTRUCTIONS.md documents the KIE-off skip artifact (drama-song-skipped.json)" \
+  "grep -q 'drama-song-skipped.json' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null"
+assert "INSTRUCTIONS.md states the 59.0 second planner hard cap" \
+  "grep -q '59.0' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null"
+assert "INSTRUCTIONS.md refuses a private KIE client fallback" \
+  "grep -q 'private KIE client' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null"
+assert "INSTRUCTIONS.md carries the schema 1.3.0 drama-song row fields" \
+  "grep -q '1.3.0' \"$SKILL35_DIR/INSTRUCTIONS.md\" 2>/dev/null"
+assert "QC.md carries the weekly drama-song checklist" \
+  "grep -qi 'Weekly Drama Song Ad' \"$SKILL35_DIR/QC.md\" 2>/dev/null"
+assert "QC.md keeps Google Business Profile refused until a limit is verified" \
+  "grep -q 'Google Business Profile.*limit unverified\|limit unverified.*Google Business Profile' \"$SKILL35_DIR/QC.md\" 2>/dev/null"
+assert "QC.md routes Stories to the 15-second teaser only" \
+  "grep -q '15-second teaser' \"$SKILL35_DIR/QC.md\" 2>/dev/null"
+assert "INSTALL.md keeps the drama-song weekly task off HEARTBEAT.md (furnace rule)" \
+  "grep -q 'drama-song-style.json' \"$SKILL35_DIR/INSTALL.md\" 2>/dev/null && grep -q 'FURNACE RULE' \"$SKILL35_DIR/INSTALL.md\" 2>/dev/null"
+warn_only "weekly-batch.sh invokes the weekly drama-song step" \
+  "grep -q 'run_drama_song_step' \"$SKILL35_DIR/scripts/weekly-batch.sh\" 2>/dev/null"
+warn_only "run-publishing-cycle.sh carries the drama-song block in its manifest" \
+  "grep -q 'drama_song' \"$SKILL35_DIR/scripts/run-publishing-cycle.sh\" 2>/dev/null"
+warn_only "kie_media_plan.py reports the Skill 75 / Skill 74 weekly ad route" \
+  "grep -q 'drama_song' \"$SKILL35_DIR/scripts/kie_media_plan.py\" 2>/dev/null"
 
 echo ""
 echo "═══════════════════════════════════════════════"

@@ -61,6 +61,35 @@ PY
   printf '%s' "$ws"
 }
 
+# The agent that should own box-level jobs (INF002): 'main' when the box has an
+# agent named main, otherwise the box's own primary agent: the one marked
+# default, else the first one in the roster (agents.entries in the 2026.9 shape,
+# agents.list[] in the legacy one). Never fails: prints 'main' when the config
+# cannot be read or lists no agents, so behavior only changes where 'main' is absent.
+pr_primary_agent() {
+  local ocjson a=""
+  ocjson="$(pr_ocroot)/openclaw.json"
+  if [ -f "$ocjson" ] && command -v python3 >/dev/null 2>&1; then
+    a="$(OC_JSON="$ocjson" python3 - <<'PY' 2>/dev/null || true
+import json, os
+try:
+    a = json.load(open(os.environ["OC_JSON"])).get("agents", {}) or {}
+    e = a.get("entries") if isinstance(a.get("entries"), dict) else {}
+    lst = [x for x in (a.get("list") if isinstance(a.get("list"), list) else []) if isinstance(x, dict) and x.get("id")]
+    rows = [(k, v if isinstance(v, dict) else {}) for k, v in e.items()] + [(x["id"], x) for x in lst]
+    ids = [k for k, _ in rows]
+    if "main" in ids or not ids:
+        print("main")
+    else:
+        print(next((k for k, v in rows if v.get("default") is True), ids[0]))
+except Exception:
+    pass
+PY
+)"
+  fi
+  printf '%s' "${a:-main}"
+}
+
 # Where the installed skill folder lives on this box.
 pr_skill_dir() { printf '%s' "$(pr_ocroot)/skills/70-lean-core-file-system"; }
 

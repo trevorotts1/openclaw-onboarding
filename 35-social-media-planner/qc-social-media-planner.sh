@@ -9,7 +9,8 @@
 #  point name is preserved for any caller that still invokes it.
 #
 #  All QC logic — credentials, software, GHL access, cron presence,
-#  fix assertions — lives in qc-skill35.sh. Edit that file, not this.
+#  fix assertions, and Section J (plan 6.15 weekly drama-song
+#  integration) — lives in qc-skill35.sh. Edit that file, not this.
 # ============================================================
 set -u
 

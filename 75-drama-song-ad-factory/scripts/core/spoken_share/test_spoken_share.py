@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""AF-SHARE-U1 suite: D15 spoken-share retarget (45% target, 40-55 band).
+"""AF-SHARE-U1 suite: spoken-share retarget (SPK001: 22.5% spoken, 77.5% sung of voice).
 
 Proves, stdlib only and with zero paid calls:
-  1. The three numbers are 45 / 40 / 55 and nothing else -- no 0.70 ceiling,
-     no per-length table survives in this package.
+  1. The three numbers are 22.5 / 12.5 / 32.5 (target and the two redo
+     edges) and nothing else -- no 0.70 ceiling, no per-length table
+     survives in this package. Sung share of voice time targets 77.5.
   2. The SAME band holds for every offered length (60/90/180/300/600) and
      every offered music style (Soul Ballad / R&B Flow / Soul Rise); rap
      counts as spoken-style delivery everywhere.
@@ -46,7 +47,7 @@ FAILS = []
 
 def check(name, cond, detail=""):
     print("%s: %s%s" % ("ok" if cond else "FAIL", name,
-                        (" (%s)" % detail) if detail and not cond else ""))
+                        (" (%s)" % (detail,)) if detail and not cond else ""))
     if not cond:
         FAILS.append(name)
 
@@ -63,16 +64,19 @@ def raises(fn, exc):
 
 
 # ------------------------------------------------------------ 1. three numbers
-check("target-is-45", SS.SPOKEN_TARGET_PCT == 45, SS.SPOKEN_TARGET_PCT)
-check("floor-is-40", SS.SPOKEN_MIN_PCT == 40, SS.SPOKEN_MIN_PCT)
-check("cap-is-55", SS.SPOKEN_MAX_PCT == 55, SS.SPOKEN_MAX_PCT)
-check("fractions", (SS.TARGET, SS.FLOOR, SS.CAP) == (0.45, 0.40, 0.55),
+check("target-is-22.5", SS.SPOKEN_TARGET_PCT == 22.5, SS.SPOKEN_TARGET_PCT)
+check("floor-is-12.5", SS.SPOKEN_MIN_PCT == 12.5, SS.SPOKEN_MIN_PCT)
+check("cap-is-32.5", SS.SPOKEN_MAX_PCT == 32.5, SS.SPOKEN_MAX_PCT)
+check("sung-of-voice-target-is-77.5", SS.SUNG_TARGET_PCT == 77.5,
+      SS.SUNG_TARGET_PCT)
+check("lyric-spoken-word-budget-is-15-18", SS.LYRIC_SPOKEN_WORD_PCT == (15.0, 18.0))
+check("fractions", (SS.TARGET, SS.FLOOR, SS.CAP) == (0.225, 0.125, 0.325),
       (SS.TARGET, SS.FLOOR, SS.CAP))
 check("cap-is-not-70", SS.CAP != 0.70, SS.CAP)
 
 b = SS.band()
 check("band-dict",
-      (b["target_pct"], b["floor_pct"], b["cap_pct"]) == (45, 40, 55), b)
+      (b["target_pct"], b["floor_pct"], b["cap_pct"]) == (22.5, 12.5, 32.5), b)
 check("band-applies-to-every-length-and-style",
       b["applies_to"] == "every length and every music style", b["applies_to"])
 check("band-rap-counts", b["rap_counts_as_spoken"] is True, b)
@@ -93,9 +97,11 @@ for secs in LENGTHS:
     bands[secs] = (got["floor_s"], got["cap_s"], got["target_s"])
     check("length-%s-fractions" % secs,
           (round(got["floor_s"] / secs, 6), round(got["cap_s"] / secs, 6),
-           round(got["target_s"] / secs, 6)) == (0.40, 0.55, 0.45), got)
-    check("length-%s-first-sung-limit" % secs,
-          got["first_sung_within_s"] == SS.FIRST_SUNG_WITHIN_SECONDS, got)
+           round(got["target_s"] / secs, 6)) == (0.125, 0.325, 0.225), got)
+    check("length-%s-first-sung-target" % secs,
+          got["first_sung_target_s"] == round(secs * 0.15, 3)
+          and got["first_sung_accept_s"] == [round(secs * 0.10, 3),
+                                             round(secs * 0.20, 3)], got)
 
 check("one-band-every-length",
       len({(round(f / s, 6), round(c / s, 6), round(t / s, 6))
@@ -110,15 +116,15 @@ try:
     for sid in MS.style_ids():
         for secs in LENGTHS:
             t = MS.spoken_target(sid, secs)
-            ok = ((t["floor"], t["cap"], t["target"]) == (0.40, 0.55, 0.45)
+            ok = ((t["floor"], t["cap"], t["target"]) == (0.125, 0.325, 0.225)
                   and t["rap_counts_as_spoken"] is True)
             if not ok:
                 styles_ok = False
                 detail.append((sid, secs, t["floor"], t["cap"], t["target"]))
-            if MS.d15_range(secs) != (0.40, 0.55):
+            if MS.d15_range(secs) != (0.125, 0.325):
                 styles_ok = False
                 detail.append(("d15_range", secs, MS.d15_range(secs)))
-    check("every-style-every-length-45-40-55", styles_ok, detail)
+    check("every-style-every-length-22.5-12.5-32.5", styles_ok, detail)
     check("music-styles-reads-this-package",
           MS.SPOKEN_SHARE_TARGET == SS.TARGET
           and MS.SPOKEN_SHARE_MIN == SS.FLOOR
@@ -133,12 +139,12 @@ except Exception as e:  # noqa: BLE001 - a broken engine import is a failure
 
 # ---------------------------------------------------- 3. rap counts as spoken
 RAP = [
-    {"delivery": "spoken", "seconds": 30.0},
-    {"delivery": "rap", "seconds": 10.5},
-    {"delivery": "sung", "seconds": 49.5},
+    {"delivery": "spoken", "seconds": 15.0},
+    {"delivery": "rap", "seconds": 7.5},
+    {"delivery": "sung", "seconds": 77.5},
 ]
 m = SS.measure_share(RAP)
-check("rap-counted-in-measure", abs(m["share"] - 0.45) < 1e-9, m)
+check("rap-counted-in-measure", abs(m["share"] - 0.225) < 1e-9, m)
 check("rap-flag", m["rap_counts_as_spoken"] is True, m)
 check("rap-style-set", SS.SPOKEN_STYLE_DELIVERIES == frozenset({"spoken", "rap"}),
       sorted(SS.SPOKEN_STYLE_DELIVERIES))
@@ -150,27 +156,28 @@ check("is-spoken-style-spoken", SS.is_spoken_style("Spoken ") is True)
 check("is-spoken-style-sung-false", SS.is_spoken_style("sung") is False)
 
 # ------------------------------------------------------- 4. band boundaries
-check("floor-pass", SS.check_share(0.40)["verdict"] == "PASS",
-      SS.check_share(0.40))
-check("cap-is-flag-not-pass", SS.check_share(0.55)["verdict"] == "FLAG",
-      SS.check_share(0.55))
-check("target-pass", SS.check_share(0.45)["verdict"] == "PASS")
-check("just-under-floor-flag", SS.check_share(0.3999)["verdict"] == "FLAG")
-check("just-over-cap-redo", SS.check_share(0.5501)["verdict"] == "FAIL")
+check("accept-edge-low-pass", SS.check_share(0.175)["verdict"] == "PASS",
+      SS.check_share(0.175))
+check("accept-edge-high-pass", SS.check_share(0.275)["verdict"] == "PASS")
+check("cap-is-flag-not-pass", SS.check_share(0.325)["verdict"] == "FLAG",
+      SS.check_share(0.325))
+check("target-pass", SS.check_share(0.225)["verdict"] == "PASS")
+check("just-under-accept-flag", SS.check_share(0.1749)["verdict"] == "FLAG")
+check("just-over-cap-redo", SS.check_share(0.3251)["verdict"] == "FAIL")
 check("zero-fail", SS.check_share(0.0)["verdict"] == "FAIL")
 check("full-fail", SS.check_share(1.0)["verdict"] == "FAIL")
 check("over-70-fail", SS.check_share(0.70)["verdict"] == "FAIL",
       SS.check_share(0.70)["reasons"])
 r = SS.check_share(0.70)
-check("over-cap-reason-names-55",
+check("over-cap-reason-says-redo",
       any("redo" in x for x in r["reasons"]), r["reasons"])
-check("under-floor-reason-names-40",
-      any("redo" in x for x in SS.check_share(0.30)["reasons"]),
-      SS.check_share(0.30)["reasons"])
-check("in-band-flag", SS.check_share(0.45)["in_band"] is True)
-check("delta-from-target", abs(SS.check_share(0.45)["delta_from_target"]) < 1e-9)
+check("under-floor-reason-says-redo",
+      any("redo" in x for x in SS.check_share(0.05)["reasons"]),
+      SS.check_share(0.05)["reasons"])
+check("in-band-flag", SS.check_share(0.225)["in_band"] is True)
+check("delta-from-target", abs(SS.check_share(0.225)["delta_from_target"]) < 1e-9)
 
-check("refusal-empty-when-ok", SS.refusal(0.45) == "", SS.refusal(0.45))
+check("refusal-empty-when-ok", SS.refusal(0.225) == "", SS.refusal(0.225))
 check("refusal-text-when-fail",
       SS.refusal(0.70).startswith("REFUSED spoken share"), SS.refusal(0.70))
 
@@ -182,43 +189,78 @@ check("matching-share-and-segments-pass",
       SS.check_share(round(m["share"], 6), RAP)["verdict"] == "PASS",
       SS.check_share(round(m["share"], 6), RAP))
 
-# ------------------------------------------------- 5. first sung within 10 s
-check("first-sung-limit-is-10", SS.FIRST_SUNG_WITHIN_SECONDS == 10,
-      SS.FIRST_SUNG_WITHIN_SECONDS)
-on_time = [
-    {"delivery": "spoken", "start": 0.0, "end": 8.0},
-    {"delivery": "sung", "start": 8.0, "end": 60.0},
-]
-late = [
-    {"delivery": "spoken", "start": 0.0, "end": 20.0},
-    {"delivery": "sung", "start": 20.0, "end": 60.0},
-]
+# ------------------------------------- 5. first real singing, 15% target
+check("first-sung-target-is-15", SS.FIRST_SUNG_TARGET_PCT == 15)
+check("old-fixed-seconds-check-is-gone",
+      not hasattr(SS, "FIRST_SUNG_WITHIN_SECONDS"))
+check("g10-one-constants-set",
+      (SS.TARGET_ACCEPT_PCT, SS.TARGET_FLAG_PCT, SS.REAL_SINGING_STRETCH_S)
+      == (SS.ACCEPT_PTS, SS.FLAG_PTS, SS.NO_REAL_SINGING_STRETCH_S))
+
+
+def at(first, total=100.0):
+    return SS.check_first_sung([
+        {"delivery": "spoken", "start": 0.0, "end": first},
+        {"delivery": "sung", "start": first, "end": total}])
+
+
+# 100 s ad: target 15 s. 18% accept, 22% flag (7 pts), 27% redo (12 pts).
+check("first-sung-15-accept", at(15)["verdict"] == "PASS", at(15))
+check("first-sung-18-percent-accept",
+      at(18)["verdict"] == "PASS" and at(18)["band"] == "ACCEPT", at(18))
+check("first-sung-20-percent-accept-edge", at(20)["verdict"] == "PASS")
+f22 = at(22)
+check("first-sung-22-percent-flag",
+      f22["verdict"] == "FLAG" and f22["flags"] and not f22["reasons"], f22)
+f27 = at(27)
+check("first-sung-27-percent-redo",
+      f27["verdict"] == "FAIL" and any("redo" in x for x in f27["reasons"]),
+      f27)
+check("first-sung-10-percent-accept-early-edge", at(10)["verdict"] == "PASS")
+check("first-sung-at-zero-redo", at(0.5)["verdict"] == "FAIL")
+check("basis-is-reported", at(15)["basis"] == "planned"
+      and SS.check_first_sung([{"delivery": "sung", "seconds": 60.0}],
+                              "measured")["basis"] == "measured")
 no_sung = [{"delivery": "spoken", "seconds": 60.0}]
-check("first-sung-within-10-pass",
-      SS.check_first_sung(on_time)["verdict"] == "PASS",
-      SS.check_first_sung(on_time))
-check("first-sung-at-10-pass",
-      SS.check_first_sung([
-          {"delivery": "spoken", "seconds": 10.0},
-          {"delivery": "sung", "seconds": 50.0},
-      ])["verdict"] == "PASS")
-check("first-sung-late-fail",
-      SS.check_first_sung(late)["verdict"] == "FAIL",
-      SS.check_first_sung(late))
-check("first-sung-late-reason",
-      any("10 s" in x for x in SS.check_first_sung(late)["reasons"]),
-      SS.check_first_sung(late)["reasons"])
 check("no-sung-fail", SS.check_first_sung(no_sung)["verdict"] == "FAIL",
       SS.check_first_sung(no_sung))
+blip = [{"delivery": "sung", "start": 5.0, "end": 8.0},
+        {"delivery": "spoken", "start": 8.0, "end": 60.0}]
+check("short-sung-blip-is-not-real-singing",
+      SS.check_first_sung(blip)["verdict"] == "FAIL"
+      and SS.check_first_sung(blip)["first_sung_start_s"] is None)
+# A 3 s blip first, then a real stretch: the first REAL singing is judged.
+blip_then_real = [{"delivery": "spoken", "start": 0.0, "end": 5.0},
+                  {"delivery": "sung", "start": 5.0, "end": 8.0},
+                  {"delivery": "spoken", "start": 8.0, "end": 15.0},
+                  {"delivery": "sung", "start": 15.0, "end": 60.0}]
+check("first-real-singing-skips-blip",
+      SS.check_first_sung(blip_then_real)["first_sung_start_s"] == 15.0)
+kies = SS.segments_from_sung_stretches([(41.0, 43.0)], 60.0)
+check("measured-2s-sung-is-redo",
+      SS.check_first_sung(kies, "measured")["verdict"] == "FAIL")
+ok = SS.check_first_sung(SS.segments_from_sung_stretches([(9.0, 60.0)], 60.0),
+                         "measured")
+check("measured-hook-at-9s-accept", ok["verdict"] == "PASS", ok)
+st = SS.steer_first_sung([{"delivery": "spoken", "seconds": 30.0},
+                          {"delivery": "sung", "seconds": 30.0}])
+check("steer-shorten-opener", st["action"] == "shorten_opener"
+      and st["move_by_s"] == -21.0 and st["target_s"] == 9.0, st)
+st = SS.steer_first_sung([{"delivery": "spoken", "seconds": 9.0},
+                          {"delivery": "sung", "seconds": 51.0}])
+check("steer-keep", st["action"] == "keep", st)
+check("steer-add-hook",
+      SS.steer_first_sung(no_sung)["action"] == "add_sung_hook")
 
 # check_plan enforces BOTH halves: band and first-sung rule.
-# 90 s cut on the target: 6 s spoken + 34.5 s rap = 40.5 s spoken-style
-# (45%), the sung line opens at 6 s, the second sung block closes it out.
+# 90 s cut on the target: 13.5 s spoken + 6.75 s rap = 20.25 s spoken-style
+# (22.5%), the sung line opens at 13.5 s (15%), the second sung block closes
+# it out (sung 69.75 s of 90 s voice = 77.5%).
 good = [
-    {"delivery": "spoken", "start": 0.0, "end": 6.0},
-    {"delivery": "sung", "start": 6.0, "end": 12.0},
-    {"delivery": "rap", "start": 12.0, "end": 46.5},
-    {"delivery": "sung", "start": 46.5, "end": 90.0},
+    {"delivery": "spoken", "start": 0.0, "end": 13.5},
+    {"delivery": "sung", "start": 13.5, "end": 19.5},
+    {"delivery": "rap", "start": 19.5, "end": 26.25},
+    {"delivery": "sung", "start": 26.25, "end": 90.0},
 ]
 p = SS.check_plan(90, good)
 check("plan-in-band-pass", p["share_check"]["verdict"] == "PASS",
@@ -249,7 +291,7 @@ talky = [
 ]
 p3 = SS.check_plan(90, talky)
 check("plan-over-cap-fail", p3["share_check"]["verdict"] == "FAIL", p3)
-check("plan-over-cap-reason-names-55",
+check("plan-over-cap-reason-says-redo",
       any("redo" in x for x in p3["reasons"]), p3["reasons"])
 
 
@@ -261,25 +303,13 @@ check("h8-judge-5.1-flag", SS.judge_gap(5.1) == "FLAG")
 check("h8-judge-10-flag", SS.judge_gap(10.0) == "FLAG")
 check("h8-judge-10.1-redo", SS.judge_gap(10.1) == "FAIL")
 check("h8-judge-negative-gap", SS.judge_gap(-7) == "FLAG")
-# share: 45 goal -> 50 accept, 52 flag, 56 redo
-check("h8-share-50-accept", SS.check_share(0.50)["verdict"] == "PASS")
-f52 = SS.check_share(0.52)
-check("h8-share-52-flag-carries-flag",
-      f52["verdict"] == "FLAG" and len(f52["flags"]) == 1, f52)
-check("h8-share-56-redo", SS.check_share(0.56)["verdict"] == "FAIL")
-check("h8-flag-never-refuses", SS.refusal(0.52) == "")
-# first-sung: 60 s ad, goal 10 s; 13 s = 5 pts accept, 14 s = 6.7 flag, 17 s redo
-def ad(first):
-    return [{"delivery": "spoken", "start": 0.0, "end": first},
-            {"delivery": "sung", "start": first, "end": 60.0}]
-check("h8-first-sung-13-accept",
-      SS.check_first_sung(ad(13))["verdict"] == "PASS")
-fs = SS.check_first_sung(ad(14))
-check("h8-first-sung-14-flag", fs["verdict"] == "FLAG" and fs["flags"], fs)
-check("h8-first-sung-17-redo",
-      SS.check_first_sung(ad(17))["verdict"] == "FAIL")
-check("h8-first-sung-early-fine",
-      SS.check_first_sung(ad(2))["verdict"] == "PASS")
+# share: 22.5 goal -> 27 accept, 30 flag, 34 redo
+check("h8-share-27-accept", SS.check_share(0.27)["verdict"] == "PASS")
+f30 = SS.check_share(0.30)
+check("h8-share-30-flag-carries-flag",
+      f30["verdict"] == "FLAG" and len(f30["flags"]) == 1, f30)
+check("h8-share-34-redo", SS.check_share(0.34)["verdict"] == "FAIL")
+check("h8-flag-never-refuses", SS.refusal(0.30) == "")
 # THE singing rule: only a missing 6 s sung stretch is a hard reject.
 short = [{"delivery": "spoken", "start": 0.0, "end": 20.0},
          {"delivery": "sung", "start": 20.0, "end": 25.0},
@@ -306,8 +336,8 @@ check("h8-share-miss-is-band-not-singing-reject",
       p["share_check"]["verdict"] == "FAIL", p["reasons"])
 # length goal uses the band too: 60 s goal, 63 s accept, 66 s flag, 70 s redo
 def run(total):
-    return [{"delivery": "spoken", "seconds": total * 0.45},
-            {"delivery": "sung", "seconds": total * 0.55}]
+    return [{"delivery": "spoken", "seconds": total * 0.225},
+            {"delivery": "sung", "seconds": total * 0.775}]
 check("h8-length-63-accept",
       SS.check_plan(60, run(63))["length_check"]["verdict"] == "PASS")
 check("h8-length-66-flag",
@@ -319,6 +349,71 @@ check("h8-lipsync-seconds-short-band",
       and SS.judge_seconds(10, 15, 60, only="short")["verdict"] == "FLAG"
       and SS.judge_seconds(5, 15, 60, only="short")["verdict"] == "FAIL"
       and SS.judge_seconds(30, 15, 60, only="short")["verdict"] == "PASS")
+
+# ------------------------------------------------ SPK001: the new targets
+# Spoken share of runtime (target 22.5): 22% accept, 31% flag, 37% redo.
+check("spk001-spoken-22-accept", SS.check_share(0.22)["verdict"] == "PASS")
+s31 = SS.check_share(0.31)
+check("spk001-spoken-31-flag",
+      s31["verdict"] == "FLAG" and len(s31["flags"]) == 1, s31)
+check("spk001-spoken-37-redo", SS.check_share(0.37)["verdict"] == "FAIL")
+
+
+def voice(pct, lead=0.0, tail=0.0):
+    """40 s of voice, ``pct`` of it sung, behind a music-only ``lead`` and
+    before a music-only ``tail`` (uncovered seconds: intro / end card)."""
+    sung, spoken = 40.0 * pct / 100.0, 40.0 * (100 - pct) / 100.0
+    return [{"delivery": "sung", "start": lead, "end": lead + sung},
+            {"delivery": "spoken", "start": lead + sung,
+             "end": lead + sung + spoken}]
+
+
+# Sung of VOICE time (target 77.5): 76 accept, 69 flag, 60 redo.
+check("spk001-voice-76-accept",
+      SS.check_sung_of_voice(voice(76))["verdict"] == "PASS")
+v69 = SS.check_sung_of_voice(voice(69))
+check("spk001-voice-69-flag",
+      v69["verdict"] == "FLAG" and len(v69["flags"]) == 1, v69)
+v60 = SS.check_sung_of_voice(voice(60))
+check("spk001-voice-60-redo",
+      v60["verdict"] == "FAIL" and v60["reasons"], v60)
+# A 10 s music-only intro and a 5 s end card are not penalized.
+bare, framed = voice(76), voice(76, lead=10.0)
+check("spk001-intro-and-end-card-not-penalized",
+      SS.check_sung_of_voice(framed)["sung_of_voice_pct"]
+      == SS.check_sung_of_voice(bare)["sung_of_voice_pct"] == 76.0
+      and SS.check_sung_of_voice(framed)["verdict"] == "PASS"
+      and SS.check_plan(55, framed + [], "measured")["sung_of_voice"]
+      ["verdict"] == "PASS")
+check("spk001-voice-direct-seconds",
+      SS.check_sung_of_voice(sung_s=31.0, spoken_s=9.0)["sung_of_voice_pct"]
+      == 77.5)
+check("spk001-card-target-overrides-default",
+      SS.check_sung_of_voice(voice(60), target_pct=60)["verdict"] == "PASS")
+check("spk001-no-voice-raises",
+      raises(lambda: SS.sung_of_voice_pct(0, 0), SS.SpokenShareError)
+      is not None)
+check("spk001-hard-reject-is-only-no-6s-stretch",
+      SS.check_real_singing([{"delivery": "sung", "seconds": 5.0}])
+      ["verdict"] == "FAIL"
+      and SS.check_real_singing([{"delivery": "sung", "seconds": 6.0}])
+      ["verdict"] == "PASS")
+# Lyric word budget: spoken lines ~15-18% of the lyric words.
+check("spk001-word-budget-for-200-words",
+      SS.spoken_word_budget(200) == (30.0, 36.0), SS.spoken_word_budget(200))
+
+
+def sheet_with(spoken_words, sung_words):
+    return [{"delivery": "sung", "lines": [" ".join(["la"] * sung_words)]},
+            {"delivery": "spoken", "lines": [" ".join(["ha"] * spoken_words)]}]
+
+
+check("spk001-budget-16pct-accept",
+      SS.check_spoken_word_budget(sheet_with(16, 84))["verdict"] == "PASS")
+check("spk001-budget-25pct-flag",
+      SS.check_spoken_word_budget(sheet_with(25, 75))["verdict"] == "FLAG")
+check("spk001-budget-35pct-redo",
+      SS.check_spoken_word_budget(sheet_with(35, 65))["verdict"] == "FAIL")
 
 # --------------------------------------------- 6. malformed input = caller bug
 check("empty-segments-raises",

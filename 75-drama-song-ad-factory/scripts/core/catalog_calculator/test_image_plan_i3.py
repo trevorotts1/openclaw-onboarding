@@ -24,19 +24,19 @@ c = card()                              # 60 s, one shape, default 1 main charac
 p = c["image_plan"]
 shots = c["shots_per_shape"]            # 60 s / 15 s max shot = 4
 assert shots == 4 and p["image_model"] == SUN
-assert p["reference_images"] == 6 and p["keyframe_images"] == shots, p
+assert p["reference_images"] == 7 and p["keyframe_images"] == shots, p
 views = {r["view"] for r in p["reference_set"]}
 assert views == {"front", "three-quarter", "side", "neutral", "sad-tired",
-                 "happy-relieved"}, views
+                 "happy-relieved", "lipsync-closeup"}, views
 assert [k["shot"] for k in p["keyframes"]] == [1, 2, 3, 4]
 img = [li for li in c["line_items"] if li["component"] == "image"][0]
-assert img["units"] == 10 and img["credits"] == 60.0, img      # 10 images x 6 credits
-assert p["reference_set_usd"] == C.credits_to_usd(36.0)        # the added cost
-# two characters, both shapes: 12 refs + 4 keyframes x 2 shapes
+assert img["units"] == 11 and img["credits"] == 66.0, img      # 11 images x 6 credits
+assert p["reference_set_usd"] == C.credits_to_usd(42.0)        # the added cost
+# two characters, both shapes: 14 refs + 4 keyframes x 2 shapes
 c2 = card(shapes=("9:16", "16:9"))
 c2 = C.price_card(F.choice(image=SUN, shapes=("9:16", "16:9")) | {"main_characters": ["Ana", "Ben"]},
                   F.load_catalog(), F.FakeSkill74())["card"]
-assert c2["image_plan"]["total_images"] == 12 + 8
+assert c2["image_plan"]["total_images"] == 14 + 8
 assert c2["price_usd"] > c["price_usd"]                        # cost went up
 # bad character count fails closed
 bad = C.price_card(F.choice(image=SUN) | {"main_characters": 0}, F.load_catalog(), F.FakeSkill74())

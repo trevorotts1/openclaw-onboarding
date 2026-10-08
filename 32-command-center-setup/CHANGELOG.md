@@ -1,5 +1,9 @@
 # Changelog — 32-command-center-setup
 
+## [13.1.47] - 2026-10-08 - INF002
+
+- Runtime-parity guard test now proves every ALIAS_MAP pair matches board slug and runtime id both ways, plus the legal-compliance inverse through the CLI (INF002 F). No guard behavior change: main already matched both directions.
+
 ## v13.1.44 - 2026-10-08 - A hung contract check can no longer wedge an update; Command Center pin raised to v7.6.110
 
 The CC contract check (`openclaw-contract-check.mjs`, shipped by the Command Center repo) printed OK and then never exited on one Mac, blocking the updater for 39 minutes. It is now run through `scripts/run-bounded.sh`: stdin from /dev/null and a 120 second hard limit (perl alarm, works on macOS without GNU timeout), from both `run-full-install.sh` and `update-skills.sh`. `cc-compat.json` `commandCenter.pinnedTag` moves v7.6.102 to v7.6.110 (the tag at Command Center main) so boxes get the latest Command Center.

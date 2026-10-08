@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.0.4] - 2026-10-08 - INF002
+
+- Install QC uses the shared credential lookup (every store, every location id name, pit- token to its location through the GHL API); neither found installs with a note (INF002).
+
 ## [2.0.2] - 2026-09-17: runtime checks derive the install path from the OpenClaw root, know linux-home, and build with dev dependencies
 
 ### Fixed
