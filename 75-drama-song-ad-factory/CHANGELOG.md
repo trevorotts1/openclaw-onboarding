@@ -6,6 +6,16 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.1] - 2026-10-08 - Part I I4: masters end 2 seconds early
+
+- New `scripts/core/master_length/`: a chosen length L delivers a master of at
+  most L-2 seconds (60 to 58, 30 to 28, 90 to 88, 120 to 118). Hard maximum,
+  not a band. Song, shot plan and end card are planned to L-2; QC (`final_edit`
+  record, reason `MASTER_TOO_LONG`) fails any longer master.
+- Intake summary now carries `master_max_s`.
+
+---
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).

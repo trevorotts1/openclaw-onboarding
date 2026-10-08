@@ -1,3 +1,5 @@
+## [v26.4.7]  -  2026-10-08  -  Skill 75 Part I I4: every video master ends 2 seconds early (chosen length minus 2, hard maximum, QC fails longer), skill v2.6.1
+
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

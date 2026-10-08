@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.6.0
+version: v2.6.1
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -173,6 +173,12 @@ SOP named above.
   click.
 - **Lengths:** 60 seconds, 90 seconds, 3 minutes, 5 minutes, and a
   **10-minute long version**. Each length is its own song and timing map.
+- **Ends 2 seconds early (Part I, I4):** the master for a chosen length L is
+  at most L-2 seconds (60 becomes 58, 30 becomes 28, 90 becomes 88, 120
+  becomes 118), because a 60-second video that runs to 1:02 cannot be used in
+  Stories, Reels or a Facebook ad. This is a hard maximum, not a band: the
+  song, the shot plan and the end card are all planned to L-2, and final QC
+  fails any master longer than that (`core/master_length`).
 - **Shapes:** 9:16, 16:9, or both, each generated natively - never a crop of
   the other.
 - **Clips:** automatic 60- or 90-second clips are offered for the **5-minute
