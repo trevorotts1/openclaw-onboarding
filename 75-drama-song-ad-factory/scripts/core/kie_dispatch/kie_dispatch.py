@@ -49,6 +49,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
 
+try:  # F4: no automatic Suno sound effects (audio_c3/sfx_off)
+    import audio_c3.sfx_off as _sfx_off  # noqa: E402
+except ImportError:  # pragma: no cover - flat script path
+    from audio_c3 import sfx_off as _sfx_off  # type: ignore # noqa: E402
+
 TOOL_NAME = "kie_dispatch"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "blackceo.kie-dispatch/envelope/v1"
@@ -254,6 +259,21 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
     if not model:
         return envelope("dispatch", "rejected", "MODEL_REQUIRED",
                         "name the model id; this module never picks one",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id)
+    # F4 gate: a Suno sound-effects job is refused unless the request itself
+    # carries the run's explicit manual order (``sound_effects: [...]``).
+    # The catalog's suno-sounds surface is NEVER auto-queued: default runs
+    # make zero sound-effect jobs (manual Part F F4).
+    request_orders_sfx = _sfx_off.sfx_ordered(request)
+    if _sfx_off._is_sfx_job({"model": model, "route": model,
+                             "endpoint": (request or {}).get("endpoint", "")}) \
+            and not request_orders_sfx:
+        return envelope("dispatch", "rejected", "SFX_JOB_NOT_ORDERED",
+                        "no automatic Suno sound effects: a default run "
+                        "makes zero sound-effect jobs; carry "
+                        "`sound_effects: [...]` in the run config for an "
+                        "explicit manual order (manual Part F F4)",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
     if not isinstance(estimated_cost, int) or estimated_cost < 0:
