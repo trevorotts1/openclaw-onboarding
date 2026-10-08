@@ -92,7 +92,7 @@
     {
       "id": "skill-30-fish-audio",
       "type": "skill",
-      "label": "Skill 30 - Fish Audio API reference",
+      "label": "Skill 30 - Fish Audio API reference (not used by drama song ads)",
       "check": { "skill": "30-fish-audio-api-reference" },
       "severity": "optional",
       "satisfy": "NOT USED by drama song ads: Fish Audio (Skill 30) was the spoken-voiceover route in an earlier draft; spoken voiceover is now built as Skill 74 request JSON (a google/gemini-*-tts model) and dispatched through core/kie_dispatch (manual M2). Do not install Skill 30 for this skill and do not spend on Fish Audio; sung music never needed it."
