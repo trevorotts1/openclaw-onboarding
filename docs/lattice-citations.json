@@ -31,7 +31,7 @@
       "citations": [
         {
           "file": "35-social-media-planner/INSTALL.md",
-          "line": 240,
+          "line": 241,
           "must_contain": "Tier 0 `caf social create-post`"
         }
       ]
@@ -43,7 +43,7 @@
       "citations": [
         {
           "file": "35-social-media-planner/CHANGELOG.md",
-          "line": 118,
+          "line": 185,
           "must_contain": "funnel_matcher.py --match"
         }
       ]
@@ -82,7 +82,7 @@
       "citations": [
         {
           "file": "35-social-media-planner/SKILL.md",
-          "line": 132,
+          "line": 133,
           "must_contain": "Skill 38 owns the conversations these CTAs generate"
         }
       ]
@@ -170,7 +170,7 @@
       "citations": [
         {
           "file": "35-social-media-planner/INSTRUCTIONS.md",
-          "line": 110,
+          "line": 120,
           "must_contain": "Graphics department"
         }
       ]

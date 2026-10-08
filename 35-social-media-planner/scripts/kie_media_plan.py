@@ -20,6 +20,10 @@ Policy (owner order 2026-10-05, AGENTS.md N43, 07-kie-setup/references/kie-commo
   * Video is chosen by the Skill 67 selector. A Sora id in video-specs.json is ignored and
     reported; this script never names a video model other than the documented default request.
   * No prices, no prompt-length numbers here: Skill 74 `price` and `prompt-budget` own them.
+  * plan 6.15 — the weekly drama-song ad (Skill 75 behind Skill 74, active mode
+    only) is described in the plan's "drama_song" block. It is contract data:
+    no dispatch, no spend, no second KIE client, and a KIE-off run reports
+    drama-song-skipped.json with paid_calls_when_skipped 0.
 
 Exit 0 always for a readable plan (violations are data); 2 on bad arguments.
 """
@@ -142,6 +146,24 @@ def build_plan(image_cfg_path, video_cfg_path, skill_dir, openclaw_dir):
         },
         "adapter": {"path": adapter, "found": bool(adapter),
                     "note": None if adapter else "Skill 74 not found: dispatch uses the policy owner's static path (Skills 66 and 67) and records that fact"},
+        # plan 6.15 — the weekly drama-song ad rides the same cycle manifest.
+        # Contract only: this script makes no call, spends nothing, and never
+        # names a second KIE client.
+        "drama_song": {
+            "shape": "9:16",
+            "one_per_week": True,
+            "owner": "75-drama-song-ad-factory (Skill 75)",
+            "kie_path": "skill-74",
+            "kie_mode_required": "active",
+            "skip_when": "Skill 74 not active -> drama-song-skipped.json, exit 0, plain-English client reason",
+            "paid_calls_when_skipped": 0,
+            "second_kie_client": False,
+            "hard_cap_s": 59.0,
+            "ninety_window_s": [88.0, 95.0],
+            "stories": "15-second teaser only",
+            "google_business_profile": "refused until a limit is verified",
+            "sheet_schema_version": "1.3.0",
+        },
         "violations": violations,
     }
 

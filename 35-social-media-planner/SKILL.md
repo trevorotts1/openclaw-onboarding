@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: "3.6.14"
+version: "3.7.0"
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -37,6 +37,7 @@ WordPress (blog), Medium (articles), Substack (newsletter), YouTube (videos), em
 - Blog post (Day 7)
 - HTML email newsletter (Tuesday)
 - Podcast episode (if Fish Audio / Skill 30 is configured — gracefully skipped otherwise)
+- Weekly drama song ad — one 9:16 video cut from the Theme of the Week (Skill 75 through Skill 74, active mode only; skipped with a client-facing reason when KIE is switched off)
 
 ## Key Principles
 - **15+6 Agent Model**: 15 primary agents for core execution + 6 QC (Quality Control) agents for validation.
@@ -187,7 +188,7 @@ When an owner asks what the social media planner does, how it works, or what it 
 The answer MUST include all of the following — missing any element is a failure:
 
 - **Full platform list** (from live query): state each enabled platform by name and which content types it receives (posts, Reels, carousels, Stories, comments, etc.)
-- **Content types statement**: "I produce daily posts, Thursday carousels, short-form videos/Reels, comments with your action link, a weekly blog post, an HTML email newsletter, and (if Fish Audio is configured) a podcast episode."
+- **Content types statement**: "I produce daily posts, Thursday carousels, short-form videos/Reels, comments with your action link, a weekly blog post, an HTML email newsletter, one 9:16 drama song video from the Theme of the Week, and (if Fish Audio is configured) a podcast episode."
 - **Scope statement**: "I update every channel you have connected in GHL — currently: [live list from query]."
 - **How to trigger it**: tell the owner the two ways to start a run — (a) say "update my social media" or "run my planner" and (b) the automated Saturday-morning theme prompt.
 - **Optional add-ons clarification**: mention that WordPress, Medium, Substack, and YouTube are optional extras that extend the skill if the client has those integrations configured — they are never required.
@@ -208,6 +209,7 @@ The answer MUST include all of the following — missing any element is a failur
 >
 > **Also produced every week (regardless of social channels):**
 > - Blog post (Day 7, published to GHL blog)
+> - One 9:16 drama song video built from the Theme of the Week, using your saved style (plain-English skip note while KIE is switched off)
 > - HTML email newsletter (sent Tuesday at 9 AM via GHL Campaigns)
 > - Podcast episode (if Fish Audio is configured — automatically skipped if not)
 >
@@ -216,6 +218,57 @@ The answer MUST include all of the following — missing any element is a failur
 > **Optional extras** (if you ever want to add them): WordPress blog, Medium, Substack, and YouTube have direct integrations available. Let me know and I can set those up."
 
 This example answer must be adapted to reflect the ACTUAL live connected channels — never copy-paste the example platforms list without running the live check first.
+
+## Weekly Drama Song Ad — Skill 35 x Skill 75 (plan 6.15, owner D27/D35)
+
+Every week the planner also ships **one 9:16 drama song ad** cut from the
+**Theme of the Week**. This section is the Skill 35 side of that integration;
+the factory side stays with Skill 75 (`75-drama-song-ad-factory`).
+
+**Modules (staged under `core/smp/`, shipped by the onboarding batch train):**
+
+| Module | What it owns |
+|---|---|
+| `core/smp/weekly_step/` | the weekly run: Skill 75 through Skill 74, active mode only |
+| `core/smp/initial_questions/` | the one setup block added to the First-Run Protocol |
+| `core/smp/saturday_prompt/` | `Drama song of the week: keep <style> or change it?` |
+| `core/smp/length_routing/` | 59.0 s hard cap and the per-channel length table |
+| `core/smp/stories_teaser/` | the 15-second Stories teaser cut |
+| `core/smp/sheet_schema_130/` | Weekly Overview schema 1.3.0 drama-song columns (SMP-W2-U1) |
+| `core/smp/sheet_migration/` | 1.2.0 to 1.3.0 migration, row-append payload, validator (SMP-W2-U2) |
+
+**Setup state:** `~/.openclaw/workspace/social-media-planner/drama-song-style.json`
+holds `enabled, look, music, voice, length, cta_text, cta_link, updated_at`
+(plus `schema_version`). Defaults are pre-selected so the client can just say
+yes: **Lifelike 3D / Soul Ballad / All Suno / 60 seconds** (90 optional), with
+the weekly call to action defaulting to the planner's own weekly action link.
+The weekly yes/no defaults to **yes only while Skill 74 is active**.
+
+**KIE gate (binding).** Skill 74 (`74-kie-live-adapter`) must be in **active**
+mode. Any other mode writes `drama-song-skipped.json`, logs a plain-English
+client-facing reason and exits 0 — the weekly cycle continues without the
+video. **Skill 74 is the only KIE path; there is never a fallback to a
+private KIE client**, and a `skipped` result means "not generated", never success.
+
+**Length and routing:**
+- 60-second option — the planner cut ends by **59.0 s** (approved ads run
+  62-63 s and are never the planner cut) and reaches all seven destinations.
+- 90-second option — lands in the **88.0-95.0 s** window and posts **only** to
+  Facebook Reels, Instagram Reels, TikTok and LinkedIn: never YouTube Shorts,
+  never the Instagram feed.
+- **Google Business Profile** is refused until a limit is verified.
+- **Stories** carry the **15-second teaser only**, never the full ad.
+
+**Weekly Overview (schema 1.3.0).** The tab gains the drama-song fields —
+style chosen, status, KIE cost, video link, channels posted — written through
+the `social-planner-row-append` webhook. The authoritative column names and
+the migration/validator wiring live in `config/sheet-template.schema.json`
+(SMP-W2-U1) and `scripts/migrate-template.py` +
+`config/validate-sheet-format.py` (SMP-W2-U2); this skill never invents its
+own column names.
+
+**Zero paid calls when the gate is closed.** With KIE off the weekly step
+performs no network call, dispatches nothing and writes no media file.
 
 ## Config Fields
 
