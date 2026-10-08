@@ -72,6 +72,15 @@ DEFAULT_DUCK_DB = 7.0
 DUCK_MIN_DB = 6.0
 DUCK_MAX_DB = 8.0
 
+#: E9 ducking envelope (W-E-U9): a fixed-gain dip with a SHORT attack and
+#: release - defaults 50 ms / 150 ms (manual 02 Part E E9). The caller may
+#: pass dip_db beyond the cap; it is clamped to ``MAX_DIP_DB`` (never more
+#: than 8 dB), so a careless 10 still ducks 8.
+ATTACK_S = 0.050
+RELEASE_S = 0.150
+DEFAULT_DIP_DB = DEFAULT_DUCK_DB
+MAX_DIP_DB = DUCK_MAX_DB
+
 #: The switch between song and instrumental is short: one beat.
 CROSSFADE_MIN_S = 0.2          # sanity floor so a beat of zero never 0-lengths the ramp
 
@@ -411,6 +420,190 @@ def build_mix(song_master, instrumental, spoken_lines,
     return plan
 
 
+def db_to_lin(db):
+    """dB to linear gain. Pure - the level math the checks measure with."""
+    return 10.0 ** (db / 20.0)
+
+
+def lin_to_db(lin):
+    """Linear gain to dB. Pure; 0 maps to -inf dB (the gain that never
+    ships: the bed never reaches 0 anywhere)."""
+    if lin <= 0.0:
+        return float("-inf")
+    return 20.0 * math.log10(lin)
+
+
+def duck_lin(dip_db):
+    """The bed gain at a spoken-line plateau: dip_db below full, clamped to
+    MAX_DIP_DB so a caller passing 10 still gets 8 (never more than 8 dB)."""
+    clamped = min(_num(dip_db, "dip_db", "DIP_RANGE"),
+                  _num(MAX_DIP_DB, "MAX_DIP_DB", "DIP_RANGE"))
+    return 10.0 ** (-clamped / 20.0)
+
+
+def duck_envelope(spoken_lines, song_regions,
+                  dip_db=DEFAULT_DIP_DB, max_dip_db=MAX_DIP_DB,
+                  attack_s=ATTACK_S, release_s=RELEASE_S, duration_s=None):
+    """The per-line gain automation under every spoken line (E9).
+
+    One function producing the shaped duck: the bed holds full level through
+    the sung regions, DIPS by ``dip_db`` (6-8 dB documented; never more than
+    ``max_dip_db`` - a caller passing 10 with the default cap ducks 8) inside
+    each spoken line, and moves with a SHORT attack (``attack_s``, default
+    50 ms) and release (``release_s``, default 150 ms). The dip is a fixed
+    gain envelope: the plateau sits at ``10**(-dip/20)``, the ramps are
+    linear over attack/release, and no point in the envelope goes below
+    ``10**(-max_dip_db/20)`` - the bed under speech is never more than
+    ``max_dip_db`` dB below the sung level, so E10's 9 dB gate can never
+    trip on this envelope's shape.
+
+    ``spoken_lines``: the same records the bed mixer consumes ({line_id,
+    start, end} or merged tuples); ``song_regions``: the sung spans
+    [{"start", "end"} ...] - full gain there, used for the reference level
+    the per-line math measures against. ``duration_s`` (optional) bounds the
+    envelope; when None it is the last edge seen in the inputs.
+
+    Returns an envelope record: constants, the per-line automation
+    [{line_id, start, end, plateau_gain, plateau_db, attack_s, release_s,
+    knee_in: (t, gain), knee_out: (t, gain)}], the breakpoints
+    [(t, gain)] as monotone piecewise-linear (the ``gain_points`` shape this
+    part extends), and the level math the checks measure - pure, no audio
+    needed to test it.
+    """
+    duration = (duration_s if duration_s is not None
+                else _envelope_span(spoken_lines, song_regions))
+    duration = _num(duration, "duration")
+    if duration <= 0.0:
+        raise BedError("BAD_DURATION", "duration must be greater than 0")
+    win = _spoken_lines(spoken_lines, duration)
+    dip = _num(dip_db, "dip_db", "DIP_RANGE")
+    cap = _num(max_dip_db, "max_dip_db", "DIP_RANGE")
+    if cap <= 0:
+        raise BedError("DIP_RANGE", "max_dip_db must be greater than 0")
+    # the owner cap: never more than 8 dB under speech, whatever a caller
+    # passes (E9 acceptance: dip_db=10 is clamped to 8).
+    dip = min(dip, cap)
+    if not (DUCK_MIN_DB - 1e-9 <= dip <= DUCK_MAX_DB + 1e-9):
+        raise BedError("DIP_RANGE",
+                       "duck envelope dips %s-%s dB (called dip %s after the "
+                       "cap); pass dip_db inside the band"
+                       % (DUCK_MIN_DB, DUCK_MAX_DB, dip))
+    atk = _seconds(attack_s, "attack_s", "BAD_ENVELOPE_RATE")
+    rel = _seconds(release_s, "release_s", "BAD_ENVELOPE_RATE")
+    # SHORT by the E9 rule: attack 50 ms / release 150 ms defaults; a caller
+    # may pass its own, but an oversized one is refused, not shipped.
+    if atk > 0.10 + 1e-9:
+        raise BedError("BAD_ENVELOPE_RATE",
+                       "attack_s %.3f s exceeds the short-attack ceiling "
+                       "0.100 s" % atk)
+    if rel > 0.300 + 1e-9:
+        raise BedError("BAD_ENVELOPE_RATE",
+                       "release_s %.3f s exceeds the short-release ceiling "
+                       "0.300 s" % rel)
+    plateau = 10.0 ** (-dip / 20.0)
+
+    points = [(0.0, 1.0)]
+    lines = []
+    for lid, start, end, _text in win:
+        knee_in = min(max(start - atk, 0.0), start)
+        knee_out = min(max(end - rel, start), end)
+        # down-ramp: 1.0 -> plateau across the attack, hold plateau over the
+        # line, up-ramp: plateau -> 1.0 across the release.
+        points += [(knee_in, 1.0), (start, plateau),
+                   (knee_out, plateau), (end, 1.0)]
+        lines.append({
+            "line_id": lid, "start": start, "end": end,
+            "plateau_gain": plateau, "plateau_db": round(-dip, 6),
+            "attack_s": atk, "release_s": rel,
+            "knee_in": (round(knee_in, 6), round(1.0, 6)),
+            "knee_out": (round(end, 6), round(1.0, 6)),
+        })
+    # close on the sung level: full gain to the end
+    points.append((duration, 1.0))
+
+    def compress(pts):
+        out = [pts[0]]
+        for t, g in pts[1:]:
+            if t <= out[-1][0] + 1e-9:
+                if abs(g - out[-1][1]) > 1e-9:
+                    out[-1] = (out[-1][0], g)
+            else:
+                out.append((round(t, 6), g))
+        return out
+
+    pts = compress(points)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "tool_version": TOOL_VERSION,
+        "dip_db": dip, "max_dip_db": cap,
+        "attack_s": atk, "release_s": rel,
+        "plateau_gain": plateau,
+        "sung_reference_gain": 1.0,
+        "lines": lines,
+        "breakpoints": pts,
+        "song_regions": [(r.get("start", 0.0), r.get("end", duration))
+                         for r in (song_regions or [])],
+        "duration": duration,
+    }
+
+
+def _envelope_span(spoken_lines, song_regions):
+    """The span the envelope covers: the last edge seen in the inputs
+    (E10 consumes the same record against the assembled timeline)."""
+    spans = 0.0
+    for rec in list(spoken_lines or []) + list(song_regions or []):
+        if isinstance(rec, dict):
+            ends = [rec.get("end", rec.get("end_s"))]
+            for e in ends:
+                if isinstance(e, (int, float)) and not isinstance(e, bool):
+                    spans = max(spans, float(e))
+    return spans if spans > 0.0 else None
+
+
+def envelope_gain_at(envelope, t):
+    """The ducking envelope's linear gain at ``t`` (pure, from breakpoints)."""
+    if envelope is None:
+        return 1.0
+    return _gain_at(envelope["breakpoints"], t)
+
+
+def envelope_level_delta_db(envelope, t, lookahead_s=2.0):
+    """dB of (sung level - bed level) at ``t``, from the envelope alone.
+
+    Measured level math, pure: sung level = the envelope's gain in the
+    nearest sung part within ``lookahead_s`` (the adjacent sung section),
+    bed level = the envelope's gain at ``t`` (the line's plateau). A delta
+    of exactly the dip (e.g. 7) is the documented '6-8 dB below' state;
+    more than 9 is what E10's gate fails.
+    """
+    sung = 1.0                      # the envelope's sung reference is full gain
+    bed = envelope_gain_at(envelope, t)
+    return lin_to_db(sung) - lin_to_db(bed) if bed > 0 else float("inf")
+
+
+def line_bounds(envelope):
+    """[(first_dip_start, last_dip_end), ...] in timeline order - the
+    windows the envelope actually dips, tests assert against them."""
+    return [(ln["start"] - envelope["attack_s"], ln["end"])
+            for ln in envelope["lines"]]
+
+
+def level_at(envelope, t):  # a direct alias for the checker math
+    return envelope_gain_at(envelope, t)
+
+
+def duck_envelope_to_gain_points(envelope, duration_s):
+    """Fold an envelope into the bed mixer's [(t, song_gain, instr_gain)]
+    shape: the instrumental source carries the dip (it plays under speech),
+    the song carries the sung full-gain spans. One call: the plan's
+    ``gain_points`` can then be built straight from the E9 shape.
+    """
+    duration = _seconds(duration_s, "duration_s")
+    pts = envelope["breakpoints"] if envelope else [(0.0, 1.0)]
+    return [(t, 1.0, g) for t, g in pts if t <= duration] \
+        + ([(duration, 1.0, pts[-1][1])] if pts[-1][0] > duration else [])
+
+
 def gain_points(duration_s, merged_spoken, duck_db=DEFAULT_DUCK_DB,
                 beat_s=1.0):
     """Piecewise-linear breakpoints [(t, song_gain, instrumental_gain)].
@@ -627,21 +820,34 @@ def attach_mix(timeline, base_dir, song_path=None, ffmpeg="ffmpeg",
 
 
 __all__ = [
+    "ATTACK_S",
     "BED_SOURCES",
     "BedError",
     "CROSSFADE_MIN_S",
+    "DEFAULT_DIP_DB",
     "DEFAULT_DUCK_DB",
     "DUCK_MAX_DB",
     "DUCK_MIN_DB",
     "NO_MUSIC_MAX_S",
+    "MAX_DIP_DB",
     "SCHEMA_VERSION",
     "SOURCE_INSTRUMENTAL",
     "SOURCE_SONG",
     "TOOL_VERSION",
+    "RELEASE_S",
     "attach_mix",
     "build_mix",
     "check_bed_timeline",
+    "db_to_lin",
+    "duck_envelope",
+    "duck_envelope_to_gain_points",
+    "duck_lin",
+    "envelope_gain_at",
+    "envelope_level_delta_db",
     "gain_points",
+    "lin_to_db",
+    "line_bounds",
+    "level_at",
     "merge_windows",
     "render_bed_argv",
     "song_windows",
