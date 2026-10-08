@@ -21,6 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))          # core/
 
 import kie_dispatch as D            # noqa: E402  (package under test)
+import kie_dispatch.model_lock as ML  # noqa: E402  (F14 video-model lock)
 import spend_ledger as L            # noqa: E402  (sibling, same core/ tree)
 
 MODULE = importlib.import_module("kie_dispatch.kie_dispatch")
@@ -83,10 +84,27 @@ def job_row(db, logical_key, attempt_id):
 
 
 def run_case(script, label, adapter_path=None, prompt=None, cost=100,
-             model="gpt-image-2-5-sunburst-text-to-image", request=None):
+             model="gpt-image-2-5-sunburst-text-to-image", request=None,
+             lock_model="unset"):
+    """One dispatch against a fake Skill 74.
+
+    lock_model: F14 pre-lock for video jobs, by default the menu default
+    (MiniMax H3 768P) so F15 card flow is assumed; pass None to leave the
+    run un-locked (lock-missing cases).
+    """
     tmp = tempfile.mkdtemp(prefix="kie-dispatch-test-")
     db = os.path.join(tmp, "spend.db")
     L.init_run(db, "run-" + label, 10000)
+    state_db = os.path.join(tmp, "state.db")
+    if lock_model == "unset":
+        try:
+            is_vid = (MODULE._is_menu_video(model)
+                      or MODULE._modality(model) == "video")
+        except Exception:
+            is_vid = False
+        lock_model = ML.DEFAULT_VIDEO_MODEL if is_vid else None
+    if lock_model:
+        ML.lock_run_model(state_db, "run-" + label, lock_model)
     save_dir = os.path.join(tmp, "out")
     fake = Fake74(script)
     req = request if request is not None else {
@@ -99,7 +117,7 @@ def run_case(script, label, adapter_path=None, prompt=None, cost=100,
         estimated_cost=cost,
         prompt=("q" * 200) if prompt is None else prompt,
         adapter_path=adapter_path or os.path.abspath(__file__),
-        runner=fake)
+        runner=fake, state_store=state_db)
     return env, db, fake, tmp
 
 
@@ -163,7 +181,8 @@ def test_video_wait_budget():
                      "saved_paths": ["/tmp/x.mp4"], "credits_consumed": 30}),
     })
     env, db, fake, _ = run_case(script, "vidwait",
-                                model="kling-2.6/image-to-video")
+                                model="kling-3.0/video",
+                                lock_model="kling-3.0/video")
     w_argv = fake.argv_of("wait")
     check("video: wait budget 1200",
           w_argv and w_argv[w_argv.index("--timeout") + 1] == "1200",
@@ -203,7 +222,8 @@ def test_wait_timeout_keeps_task_id():
                                "msg": "deadline 300s reached"}}),
     })
     env, db, fake, _ = run_case(script, "waittimeout",
-                                model="kling-2.6/image-to-video")
+                                model="kling-3.0/video",
+                                lock_model="kling-3.0/video")
     check("wait-timeout: waiting", env["outcome"] == "waiting",
           str(env["outcome"]))
     check("wait-timeout: reason unknown-outcome-no-retry",
