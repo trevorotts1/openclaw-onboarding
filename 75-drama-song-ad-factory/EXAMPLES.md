@@ -65,10 +65,10 @@ EXAMPLE 1: INTAKE - THIN BRIEF ASKS AT MOST THREE QUESTIONS
     --brief '{"offer": "demo offer"}'
 
 Observed: exit 2, outcome=waiting, reason_code=missing-essentials,
-digest e64ca3a125a7dbcc, exactly three questions bundled in ONE message:
+digest 5f4e234c1193d9b6, exactly three questions bundled in ONE message:
 
   1. Who is it for, and what should viewers do?
-  2. What maximum generation budget is authorized, with its currency/credit unit?
+  2. What is the most you want to spend on this video? For example: $25.
   3. What placement/format should we produce (aspect ratio + target length)?
 
 Placement substitutes into a leftover question slot; the three essentials are

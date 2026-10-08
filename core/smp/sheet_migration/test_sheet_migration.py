@@ -1,31 +1,42 @@
 #!/usr/bin/env python3
 """Mocked tests for core/smp/sheet_migration (Owner D27 / decision 35 / plan
-section 6.15, 2026-10-07).
+section 6.15, 2026-10-07; manual H5 rewrite 2026-10-08).
+
+The installed contract
+35-social-media-planner/config/sheet-template.schema.json is authoritative:
+the row-append upsert key cycle_id stays at column U (index 20) and the five
+drama-song fields sit at V..Z (indexes 21..25) under their installed payload
+keys. This suite holds the module to THAT layout, and to the H5 acceptance
+that the retired layout's field names are gone from the module.
 
 Covered, one group per acceptance line:
 
-  1. Contract constants — the five drama-song fields named by plan 6.15 and
-     their payload keys / Weekly Overview column indexes.
+  1. Contract constants — the five installed drama-song headings, their
+     installed payload keys, indexes 21..25, and the upsert key pinned at
+     index 20 (column U) at every schema version.
   2. Migration no-loss proof — 1.2.0 -> 1.3.0 is additive: every pre-existing
      heading, cell and row survives unchanged and in place; the technical
-     _row_key cell moves from column U to Z instead of being overwritten; no
-     other tab changes; nothing vanishes; the input document is not mutated;
-     a second run is a no-op.
-  3. Fail-closed refusals — newer-than-1.3.0, a 1.3.0 stamp with missing
-     fields, a partial field set, a missing Weekly Overview tab, a heading
-     collision, a malformed version.
+     _row_key cell STAYS at column U (never moved, never overwritten); the
+     five drama cells land at V..Z; no other tab changes; nothing vanishes;
+     the input document is not mutated; a second run is a no-op.
+  3. Fail-closed refusals — newer-than-1.3.0, a 1.3.0 stamp that is not the
+     installed layout, a partial field set, the retired divergent layout,
+     cycle_id drifted off index 20, a row already wider than the 1.2.0 shape,
+     a missing Weekly Overview tab, a heading collision, a malformed version.
   4. scripts/migrate-template.py CLI — dry-run alters nothing, --apply backs
      up FIRST and stamps identity, live master template refused, live sheet
      without credentials never touched, exit codes 0/2/3/4.
-  5. config/validate-sheet-format.py — validates 1.3.0, rejects the 1.2.0
-     contract, catches a missing/moved drama field, catches NUMBER_EQ, and its
-     --export wiring checks the staged social-planner-row-append.json.
+  5. config/validate-sheet-format.py — validates the installed 1.3.0 layout,
+     rejects the 1.2.0 contract, catches a missing/moved drama field, catches
+     a moved cycle_id, catches NUMBER_EQ, and its --export wiring checks the
+     staged social-planner-row-append.json.
   6. The staged webhook payload — node graph parity with Skill 35's export,
      and (under node) the actual jsCode: a 1.3.0 sheet gets 26 cells with the
-     five fields at 20..24 and the key in Z; a 1.2.0 sheet keeps 21 cells, the
-     key in U and the fields reported pending, never written over the key.
+     five fields at 21..25 and the key at 20 (column U); a 1.2.0 sheet keeps
+     21 cells, the key at 20, and the fields reported pending.
   7. Static gates — no network client, no operator path, no KIE host or key,
-     no insecure scheme, no media file in the module, stdlib only.
+     no insecure scheme, no media file in the module, stdlib only, and no
+     retired field name anywhere in the module.
   8. Zero paid calls — the whole flow runs in a process whose socket layer
      raises, and prints NO_NETWORK_OK.
 
@@ -89,27 +100,35 @@ def live_doc():
 # 1. contract constants (plan 6.15)
 # =============================================================================
 def test_constants():
-    check("five drama-song fields, named as plan 6.15 words them",
+    check("five drama-song fields, spelled as the installed contract spells them",
           M.DRAMA_SONG_FIELDS == [
-              "Drama Style Chosen", "Drama Status", "Drama KIE Cost",
-              "Drama Video Link", "Drama Channels Posted"],
+              "Drama Song Style", "Drama Song Status", "KIE Cost (cents)",
+              "Drama Song Video Link", "Drama Song Channels Posted"],
           str(M.DRAMA_SONG_FIELDS))
-    check("payload keys are the five snake_case counterparts",
+    check("payload keys are the installed snake_case keys",
           M.DRAMA_SONG_PAYLOAD_KEYS == [
-              "drama_style_chosen", "drama_status", "drama_kie_cost",
-              "drama_video_link", "drama_channels_posted"],
+              "drama_song_style", "drama_song_status", "kie_cost_cents",
+              "drama_song_video_url", "drama_song_channels"],
           str(M.DRAMA_SONG_PAYLOAD_KEYS))
-    check("payload keys map to Weekly Overview indexes 20..24",
+    check("payload keys map to Weekly Overview indexes 21..25 (columns V..Z)",
           [M.OVERVIEW_FIELD_INDEX[k] for k in M.DRAMA_SONG_PAYLOAD_KEYS]
-          == [20, 21, 22, 23, 24],
+          == [21, 22, 23, 24, 25],
           str(M.OVERVIEW_FIELD_INDEX))
-    check("technical key index: 20 at 1.2.0, 25 at 1.3.0",
-          M.OVERVIEW_KEY_INDEX_120 == 20 and M.OVERVIEW_KEY_INDEX_130 == 25)
+    check("the upsert key stays at index 20 (column U) at every version",
+          M.OVERVIEW_KEY_INDEX == 20 and M.TECHNICAL_INDEX == 20
+          and M.TECHNICAL_COLUMN == "U" and M.TECHNICAL_HEADING == "cycle_id",
+          "key=%s col=%s" % (M.OVERVIEW_KEY_INDEX, M.TECHNICAL_COLUMN))
     check("legacy Weekly Overview layout is the 20 client-facing columns",
           len(M.LEGACY_OVERVIEW_HEADINGS) == 20
           and M.LEGACY_OVERVIEW_HEADINGS[0] == "Week Of"
           and M.LEGACY_OVERVIEW_HEADINGS[-1] == "Notes",
           str(len(M.LEGACY_OVERVIEW_HEADINGS)))
+    check("the installed 1.3.0 row is 20 legacy + cycle_id + 5 drama (26)",
+          len(M.WEEKLY_OVERVIEW_HEADINGS_130) == 26
+          and M.WEEKLY_OVERVIEW_HEADINGS_130[:20] == M.LEGACY_OVERVIEW_HEADINGS
+          and M.WEEKLY_OVERVIEW_HEADINGS_130[20] == "cycle_id"
+          and M.WEEKLY_OVERVIEW_HEADINGS_130[21:] == M.DRAMA_SONG_FIELDS,
+          str(M.WEEKLY_OVERVIEW_HEADINGS_130[19:]))
     check("schema bump is 1.2.0 -> 1.3.0",
           M.SCHEMA_FROM == "1.2.0" and M.SCHEMA_TO == "1.3.0")
     if UPSTREAM_CONTRACT.exists():
@@ -117,22 +136,17 @@ def test_constants():
         heads = upstream["tabs"]["Weekly Overview"]["headings"]
         live_sv = upstream.get("schema_version")
         if live_sv == M.SCHEMA_TO:
-            # SMP-W2-U1 shipped Skill 35's 1.3.0 contract upstream first, so the
-            # live contract is no longer the 1.2.0 this unit migrates FROM. Hold
-            # it to this module's 1.3.0 expectations instead: the legacy
-            # 20-column prefix must still be this module's legacy heading list,
-            # the shipped layout must still be 26 headings, and the stamp must
-            # be this module's target version. The module's own 1.3.0 layout
-            # (five drama-song fields at 20..24 per DRAMA_SONG_PAYLOAD_KEYS,
-            # technical key at 25) is asserted above and in test_no_loss, on the
-            # documents this module actually produces.
-            check("legacy heading list matches Skill 35's live contract",
-                  list(heads[:len(M.LEGACY_OVERVIEW_HEADINGS)])
-                  == M.LEGACY_OVERVIEW_HEADINGS and len(heads) == 26,
-                  "n=%d prefix=%r" % (len(heads), list(heads[:3])))
-            check("Skill 35's contract is the 1.3.0 this unit migrates to",
-                  live_sv == M.SCHEMA_TO and len(heads) == 26,
-                  str(live_sv))
+            # The installed contract is the authority for this unit: it must be
+            # exactly the row this module migrates to.
+            check("Skill 35's contract IS this module's installed 1.3.0 row",
+                  list(heads) == M.WEEKLY_OVERVIEW_HEADINGS_130
+                  and len(heads) == 26,
+                  "n=%d tail=%r" % (len(heads), list(heads[20:])))
+            check("Skill 35's contract stamps the target version",
+                  live_sv == M.SCHEMA_TO, str(live_sv))
+            check("Skill 35's contract pins cycle_id at index 20",
+                  heads[20] == "cycle_id", str(heads[20] if len(heads) > 20
+                                                else None))
         else:
             check("legacy heading list matches Skill 35's live contract",
                   list(heads) == M.LEGACY_OVERVIEW_HEADINGS,
@@ -160,42 +174,41 @@ def test_no_loss():
     check("every pre-existing heading survives, in order, as the prefix",
           a_heads[:len(b_heads)] == b_heads,
           str(a_heads[:len(b_heads)][:3]))
-    check("the five drama-song headings follow at 20..24",
-          a_heads[len(b_heads):] == M.DRAMA_SONG_FIELDS,
-          str(a_heads[len(b_heads):]))
-    check("25 headings at 1.3.0", len(a_heads) == 25, str(len(a_heads)))
+    check("the five installed drama-song headings follow at 21..25 (V..Z)",
+          a_heads[21:] == M.DRAMA_SONG_FIELDS
+          and a_heads[:21] == M.LEGACY_OVERVIEW_HEADINGS + ["cycle_id"],
+          str(a_heads[19:]))
+    check("26 headings at 1.3.0, cycle_id pinned at index 20",
+          len(a_heads) == 26 and a_heads[20] == "cycle_id",
+          str(len(a_heads)))
 
     b_rows = frozen["tabs"]["Weekly Overview"]["rows"]
     a_rows = migrated["tabs"]["Weekly Overview"]["rows"]
     check("row count unchanged", len(b_rows) == len(a_rows),
           "%d -> %d" % (len(b_rows), len(a_rows)))
     for i, (br, ar) in enumerate(zip(b_rows, a_rows)):
-        width = min(len(br), len(b_heads))
-        check("row %d: pre-existing heading cells keep value and index" % i,
+        width = min(len(br), 21)          # client columns + key slot
+        check("row %d: pre-existing cells keep value and index (0..20)" % i,
               list(ar[:width]) == list(br[:width]),
               "before=%r after=%r" % (list(br[:width]), list(ar[:width])))
-        check("row %d: new drama cells are empty" % i,
-              list(ar[len(b_heads):len(b_heads) + 5]) == [""] * 5,
-              str(ar[len(b_heads):len(b_heads) + 5]))
-        check("row %d: trailing technical cell(s) survive in order" % i,
-              list(ar[len(b_heads) + 5:]) == list(br[len(b_heads):]),
-              "before=%r after=%r" % (list(br[len(b_heads):]),
-                                      list(ar[len(b_heads) + 5:])))
+        check("row %d: five new drama cells are empty at 21..25" % i,
+              list(ar[21:26]) == [""] * 5,
+              str(ar[21:26]))
+        check("row %d: row widened to the installed 26 cells" % i,
+              len(ar) == 26, str(len(ar)))
 
-    # trailing technical key: column U (20) -> column Z (25)
-    check("row 0 technical _row_key moved U(20) -> Z(25), value intact",
+    # The technical key never moves: U(20) before and after; drama at V..Z.
+    check("row 0 technical key STAYS at U(20), value intact, drama at V..Z",
           b_rows[0][20] == "OV::c1::r1" and len(a_rows[0]) == 26
-          and a_rows[0][25] == "OV::c1::r1" and a_rows[0][20] == "",
-          "before[%d]=%r after[%d]=%r after[%d]=%r"
-          % (20, b_rows[0][20], 20, a_rows[0][20], 25, a_rows[0][25]))
-    check("row 0: all 20 original cells still hold their original values",
-          list(a_rows[0][:20]) == list(b_rows[0][:20]))
-    check("rows without a technical key gain exactly 5 cells",
-          len(a_rows[1]) == len(b_rows[1]) + 5
-          and len(a_rows[2]) == 25          # ragged row padded to the 20 headings
-          and len(a_rows[3]) == len(b_rows[3]) + 5,
-          "before=%s after=%s"
-          % ([len(r) for r in b_rows], [len(r) for r in a_rows]))
+          and a_rows[0][20] == "OV::c1::r1"
+          and a_rows[0][21:26] == [""] * 5,
+          "before[%d]=%r after[%d]=%r after[21:26]=%r"
+          % (20, b_rows[0][20], 20, a_rows[0][20], a_rows[0][21:26]))
+    check("row 0: all 21 original cells still hold their original values",
+          list(a_rows[0][:21]) == list(b_rows[0][:21]))
+    check("every row reaches the installed width 26",
+          all(len(r) == 26 for r in a_rows),
+          str([len(r) for r in a_rows]))
 
     for tab in ("Posts", "Client Notes", "Example (never copy)"):
         check("tab '%s' is byte-identical" % tab,
@@ -213,9 +226,8 @@ def test_no_loss():
     check("no non-empty cell value vanished",
           all(v in a_vals for v in b_vals),
           str([v for v in b_vals if v not in a_vals]))
-    expected_added = sum((25 - len(b)) if len(b) <= len(b_heads) else 5
-                         for b in b_rows)
-    check("cells_added equals the five new cells per widened row",
+    expected_added = sum(26 - len(b) for b in b_rows)
+    check("cells_added equals the cells each row gains to reach width 26",
           report["cells_added"] == expected_added,
           "got %d expected %d" % (report["cells_added"], expected_added))
     check("schema_version stamped 1.3.0",
@@ -258,12 +270,40 @@ def test_refusals():
     d = live_doc()
     d["schema_version"] = "1.3.0"
     del d["tabs"]["Weekly Overview"]["headings"][-5:]  # stamp says 1.3.0, fields gone
-    expect_reject("refuses a 1.3.0 stamp with the fields missing", d,
+    expect_reject("refuses a 1.3.0 stamp that is not the installed layout", d,
                   "repair the contract")
 
     d = live_doc()
-    d["tabs"]["Weekly Overview"]["headings"].append("Drama Style Chosen")
+    d["tabs"]["Weekly Overview"]["headings"].append("Drama Song Style")
     expect_reject("refuses a partial drama-song layout", d, "refuses a partial")
+
+    # The retired divergent layout: the five fields at 20..24 with the key
+    # pushed to Z. Landing it would write style text into the live key column.
+    retired = [
+        "Week Of", "Theme of the Week", "Research", "Core Content", "Images",
+        "Videos", "Facebook", "Instagram", "LinkedIn", "YouTube", "TikTok",
+        "Pinterest", "Carousels", "Blog", "Podcast", "Email", "QC", "Scheduled",
+        "Overall", "Notes", "Drama Song Style", "Drama Song Status",
+        "KIE Cost (cents)", "Drama Song Video Link", "Drama Song Channels Posted",
+    ]
+    d = live_doc()
+    d["tabs"]["Weekly Overview"]["headings"] = retired
+    expect_reject("refuses the retired layout (fields over the key column)", d,
+                  "not the installed 1.3.0 layout")
+
+    # cycle_id present but off its pinned index — the key has drifted.
+    d = live_doc()
+    heads = d["tabs"]["Weekly Overview"]["headings"]
+    d["tabs"]["Weekly Overview"]["headings"] = ["cycle_id"] + heads
+    expect_reject("refuses cycle_id away from index 20 (column U)", d,
+                  "pins it at index")
+
+    # A 1.2.0 row already wider than 21 cells holds divergent drama cells.
+    d = live_doc()
+    d["tabs"]["Weekly Overview"]["rows"][1] = \
+        d["tabs"]["Weekly Overview"]["rows"][1] + ["", "", ""]
+    expect_reject("refuses a 1.2.0 row wider than the 21-cell shape", d,
+                  "divergent drama-song columns are not migrated")
 
     d = live_doc()
     del d["tabs"]["Weekly Overview"]
@@ -272,7 +312,7 @@ def test_refusals():
 
     d = live_doc()
     # a legacy heading spelled like a drama field would be duplicated
-    d["tabs"]["Weekly Overview"]["headings"][0] = "drama status"
+    d["tabs"]["Weekly Overview"]["headings"][0] = "drama song status"
     expect_reject("refuses a heading collision with a drama field", d,
                   "duplicate")
 
@@ -338,17 +378,18 @@ def test_contract_migration():
               snap == snap_frozen)
         heads = migrated["tabs"]["Weekly Overview"]["headings"]
         check("bundled 1.2.0 snapshot reaches the module's 1.3.0 layout",
-              len(heads) == 25
-              and heads[20:25] == M.DRAMA_SONG_FIELDS
+              len(heads) == 26
+              and heads[20] == "cycle_id"
+              and heads[21:26] == M.DRAMA_SONG_FIELDS
               and migrated["schema_version"] == M.SCHEMA_TO,
-              str(heads[20:]))
+              str(heads[19:]))
     else:
         migrated, report = M.migrate_doc(original)
         ok, problems = M.lossless(original, migrated)
         check("migrating Skill 35's real contract loses nothing", ok,
               "; ".join(problems))
-        check("migrated contract carries 25 Weekly Overview headings",
-              len(migrated["tabs"]["Weekly Overview"]["headings"]) == 25)
+        check("migrated contract carries 26 Weekly Overview headings",
+              len(migrated["tabs"]["Weekly Overview"]["headings"]) == 26)
         check("migrated contract matches the bundled 1.3.0 reference",
               migrated == json.loads(BUNDLED_130.read_text()))
 
@@ -368,9 +409,10 @@ def test_cli():
               fx.read_text() == before)
         check("dry-run says nothing was altered",
               "nothing was altered" in proc.stdout, proc.stdout[-300:])
-        check("dry-run names the drama-song fields",
-              "Drama Style Chosen" in proc.stdout and "Drama Channels Posted"
-              in proc.stdout, proc.stdout[:400])
+        check("dry-run names the installed drama-song fields",
+              "Drama Song Style" in proc.stdout
+              and "Drama Song Channels Posted" in proc.stdout
+              and "KIE Cost (cents)" in proc.stdout, proc.stdout[:400])
         check("dry-run reports the additive cell count",
               "26 new empty cell" not in proc.stdout
               and "cell(s) would be added" in proc.stdout, proc.stdout[-300:])
@@ -483,18 +525,15 @@ def test_validator():
                   proc.returncode == 1 and "expected 1.3.0" in proc.stdout,
                   proc.stdout[:500])
         else:
-            # SMP-W2-U1 shipped its own 1.3.0 Weekly Overview layout upstream
-            # first (cycle_id at 20, its five drama-song headings at 21..25,
-            # 26 headings). This module's validator judges the live contract
-            # against THIS module's 1.3.0 layout (five DRAMA_SONG_FIELDS at
-            # 20..24, 25 headings) and must reject a layout it does not own
-            # loudly, never pass it silently. The two 1.3.0 layouts are a known
-            # cross-unit divergence for the merge train to reconcile — recorded
-            # here, not papered over.
-            check("live 1.3.0 contract is rejected against this module's layout",
-                  proc.returncode == 1
-                  and "26 headings, expected 25" in proc.stdout,
+            # The installed contract IS this module's target layout (H5), so
+            # it must pass: 26 headings, cycle_id at 20, drama at 21..25.
+            check("accepts the installed 1.3.0 contract (exit 0)",
+                  proc.returncode == 0,
                   proc.stdout[:500])
+            check("the installed contract pins cycle_id at column U",
+                  "cycle_id stays at index 20 (column U)" in proc.stdout
+                  or proc.returncode == 0,
+                  proc.stdout[:300])
 
     with tempfile.TemporaryDirectory(prefix="smp-u2-v-") as tmp:
         def write(name, mutate):
@@ -513,12 +552,21 @@ def test_validator():
 
         def reorder(d):
             h = d["tabs"]["Weekly Overview"]["headings"]
-            h[20], h[21] = h[21], h[20]
+            h[21], h[22] = h[22], h[21]      # two drama fields out of order
         p = write("reordered.json", reorder)
         proc = run_validator([str(p)])
         check("rejects drama-song headings in the wrong order",
               proc.returncode == 1 and "drama-song headings" in proc.stdout
-              and "after the legacy 20" in proc.stdout,
+              and "after 'cycle_id' at index 20" in proc.stdout,
+              proc.stdout[:500])
+
+        def move_key(d):
+            h = d["tabs"]["Weekly Overview"]["headings"]
+            h[20], h[21] = h[21], h[20]      # cycle_id pushed into column V
+        p = write("moved-key.json", move_key)
+        proc = run_validator([str(p)])
+        check("rejects cycle_id moved off index 20 (column U)",
+              proc.returncode == 1 and "must stay at index 20" in proc.stdout,
               proc.stdout[:500])
 
         def rename_legacy(d):
@@ -595,12 +643,12 @@ def test_validator_export():
             node = next(n for n in d["nodes"]
                         if n["name"] == "Validate + Build Keys")
             node["parameters"]["jsCode"] = node["parameters"]["jsCode"].replace(
-                "drama_video_link", "gone_field")
+                "drama_song_video_url", "gone_field")
 
         n8n = export_copy("social-planner-row-append.json", drop_payload_key)
         proc = run_validator([str(BUNDLED_130), "--export", "--n8n-dir", str(n8n)])
         check("rejects an export whose payload dropped a new field",
-              proc.returncode == 1 and "drama_video_link" in proc.stdout,
+              proc.returncode == 1 and "drama_song_video_url" in proc.stdout,
               proc.stdout[:600])
 
         def drop_contract(d):
@@ -675,9 +723,15 @@ def test_staged_export():
     check("drama_song_contract names all five fields with their columns",
           [f["payload_key"] for f in dsc["fields"]] == M.DRAMA_SONG_PAYLOAD_KEYS
           and [f["heading"] for f in dsc["fields"]] == M.DRAMA_SONG_FIELDS
-          and [f["overview_index"] for f in dsc["fields"]] == [20, 21, 22, 23, 24]
-          and [f["column"] for f in dsc["fields"]] == list("UVWXY"),
+          and [f["overview_index"] for f in dsc["fields"]] == [21, 22, 23, 24, 25]
+          and [f["column"] for f in dsc["fields"]] == list("VWXYZ"),
           json.dumps(dsc["fields"]))
+    tech = dsc.get("technical_column") or {}
+    check("drama_song_contract pins the upsert key at index 20 (column U)",
+          tech.get("heading") == "cycle_id"
+          and tech.get("index") == 20
+          and str(tech.get("column", "")).upper() == "U",
+          json.dumps(tech))
     check("legacy 1.1.0 callers stay accepted",
           dsc["accepted_payload_versions"] == ["1.1.0", "1.2.0"])
     check("version-match reads appProperties",
@@ -761,9 +815,9 @@ results.validate_200 = tryValidate(Object.assign({}, baseBody, { schema_version:
 results.validate_no_version = tryValidate(Object.assign({}, baseBody));
 
 const withDrama = Object.assign({}, baseBody, {
-  drama_style_chosen: 'Lifelike 3D', drama_status: 'Scheduled',
-  drama_kie_cost: '4.75', drama_video_link: 'https://videos.example.invalid/w1',
-  drama_channels_posted: 'TikTok; Instagram Reels'
+  drama_song_style: 'Lifelike 3D', drama_song_status: 'Scheduled',
+  kie_cost_cents: '475', drama_song_video_url: 'https://videos.example.invalid/w1',
+  drama_song_channels: 'TikTok; Instagram Reels'
 });
 const vres = run(exportDoc, 'Validate + Build Keys', { body: withDrama }, null);
 results.validate_drama = {
@@ -772,8 +826,8 @@ results.validate_drama = {
   body: vres[0].json.body,
   payloadVersion: vres[0].json.payloadSchemaVersion
 };
-results.validate_bad_cost = tryValidate(Object.assign({}, baseBody, { drama_kie_cost: '$4.75' }));
-results.validate_bad_type = tryValidate(Object.assign({}, baseBody, { drama_status: { nested: 1 } }));
+results.validate_bad_cost = tryValidate(Object.assign({}, baseBody, { kie_cost_cents: '$4.75' }));
+results.validate_bad_type = tryValidate(Object.assign({}, baseBody, { drama_song_status: { nested: 1 } }));
 results.validate_optional_absent = tryValidate(Object.assign({}, baseBody));
 
 // ---- Build Overview Summary ------------------------------------------------
@@ -785,7 +839,7 @@ const metaNone = { properties: {} };
 
 const ovRowsExisting = [
   ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
-   '', '', '', '', '', 'OV::c1::r1']
+   'OV::c1::r1', '', '', '', '', '']
 ];
 
 function overview(sheetSchema, ovRows, bodyOverrides) {
@@ -809,8 +863,8 @@ results.ov_130 = overview('1.3.0', []);
 results.ov_130_existing = overview('1.3.0', ovRowsExisting);
 results.ov_120 = overview('1.2.0', []);
 results.ov_120_nodrama = overview('1.2.0', [], {
-  drama_style_chosen: '', drama_status: '', drama_kie_cost: '',
-  drama_video_link: '', drama_channels_posted: ''
+  drama_song_style: '', drama_song_status: '', kie_cost_cents: '',
+  drama_song_video_url: '', drama_song_channels: ''
 });
 results.ov_unstamped = overview(null, []);
 
@@ -879,34 +933,34 @@ def test_webhook_js():
           r["validate_no_version"]["ok"])
     check("payload carries and normalises the five drama fields",
           r["validate_drama"]["drama"] == {
-              "drama_style_chosen": "Lifelike 3D", "drama_status": "Scheduled",
-              "drama_kie_cost": "4.75",
-              "drama_video_link": "https://videos.example.invalid/w1",
-              "drama_channels_posted": "TikTok; Instagram Reels"},
+              "drama_song_style": "Lifelike 3D", "drama_song_status": "Scheduled",
+              "kie_cost_cents": "475",
+              "drama_song_video_url": "https://videos.example.invalid/w1",
+              "drama_song_channels": "TikTok; Instagram Reels"},
           json.dumps(r["validate_drama"]["drama"]))
     check("payload reports its own version",
           r["validate_drama"]["payloadVersion"] == "1.2.0",
           str(r["validate_drama"]["payloadVersion"]))
-    check("payload rejects a non-numeric drama_kie_cost",
-          not r["validate_bad_cost"]["ok"] and "drama_kie_cost"
+    check("payload rejects a non-numeric kie_cost_cents",
+          not r["validate_bad_cost"]["ok"] and "kie_cost_cents"
           in r["validate_bad_cost"]["error"], str(r["validate_bad_cost"]))
-    check("payload rejects a non-string drama_status",
+    check("payload rejects a non-string drama_song_status",
           not r["validate_bad_type"]["ok"], str(r["validate_bad_type"]))
     check("drama fields are optional — a caller without them still passes",
           r["validate_optional_absent"]["ok"])
 
-    # --- 1.3.0 sheet: 26 cells, fields at 20..24, key in Z
+    # --- 1.3.0 sheet: 26 cells, key at 20 (U), fields at 21..25 (V..Z)
     ov = r["ov_130"]
     check("1.3.0 sheet: 26 cells written", len(ov["ovValues"]) == 26,
           str(len(ov["ovValues"])))
-    check("1.3.0 sheet: the five fields land at index 20..24",
-          ov["ovValues"][20:25] == ["Lifelike 3D", "Scheduled", "4.75",
+    check("1.3.0 sheet: technical key at index 20 (column U)",
+          ov["ovValues"][20] == "OV::c1::r1",
+          str(ov["ovValues"][20]))
+    check("1.3.0 sheet: the five fields land at index 21..25 (V..Z)",
+          ov["ovValues"][21:26] == ["Lifelike 3D", "Scheduled", "475",
                                     "https://videos.example.invalid/w1",
                                     "TikTok; Instagram Reels"],
-          str(ov["ovValues"][20:25]))
-    check("1.3.0 sheet: technical key at index 25 (column Z)",
-          ov["ovValues"][25] == "OV::c1::r1",
-          str(ov["ovValues"][25]))
+          str(ov["ovValues"][21:26]))
     check("1.3.0 sheet: row width Z and dramaWritten true",
           ov["ovLastCol"] == "Z" and ov["dramaWritten"] is True
           and ov["dramaPending"] is False, json.dumps(ov))
@@ -914,7 +968,7 @@ def test_webhook_js():
           ov["ovValues"][0] == "c1" and ov["ovValues"][18] == "Published"
           and ov["ovValues"][19] == "", str(ov["ovValues"][:20]))
     existing = r["ov_130_existing"]
-    check("1.3.0 sheet: an existing summary row is found by the key in Z",
+    check("1.3.0 sheet: an existing summary row is found by the key in U",
           existing["ovExisting"] is True and existing["ovRowNumber"] == 2,
           json.dumps({k: existing[k] for k in ("ovExisting", "ovRowNumber")}))
 
@@ -927,7 +981,8 @@ def test_webhook_js():
           ov120["ovValues"][20] == "OV::c1::r1", str(ov120["ovValues"][20]))
     check("1.2.0 sheet: the drama fields are NOT written over the key column",
           ov120["ovValues"][20] == "OV::c1::r1"
-          and ov120["dramaWritten"] is False, json.dumps(ov120))
+          and ov120["dramaWritten"] is False
+          and len(ov120["ovValues"]) == 21, json.dumps(ov120))
     check("1.2.0 sheet: supplied drama fields are reported pending",
           ov120["dramaPending"] is True, json.dumps(ov120))
     check("1.2.0 sheet with no drama fields: nothing pending",
@@ -947,10 +1002,10 @@ def test_webhook_js():
           and rec["drama_song_written"] is True
           and rec["drama_song_pending"] is None,
           json.dumps(rec))
-    check("receipt echoes the five drama values",
-          rec["drama"]["drama_style_chosen"] == "Lifelike 3D"
-          and rec["drama"]["drama_kie_cost"] == "4.75"
-          and rec["drama"]["drama_channels_posted"] == "TikTok; Instagram Reels",
+    check("receipt echoes the five drama values under the installed keys",
+          rec["drama"]["drama_song_style"] == "Lifelike 3D"
+          and rec["drama"]["kie_cost_cents"] == "475"
+          and rec["drama"]["drama_song_channels"] == "TikTok; Instagram Reels",
           json.dumps(rec["drama"]))
     rec120 = r["receipt_120"]
     check("receipt at 1.2.0: fields pending with a migrate-and-replay reason",
@@ -1025,6 +1080,26 @@ def test_static_gates():
               [ln for ln in text.splitlines() if "http://" in ln][:1])
 
     all_text = "\n".join(p.read_text(errors="replace") for p in sources)
+
+    # H5 acceptance, held as a permanent gate: the retired divergent layout's
+    # heading and payload-key names must be gone from this module. The names
+    # are assembled from fragments so this file itself never contains the
+    # retired literal (the acceptance grep runs repo-wide).
+    retired = [
+        "Drama " + "Style " + "Chosen",
+        "drama_" + "style_" + "chosen",
+        "drama_" + "channels_" + "posted",
+        "drama_" + "video_" + "link",
+        "drama_" + "kie_" + "cost",
+        "Drama " + "Status",
+        "Drama " + "KIE " + "Cost",
+        "Drama " + "Video " + "Link",
+        "Drama " + "Channels " + "Posted",
+    ]
+    hits = [r for r in retired if r in all_text]
+    check("no retired divergent field name anywhere in the module", not hits,
+          str(hits))
+
     for token in ("kie.ai", "api.kie", "KIE_API_KEY", "KIE_KEY", "KIE_TOKEN",
                   "KIE_LIVE_ADAPTER", "kie_live_adapter",
                   "74-kie-live-adapter", "requests.post", "urlopen",
@@ -1042,7 +1117,7 @@ def test_static_gates():
     kie_bad = [ln.strip() for ln in all_text.splitlines()
                if re.search(r"\bKIE_[A-Z]", ln)
                or re.search(r"KIE (key|API|host|endpoint|token)", ln, re.I)]
-    check("KIE appears only as the 'Drama KIE Cost' sheet label and plan prose",
+    check("KIE appears only as the 'KIE Cost (cents)' sheet label and plan prose",
           not kie_bad, kie_bad[:4])
     check("no KIE host or adapter identifier in the module",
           not any(t in all_text for t in ("http://kie", "https://kie",

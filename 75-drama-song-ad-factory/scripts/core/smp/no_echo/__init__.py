@@ -1,56 +1,68 @@
-"""no_echo package: D22a no-echo rule on the SMP weekly drama-song step
-(Owner AF-SMP-U1, Decision log 36-37 applied to Skill 35, plan 6.15).
+"""no_echo package: D22a re-export of core audio_c3 for scripts/core/smp/.
 
-Every Suno request the weekly step builds carries the dry close-microphone
-vocal rule and the seven negative tags (reverb, echo, delay, hall, ethereal,
-ambient, choir pad); a spoken part naming spacious, cinematic or choir is
-refused by name. Prompt/request shaping and verification only — no network,
-no media, no operator paths; Skill 74 stays the sole KIE path. stdlib only.
+One implementation lives in ``core/audio_c3/no_echo/no_echo.py`` (manual L1);
+this package re-exports it so ``import no_echo`` under ``core/smp/`` keeps
+resolving. Skill 74 stays the sole KIE path. Prompt/payload shaping and
+verification only — no network, no media, no operator paths. stdlib only.
 """
 from .no_echo import (  # noqa: F401
+    BRIEF_NEGATIVE_TAGS,
     CARD_LINE,
+    DOCS_LINE,
     DRY_RULE,
+    KIND_SONG,
+    KIND_VOICE_PACK,
     KIE_PATH,
     NEGATIVE_TAGS,
     NoEchoError,
     PROVIDER,
+    REQUEST_KINDS,
     RULE_ID,
     RULE_TEXT,
     SCHEMA_VERSION,
     SPOKEN_BANNED_STYLE_WORDS,
-    STEP,
+    STYLE_TEXT_PATHS,
+    TAG_LIST_TEXT,
     TOOL_VERSION,
     card_line,
     check,
+    docs_line,
     main,
     negative_tags,
     refused_style_words,
     rule_text,
+    song_request,
     stamp,
-    style_phrase,
-    weekly_request,
+    voice_pack_request,
 )
 
 __all__ = [
+    "BRIEF_NEGATIVE_TAGS",
     "CARD_LINE",
+    "DOCS_LINE",
     "DRY_RULE",
+    "KIND_SONG",
+    "KIND_VOICE_PACK",
     "KIE_PATH",
     "NEGATIVE_TAGS",
     "NoEchoError",
     "PROVIDER",
+    "REQUEST_KINDS",
     "RULE_ID",
     "RULE_TEXT",
     "SCHEMA_VERSION",
     "SPOKEN_BANNED_STYLE_WORDS",
-    "STEP",
+    "STYLE_TEXT_PATHS",
+    "TAG_LIST_TEXT",
     "TOOL_VERSION",
     "card_line",
     "check",
+    "docs_line",
     "main",
     "negative_tags",
     "refused_style_words",
     "rule_text",
+    "song_request",
     "stamp",
-    "style_phrase",
-    "weekly_request",
+    "voice_pack_request",
 ]

@@ -19,10 +19,15 @@ The block (plan 6.15, transcribed):
     here -- the long menu belongs to the factory intake, not the planner).
   * The weekly call to action and link default to the planner's own weekly
     action link (``SOCIAL_MEDIA_ACTION_LINK``).
+  * One combined ask (manual C4 step 4) fills the weekly brief: "What should
+    viewers do, and what is your weekly video budget?" Offer, audience,
+    action and a weekly ``budget_minor`` / ``budget_currency`` land in the
+    record, so Skill 75's three-question intake is never reached from setup.
 
 Resolved answers become the style record the weekly step reads::
 
-    {enabled, look, music, voice, length, cta_text, cta_link, updated_at}
+    {enabled, look, music, voice, length, cta_text, cta_link,
+     offer, audience, action, budget_minor, budget_currency, updated_at}
 
 ``enabled`` defaults to ``kie_active``; an explicit weekly yes/no overrides
 it. With KIE switched off and no answer the record comes out disabled, and
@@ -58,11 +63,36 @@ TOOL_VERSION = "0.1.0"
 #: Where the resolved record is stored on the client box (brief; overridable).
 #: The literal stays ``~``-relative so no host path lands in the source.
 STYLE_PATH_TEMPLATE = "~/.openclaw/workspace/social-media-planner/drama-song-style.json"
-DEFAULT_STYLE_PATH = os.path.expanduser(STYLE_PATH_TEMPLATE)
+#: M8: Docker boxes keep OpenClaw at /data/.openclaw (wire.sh's two-line rule),
+#: so the same file has to be found there too. The sub-path is taken from the
+#: template above, so the two cannot drift apart.
+_OC_ROOT = ("/data/.openclaw" if os.path.isdir("/data/.openclaw")
+            else os.path.expanduser("~/.openclaw"))
+DEFAULT_STYLE_PATH = os.path.join(_OC_ROOT,
+                                  STYLE_PATH_TEMPLATE.split(".openclaw/", 1)[1])
 
-#: The eight fields of the style record, exactly as the brief names them.
+#: The brief fields. The first eight are the plan 6.15 style record; the last
+#: five are the essentials Skill 75's intake needs (manual C4 step 4), asked
+#: once at setup so the weekly brief never lands in the factory's
+#: ``missing-essentials`` loop. Offer / audience / action / budget never get
+#: a default value here -- a blank field means the factory asks for it.
 STYLE_FIELDS = ("enabled", "look", "music", "voice", "length",
-                "cta_text", "cta_link", "updated_at")
+                "cta_text", "cta_link", "offer", "audience", "action",
+                "budget_minor", "budget_currency", "updated_at")
+
+#: The five fields the weekly brief must carry (manual C4 step 4).
+BRIEF_ESSENTIALS = ("offer", "audience", "action", "budget_minor",
+                    "budget_currency")
+
+#: Fill-ins for the five essentials when a pre-existing style record predates
+#: them: blank / zero only, never an invented offer, audience or budget.
+ESSENTIAL_DEFAULTS = {
+    "offer": "",
+    "audience": "",
+    "action": "",
+    "budget_minor": 0,
+    "budget_currency": "",
+}
 
 #: Menu order carries the default first, exactly as plan 4.1 prints it.
 LOOKS = (
@@ -85,6 +115,13 @@ VOICES = (
 #: Plan 6.15: the planner offers 60 (default) and 90 (optional), nothing else.
 LENGTHS = (60, 90)
 DEFAULT_LENGTH = 60
+
+#: Manual C4 step 4: the one setup ask that fills the weekly brief with offer,
+#: audience, action and a weekly budget. It is ONE question in ONE message, so
+#: Skill 75's three-question intake cap is never exceeded: asking it here
+#: REMOVES up to three questions from intake instead of adding to them.
+Q_WEEKLY_BRIEF = (
+    "What should viewers do, and what is your weekly video budget?")
 
 SOURCE = "Owner D27/D35 2026-10-07, plan 6.15"
 
@@ -183,6 +220,137 @@ def resolve_length(answer) -> int:
     return value
 
 
+#: Currency symbols and codes the plain-language budget accepts. Only these
+#: are recognised; anything else is refused by name rather than guessed.
+CURRENCY_SYMBOLS = {
+    "$": "USD", "usd": "USD", "us$": "USD",
+    "£": "GBP", "gbp": "GBP",
+    "€": "EUR", "eur": "EUR",
+    "c$": "CAD", "cad": "CAD",
+    "a$": "AUD", "aud": "AUD",
+}
+#: Every bare unit word the budget accepts, next to the symbols above.
+BUDGET_UNITS = frozenset(("usd", "gbp", "eur", "cad", "aud",
+                          "credit", "credits"))
+
+BUDGET_RE = re.compile(
+    r"^\s*(?P<sym>[$£€]|US\$|C\$|A\$|USD|GBP|EUR|CAD|AUD)?\s*"
+    r"(?P<amount>\d+(?:[.,]\d+)?)\s*"
+    r"(?P<unit>[a-zA-Z]+)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def resolve_budget(answer) -> "tuple[int, str]":
+    """Plain-language weekly budget -> ``(budget_minor, budget_currency)``.
+
+    Accepts the shapes a client actually types: ``25``, ``$25``, ``$25.00``,
+    ``25 USD``, ``25 credits``. Credits are kept as-is because Skill 74 prices
+    in credits too; the parser never converts and never invents a currency.
+    A blank answer stays blank (``0`` / ``""``) so the factory asks for it.
+    """
+    if answer is None or (isinstance(answer, str) and not answer.strip()):
+        return 0, ""
+    if isinstance(answer, bool):
+        raise InitialQuestionsError(
+            "BUDGET_UNREADABLE",
+            "weekly budget must be an amount, got %r" % (answer,))
+    if isinstance(answer, (int, float)) and not isinstance(answer, bool):
+        amount = float(answer)
+        currency = ""
+    else:
+        text = str(answer).strip()
+        m = BUDGET_RE.match(text)
+        if not m or not m.group("amount"):
+            raise InitialQuestionsError(
+                "BUDGET_UNREADABLE",
+                "weekly budget %r is not an amount (for example: $25, "
+                "25 USD, 25 credits)" % (answer,))
+        amount = float(m.group("amount").replace(",", ""))
+        sym = (m.group("sym") or "").strip()
+        unit = (m.group("unit") or "").strip()
+        if sym:
+            currency = CURRENCY_SYMBOLS.get(sym.lower(), "")
+            if not currency:
+                raise InitialQuestionsError(
+                    "BUDGET_CURRENCY_UNKNOWN",
+                    "weekly budget currency %r is not one of %s"
+                    % (sym, sorted(set(CURRENCY_SYMBOLS.values()))))
+        elif unit:
+            # A bare unit word is accepted only when it names a currency or
+            # the credit unit Skill 74 prices in -- never invented from
+            # whatever word happens to sit next to the number.
+            if unit.lower() not in BUDGET_UNITS:
+                raise InitialQuestionsError(
+                    "BUDGET_CURRENCY_UNKNOWN",
+                    "weekly budget unit %r is not one of %s"
+                    % (unit, sorted(BUDGET_UNITS)))
+            currency = unit.upper()
+        else:
+            currency = ""
+    if amount < 0:
+        raise InitialQuestionsError(
+            "BUDGET_UNREADABLE",
+            "weekly budget must not be negative; got %r" % (answer,))
+    return int(round(amount * 100)), currency
+
+
+#: A plain-language amount inside the one combined setup sentence
+#: ("... and what is your weekly video budget?  Answer: $25").
+SENTENCE_BUDGET_RE = re.compile(
+    r"(?:budget\s*(?:is|of|:)?\s*)?"
+    r"([$\u00a3\u20ac]|US\$|C\$|A\$)\s*"
+    r"(\d+(?:[.,]\d+)?)",
+    re.IGNORECASE,
+)
+
+
+def _budget_from_sentence(answer: Any) -> Optional[str]:
+    """The amount in the one combined setup answer, or None when absent.
+
+    Never guesses: a sentence with no amount yields None and the budget
+    stays blank, so Skill 75's intake asks for it instead of inventing one.
+    """
+    if not isinstance(answer, str) or not answer.strip():
+        return None
+    m = SENTENCE_BUDGET_RE.search(answer)
+    if not m:
+        return None
+    return "%s%s" % (m.group(1), m.group(2))
+
+
+def resolve_weekly_budget(answers: Dict[str, Any]) -> "tuple[int, str]":
+    """The weekly budget out of one setup answer bag.
+
+    Priority: explicit ``budget_minor`` / ``budget_currency`` (already minor
+    units), then ``budget`` / ``weekly_budget`` (parsed), then the amount
+    carried inside the one combined ``weekly_brief`` sentence. Nothing is
+    ever invented -- an absent budget stays ``0`` / ``""`` so the factory
+    asks for it.
+    """
+    if not isinstance(answers, dict):
+        return 0, ""
+    if "budget_minor" in answers or "budget_currency" in answers:
+        try:
+            minor = int(answers.get("budget_minor") or 0)
+        except (TypeError, ValueError):
+            raise InitialQuestionsError(
+                "BUDGET_UNREADABLE",
+                "budget_minor must be a whole number of minor units")
+        if minor < 0:
+            raise InitialQuestionsError(
+                "BUDGET_UNREADABLE", "budget_minor must not be negative")
+        return minor, str(answers.get("budget_currency") or "").strip()
+    raw = answers.get("budget")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raw = answers.get("weekly_budget")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raw = _budget_from_sentence(answers.get("weekly_brief"))
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return 0, ""
+    return resolve_budget(raw)
+
+
 def build_block(kie_active: bool, weekly_action_link: str = "") -> Dict[str, Any]:
     """The one drama-song setup block, defaults pre-selected (plan 6.15)."""
     link = str(weekly_action_link or "").strip()
@@ -241,6 +409,14 @@ def build_block(kie_active: bool, weekly_action_link: str = "") -> Dict[str, Any
                 "required": True,
                 "cadence": "once",
             },
+            {
+                "id": "weekly_brief",
+                "prompt": Q_WEEKLY_BRIEF,
+                "type": "text",
+                "default": None,
+                "cadence": "once",
+                "fills": list(BRIEF_ESSENTIALS),
+            },
         ],
     }
 
@@ -271,6 +447,15 @@ def resolve_style(answers: Optional[Dict[str, Any]] = None,
             "action link")
     cta_text = str(answers.get("cta_text") or "").strip() or cta_link
 
+    # Manual C4 step 4: the essentials the weekly brief must carry. Offer,
+    # audience and action are taken only from their own keys -- a combined
+    # answer is never split into an invented offer or action. The budget is
+    # the one value read out of the combined sentence.
+    offer = str(answers.get("offer") or "").strip()
+    audience = str(answers.get("audience") or "").strip()
+    action = str(answers.get("action") or "").strip()
+    budget_minor, budget_currency = resolve_weekly_budget(answers)
+
     stamp = now or datetime.now(timezone.utc)
     updated = stamp.astimezone(timezone.utc).replace(microsecond=0)
     updated = updated.isoformat().replace("+00:00", "Z")
@@ -286,6 +471,11 @@ def resolve_style(answers: Optional[Dict[str, Any]] = None,
         "length": resolve_length(answers.get("length")),
         "cta_text": cta_text,
         "cta_link": cta_link,
+        "offer": offer,
+        "audience": audience,
+        "action": action,
+        "budget_minor": budget_minor,
+        "budget_currency": budget_currency,
         "updated_at": updated,
     }
 
@@ -317,7 +507,12 @@ def save_style(style: Dict[str, Any], path: str = DEFAULT_STYLE_PATH) -> str:
 
 
 def load_style(path: str = DEFAULT_STYLE_PATH) -> Optional[Dict[str, Any]]:
-    """The stored record, or None when there is none yet / it is unreadable."""
+    """The stored record, or None when there is none yet / it is unreadable.
+
+    A record written before the weekly essentials existed loads with those
+    five fields blank (``0`` / ``""``) rather than being rejected: the
+    factory then asks for them instead of the planner inventing any.
+    """
     try:
         with open(path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
@@ -325,9 +520,17 @@ def load_style(path: str = DEFAULT_STYLE_PATH) -> Optional[Dict[str, Any]]:
         return None
     if not isinstance(data, dict):
         return None
-    if any(field not in data for field in STYLE_FIELDS):
+    required = ("enabled", "look", "music", "voice", "length",
+                "cta_text", "cta_link", "updated_at")
+    if any(field not in data for field in required):
         return None
-    return {field: data[field] for field in STYLE_FIELDS}
+    out = {}
+    for field in STYLE_FIELDS:
+        if field in data:
+            out[field] = data[field]
+        else:
+            out[field] = ESSENTIAL_DEFAULTS.get(field)
+    return out
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -344,6 +547,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--length", default=None)
     parser.add_argument("--cta-text", default=None)
     parser.add_argument("--cta-link", default=None)
+    parser.add_argument("--offer", default=None,
+                        help="what the weekly video promotes (offer)")
+    parser.add_argument("--audience", default=None,
+                        help="who the weekly video is for")
+    parser.add_argument("--action", default=None,
+                        help="what viewers should do")
+    parser.add_argument("--weekly-brief", default=None,
+                        help="the one combined setup answer: what viewers do "
+                             "and the weekly video budget")
+    parser.add_argument("--budget", default=None,
+                        help="weekly video budget, for example: $25")
     parser.add_argument("--path", default=DEFAULT_STYLE_PATH,
                         help="style record path")
     parser.add_argument("--block", action="store_true",
@@ -365,6 +579,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         answers["cta_text"] = args.cta_text
     if args.cta_link is not None:
         answers["cta_link"] = args.cta_link
+    for key in ("offer", "audience", "action", "weekly_brief", "budget"):
+        value = getattr(args, key)
+        if value is not None:
+            answers[key] = value
     try:
         style = resolve_style(answers, kie_active=args.kie_active,
                               weekly_action_link=args.action_link)

@@ -12,7 +12,7 @@
   "starter_rows_rule": "Starter rows MUST be EMPTY of any brand name, campaign, publication claim (published/scheduled statuses) or progress. A starter row may carry ONLY help text explicitly marked as help. Legacy template content (old campaign rows with Complete/Scheduled/Published statuses) is template starter content and migration blanks it; legitimate client rows/notes are preserved.",
   "tabs": {
     "Weekly Overview": {
-      "purpose": "Summary derived from the Posts table; legacy 20-column client-facing layout retained.",
+      "purpose": "Summary derived from the Posts table; legacy 20-column client-facing layout retained at A-T, technical key at U, drama-song columns 1.3.0 adds at V-Z.",
       "frozen_headings_row": 1,
       "frozen_columns": 0,
       "headings": [
@@ -36,16 +36,18 @@
         "Scheduled",
         "Overall",
         "Notes",
-        "Drama Style Chosen",
-        "Drama Status",
-        "Drama KIE Cost",
-        "Drama Video Link",
-        "Drama Channels Posted"
+        "cycle_id",
+        "Drama Song Style",
+        "Drama Song Status",
+        "KIE Cost (cents)",
+        "Drama Song Video Link",
+        "Drama Song Channels Posted"
       ],
       "headings_unique": true,
       "status_columns": [
         "QC",
-        "Overall"
+        "Overall",
+        "Drama Song Status"
       ],
       "wrap_text": true
     },
@@ -223,5 +225,61 @@
   "identity": {
     "schema_version": "1.3.0",
     "migrated_from": "1.2.0"
+  },
+  "drama_song": {
+    "introduced_in": "1.3.0",
+    "tab": "Weekly Overview",
+    "purpose": "1.3.0 — the weekly drama-song ad (Owner D27 / D35, plan 6.15) is recorded on the same summary row it is produced for: which style was chosen, whether the week produced one, what Skill 74/75 spent, where the video lives and which channels took it.",
+    "technical_column": {
+      "heading": "cycle_id",
+      "index": 20,
+      "column": "U",
+      "note": "Pre-1.3.0 provisioner column, kept at the same index so the row-append upsert key at column U never moves. It sits in this contract so a heading rewrite in contract order reproduces the live sheet exactly."
+    },
+    "fields": [
+      {
+        "heading": "Drama Song Style",
+        "key": "drama_song_style",
+        "kind": "text",
+        "index": 21,
+        "column": "V",
+        "source": "style chosen for the week — the look / music / voice / length record Skill 35 resolves at setup and on Saturday"
+      },
+      {
+        "heading": "Drama Song Status",
+        "key": "drama_song_status",
+        "kind": "status",
+        "index": 22,
+        "column": "W",
+        "source": "status_colors.statuses dropdown, TEXT_EQ rules like every other status column; a blank cell means no drama song was produced that week"
+      },
+      {
+        "heading": "KIE Cost (cents)",
+        "key": "kie_cost_cents",
+        "kind": "integer",
+        "unit": "usd_cents",
+        "index": 23,
+        "column": "X",
+        "source": "what the week's drama song cost through Skill 74/75, whole cents, written RAW; never a currency formula"
+      },
+      {
+        "heading": "Drama Song Video Link",
+        "key": "drama_song_video_url",
+        "kind": "url",
+        "index": 24,
+        "column": "Y",
+        "source": "the produced video's link; RAW text, never an =IMAGE() formula — the Images/Videos preview columns are the only formula columns"
+      },
+      {
+        "heading": "Drama Song Channels Posted",
+        "key": "drama_song_channels",
+        "kind": "text_list",
+        "separator": ", ",
+        "index": 25,
+        "column": "Z",
+        "source": "channels the week's drama song was posted to, from the per-channel length routing plan"
+      }
+    ],
+    "kie_path": "Skill 74 is the only KIE path. This contract carries no key, host, adapter or spend call — it is a description of columns, read and written by callers."
   }
 }
