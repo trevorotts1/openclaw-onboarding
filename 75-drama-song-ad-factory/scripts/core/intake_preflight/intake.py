@@ -78,6 +78,48 @@ def _load_style_defaults():
 
 DEFAULT_LOOK, DEFAULT_MUSIC, _LOOK_MUSIC_SOURCE = _load_style_defaults()
 
+
+def _load_card_gate():
+    """card_gate (F15) when style_defaults is importable, else None."""
+    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    try:
+        import style_defaults.card_gate as CG  # noqa: PLC0415
+        return CG
+    except Exception:  # noqa: BLE001 - gate missing: fail closed in-card below
+        return None
+
+
+_CARD_GATE = _load_card_gate()
+#: F15 fail-closed copy for the (defensive) case card_gate cannot import:
+#: the gate must never open just because a module is missing.
+_CARD_UNANSWERED = "CARD_UNANSWERED"
+_CARD_NEXT_ACTION = ("Show the choice card and record all four answers "
+                     "(video style, audio style, length, video model) with "
+                     "who and when before any paid job.")
+
+def _card_refusal(run_state):
+    """F15: (reason, next_action) when the run state lacks the recorded
+    card receipt; None when the card is answered. Falls back to a local
+    fail-closed check of the four fields when card_gate is unavailable."""
+    record = None
+    if isinstance(run_state, dict):
+        record = run_state.get("card_receipt")
+        if not isinstance(record, dict):
+            inner = run_state.get("card") or run_state.get("choice_card")
+            record = inner if isinstance(inner, dict) else None
+    if _CARD_GATE is not None:
+        ok, refusal = _CARD_GATE.gate_run_state(record)
+        return (refusal["reason_code"], refusal["next_action"]) if not ok else None
+    if not isinstance(record, dict):
+        return _CARD_UNANSWERED, _CARD_NEXT_ACTION
+    for f in ("video_style", "audio_style", "length", "video_model"):
+        v = record.get(f, run_state.get(f) if isinstance(run_state, dict) else None)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return _CARD_UNANSWERED, _CARD_NEXT_ACTION
+    return None
+
 DEFAULTS = {
     "placement": "unspecified (default: 9:16 vertical)",
     "aspect_ratio": "unspecified (default: 9:16)",
@@ -302,6 +344,14 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
                            ({"action"} if "cta" in changes else set()) |
                            ({"budget_minor", "budget_currency"} if "generation_ceiling" in changes else set()))
         if not changes and not (resume_state.get("outstanding") or []):
+            card_refusal = _card_refusal(resume_state)
+            if card_refusal is not None:
+                reason, next_action = card_refusal
+                return {"outcome": "waiting", "reason_code": reason,
+                        "questions": [], "question_message": None,
+                        "summary": summary, "digest": digest, "provenance": prov,
+                        "auth_status": status, "approval_invalidated": False,
+                        "changes": [], "next_action": next_action}
             return {"outcome": "ok", "reason_code": "resume-no-changes", "questions": [],
                     "question_message": None, "summary": summary, "digest": digest,
                     "provenance": prov, "auth_status": status, "approval_invalidated": False,
@@ -322,6 +372,14 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
                     "auth_status": status, "approval_invalidated": False, "changes": changes,
                     "next_stage": resume_state.get("next_stage"),
                     "next_action": "Answer outstanding decisions; questionnaire is not rerun."}
+        card_refusal = _card_refusal(resume_state)
+        if card_refusal is not None:
+            reason, next_action = card_refusal
+            return {"outcome": "waiting", "reason_code": reason,
+                    "questions": [], "question_message": None,
+                    "summary": summary, "digest": digest, "provenance": prov,
+                    "auth_status": status, "approval_invalidated": False,
+                    "changes": changes, "next_action": next_action}
         return {"outcome": "ok", "reason_code": "resume-material-changes",
                 "questions": [], "question_message": None, "summary": summary,
                 "digest": digest, "provenance": prov, "auth_status": status,
@@ -329,8 +387,30 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
                 "next_stage": resume_state.get("next_stage"),
                 "next_action": resume_state.get("next_stage") or "Proceed to preflight."}
     qs = missing_essentials(fields, prov)
-    if not qs:
-        return {"outcome": "ok", "reason_code": "complete-brief-zero-questions",
+    if qs:
+        # The <=3 story questions are asked first; the choice card comes at
+        # the approval step, not instead of them (directive 24.3 note: the
+        # cap applies to the story questions only).
+        return {"outcome": "waiting", "reason_code": "missing-essentials",
+                "questions": qs,
+                "question_message": "\n".join(f"{i+1}. {q['question']}" for i, q in enumerate(qs)),
+                "summary": summary, "digest": digest, "provenance": prov,
+                "auth_status": status, "approval_invalidated": False,
+                "changes": [],
+                "next_action": ("Answer the bundled questions in one reply; "
+                                "nothing else is asked.")}
+    # F15: a complete brief (zero questions) is not a launch -- the choice
+    # card must still be shown and its four answers recorded before any
+    # paid job, whichever entry path filled the brief.
+    card_refusal = _card_refusal(resume_state)
+    if card_refusal is not None:
+        reason, next_action = card_refusal
+        return {"outcome": "waiting", "reason_code": reason,
+                "questions": [], "question_message": None, "summary": summary,
+                "digest": digest, "provenance": prov, "auth_status": status,
+                "approval_invalidated": False, "changes": [],
+                "next_action": next_action}
+    return {"outcome": "ok", "reason_code": "complete-brief-zero-questions",
                 "questions": [], "question_message": None, "summary": summary,
                 "digest": digest, "provenance": prov, "auth_status": status,
                 "approval_invalidated": False, "changes": [],

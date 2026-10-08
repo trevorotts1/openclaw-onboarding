@@ -208,11 +208,20 @@ message, and the options are presented as ONE choice card with every default
 pre-selected, so a client can approve with a single click. On resume the
 card shows only what changed.
 
+**F15 gate (Critical, owner order 2026-10-08): no run starts any paid job
+until the choice card is shown and its four answers - video style, audio
+style, length, video model - are recorded.** A brief pre-fills the
+RECOMMENDED picks but never skips the card; direct launches, Social Media
+Planner runs and operator/agent brief-launched runs all answer the same
+card. The answers and the time answered go into the receipt
+(`core/style_defaults/card_gate.py`; intake and preflight refuse with
+`CARD_UNANSWERED` until the record exists).
+
 **The card, in order:**
 
 | Row | Values | Default |
 |---|---|---|
-| Length | 60 seconds, 90 seconds, 3 minutes, 5 minutes, 10-minute long version | from the brief, else 60 seconds |
+| Length | 60 seconds, 90 seconds, 2 minutes, 3 minutes, 5 minutes, 10-minute long version | brief pre-fills the RECOMMENDED pick, else 60 seconds - the card still shows and the answers still record |
 | Shape | 9:16, 16:9, both | 9:16 |
 | Style | Lifelike 3D, 2D Hand-Painted, Sketch to Life, Canvas to Life, Canvas to 3D | Lifelike 3D |
 | Music | Soul Ballad, R&B Flow, Soul Rise | Soul Ballad |
@@ -220,8 +229,9 @@ card shows only what changed.
 | Clips | 60-second and 90-second clips | offered for the 5-minute and 10-minute lengths only |
 | Video model | MiniMax H3 768P (RECOMMENDED) and the full APPROVED list | MiniMax H3 at 768P |
 
-- **Lengths** 60 s / 90 s / 3 min / 5 min / **10-minute long version**;
-  each is its own song and timing map, never a cut-down.
+- **Lengths** 60 s / 90 s / **2 minutes (new, added by F15)** / 3 min /
+  5 min / **10-minute long version**; each is its own song and timing map,
+  never a cut-down.
 - **Shapes** 9:16, 16:9 or both, each generated natively - never a squash
   or crop of the other. "Both shapes" shows its own price before approval.
 - **Clips:** automatic 60- or 90-second clips are offered **only** for the

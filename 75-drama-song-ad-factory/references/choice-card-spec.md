@@ -32,7 +32,8 @@ Both modes end at the same approval card.
 
 ```text
 Your drama song ad
-  Length:       60 seconds   (90 seconds, 3 minutes, 5 minutes, 10-minute long version)
+  Length:       60 seconds   (90 seconds, 2 minutes, 3 minutes, 5 minutes,
+                10-minute long version)
   Shape:        9:16 vertical (16:9 widescreen, or both)
   Style:        Lifelike 3D (default) / 2D Hand-Painted / Sketch to Life
                 / Canvas to Life / Canvas to 3D
@@ -48,6 +49,9 @@ Your drama song ad
   [Approve]   [Change options]
 ```
 
+Directive 24.3 note (owner order 2026-10-08): the card is one step with
+four picks, so the three-question cap applies to the story questions only.
+
 `[Approve]` is one click. `[Change options]` reopens the same card with the
 previous selections kept.
 
@@ -55,9 +59,12 @@ previous selections kept.
 
 ### 3.1 Length
 
-Offered values, in order: **60 seconds, 90 seconds, 3 minutes, 5 minutes,
-10-minute long version** (decision 32). Default comes from the brief; if the
-brief gives none, 60 seconds.
+Offered values, in order: **60 seconds, 90 seconds, 2 minutes (new, added
+by F15, owner order 2026-10-08), 3 minutes, 5 minutes, 10-minute long
+version** (decision 32). Default comes from the brief; if the brief gives
+none, 60 seconds. A brief pre-fills the RECOMMENDED picks but never skips
+the card (F15): the card still shows and the answers still record before
+ANY paid job.
 
 Each length is its own song and timing map, never a cut-down of a longer one.
 Shot count is computed from the chosen model's maximum shot length; it is
