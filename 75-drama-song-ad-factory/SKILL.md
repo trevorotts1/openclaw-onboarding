@@ -107,6 +107,16 @@ reserved/submitted/unknown/reconciled protocol, and never auto-resubmits an
 uncertain outcome. Always show the client the sentence from
 `references/client-messages.md`, never the reason code.
 
+- **All ready KIE clips go out at once (Part F F5):** once reference images
+  and keyframes exist, EVERY ready clip is submitted together in one pass —
+  no "test batch first" unless the owner orders it. Stage order stays
+  reference images → keyframes → clips; the clips stage is the single
+  all-ready pass. `core/kie_dispatch/kie_dispatch.py::submit_all_ready(jobs,
+  max_concurrency=None)` runs it and the receipt carries
+  `max_at_once = len(submitted)` (or the provider cap, named in
+  `capped_by`, when that binds). Never submit clips in dribbles or wait for
+  one clip before sending the next.
+
 ## Shared canonical core (read, never duplicate)
 
 Core modules live in `scripts/core/` (packaged copies of the canonical
