@@ -67,6 +67,9 @@ socket.socket = _NoNetwork                      # noqa: A001
 # Plan 6.15, transcribed from the owner plan -- never read back from the
 # module under test, so a gutted module cannot satisfy its own test.
 PLAN_WEEKLY_Q = "Do you want a drama song video every week?"
+# manual C4 step 4, transcribed -- never read back from the module.
+PLAN_WEEKLY_BRIEF = (
+    "What should viewers do, and what is your weekly video budget?")
 PLAN_DEFAULTS = ("Lifelike 3D", "Soul Ballad", "All Suno", "60")
 FIXED_NOW = datetime(2026, 10, 7, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -78,8 +81,21 @@ class BlockShapeTests(unittest.TestCase):
         self.assertEqual(block["source"], Q.SOURCE)
         prompts = [q["prompt"] for q in block["questions"]]
         self.assertIn(PLAN_WEEKLY_Q, prompts)
-        # exactly six questions: weekly + look + music + voice + length + cta
-        self.assertEqual(len(block["questions"]), 6)
+        # manual C4 step 4: ONE combined ask fills the weekly brief, so the
+        # factory's three-question intake cap is never reached from setup.
+        self.assertIn(PLAN_WEEKLY_BRIEF, prompts)
+        # weekly + look + music + voice + length + cta + weekly_brief
+        self.assertEqual(len(block["questions"]), 7)
+        combined = [q for q in block["questions"]
+                    if q["id"] == "weekly_brief"][0]
+        self.assertEqual(combined["prompt"], PLAN_WEEKLY_BRIEF)
+        self.assertEqual(Q.Q_WEEKLY_BRIEF, PLAN_WEEKLY_BRIEF)
+        self.assertEqual(combined["cadence"], "once")
+        # one question carries the whole brief: no second budget ask here.
+        self.assertEqual(
+            len([q for q in block["questions"]
+                 if q["id"] in ("weekly_brief", "budget", "offer", "audience")]),
+            1)
 
     def test_weekly_default_yes_only_when_kie_active(self):
         self.assertEqual(Q.default_weekly(True), "yes")
@@ -127,6 +143,12 @@ class ResolveTests(unittest.TestCase):
             "length": 60,
             "cta_text": self.LINK,
             "cta_link": self.LINK,
+            # manual C4 step 4: blank, never an invented offer / budget.
+            "offer": "",
+            "audience": "",
+            "action": "",
+            "budget_minor": 0,
+            "budget_currency": "",
             "updated_at": "2026-10-07T12:00:00Z",
         })
 
@@ -219,7 +241,10 @@ class ResolveTests(unittest.TestCase):
         style = Q.resolve_style({}, kie_active=True,
                                 weekly_action_link=self.LINK, now=FIXED_NOW)
         self.assertEqual(tuple(style), Q.STYLE_FIELDS)
-        self.assertEqual(len(Q.STYLE_FIELDS), 8)
+        # plan 6.15's eight + the five weekly essentials (manual C4 step 4)
+        self.assertEqual(len(Q.STYLE_FIELDS), 13)
+        for field in Q.BRIEF_ESSENTIALS:
+            self.assertIn(field, Q.STYLE_FIELDS)
 
 
 class PersistenceTests(unittest.TestCase):
@@ -341,6 +366,94 @@ class HygieneTests(unittest.TestCase):
                      "load_style", "InitialQuestionsError", "STYLE_FIELDS"):
             self.assertIn(name, PKG.__all__)
             self.assertTrue(hasattr(PKG, name), name)
+
+
+class WeeklyEssentialsTests(unittest.TestCase):
+    """Manual C4 step 4: the setup answer fills the weekly brief."""
+
+    LINK = "https://book.example.test/weekly"
+
+    def test_combined_sentence_fills_the_weekly_budget(self):
+        style = Q.resolve_style(
+            {"weekly_brief": "Book the call, and my weekly video budget is $25"},
+            kie_active=True, weekly_action_link=self.LINK, now=FIXED_NOW)
+        self.assertEqual(style["budget_minor"], 2500)
+        self.assertEqual(style["budget_currency"], "USD")
+
+    def test_budget_shapes_a_client_actually_types(self):
+        self.assertEqual(Q.resolve_budget("$25"), (2500, "USD"))
+        self.assertEqual(Q.resolve_budget("25 USD"), (2500, "USD"))
+        self.assertEqual(Q.resolve_budget("25.50"), (2550, ""))
+        self.assertEqual(Q.resolve_budget("500 credits"), (50000, "CREDITS"))
+        self.assertEqual(Q.resolve_budget("\u00a330"), (3000, "GBP"))
+        self.assertEqual(Q.resolve_budget(None), (0, ""))
+        self.assertEqual(Q.resolve_budget("   "), (0, ""))
+
+    def test_budget_refuses_anything_it_cannot_read(self):
+        for bad in ("soon", "$", "25 bitcoins", -5):
+            with self.assertRaises(Q.InitialQuestionsError) as ctx:
+                Q.resolve_budget(bad)
+            self.assertIn(ctx.exception.code,
+                          ("BUDGET_UNREADABLE", "BUDGET_CURRENCY_UNKNOWN"),
+                          "%r -> %s" % (bad, ctx.exception.code))
+
+    def test_essentials_land_in_the_record_blank_when_not_answered(self):
+        style = Q.resolve_style({}, kie_active=True,
+                                weekly_action_link=self.LINK, now=FIXED_NOW)
+        for field in Q.BRIEF_ESSENTIALS:
+            self.assertIn(field, style)
+        self.assertEqual(style["offer"], "")
+        self.assertEqual(style["audience"], "")
+        self.assertEqual(style["action"], "")
+        self.assertEqual(style["budget_minor"], 0)
+        self.assertEqual(style["budget_currency"], "")
+
+    def test_explicit_essentials_win_and_are_never_invented(self):
+        style = Q.resolve_style(
+            {"offer": "The weekly planner", "audience": "Solo founders",
+             "action": "Book a call", "budget_minor": 999,
+             "budget_currency": "USD"},
+            kie_active=True, weekly_action_link=self.LINK, now=FIXED_NOW)
+        self.assertEqual(style["offer"], "The weekly planner")
+        self.assertEqual(style["audience"], "Solo founders")
+        self.assertEqual(style["action"], "Book a call")
+        self.assertEqual(style["budget_minor"], 999)
+        self.assertEqual(style["budget_currency"], "USD")
+
+    def test_combined_sentence_never_invents_offer_or_action(self):
+        style = Q.resolve_style(
+            {"weekly_brief": "Whatever you like, budget $10"},
+            kie_active=True, weekly_action_link=self.LINK, now=FIXED_NOW)
+        self.assertEqual(style["budget_minor"], 1000)
+        self.assertEqual(style["offer"], "")
+        self.assertEqual(style["audience"], "")
+        self.assertEqual(style["action"], "")
+
+    def test_a_pre_essentials_record_loads_with_them_blank(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "drama-song-style.json")
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump({"enabled": True, "look": "Lifelike 3D",
+                           "music": "Soul Ballad", "voice": "All Suno",
+                           "length": 60, "cta_text": "Book",
+                           "cta_link": self.LINK,
+                           "updated_at": "2026-10-07T12:00:00Z"}, handle)
+            loaded = Q.load_style(path)
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded["budget_minor"], 0)
+            self.assertEqual(loaded["offer"], "")
+            self.assertEqual(tuple(loaded), Q.STYLE_FIELDS)
+
+    def test_a_saved_record_round_trips_every_essential(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "drama-song-style.json")
+            style = Q.resolve_style(
+                {"offer": "Guide", "audience": "Owners",
+                 "action": "Download", "budget_minor": 1500,
+                 "budget_currency": "USD"},
+                kie_active=True, weekly_action_link=self.LINK, now=FIXED_NOW)
+            Q.save_style(style, path)
+            self.assertEqual(Q.load_style(path), style)
 
 
 if __name__ == "__main__":
