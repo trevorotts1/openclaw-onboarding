@@ -51,10 +51,13 @@ EXIT = {"ok": 0, "unavailable": 4, "error": 1}
 
 
 # Storyboard image plan (Part I, unit I3). Per main character: a small
-# reference set (3 angles + 3 expressions); then one keyframe per shot per
+# reference set (3 angles + 3 expressions + 1 lip-sync close-up); then one keyframe per shot per
 # shape before any video is made. Same image model as the keyframes.
 REFERENCE_ANGLES = ("front", "three-quarter", "side")
 REFERENCE_EXPRESSIONS = ("neutral", "sad-tired", "happy-relieved")
+# Owner order 2026-10-08: one LIP-SYNC CLOSE-UP per speaking/singing character,
+# 9:16 front-facing head-and-shoulders, mouth clear (lip_gate.check_reference_set).
+LIPSYNC_CLOSEUP = "lipsync-closeup"
 MAX_MAIN_CHARACTERS = 6
 
 
@@ -67,6 +70,8 @@ def image_plan(shots, shapes, characters, image_model):
             for c in characters for a in REFERENCE_ANGLES]
     refs += [{"character": c, "kind": "expression", "view": e}
              for c in characters for e in REFERENCE_EXPRESSIONS]
+    refs += [{"character": c, "kind": "lipsync", "view": LIPSYNC_CLOSEUP}
+             for c in characters]
     keys = [{"shot": n, "shape": sh} for sh in shapes for n in range(1, shots + 1)]
     return {"image_model": image_model, "characters": list(characters),
             "reference_set": refs, "keyframes": keys,
