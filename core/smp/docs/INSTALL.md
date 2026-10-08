@@ -1,0 +1,674 @@
+# Social Media Planner (Skill 35) — Installation Guide
+
+> **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
+
+
+**Skill version:** v2.1.0 (canonical env-var migration + MCP-first routing + plan 6.15 weekly drama-song setup)
+
+---
+
+## Mandatory pre-install discipline contract
+
+Before you touch anything, read **`INSTALL-CONTRACT.md`** at the root of this onboarding repo. It binds you to:
+- Read EVERY .md file in this skill folder before executing any step
+- Follow INSTALL.md step order verbatim — no skipping, no reordering, no improvising
+- Pass QC.md with score 8.5/10+ or LOOP back and fix (max 5 loops, then escalate)
+- Never use `--force`, `--break-system-packages`, `--no-verify`, model substitution, or step invention
+- Sub-agents NEVER call `openclaw gateway restart` — that's master-orchestrator only, and only when `openclaw subagents list` is empty
+
+If you have not read the contract, STOP and read it now.
+
+---
+
+## Prerequisites
+
+### Required Skills (install these BEFORE Skill 35)
+
+| Skill | Why it's needed |
+|-------|---|
+| **01 — Teach Yourself Protocol** | Required by INSTALL-CONTRACT.md. Governs how you store knowledge from this skill. |
+| **02 — Back Yourself Up Protocol** | Required before any config change for this skill. |
+| **22 — Book-to-Persona** | Content uses persona governance (5-layer alignment). Without it, content defaults to soul.md tone only. |
+| **31 — Upgraded Memory System** | Weekly content logs go into memory-core. Without it, logs land in MEMORY.md directly. |
+| **07 KIE Setup, 66 KIE Image, 67 KIE Video, 74 KIE Live Adapter** | Image and video generation. Images are GPT Image 2.5 Sunburst through Skill 66 policy; every paid job runs the Skill 74 chain (playbook.md Section 8c); video models are picked by Skill 67. The client's own `KIE_API_KEY` is required; shared rules are in `07-kie-setup/references/kie-common-rules.md`. |
+| **36 — GHL MCP Setup** | **STRONGLY RECOMMENDED.** When installed, ALL GHL operations in this skill route through MCPs first (Tier 1 → Tier 2 → fall to raw API as last resort). Without skill 36, this skill falls back to direct GHL Social Planner API. |
+| **30 — Fish Audio API Reference** | OPTIONAL. Required only if the client wants podcast episodes. If absent, podcast production is skipped and other content continues. |
+
+**Auto-check the prerequisites:**
+```bash
+# Required prerequisites — Skill 35 install BLOCKS if any of these are missing.
+for skill in 01-teach-yourself-protocol 02-back-yourself-up-protocol 22-book-to-persona-coaching-leadership-system 31-upgraded-memory-system; do
+  if [ -d "$HOME/.openclaw/skills/$skill" ]; then
+    echo "  ✓ $skill installed (required)"
+  else
+    echo "  ✗ $skill MISSING (required — install before continuing)"
+  fi
+done
+
+# Optional prerequisites — Skill 35 still installs without these. Missing = info, not error.
+for skill in 36-ghl-mcp-setup 30-fish-audio-api-reference; do
+  if [ -d "$HOME/.openclaw/skills/$skill" ]; then
+    echo "  ✓ $skill installed (optional — feature enabled)"
+  else
+    case "$skill" in
+      36-ghl-mcp-setup)              REASON="MCP-first routing disabled; falls back to direct GHL API";;
+      30-fish-audio-api-reference)   REASON="podcast voiceover production disabled; all other features run normally";;
+    esac
+    echo "  ⓘ $skill not installed (optional — $REASON)"
+  fi
+done
+```
+
+> **Skill 30 (Fish Audio) is OPTIONAL.** If it is not installed, Skill 35 still installs and runs. The podcast production step (`Phase 2 → Audio Generator + Podcast Publisher`) is skipped gracefully and Skill 35 writes `PODCAST_DEFERRED=true` to MEMORY.md so QC, the weekly heartbeat, and downstream agents all know the skip is intentional, not a failure. If Fish Audio is installed later, edit MEMORY.md to remove `PODCAST_DEFERRED` and the next weekly run will re-enable the podcast pipeline.
+
+---
+
+## Required credentials — CANONICAL paths and env-var names
+
+⚠️ **This skill uses the same canonical credential paths as Skill 05 and Skill 36. DO NOT invent new variable names. DO NOT use deprecated paths.**
+
+### Canonical storage locations
+- **macOS:** `~/.openclaw/secrets/.env`
+- **VPS (Hostinger Docker):** `/data/.openclaw/secrets/.env` — resolve from the presence of `/data/.openclaw`; `~/.openclaw/secrets/.env` only equals this when `$HOME=/data` inside the container, so do NOT assume `~`.
+- **Secondary mirror:** `openclaw.json` `env.vars` (gateway reads here at runtime)
+
+### Required env-var names (DO NOT rename — Skill 36 and Skill 05 use these)
+
+| Conceptual value | Canonical env-var name | Format |
+|---|---|---|
+| GoHighLevel Location Private Integration Token | **`GOHIGHLEVEL_API_KEY`** (legacy name — its value IS a PIT, despite the "_API_KEY" suffix) | `pit-xxxxxxxx-xxxx-...` |
+| GoHighLevel Location ID | **`GOHIGHLEVEL_LOCATION_ID`** | 22-char alphanumeric |
+| kie.ai API key | `KIE_API_KEY` | provider-specific |
+| Fish Audio API key (OPTIONAL) | `FISH_AUDIO_API_KEY` | provider-specific |
+| Fish Audio Voice ID (OPTIONAL) | `FISH_AUDIO_VOICE_ID` | string |
+| Podbean Channel ID (OPTIONAL) | `PODBEAN_PODCAST_ID` | provider-specific |
+
+⛔ **DEPRECATED names you may see in older skill docs — DO NOT use:** `GHL_PRIVATE_TOKEN`, `GHL_API_KEY` (Skill 36 era reusable but Skill 35 uses `GOHIGHLEVEL_API_KEY` now), `GHL_LOCATION_ID` (use `GOHIGHLEVEL_LOCATION_ID`). If you see these in `secrets/.env`, the auto-search step below will detect both old and new and surface a migration note.
+
+### Required GHL PIT scopes
+
+The Private Integration Token must have these scopes (matches Skill 36's recommended set since this skill cross-uses MCP tools):
+
+- `contacts.readonly` + `contacts.write`
+- `conversations.readonly` + `conversations.write`
+- `opportunities.readonly` + `opportunities.write`
+- `calendars.readonly` + `calendars.write`
+- `locations.readonly` + `locations.write`
+- `workflows.readonly`
+- `blogs.readonly` + `blogs.write`
+- `users.readonly`
+- `custom_objects.readonly` + `custom_objects.write`
+- `invoices.readonly` + `invoices.write`
+- `payments.readonly`
+- `products.readonly` + `products.write`
+- **`medias.write`** (REQUIRED for this skill — media uploads to GHL CDN)
+- **`social-media-posting.readonly` + `social-media-posting.write`** (REQUIRED for this skill)
+
+⚠️ If the PIT lacks any required scope, the install will surface a specific 403 error from GHL. DO NOT "auto-fix" by trying a different env var — STOP and ask the client to add the missing scope in GHL Settings → Integrations → Private Integrations.
+
+### Required software
+
+```bash
+ffmpeg -version | head -1     # must be ≥4.0
+# ImageMagick 7 ships the `magick` command; ImageMagick 6 ships `convert`. Accept either.
+( command -v magick >/dev/null && magick -version || convert -version ) | head -1
+python3 --version             # ≥3.8
+```
+
+If any are missing: `brew install ffmpeg imagemagick python3` (Mac) / `sudo apt install ffmpeg imagemagick python3` (VPS).
+
+---
+
+## Installation Steps (follow IN ORDER — no skipping)
+
+### Step 0: Confirm contract loaded + read all 5 files
+
+Before any system change:
+1. Verify INSTALL-CONTRACT.md was read this session (the cron orchestrator session, or a fresh `/new` session if this is a manual install)
+2. Read these 5 files in this skill folder in this exact order:
+   - `SKILL.md` — overview + 15+6 agent model
+   - `INSTALL.md` — this file
+   - `CORE_UPDATES.md` — what to add to client core files
+   - `QC.md` — quality control (with new 0–10 rubric in v2.0.0)
+   - `references/playbook.md` — the production playbook
+
+Do NOT proceed until all 5 are read.
+
+### Step 1: Canonical Mac paths
+
+```bash
+SECRETS_ENV=$HOME/.openclaw/secrets/.env
+WORKSPACE=$HOME/clawd                # most existing Mac clients
+[ ! -d "$WORKSPACE" ] && WORKSPACE=$HOME/.openclaw/workspace   # fresh OpenClaw default
+```
+
+### Step 2: Search ALL canonical credential locations before asking
+
+```bash
+# Search canonical first, then legacy locations
+for FILE in "$SECRETS_ENV" \
+            "$HOME/.openclaw/secrets/.env" \
+            "~/.openclaw/secrets/.env" \
+            "$HOME/clawd/secrets/.env" \
+            "$HOME/.env"; do
+  [ -f "$FILE" ] && grep -E "^(GOHIGHLEVEL_API_KEY|GOHIGHLEVEL_LOCATION_ID|KIE_API_KEY|FISH_AUDIO_API_KEY|FISH_AUDIO_VOICE_ID|PODBEAN_PODCAST_ID)=" "$FILE" 2>/dev/null
+done
+
+# Also check openclaw.json env.vars
+python3 -c "
+import json
+for path in ['$HOME/.openclaw/openclaw.json', '~/.openclaw/openclaw.json']:
+  try:
+    cfg=json.load(open(path))
+    ev=cfg.get('env',{}).get('vars',{})
+    for k in ['GOHIGHLEVEL_API_KEY','GOHIGHLEVEL_LOCATION_ID','KIE_API_KEY','FISH_AUDIO_API_KEY','FISH_AUDIO_VOICE_ID','PODBEAN_PODCAST_ID']:
+      v=ev.get(k,'')
+      if v: print(f'  ✓ {k}=<set, prefix {v[:8]}...>')
+  except: pass
+"
+
+# Live env
+env | grep -E "^(GOHIGHLEVEL_API_KEY|GOHIGHLEVEL_LOCATION_ID|KIE_API_KEY|FISH_AUDIO)" | sed 's/=\(.\{0,10\}\).*/=\1.../'
+```
+
+**If both `GOHIGHLEVEL_API_KEY` AND `GOHIGHLEVEL_LOCATION_ID` are found, skip to Step 4.**
+
+**If you find them under DEPRECATED names** (`GHL_PRIVATE_TOKEN`, `GHL_API_KEY`, `GHL_LOCATION_ID`): copy the values to the canonical names in `$SECRETS_ENV`. Keep the old entries too (for backwards-compat). Do not delete originals.
+
+**If they're missing from everywhere:** proceed to Step 3.
+
+### Step 3: Ask client for missing credentials (only if Step 2 failed)
+
+Send the client this exact message:
+
+> "I couldn't find your GoHighLevel credentials in your environment. I need two things:
+>
+> 1. **Location ID** — open your GHL/Convert and Flow account → Settings → Company → Locations → click the location → copy the ID at the top (22 characters).
+>
+> 2. **Private Integration Token** — Settings → Integrations → Private Integrations → Create New Private Integration → enable ALL these scopes:
+>    - contacts.readonly + write
+>    - conversations.readonly + write
+>    - opportunities.readonly + write
+>    - calendars.readonly + write
+>    - locations.readonly + write
+>    - workflows.readonly
+>    - blogs.readonly + write
+>    - users.readonly
+>    - custom_objects.readonly + write
+>    - invoices.readonly + write
+>    - payments.readonly
+>    - products.readonly + write
+>    - **medias.write**
+>    - **social-media-posting.readonly + write**
+>
+>    Save, copy the token (starts with `pit-`), and paste both values here."
+
+Store them:
+```bash
+mkdir -p "$(dirname "$SECRETS_ENV")"
+chmod 600 "$SECRETS_ENV" 2>/dev/null
+cat >> "$SECRETS_ENV" <<EOF
+GOHIGHLEVEL_API_KEY=pit-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
+GOHIGHLEVEL_LOCATION_ID=YYYYYYYYYYYYYYYYYYYYYY
+EOF
+
+openclaw config set env.vars.GOHIGHLEVEL_API_KEY "pit-XXXXXXXX-..."
+openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID "YYYYYYYYYYYYYYYYYYYYYY"
+```
+
+Never echo the PIT into chat logs.
+
+### Step 4: Detect Skill 44 (Tier 0 CLI) + Skill 36 (GHL MCPs) and configure routing
+
+```bash
+if [ -d "$HOME/.openclaw/skills/44-convert-and-flow-operator" ] || [ -d "~/.openclaw/skills/44-convert-and-flow-operator" ]; then
+  CAF_AVAILABLE="yes"
+  echo "  ✓ Skill 44 (Tier 0 caf) detected — social posting/scheduling routes through caf FIRST"
+else
+  CAF_AVAILABLE="no"
+fi
+if [ -d "$HOME/.openclaw/skills/36-ghl-mcp-setup" ] || [ -d "~/.openclaw/skills/36-ghl-mcp-setup" ]; then
+  ROUTING_MODE="mcp-first"
+  echo "  ✓ Skill 36 detected — Skill 35 will route GHL operations through MCPs (after Tier 0 caf)"
+else
+  ROUTING_MODE="direct-api"
+  echo "  ⚠ Skill 36 NOT installed — Skill 35 falls to direct GHL Social Planner API after Tier 0"
+  echo "    STRONGLY RECOMMENDED: install Skill 44 (Tier 0) and Skill 36 first for better reliability"
+fi
+```
+
+The production playbook follows the 6-tier chain (skill 36), highest applicable tier first:
+- **Social posting:** Tier 0 `caf social create-post` (if Skill 44 installed) → Tier 1 `social-media-posting_create-post` → Tier 2 `create_social_post` → direct API as last resort
+- **Blog publish:** Tier 1 `blogs_create-blog-post` → Tier 2 `create_blog_post` → direct API
+- **Media upload:** Tier 0/Tier 1 not available (no caf/official-MCP media command) → Tier 2 `upload_media_file` → direct API (`POST /medias/upload-file` — documented Tier 3 exception)
+- **Email templates:** Tier 1 `emails_create-template` → Tier 2 `create_email_template` → direct API
+
+Every GHL-data response from this skill MUST include the `[GHL tier used: N — tool_name]` disclosure header (Skill 36 protocol).
+
+### Step 5: Verify GHL access — test ONE platform connection
+
+Pick Facebook as the smoke test. Use whichever tier matches `ROUTING_MODE`.
+
+**MCP-first (Skill 36 installed):**
+```bash
+# Community MCP speaks JSON-RPC (tools/call); the account tool is get_social_accounts.
+# Confirm the exact tool name + endpoint path against your installed community MCP manifest.
+curl -sS -X POST "$GHL_COMMUNITY_MCP_URL" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_social_accounts","arguments":{}}}' \
+  | python3 -m json.tool | head -20
+```
+
+**Direct API (Skill 36 NOT installed):**
+```bash
+. "$SECRETS_ENV"
+curl -sS \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
+  -H "Version: 2021-07-28" \
+  "https://services.leadconnectorhq.com/social-media-posting/oauth/$GOHIGHLEVEL_LOCATION_ID/facebook/accounts" \
+  | python3 -m json.tool | head -20
+```
+
+Expected: JSON with at least one connected account. If you get 403, the PIT is missing a scope — go back to Step 3 and have the client add it.
+
+### Step 6: Verify FFmpeg + ImageMagick
+
+```bash
+ffmpeg -version | head -1 || { echo "FFmpeg missing — install: brew install ffmpeg"; exit 1; }
+# ImageMagick 7 ships `magick`; older installs ship `convert`. Accept either.
+( command -v magick >/dev/null && magick -version || convert -version ) | head -1 \
+  || { echo "ImageMagick missing — install: brew install imagemagick"; exit 1; }
+```
+
+### Step 7: Run First-Run Protocol (references/playbook.md Section 0)
+
+**F34 — setup is TRANSACTIONAL and RESUMABLE (run this way, not the legacy imperative path):**
+The install is driven by the durable bootstrap state machine
+(`shared-utils/social_bootstrap.py`) with ONE checkpoint file per company at
+`<openclaw-root>/data/social-bootstrap/<company_id>::<planner_kind>/state.json`.
+Steps 4/4a–4f below describe WHAT the machine does; the bootstrap runner owns
+WHEN each is safe to run. Record the verified identity FIRST, then run
+`python3 shared-utils/social_bootstrap.py bootstrap --config request.json`
+(from the skill entry) — it resumes from the last durable checkpoint after any
+crash and never provisions a second sheet: step 2 re-POSTs the SAME
+`company_id::planner_kind` provisioning key and the F15 webhook returns the
+already-created sheet (`deduped: true`). A crash AFTER Google created the file
+but BEFORE the registry step re-uses it — the file is adopted, never duplicated.
+The five steps, each saved to the durable state file before the next begins:
+
+1. `identity` — VERIFIED company_id, owner, notification destination,
+   timezone, deployment type and engine ownership recorded FIRST. Model/
+   provider preferences and a READ-ONLY GHL account-access test are collected
+   here; absent optional channels are recorded EXCLUSIONS (never silent
+   failures, never asked-for-later promises).
+2. `planner` — create-or-adopt EXACTLY ONE company planner via the
+   `social-planner-sheet-create` webhook under the F15 provisioning key.
+3. `registry` — verify the F02 sharing contract (anyone/writer), the expected
+   tabs/schema with the SAME credential class the appends use (F14), persist
+   the durable sheet registry (`unique(company_id, planner_kind)`) and
+   synchronize local references (MEMORY.md/env are copies, never ownership).
+4. `readiness` — verify worker/board/mini-app readiness receipts and register
+   ONE schedule (the durable cycle engine claims ownership; legacy triggers
+   are superseded, never both armed — F17).
+5. `deliver` — deliver the REAL planner + intake links. `ready: true` is
+   written ONLY when every prior step has a verified receipt in the state
+   file; a webhook 200 alone is NEVER treated as installation complete.
+
+Resume after any crash: re-run the same bootstrap command — completed steps
+re-verify (never re-create) and only the interrupted step re-executes.
+
+Read brand info from core files, then ask only what's missing:
+1. Read `identity.md`, `soul.md`, `memory.md`, `agents.md`, `heartbeat.md`
+2. Extract: brand name, founder, target audience, brand colors, tone, voice, products/services
+3. Ask ONLY for items not found in core files
+4. Establish the client's content Google Sheet — **ADOPT EXISTING SHEET FIRST, then create**:
+
+   **4a. Check MEMORY.md** for an existing `content_sheet_id` or `content_sheet_url`. If found, use it — never create a duplicate. Skip to step 4d.
+
+   **4a-bis. Crash-window recovery — check for a `content_sheet_pending` marker.** If MEMORY.md (or `~/.openclaw/data/skill35/.sheet-create.pending`) contains a `content_sheet_pending` entry, a previous run had already requested a sheet but crashed before recording the id. Do NOT blindly create a new sheet. Instead RECONCILE: re-POST the SAME idempotency key (step 4c) — the webhook returns the already-created sheet for that key instead of making a second one — then go to 4d. This closes the create-then-crash-then-rerun duplicate window.
+
+   **4b. Check if an existing sheet ID was provided during onboarding** (the client may have shared one during their interview). If yes, adopt it — skip to 4d.
+
+   **4c. If no existing sheet:** create via n8n webhook (no client credentials required — the webhook uses the BlackCEO Automations service account). **Write the pending marker BEFORE the POST so a crash mid-create is recoverable, and pass the stable provisioning key `company_id::planner_kind` so the webhook never makes a second sheet for the same client and planner kind:**
+   ```bash
+   # Stable per-company key (run/contracts/sheet_registry.json: unique(company_id, planner_kind)).
+   PROVISIONING_KEY="${COMPANY_ID}::${PLANNER_KIND}"   # PLANNER_KIND is e.g. "social-planner"
+   # 1) Record intent FIRST (atomic write), so a crash before 4d is detectable in 4a-bis.
+   #    This local marker is the DURABLE CLAIM — the caller owns the ledger; the
+   #    webhook itself stays stateless-safe via its Google Drive readback (F15).
+   mkdir -p ~/.openclaw/data/skill35
+   printf 'content_sheet_pending: %s\n' "$PROVISIONING_KEY" > ~/.openclaw/data/skill35/.sheet-create.pending.tmp
+   mv ~/.openclaw/data/skill35/.sheet-create.pending.tmp ~/.openclaw/data/skill35/.sheet-create.pending
+   # 2) Create (idempotent on the server: the webhook reads back Drive files by the
+   #    skill35_provisioning_key app property BEFORE copying; a replay returns the
+   #    EXISTING sheet with "deduped": true instead of making a second one).
+   RESPONSE=$(curl -s -X POST "https://main.blackceoautomations.com/webhook/social-planner-sheet-create" \
+     -H "Content-Type: application/json" \
+     -d "{\"brandName\":\"$BRAND_NAME\",\"clientEmail\":\"$CLIENT_EMAIL\",\"company_id\":\"$COMPANY_ID\",\"planner_kind\":\"$PLANNER_KIND\",\"templateSheetId\":\"$TEMPLATE_SHEET_ID\",\"timezone\":\"$TZ\"}")
+   SHEET_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['sheetId'])")
+   SHEET_URL=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['sheetUrl'])")
+   ```
+   If the webhook fails after 3 retries: use the fleet template sheet ID `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c` as a fallback reference — tell the client to go to `https://docs.google.com/spreadsheets/d/1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c/edit`, click File → Make a Copy, rename it, share the link back. (Leave the `content_sheet_pending` marker in place so the next run reconciles via the provisioning key rather than creating another sheet.)
+
+   **4d. Record `content_sheet_id` and `content_sheet_url` in MEMORY.md and skill config:**
+   ```bash
+   # Write to MEMORY.md (under ## Skill 35 — Social Media Planner section)
+   # content_sheet_id: $SHEET_ID
+   # content_sheet_url: $SHEET_URL
+
+   # Wire into openclaw config so the agent can read it at runtime
+   openclaw config set env.vars.SKILL35_CONTENT_SHEET_ID "$SHEET_ID"
+   openclaw config set env.vars.SKILL35_CONTENT_SHEET_URL "$SHEET_URL"
+
+   # Commit point: the id is now persisted — clear the pending marker LAST so the
+   # crash-window check in 4a-bis only fires when the id genuinely was not saved.
+   rm -f ~/.openclaw/data/skill35/.sheet-create.pending
+   ```
+
+   **4d-bis. Verify the planner sharing contract (F02).** The provisioned sheet MUST have Drive permission `type=anyone`, `role=writer` — anyone with the link can edit without an individual invitation. This is INTENTIONAL, not a defect: verify it during provisioning (Drive permissions readback on the new sheetId) and never migrate the planner to named-user-only sharing. This sharing setting does not change GHL account ownership or mini-app identity, and it does not authorize API access to another company's data.
+
+   **4d-ter. Registry verification with the SAME credential the appends use (F14).** BEFORE provisioning completes, sheet metadata is read with the SAME credential class the append workflow uses (`googleSheetsOAuth2Api` on the row-append path) and the expected tabs/schema are checked; the resulting sheetId is stored in the durable company registry (`run/contracts/sheet_registry.json` shape — unique per `company_id::planner_kind`). Legacy MEMORY.md/env copies are synchronized references, never competing ownership records. A 404 (nonexistent/deleted sheet ID) is an **identity repair** (`sheet_not_found`): correct the registered sheetId — the webhooks NEVER silently create a replacement sheet. A 403 is an **access repair** (`sheet_access_denied`): re-grant the operator credential access to the EXISTING sheet. Transient errors get bounded retries (3x/2s) and surface as `transient` for the caller to re-queue. Pending keyed rows replay from the F15 idempotency ledger exactly once once verified access is restored — the readback upsert updates the existing row in place and never duplicates it.
+
+   **4e. Verify the agent knows the link:**
+   After writing config, the agent MUST be able to answer "what is my social media planner link?" by reading `content_sheet_url` from MEMORY.md. Test this before proceeding.
+
+   **4f. Google Sheets write auth — TWO webhooks, TWO purposes (do NOT confuse them):**
+   - **`social-planner-sheet-create`** (`POST https://main.blackceoautomations.com/webhook/social-planner-sheet-create`): used ONCE at install time to create a new Google Sheet for the client (copies the template, sets the anyone/writer link permission). Payload: `{brandName, clientEmail, company_id, planner_kind, templateSheetId, timezone?}`; receipt: `{status, deduped, sheetId, sheetUrl, sheetName, sharedWith, provisioning_key, schema_version}`. Never call this for row logging.
+   - **`social-planner-row-append`** (`POST https://main.blackceoautomations.com/webhook/social-planner-row-append`): used on EVERY publish cycle to **upsert** one keyed row per content revision and destination account into the client sheet's **Posts** tab, then update the Weekly Overview summary. Payload (schema_version 1.1.0): `{sheetId, company_id, cycle_id, content_revision, account_id, platform, account_name, format, scheduled_local, scheduled_utc, state, qc_state, preview_url?, remote_url?, theme?, week_of?, title?, notes?}`; receipt: `{success, sheetId, posts_updatedRange, overview_updatedRange, row_key, overview_key, mode, schema_version}`. The webhook is idempotent: it reads Posts back first — an existing `row_key` (`cycle_id::content_revision::account_id`) is UPDATED in place (upsert), never duplicated. A new content revision updates only its own keyed row. **platform is written verbatim** — no generic-platform fallback into TikTok or any named column; unfamiliar platform labels get their own Posts rows.
+
+   **4f-bis. Posts table + Weekly Overview summary (F23).** The Posts tab is the normalized source of truth — one row per content revision and destination account, keyed by `row_key`. Multiple accounts on the same platform and unfamiliar platform labels all get distinct keyed rows. Weekly Overview stays a summary derived from the Posts rows (new summary rows carry the technical key `OV::<cycle_id>::<content_revision>` in column U; legacy overview rows are retained untouched). The webhook also resizes the preview columns and appended data row (real `spreadsheet.batchUpdate` `updateDimensionProperties` calls) so `=IMAGE()` thumbnails display at full size.
+
+   The agent does NOT use Google Workspace OAuth or a `client_secret.json`. Both webhooks run on the BlackCEO Automations operator n8n and use the operator's Google service account — clients need no Google credentials. **The agent itself never calls the Google Sheets API directly.** If either webhook is unavailable, log to `~/.openclaw/data/skill35/content-log.jsonl` and queue for retry. The agent NEVER responds "gws is not authenticated" or "I don't have a client_secret.json".
+
+5. Ask: "What action link should I include in social media comments this week?" → store as `SOCIAL_MEDIA_ACTION_LINK` in MEMORY.md.
+6. Ask: "How many videos per week — 0, 2, or 7?" → store as `VIDEO_PREFERENCE` in MEMORY.md.
+7. Ask: "Where should I send weekly notifications — Telegram, email, or text?" → store as `NOTIFICATION_CHANNEL` in MEMORY.md.
+8. Ask about podcast — but FIRST auto-detect Fish Audio availability:
+   ```bash
+   if [ -d "$HOME/.openclaw/skills/30-fish-audio-api-reference" ] && [ -n "${FISH_AUDIO_API_KEY:-}" ] && [ -n "${FISH_AUDIO_VOICE_ID:-}" ]; then
+     PODCAST_AVAILABLE=yes
+   else
+     PODCAST_AVAILABLE=no
+   fi
+   ```
+   - If `PODCAST_AVAILABLE=yes`: ask "Do you want podcast episodes produced? Fish Audio + Podbean are configured. (yes/no/later)" → handle per response.
+   - If `PODCAST_AVAILABLE=no`: do NOT ask. Auto-defer the podcast pipeline by appending `PODCAST_DEFERRED=true` to MEMORY.md (under a `## Skill 35 — Social Media Planner` section). Send the client this informational note:
+     > "Your social media planner is installing without podcast production. Podcasts need Fish Audio (voice) + Podbean (hosting). To add podcasts later, install Skill 30 and set `FISH_AUDIO_API_KEY` + `FISH_AUDIO_VOICE_ID` + `PODBEAN_PODCAST_ID`, then ask me to remove `PODCAST_DEFERRED` from MEMORY.md. Everything else — images, videos, blogs, carousels, emails, comments — runs normally starting this week."
+
+### Step 8: Apply CORE_UPDATES.md surgically
+
+Add the LABELED sections from CORE_UPDATES.md ONLY to:
+- `AGENTS.md` — social planner routing rules + MCP-first language
+- `TOOLS.md` — GHL Social Planner tool reference
+- `MEMORY.md` — weekly logging structure
+
+Do NOT touch IDENTITY.md, HEARTBEAT.md, USER.md, or SOUL.md from this skill.
+
+### Step 8.5: (v2.1.0) Set up the content calendar (optional, enables `weekly-batch.sh`)
+
+The cron line documented in `INSTRUCTIONS.md` (`0 9 * * 1 bash …/weekly-batch.sh`) reads `~/.openclaw/config/content-calendar.json` and runs `run-publishing-cycle.sh` once per scheduled topic. The file is **opt-in** — `weekly-batch.sh` exits 0 with an informational message if it's missing.
+
+```bash
+mkdir -p ~/.openclaw/config
+cp ~/.openclaw/skills/35-social-media-planner/scripts/content-calendar.example.json \
+   ~/.openclaw/config/content-calendar.json
+```
+
+**Schema (v1.0):**
+
+```json
+{
+  "version": "v1.0",
+  "entries": [
+    {
+      "date": "2026-05-25",
+      "topic": "...",
+      "platforms": ["linkedin", "medium", "x", "wordpress"],
+      "schedule": "auto"
+    }
+  ]
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `date` | yes | `YYYY-MM-DD` local timezone. |
+| `topic` | yes | Passed to `run-publishing-cycle.sh --topic`. |
+| `platforms` | yes | Same list `run-publishing-cycle.sh --platforms` accepts. |
+| `schedule` | no  | `"auto"`, `"now"`, or ISO 8601 timestamp. |
+
+### Step 8.6: (v2.1.0) Weekly drama-song setup (plan 6.15 — optional, fail-soft)
+
+The planner can ship **one 9:16 drama song ad per week** from the Theme of the
+Week. The asking is done by the setup block, the style change by the Saturday
+line, and the generation by `core/smp/weekly_step/` — none of it by heartbeat
+prose.
+
+1. **Answer the First-Run Protocol's drama-song block** (Skill 35 setup
+   questions, `core/smp/initial_questions/`). Defaults are pre-selected:
+   weekly **yes** (only while Skill 74 is active), **Lifelike 3D**,
+   **Soul Ballad**, **All Suno**, **60 seconds** (90 optional), weekly CTA +
+   link defaulting to the planner's own weekly action link.
+2. **Confirm the style file** was written to
+   `~/.openclaw/workspace/social-media-planner/drama-song-style.json`
+   (`enabled, look, music, voice, length, cta_text, cta_link, updated_at`,
+   `schema_version` present).
+3. **Leave the cadence to the crons.** The Monday `weekly-batch.sh` cron runs
+   the ad; the Saturday `skill35-weekly-theme` cron asks for the theme and the
+   `Drama song of the week: keep <style> or change it?` line. Do NOT write a
+   drama-song task into HEARTBEAT.md — the **FURNACE RULE** in Step 9 applies
+   to this work exactly as it does to the theme request: heartbeat prose fires
+   on every tick with no day-of-week gate.
+4. **Leave the KIE gate alone.** With Skill 74 not in active mode the weekly
+   step writes `drama-song-skipped.json`, exits 0 and tells the client media
+   generation is not switched on. That is a normal weekly outcome, not an
+   install failure, and no private KIE client may be configured as a way
+   around it.
+
+### Step 9: Register the weekly theme cron (AUTOMATED — FAIL-LOUD)
+
+> **FURNACE RULE — HARD BLOCK:** Do NOT add the Saturday theme-request task to HEARTBEAT.md. The agent reads HEARTBEAT.md on every heartbeat tick. Any recurring real-work task written there fires on every tick (potentially every 5–30 minutes) with no day-of-week gate, burning the metered model continuously. This is the proven root cause of the fleet-wide heartbeat token furnace. The correct enforcement mechanism is a hard cron.
+
+Run the bundled registration script now. It is **fail-loud** — it exits non-zero if registration fails and the install MUST NOT proceed to Step 10 until exit 0 is confirmed.
+
+```bash
+# Resolve the skill directory (handles both Mac and VPS canonical paths)
+SKILL35_DIR="${HOME}/.openclaw/skills/35-social-media-planner"
+if [ ! -d "$SKILL35_DIR" ]; then
+  SKILL35_DIR="/data/.openclaw/skills/35-social-media-planner"
+fi
+
+REGISTER_SCRIPT="${SKILL35_DIR}/scripts/register-weekly-cron.sh"
+if [ ! -f "$REGISTER_SCRIPT" ]; then
+  echo "ERROR: register-weekly-cron.sh not found at $REGISTER_SCRIPT" >&2
+  echo "Skill 35 may not be installed at the expected path. Verify skill installation." >&2
+  exit 1
+fi
+
+bash "$REGISTER_SCRIPT" || {
+  echo "HARD FAIL: register-weekly-cron.sh exited non-zero." >&2
+  echo "Skill 35 install INCOMPLETE — cron not registered. Fix the error above and re-run Step 9." >&2
+  exit 1
+}
+```
+
+The script:
+- Is idempotent — skips if a healthy `skill35-weekly-theme` main-target cron already exists.
+- Deduplicates — removes stale/erroring duplicate entries before registering a clean single entry.
+- Asserts exactly 1 entry post-registration (hard-fail if count != 1).
+- Pins the schedule to `0 8 * * 6` (Saturday 8:00 AM weekly only — furnace-safe).
+- Uses `sessionTarget=main` (isolated + channel-deliver is rejected by the gateway).
+- Marker path: `~/.openclaw/data/skill35/weekly-theme-last-run.json` (persistent across reboots; written by the cron on each fire to skip double-fires within the same ISO week).
+- Model: cheap/free (flash or free OpenRouter fallback) — NOT the metered primary pro model.
+
+**F07/F17 — forwarding adapter, not the owner (important):** the registered trigger is a
+LIGHTWEIGHT forwarding adapter. The invitation/reminder/cutoff cadence is owned by the DURABLE
+cycle service (`shared-utils/social_cycle_service.py` on ONB-only boxes; the Command Center's
+`node-cron` engine `cc-cycle-service` wherever CC is live). The trigger's message contains no
+multi-hour wait and no noon/6PM fallback — the durable service owns that timing and records it
+in the engine-ownership record (`~/.openclaw/data/social-cycle/engine-ownership.json`).
+Verify the handover after the CC side is deployed:
+
+```bash
+bash "$REGISTER_SCRIPT" --verify   # exit 0 = durable engine owns the schedule (one active owner/company)
+```
+
+Exit 5 means the CC cycle service has not claimed ownership yet (the lightweight trigger remains
+the fallback owner) — that is the expected state until the deployment step below runs.
+
+**Deployment-phase handover (disable the superseded trigger only after proving the replacement):**
+once the Command Center's `social-cycle` job is live on the box (visible in `job_liveness` and
+`social_engine_ownership` with exactly one active `cc-cycle-service` row per company), retire the
+legacy gateway trigger: `openclaw cron delete --name skill35-weekly-theme`, then re-run the verify
+above. Do NOT disable the legacy trigger before the durable engine's ownership record verifies —
+that order is what prevents a week with zero invitations. The n8n weekly-theme trigger
+(VXRfHv2UT6QbD7Sg) is likewise superseded: the export README documents the versioned-schema
+requirement, and disabling the live n8n trigger is the same deployment-phase step (prove the
+replacement first, then disable).
+
+**If the client's HEARTBEAT.md already contains the Saturday theme-request block** (from a prior install of this skill), remove it:
+
+```bash
+WORKSPACE_HEARTBEAT="${HOME}/.openclaw/workspace/HEARTBEAT.md"
+if [ -f "$WORKSPACE_HEARTBEAT" ] && grep -q "Saturday 8:00 AM" "$WORKSPACE_HEARTBEAT"; then
+  cp "$WORKSPACE_HEARTBEAT" "${WORKSPACE_HEARTBEAT}.bak-$(date +%Y%m%d%H%M%S)"
+  python3 - <<'PYEOF'
+import re, pathlib, os
+p = pathlib.Path(os.environ['HOME'] + '/.openclaw/workspace/HEARTBEAT.md')
+txt = p.read_text()
+txt = re.sub(r'###\s+Saturday 8:00 AM.*?(?=\n###|\Z)', '', txt, flags=re.DOTALL).strip() + '\n'
+p.write_text(txt)
+print("Removed ungated Saturday block from HEARTBEAT.md")
+PYEOF
+else
+  echo "No ungated Saturday block found — nothing to remove"
+fi
+```
+
+### Step 9-bis: Install the durable service contract (F21 — portable deployment health)
+
+After the weekly trigger registers, install the SERVICE layer that survives
+reboots and is verifiable on ANY supported profile (Mac launchd, Docker VPS
+systemd) — never a Mac-only proof:
+
+```bash
+SHARED_UTILS="${HOME}/.openclaw/skills/shared-utils"
+[ -d "$SHARED_UTILS" ] || SHARED_UTILS="/data/.openclaw/skills/shared-utils"
+
+# 1) Install/upgrade the durable cycle service (one SHORT advance step per
+#    tick; correct service-user HOME, canonical secret paths, CLIENT timezone):
+bash "$SHARED_UTILS/social-service.sh" --install --timezone "$TZ" \
+  --runner "$SHARED_UTILS/social_cycle_cli.py" || {
+  echo "HARD FAIL: social-service.sh install failed — fix the error above; the install MUST NOT claim completion." >&2
+  exit 1
+}
+
+# 2) Record the n8n contract version the deployment carries (the doctor reads
+#    this; stale mappings are a FAILED health check, not a warning):
+mkdir -p ~/.openclaw/data/skill35
+: "${SHEET_CREATE_WORKFLOW_ID:?Use the activated public router ID from deployment}"
+: "${ROW_APPEND_WORKFLOW_ID:?Use the activated public router ID from deployment}"
+cat > ~/.openclaw/data/skill35/n8n-mapping.json <<EOF
+{"schema_version":"1.1.0","sheet_create_workflow_id":"${SHEET_CREATE_WORKFLOW_ID}","row_append_workflow_id":"${ROW_APPEND_WORKFLOW_ID}","persisted_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+EOF
+
+# 3) Run the ONE doctor command (portable proof the install is healthy):
+python3 "$SHARED_UTILS/social-planner-doctor.py"
+```
+
+The doctor checks (each maps to a WF-owned durable record): company identity,
+active engine + scheduler registration, worker acknowledgement (a stopped
+worker is reported as a HEALTH PROBLEM — never as work progressing), last/next
+cycle, GHL credential resolution (`--live`), recorded sheet schema/registry,
+n8n contract version, unresolved retries/overdue dispatch. Exit 0 healthy /
+1 degraded / 2 unhealthy. Run it again after any restart/recovery; save the
+JSON with the install receipt. Doctor output is preflight evidence only: it does not itself prove a real GHL
+account-discovery response, live n8n Google credentials, or a successful sheet
+write. Complete the live compatibility acceptance in `config/n8n/compat/README.md`
+and verify an approved GHL post separately.
+
+The service layer sends NOTHING itself (silence doctrine): overdue states are
+surfaced by the doctor and, on boxes with the Command Center, by the
+`social-publish-dispatcher` overdue sweep through the authorized notification
+path (`notifySystem` → rescue webhook / owner chat).
+
+### Step 10: Run QC.md and require 8.5+ to pass
+
+Execute the QC.md checklist. Score against the v2.0.0 rubric. If score is **below 8.5**, loop back and fix until passing (max 5 loops, then escalate to client/Trevor).
+
+If a bundled `qc-skill35.sh` script is present in this skill folder, run it. It MUST exit 0.
+
+### Step 11: Confirm completion to client
+
+Send the client this exact summary:
+
+> ✅ Social Media Planner activated.
+>
+> • Content calendar sheet: [content_sheet_url from MEMORY.md]
+> • GHL Social Planner connected via [MCP / direct API]
+> • Finished media delivered as public links (GHL CDN — no attachment size limits)
+> • Weekly theme heartbeat scheduled (Saturdays 8 AM)
+> • Video preference: [0/2/7] per week
+> • Podcast: [enabled / deferred]
+> • Notification channel: [Telegram/email/text]
+> • QC score: [N/10]
+>
+> Pending items needing your attention: [list, or "nothing"]
+
+---
+
+## Completion Checklist
+
+- [ ] INSTALL-CONTRACT.md read this session
+- [ ] All 5 skill files read (Step 0 complete)
+- [ ] Required prerequisites verified (skills 01, 02, 22, 31 ALL installed)
+- [ ] Optional prerequisites detected and handled (Skill 30 / Fish Audio: present → podcast enabled / absent → `PODCAST_DEFERRED=true` written to MEMORY.md; Skill 36 / GHL MCP: present → MCP-first / absent → direct-api fallback)
+- [ ] Platform detected + canonical paths resolved
+- [ ] `GOHIGHLEVEL_API_KEY` present at `$SECRETS_ENV` (NOT deprecated `GHL_PRIVATE_TOKEN`)
+- [ ] `GOHIGHLEVEL_LOCATION_ID` present at `$SECRETS_ENV`
+- [ ] All required PIT scopes confirmed (smoke test returned 200 + real data, no 403s)
+- [ ] `KIE_API_KEY` present
+- [ ] `FISH_AUDIO_API_KEY` + `FISH_AUDIO_VOICE_ID` present OR `PODCAST_DEFERRED=true` in MEMORY.md (OPTIONAL — either state is acceptable, install does not block)
+- [ ] `PODBEAN_PODCAST_ID` present OR `PODCAST_DEFERRED=true` in MEMORY.md (OPTIONAL — either state is acceptable, install does not block)
+- [ ] Skill 36 routing mode detected (mcp-first or direct-api), routing rules applied
+- [ ] FFmpeg ≥4.0 working
+- [ ] ImageMagick working
+- [ ] First-Run Protocol complete (brand info, Google Sheet, action link, video preference, notifications)
+- [ ] `content_sheet_id` present in MEMORY.md and `openclaw config env.vars.SKILL35_CONTENT_SHEET_ID`
+- [ ] `content_sheet_url` present in MEMORY.md and `openclaw config env.vars.SKILL35_CONTENT_SHEET_URL`
+- [ ] Agent can answer "what is my social media planner link?" without error
+- [ ] Finished media delivery verified: upload to GHL Media Library → return CDN link → no raw Telegram file attachment for files >10 MB
+- [ ] CORE_UPDATES.md applied surgically to AGENTS.md / TOOLS.md / MEMORY.md
+- [ ] `register-weekly-cron.sh` exited 0 (Step 9 — hard fail if not)
+- [ ] QC assert: `openclaw cron list | grep -c skill35-weekly-theme` == 1 (exactly one entry, main target, `0 8 * * 6`)
+- [ ] HEARTBEAT.md does NOT contain the Saturday 8:00 AM theme-request block (ungated block removed if present)
+- [ ] Drama-song style file written to `~/.openclaw/workspace/social-media-planner/drama-song-style.json` (or the client declined the weekly ad — both are acceptable; never a HEARTBEAT.md task)
+- [ ] QC.md run with score 8.5/10+ (or loop completed)
+- [ ] `qc-skill35.sh` exit 0 (if present)
+- [ ] Client confirmation message sent
+
+---
+
+## What v2.0.0 changed (May 13, 2026)
+
+- **Replaced `GHL_PRIVATE_TOKEN` with `GOHIGHLEVEL_API_KEY`** everywhere — eliminates the "auto-fix during install" bug where the agent had to remap names every time.
+- **Migrated all credential paths** from `~/clawd/secrets/.env` (deprecated) to `~/.openclaw/secrets/.env` (Mac) / `/data/.openclaw/secrets/.env` (VPS Docker).
+- **Expanded required PIT scope list** to match the full set Skill 36 uses, plus the two social-media-specific scopes this skill needs.
+- **Added MCP-first routing detection in Step 4** — when Skill 36 is installed, this skill prefers MCP tools. Direct API only as fallback.
+- **Made the install order explicitly numbered** with Step 0 (contract check) at the top. Steps are no longer reorderable.
+- **Added 8.5/10 QC gate** — the install isn't complete until QC scores 8.5+. Loop and fix below threshold.
+- **Resolved the long-pending `PPSA` placeholder** — removed (was unused for 9 months).
+
+
+### Final reliability deployment gate (F14–F16, F22–F26, F38)
+
+Follow `config/n8n/README.md` for compiled imports, isolated acceptance and
+the compatibility compiler and migration of existing sheet ownership. Keep the
+shared URLs on the contract router: exact legacy document requests use the
+public-edit document lane, while modern identity-bearing requests use the strict
+versioned graph. Never point an upgraded client at the strict append graph before
+its verified Sheets ownership metadata and headers are ready. The create initializer is for new/private initializing
+copies only; it is not a migration tool for client content. A `formatted`
+checkpoint resumes modern sharing without erasing cells. Legacy creation always creates a fresh copy; it never searches existing documents by name/email. Reconcile execution history after an ambiguous legacy copy/append result before retrying. Treat an `error`/partial
+receipt as a visible repair requirement, never as permission to activate weekly
+work or mark a post published. Always preserve intentional anyone-link edit.

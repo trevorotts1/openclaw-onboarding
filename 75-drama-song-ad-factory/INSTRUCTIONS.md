@@ -117,11 +117,13 @@ guard that already failed.
 
 7. **Spawn department workers using current workforce rules (step 7).**
    Owning department: **video** (per
-   `23-ai-workforce-blueprint/skill-department-map.json`); primary role
-   `video-editor`, support roles `head-of-video-production` and
-   `storyboard-pre-production-specialist`. Spawn through the current
-   OpenClaw workforce/dispatch mechanism of the box - never a second,
-   private worker scheme.
+   `23-ai-workforce-blueprint/skill-department-map.json`); lead role
+   `vsl-video-sales-letter-specialist` (decision 1; owner BUILD-OUT order
+   2026-10-07), support roles `video-editor`,
+   `storyboard-pre-production-specialist` and `qc-specialist-video`. Spawn
+   through the current OpenClaw workforce/dispatch mechanism of the box -
+   never a second, private worker scheme. Pipeline SOP:
+   `23-ai-workforce-blueprint/templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md`.
 
 8. **Drive the stage manifest (step 8).** Stages run in section 22 state
    machine order: claim an eligible stage, do the authorized work,
@@ -190,3 +192,85 @@ critical identity/lyrics/offer/claim/product/CTA defect (17.8).
   credentials, authorization or QC (injection is rejected).
 - Print credential values (names only), or mint replacement keys.
 - Claim merged/published state that has not been independently verified.
+- Compute or hard-code a price; every figure on the choice card comes from
+  Skill 74 `price`.
+- Carry the superseded echo-flavoured voice name (the pre-rename spelling), or offer a lip-sync model outside the approved Kling-avatar-first order (Volcengine is dropped).
+
+## VERSION 2 OPTIONS (OWNER BUILD-OUT 2026-10-07)
+
+Shared with the 999 twin. Field rules: `references/choice-card-spec.md`.
+Human price snapshot: `references/price-menu.md`. Stage order, QC, delivery
+and PARKED handling: `SOP--drama-song-ad-pipeline.md`.
+
+**Intake.** Quick mode is the default; Concept mode is for a client with
+their own story. Directive 24.3 still caps intake at three questions in one
+message, and the options are presented as ONE choice card with every default
+pre-selected, so a client can approve with a single click. On resume the
+card shows only what changed.
+
+**The card, in order:**
+
+| Row | Values | Default |
+|---|---|---|
+| Length | 60 seconds, 90 seconds, 3 minutes, 5 minutes, 10-minute long version | from the brief, else 60 seconds |
+| Shape | 9:16, 16:9, both | 9:16 |
+| Style | Lifelike 3D, 2D Hand-Painted, Sketch to Life, Canvas to Life, Canvas to 3D | Lifelike 3D |
+| Music | Soul Ballad, R&B Flow, Soul Rise | Soul Ballad |
+| Voice | All Suno, Velvet Voiceover | All Suno |
+| Clips | 60-second and 90-second clips | offered for the 5-minute and 10-minute lengths only |
+| Video model | MiniMax H3 768P (RECOMMENDED) and the full APPROVED list | MiniMax H3 at 768P |
+
+- **Lengths** 60 s / 90 s / 3 min / 5 min / **10-minute long version**;
+  each is its own song and timing map, never a cut-down.
+- **Shapes** 9:16, 16:9 or both, each generated natively - never a squash
+  or crop of the other. "Both shapes" shows its own price before approval.
+- **Clips:** automatic 60- or 90-second clips are offered **only** for the
+  5-minute and 10-minute lengths. Cutting is free (FFmpeg edit, no new AI
+  media); the AI that picks the moments runs on the client's own AI plan.
+- **Five looks:** each look owns its style-bible block, its own switching
+  rules and its own QC. The three hybrids switch on matched poses with a
+  0.3-0.4 s dissolve, hold each style at least 3 seconds, never flicker, and
+  lock identity across styles; golden realism carries the transformation.
+  No lip-sync on sketch shots; Canvas to 3D lip-syncs only on lifelike 3D
+  close-ups.
+- **Music styles:** Soul Ballad (default), R&B Flow, Soul Rise. The song
+  brief, the Suno style prompt and the spoken/sung balance follow the choice.
+- **Voice:** All Suno (default) makes every line with Suno and plays spoken
+  lines over the music bed only - no singing-underneath layer. **Velvet
+  Voiceover** voices the spoken lines with Google text-to-speech, one
+  distinct voice per character, with the sung version of each line playing
+  softly underneath and the music bed dipped: **no echo effect, no reverb**.
+  It is the only exception to the all-Suno rule, and the option was renamed
+  from its earlier echo-flavoured spelling, which must not appear anywhere.
+- **Per-character voice packs:** no two characters share a voice, in any
+  look or music style.
+- **Lip-sync (decision 33):** selected lines only - the pain peak, the
+  product line, the call to action and the chorus hook; three to four lines,
+  about 15 to 20 seconds, listed on the approval card. Model order is
+  Kling avatar `kling/ai-avatar-standard` first (a front-facing close-up
+  image plus that character's own isolated line), InfiniTalk
+  `infinitalk/from-audio` as backup, **Volcengine dropped**. Tight
+  front-facing close-ups only. The input clip contains only the on-screen
+  speaker's line - never a narrator, never another character, never a mixed
+  vocal stem. Narrator, phone, voicemail and laptop voices may play as
+  voice-over but are never lip-synced onto a person.
+- **Speaker and pitch QC:** the person visible during a spoken line must be
+  the one speaking it, or the voice's source device; measured pitch must sit
+  in the character's gender range (roughly 85-155 Hz male, 165-255 Hz
+  female) with same-gender characters measurably different - an octave
+  error fails QC and the line is regenerated.
+- **Suno extend** is used only to hit an exact length or to repair a
+  section, never as routine billing.
+- **Unknown KIE job results** are resolved by querying KIE task status;
+  they are never left open and never blindly re-submitted.
+- **Book campaigns and batch mode (decision 34):** the cover is the product
+  image. One choice card covers the whole batch; one ad per book, each with
+  its own campaign folder, receipt, spend-ledger run and Command Center
+  deliverable. Books and authors are never mixed. The card shows the batch
+  total.
+- **Prices:** every figure on the card - video, both shapes, lip-sync
+  close-ups, voice packs, clips and the batch total - comes from Skill 74
+  `price`. Nothing here computes a rate.
+- **Command Center:** one deliverable per ad (VPS boxes), one Kanban card
+  per ad and one parent card per batch.
+

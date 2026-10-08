@@ -1,0 +1,386 @@
+---
+# CANONICAL OpenClaw skill name — this is the field OpenClaw uses to register
+# the skill, derive its slash command, and key its allowlist (docs.openclaw.ai
+# /tools/skills: "The skill's name, slash command, and allowlist key all come
+# from the `name` frontmatter field"). It MUST stay identical across Mac and VPS
+# platforms in the unified repo (trevorotts1/openclaw-onboarding, platform/mac +
+# platform/vps overlays). Canonical name: `social-media-planner`. Do NOT rename.
+name: social-media-planner
+description: Multi-agent content publishing engine that researches, creates, produces, schedules, and publishes content across every social channel the client has enabled in GHL — primary platforms include Facebook (posts + carousels + Stories), Instagram (posts + Reels + carousels + Stories), LinkedIn (posts + PDF carousels), X/Twitter, TikTok, Pinterest, and Google Business Profile, plus optional add-ons (WordPress, Medium, Substack, YouTube, email newsletter, podcast). Handles text, images, videos, carousels, comments, blog posts, podcasts, and HTML email newsletters using a 15+6 agent model.
+# `pipeline_id` is the internal identifier for the content publishing pipeline
+# run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
+# registers from it.
+pipeline_id: content-publishing-engine
+version: "3.7.0"
+author: Stefanie
+created_date: 2026-04-14
+---
+
+# Content Publishing Engine Skill
+
+## Purpose
+The Content Publishing Engine orchestrates multi-agent workflows to research, create, produce, publish, and monitor content across every social channel the client has enabled in their GHL Social Planner. It handles text posts, images, videos/Reels, carousels, comments, blog posts, podcasts, and HTML email newsletters.
+
+**Primary GHL Social Planner channels (published through GoHighLevel):**
+Facebook (feed posts + carousels + Stories/Reels), Instagram (feed posts + Reels + carousels + Stories), LinkedIn (feed posts + PDF carousels), X/Twitter, TikTok, Pinterest, Google Business Profile.
+
+The agent publishes to **every channel the client has connected inside GHL**. The exact enabled set is determined at runtime by a live GHL connected-accounts query — not by a fixed list.
+
+**Optional add-on channels (direct integrations, not required):**
+WordPress (blog), Medium (articles), Substack (newsletter), YouTube (videos), email newsletter (GHL Campaigns). These are supplementary and never block the skill if absent.
+
+**Content types produced every week:**
+- Daily social posts (7 days × all enabled platforms)
+- Thursday carousels (multi-image, platform-specific formats: LinkedIn PDF, Facebook/Instagram image-stack)
+- Short-form videos / Reels (Facebook, Instagram, TikTok, YouTube Shorts when enabled)
+- Emotionally-driven comments with the client's weekly action link (posted 1-2 min after each post)
+- Blog post (Day 7)
+- HTML email newsletter (Tuesday)
+- Podcast episode (if Fish Audio / Skill 30 is configured — gracefully skipped otherwise)
+- Weekly drama song ad — one 9:16 video cut from the Theme of the Week (Skill 75 through Skill 74, active mode only; skipped with a client-facing reason when KIE is switched off)
+
+## Key Principles
+- **15+6 Agent Model**: 15 primary agents for core execution + 6 QC (Quality Control) agents for validation.
+- **Variable-based Configuration**: All platform credentials, URLs, and settings pulled from `[from identity.md: brand name]`, `[from secrets/.env: GOHIGHLEVEL_LOCATION_ID]`, etc. NO hardcoded values.
+- **Phase-based Execution**: Research → Create → Produce → Schedule → Publish.
+- **Enabled-channels-first Publishing**: The agent ALWAYS queries the client's live GHL connected accounts before reporting scope or producing content. It publishes to EVERY connected channel — never a fixed generic list.
+- **Full Platform + Content-Type Matrix**: Primary channels (Facebook, Instagram, LinkedIn, X/Twitter, TikTok, Pinterest, Google Business Profile) + carousels, Reels, Stories, comments, blog, email newsletter, podcast. Optional add-ons (WordPress, Medium, Substack, YouTube) enabled per client.
+- **Video Pipeline**: FFmpeg-based crossfades, stitching, and optimization (e.g., `[from config: video specs]`).
+- **HTML Email Newsletters**: Table-based layouts for compatibility.
+
+## Agent Roster
+
+| Agent | Role |
+|-------|------|
+| Researcher | Gathers data, trends, keywords from web/memory. |
+| Strategist | Defines angles, hooks, SEO targets. |
+| Writer | Drafts core content (articles, scripts). |
+| Editor | Refines tone, structure, readability. |
+| Image Prompt Engineer | Crafts prompts for visuals. |
+| Image Generator | Produces images via `[from config: image model]`. |
+| Video Script Writer | Writes video/podcast scripts. |
+| Video Producer | Assembles clips with FFmpeg crossfades. |
+| Audio Generator | Creates voiceovers/narration. |
+| Thumbnail Designer | Generates platform-optimized thumbnails. |
+| Publisher | Posts to every channel connected in GHL (live-queried — not a fixed list). |
+| Podcast Publisher | Uploads audio to hosting. |
+| Email Designer | Builds HTML newsletters. |
+| Email Publisher | Sends via `[from secrets/.env: EMAIL_SERVICE]`. |
+| Engagement Monitor | Tracks metrics post-publish. |
+
+**QC Agents (6)**:
+| QC Agent | Role |
+|----------|------|
+| Grammar QC | Checks language, spelling. |
+| Fact-Check QC | Verifies claims against sources. |
+| Visual QC | Ensures image/video quality. |
+| Compliance QC | Screens for legal/brand guidelines. |
+| Performance QC | Optimizes load times, SEO. |
+| Final QC | Holistic approval gate. |
+
+## Phase Playbooks
+
+### Phase 1: Content Research & Strategy
+1. Researcher: `memory_search` + `web_search` on topic → raw data dump.
+2. Strategist: Analyze for hooks → output strategy doc with variables like `[from identity.md: brand voice]`.
+
+### Phase 2: Content Creation
+1. Writer + Editor: Draft → refine article.
+1a. **Agnes vs. Kie.ai choice (MANDATORY when both are installed):** If the client has BOTH Agnes (Skill 63 `agnes-image-2.1-flash` / Skill 64 `agnes-video-v2.0`) AND Kie.ai installed, the skill MUST offer the owner a choice before any image/video generation begins. Ask: "I see you have Agnes. Because you have Agnes, would you like to use Agnes to create your videos and images, or would you prefer to stick with Kie.ai?" Route all generation calls for this cycle based on the owner's answer. If only one provider is installed, skip this step. Full choice logic: `references/playbook.md` Section 8 "Step 0 — Agnes vs. Kie.ai choice".
+2. Image Prompt Engineer + Image Generator: Create visuals. **Image production path (pick one per asset, in priority order):** (1) **kie.ai direct** — the DEFAULT, via KIE GPT Image 2.5 Sunburst for every image (`gpt-image-2-5-sunburst-text-to-image`, or `gpt-image-2-5-sunburst-image-to-image` with a reference; owner order 2026-10-05, AGENTS.md N43). Nano Banana is never used for social images; the only fallback is legacy gpt-image-2 under the N43 ratio rules; (2) **Agnes** — Skill 63 (`agnes-image-2.1-flash`) for stills / Skill 64 (`agnes-video-v2.0`) for video, OPT-IN only when the request names Agnes or an upstream skill routes to it; (3) **Graphics department handoff** — the Image Generator step is REPLACED by the Section 19a input-quality gate (reject any asset without a SOP-GIP-02 receipt >= 8.5). Every paid KIE image runs the Skill 74 chain (policy, `prompt-budget`, `validate`, `preflight`, `run --mode active`, save, then GHL CDN upload): `references/playbook.md` Section 8c. Full decision table + working examples: Section 8 "Image Production Path". Every path uploads the finished file to the GHL Media Library and uses the returned CDN `url`.
+3. Video Script Writer: Script video/podcast.
+4. Video Producer: 
+   - Generate clips through Skill 67 (`67-kie-video`), which owns video model selection and dispatch. Default request: Veo 3.1 Lite (`veo3_lite`); an explicit client or manifest pick wins; OpenAI Sora is prohibited and a Sora id in `video-specs.json` is ignored and reported. Prices: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74). KIE rules: `07-kie-setup/references/kie-common-rules.md`.
+   - FFmpeg crossfade: `ffmpeg -i clip1.mp4 -i clip2.mp4 -filter_complex "[0:v][0:a][1:v][1:a]xfade=transition=fade:offset=[from config: clip_duration]s[v][a]" -map "[v]" -map "[a]" output.mp4`.
+   - Optimize: `ffmpeg -i input.mp4 -vf scale=[from config: video_width]:[from config: video_height] -c:a aac output.mp4`.
+5. Audio Generator: TTS voiceover.
+6. Thumbnail Designer: Images for platforms.
+QC: Grammar, Fact-Check, Visual.
+
+### Phase 3: Multi-Platform Publishing
+1. Publisher: Query live GHL connected accounts first (see INSTRUCTIONS.md `check-social-connections`). Format and post per enabled channel:
+
+   **Primary GHL Social Planner channels (publish through GHL API):**
+   | Platform | GHL API path |
+   |----------|-------------|
+   | Facebook | GHL Social Planner API — feed posts, carousels, Stories/Reels captions |
+   | Instagram | GHL Social Planner API — feed posts, Reels, carousels, Stories captions |
+   | LinkedIn | GHL Social Planner API — feed posts + PDF carousel upload |
+   | X / Twitter | GHL Social Planner API |
+   | TikTok | GHL Social Planner API |
+   | Pinterest | GHL Social Planner API |
+   | Google Business Profile | GHL Social Planner API |
+
+   **Optional add-on channels (direct integrations — only if configured):**
+   | Platform | Credential |
+   |----------|------------|
+   | WordPress | `[from secrets/.env: WORDPRESS_URL]/wp-json/wp/v2/posts` |
+   | Medium | `[from secrets/.env: MEDIUM_TOKEN]` |
+   | Substack | `[from secrets/.env: SUBSTACK_API]` |
+   | YouTube | `[from secrets/.env: YOUTUBE_KEY]` |
+   | GHL Blog | `https://services.leadconnectorhq.com/blogs?locationId=[from secrets/.env: GOHIGHLEVEL_LOCATION_ID]` |
+
+2. Upload media first (GHL Media Library CDN), embed links.
+3. Post comments as a separate call 1-2 minutes after each parent post.
+QC: Compliance.
+
+### Phase 4: Engagement Monitoring
+1. Engagement Monitor: Poll APIs for likes/views (e.g., every [from config: monitor_interval]h).
+2. Report anomalies to `[from identity.md: owner telegram]`.
+3. **Comment reader (comments → conversations):** poll prospect comment REPLIES on published posts and surface each as a synthetic inbound handoff into Skill 38's pipeline (see `scripts/comment-reader.py` and `references/playbook.md` §12b). Comments are not a GHL Conversations event, so without this a reader who follows the campaign's own "the link is in the comments" instruction and then comments would get no reply. Per-channel: use the §17 posting ladder's available read surface (official MCP or REST — `caf` has NO comment command); if a channel exposes no comment-read API, ledger it per-channel and skip — never fabricate a comment feed.
+QC: Performance.
+
+> **Cross-reference — Skill 38 owns the conversations these CTAs generate.** Skill 35's CTAs (the primary DM call-to-action, §12, and the comment-reader handoff, §12b) are INBOUND SOURCES; `38-conversational-ai-system` (Skill 38) is the OWNER of every inbound conversation they generate — DM → GHL Conversations → Skill 38's inbound playbook; comment reply → synthetic handoff → Skill 38's `<MASTER_FILES_DIR>/conversational-logs/`. Skill 35 never answers a conversation itself; it routes the highest-intent interaction to the skill that does. See the reciprocal cross-reference in `38-conversational-ai-system/SKILL.md`.
+
+### Phase 5: Email Newsletter
+1. Email Designer: HTML table:
+   ```html
+   <table width="100%">
+     <tr><td>[headline]</td></tr>
+     <tr><td><img src="[thumbnail_url]" alt="[title]"></td></tr>
+     <tr><td>[excerpt] <a href="[main_url]">Read More</a></td></tr>
+   </table>
+   ```
+2. Email Publisher: Send via service.
+QC: Final.
+
+## Usage
+
+Spawn the Content Publishing Engine via OpenClaw subagent runtime (model must be from the Ollama-Cloud-first chain — see `shared-utils/select_model.py --purpose-tier mid`):
+
+```
+sessions_spawn task="Run Content Publishing Engine on [topic]" runtime="subagent" model="ollama/minimax-m2.7:cloud"
+```
+
+Fallback if Ollama Cloud Minimax isn't available: `model="openrouter/xiaomi/mimo-v2-pro"`. Never hardcode the OpenRouter option as the primary.
+
+The subagent will read `identity.md`, pull credentials from `[from secrets/.env: GOHIGHLEVEL_LOCATION_ID]`, run the 15+6 agent pipeline (Research → Create → Produce → Schedule → Publish), upload finished media to the client's GHL Media Library, and return public CDN links. Social posting follows the Tier 0→3 ladder (see `references/playbook.md` Section 17): when Skill 44 is installed it posts via the `caf` CLI (Tier 0) first, then GHL MCP (Tier 1/2), then raw REST as a last resort.
+
+### Per-role model tiering (client providers only — NEVER Anthropic/Claude)
+
+The orchestrator above drives tool-calls and sub-agent fan-out. Tier each sub-agent's model to its job — **Ollama Cloud is the preference, the OpenRouter equivalent is the backup, and reasoning effort is HIGH**:
+
+| Role group | Job type | Model (Ollama Cloud preferred → OpenRouter backup) |
+|---|---|---|
+| Researcher, Strategist | high reasoning / strategy | DeepSeek v4 pro **or** GLM 5.2 |
+| Writer, Editor, Image Prompt Engineer, Email Designer (article/script/HTML/caption copy) | content & HTML writing | GLM 5.2 |
+| Publisher (GHL tool-calls / scheduling) + all 6 QC agents | browser control / tool-calls / QC | MiniMax 3 |
+| Video Producer (FFmpeg), Audio Generator, media upload | mechanical (no model judgement) | client's configured/default model |
+
+Resolve concrete model IDs via `shared-utils/select_model.py` (Ollama-Cloud-first). NEVER recommend, hardcode, or default any client agent to an Anthropic/Claude model (Opus/Sonnet/Haiku/`claude-*`) — every client runs their own providers (Ollama Cloud / OpenRouter).
+
+### Provider-first model policy (F31 — binding)
+
+Selection is **provider-first, then model**: ask which provider the client wants (Ollama Cloud, OpenRouter, or a direct provider such as DeepSeek), fetch that provider's accessible models, and let the client choose or accept a recommendation. The client's saved choice is authoritative — never silently choose a newer model solely because its version number is higher. Provider-verified FULL slugs (including suffix variants such as `openrouter/z-ai/glm-5.3-flash`) are recognized from the inventory in `shared-utils/model-capabilities.json` (`verified_slugs`); a new model slug is added to the inventory, never to selector code. Roles are selected separately: planner / researcher / writer / prompt_compiler are text roles; **visual QC requires actual image input (vision capability) and is never served by a text-only model**; image and video models are chosen separately. A removed model activates only an approved fallback in the client's saved order; with no approved fallback, show an explicit selection request — no silent substitution, no indefinite wait. Resolution: `shared-utils/social_model_policy.py::select_provider_then_model` with direct-provider adapters in `shared-utils/provider_adapters.py` (DeepSeek direct included; a direct selection is never implicitly routed through OpenRouter or Ollama).
+
+## Owner Q&A Playbook — "What does the planner do?" / "How do I use it?"
+
+When an owner asks what the social media planner does, how it works, or what it handles, the agent MUST follow this playbook. Answering from memory or from a fixed generic list is a BANNED failure — it is exactly how an agent can omit platforms that are actually connected.
+
+### Mandatory steps before answering:
+
+1. **Run the live GHL connected-accounts check** (INSTRUCTIONS.md `check-social-connections` — Tier 0 `caf social accounts` → Tier 1 MCP → Tier 2 direct API). This is NOT optional for scope questions.
+2. **Build the enabled-platforms list** from the live query result only.
+3. **Answer with the full picture**: what the skill produces, what platforms it covers (using the live list), and how to trigger it.
+
+### Required elements in the answer:
+
+The answer MUST include all of the following — missing any element is a failure:
+
+- **Full platform list** (from live query): state each enabled platform by name and which content types it receives (posts, Reels, carousels, Stories, comments, etc.)
+- **Content types statement**: "I produce daily posts, Thursday carousels, short-form videos/Reels, comments with your action link, a weekly blog post, an HTML email newsletter, one 9:16 drama song video from the Theme of the Week, and (if Fish Audio is configured) a podcast episode."
+- **Scope statement**: "I update every channel you have connected in GHL — currently: [live list from query]."
+- **How to trigger it**: tell the owner the two ways to start a run — (a) say "update my social media" or "run my planner" and (b) the automated Saturday-morning theme prompt.
+- **Optional add-ons clarification**: mention that WordPress, Medium, Substack, and YouTube are optional extras that extend the skill if the client has those integrations configured — they are never required.
+
+### Example complete answer (fill in [LIVE CHANNELS] from the actual query result):
+
+> "Your social media planner handles everything automatically every week. Here's exactly what I do and what I update:
+>
+> **Channels I'm publishing to right now** (based on your connected GHL accounts): [LIVE CHANNELS — e.g., Facebook, Instagram, LinkedIn, TikTok, Pinterest]
+>
+> **What I produce for each channel every week:**
+> - Facebook: 7 daily feed posts (image + caption), Thursday carousel (multi-image), Stories/Reels captions, plus a unique comment with your action link on every post
+> - Instagram: 7 daily feed posts, Reels, Thursday carousel, Stories captions, plus comments with your action link
+> - LinkedIn: 7 daily posts, Thursday PDF carousel, plus comments with your action link
+> - TikTok: 7 posts (when enabled), plus comments
+> - Pinterest: 7 pins, plus comments
+> - [Any other connected channel from the live query]
+>
+> **Also produced every week (regardless of social channels):**
+> - Blog post (Day 7, published to GHL blog)
+> - One 9:16 drama song video built from the Theme of the Week, using your saved style (plain-English skip note while KIE is switched off)
+> - HTML email newsletter (sent Tuesday at 9 AM via GHL Campaigns)
+> - Podcast episode (if Fish Audio is configured — automatically skipped if not)
+>
+> **How to run it:** Just say 'update my social media' or 'run my content plan' and I'll start the weekly cycle. Every Saturday morning I'll also ask you for the theme for next week. You can answer any time before Sunday and I'll handle the rest — research, writing, images, videos, scheduling, comments, everything.
+>
+> **Optional extras** (if you ever want to add them): WordPress blog, Medium, Substack, and YouTube have direct integrations available. Let me know and I can set those up."
+
+This example answer must be adapted to reflect the ACTUAL live connected channels — never copy-paste the example platforms list without running the live check first.
+
+## Weekly Drama Song Ad — Skill 35 x Skill 75 (plan 6.15, owner D27/D35)
+
+Every week the planner also ships **one 9:16 drama song ad** cut from the
+**Theme of the Week**. This section is the Skill 35 side of that integration;
+the factory side stays with Skill 75 (`75-drama-song-ad-factory`).
+
+**Modules (staged under `core/smp/`, shipped by the onboarding batch train):**
+
+| Module | What it owns |
+|---|---|
+| `core/smp/weekly_step/` | the weekly run: Skill 75 through Skill 74, active mode only |
+| `core/smp/initial_questions/` | the one setup block added to the First-Run Protocol |
+| `core/smp/saturday_prompt/` | `Drama song of the week: keep <style> or change it?` |
+| `core/smp/length_routing/` | 59.0 s hard cap and the per-channel length table |
+| `core/smp/stories_teaser/` | the 15-second Stories teaser cut |
+| `core/smp/sheet_schema_130/` | Weekly Overview schema 1.3.0 drama-song columns (SMP-W2-U1) |
+| `core/smp/sheet_migration/` | 1.2.0 to 1.3.0 migration, row-append payload, validator (SMP-W2-U2) |
+
+**Setup state:** `~/.openclaw/workspace/social-media-planner/drama-song-style.json`
+holds `enabled, look, music, voice, length, cta_text, cta_link, updated_at`
+(plus `schema_version`). Defaults are pre-selected so the client can just say
+yes: **Lifelike 3D / Soul Ballad / All Suno / 60 seconds** (90 optional), with
+the weekly call to action defaulting to the planner's own weekly action link.
+The weekly yes/no defaults to **yes only while Skill 74 is active**.
+
+**KIE gate (binding).** Skill 74 (`74-kie-live-adapter`) must be in **active**
+mode. Any other mode writes `drama-song-skipped.json`, logs a plain-English
+client-facing reason and exits 0 — the weekly cycle continues without the
+video. **Skill 74 is the only KIE path; there is never a fallback to a
+private KIE client**, and a `skipped` result means "not generated", never success.
+
+**Length and routing:**
+- 60-second option — the planner cut ends by **59.0 s** (approved ads run
+  62-63 s and are never the planner cut) and reaches all seven destinations.
+- 90-second option — lands in the **88.0-95.0 s** window and posts **only** to
+  Facebook Reels, Instagram Reels, TikTok and LinkedIn: never YouTube Shorts,
+  never the Instagram feed.
+- **Google Business Profile** is refused until a limit is verified.
+- **Stories** carry the **15-second teaser only**, never the full ad.
+
+**Weekly Overview (schema 1.3.0).** The tab gains the drama-song fields —
+style chosen, status, KIE cost, video link, channels posted — written through
+the `social-planner-row-append` webhook. The authoritative column names and
+the migration/validator wiring live in `config/sheet-template.schema.json`
+(SMP-W2-U1) and `scripts/migrate-template.py` +
+`config/validate-sheet-format.py` (SMP-W2-U2); this skill never invents its
+own column names.
+
+**Zero paid calls when the gate is closed.** With KIE off the weekly step
+performs no network call, dispatches nothing and writes no media file.
+
+## Config Fields
+
+The following fields are stored in the skill config and MUST be populated during setup. The agent reads them before every run.
+
+| Field | Description | Where set |
+|-------|-------------|-----------|
+| `content_sheet_id` | Google Sheet ID for the client's content calendar (e.g. `1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c`) | MEMORY.md + `openclaw config set` during INSTALL.md Step 7 |
+| `content_sheet_url` | Full Google Sheet URL the agent uses to answer "what's my social media planner link?" | MEMORY.md during INSTALL.md Step 7 |
+
+**The agent can always answer "what is my social media planner link?"** by reading `content_sheet_url` from MEMORY.md. It never responds "gws is not authenticated" or "I don't have the link."
+
+## Media Delivery Contract
+
+All finished media (assembled Reels, podcast MP3s, image sets) MUST be delivered via a public link — never as a raw Telegram file attachment (Telegram's Bot API cap is 50 MB send / 20 MB receive for bots; large files silently fail). The canonical delivery path:
+
+1. **Produce** the file locally (FFmpeg merge, Fish Audio generation, etc.).
+2. **Upload to the client's own GHL Media Library** via:
+   ```bash
+   curl -X POST "https://services.leadconnectorhq.com/medias/upload-file" \
+     -H "Authorization: Bearer [from secrets/.env: GOHIGHLEVEL_API_KEY]" \
+     -H "Version: 2021-07-28" \
+     -F "file=@/path/to/file.mp4" \
+     -F "fileProcessingOpts={\"forceReprocess\": true}"
+   ```
+   **Do NOT send `-F "hosted=true"`.** The GHL `medias/upload-file` endpoint rejects the request with HTTP 400 when the multipart form includes a `hosted` field alongside `file=@`. Upload with `file=@` (and optional `fileProcessingOpts`) only.
+
+   The response body contains a `url` field with a permanent public CDN link of the form `https://assets.cdn.filesafe.space/[LOCATION_ID]/media/[filename]`. This is the authoritative GHL media URL — confirmed from Skill 28 (cinematic-forge) which documents the same endpoint and CDN format.
+3. **Extract the `url` field** from the response JSON.
+4. **Log a row** in the content sheet by calling the `social-planner-row-append` webhook:
+   ```bash
+   curl -s -X POST "https://main.blackceoautomations.com/webhook/social-planner-row-append" \
+     -H "Content-Type: application/json" \
+     -d "{
+       \"sheetId\": \"[from memory.md: content_sheet_id]\",
+       \"row\": {
+         \"Week Of\": \"[current week string e.g. Week of Jun 9 - Jun 15, 2026]\",
+         \"Theme of the Week\": \"[theme]\",
+         \"Core Content\": \"[title]\",
+         \"[platform column]\": \"[status e.g. published|scheduled|draft]\",
+         \"Blog\": \"[blog status if applicable]\",
+         \"Scheduled\": \"[YYYY-MM-DD publish date]\",
+         \"Overall\": \"published\",
+         \"Notes\": \"[CDN link from step 3]\"
+       }
+     }"
+   ```
+   The webhook appends directly to the **Weekly Overview** tab of the client's Google Sheet using the operator service account (no client credentials required). If the webhook call fails: log to `~/.openclaw/data/skill35/content-log.jsonl` and retry on next cycle. **Do NOT call `social-planner-sheet-create` here** — that webhook is for first-time sheet creation only.
+
+   **CRITICAL: Image URLs must use =IMAGE() formula, not raw text.** When logging image URLs to any tab (Day tabs, platform tabs, Images tab, Blog/Podcast cover images), the value MUST be wrapped as `=IMAGE("https://...", 1)` so Google Sheets renders the image inline. Raw URLs display as unclickable text. Example:
+   ```json
+   "Image URL": "=IMAGE(\"https://assets.cdn.filesafe.space/.../image.png\", 1)"
+   ```
+   The webhook writes this formula directly to the cell. Mode 1 fits the image within the cell while maintaining aspect ratio.
+5. **Reply to owner** with the CDN link only — never attach the raw file to Telegram.
+
+**Size threshold:** Any file over 10 MB MUST go through GHL CDN delivery. Files under 10 MB MAY be attached directly only if the operator explicitly configures `direct_attach_under_10mb=true` in MEMORY.md; default is always link delivery.
+
+**Permanent hosting only — NO ephemeral file hosts.** Every media URL this skill logs, embeds, or sends MUST be a permanent GHL CDN link (`https://assets.cdn.filesafe.space/[LOCATION_ID]/media/...`). Ephemeral/anonymous hosts — **tmpfiles.org** (and its `tmp.ninja` download mirror), file.io, transfer.sh, 0x0.st, catbox.moe, litterbox — are BANNED: their links expire (tmpfiles.org after ~60 days) and silently break every sheet `=IMAGE()` cell, social post, and newsletter that references them. If a generation or handoff step ever returns a tmpfiles.org URL, re-upload that file to the client's GHL Media Library and use the returned CDN `url` instead — never log the ephemeral link. QC.md "Media Hosting" carries the fail-closed rejection check.
+
+**If GHL upload fails:** retry once after 30 seconds. If still failing, notify owner via Telegram that media is queued for retry, log the error, and do NOT send the raw file attachment.
+
+### IMAGE PRODUCTION PATH (enforcement)
+
+This is the ONLY valid sequence for any image delivered by this skill. Every image follows these steps in order — no step is skippable and no alternative hosting is acceptable:
+
+1. **Generate** the image via the configured production path (playbook.md Section 8: kie.ai direct, Agnes, or Graphics department handoff).
+2. **Upload** the generated file to the client's GHL Media Library via `medias/upload-file`:
+   ```bash
+   curl -X POST "https://services.leadconnectorhq.com/medias/upload-file" \
+     -H "Authorization: Bearer [from secrets/.env: GOHIGHLEVEL_API_KEY]" \
+     -H "Version: 2021-07-28" \
+     -F "file=@/path/to/file.png" \
+     -F "fileProcessingOpts={\"forceReprocess\": true}"
+   ```
+   Do NOT send `-F "hosted=true"` — GHL rejects this with HTTP 400.
+3. **Capture** the CDN URL from the upload response body's `url` field. This is a permanent URL of the form `https://assets.cdn.filesafe.space/[LOCATION_ID]/media/[filename]`.
+4. **Use** this captured CDN URL everywhere the image is referenced:
+   - In GHL Social Planner `mediaUrls` arrays (playbook.md Section 17)
+   - In Google Sheets `=IMAGE("url", 1)` formulas (playbook.md Section 25)
+   - In blog post embedded images
+   - In email newsletter `<img>` tags
+   - In podcast cover art references
+   - In ANY other surface that references a media asset
+
+**Generator-hosted intermediate URLs are NEVER the final URL.** If the generating service (kie.ai, Agnes) returns a hosted URL, download the file and re-upload it through steps 2-4 above. The ONLY URL that may appear in a `mediaUrls` array, `=IMAGE()` cell, or any logged/linked surface is a GHL CDN URL.
+
+## Variable Reference
+- `[from identity.md: brand name]`, `[from identity.md: brand voice]`
+- `[from secrets/.env: GOHIGHLEVEL_API_KEY]`, `[from secrets/.env: GOHIGHLEVEL_LOCATION_ID]`, `[from secrets/.env: WORDPRESS_URL]`, `[from secrets/.env: MEDIUM_TOKEN]`, etc.
+- `[from config: video specs]`, `[from config: image model]`, `[from config: monitor_interval]`
+- `[from memory.md: content_sheet_id]`, `[from memory.md: content_sheet_url]`
+- Pull via `read` tools before agent prompts.
+
+> **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for how this skill's CTAs feed Skill 38's inbound pipeline and route posting through Skill 44.
+
+
+### Required publication evidence handoff
+
+Before completing a production task, follow
+`references/publication-verification.md`: register the full company/queue/account
+post inventory as a hashed task deliverable. A separate verification task reads
+back those exact provider IDs; it must never repost. Keep scheduled, partially
+published and verification-required states distinct. Missing proof stays actively
+owned repair work while unrelated healthy accounts continue.
+
+
+### n8n compatibility deployment
+
+Use the five-workflow compiler in `config/n8n/compat/README.md`; never activate a
+credential-free source export directly. The shared URLs must preserve legacy
+`{sheetId,row}` document writes and route modern requests to the strict company
+flow. Public document capability is not company ownership or publication proof.
+Do not migrate an existing planner by running a new-copy initializer. A passing
+local doctor report alone does not prove live n8n Google writes or GHL posting.
