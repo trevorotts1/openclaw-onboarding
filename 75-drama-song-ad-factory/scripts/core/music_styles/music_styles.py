@@ -89,11 +89,10 @@ STYLES = {
         "notes": ("The original drama-song style."),
         "suno_style_prompt": (
             "soul ballad, slow emotional 62-68 bpm, warm felt piano, "
-            "swelling analog strings, brushed kit entering at the chorus, "
-            "deep rounded bass, soulful lead vocal with melismatic runs, "
-            "gospel-tinged backing harmonies, minor key, intimate verse "
-            "opening into a full-throated chorus, long held final note, "
-            "clean cinematic studio mix, no distortion"
+            "brushed kit entering at the chorus, deep rounded bass, "
+            "soulful lead vocal with melismatic runs, close dry upfront "
+            "vocal, minor key, restrained verse opening into a full-voiced "
+            "chorus, no distortion"
         ),
     },
     "rnb-flow": {
@@ -106,10 +105,11 @@ STYLES = {
                   "Trevor 2026-10-07: a keeper."),
         "suno_style_prompt": (
             "contemporary r&b with hip-hop flow, 84-94 bpm, crisp programmed "
-            "drums with tight hats, deep sub bass, Rhodes chord stabs, airy "
+            "drums with tight hats, deep sub bass, Rhodes chord stabs, bright "
             "synth plucks, rhythmic rap verses delivered with clear diction "
             "over the beat, smooth sung r&b hook, call-and-response ad-libs, "
-            "confident swagger, radio-ready mix, no vocals in the intro pad"
+            "confident swagger, dry upfront vocal, radio-ready mix, no vocals "
+            "in the intro pad"
         ),
     },
     "soul-rise": {
@@ -124,8 +124,8 @@ STYLES = {
             "an upbeat 100-112 bpm groove at the turn, warm piano and round "
             "bass foundation, percussion thickening as it lifts, triumphant "
             "horn stabs and claps from the turnaround, hopeful minor-to-major "
-            "resolution, soulful lead vocal rising in register, gospel-tinged "
-            "backing choir, polished commercial mix, single continuous take"
+            "resolution, soulful lead vocal rising in register, close dry "
+            "upfront vocal, single continuous take"
         ),
     },
 }

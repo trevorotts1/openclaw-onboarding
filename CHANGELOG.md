@@ -2,6 +2,18 @@
 
 - frontdoor_update_999 now finds every checkout (incl. ~/Documents/999-setup), fast-forwards clean ones, leaves dirty/diverged ones untouched and uses a clean ~/999-setup (cloned if absent) as the link source, links per skill (hand-managed real dirs skipped alone), and sources the link functions from the scripts dir. Never runs the full installer or touches 9Router config.
 
+## [v26.4.5]  -  2026-10-08  -  Merge train: #1618 fix(cc): raise CC pin to v7.6.111 + release v26.4.5 (CCP002); #1621 batch: dts w7 (F-B units F4-F13, F17 + trunk resolves)
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1618 — [v26.4.5]  -  2026-10-08  -  fix(cc): raise CC pin to v7.6.111 (the Command Center main that includes batch #512), refresh decision-engine SHAs (CCP002)
+
+The pin sat at v7.6.110 (CC commit 37aee296) while CC main moved on, so every box that installs the pinned tag stayed behind what the checks demand. cc-compat.json commandCenter.pinnedTag is now v7.6.111 (annotated tag, CC commit 493dba5c); decisionEngine SHAs re-derived at onboarding main 59019f2c6 and CC main 493dba5c8; release-cohort.json cc_version/cc_sha and the CC_PIN literal in tests/unit/cc-runtime-preflight.test.py follow. minVersion unchanged (v7.6.111 >= v7.4.0, maxVersion null). No other code touched.
+
+### #1621 — batch: dts w7 (F-B units F4-F13, F17 + trunk resolves)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v26.4.4]  -  2026-10-08  -  fix(cc): bound the CC contract check (stdin /dev/null + 120s alarm) and raise CC pin to v7.6.110 (skill 32 v13.1.44)
 
 ## [v26.4.3]  -  2026-10-07  -  Merge train: #1586 fix(embeddings): skill 76 per-agent multimodal, re-index retries, 5c…
