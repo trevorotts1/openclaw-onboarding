@@ -51,6 +51,26 @@ Your drama song ad
 `[Approve]` is one click. `[Change options]` reopens the same card with the
 previous selections kept.
 
+## 2.2 One question at a time (Part I7, normative)
+
+The intake is a conversation, not a form. One message per turn:
+
+1. `Question 3 of 6 - VIDEO STYLE`, then a one-sentence reason the question
+   matters, then the question.
+2. Options as a numbered list, one per line, each with a short plain
+   description; the RECOMMENDED option is marked and followed by "I recommend
+   option N (name) because ...".
+3. Wait for the answer. A number, "recommended", or (spend only) a dollar
+   amount is accepted; anything else gets "Sorry, I did not catch that." and
+   the same question again.
+4. After the last answer, a recap ("Here is what you picked:") and a request
+   for "yes". A line number reopens only that question, then returns to the
+   recap.
+
+Built by `intake_card.conversation(replies)` (stateless: replay the replies so
+far), exposed as `factory.py card --step --reply ...`. Same code in claude-nine
+and OpenClaw. Test: `choice_card/intake_card/test_intake_step_i7.py`.
+
 ## 2.1 Intake question card layout (Part H9, normative)
 
 The six intake questions (length, music style, video style, video model,

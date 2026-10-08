@@ -277,6 +277,10 @@ def main(argv=None):
     c.add_argument("--format", default="text",
                    choices=("text", "openclaw-json", "telegram-json"))
     c.add_argument("--target", default="", help="Telegram chat id")
+    c.add_argument("--step", action="store_true",
+                   help="one question per message (I7): print only the next message")
+    c.add_argument("--reply", action="append", default=[],
+                   help="a client reply so far, in order (repeat the flag)")
     ch = sub.add_parser("character", help="Per-client character library: ask / save / "
                                           "list / use / card (Part I, I6). Extra args pass through.")
     args = sys.argv[1:] if argv is None else list(argv)
@@ -289,7 +293,9 @@ def main(argv=None):
         if core not in sys.path:
             sys.path.insert(0, core)
         from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
-        return _card.main(["--format", a.format, "--target", a.target])
+        return _card.main(["--format", a.format, "--target", a.target]
+                          + (["--step"] if a.step else [])
+                          + [x for r in a.reply for x in ("--reply", r)])
     if a.cmd == "character":
         import os
         core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

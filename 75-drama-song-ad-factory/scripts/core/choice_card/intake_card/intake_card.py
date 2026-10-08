@@ -77,27 +77,27 @@ def _musics():
 
 def _questions():
     return [
-        {"id": "length", "label": "LENGTH", "ask": "How long should the ad be?",
+        {"id": "length", "why": "Length decides the story size and the price.", "reason": "the standard length for ads, and it fits stories, reels and ads.", "label": "LENGTH", "ask": "How long should the ad be?",
          "options": [("60 seconds", "The standard ad length."),
                      ("90 seconds", "Room for a fuller story."),
                      ("3 minutes", "A short film."),
                      ("5 minutes", "A long story, with automatic 60 and 90 second clips."),
                      ("10-minute long version", "The full-length cut, with automatic clips.")],
          "recommended": 0},
-        {"id": "music", "label": "MUSIC STYLE", "ask": "What should the song sound like?",
+        {"id": "music", "why": "The song carries the feeling of the whole ad.", "reason": "it is the style that tests best for emotional stories.", "label": "MUSIC STYLE", "ask": "What should the song sound like?",
          "options": _musics(), "recommended": 0},
-        {"id": "look", "label": "VIDEO STYLE", "ask": "What should the video look like?",
+        {"id": "look", "why": "The look is what viewers see in every shot.", "reason": "it gives the most real, cinematic result.", "label": "VIDEO STYLE", "ask": "What should the video look like?",
          "options": _looks(), "recommended": 0},
-        {"id": "model", "label": "VIDEO MODEL", "ask": "Which video model should make the shots?",
+        {"id": "model", "why": "The video model sets how good the shots look and what they cost.", "reason": "it gives the best balance of quality and price.", "label": "VIDEO MODEL", "ask": "Which video model should make the shots?",
          "options": [("MiniMax H3, 768P", "Best balance of quality and price."),
                      ("Show me every model and its price", "I will list them, then you pick.")],
          "recommended": 0},
-        {"id": "spend", "label": "SPEND LIMIT",
+        {"id": "spend", "why": "This keeps you in control of the cost.", "reason": "it already covers a 20% allowance for redoing shots.", "label": "SPEND LIMIT",
          "ask": "What is the most you want to spend on this ad?",
          "options": [("The price on the card", "Includes a 20% allowance for redoing shots."),
                      ("My own limit", "Reply with a dollar amount, for example $25.")],
          "recommended": 0},
-        {"id": "storyboard", "label": "STORYBOARD APPROVAL",
+        {"id": "storyboard", "why": "The storyboard is cheap to fix now and costly to fix after video is made.", "reason": "you see every scene before any money is spent on video.", "label": "STORYBOARD APPROVAL",
          "ask": "Do you want to approve the storyboard before any video is made?",
          "options": [("Yes, show me first", "Nothing is generated until you say go."),
                      ("No, just make it", "I start as soon as the card is approved.")],
@@ -118,6 +118,88 @@ def _block(i, total, q):
 
 def _blocks(questions):
     return [_block(i, len(questions), q) for i, q in enumerate(questions, 1)]
+
+
+def render_step(i, questions=None):
+    """ONE question as its own message (Trevor 2026-10-08, I7): a one-sentence
+    why, numbered options one per line, the RECOMMENDED one marked and
+    explained, then how to answer."""
+    qs = questions or QUESTIONS
+    q = qs[i - 1]
+    lines = ["Question %d of %d - %s" % (i, len(qs), q["label"]), q["why"], "", q["ask"]]
+    for n, (opt, sentence) in enumerate(q["options"], 1):
+        mark = (" " + REC) if n - 1 == q.get("recommended") else ""
+        lines.append("%d. %s - %s%s" % (n, opt, sentence, mark))
+    r = q.get("recommended", 0)
+    lines += ["", "I recommend option %d (%s) because %s" % (r + 1, q["options"][r][0], q["reason"]),
+              "Reply with a number, or say \"recommended\"."]
+    return "\n".join(lines)
+
+
+def render_recap(answers, questions=None):
+    qs = questions or QUESTIONS
+    lines = ["Here is what you picked:"]
+    for i, (q, a) in enumerate(zip(qs, answers), 1):
+        lines.append("%d. %s: %s" % (i, q["label"].title(), a["text"]))
+    lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
+    return "\n".join(lines)
+
+
+_YES = ("yes", "y", "yep", "go", "ok", "okay", "start", "approve", "approved")
+
+
+def _parse(reply, q):
+    """Reply -> {"n": option number, "text": ..., "value": ...} or None."""
+    t = (reply or "").strip().lower()
+    opts = q["options"]
+    if t in ("recommended", "recommend", "rec") or (t in _YES and len(opts) > 0):
+        n = q.get("recommended", 0) + 1
+    elif t.isdigit() and 1 <= int(t) <= len(opts):
+        n = int(t)
+    elif q["id"] == "spend" and t.lstrip("$").replace(".", "", 1).isdigit():
+        return {"n": 2, "text": "up to $" + t.lstrip("$"), "value": t.lstrip("$")}
+    else:
+        return None
+    return {"n": n, "text": opts[n - 1][0], "value": None}
+
+
+def conversation(replies, questions=None):
+    """Replay the client's replies from the start; return the state and the ONE
+    message to send next. Stateless, so claude-nine and OpenClaw can both call
+    it with the replies so far. state: answers, done, message."""
+    qs = questions or QUESTIONS
+    answers, fix, note, done = [], None, "", False
+    for r in replies:
+        note = ""
+        if len(answers) < len(qs) and fix is None:
+            a = _parse(r, qs[len(answers)])
+            if a:
+                answers.append(a)
+            else:
+                note = "Sorry, I did not catch that. "
+        elif fix is not None:                       # re-answering one line
+            a = _parse(r, qs[fix])
+            if a:
+                answers[fix], fix = a, None
+            else:
+                note = "Sorry, I did not catch that. "
+        else:                                       # recap: yes, or a line number
+            t = r.strip().lower()
+            if t in _YES:
+                done = True
+            elif t.isdigit() and 1 <= int(t) <= len(qs):
+                fix = int(t) - 1
+            else:
+                note = "Sorry, I did not catch that. "
+    if done:
+        msg = "Locked in. I am starting now."
+    elif fix is not None:
+        msg = note + render_step(fix + 1, qs)
+    elif len(answers) < len(qs):
+        msg = note + render_step(len(answers) + 1, qs)
+    else:
+        msg = note + render_recap(answers, qs)
+    return {"answers": answers, "done": done, "message": msg}
 
 
 def render_card(questions=None):
@@ -191,7 +273,21 @@ def main(argv=None):
                     help="text: raw card for the Claude Code chat. "
                          "openclaw-json / telegram-json: one send payload per message.")
     ap.add_argument("--target", default="", help="Telegram chat id (send formats)")
+    ap.add_argument("--step", action="store_true",
+                    help="one question at a time: print only the NEXT message, "
+                         "given every --reply the client has sent so far (I7)")
+    ap.add_argument("--reply", action="append", default=[],
+                    help="a client reply, in order (repeat the flag)")
     a = ap.parse_args(argv)
+    if a.step:
+        st = conversation(a.reply)
+        if a.format == "text":
+            sys.stdout.write(st["message"] + "\n")
+        else:
+            send = openclaw_send_argv if a.format == "openclaw-json" else telegram_payload
+            sys.stdout.write(json.dumps(
+                {"done": st["done"], "send": send(a.target, st["message"])}, indent=2) + "\n")
+        return 0
     if a.format == "text":
         sys.stdout.write(render_card() + "\n")      # raw newlines, no JSON escaping
         return 0
