@@ -31,6 +31,7 @@ import suno_recipe
 import spend_ledger as L
 import protected_names
 import words_match
+import words_fit
 
 TOOL_NAME = "music_director"
 TOOL_VERSION = "1.0.0"
@@ -118,7 +119,24 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     an invented line raises ValueError ``(CAPTION_WORD_MISMATCH ...)`` and
     the master request is never built. ``packet_lines=None`` keeps the old
     behavior (packet binding happens upstream in lyric QC).
+
+    G9 (words-fit, order 2026-10-08 11:50): when ``length_s`` is given, the
+    word mix is checked against the carded length at measured delivery speed
+    BEFORE any payload is built (and before the recipe guard, so the three
+    options always reach the person). Infeasible raises
+    ``words_fit.WordsFitError`` carrying longer ad / lower sung target /
+    fewer words. A feasible plan stamps ``input.duration`` with planned
+    time + 15% headroom unless the caller already set ``duration``.
     """
+    fit = None
+    if length_s is not None:
+        fit = words_fit.preflight_sheet(length_s, lyrics_text)
+        if fit["outcome"] != "ok":
+            raise words_fit.WordsFitError(
+                fit["reason_code"],
+                fit["detail"] + " | options: "
+                + "; ".join("%s -> %s" % (k, v.get("detail", v))
+                            for k, v in (fit.get("options") or {}).items()))
     suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # G12 + I8
     if packet_lines is not None and protected:
         # H7 (supersedes the F7 whole-text match, which forbids any sung
@@ -145,6 +163,8 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
         req["input"]["vocal_gender"] = vocal_gender
     if duration is not None:
         req["input"]["duration"] = duration
+    elif fit is not None:  # G9: plan + >=15% Suno headroom when length was carded
+        req["input"]["duration"] = words_fit.max_suno_duration(fit["plan_s"])
     return req
 
 
