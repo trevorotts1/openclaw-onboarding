@@ -1,4 +1,7 @@
-## [v26.4.9]  -  2026-10-08  -  feat(onboarding): standard company placeholder after 14 days without an interview (STD001)
+## [v26.4.9]  -  2026-10-08  -  batch: mega MGB003 (3 units; skill 32 v13.1.48, skill 75 v2.8.2)
+
+One batch release of three unit pull requests, merged together in one batch pull request (none merged one at a time): #1639 (STD001 standard company placeholder, Command Center pin v7.6.112), #1653 (CIO002 run-once CI: push triggers main-only, per-PR concurrency, 93 fast guards folded into one fast-guards job; the 8 required check names are unchanged), #1666 (G3b singing detector v2, skill 75 v2.8.2). One onboarding bump to v26.4.9. #1639 detail follows.
+
 
 Trevor's order (2026-10-08): a client who has not finished the AI Workforce interview still gets a
 standard company named after them, so the Command Center and everything downstream proceed.

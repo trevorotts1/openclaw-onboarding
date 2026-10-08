@@ -1,6 +1,6 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v26.4.9 — Standard company placeholder.** A client whose AI Workforce interview is still unfinished after 14 days now gets the standard company named after them, so the Command Center and everything after it can proceed; the interview stays open and finishing it makes the company theirs. Paired Command Center: **v7.6.112**.
+> **v26.4.9 - Batch MGB003 (3 units: STD001, CIO002, G3b; Skill 75 v2.8.2).** Run-once CI, calibrated singing detector v2. Standard company placeholder: A client whose AI Workforce interview is still unfinished after 14 days now gets the standard company named after them, so the Command Center and everything after it can proceed; the interview stays open and finishing it makes the company theirs. Paired Command Center: **v7.6.112**.
 >
 > **v26.4.8 - Batch MGB002: six units (Skill 75 v2.8.1, Skill 35 v3.7.0, installers).** Lip-sync close-up in every reference set; sung share judged only by the 5/10 point band with no 55 percent floor; calibrated sung detector; spoken share cut to 20-25 percent with singing judged against voice time; Social Media Planner v3.7.0; installers install with a note instead of failing on a box with a real key. See CHANGELOG.md.
 >
