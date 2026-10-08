@@ -64,6 +64,13 @@ fi
 # Default unset vars to empty so set -u doesn't blow up
 : "${GOHIGHLEVEL_API_KEY:=}"
 : "${GOHIGHLEVEL_LOCATION_ID:=}"
+# Shared credential lookup (INF002): location id under every name in every store; else the
+# Convert and Flow private integration token -> its location through the GHL API; neither
+# -> the skill installs with a note (below), never a failure.
+for _g in "$(dirname "$0")/../shared-utils/ghl-creds.sh" "$HOME/.openclaw/skills/shared-utils/ghl-creds.sh" "/data/.openclaw/skills/shared-utils/ghl-creds.sh"; do
+  [ -f "$_g" ] && { . "$_g"; break; }
+done
+set +u; command -v ghl_creds_resolve >/dev/null 2>&1 && ghl_creds_resolve; set -u
 : "${KIE_API_KEY:=}"
 # Credential stores: secrets/.env was the only one read; also read ~/.openclaw/.env and openclaw.json env.vars.
 if declare -F oc_fill_from_env_stores >/dev/null 2>&1; then oc_fill_from_env_stores KIE_API_KEY; fi
@@ -138,6 +145,15 @@ fi
 
 echo ""
 echo "── Section B: GHL credentials (canonical names) ──"
+# Neither a location id nor a pit- token exists (or the token's location is unreadable):
+# the skill is installed, with ONE note naming what is needed. The checks below need an
+# account, so they are skipped rather than failed.
+if [ "${GHL_CREDS_STATUS:-}" = "missing" ] || [ "${GHL_CREDS_STATUS:-}" = "unresolved" ]; then
+  yellow "  ⚠ WARN — $GHL_CREDS_NOTE"; WARN=$((WARN+1))
+  echo ""
+  echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
+  [ $FAIL -gt 0 ] && { red "Skill 35 QC FAILED"; exit 1; } || { green "Skill 35 QC PASS (installed with a note)"; exit 0; }
+fi
 assert "GOHIGHLEVEL_API_KEY (PIT) is set"     "[ -n \"${GOHIGHLEVEL_API_KEY:-}\" ]"
 assert "GOHIGHLEVEL_API_KEY starts with pit-" "[[ \"${GOHIGHLEVEL_API_KEY:-}\" == pit-* ]]"
 assert "GOHIGHLEVEL_LOCATION_ID is set"       "[ -n \"${GOHIGHLEVEL_LOCATION_ID:-}\" ]"

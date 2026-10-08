@@ -1,6 +1,7 @@
 ## [v26.4.8]  -  2026-10-08  -  BND001: sung share judged only by Trevor's band (skill 75 v2.8.1)
 
 Removes the hard 55 percent sung floor that batch #1652 kept; sung share is judged against the ad's own target with the 5/10 point band, and the first real singing is targeted at 15 percent of runtime (H6, supersedes #1637). See the skill 75 CHANGELOG v2.8.1.
+## [v26.4.8]  -  2026-10-08  -  INF002: installers install with a note when a key is missing and never fail on a box with a real key (skill 48 KIE, 59/05/29/35/36 Convert and Flow credentials, 70 primary agent), skill 74 QC reads its version, skill 06 QC gets 600 s, parity guard proven both ways (skills 05 v7.0.2, 29 v7.0.1, 32 v13.1.47, 35 v3.6.16, 36 v2.0.4, 47 v15.1.4, 48 v2.0.8, 59 v1.0.11, 70 v1.0.2, 74 v1.1.4)
 
 ## [v26.4.7]  -  2026-10-08  -  batch: mega MGB001 (24 units; skill 75 v2.8.0)
 

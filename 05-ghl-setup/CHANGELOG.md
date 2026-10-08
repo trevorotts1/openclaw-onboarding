@@ -1,5 +1,9 @@
 # Changelog - ghl-setup
 
+## [7.0.2] - 2026-10-08 - INF002
+
+- Install QC finds the Convert and Flow location id under every name in every store; with only a pit- token it reads the location from the GHL API; with neither it installs with a note instead of failing (shared-utils/ghl_creds.py, INF002).
+
 ## [7.0.1] - 2026-09-06 — preserve the selected client paths during QC
 
 - Resolve platform, configuration and workspace through the delivered shared resolver on Mac and native/container Linux. Refuse missing resolver dependencies instead of probing a different client root.
