@@ -87,6 +87,11 @@
     "tier_credits": 4,
     "source": "registry"
   },
+  "gpt-image-2-5-sunburst": {
+    "unit": "per-image",
+    "tier_credits": 6,
+    "source": "registry"
+  },
   "gpt-image-2-flare": {
     "unit": "per-image",
     "tier_credits": 6,
