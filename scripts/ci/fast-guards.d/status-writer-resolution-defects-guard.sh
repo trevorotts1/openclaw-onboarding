@@ -20,6 +20,8 @@ git show "${PRE_FIX_SHA}:23-ai-workforce-blueprint/scripts/refresh-build-state-f
 echo "REFRESH_PRE=$REFRESH_PRE" >> "$GITHUB_ENV"
 echo "OK: pinned pre-fix fixture materialized from ${PRE_FIX_SHA} -> $REFRESH_PRE"
 )
+# GITHUB_ENV does not carry across steps inside the folded job; import the line step 2 just wrote
+export "$(grep '^REFRESH_PRE=' "$GITHUB_ENV" | tail -n1)"
 ( # step: Run the status-writer resolution suite (4 scenarios, 13 assertions)
 set -e -o pipefail
 set -uo pipefail
