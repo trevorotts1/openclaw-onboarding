@@ -183,12 +183,19 @@ def test_assemble_gate_wired():
             check("assemble-plan gate rejects split",
                   str(exc).startswith("LIPSYNC_SPLIT"), str(exc)[:110])
         # and the full assemble() path honours the gate on a valid plan
-        # (files present, gate passes -> dry_run ok)
+        # (files present, gate passes -> dry_run ok). The plan carries 3
+        # lip-sync lines over >=12% of the runtime so the shared E6
+        # coverage gate (same path) passes too.
         clip = os.path.join(tmp, "lipsync.mp4")
         open(clip, "wb").close()
         broll = os.path.join(tmp, "broll.mp4")
         open(broll, "wb").close()
-        tl2 = _tl([{"src": "lipsync.mp4", "dur": 2.0, "lids": ["L1"]},
+        extra = [os.path.join(tmp, "lip%d.mp4" % i) for i in (2, 3)]
+        for e in extra:
+            open(e, "wb").close()
+        tl2 = _tl([{"src": "lipsync.mp4", "dur": 16.0, "lids": ["L1"]},
+                   {"src": "lip2.mp4", "dur": 2.5, "lids": ["L2"]},
+                   {"src": "lip3.mp4", "dur": 1.5, "lids": ["L3"]},
                    {"src": "broll.mp4", "dur": 3.0}])
         path2 = os.path.join(tmp, "timeline2.json")
         with open(path2, "w", encoding="utf-8") as fh:

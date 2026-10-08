@@ -130,9 +130,11 @@ def test_gate_wiring(tmp_root):
 
     # Done-when FAIL through the assembler gate: 3 clips of 2 s each in a
     # 120 s ad (3 x 2 + 5 x 19.5 + 16.5 = 120), 6 s of lip-sync total.
+    # E2 default fades land in the same trunk, so the plan's real total is
+    # 78.2 - 8 x 0.4 = 75 s (inside 60-90): the 6 s total is 7.98% < 12%.
     segs = ([{"src": "clip.mp4", "dur": 2.0, "lip_sync": True}] * 3
-            + [{"src": "clip.mp4", "dur": 19.5}] * 5
-            + [{"src": "clip.mp4", "dur": 16.5}])
+            + [{"src": "clip.mp4", "dur": 11.0}] * 5
+            + [{"src": "clip.mp4", "dur": 17.2}])
     tl = _tl(segs, 120, tmp)
     rec = A.assemble(tl, os.path.join(tmp, "out.mp4"), dry_run=True)
     # 3 clips meet the line minimum; the 6 s total is what fails.
@@ -141,9 +143,10 @@ def test_gate_wiring(tmp_root):
           rec.get("reason_code"))
     check("blocked receipt carries coverage evidence",
           rec["outcome"] == "error"
-          and rec["evidence"]["lipsync"]["evidence"]["ad_length_s"] == 120
-          and rec["evidence"]["lipsync"]["evidence"]["lipsync_total_s"]
-          == 6.0, rec["evidence"]["lipsync"])
+          and abs(rec["evidence"]["lipsync"]["evidence"]["ad_length_s"]
+                  - 75.0) < 0.2
+          and abs(rec["evidence"]["lipsync"]["evidence"]["lipsync_total_s"]
+                  - 6.0) < 0.2, rec["evidence"]["lipsync"])
 
     # Done-when PASS through the assembler gate: 60 s, 4 lines, 16 s.
     segs_pass = ([{"src": "clip.mp4", "dur": 4.0, "lip_sync": True}] * 4

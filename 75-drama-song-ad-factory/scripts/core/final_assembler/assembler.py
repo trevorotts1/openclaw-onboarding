@@ -241,7 +241,8 @@ def lipsync_gate(plan):
     declares no lip-sync markers at all, which the QC review layer reads
     as a FAIL via the emitted coverage report — never silently as none).
     """
-    marked = [s for s in plan["segments"] if s.get("lip_sync")]
+    marked = [s for s in plan["segments"]
+              if s.get("lip_sync") or s.get("lip_sync_line_ids")]
     lines = len(marked)
     total = sum(s["snapped_dur"] for s in marked)
     res = check_lipsync_coverage(plan["total_dur"], lines, total)
@@ -281,17 +282,17 @@ def load_timeline(path):
         if s.get("dur") is not None and s["dur"] <= 0:
             raise ValueError(
                 f"TIMELINE_BAD_SEGMENT: segments[{i}].dur must be positive")
-    min_shot_errs = check_timeline_min_shot(tl)
-    if min_shot_errs:
-        raise ValueError(
-            "SEGMENT_TOO_SHORT: minimum shot length failed: "
-            + "; ".join(min_shot_errs[:4]))
-        # E6: a optional per-segment lip-sync marker must be a boolean, so
+        # E6: an optional per-segment lip-sync marker must be a boolean, so
         # the coverage gate below counts exactly what the planner intended.
         if not isinstance(s.get("lip_sync", False), bool):
             raise ValueError(
                 f"TIMELINE_BAD_SEGMENT: segments[{i}].lip_sync must be "
                 "boolean")
+    min_shot_errs = check_timeline_min_shot(tl)
+    if min_shot_errs:
+        raise ValueError(
+            "SEGMENT_TOO_SHORT: minimum shot length failed: "
+            + "; ".join(min_shot_errs[:4]))
     return tl
 
 
@@ -425,9 +426,6 @@ def plan_timeline(tl, base_dir=".", probe=None):
         if isinstance(lids, list) and lids:
             item["lip_sync_line_ids"] = list(lids)
         items.append(item)
-        items.append({"src": s["src"], "frames": frames,
-                      "snapped_dur": frames / fps, "transition": trans,
-                      "xfade_dur": xd, "lip_sync": bool(s.get("lip_sync"))})
     for i in range(1, len(items)):
         ov = round(items[i]["xfade_dur"] * fps)
         lo = min(items[i - 1]["frames"], items[i]["frames"])
