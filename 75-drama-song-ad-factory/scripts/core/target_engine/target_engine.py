@@ -374,8 +374,8 @@ def score(metrics, tg, grace_pct=GRACE_PCT):
 
 def adjustment_for(metrics, tg, grace_pct=GRACE_PCT):
     """Steering knobs for a candidate that missed: which way each miss went
-    and what the regenerating side changes (lyric structure, style text,
-    spoken budget, length). Never a cancel instruction."""
+    and what the regenerating side changes (lyric structure, spoken budget,
+    length). Never a cancel instruction."""
     knobs = {}
     t_share = tg.get("spoken_share")
     m_share = metrics.get("spoken_share")
@@ -388,9 +388,6 @@ def adjustment_for(metrics, tg, grace_pct=GRACE_PCT):
             knobs["spoken_budget"] = (
                 "raise spoken budget: re-add opener / turn / call-to-action "
                 "spoken blocks within the cap")
-        knobs["style_text"] = (
-            "style names spoken at most once, says the full band keeps playing "
-            "under it, and holds no rap / talk-singing wording")
     t_len, m_len = tg.get("length_s"), metrics.get("length_s")
     if t_len is not None and m_len is not None:
         knobs["length"] = ("trim sung lines (keep meter and rhyme)"
