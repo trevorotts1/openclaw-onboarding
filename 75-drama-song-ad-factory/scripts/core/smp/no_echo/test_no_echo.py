@@ -92,22 +92,23 @@ class ThinnessTests(unittest.TestCase):
 
 
 class ConstantsTests(unittest.TestCase):
-    def test_seven_negative_tags_exactly(self):
-        self.assertEqual(len(M.NEGATIVE_TAGS), 7, M.NEGATIVE_TAGS)
-        self.assertEqual(
-            M.NEGATIVE_TAGS,
-            ("reverb", "echo", "delay", "hall", "ethereal", "ambient",
-             "choir pad"))
+    def test_short_negative_tags_exactly(self):
+        self.assertEqual(len(M.NEGATIVE_TAGS), 3, M.NEGATIVE_TAGS)
+        self.assertEqual(M.NEGATIVE_TAGS, ("reverb", "echo", "choir"))
         self.assertEqual(M.negative_tags(), list(M.NEGATIVE_TAGS))
 
     def test_three_banned_spoken_style_words_exactly(self):
         self.assertEqual(M.SPOKEN_BANNED_STYLE_WORDS,
                          ("spacious", "cinematic", "choir"))
 
+    def test_song_banned_style_words_reexported(self):
+        # Part F F13: the song-style ban travels through the re-export too.
+        self.assertEqual(M.SONG_BANNED_STYLE_WORDS,
+                         CORE.SONG_BANNED_STYLE_WORDS)
+
     def test_dry_rule_and_card_line_state_the_rule(self):
         self.assertIn("dry close-microphone vocal", M.DRY_RULE)
-        self.assertIn("reverb, echo, delay, hall, ethereal, ambient, "
-                      "choir pad", M.rule_text())
+        self.assertIn("reverb, echo, choir", M.rule_text())
         self.assertIn("spacious", M.card_line())
         self.assertIn("cinematic", M.card_line())
         self.assertIn("choir", M.card_line())
@@ -129,9 +130,11 @@ class SongRequestTests(unittest.TestCase):
         self.assertIs(req["dry_close_mic"], True)
         self.assertIn("dry close-microphone vocal", req["prompt"])
         self.assertEqual(req["negative_tags"], list(M.NEGATIVE_TAGS))
-        self.assertEqual(len(req["negative_tags"]), 7)
+        self.assertEqual(len(req["negative_tags"]), 3)
         self.assertEqual(req["style_words_banned"],
                          list(M.SPOKEN_BANNED_STYLE_WORDS))
+        self.assertEqual(req["song_style_words_banned"],
+                         list(M.SONG_BANNED_STYLE_WORDS))
         self.assertEqual(req["provider"], "suno")
         self.assertEqual(req["kie_path"], "Skill 74")
         self.assertEqual(req["request_id"], "w1")
@@ -195,12 +198,13 @@ class BannedWordRefusalTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "BANNED_STYLE_WORD")
         self.assertIn("cinematic", str(ctx.exception))
 
-    def test_sung_prompt_is_not_subject_to_the_spoken_ban(self):
-        # D22a bans the three words in SPOKEN parts only; the sung side of
-        # the prompt may still ask for them.
+    def test_song_style_with_a_banned_word_is_refused(self):
+        # Part F F13: the song style itself is banned-word checked through
+        # the re-export too; the old sung-side exemption is gone.
         res = M.song_request({"prompt": "cinematic soul ballad chorus"})
-        self.assertEqual(res["outcome"], "ok", res["errors"])
-        self.assertEqual(M.check(res["request"])["outcome"], "ok")
+        self.assertEqual(res["outcome"], "rejected", res)
+        self.assertEqual(res["reason_code"], "banned-song-style-word", res)
+        self.assertIsNone(res["request"], "a refused request was built")
 
 
 class CheckTests(unittest.TestCase):
@@ -227,14 +231,14 @@ class CheckTests(unittest.TestCase):
     def test_negcontrol_one_negative_tag_dropped_is_caught(self):
         req = self._stamped()
         req["negative_tags"] = [t for t in req["negative_tags"]
-                                if t != "hall"]
+                                if t != "echo"]
         out = M.check(req)
         self.assertEqual(out["outcome"], "rejected")
-        self.assertIn("MISSING_NEGATIVE_TAG:hall", out["errors"])
+        self.assertIn("MISSING_NEGATIVE_TAG:echo", out["errors"])
         self.assertEqual(
             sorted(e for e in out["errors"]
                    if e.startswith("MISSING_NEGATIVE_TAG:")),
-            ["MISSING_NEGATIVE_TAG:hall"])
+            ["MISSING_NEGATIVE_TAG:echo"])
 
     def test_negcontrol_all_tags_dropped_is_caught(self):
         req = self._stamped()
@@ -243,7 +247,7 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(out["outcome"], "rejected")
         self.assertEqual(
             len([e for e in out["errors"]
-                 if e.startswith("MISSING_NEGATIVE_TAG:")]), 7)
+                 if e.startswith("MISSING_NEGATIVE_TAG:")]), 3)
 
     def test_negcontrol_banned_guard_removed_is_caught(self):
         req = self._stamped()
@@ -271,9 +275,9 @@ class CheckTests(unittest.TestCase):
                 for e in out["errors"]), out["errors"])
 
     def test_negative_tag_field_is_not_mistaken_for_spoken_text(self):
-        # "choir pad" lives in negative_tags; only spoken text is scanned.
+        # "choir" lives in negative_tags; only spoken text is scanned.
         req = self._stamped()
-        self.assertIn("choir pad", req["negative_tags"])
+        self.assertIn("choir", req["negative_tags"])
         self.assertEqual(M.check(req)["outcome"], "ok")
 
     def test_wrong_provider_and_wrong_kie_path_refused(self):
@@ -434,7 +438,7 @@ class ImportTests(unittest.TestCase):
                               capture_output=True, text=True, timeout=60)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(proc.stdout.strip(),
-                         "7 Skill 74 ('spacious', 'cinematic', 'choir')")
+                         "3 Skill 74 ('spacious', 'cinematic', 'choir')")
 
     def test_package_exports_every_name_the_core_package_hands_out(self):
         core_init = os.path.abspath(os.path.join(
