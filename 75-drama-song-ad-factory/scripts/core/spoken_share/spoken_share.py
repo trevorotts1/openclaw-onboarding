@@ -1,13 +1,27 @@
 #!/usr/bin/env python3
-"""D15 spoken-share retarget: one band, every length, every style.
+"""Spoken-share targets (SPK001): one band, every length, every style.
 
-Source: Decision log 37 (D15 retarget) 2026-10-07; plan 6.7.
+Source: Decision log 37 (D15 retarget) 2026-10-07; plan 6.7; SPK001 retarget
+(Trevor, 2026-10-08): "Okay, let's go to your recommendation that cut it to
+about 20-25%."
 
-Owner order, verbatim: "It should be 45% and never more than 55%." The 40%
-floor stays. Same for every length and every music style -- rap counts as
-spoken-style delivery, so a rap-heavy cut cannot measure under the band by
-accident. The earlier per-length targets and the earlier wider ceiling are
-retired: this module holds ONE band and nothing keyed by length.
+Why: Suno turns spoken lyric lines into long talking, and the old targets did
+not add up (spoken 35-40% of runtime plus a music-only intro and end card left
+at most about 50% for singing, never the 55-60% goal). Now:
+
+  * spoken share of RUNTIME: 20-25%, target 22.5 (SPOKEN_TARGET_PCT);
+  * the lyric writer budgets spoken lines at about 15-18% of the lyric WORDS
+    (LYRIC_SPOKEN_WORD_PCT), because Suno stretches spoken parts;
+  * singing is measured against VOICE time, sung / (sung + spoken), target
+    77.5 (SUNG_TARGET_PCT). A music-only intro, gaps and the end card never
+    count against it;
+  * both numbers use Trevor's band: within 5 accept, 5-10 accept with a flag,
+    past 10 redo. The only hard reject is no sung stretch of 6 s.
+
+Same for every length and every music style -- rap counts as spoken-style
+delivery, so a rap-heavy cut cannot measure under the band by accident. The
+earlier per-length targets and the earlier wider ceiling are retired: this
+module holds ONE band and nothing keyed by length.
 
 The spoken opener (D12) stays short. H6 (owner, 2026-10-08): the first REAL
 singing -- a sung stretch of at least 6 s, measured on the vocal stem, never
@@ -29,14 +43,14 @@ from __future__ import annotations
 from math import isfinite
 
 TOOL_NAME = "spoken_share"
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "1.1.0"
 SCHEMA_VERSION = "blackceo.spoken-share/v1"
-SOURCE = "Decision log 37 (D15 retarget) 2026-10-07; plan 6.7"
+SOURCE = "Decision log 37 (D15 retarget) 2026-10-07; plan 6.7; SPK001 2026-10-08"
 
 # ---- the three numbers (owner D15 retarget) -------------------------------
-SPOKEN_TARGET_PCT = 45   # the target: spoken share of runtime, as a percent
-SPOKEN_MIN_PCT = 40      # hard floor: never less than this
-SPOKEN_MAX_PCT = 55      # hard ceiling: never more than this
+SPOKEN_TARGET_PCT = 22.5  # the target: spoken share of runtime (20-25), as a percent
+SPOKEN_MIN_PCT = 12.5     # redo edge: target - FLAG_PTS (no absolute floor; reporting only)
+SPOKEN_MAX_PCT = 32.5     # redo edge: target + FLAG_PTS (reporting only)
 
 TARGET = SPOKEN_TARGET_PCT / 100.0
 FLOOR = SPOKEN_MIN_PCT / 100.0
@@ -60,9 +74,14 @@ ACCEPT_PTS = 5      # within this many points of the goal: accept
 FLAG_PTS = 10       # past ACCEPT_PTS up to this: accept WITH A FLAG
 #: H6: first REAL singing lands at this share of runtime (60 s ad -> 9 s).
 FIRST_SUNG_TARGET_PCT = 15
-#: Default sung share of runtime for an ad whose choice card / plan names no
-#: target of its own. The ad's own target always wins (sung_vocal_guard).
-SUNG_TARGET_PCT = 100 - SPOKEN_TARGET_PCT  # = 55: all that is not spoken-style
+#: Default sung share of VOICE time for an ad whose choice card / plan names
+#: no target of its own; music-only intro, gaps and the end card never count
+#: against it. The ad's own target always wins (sung_vocal_guard).
+SUNG_TARGET_PCT = 77.5   # sung share of VOICE time, sung / (sung + spoken); 75-80
+#: The lyric writer budgets spoken lines at this share of the lyric WORDS
+#: (min, max), because Suno stretches spoken parts so the same words take far
+#: more runtime than sung ones. Lands the runtime share near SPOKEN_TARGET_PCT.
+LYRIC_SPOKEN_WORD_PCT = (15.0, 18.0)
 #: The only hard reject when singing was chosen: no real singing, i.e. no
 #: sung stretch this long (seconds). Same number as the singing detector's.
 NO_REAL_SINGING_STRETCH_S = 6.0
@@ -242,6 +261,94 @@ def measure_share(segments):
     }
 
 
+def sung_of_voice_pct(sung_s, spoken_s):
+    """Sung share of VOICE time as a percent: sung / (sung + spoken).
+
+    Voice time is only the seconds somebody is singing or speaking. A
+    music-only intro, gaps and the end card are not voice time, so they never
+    count against singing. No voice at all is refused rather than called 0%.
+    """
+    sung_s = _number(sung_s, "sung_s")
+    spoken_s = _number(spoken_s, "spoken_s")
+    if sung_s < 0 or spoken_s < 0 or sung_s + spoken_s <= 0:
+        raise SpokenShareError("ZERO_VOICE",
+                               "sung + spoken must be positive; share undefined")
+    return round(sung_s / (sung_s + spoken_s) * 100.0, 6)
+
+
+def check_sung_of_voice(segments=None, target_pct=None, sung_s=None,
+                        spoken_s=None):
+    """Judge singing against voice time with Trevor's band.
+
+    Give timing ``segments`` (rap counts as spoken) or ``sung_s`` and
+    ``spoken_s`` directly. ``target_pct`` defaults to SUNG_TARGET_PCT (77.5).
+    Returns {"verdict": PASS|FLAG|FAIL, "band", "sung_of_voice_pct",
+    "target_pct", "gap_pts", "reasons", "flags", ...}. The only other hard
+    reject (no 6 s sung stretch) is check_real_singing, run on segments.
+    """
+    if segments is not None:
+        m = measure_share(segments)
+        sung_s = m["sung_seconds"]
+        spoken_s = m["spoken_style_seconds"]
+    target = SUNG_TARGET_PCT if target_pct is None else float(target_pct)
+    pct = sung_of_voice_pct(sung_s, spoken_s)
+    j = judge_gap(pct, target)
+    text = ("sung %.1f%% of voice time (sung %.1f s, spoken %.1f s), target "
+            "%g%%, %.1f points off" % (pct, float(sung_s), float(spoken_s),
+                                       target, j["gap_pts"]))
+    out = {"verdict": j["verdict"], "band": j["band"],
+           "sung_of_voice_pct": round(pct, 3), "target_pct": target,
+           "gap_pts": j["gap_pts"], "sung_seconds": float(sung_s),
+           "spoken_seconds": float(spoken_s), "reasons": [], "flags": []}
+    if j["verdict"] == VERDICT_FLAG:
+        out["flags"].append("FLAG: " + text)
+    elif j["verdict"] == VERDICT_FAIL:
+        out["reasons"].append(text + "; over %d points, redo" % FLAG_PTS)
+    return out
+
+
+def spoken_word_budget(total_words):
+    """Spoken words the lyric writer should plan for ``total_words`` lyric
+    words: (min, max) at LYRIC_SPOKEN_WORD_PCT (15-18%). Suno stretches
+    spoken parts, so this small word share lands near the 22.5% runtime
+    target."""
+    total_words = _number(total_words, "total_words", "BAD_WORDS")
+    if total_words <= 0:
+        raise SpokenShareError("BAD_WORDS", "total_words must be positive")
+    lo, hi = LYRIC_SPOKEN_WORD_PCT
+    return (round(total_words * lo / 100.0, 1),
+            round(total_words * hi / 100.0, 1))
+
+
+def check_spoken_word_budget(sections):
+    """Judge a lyric sheet's spoken words against the 15-18% budget.
+
+    ``sections`` = [{"delivery": "sung"|"spoken"|"rap", "lines": [str]}].
+    Inside 15-18% is on target; outside, the gap is points to the nearest
+    edge and Trevor's band applies (5 accept, 5-10 flag, past 10 redo).
+    Returns {"verdict", "spoken_word_pct", "budget_pct", "gap_pts",
+    "reasons", "flags"}.
+    """
+    spoken = total = 0
+    for sec in sections or []:
+        n = sum(len(str(line).split()) for line in sec.get("lines") or [])
+        total += n
+        if is_spoken_style(sec.get("delivery")):
+            spoken += n
+    if total <= 0:
+        raise SpokenShareError("BAD_WORDS", "sheet has no lyric words")
+    pct = round(spoken / total * 100.0, 3)
+    lo, hi = LYRIC_SPOKEN_WORD_PCT
+    gap = lo - pct if pct < lo else (pct - hi if pct > hi else 0.0)
+    verdict = judge_gap(gap)
+    text = ("spoken lines are %.1f%% of the lyric words, budget %g-%g%% "
+            "(%.1f points outside)" % (pct, lo, hi, gap))
+    return {"verdict": verdict, "spoken_word_pct": pct,
+            "budget_pct": [lo, hi], "gap_pts": round(gap, 3),
+            "reasons": [text + "; redo the sheet"] if verdict == VERDICT_FAIL else [],
+            "flags": ["FLAG: " + text] if verdict == VERDICT_FLAG else []}
+
+
 def check_share(share, segments=None):
     """Enforce the band on one measured share. Never raises on a share that
     is merely out of band -- that is a FAIL verdict, not an error.
@@ -293,13 +400,13 @@ def check_share(share, segments=None):
     gap = round((share - TARGET) * 100.0, 6)
     verdict = VERDICT_FAIL if reasons else judge_gap(gap)
     if verdict == VERDICT_FAIL and not reasons:
-        reasons.append("spoken share %.1f%% is %.1f points from the %.0f%% "
+        reasons.append("spoken share %.1f%% is %.1f points from the %g%% "
                        "goal, past %d: redo (rap counts as spoken-style "
                        "delivery)" % (share_pct(share), abs(gap),
                                       SPOKEN_TARGET_PCT, FLAG_PTS))
     flags = []
     if verdict == VERDICT_FLAG:
-        flags.append("spoken share %.1f%% is %.1f points from the %.0f%% "
+        flags.append("spoken share %.1f%% is %.1f points from the %g%% "
                      "goal (past %d, within %d): accepted with a flag"
                      % (share_pct(share), abs(gap), SPOKEN_TARGET_PCT,
                         ACCEPT_PTS, FLAG_PTS))
@@ -489,9 +596,16 @@ def check_plan(length_s, segments, basis="planned"):
     first_sung = check_first_sung(segments, basis)
     real = check_real_singing(segments)
     length_check = judge_seconds(measured["total_seconds"], length_s, length_s)
-    parts = (share_check, first_sung, length_check)
+    voice = (check_sung_of_voice(segments)
+             if measured["sung_seconds"] + measured["spoken_style_seconds"] > 0
+             else None)
+    parts = [share_check, first_sung, length_check]
     reasons = list(share_check["reasons"]) + list(first_sung["reasons"])
     flags = list(share_check["flags"]) + list(first_sung["flags"])
+    if voice is not None:
+        parts.append(voice)
+        reasons += voice["reasons"]
+        flags += voice["flags"]
     if length_check["verdict"] == VERDICT_FAIL:
         reasons.append("cut runs %.1f s against a %.1f s goal (%.1f points "
                        "off): redo" % (measured["total_seconds"],
@@ -514,6 +628,7 @@ def check_plan(length_s, segments, basis="planned"):
         "length_s": length_s,
         "measurement": measured,
         "share_check": share_check,
+        "sung_of_voice": voice,
         "first_sung": first_sung,
         "length_check": length_check,
         "real_singing": real,
@@ -552,6 +667,11 @@ __all__ = [
     "VERDICT_FLAG",
     "VERDICT_PASS",
     "check_real_singing",
+    "check_sung_of_voice",
+    "check_spoken_word_budget",
+    "spoken_word_budget",
+    "sung_of_voice_pct",
+    "LYRIC_SPOKEN_WORD_PCT",
     "judge_gap",
     "judge_seconds",
     "longest_sung_stretch_s",

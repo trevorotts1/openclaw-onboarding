@@ -14,8 +14,10 @@ What this module owns and nothing else:
    the sung vocal for All Suno ads, or a song bed under the voiceover for
    Velvet Voiceover ads. Sung share is judged ONLY by Trevor's band around
    the ad's own sung target (choice card / plan, default from the G10
-   constants in core/spoken_share): within 5 points accept, 5-10 accept with
-   a flag, past 10 redo. There is NO absolute floor;
+   constants in core/spoken_share, 77.5): within 5 points accept, 5-10 accept
+   with a flag, past 10 redo. Sung is measured against VOICE time, sung /
+   (sung + spoken): a music-only intro, gaps and the end card never count
+   against it (SPK001). There is NO absolute floor;
 2. two **code-only evidence paths** (no paid call):
    primary  -- the 12.4 song timing map (shot_planner.load_timing_map)
               gives the sung_runtime / runtime coverage ratio;
@@ -66,7 +68,7 @@ except ImportError:                      # pragma: no cover
     from .. import spoken_share as _SS
 
 TOOL_NAME = "final_assembler.sung_vocal_guard"
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "1.1.0"
 
 #: Trevor (2026-10-08): "It's not an absolute 55% or 20% ... within about 5
 #: percentage points" and "Once you get past 10%, it's got to be redone."
@@ -149,7 +151,7 @@ def resolve_voice_mode(profile):
 
 
 def resolve_sung_target(profile=None, target=None):
-    """The ad's own sung target as a fraction of runtime.
+    """The ad's own sung target as a fraction of VOICE time.
 
     Order: explicit ``target`` argument, then the choice card / plan record
     (``sung_target`` or ``sung_target_pct``, top level or under ``style``),
@@ -179,13 +181,26 @@ def resolve_sung_target(profile=None, target=None):
 
 
 # ------------------------------------------------------------ evidence ------
-def sung_coverage_from_timing(timing, runtime_s=None, spoken_section_ids=None):
-    """Sung coverage ratio from the planner's 12.4 song timing map.
+def sung_voice_seconds_from_timing(timing, spoken_section_ids=None):
+    """(sung_s, spoken_s) from the 12.4 timing map: line windows in the
+    ``spoken_section_ids`` sections are spoken, every other line window is
+    sung. Gaps no line covers (intro, breaks, end card) are in neither."""
+    t = load_timing_map(timing)
+    sung_s = sum(en - st for st, en in _sung_windows(t, spoken_section_ids))
+    spoken_s = sum(en - st for st, en in
+                   _sung_windows(t, spoken_section_ids, spoken=True))
+    return sung_s, spoken_s
 
-    Normalizes the map through shot_planner.load_timing_map, sums the line
-    windows and divides by the master runtime (default: the map's own
-    duration_seconds). ``spoken_section_ids`` excludes spoken-line sections
-    from the sung sum (E8 lays those lines on the bed, they are not sung).
+
+def sung_coverage_from_timing(timing, runtime_s=None, spoken_section_ids=None):
+    """Sung share of VOICE time, sung / (sung + spoken), from the planner's
+    12.4 song timing map, as (ratio 0..1, runtime_s).
+
+    Normalizes the map through shot_planner.load_timing_map. Music-only
+    seconds (intro, gaps, end card) are not voice time and never count
+    against singing (SPK001). ``spoken_section_ids`` names the spoken-line
+    sections (E8 lays those lines on the bed, they are not sung). ``runtime_s``
+    (default: the map's own duration_seconds) is returned for the receipt.
     Raises ValueError on a bad shape (never coerces it to "no sung").
     """
     t = load_timing_map(timing)
@@ -193,17 +208,21 @@ def sung_coverage_from_timing(timing, runtime_s=None, spoken_section_ids=None):
         else float(t["duration_seconds"])
     if dur <= 0:
         raise ValueError("BAD_RUNTIME: runtime must be positive")
-    windows = _sung_windows(t, spoken_section_ids)
-    sung_s = sum(en - st for st, en in windows)
-    return min(1.0, sung_s / dur), dur
+    sung_s, spoken_s = sung_voice_seconds_from_timing(timing, spoken_section_ids)
+    if sung_s + spoken_s <= 0:
+        return 0.0, dur
+    return sung_s / (sung_s + spoken_s), dur
 
 
-def _sung_windows(t, spoken_section_ids=None):
-    """(start, end) of every sung line window in a normalized timing map."""
-    spoken = {_norm(s) for s in (spoken_section_ids or []) if isinstance(s, str)}
+def _sung_windows(t, spoken_section_ids=None, spoken=False):
+    """(start, end) of every sung line window in a normalized timing map
+    (``spoken=True``: of every spoken line window instead)."""
+    ids = {_norm(s) for s in (spoken_section_ids or []) if isinstance(s, str)}
     out = []
     for ln in t["lines"].values():
-        if spoken and ln["section_id"] and _norm(ln["section_id"]) in spoken:
+        is_spoken = bool(ids and ln["section_id"]
+                         and _norm(ln["section_id"]) in ids)
+        if is_spoken != spoken:
             continue
         st, en = float(ln["start"]), float(ln["end"])
         if en > st:
@@ -280,6 +299,8 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
     Primary path  -- ``timing``: 12.4 map -> sung coverage ratio.
                      no sung stretch of 6 s  -> FAIL VOCAL_MISSING
                      within 5 points of the ad's target   -> PASS
+                     (sung share of VOICE time, sung / (sung + spoken);
+                     pass ``spoken_section_ids`` so spoken lines count)
                      5-10 points off                      -> PASS + flag
                      more than 10 points off              -> FAIL
                                                 SUNG_COVERAGE_LOW (redo)
@@ -312,6 +333,7 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
             return ver
         ver["evidence_path"] = "timing_map"
         ver["sung_coverage"] = round(ratio, 4)
+        ver["measured_over"] = "voice_time"
         if mode == VELVET:
             if ratio <= 0.0:
                 # Velvet's bed is the song: a map with no song windows means
@@ -342,7 +364,7 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
             ver["outcome"] = "FAIL"
             ver["reason_code"] = "SUNG_COVERAGE_LOW"
             ver["next_action"] = (
-                "sung runtime %.2f%% is %.1f points from the %.0f%% target, "
+                "sung %.2f%% of voice time is %.1f points from the %g%% target, "
                 "past %d: redo" % (ratio * 100.0, j["gap_pts"],
                                    target * 100.0, _SS.FLAG_PTS))
             return ver
@@ -350,7 +372,7 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
         ver["reason_code"] = "SUNG_COVERAGE_OK"
         if j["verdict"] == _SS.VERDICT_FLAG:
             ver["flags"] = [
-                "sung runtime %.2f%% is %.1f points from the %.0f%% target: "
+                "sung %.2f%% of voice time is %.1f points from the %g%% target: "
                 "accepted with a flag" % (ratio * 100.0, j["gap_pts"],
                                           target * 100.0)]
         ver["next_action"] = "final QC continues"

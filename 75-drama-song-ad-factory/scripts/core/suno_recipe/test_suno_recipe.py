@@ -34,8 +34,9 @@ def seg(d, a, b, src="measured"):
     return {"delivery": d, "start": a, "end": b, "source": src}
 
 
-GOOD_TAKE = [seg("spoken", 0, 10), seg("sung", 10, 30), seg("spoken", 30, 65),
-             seg("sung", 65, 100)]
+# 22% spoken of runtime, 78% sung of voice time, first singing at 10%.
+GOOD_TAKE = [seg("spoken", 0, 10), seg("sung", 10, 45), seg("spoken", 45, 57),
+             seg("sung", 57, 100)]
 
 
 class Recipe(unittest.TestCase):
@@ -121,6 +122,16 @@ class Recipe(unittest.TestCase):
         self.assertEqual(R.score_take({"segments": late})["verdict"], "FAIL")
         none = [seg("spoken", 0, 100)]
         self.assertEqual(R.score_take({"segments": none})["verdict"], "FAIL")
+
+    def test_spk001_take_bands(self):
+        # spoken 31% / 37% of runtime; sung of voice 69% / 63% (first sung 10%)
+        flag = [seg("spoken", 0, 10), seg("sung", 10, 45), seg("spoken", 45, 66),
+                seg("sung", 66, 100)]
+        r = R.score_take({"segments": flag})
+        self.assertEqual(r["verdict"], "FLAG", r)
+        redo = [seg("spoken", 0, 10), seg("sung", 10, 45), seg("spoken", 45, 72),
+                seg("sung", 72, 100)]
+        self.assertEqual(R.score_take({"segments": redo})["verdict"], "FAIL")
 
     def test_rules_text_is_verbatim(self):
         self.assertEqual(len(R.RULES), 4)

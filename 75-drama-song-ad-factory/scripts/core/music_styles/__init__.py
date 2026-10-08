@@ -2,7 +2,7 @@
 
 The three styles offered on the approval card, each with its Suno style
 prompt, its song-brief sound description, and the spoken-share target it
-carries (D15 retarget: target 45% of runtime, hard band 40-55%, identical
+carries (D15 retarget: target 22.5% of runtime (20-25), redo past 10 points, identical
 for every length and every style, rap counted as spoken-style delivery;
 first real singing targeted at 15% of runtime). The earlier 40-70% band and the
 per-length targets are retired -- the numbers come from core/spoken_share.

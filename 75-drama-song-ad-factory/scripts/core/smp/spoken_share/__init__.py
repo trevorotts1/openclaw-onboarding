@@ -2,7 +2,7 @@
 
 One implementation lives in ``core/spoken_share/spoken_share.py`` (manual L1);
 this package re-exports it so ``import spoken_share`` under ``core/smp/`` keeps
-resolving to the same rule (45% target, 40-55 band, every length and style,
+resolving to the same rule (22.5% target, 20-25 band, every length and style,
 rap counts as spoken, first real singing targeted at 15% of runtime). Skill 74 stays
 the sole KIE path. Plan measuring and verification only — no network, no
 spend. stdlib only.
@@ -26,6 +26,11 @@ from .spoken_share import (  # noqa: F401
     SPOKEN_STYLE_DELIVERIES,
     SPOKEN_TARGET_PCT,
     SUNG_TARGET_PCT,
+    LYRIC_SPOKEN_WORD_PCT,
+    check_sung_of_voice,
+    check_spoken_word_budget,
+    spoken_word_budget,
+    sung_of_voice_pct,
     SpokenShareError,
     TARGET,
     TARGET_ACCEPT_PCT,
@@ -72,6 +77,11 @@ __all__ = [
     "SPOKEN_STYLE_DELIVERIES",
     "SPOKEN_TARGET_PCT",
     "SUNG_TARGET_PCT",
+    "LYRIC_SPOKEN_WORD_PCT",
+    "check_sung_of_voice",
+    "check_spoken_word_budget",
+    "spoken_word_budget",
+    "sung_of_voice_pct",
     "SpokenShareError",
     "TARGET",
     "TARGET_ACCEPT_PCT",
