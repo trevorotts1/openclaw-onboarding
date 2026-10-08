@@ -1,3 +1,5 @@
+## [v26.4.4]  -  2026-10-08  -  fix(cc): bound the CC contract check (stdin /dev/null + 120s alarm) and raise CC pin to v7.6.110 (skill 32 v13.1.44)
+
 ## [v26.4.3]  -  2026-10-07  -  Merge train: #1586 fix(embeddings): skill 76 per-agent multimodal, re-index retries, 5c…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
