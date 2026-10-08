@@ -1,6 +1,6 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v26.4.7 — Skill 76 local embedder hardened (QC fixes).** A fresh install on a client Mac no longer fails after switching memory search: every Ollama, model and cloud-protection check now passes before the config is written. Re-index and brew calls are time-bounded, memory search keeps one vector space (fallback `none`), the Ollama app is stopped with SIGTERM, and per-agent memory overrides are reported, never rewritten. Builds on v26.1.0 (Skill 76). Paired Command Center: **v7.6.111**.
+> **v26.4.7 — Drama song ad factory batch (Skill 75 v2.8.0).** One batch release of 24 units: Part H (lip-sync offset and measured gate, fades and long gaps, pictures planned from real song timestamps, one singing rule with the 5/10 point band, readable intake card, protected names in captions, delivery checklist Q8-Q11, no hand-written pipeline scripts, song files MP3 320 and WAV), Part I (caption spelling and website, scenes match the song and faces, character reference sets, master length L-2, clean endings, character library, one-question-at-a-time intake, one sung hook by a length formula), the Suno song recipe default, the F1/F14/F15/E7 amendments, and the runtime-parity alias fix. Builds on v26.4.6. Paired Command Center: **v7.6.111**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
 > **Version:** see `/version` - this repo at v26.4.7.
