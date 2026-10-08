@@ -12,6 +12,13 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+
+# Skill 75 load governor: every heavy local job goes through it (see load_governor/).
+import os as _gos, sys as _gsys
+_gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..'))
+if _gcore not in _gsys.path:
+    _gsys.path.insert(0, _gcore)
+import load_governor as _LG  # noqa: E402
 import sys
 from pathlib import Path
 
@@ -61,8 +68,8 @@ def build_song_files(mix_path, delivery_dir, ad_name, instrumental_path=None,
         codec = ["-c:a", "libmp3lame", "-b:a", "%dk" % MP3_KBPS] if ext == "mp3" \
             else ["-c:a", "pcm_s16le"]
         dst = out / fname
-        subprocess.run([ffmpeg, "-y", "-v", "error", "-i", str(srcs[kind]), "-vn",
-                        *codec, str(dst)], check=True)
+        _LG.run_ffmpeg([ffmpeg, "-y", "-v", "error", "-i", str(srcs[kind]), "-vn",
+                        *codec, str(dst)], "song-encode", check=True)
         rows.append({"kind": kind, "file": fname, "format": ext,
                      "sha256": sha256_file(dst), **_probe(dst, ffprobe)})
     return rows

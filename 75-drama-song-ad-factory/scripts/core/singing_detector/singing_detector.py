@@ -56,6 +56,13 @@ import subprocess
 
 import numpy as np
 
+# Skill 75 load governor: every heavy local job goes through it (see load_governor/).
+import os as _gos, sys as _gsys
+_gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..'))
+if _gcore not in _gsys.path:
+    _gsys.path.insert(0, _gcore)
+import load_governor as _LG  # noqa: E402
+
 TOOL_NAME = "singing_detector"
 TOOL_VERSION = "2.0.0"
 METHOD = "pitch-stability+voicing+note-alignment"
@@ -157,10 +164,10 @@ def decode_stem(stem_path, ffmpeg="ffmpeg", sr=SR):
     """One stem -> float32 mono at sr via one ffmpeg process. Raises
     RuntimeError when ffmpeg is missing or the file is unreadable."""
     try:
-        raw = subprocess.run(
+        raw = _LG.run_ffmpeg(
             [ffmpeg, "-v", "error", "-threads", "4", "-i", str(stem_path),
              "-f", "s16le", "-ac", "1", "-ar", str(sr), "-"],
-            capture_output=True, check=True).stdout
+            "singing-detector-decode", capture_output=True, check=True).stdout
     except FileNotFoundError as e:
         raise RuntimeError("FFMPEG_MISSING: %s" % e) from e
     except subprocess.CalledProcessError as e:
@@ -309,6 +316,7 @@ def _confidence(votes, cover, voiced):
     return round(max(0.0, min(1.0, margin * (0.5 + 0.5 * coverage))), 3)
 
 
+@_LG.heavy("singing-detector")
 def detect_track(stem_path, win=WINDOW_S, hop=HOP_S, ffmpeg="ffmpeg"):
     """Rolling windows over one vocal stem -> the measured share record.
 
@@ -372,6 +380,7 @@ def detect_track(stem_path, win=WINDOW_S, hop=HOP_S, ffmpeg="ffmpeg"):
     }
 
 
+@_LG.heavy("singing-detector")
 def share_for_stem(stem_path, ffmpeg="ffmpeg"):
     """The record receipts print (G5): MEASURED sung share + confidence +
     method name. `labelled time` may never appear here -- this function has
@@ -393,6 +402,7 @@ def share_for_stem(stem_path, ffmpeg="ffmpeg"):
     }
 
 
+@_LG.heavy("singing-detector")
 def score_stem_window(stem_path, a, b, ffmpeg="ffmpeg"):
     """Line-level QC: one window of one stem."""
     x = decode_stem(stem_path, ffmpeg=ffmpeg)

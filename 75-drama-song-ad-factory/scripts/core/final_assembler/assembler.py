@@ -58,6 +58,13 @@ import shutil
 import subprocess
 import sys
 
+# Skill 75 load governor: every heavy local job goes through it (see load_governor/).
+import os as _gos, sys as _gsys
+_gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..'))
+if _gcore not in _gsys.path:
+    _gsys.path.insert(0, _gcore)
+import load_governor as _LG  # noqa: E402
+
 try:                                    # E1 module (this package)
     from . import fps_conform
 except ImportError:                     # direct-script fallback
@@ -979,7 +986,8 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
     threads, nice, _timeout = size_ffmpeg(
         plan.get("total_dur", 0), w, h)
     segs = plan["segments"]
-    cmd = ["nice", "-n", str(nice), ffmpeg, "-y", "-threads", str(threads)]
+    # Load governor: nice -n 10 + -threads min(4, size_ffmpeg) on every ffmpeg argv.
+    cmd = _LG.ffmpeg_argv(["-y"], ffmpeg, threads)
     for s in segs:
         cmd += ["-i", s["src"]]
     song = plan.get("song_path")
@@ -1051,8 +1059,8 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
 
 def _run(cmd, timeout=600):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=timeout, check=False)
+        return _LG.run_ffmpeg(cmd, "ffmpeg-render", capture_output=True,
+                              text=True, timeout=timeout, check=False)
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError(f"FFMPEG_UNAVAILABLE: {exc}") from exc
 
@@ -1355,6 +1363,12 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             return _fail("AV_DRIFT",
                          next_action="audio/video differ by >1 frame",
                          evidence=evid)
+    # Load governor: the master is verified; delete the stage intermediates the
+    # timeline lists (never deliverables), log each deletion, record heavy-job waits.
+    reg = _LG.StageRegistry()
+    reg.register("assemble", [abspath(p) for p in tl.get("intermediates", [])])
+    evid["cleanup"] = reg.consumed("assemble", output)
+    evid["load_governor"] = _LG.receipt()
     receipt = {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
                "tool_version": TOOL_VERSION, "command": "assemble",
                "outcome": "ok", "reason_code": "ASSEMBLED",

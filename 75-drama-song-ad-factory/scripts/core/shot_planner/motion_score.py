@@ -19,6 +19,13 @@ CLIP_LOW_MOTION before assembly. Stdlib only, $0 spend, no network.
 """
 from __future__ import annotations
 
+# Skill 75 load governor: every heavy local job goes through it (see load_governor/).
+import os as _gos, sys as _gsys
+_gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..'))
+if _gcore not in _gsys.path:
+    _gsys.path.insert(0, _gcore)
+import load_governor as _LG  # noqa: E402
+
 #: Below this mean normalized frame-to-frame change a clip is near-still.
 #: Matches fps_conform.DUP_FRAMES_CAP's 2% band (same scale: 0.0-1.0).
 MOTION_SCORE_LOW = 0.02
@@ -116,8 +123,8 @@ def _sample_clip(clip_path, samples=6):
            "-vf", "signalstats,metadata=print:key=lavfi.signalstats.YAVG",
            "-f", "null", "-"]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=60, check=False)
+        proc = _LG.run_ffmpeg(cmd, "motion-score", capture_output=True,
+                              text=True, timeout=60, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
         raise MotionScoreError("CLIP_UNREADABLE", str(exc)) from exc
     if proc.returncode != 0:
