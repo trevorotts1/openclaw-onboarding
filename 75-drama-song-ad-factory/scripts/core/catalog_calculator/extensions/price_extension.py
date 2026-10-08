@@ -3,7 +3,8 @@
 Adds four things to the choice-card total and to the D26 batch total:
 
   * **lip-sync close-up seconds** (choice-card-spec 3.6, price-menu 3): one
-    line per ad, priced by Skill 74 ``price --model <roster model> --units
+    line per ad (6-8 clips of 4-6 s per 60 s ad, 30-40 s; no clip over 6 s,
+    so seconds <= 6 x lines or the card is refused), priced by Skill 74 ``price --model <roster model> --units
     <seconds x shapes>``. Lip-sync runs on every shape that was ordered, so
     both shapes double this line.
   * **voice packs** (price-menu 4): one line of extra Suno generations. How
@@ -31,6 +32,12 @@ calculator is discovered on disk, never fetched.
 """
 import math
 import os
+import sys
+
+_CORE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+import lipsync_clips                    # the doubled-lip-sync numbers (one source)
 
 try:  # package import (core.catalog_calculator.extensions)
     from . import base_bridge
@@ -103,6 +110,11 @@ def _lip_sync_spec(choice):
         return None, "BAD_LIP_SYNC", "error"
     if model not in LIPSYNC_ROSTER:
         return None, "LIPSYNC_MODEL_NOT_OFFERED", "unavailable"
+    # Doubled lip-sync = more pieces, not longer ones: no clip over 6 s. A
+    # card that breaks it is refused loudly ("Price unavailable"), never
+    # trimmed or priced as if it were fine.
+    if seconds > lines * lipsync_clips.CLIP_MAX_S + 1e-9:
+        return None, "LIPSYNC_CLIP_OVER_CAP", "unavailable"
     return {"model": model, "seconds": seconds, "lines": lines}, None, None
 
 

@@ -4,7 +4,7 @@ lip-sync coverage hits a target band.
 
 Evidence (Kiesett "Stop Stale" ad, 2026-10-08): 19 s of the 63 s ad showed a
 character's face with a moving mouth while the words heard were not hers,
-and only 9.6 s carried lip-sync against the 15-20 s rule. Part E E6
+and only 9.6 s carried lip-sync against the then 15-20 s rule. Part E E6
 (final_assembler/lipsync_coverage.py) counts seconds and lines only; it
 never asked WHICH faces are speaking. This module adds the two missing
 pieces, stdlib only, no network, no spend:
@@ -22,14 +22,19 @@ pieces, stdlib only, no network, no spend:
    (leave the character out of faces_on_screen), another character, or an
    off-screen voice (narrator).
 
-2. COVERAGE TARGET (planner + QC): target_band_s() is the 15-20 s target of a
-   60-90 s ad (scaled by runtime outside it) with the 5-point grace
-   (GRACE_POINTS of runtime). plan_lipsync_lines() picks enough of the
-   script's own-face lines to reach the target; check_coverage_band() is the
-   QC measurement. Part E E6 hard floors stay as they are.
+2. COVERAGE TARGET (planner + QC): DOUBLED by owner order 2026-10-08. A 60 s
+   ad carries 6-8 short lip-sync clips of 4-6 s each (30-40 s), scaled
+   linearly with ad length; every clip is capped at 6 s. The numbers live in
+   core/lipsync_clips.py (the single source). target_band_s() is the seconds
+   band with the 5-point grace (GRACE_POINTS of runtime).
+   plan_lipsync_lines() picks the clips: every sung hook, the spoken opener
+   and the spoken closing line first (line "role": hook / opener / closing),
+   then the longest remaining own-face lines, each cut to at most 6 s;
+   check_coverage_band() is the QC measurement. Part E E6 floors follow the
+   same numbers.
 
-ponytail: the 5-point grace and the 15-20 s band are constants here; fold
-them into the G10 constants module when that lands on main.
+ponytail: the 5-point grace is a constant here; fold it into the G10
+constants module when that lands on main.
 """
 from __future__ import annotations
 
@@ -39,6 +44,8 @@ import sys
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
+
+import lipsync_clips as _LC            # the one source of the clip numbers
 
 try:                                   # reuse the Decision-26 predicate
     from lip_sync.narrator_rule import person_on_screen as _person
@@ -55,10 +62,11 @@ BELOW_BAND = "LIPSYNC_COVERAGE_BELOW_BAND"
 TARGET_UNREACHABLE = "LIPSYNC_TARGET_UNREACHABLE"
 
 OVERLAP_MIN_S = 0.25        # a boundary brush shorter than this is not "heard"
-TARGET_MIN_S = 15.0         # lip-sync seconds in a 60-90 s ad ...
-TARGET_MAX_S = 20.0         # ... the documented 15-20 s
+TARGET_MIN_S = _LC.TOTAL_PER_REF_S[0]   # lip-sync seconds in a 60 s ad: 30 ...
+TARGET_MAX_S = _LC.TOTAL_PER_REF_S[1]   # ... to 40 (was 15-20), scaled by L/60
+CLIP_MAX_S = _LC.CLIP_MAX_S             # every clip is cut to at most 6 s
 GRACE_POINTS = 5.0          # +/- 5 points of runtime around the band
-MIN_LINES = 3               # same floor as Part E E6
+MIN_LINES = _LC.MIN_CLIPS_FLOOR         # absolute floor; per-length in budget()
 
 
 class FaceRuleError(Exception):
@@ -172,14 +180,13 @@ def check_face_speaks(shots, lines):
 def target_band_s(ad_length_s):
     """(target_min_s, target_max_s, grace_s) for one ad length.
 
-    15-20 s from 60 to 90 s; scaled down below 60 s and up above 90 s so the
-    share of runtime never drifts. grace = GRACE_POINTS of runtime.
+    30-40 s at 60 s, scaled linearly with the ad length (core/lipsync_clips).
+    grace = GRACE_POINTS of runtime.
     """
     if not _num(ad_length_s) or ad_length_s <= 0:
         raise FaceRuleError("BAD_INPUT", "ad_length_s must be positive")
-    scale = ad_length_s / 60.0 if ad_length_s < 60 else (
-        1.0 if ad_length_s <= 90 else ad_length_s / 90.0)
-    return (TARGET_MIN_S * scale, TARGET_MAX_S * scale,
+    b = _LC.budget(ad_length_s)
+    return (b["total_min_s"], b["total_max_s"],
             GRACE_POINTS / 100.0 * ad_length_s)
 
 
@@ -194,37 +201,60 @@ def check_coverage_band(ad_length_s, lipsync_total_s, lipsync_lines_count):
           "band_low_s": lo - grace, "band_high_s": hi + grace,
           "share_pct": round(100.0 * lipsync_total_s / ad_length_s, 2),
           "in_band": lo - grace - 1e-9 <= lipsync_total_s <= hi + grace + 1e-9}
-    ok = lipsync_total_s + 1e-9 >= lo - grace and lipsync_lines_count >= MIN_LINES
+    min_clips = _LC.budget(ad_length_s)["min_clips"]
+    ev["min_clips"] = min_clips
+    ok = lipsync_total_s + 1e-9 >= lo - grace and lipsync_lines_count >= min_clips
     return {"pass": ok, "reason_code": "LIPSYNC_BAND_OK" if ok else BELOW_BAND,
             "evidence": ev}
 
 
 def plan_lipsync_lines(lines, ad_length_s, must_ids=()):
     """Pick which script lines become lip-sync clips so coverage hits the
-    target. Candidates are lines spoken by a person on screen (never a
-    narrator or device). must_ids (e.g. lines whose face is on screen) are
-    taken first; then the longest remaining lines that keep the total at or
-    below target_max, until the total reaches target_min and MIN_LINES.
+    target: MORE PIECES, NOT LONGER ONES (6-8 clips of 4-6 s per 60 s ad).
 
-    Returns {"pass", "reason_code", "selected" (timeline order), "total_s",
-    "target_min_s", "target_max_s"}; TARGET_UNREACHABLE when the script does
-    not carry enough own-face lines (the script needs more).
+    Candidates are lines spoken by a person on screen (never a narrator or
+    device). A clip is its line cut to at most CLIP_MAX_S (6 s). Taken first:
+    must_ids and every line whose "role" is hook / opener / closing (the
+    sung hooks, the spoken opener, the spoken closing line). Then the longest
+    remaining lines (clips under 4 s last) until the total reaches target_min
+    and the clip count reaches min_clips, never passing max_clips or
+    target_max.
+
+    Returns {"pass", "reason_code", "selected" (timeline order),
+    "clip_s" ({id: seconds}), "total_s", "clips", "target_min_s",
+    "target_max_s", "min_clips", "max_clips"}; TARGET_UNREACHABLE when the
+    script does not carry enough own-face lines (the script needs more).
     """
     ls = _lines(lines)
-    lo, hi, _ = target_band_s(ad_length_s)
-    dur = {k: v["end"] - v["start"] for k, v in ls.items()}
+    b = _LC.budget(ad_length_s)
+    lo, hi = b["total_min_s"], b["total_max_s"]
+    dur = {k: min(v["end"] - v["start"], CLIP_MAX_S) for k, v in ls.items()}
     cand = {k for k, v in ls.items() if v["speaker"] and _person(v["speaker"])}
-    picked = [k for k in must_ids if k in cand]
+    roles = {r.get("line_id") or r.get("name"): r.get("role")
+             for r in (lines if not isinstance(lines, dict) else [])
+             if isinstance(r, dict)}
+    first = [k for k in list(must_ids) + sorted(
+        (k for k in cand if roles.get(k) in _LC.PRIORITY_ROLES),
+        key=lambda k: ls[k]["start"]) if k in cand]
+    picked = []
+    for k in first:
+        if k not in picked and len(picked) < b["max_clips"] and \
+                sum(dur[x] for x in picked) + dur[k] <= hi + 1e-9:
+            picked.append(k)
     total = sum(dur[k] for k in picked)
-    for k in sorted(cand - set(picked), key=lambda k: -dur[k]):
-        if total >= lo and len(picked) >= MIN_LINES:
+    rest = sorted(cand - set(picked),
+                  key=lambda k: (dur[k] < _LC.CLIP_MIN_S, -dur[k]))
+    for k in rest:
+        if total >= lo and len(picked) >= b["min_clips"]:
             break
-        if total + dur[k] <= hi + 1e-9:
+        if len(picked) < b["max_clips"] and total + dur[k] <= hi + 1e-9:
             picked.append(k)
             total += dur[k]
     picked.sort(key=lambda k: ls[k]["start"])
-    ok = total + 1e-9 >= lo and len(picked) >= MIN_LINES
+    ok = total + 1e-9 >= lo and len(picked) >= b["min_clips"]
     return {"pass": ok, "reason_code": "LIPSYNC_PLAN_OK" if ok
             else TARGET_UNREACHABLE, "selected": picked,
-            "total_s": round(total, 3), "target_min_s": lo,
-            "target_max_s": hi}
+            "clip_s": {k: round(dur[k], 3) for k in picked},
+            "total_s": round(total, 3), "clips": len(picked),
+            "target_min_s": lo, "target_max_s": hi,
+            "min_clips": b["min_clips"], "max_clips": b["max_clips"]}

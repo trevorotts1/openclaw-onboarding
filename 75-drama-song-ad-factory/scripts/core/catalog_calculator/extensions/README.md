@@ -13,8 +13,9 @@ re-runs the tests and reads the source.
   close-ups, voice packs, clips and the batch total**.
 - `references/price-menu.md` section **3** (lip-sync close-ups), **4** (voice
   packs), **6** (batch total).
-- Plan **6.3** / decision **33**: lip-sync runs on three to four selected
-  lines, about 15-20 seconds **per shape**; roster is Kling avatar first,
+- Plan **6.3** / decision **33**, doubled 2026-10-08: lip-sync runs on 6-8
+  short clips of 4-6 s per 60 s ad (30-40 seconds, scaled by length, no clip
+  over 6 s) **per shape**; roster is Kling avatar first,
   InfiniTalk backup.
 - Plan **6.2**: the song is one asset shared by every shape.
 - Plan **5.4**: Skill 74 `price --model ID --units N` is the single price
@@ -34,7 +35,7 @@ Same envelope as the base calculator, with `unit` set to
 `catalog-calculator.extensions`. Two optional additions to `choice`:
 
 ```json
-"lip_sync":    {"model": "kling/ai-avatar-standard", "seconds": 18, "lines": 4}
+"lip_sync":    {"model": "kling/ai-avatar-standard", "seconds": 35, "lines": 7}
 "voice_packs": {"count": 3}
 ```
 
@@ -75,6 +76,7 @@ and `start_paid` false.
 | Lip-sync rate unreadable | `unavailable` | `PRICE_UNAVAILABLE` / `PRICE_UNESTIMABLE` / `PRICE_UNIT_UNSUPPORTED` / `PRICE_RUNNER_ERROR` |
 | Voice-pack rate unreadable | `unavailable` | same codes |
 | Model outside the D33 roster | `unavailable` | `LIPSYNC_MODEL_NOT_OFFERED` |
+| A lip-sync clip over 6 s (`seconds` > 6 x `lines`) | `unavailable` | `LIPSYNC_CLIP_OVER_CAP` |
 | Malformed `lip_sync` / `voice_packs` / choice | `error` | `BAD_LIP_SYNC` / `BAD_VOICE_PACKS` / `BAD_CHOICE` |
 | Empty batch / malformed book | `error` | `BATCH_EMPTY` / `BATCH_AD_ERROR` |
 

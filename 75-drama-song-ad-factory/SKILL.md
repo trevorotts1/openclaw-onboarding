@@ -339,12 +339,20 @@ SOP named above.
   no two characters share a voice. Its spoken-only separate-take packs are
   SUPERSEDED by the one-track rule: spoken words inside the song's lyrics.
 - **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
-  includes one lip-sync close-up per speaking/singing character: 9:16, front-facing, head
-  and shoulders filling the frame, mouth clearly visible and unobstructed (no hand, hair,
-  mic or shadow on the lips), even soft light, lips slightly parted, eyes to camera, same
-  style and likeness. Every lip-sync job (Kling avatar, InfiniTalk) uses it as its source
-  image by default (`lip_gate.run_gate(..., source_image=)`). QC: its mouth region must be
-  sharp and unobstructed (`lip_gate.check_reference_set`); a set without it fails.
+  includes one lip-sync close-up per speaking/singing character. It is MADE from the
+  template `lip_gate.closeup_prompt()` and CHECKED by the lip-sync image gate
+  (`lip_gate/image_gate.py`) before any paid lip-sync job: face looking straight at the
+  camera (yaw and pitch within 10 degrees); head-and-shoulders, portrait 9:16, face about
+  35-40% of the frame height (accepted 30-45%); mouth closed or slightly parted, neutral,
+  no big toothy smile; nothing over the mouth or jaw (hand, microphone, hair, hat brim);
+  soft even light, no hard shadow across the mouth, background separated from the head;
+  the same 3D character as the storyboard reference; sharp, at least 1080x1920, generated
+  natively and never cropped out of a wide shot. A picture that fails any point, or one
+  that cannot be measured, is refused LOUDLY with every reason and no paid job runs
+  (`lip_gate.run_gate(..., source_image=, image_check=)` raises
+  `LipsyncImageRefused`). Every lip-sync job (Kling avatar, InfiniTalk) then uses the
+  picture as its source image. QC: its mouth region must be sharp and unobstructed
+  (`lip_gate.check_reference_set`); a set without it fails.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
   that character's own line cut from the one track's vocal stem; InfiniTalk
@@ -353,8 +361,15 @@ SOP named above.
   line: never a narrator, never another character. Narrator, phone,
   voicemail and laptop voices may play as voice-over but are never lip-synced
   onto a person. Lip-sync applies to the pain peak, the product line, the
-  call to action and the chorus hook - three to four lines, about 15 to 20
-  seconds, listed on the approval card; every other shot stays as the video
+  call to action and the chorus hook, now DOUBLED (owner order 2026-10-08): more
+  pieces, not longer ones. A 60 s ad carries 6 to 8 short clips of 4 to 6 seconds
+  (30 to 40 seconds in all, was 15 to 20), scaled linearly with the ad length, no
+  clip over 6 seconds (`core/lipsync_clips.py`). Clips go on every sung hook, the
+  spoken opener and the spoken closing line first. Each clip is a paid
+  `kling/ai-avatar-standard` job, so the lip-sync cost roughly doubles: the card
+  prices it through Skill 74 and a plan that would pass the spend cap is refused
+  loudly (`lipsync_clips.check_budget`), never trimmed or run past the cap. The
+  list is shown on the approval card; every other shot stays as the video
   model made it. For an All Suno run the isolated line is cut from the one
   track's vocal stem by Skill 74's `ai-music-api/separate-vocals`; the stem
   is only the lip-sync input, never in the final mix. The Kling-avatar-first

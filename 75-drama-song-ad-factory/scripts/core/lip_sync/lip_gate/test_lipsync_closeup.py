@@ -25,7 +25,8 @@ def gen(provider, spec):
     seen.append((provider, spec["source_image"]))
     return provider
 bad = {"offset_s": 0.3, "corr": 0.1, "control_corr": 0.1, "margin": 0.0, "frozen_s": 0.0}
-L.run_gate("l1", gen, lambda clip: bad, {}, source_image=pic)
+L.run_gate("l1", gen, lambda clip: bad, {}, source_image=pic,
+           image_check=lambda img: {"pass": True})
 assert seen == [("kling", pic), ("kling", pic), ("infinitalk", pic)], seen
 
 # 3. QC: missing close-up fails; unclear mouth fails; clear passes

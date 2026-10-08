@@ -7,14 +7,15 @@ live only in docs; the 2026-10-08 failed ad cut ~6 s of lip-sync out of a
 2-minute ad and nobody failed it. This module is the code that enforces the
 rule at the FINAL edit QC gate (17.5, qc_gate check "final_edit"):
 
-  * at least 3 lip-sync LINES per ad, whatever the length (never fewer);
-  * a 60-90 s ad carries 15-20 s of lip-sync -- the 15 s floor holds from
-    60 s upward; for ads longer than 90 s the floor scales up to at least
-    12% of runtime; for ads shorter than 60 s the floor scales down the
-    same way (12% of runtime);
-  * the upper 20 s guidance within the 60-90 s band is guidance, not a
-    gate: only the two documented failure codes exist, and neither fires
-    on "too much" lip-sync.
+  * DOUBLED (owner order 2026-10-08): more pieces, not longer ones. A 60 s
+    ad carries 6-8 short lip-sync clips (4-6 s each, 30-40 s in total),
+    scaled linearly with the ad length; the numbers live in
+    core/lipsync_clips.py. The floor here is the clip count (never fewer
+    than 3) and the minimum seconds (50% of runtime, 30 s at 60 s);
+  * the upper 40 s (at 60 s) is planning guidance, not a gate: only the two
+    documented failure codes exist, and neither fires on "too much"
+    lip-sync. The 6 s per-clip cap and the cost cap are enforced where the
+    clips are planned and dispatched (lipsync_clips).
 
 Wiring: evaluate() -> to_qc_record() emits a qc-schema 1.0.0 record with
 check="final_edit" for core/qc_gate.py, exactly like sibling checkers do
@@ -39,6 +40,7 @@ _CORE = _TOOL_HERE.parents[1]                          # .../core
 if str(_CORE) not in sys.path:
     sys.path.insert(0, str(_CORE))
 import spoken_share as _SS                 # the one band (H8)
+import lipsync_clips as _LC                # the doubled-lip-sync numbers
 
 TOOL_NAME = "lipsync_coverage"
 TOOL_VERSION = "1.0.0"
@@ -51,12 +53,8 @@ LINES_TOO_FEW = "LIPSYNC_LINES_TOO_FEW"
 COVERAGE_SHORT = "LIPSYNC_COVERAGE_SHORT"
 
 # Rule constants; acceptance-profile.json "lipsync" overrides when present.
-MIN_LINES = 3                             # always at least 3 lines
-SCALE_SHARE = 0.12                        # >= 12% of runtime (scaled ads)
-BAND_MIN_S = 60.0                         # the 15-20 s band starts at 60 s
-BAND_MAX_S = 90.0                         # and is the band the docs name
-BAND_TOTAL_MIN_S = 15.0                   # 15 s floor from 60 s upward
-BAND_TOTAL_MAX_S = 20.0                   # guidance only (never enforced here)
+MIN_LINES = _LC.MIN_CLIPS_FLOOR           # always at least 3 lines (floor)
+SCALE_SHARE = _LC.TOTAL_PER_REF_S[0] / _LC.REF_LENGTH_S   # 0.5: 30 s per 60 s
 
 EXIT = {"ok": 0, "error": 1, "rejected": 5}
 
@@ -72,8 +70,7 @@ class LipsyncCoverageError(Exception):
 
 def _numbers(profile=None):
     """Thresholds from the shipped acceptance profile, constants otherwise."""
-    d = {"min_lines": MIN_LINES, "scale_share": SCALE_SHARE,
-         "band_min_s": BAND_MIN_S, "band_total_min_s": BAND_TOTAL_MIN_S}
+    d = {"min_lines": MIN_LINES, "scale_share": SCALE_SHARE}
     if isinstance(profile, dict):
         block = profile.get(_PROFILE_KEY)
         if block is not None:
@@ -83,13 +80,18 @@ def _numbers(profile=None):
             try:
                 d["min_lines"] = int(block["min_lines"])
                 d["scale_share"] = float(block["scale_share"])
-                d["band_min_s"] = float(block["band_min_s"])
-                d["band_total_min_s"] = float(block["band_total_min_s"])
             except (KeyError, TypeError, ValueError) as exc:
                 raise LipsyncCoverageError(
                     "BAD_PROFILE", "%s thresholds unreadable: %s"
                     % (_PROFILE_KEY, exc)) from exc
     return d
+
+
+def required_lines(ad_length_s, profile=None):
+    """Minimum lip-sync clips for one ad length: 6 per 60 s, scaled, never
+    below the profile floor (3)."""
+    return max(_numbers(profile)["min_lines"],
+               _LC.budget(float(ad_length_s))["min_clips"])
 
 
 def load_profile(path=None):
@@ -102,17 +104,9 @@ def load_profile(path=None):
 
 
 def required_total_s(ad_length_s, profile=None):
-    """The lip-sync duration floor for one ad length (seconds).
-
-    Below the 60 s band the floor scales at >= 12% of runtime; from 60 s
-    up it is at least the band floor (15 s), for longer ads growing to at
-    least 12% of runtime. Monotone in ad length.
-    """
-    n = _numbers(profile)
-    length = float(ad_length_s)
-    if length < n["band_min_s"]:
-        return n["scale_share"] * length
-    return max(n["band_total_min_s"], n["scale_share"] * length)
+    """The lip-sync duration floor for one ad length (seconds): 50% of
+    runtime, so 30 s in a 60 s ad. Linear, monotone in ad length."""
+    return _numbers(profile)["scale_share"] * float(ad_length_s)
 
 
 def check_lipsync_coverage(ad_length_s, lipsync_lines_count, lipsync_total_s,
@@ -145,10 +139,10 @@ def check_lipsync_coverage(ad_length_s, lipsync_lines_count, lipsync_total_s,
         raise LipsyncCoverageError("BAD_INPUT",
                                    "line count and total must be >= 0")
 
-    n = _numbers(profile)
     floor_s = required_total_s(ad_length_s, profile)
     codes = []
-    if lipsync_lines_count < n["min_lines"]:
+    need_lines = required_lines(ad_length_s, profile)
+    if lipsync_lines_count < need_lines:
         codes.append(LINES_TOO_FEW)
     # H8: the seconds goal is judged by Trevor's band, as percent of the lip-sync
     # goal short of the goal: <=5% accept, 5-10% accept WITH A FLAG, >10% redo.
@@ -165,7 +159,7 @@ def check_lipsync_coverage(ad_length_s, lipsync_lines_count, lipsync_total_s,
                 "evidence": {"ad_length_s": ad_length_s,
                              "lipsync_lines_count": lipsync_lines_count,
                              "lipsync_total_s": lipsync_total_s,
-                             "required_lines_min": n["min_lines"],
+                             "required_lines_min": need_lines,
                              "required_total_s": floor_s}}
     return {"pass": False,
             "reason_code": "+".join(sorted(codes)),
@@ -174,11 +168,11 @@ def check_lipsync_coverage(ad_length_s, lipsync_lines_count, lipsync_total_s,
                        "%.2f s of lip-sync"
                        % ("short" if COVERAGE_SHORT in codes else "thin",
                           lipsync_lines_count, lipsync_total_s,
-                          ad_length_s, n["min_lines"], floor_s)),
+                          ad_length_s, need_lines, floor_s)),
             "evidence": {"ad_length_s": ad_length_s,
                          "lipsync_lines_count": lipsync_lines_count,
                          "lipsync_total_s": lipsync_total_s,
-                         "required_lines_min": n["min_lines"],
+                         "required_lines_min": need_lines,
                          "required_total_s": floor_s}}
 
 
