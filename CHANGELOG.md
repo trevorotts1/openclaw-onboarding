@@ -9504,6 +9504,8 @@ so guard G3 does not apply, and all ten version markers continue to agree at the
 - unit/SMP-W2-U1: SMP-W2-U1: sheet schema 1.3.0 — drama-song fields on Weekly Overview (plan 6.15 / D27) (merge abf442bd0db9)
 - unit/SMP-W2-U3: SMP-W2-U3: Skill 35 docs set for the weekly drama-song ad (plan 6.15) (merge 01fe3cf25e60)
 - unit/V2-W4R-U1: merge origin/main into unit/V2-W4R-U1: resolve skill-75 CHANGELOG (keep branch Unreleased + main v2.4.3) so the locked batch train can merge it (merge 06e020d09307)
+- unit/SMP-W2-U2: SMP-W2-U2 repair: hold the live-contract assertions to 1.3.0 after SMP-W2-U1 shipped first (merge f39c5abc973b)
+- unit/SMP-W1-SHIP-U1: SMP-W1-SHIP-U1: stage the five QC'd SMP-W1 modules into skill 75 (plan 6.15 / D27) (merge 4d7b9fe503d5)
 
 ## [v21.7.3]  -  2026-08-03  -  GHL credential names: the "alias" claim was false, and the doc that said so is corrected
 

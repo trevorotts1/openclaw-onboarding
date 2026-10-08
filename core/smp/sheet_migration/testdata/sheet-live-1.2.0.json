@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.2.0",
+  "identity": {
+    "schema_version": "1.2.0"
+  },
+  "tabs": {
+    "Weekly Overview": {
+      "headings": [
+        "Week Of",
+        "Theme of the Week",
+        "Research",
+        "Core Content",
+        "Images",
+        "Videos",
+        "Facebook",
+        "Instagram",
+        "LinkedIn",
+        "YouTube",
+        "TikTok",
+        "Pinterest",
+        "Carousels",
+        "Blog",
+        "Podcast",
+        "Email",
+        "QC",
+        "Scheduled",
+        "Overall",
+        "Notes"
+      ],
+      "frozen_headings_row": 1,
+      "headings_unique": true,
+      "rows": [
+        [
+          "Week of Sep 7 - Sep 13, 2026",
+          "Stack the offer before the cart closes",
+          "audience research",
+          "Founder story reel",
+          "3",
+          "1",
+          "Complete",
+          "Scheduled",
+          "Complete",
+          "",
+          "Complete",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "Complete",
+          "2026-09-10",
+          "Published",
+          "client note: keep the CTA",
+          "OV::c1::r1"
+        ],
+        [
+          "Week of Sep 14 - Sep 20, 2026",
+          "Reset week",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ],
+        [
+          "Week of Sep 21 - Sep 27, 2026"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          ""
+        ]
+      ]
+    },
+    "Posts": {
+      "headings": [
+        "row_key",
+        "company_id",
+        "cycle_id",
+        "content_revision",
+        "account_id",
+        "platform",
+        "account_name",
+        "format",
+        "scheduled_local",
+        "scheduled_utc",
+        "state",
+        "qc_state",
+        "preview_url",
+        "remote_url"
+      ],
+      "rows": [
+        [
+          "c1::r1::acct1",
+          "co_1",
+          "c1",
+          "r1",
+          "acct1",
+          "tiktok",
+          "Brand TikTok",
+          "9:16",
+          "2026-09-10 09:00",
+          "2026-09-10T13:00:00Z",
+          "Published",
+          "ok",
+          "",
+          "https://example.invalid/v1"
+        ]
+      ]
+    },
+    "Client Notes": {
+      "headings": [
+        "Date",
+        "Note"
+      ],
+      "rows": [
+        [
+          "2026-09-06",
+          "Client wants more reels this month"
+        ]
+      ]
+    },
+    "Example (never copy)": {
+      "headings": [
+        "Demo"
+      ],
+      "rows": [
+        [
+          "Demo campaign — never copied"
+        ]
+      ],
+      "example_tab": true,
+      "copied_to_clients": false
+    }
+  }
+}
