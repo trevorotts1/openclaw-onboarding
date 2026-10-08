@@ -191,7 +191,11 @@ def load_timing_map(obj):
 def bind_plan(shots, timing, contracts=None):
     """Validate shots against timing; every lyric_line_id must resolve and
     each shot window must cover its lines. Returns ok record, raises PlanError.
-    """
+
+    Part E E5 (lip-sync clips stay whole): a shot list that puts one
+    lip-synced line in two different shots raises PlanError LIPSYNC_SPLIT
+    before it can reach the assembler, which enforces the same atomicity
+    on the timeline (validate_lipsync_atomic)."""
     if not isinstance(shots, list) or not shots:
         raise PlanError("EMPTY_PLAN", "shot plan must be a non-empty list")
     seen = set()
@@ -205,6 +209,26 @@ def bind_plan(shots, timing, contracts=None):
             raise PlanError("SHOT_INVALID", "%s: %s" % (sid, ";".join(errs)))
     t = timing if isinstance(timing, dict) and "lines" in timing else load_timing_map(timing)
     lines = t["lines"]
+    # Part E E5: one lip-synced line, one shot. Declared via the shot's
+    # lip_sync_line_ids (speaker_check, Decision 26) or, when absent,
+    # an unsplit shot for each line is not required — plain lyric lines may
+    # span shots; only lip-synced lines are atomic.
+    lipsync_seen = {}
+    for sh in shots:
+        lids = sh.get("lip_sync_line_ids") or []
+        if not isinstance(lids, list):
+            raise PlanError("LIPSYNC_SPLIT_BAD_DECL",
+                            "%s lip_sync_line_ids must be a list"
+                            % sh["shot_id"])
+        for lid in lids:
+            if lid in lipsync_seen and lipsync_seen[lid] != sh["shot_id"]:
+                raise PlanError(
+                    "LIPSYNC_SPLIT",
+                    "lip-synced line %s is planned in shots %s and %s; "
+                    "a lip-sync clip is atomic and may not be split "
+                    "across two segments (manual Part E E5)"
+                    % (lid, lipsync_seen[lid], sh["shot_id"]))
+            lipsync_seen[lid] = sh["shot_id"]
     bindings = []
     for sh in shots:
         bounds = []

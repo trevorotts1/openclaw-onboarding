@@ -371,7 +371,15 @@ def plan_timeline(tl, base_dir=".", probe=None):
                     f"TIMELINE_NEEDS_PROBE: segments[{i}] has no dur "
                     "and no probe supplied")
             dur = probe(s["src"])
-        frames = max(1, round(dur * fps))
+        lids = s.get("lip_sync_line_ids")
+        # Part E E5: a lip-sync clip is atomic. Snap UP to the frame grid
+        # (ceil, never the plain round) so conforming a lip-sync segment
+        # can never trim it below its aligned line duration; the remaining
+        # trim side stays policed by validate_lipsync_atomic.
+        if isinstance(lids, list) and lids:
+            frames = max(1, math.ceil(dur * fps))
+        else:
+            frames = max(1, round(dur * fps))
         trans = _seg_transition(
             tl, s) if i > 0 and "transition" in s else (
             DEFAULT_TRANSITION if i > 0 else "none")
@@ -382,9 +390,12 @@ def plan_timeline(tl, base_dir=".", probe=None):
         # manifest records an equal-fps pass-through for legacy inputs.
         rec = fps_conform.conform_record(
             s.get("fps", fps) if s.get("fps") is not None else fps, fps)
-        items.append({"src": s["src"], "frames": frames,
-                      "snapped_dur": frames / fps, "transition": trans,
-                      "xfade_dur": xd, **rec})
+        item = {"src": s["src"], "frames": frames,
+                "snapped_dur": frames / fps, "transition": trans,
+                "xfade_dur": xd, "lip_sync": bool(s.get("lip_sync")), **rec}
+        if isinstance(lids, list) and lids:
+            item["lip_sync_line_ids"] = list(lids)
+        items.append(item)
     for i in range(1, len(items)):
         ov = round(items[i]["xfade_dur"] * fps)
         lo = min(items[i - 1]["frames"], items[i]["frames"])
@@ -406,6 +417,113 @@ def plan_timeline(tl, base_dir=".", probe=None):
             "total_dur": total_frames / fps}
 
 
+# --- Part E E5: lip-sync clips stay whole (atomic) --------------------------
+#
+# A lip-sync clip carries one sung line's mouth motion, aligned to that
+# line's window in the timing map (directive 12.4 shape, the map the
+# planner binds via load_timing_map/bind_plan). The old assembler was free
+# to split one lip-sync clip across two timeline segments (the failed 2026
+# ad split one in two) or trim it below its line. Both are now gate
+# failures at planning AND assembly validation:
+#
+#   LIPSYNC_SPLIT     - one lip-sync source clip used in two segments
+#                       (planning side also raises PlanError LIPSYNC_SPLIT
+#                       via shot_planner.bind_plan for shot lists)
+#   LIPSYNC_TRIMMED   - a segment carrying a lip-sync clip is shorter than
+#                       that clip's aligned line duration
+#
+# Timing data: segments carry "lip_sync_line_ids" (directive 12.3/12.4
+# names, the same ids the planner's bind_plan resolves) and the timeline
+# carries a directive-12.4 timing map under a "timing" key ({"sections":
+# [{"section_id", "lyrics": [{"line_id", "start", "end", ...}]}]}) — the
+# same shape load_timing_map() accepts. A declared lip-sync segment whose
+# ids cannot resolve in the map fails closed (LIPSYNC_WINDOW_UNKNOWN).
+
+
+def _timing_lines(tl):
+    """Directive-12.4 timing map (timeline 'timing' key) -> {line_id: seconds}.
+
+    Same shape shot_planner.load_timing_map accepts. Bad shape raises
+    ValueError LIPSYNC_TIMING_BAD; absent/no map raises None and the caller
+    fails closed for any declared lip-sync segment.
+    """
+    t = tl.get("timing")
+    if t is None:
+        return None
+    if not isinstance(t, dict) or not isinstance(t.get("sections"), list):
+        raise ValueError(
+            "LIPSYNC_TIMING_BAD: timeline 'timing' must be a directive-"
+            "12.4 map ({'sections': [{'lyrics': ...}, ...]})")
+    lines = {}
+    for sec in t["sections"]:
+        if not isinstance(sec, dict) or not isinstance(sec.get("lyrics"),
+                                                       list):
+            raise ValueError(
+                "LIPSYNC_TIMING_BAD: each section needs a lyrics list")
+        for ln in sec["lyrics"]:
+            if not isinstance(ln, dict) or not isinstance(ln.get("line_id"),
+                                                          str) or not ln["line_id"].strip():
+                raise ValueError(
+                    "LIPSYNC_TIMING_BAD: lyric line needs line_id")
+            st, en = ln.get("start"), ln.get("end")
+            if (not isinstance(st, (int, float)) or isinstance(st, bool)
+                    or not isinstance(en, (int, float))
+                    or isinstance(en, bool) or not st < en):
+                raise ValueError(
+                    "LIPSYNC_TIMING_BAD: line %r window unordered"
+                    % ln["line_id"])
+            lines[ln["line_id"]] = float(en) - float(st)
+    return lines
+
+
+def validate_lipsync_atomic(plan, tl=None):
+    """Part E E5 gate: lip-sync clips may not be split or trimmed.
+
+    plan: plan_timeline() output; tl: the loaded timeline dict (for the
+    timing map). Raises ValueError with reason LIPSYNC_SPLIT (one lip-sync
+    source in two segments), LIPSYNC_TRIMMED (segment shorter than its
+    clip's aligned line duration; both declared ids checked) or
+    LIPSYNC_WINDOW_UNKNOWN (declared ids unresolvable — fail closed).
+    Returns the checked count of lip-sync segments.
+    """
+    segs = plan["segments"]
+    seen = {}
+    for i, s in enumerate(segs):
+        lids = s.get("lip_sync_line_ids")
+        if not lids:
+            continue
+        if s["src"] in seen:
+            raise ValueError(
+                "LIPSYNC_SPLIT: lip-sync source %r appears in segments "
+                "%d and %d; a lip-sync clip is atomic (manual Part E E5)"
+                % (s["src"], seen[s["src"]], i))
+        seen[s["src"]] = i
+    if tl is not None:
+        lines = _timing_lines(tl)
+        for s in segs:
+            lids = s.get("lip_sync_line_ids")
+            if not lids:
+                continue
+            if not lines:
+                raise ValueError(
+                    "LIPSYNC_WINDOW_UNKNOWN: segment carries "
+                    "lip_sync_line_ids %s but the timeline carries no "
+                    "timing map to align against" % (lids,))
+            for lid in lids:
+                if lid not in lines:
+                    raise ValueError(
+                        "LIPSYNC_WINDOW_UNKNOWN: lip-sync line %r missing "
+                        "from the timing map" % (lid,))
+            if s["snapped_dur"] < min(lines[lid] for lid in lids) - 1e-9:
+                raise ValueError(
+                    "LIPSYNC_TRIMMED: segment %r %.3fs is below its "
+                    "lip-sync line duration(s) %s; a lip-sync clip may "
+                    "not be trimmed below its aligned line (manual Part "
+                    "E E5)" % (s["src"], s["snapped_dur"], sorted(lids)))
+    checked = sum(1 for s in segs if s.get("lip_sync_line_ids"))
+    return checked
+
+
 def build_argv(plan, output, ffmpeg="ffmpeg"):
     """ffmpeg argv array rendering plan -> output. No gaps by construction
     (concat/xfade chain covers every output frame exactly once).
@@ -413,6 +531,10 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
     M7: the command is prefixed with `nice -n 10` and carries `-threads N`
     (from lane_size.py when shipped, else the Part D fallback) so a render
     never pegs every core of the box.
+
+    Part E E5: lip-sync segments conform at their snapped (ceil-rounded,
+    never-below-line) duration, so the trim in the filter chain cannot cut
+    into a lip-sync clip; everything else is unchanged.
     """
     fps, w, h = plan["fps"], plan["width"], plan["height"]
     threads, nice, _timeout = size_ffmpeg(
@@ -533,6 +655,13 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         s["src"] = abspath(s["src"])
     if plan["song_path"]:
         plan["song_path"] = abspath(plan["song_path"])
+    # Part E E5: lip-sync clips stay whole — same gate the shot-planner QC
+    # path runs, at assembly validation. Render only a plan that passes.
+    try:
+        validate_lipsync_atomic(plan, tl)
+    except ValueError as exc:
+        msg = str(exc)
+        return _fail(msg.split(":")[0], next_action=msg, evidence={})
     if timeout is None:
         _threads, _nice, timeout = size_ffmpeg(
             plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
