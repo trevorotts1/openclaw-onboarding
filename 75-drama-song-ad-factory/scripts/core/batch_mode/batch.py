@@ -333,7 +333,8 @@ def _card_renderer():
     try:
         from ..catalog_calculator import card_render
     except ImportError as _e:
-        if "card_render" not in str(_e) and "beyond top-level" not in str(_e):
+        if ("card_render" not in str(_e) and "beyond top-level" not in str(_e)
+                and "no known parent package" not in str(_e)):
             raise
         try:  # script import from core/ on sys.path
             from catalog_calculator import card_render
