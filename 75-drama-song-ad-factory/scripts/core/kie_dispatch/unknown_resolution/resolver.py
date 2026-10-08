@@ -9,8 +9,9 @@ module closes that loop:
   query    Skill 74's task/status route: ``wait --task-id T --timeout 0`` reads
            the KIE recordInfo status once instead of polling. It is the ONLY
            transport here - no second KIE client, no HTTP of our own. A row
-           with no remote task id was never accepted by KIE, so it settles at
-           zero without a query.
+           with no remote task id is settled at zero ONLY when the dispatch
+           evidence shows submit returned a definite error; otherwise it is
+           reported undeterminable so a person can check kie.ai/logs.
   poll     queued/running is re-read up to ``--max-polls`` times; asking what
            happened is not resubmitting it.
   settle   status success -> optional Skill 74 ``save`` (files stored) then
@@ -145,6 +146,41 @@ def _key(row):
     return (row["run_id"], row["logical_key"], row["attempt_id"])
 
 
+def _submit_definite_error(db_path, job):
+    """Dispatch evidence that submit returned a definite error, or None.
+
+    Reads ledger events written by kie_dispatch (kind='dispatch'). A provider
+    ``status=fail`` with an error code other than timeout is definite. Without
+    this evidence a no-remote-task row is NOT zero-settled (manual C2): KIE may
+    have accepted the job before the dispatch lost the task id.
+    """
+    try:
+        conn = sqlite3.connect(db_path, timeout=10)
+        try:
+            rows = conn.execute(
+                "SELECT status, payload_json FROM events WHERE run_id=? AND "
+                "logical_key=? AND attempt_id=? AND kind='dispatch' "
+                "ORDER BY event_id",
+                (job["run_id"], job["logical_key"], job["attempt_id"])
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+    for status, payload_json in rows:
+        if status not in ("fail", "failed"):
+            continue
+        try:
+            payload = json.loads(payload_json or "{}")
+        except ValueError:
+            continue
+        err = payload.get("error") if isinstance(payload.get("error"), dict) else {}
+        code = err.get("code") or payload.get("reason_code")
+        if code and code != "timeout":
+            return str(code)
+    return None
+
+
 def _read_unknowns(db_path, run_id=None):
     """Rows currently marked unknown. Read-only; never creates a database."""
     if not os.path.isfile(db_path):
@@ -258,11 +294,23 @@ def resolve_one(*, db_path, job, runner, adapter=None, save_dir=None,
            "disposition": None, "reason_code": None, "settled": False,
            "actual_cost": None, "final_state": None, "warnings": []}
 
-    # Never accepted by KIE -> nothing to ask, nothing billed.
+    # No remote task id: zero-settle ONLY on dispatch evidence that submit
+    # returned a definite error (manual C2). Otherwise undeterminable so a
+    # person can check kie.ai/logs - never a blind zero.
     if not job["remote_task_id"]:
-        rec.update(disposition="no-remote-task", reason_code="NO_REMOTE_TASK_ID")
-        env, _ = _settle(db_path, job, "failed", 0, "", owner)
-        return _finish(rec, env)
+        submit_err = _submit_definite_error(db_path, job)
+        if submit_err:
+            rec.update(disposition="no-remote-task",
+                       reason_code="NO_REMOTE_TASK_ID")
+            rec["warnings"].append("SUBMIT_ERROR_EVIDENCE:%s" % submit_err)
+            env, _ = _settle(db_path, job, "failed", 0, "", owner)
+            return _finish(rec, env)
+        rec.update(disposition="undeterminable",
+                   reason_code="NO_REMOTE_TASK_NO_SUBMIT_ERROR",
+                   next_action="check kie.ai/logs for this run/attempt; "
+                               "dispatch left no remote task id and no "
+                               "definite submit error is recorded")
+        return rec
 
     if adapter is None:
         rec.update(disposition="blocked-adapter",
