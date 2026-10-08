@@ -10,7 +10,10 @@ Decides whether a stage may advance on its QC verdict records. Fail-closed:
   (24.4); records without session/authority cannot advance a stage;
 - UNAVAILABLE on a required check never becomes PASS (17.8);
 - no aggregate erases a critical defect (17.8): every record for a required
-  check must PASS; critical failures are flagged, never averaged away.
+  check must PASS; critical failures are flagged, never averaged away;
+- a PASS record asserting a sung/first-sung share names the G3 detector
+  (SUNG_CLAIM_UNMEASURED otherwise): sung shares are measured by
+  core/singing_detector, never computed from section labels.
 
 Stateless: keeps no DB, sets no stage state. Repair budgets live in
 spend_ledger; the gate only names the failed checks (targeted repair, 17.7:
@@ -27,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -62,6 +66,38 @@ class GateError(Exception):
 
 def _nonempty_str(v):
     return isinstance(v, str) and bool(v.strip())
+
+# G3-WIRE (Trevor order 2026-10-08 11:35 Part G G3): a sung share in QC or
+# a receipt is MEASURED by core/singing_detector, never derived from
+# section labels ("54% sung" from [Verse]/[Chorus] time was the fake number
+# the waiver accepted). This gate cannot run the audio detector (stdlib
+# only, no numpy/ffmpeg), so it enforces the provenance the receipt paths
+# attach: a PASS record whose evidence asserts a sung/first-sung number
+# must name the detector.
+# ponytail: string-level provenance check on evidence.summary (qc-schema
+# v1.0.0 evidence allows summary+refs only); move to a schema evidence key
+# when qc-schema names one.
+SUNG_DETECTOR = "singing_detector"
+_SUNG_CLAIM = re.compile(
+    r"sung_coverage\s*=|sung\s+coverage|sung_pct\s*=|first[_\s]sung"
+    r"|first real singing at \d|sung\s+\d+(?:\.\d+)?\s*%", re.I)
+
+
+def sung_claim(summary):
+    """True when evidence text asserts a sung or first-sung share."""
+    return bool(isinstance(summary, str) and _SUNG_CLAIM.search(summary))
+
+
+def sung_claim_measured(summary):
+    """True when that text names the G3 singing detector as its source.
+
+    Normalizes away separators so "singing-detector(vocal-stem)",
+    "singing_detector v2.0.0" and "detector=singing_detector" all count.
+    """
+    if not isinstance(summary, str):
+        return False
+    flat = "".join(ch for ch in summary.lower() if ch.isalnum())
+    return "singingdetector" in flat
 
 
 def validate_record(rec):
@@ -190,6 +226,15 @@ def evaluate(run_id, stage, records, makers, required,
                  "reviewer %r is the maker; not independent evidence"
                  % maker)
             continue
+        # G3: a PASS record that asserts a sung share must have flowed
+        # through core/singing_detector (receipt paths attach its name).
+        # FAIL/UNAVAILABLE never advance a stage, so the rule binds PASS.
+        if rec["verdict"] == "PASS" \
+                and sung_claim(rec["evidence"]["summary"]) \
+                and not sung_claim_measured(rec["evidence"]["summary"]):
+            fail(rec["check_id"], "SUNG_CLAIM_UNMEASURED",
+                 "sung claim carries no singing_detector provenance: %s"
+                 % rec["evidence"]["summary"][:160])
         by_check.setdefault(rec["check"], []).append(rec)
 
     for check in required:

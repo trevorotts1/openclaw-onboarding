@@ -68,6 +68,18 @@ def _timing(sung_s, total=60.0, spoken_s=0.0, start=0.0):
             "sections": secs}
 
 
+def _share(pct=61.0, source="measured", detector="singing_detector"):
+    """Fixture for singing_detector.share_for_stem's record (G3-WIRE): the
+    measured share the QC gate requires on a PASS sung claim."""
+    return {"sung_share": round(pct / 100.0, 6), "sung_pct": pct,
+            "sung_pct_of_voiced": pct, "confidence": 0.9,
+            "method": "pitch-stability+voicing+note-alignment",
+            "detector": detector, "detector_version": "2.0.0",
+            "schema_version": "blackceo.singing-detector/v1",
+            "share_source": source, "runtime_s": 60.0,
+            "sung_s": round(60.0 * pct / 100.0, 1), "voiced_s": 60.0}
+
+
 class SungVocalE7(unittest.TestCase):
 
     # ------------------------------------------------------- acceptance ---
@@ -267,14 +279,48 @@ class SungVocalE7(unittest.TestCase):
     # ------------------------------------------------- gate wiring (QC) ---
     def test_pass_record_validates_and_gate_passes(self):
         ver = _chk(timing=_timing(45.0, 60.0, 15.0),
-                                   profile="all_suno", target=0.75)
+                                   profile="all_suno", target=0.75,
+                                   detector_share=_share(75.0))
         rec = SVG.record_for_gate(ver, RUN_ID, STAGE, REVIEWER,
                                   "sess-e7", "qc-checker")
         self.assertIsNone(qc_gate.validate_record(rec))
+        self.assertIn("detector=singing_detector", rec["evidence"]["summary"])
         res = qc_gate.evaluate(
             RUN_ID, STAGE, [rec], {"final:audio:sung_vocal": MAKER},
             ["audio"])
-        self.assertEqual(res["gate"], "PASS")
+        self.assertEqual(res["gate"], "PASS", res)
+
+    def test_pass_record_without_detector_share_is_blocked(self):
+        """G3-WIRE: sung_coverage on a PASS record with no measured share
+        (the label-derived number) can never advance the stage."""
+        ver = _chk(timing=_timing(45.0, 60.0, 15.0),
+                                   profile="all_suno", target=0.75)
+        rec = SVG.record_for_gate(ver, RUN_ID, STAGE, REVIEWER,
+                                  "sess-e7", "qc-checker")
+        self.assertIn("share_source=timing_map (unmeasured)",
+                      rec["evidence"]["summary"])
+        res = qc_gate.evaluate(
+            RUN_ID, STAGE, [rec], {"final:audio:sung_vocal": MAKER},
+            ["audio"])
+        self.assertEqual(res["gate"], "BLOCKED")
+        self.assertIn("SUNG_CLAIM_UNMEASURED",
+                      {f["code"] for f in res["failures"]})
+        self.assertEqual(res["repair_scope"], ["final:audio:sung_vocal"])
+
+    def test_non_measured_share_does_not_provenance_the_claim(self):
+        """A share dict from a non-measured source is not the detector."""
+        ver = _chk(timing=_timing(45.0, 60.0, 15.0),
+                                   profile="all_suno", target=0.75,
+                                   detector_share=_share(75.0,
+                                                         source="planned"))
+        rec = SVG.record_for_gate(ver, RUN_ID, STAGE, REVIEWER,
+                                  "sess-e7", "qc-checker")
+        res = qc_gate.evaluate(
+            RUN_ID, STAGE, [rec], {"final:audio:sung_vocal": MAKER},
+            ["audio"])
+        self.assertEqual(res["gate"], "BLOCKED")
+        self.assertIn("SUNG_CLAIM_UNMEASURED",
+                      {f["code"] for f in res["failures"]})
 
     def test_fail_record_fails_final_edit_gate(self):
         ver = _chk(timing=_timing(0.0, 60.0),
