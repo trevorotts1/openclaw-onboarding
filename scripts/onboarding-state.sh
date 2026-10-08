@@ -351,6 +351,16 @@ obs_verify_skill() {
   local skill_path="$src_dir/$folder"
   local reasons=""
   local deadline_helper="$_SHIM_SCRIPT_DIR/run-with-deadline.py"
+  # UPF002/U4: update-skills.sh sources this shim from the temp clone and runs the
+  # gate AFTER that clone is deleted, so $_SHIM_SCRIPT_DIR no longer exists and the
+  # helper call died (rc 2, empty output) -> every skill "not-visible" +
+  # "qc-script:nonzero-exit". Fall back to the persistent scripts dir.
+  if [ ! -f "$deadline_helper" ]; then
+    local _obs_hd
+    for _obs_hd in "${OC_PERSISTENT_SCRIPTS_DIR:-}" "${OC_CONFIG:-$HOME/.openclaw}/scripts" "$HOME/.openclaw/scripts" /data/.openclaw/scripts; do
+      [ -n "$_obs_hd" ] && [ -f "$_obs_hd/run-with-deadline.py" ] && { deadline_helper="$_obs_hd/run-with-deadline.py"; break; }
+    done
+  fi
   local diagnostic_dir="$OBS_WORKSPACE/.onboarding-qc-diagnostics"
 
   # Resolve the canonical OpenClaw name from SKILL.md frontmatter `name:`

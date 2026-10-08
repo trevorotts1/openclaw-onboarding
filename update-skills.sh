@@ -4121,15 +4121,16 @@ colocate_presentation_entry() {
   fi
   local src_dir="$SKILLS_DIR/23-ai-workforce-blueprint/scripts"
   local copied=0
-  for f in presentation-canonical-entry.sh deck-build-guard.sh; do
+  for f in presentation-canonical-entry.sh; do
     if [ -f "$src_dir/$f" ]; then
       cp "$src_dir/$f" "$dept_scripts/$f" && chmod +x "$dept_scripts/$f" && copied=$((copied + 1))
     fi
   done
-  if [ "$copied" -eq 2 ]; then
-    echo "  [U006] co-located presentation-canonical-entry.sh + deck-build-guard.sh -> $dept_scripts/"
+  # UPF002/U2: deck-build-guard.sh was retired in U025 (check lives in the entry script's GATE 0).
+  if [ "$copied" -eq 1 ]; then
+    echo "  [U006] co-located presentation-canonical-entry.sh -> $dept_scripts/"
   else
-    echo "  [U006] presentation entry co-location partial (copied $copied of 2 files -> $dept_scripts/)" >&2
+    echo "  [U006] presentation entry co-location partial (copied $copied of 1 files -> $dept_scripts/)" >&2
   fi
 }
 # <<< U006-COLOCATE-PRESENTATION-ENTRY-END
@@ -4773,6 +4774,14 @@ main() {
     echo "  ⚠ scripts/ delivery DEFERRED (destination not writable — see the chown ACTION above). Continuing so an ownership quirk does not block skills content or the version stamp." >&2
   fi
   export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
+
+  # UPF002/U1: stage extensions/ BEFORE the "# Cleanup" rm -rf "$TEMP_EXTRACT"
+  # (the clone is gone by the time the plugin installers run near the end).
+  _OC_EXT_STAGE="$OC_CONFIG/.extensions-stage"
+  rm -rf "$_OC_EXT_STAGE"
+  if [ -d "$ONBOARDING_DIR/extensions" ]; then
+    mkdir -p "$_OC_EXT_STAGE" && cp -R "$ONBOARDING_DIR/extensions/." "$_OC_EXT_STAGE/" 2>/dev/null || true
+  fi
 
   # BURN GUARD: keep OpenClaw's weekly system-owned skill-collection-review crons OFF
   # (skills.workshop.autonomous.mode=propose when unset/auto; explicit propose/off kept).
@@ -10651,7 +10660,7 @@ LEPY
   # plugins.entries.<id>.hooks.allowPromptInjection.
   # ----------------------------------------------------------
   echo "  Installing CEO Routing Doctrine pre-injection plugin..."
-  _RD_SRC="$ONBOARDING_DIR/extensions/ceo-routing-doctrine"
+  _RD_SRC="${_OC_EXT_STAGE:-$ONBOARDING_DIR/extensions}/ceo-routing-doctrine"
   _RD_DST="$HOME/.openclaw/extensions/ceo-routing-doctrine"
   if [ -d "$_RD_SRC" ]; then
     mkdir -p "$_RD_DST"
@@ -10753,7 +10762,7 @@ PY
   # KEEP THE PYTHON BLOCK BELOW BYTE-IDENTICAL TO install.sh.
   # ----------------------------------------------------------
   echo "  Installing Agent Exchange Telemetry plugin (Headquarters capture)..."
-  _TE_SRC="$ONBOARDING_DIR/extensions/agent-exchange-telemetry"
+  _TE_SRC="${_OC_EXT_STAGE:-$ONBOARDING_DIR/extensions}/agent-exchange-telemetry"
   _TE_DST="$HOME/.openclaw/extensions/agent-exchange-telemetry"
   if [ -d "$_TE_SRC" ]; then
     mkdir -p "$_TE_DST"
@@ -10827,6 +10836,7 @@ PY
   else
     echo "  ⚠ agent-exchange-telemetry extension not found in repo ($_TE_SRC) — skipping install"
   fi
+  rm -rf "${_OC_EXT_STAGE:-}" 2>/dev/null || true
 
   # ----------------------------------------------------------
   # Dept-agent registration: turn built workspace folders into REAL agents in

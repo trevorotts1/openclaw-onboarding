@@ -86,8 +86,16 @@ expect "duplicates are reported, never deleted" 1 "2 jobs named 'lean-core-file-
 [ "$(job_field count)" = "2" ] && ok "no job was deleted" || bad "a job was deleted"
 
 reset; models '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud"}]}'
-expect "missing OpenRouter fallback refuses" 4 "MISSING_FALLBACK" -- --apply
-[ "$(job_field count)" = "0" ] && ok "refusal created nothing" || bad "refusal created a job"
+expect "missing OpenRouter fallback degrades to no fallback (UPF002/U3)" 0 "fallback model: none" -- --apply
+[ "$(job_field count)" = "1" ] && ok "job created without a fallback" || bad "job not created"
+grep -q -- '--fallbacks' "$FAKE_CALLS_FILE" && bad "--fallbacks was passed" || ok "no --fallbacks flag passed"
+expect "fallback id forced but absent still refuses" 4 "MISSING_FALLBACK" -- --apply --fallback openrouter/deepseek/made-up
+
+reset; models '{"models":[{"key":"agnes/agnes-2.5","tags":["default","configured"]},{"key":"anthropic/claude-opus-4"}]}'
+expect "non-DeepSeek box uses its default model (UPF002/U3)" 0 "primary model:  agnes/agnes-2.5" -- --apply
+[ "$(job_field count)" = "1" ] && ok "job created on a non-DeepSeek box" || bad "no job on non-DeepSeek box"
+reset; models '{"models":[{"key":"anthropic/claude-opus-4","tags":["default"]}]}'
+expect "Anthropic-only default is never used" 4 "MISSING_PRIMARY" -- --apply
 
 reset; models '{"models":[{"key":"openrouter/deepseek/deepseek-v4.1-flash"}]}'
 expect "missing Ollama primary refuses" 4 "MISSING_PRIMARY" -- --apply
