@@ -6,6 +6,18 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.2] - 2026-10-08 - Part H H2 measured lip-sync gate
+
+- New `scripts/core/lip_sync/lip_gate/`: every lip-sync clip is measured
+  against the FINAL MIX envelope. PASS needs |offset| <= 0.05 s, correlation
+  >= 0.55 AND >= 0.25 above a wrong-audio control, no frozen face > 0.75 s.
+  Below it: regenerate once with better input (single clean line, front-facing
+  tight crop, still image), then InfiniTalk only through a one-time single-line
+  A/B that keeps whichever measures better; still failing = `FAIL_REPLACE`.
+  Numbers ride the receipt row; `qc_check` fails a missing or failed row.
+- Test: `lip_sync/lip_gate/test_lip_gate_h2.py` (shifted clip fails, good clip
+  passes, A/B once per run). Assembler/Q8 wiring is H11's.
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
