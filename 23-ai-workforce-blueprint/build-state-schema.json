@@ -1049,6 +1049,33 @@
       ],
       "description": "AI Workforce standard-first redesign (2026-08-04): controls WHEN the standard prebuild fires. 'at-onboarding' (DEFAULT) = the prebuild materializes the canonical floor immediately when the operator consents, BEFORE the owner has answered a single interview question — unchanged from the original prebuild behavior. 'on-first-answer' = DEFER the prebuild: record the consent and arm the prebuild lane but do NOT materialize until the owner answers their FIRST interview question (the interview-start hooks fires the prebuild at that point). This allows boxes where the operator provisions the box but the owner hasn't started the interview to avoid prebuilding a floor the owner may never see. Both modes record prebuildStartedAt (written at materialization time) and standardReadyAt for abandonment-rate computation. ABSENT = 'at-onboarding' (the reader treats absent identically to 'at-onboarding' — every box cut over before this field was added carries the original at-onboarding trigger). Written by the prebuild driver from its --standard-first-onboarding flag; read by the prebuild driver itself and by the interview-start hooks. Never hand-write it."
     },
+    "companyMode": {
+      "type": "string",
+      "enum": ["interview", "standard-placeholder"],
+      "description": "STD001 (Trevor 2026-10-08): 'standard-placeholder' = the owner-ordered standard company is active because the AI Workforce interview stayed incomplete 14+ days (STANDARD_PLACEHOLDER_AFTER_DAYS). It is NEVER interview completion. 'interview' = the real interview superseded the placeholder. ABSENT = the normal interview-driven lane. Written only by apply-standard-placeholder.py and build-workforce.py apply_standard_edits."
+    },
+    "standardPlaceholder": {
+      "type": "object",
+      "description": "STD001: record of the standard company placeholder. Readers check exactly companyMode == 'standard-placeholder' AND standardPlaceholder.status == 'active'. Written by apply-standard-placeholder.py; superseded by apply_standard_edits. Never holds interview content.",
+      "properties": {
+        "status": {"type": "string", "enum": ["active", "superseded"]},
+        "appliedAt": {"type": "string"},
+        "appliedBy": {"type": "string", "enum": ["daily-update", "operator"]},
+        "trigger": {"type": "string", "enum": ["14-day", "forced"]},
+        "thresholdDays": {"type": "integer"},
+        "clockStart": {"type": ["string", "null"], "description": "Earliest onboarding-start value found."},
+        "clockSource": {"type": ["string", "null"], "description": "onboarding-state.seededAt | onboarding-state.startedAt | launchBootstrap.createdAt"},
+        "daysElapsed": {"type": ["integer", "null"]},
+        "ownerName": {"type": "string"},
+        "ownerNameSource": {"type": "string", "description": "operator-flag | build-state.ownerName | onboarding-identity.json (never USER.md)"},
+        "priorCompanyName": {"type": ["string", "null"]},
+        "preexistingVerticalDepartments": {"type": "array", "items": {"type": "string"}, "description": "Vertical departments already on disk when applied; exempt in vertical-derivation-guard.py only while status is active."},
+        "ccProvisionedAt": {"type": ["string", "null"], "description": "Set by run-full-install.sh when the Command Center finishes 'done'."},
+        "supersededAt": {"type": ["string", "null"]},
+        "source": {"type": "string"},
+        "policyRef": {"type": "string"}
+      }
+    },
     "standardPrebuild": {
       "type": "object",
       "description": "AI Workforce standard-first redesign (2026-08-04): the namespaced state block for the standard prebuild. Written EXCLUSIVELY by the prebuild driver (scripts/prebuild-standard-workforce.sh) — never by the interview, the apply-diff build, or an agent hand-write. The prebuild writes NO interviewProgress / interviewQc fields (anti-fabrication: the prebuild is operator-initiated, library-sourced, and records no owner answers); its entire record lives in this block so the two surfaces can never be confused. The no-fabrication rule (master plan section 2.5) binds this block: nothing inside it may ever be read back as interview content.",
