@@ -1,0 +1,27 @@
+{
+  "unit_id": "W-E-U10",
+  "built_by": "lane W-E-U10 (this builder run)",
+  "commit": "be5606a24f0dc060bfd380e329dd0200f6ee7e71",
+  "branch": "unit/W-E-U10",
+  "base": "5e4ba4176 (origin/main, merge train #1609)",
+  "files": [
+    "75-drama-song-ad-factory/scripts/core/final_assembler/music_speech_gate.py (new)",
+    "75-drama-song-ad-factory/scripts/core/final_assembler/test_music_speech_gate_e10.py (new)",
+    "75-drama-song-ad-factory/scripts/core/delivery_variants/manifests.py (write_cost_report spoken_lines field)"
+  ],
+  "py_compile": "clean (3 files, rc=0)",
+  "tests": {
+    "file": "test_music_speech_gate_e10.py",
+    "checks": 56,
+    "failed": 0,
+    "rc": 0
+  },
+  "done_when": {
+    "LEANNE_FAILURE": "PASS (MUSIC_GAP_TOO_LONG at 0.8 s digital silence)",
+    "KIESETT_FAILURE": "PASS (MUSIC_UNDER_SPEECH_LOW at 9.0+ dB drop; ==9 passes)",
+    "GOOD_MIX_PASS": "PASS (7 dB duck read inside 6-8 band, no gaps)",
+    "RECEIPT_SHAPE": "PASS ({line_id, start_s, end_s, music_db, sung_ref_db})"
+  },
+  "wiring_note": "assembler seam deferred per spec until E8/E9 land on the same branch",
+  "verdict": "BUILT-AWAITING-INDEPENDENT-QC"
+}

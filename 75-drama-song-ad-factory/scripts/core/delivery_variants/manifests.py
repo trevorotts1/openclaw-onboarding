@@ -85,8 +85,15 @@ def write_campaign_manifest(path, *, campaign_id, run_id, artifacts,
 
 def write_cost_report(path, *, run_id, estimated_cost, committed_cost,
                       actual_cost, remaining_budget, currency="USD",
-                      reconciled=False):
-    """Write cost-report.json. Money is integer minor units, never floats."""
+                      reconciled=False, spoken_lines=None):
+    """Write cost-report.json. Money is integer minor units, never floats.
+
+    spoken_lines (manual 02 Part E E10): optional delivery-receipt field,
+    one {line_id, start_s, end_s, music_db, sung_ref_db} dict per spoken
+    line as produced by final_assembler.music_speech_gate; the gate's
+    verdict/reason ride in the delivery receipt's QC refs, the per-line
+    numbers ride here.
+    """
     money = {"estimated_cost": estimated_cost,
              "committed_cost": committed_cost,
              "actual_cost": actual_cost,
@@ -103,6 +110,19 @@ def write_cost_report(path, *, run_id, estimated_cost, committed_cost,
               "created_at": _utcnow(),
               "reconciled": bool(reconciled)}
     record.update(money)
+    if spoken_lines is not None:
+        if not isinstance(spoken_lines, list):
+            raise ManifestError("BAD_SPOKEN_LINES",
+                                "spoken_lines must be a list")
+        wanted = ("line_id", "start_s", "end_s", "music_db", "sung_ref_db")
+        for i, ln in enumerate(spoken_lines):
+            if not isinstance(ln, dict) \
+                    or set(ln.keys()) != set(wanted):
+                raise ManifestError(
+                    "BAD_SPOKEN_LINES",
+                    "spoken_lines[%d] must carry exactly %s"
+                    % (i, ", ".join(wanted)))
+        record["spoken_lines"] = [dict(ln) for ln in spoken_lines]
     return {"record": record, "sha256": _write_json(path, record)}
 
 
