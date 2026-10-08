@@ -408,6 +408,48 @@ def _hold_unknown(db, run_id, logical_key, attempt_id, owner, extra):
         evidence=ev, state_version=unk.get("state_version", 0))
 
 
+# ---- F6: no animation before storyboard approval -------------------------
+try:
+    import storyboard_director as _SD                     # sibling core/ pkg
+except ImportError as _e:
+    if "storyboard_director" not in str(_e):
+        raise
+    _SD = None
+
+
+def check_storyboard_approval(shots, review, request=None):
+    """Part F F6 shot-generation entry check. Returns the refusal dict or
+    None.
+
+    A video job (the animation stage) for a shot plan must come through
+    directive 14.1's gate: every shot storyboard_approved AND the
+    adversarial review passed. Callers pass the run's bound shot list and
+    the recorded review result via request["storyboard"] =
+    {"shots": [...], "review": {...}}; anything missing or malformed
+    refuses (fail-closed: a run with no approval record cannot animate).
+    Non-video jobs (music/image) are untouched.
+    """
+    if _SD is None:
+        return {"reason_code": "storyboard-gate-unavailable",
+                "detail": "storyboard_director not importable; refusing "
+                          "fail-closed"}
+    req = request if isinstance(request, dict) else {}
+    if req.get("request_kind") != "video" and _modality(req.get("model")) != "video":
+        return None
+    sb = (request or {}).get("storyboard")
+    if not isinstance(sb, dict) or not isinstance(sb.get("shots"), list) \
+            or not sb["shots"]:
+        return {"reason_code": "STORYBOARD_NOT_APPROVED",
+                "detail": "no storyboard record in the request; a run cannot "
+                          "animate before storyboard approval is recorded"}
+    gate = _SD.video_spend_allowed(sb["shots"], sb.get("review"))
+    if not gate.get("allowed"):
+        return {"reason_code": "STORYBOARD_NOT_APPROVED",
+                "detail": gate.get("reason_code", "storyboard-gate-closed"),
+                "gate": gate}
+    return None
+
+
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
@@ -438,6 +480,17 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         "record an estimated cost before dispatch",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
+    # F6: a run cannot animate before storyboard approval is recorded.
+    sb_refusal = check_storyboard_approval(None, None, request)
+    if sb_refusal:
+        return envelope("dispatch", "rejected", sb_refusal["reason_code"],
+                        sb_refusal.get("detail", "")
+                        + " (directive 14.1: approve the storyboard and pass "
+                          "adversarial review first)",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"gate": sb_refusal.get("gate"),
+                                  "generated": False})
     run = runner or make_runner(timeout)
 
     # ---- 1. ledger reserve -------------------------------------------------
