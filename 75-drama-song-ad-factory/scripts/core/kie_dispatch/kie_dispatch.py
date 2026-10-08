@@ -7,7 +7,11 @@ Stage order (never reordered, never partially skipped):
   2. Skill 74 health     read ``adapter_mode``; only ``active`` continues
   3. Skill 74 preflight  balance must cover price x 1.30
   4. prompt-budget check exit 4 = over max, exit 3 = under floor
-  5. run / save          one Skill 74 ``run`` call, files saved immediately
+  5. submit/wait/save    Skill 74 ``submit`` (task id persisted immediately),
+                         ``wait`` with a modality budget (video 1200 / music
+                         600 / image 300, or request["timeout"]), outer
+                         subprocess W+120 so the inner wait always returns
+                         first, then ``save`` files on success
   6. ledger reconcile    succeeded/failed settle; unknown retains reservation
 
 Shadow / off: stop **before the approval card**. The client is told generation
@@ -16,10 +20,11 @@ transport - Skill 74 is the one KIE path - and a skip is recorded as
 *not generated*: the reservation is released at zero cost, never settled as a
 generation.
 
-Unknown: a ``run`` answer whose ``state`` is not a known adapter state, an
-unparsable ``run`` answer, or an exception raised while ``run`` was in flight,
-marks the reservation ``unknown`` and STOPS. No retry, no resubmit; reconcile
-from provider records or operator evidence first.
+Unknown: a wait timeout (``state`` running plus ``error.code`` timeout), an
+unparsable submit/wait answer, or an exception raised while either was in
+flight, marks the reservation ``unknown`` and STOPS - with the remote task id
+already stored when submit produced one. No retry, no resubmit; reconcile from
+provider records or operator evidence first.
 
 This module carries no HTTP client of its own: the adapter path comes from
 ``KIE_LIVE_ADAPTER_PATH`` or a search relative to this file, and every call is
@@ -34,6 +39,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -66,6 +72,83 @@ RUN_OK = "success"
 RUN_SKIPPED = "skipped"
 RUN_FAILED = "fail"
 RUN_PENDING = ("queued", "running")
+
+# Outer wait budget per modality (manual C2). request["timeout"] wins.
+_WAIT_S = {"video": 1200, "music": 600, "image": 300}
+_VIDEO_CUES = ("video", "veo", "kling", "seedance", "hailuo", "pixverse",
+               "runway", "wan2", "i2v", "t2v")
+_MUSIC_CUES = ("music", "suno", "audio", "tts", "speech", "elevenlabs",
+               "voice")
+
+
+def _registry_entry(model, adapter=None):
+    """Skill 74 registry row for model, or None. Path is relative to adapter."""
+    path = adapter or resolve_adapter()
+    if not path:
+        return None
+    reg = (Path(path).resolve().parent.parent / "references"
+           / "kie-model-registry.json")
+    try:
+        data = json.loads(Path(reg).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    models = data.get("models") if isinstance(data, dict) else None
+    if not isinstance(models, list):
+        return None
+    for m in models:
+        if isinstance(m, dict) and m.get("id") == model:
+            return m
+    return None
+
+
+def _modality(model, adapter=None):
+    entry = _registry_entry(model, adapter)
+    if entry:
+        ttypes = " ".join(entry.get("taskType") or []).lower()
+        if "video" in ttypes:
+            return "video"
+        if "music" in ttypes or "audio" in ttypes or "speech" in ttypes:
+            return "music"
+        if "image" in ttypes:
+            return "image"
+    mid = (model or "").lower()
+    if any(c in mid for c in _VIDEO_CUES):
+        return "video"
+    if any(c in mid for c in _MUSIC_CUES):
+        return "music"
+    return "image"
+
+
+def _wait_budget_s(request, model, adapter=None):
+    """W for Skill 74 wait; the outer subprocess runs with W+120."""
+    t = request.get("timeout") if isinstance(request, dict) else None
+    if isinstance(t, (int, float)) and not isinstance(t, bool) and t > 0:
+        return int(t)
+    return _WAIT_S[_modality(model, adapter)]
+
+
+def _record_stage_evidence(db, run_id, logical_key, attempt_id, stage,
+                           status="fail", task_id="", error=None,
+                           adapter_state=""):
+    """Dispatch evidence for the resolver (events kind='dispatch'). Best-effort."""
+    payload = {"stage": stage, "adapter_state": adapter_state,
+               "error": error or {}, "task_id": task_id or None,
+               "remote_task_id": task_id or None}
+    try:
+        conn = sqlite3.connect(db, timeout=10)
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO events("
+                "run_id,logical_key,attempt_id,kind,provider_event_id,"
+                "provider_seq,status,payload_json,created_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (run_id, logical_key, attempt_id, "dispatch", stage, 0, status,
+                 json.dumps(payload, sort_keys=True), L._now_iso()))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:                                      # noqa: BLE001
+        pass
 
 
 class DispatchError(Exception):
@@ -300,98 +383,175 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         {"exit_code": b_rc, "raw": (b_raw or "")[-400:],
                          "generated": False})
 
-        # ---- 5. run / save -------------------------------------------------
+        # ---- 5. submit / wait / save ---------------------------------------
+        # Split of the old single `run` call (manual C2): the outer subprocess
+        # timer used to fire before Skill 74's own wait, so a long video left
+        # an unknown row with no task id and the resolver zero-settled spend.
         req_file = os.path.join(tmp, "request.json")
         with open(req_file, "w", encoding="utf-8") as f:
             json.dump(request, f, sort_keys=True)
         os.makedirs(save_dir, exist_ok=True)
-        try:
-            r_rc, r, r_raw = _call(run, adapter,
-                                   ["run", "--request", req_file,
-                                    "--save-dir", save_dir, "--json"])
-        except Exception as e:                              # pragma: no cover
+
+        wait_s = _wait_budget_s(request, model, adapter)
+        # Injected runners (tests) already stand in for Skill 74; the real
+        # wait subprocess gets W+120 so the inner wait always returns first.
+        wait_run = run if runner is not None else make_runner(wait_s + 120)
+
+        def _unknown_at(stage, extra, task=""):
+            ev = {"stage": stage, "wait_timeout_s": wait_s}
+            ev.update(extra)
+            if task:
+                ev["task_id"] = task
+                ev["remote_task_id"] = task
             return _hold_unknown(ledger_db, run_id, logical_key, attempt_id,
-                                 owner, {"stage": "run", "error": str(e)})
-        if r is None:
-            return _hold_unknown(
-                ledger_db, run_id, logical_key, attempt_id, owner,
-                {"stage": "run", "rc": r_rc, "raw": (r_raw or "")[-400:]})
-        state = r.get("state")
-        task_id = r.get("task_id") or ""
-        if state == RUN_OK:
-            credits = r.get("credits_consumed")
-            if isinstance(credits, (int, float)) and not isinstance(credits, bool):
-                actual = int(credits)
-                warn = []
-            else:
-                actual = int(estimated_cost)
-                warn = ["ACTUAL_COST_UNREPORTED"]
-            rec = _settle(ledger_db, run_id, logical_key, attempt_id, owner,
-                          "reserved", "succeeded", actual, task_id=task_id,
-                          provider_ref="kie", evidence_ref=task_id)
-            if rec["outcome"] not in ("ok", "parked"):
-                return envelope("dispatch", rec["outcome"],
-                                rec.get("reason_code", "ledger-settle-failed"),
-                                rec.get("next_action", ""),
-                                run_id=run_id, logical_key=logical_key,
-                                attempt_id=attempt_id,
-                                evidence={"task_id": task_id,
-                                          "saved_paths": r.get("saved_paths") or []},
-                                state_version=rec.get("state_version", 0))
-            return envelope(
-                "dispatch", "ok", "KIE_DISPATCH_OK",
-                "files saved before the links expire; record the receipt",
-                run_id=run_id, logical_key=logical_key,
-                attempt_id=attempt_id,
-                evidence={"adapter_mode": mode, "generated": True,
-                          "task_id": task_id,
-                          "saved_paths": r.get("saved_paths") or [],
-                          "credits_consumed": credits,
-                          "actual_cost": actual, "warnings": warn,
-                          "retries": 0},
-                state_version=rec.get("state_version", 0))
-        if state == RUN_SKIPPED:
+                                 owner, ev)
+
+        # (1) submit --------------------------------------------------------
+        try:
+            s_rc, s, s_raw = _call(run, adapter,
+                                   ["submit", "--request", req_file, "--json"])
+        except Exception as e:                              # pragma: no cover
+            return _unknown_at("submit", {"error": str(e)})
+        if s is None:
+            return _unknown_at("submit",
+                               {"rc": s_rc, "raw": (s_raw or "")[-400:]})
+
+        s_state = s.get("state")
+        task_id = s.get("task_id") or ""
+        s_err = s.get("error") if isinstance(s.get("error"), dict) else {}
+
+        if s_state == RUN_SKIPPED:
             return stop(
                 "waiting", "generation-skipped-not-generated",
-                "Skill 74 skipped the run; skipped is not generated. Do not "
+                "Skill 74 skipped the submit; skipped is not generated. Do not "
                 "fall back to a private KIE client - activate mode=active.",
-                {"adapter_state": state, "generated": False,
-                 "approval_card": None, "fallback_used": False,
-                 "disposition": "not-generated"})
-        if state == RUN_FAILED:
-            err = r.get("error") or {}
-            credits = r.get("credits_consumed")
+                {"stage": "submit", "adapter_state": s_state,
+                 "generated": False, "approval_card": None,
+                 "fallback_used": False, "disposition": "not-generated"})
+        if s_state == RUN_FAILED:
+            # Definite submit error: settle now. Never leave an unknown row
+            # that the resolver could zero-settle without asking KIE.
+            credits = s.get("credits_consumed")
             cost = (int(credits) if isinstance(credits, (int, float))
                     and not isinstance(credits, bool) else 0)
-            return stop("rejected", "kie-run-failed",
-                        "Skill 74 reported a failed run (%s); reconcile the "
-                        "charge, then retry with a new attempt id"
-                        % (err.get("code") or "unknown"),
-                        {"adapter_state": state, "error": err,
-                         "task_id": task_id, "actual_cost": cost,
-                         "generated": False},
-                        final="failed", cost=cost)
-        if state in RUN_PENDING:
-            if not task_id:
-                return _hold_unknown(
-                    ledger_db, run_id, logical_key, attempt_id, owner,
-                    {"stage": "run", "adapter_state": state,
-                     "remote_task_id": None})
+            _record_stage_evidence(
+                ledger_db, run_id, logical_key, attempt_id, "submit",
+                status="fail", task_id=task_id, error=s_err,
+                adapter_state=s_state)
+            return stop(
+                "rejected", "kie-submit-failed",
+                "Skill 74 submit refused the job (%s); nothing was generated"
+                % (s_err.get("code") or "unknown"),
+                {"stage": "submit", "adapter_state": s_state, "error": s_err,
+                 "task_id": task_id or None, "actual_cost": cost,
+                 "generated": False},
+                final="failed", cost=cost)
+
+        if s_state == RUN_OK and not task_id:
+            # Sync family already finished inside submit; no pollable id.
+            task_id = "sync-" + L.digest_request(request)[:12]
+
+        if task_id:
             sub = L.mark_submitted(ledger_db, run_id, logical_key, attempt_id,
                                    task_id, owner=owner)
-            return envelope(
-                "dispatch", "waiting", "kie-run-incomplete",
-                "poll this job; polling is not resubmitting",
-                run_id=run_id, logical_key=logical_key,
-                attempt_id=attempt_id,
-                evidence={"adapter_state": state, "task_id": task_id,
-                          "generated": False},
-                state_version=sub.get("state_version", 0))
-        return _hold_unknown(ledger_db, run_id, logical_key, attempt_id, owner,
-                             {"stage": "run", "adapter_state": state,
-                              "task_id": task_id,
-                              "known_states": [RUN_OK, RUN_SKIPPED,
-                                               RUN_FAILED] + list(RUN_PENDING)})
+            if sub.get("outcome") == "ok":
+                job_state = "submitted"
+        elif s_state in RUN_PENDING:
+            return _unknown_at("submit",
+                               {"adapter_state": s_state,
+                                "remote_task_id": None})
+        elif s_state != RUN_OK:
+            return _unknown_at(
+                "submit",
+                {"adapter_state": s_state, "task_id": task_id or None,
+                 "remote_task_id": task_id or None,
+                 "known_states": [RUN_OK, RUN_FAILED, RUN_SKIPPED]
+                 + list(RUN_PENDING)})
+
+        # (2) wait (async only; sync submit already answered) ---------------
+        src = s
+        if s_state in RUN_PENDING:
+            try:
+                w_rc, wj, w_raw = _call(
+                    wait_run, adapter,
+                    ["wait", "--task-id", task_id,
+                     "--timeout", str(wait_s), "--json"])
+            except Exception as e:                          # pragma: no cover
+                return _unknown_at("wait", {"error": str(e)}, task_id)
+            if wj is None:
+                return _unknown_at("wait",
+                                   {"rc": w_rc, "raw": (w_raw or "")[-400:]},
+                                   task_id)
+            w_state = wj.get("state")
+            w_err = wj.get("error") if isinstance(wj.get("error"), dict) else {}
+            task_id = wj.get("task_id") or task_id
+            if w_state == RUN_FAILED:
+                credits = wj.get("credits_consumed")
+                cost = (int(credits) if isinstance(credits, (int, float))
+                        and not isinstance(credits, bool) else 0)
+                return stop(
+                    "rejected", "kie-run-failed",
+                    "Skill 74 reported a failed run (%s); reconcile the "
+                    "charge, then retry with a new attempt id"
+                    % (w_err.get("code") or "unknown"),
+                    {"stage": "wait", "adapter_state": w_state, "error": w_err,
+                     "task_id": task_id, "actual_cost": cost,
+                     "generated": False},
+                    final="failed", cost=cost)
+            if w_state != RUN_OK:
+                # wait timeout (running + error.code == timeout) and any other
+                # non-terminal answer: hold unknown WITH the task id so the
+                # resolver queries KIE instead of settling at zero.
+                return _unknown_at(
+                    "wait",
+                    {"adapter_state": w_state, "error": w_err,
+                     "wait_timeout_s": wait_s,
+                     "timed_out": (w_state == "running"
+                                   and w_err.get("code") == "timeout")},
+                    task_id)
+            src = wj
+
+        # (3) save ----------------------------------------------------------
+        try:
+            v_rc, v, v_raw = _call(run, adapter,
+                                   ["save", "--task-id", task_id,
+                                    "--save-dir", save_dir, "--json"])
+        except Exception as e:                              # pragma: no cover
+            v, v_raw, v_rc = None, str(e), -1
+        saved = (v.get("saved_paths") or []) if isinstance(v, dict) else []
+        credits = src.get("credits_consumed")
+        if isinstance(credits, (int, float)) and not isinstance(credits, bool):
+            actual = int(credits)
+            warn = []
+        else:
+            actual = int(estimated_cost)
+            warn = ["ACTUAL_COST_UNREPORTED"]
+        if not saved:
+            warn.append("SAVE_FAILED")
+
+        rec = _settle(ledger_db, run_id, logical_key, attempt_id, owner,
+                      job_state, "succeeded", actual, task_id=task_id,
+                      provider_ref="kie", evidence_ref=task_id)
+        if rec["outcome"] not in ("ok", "parked"):
+            return envelope("dispatch", rec["outcome"],
+                            rec.get("reason_code", "ledger-settle-failed"),
+                            rec.get("next_action", ""),
+                            run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id,
+                            evidence={"task_id": task_id,
+                                      "saved_paths": saved},
+                            state_version=rec.get("state_version", 0))
+        return envelope(
+            "dispatch", "ok", "KIE_DISPATCH_OK",
+            "files saved before the links expire; record the receipt",
+            run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+            evidence={"adapter_mode": mode, "generated": True,
+                      "task_id": task_id,
+                      "saved_paths": saved,
+                      "credits_consumed": credits,
+                      "actual_cost": actual, "warnings": warn,
+                      "wait_timeout_s": wait_s, "retries": 0},
+            state_version=rec.get("state_version", 0))
     except Exception as e:                                  # noqa: BLE001
         return stop("error", "dispatch-internal-error",
                     str(e)[:300], {"error": str(e)[:300], "generated": False})
@@ -408,7 +568,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="kie_dispatch.py",
         description="Plan 5.4 KIE dispatch: reserve -> Skill 74 health -> "
-                    "preflight -> prompt-budget -> run/save -> reconcile.")
+                    "preflight -> prompt-budget -> submit/wait/save -> reconcile.")
     d = ap.add_subparsers(dest="cmd", required=True)
     x = d.add_parser("dispatch", help="Run one reserved KIE generation.")
     x.add_argument("--model", required=True, help="Exact model id (never picked here).")

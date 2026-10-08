@@ -172,7 +172,7 @@ This role contributes to the company revenue cascade by: **producing finished vi
 |---|---|---|---|
 | **27** video-editor | "cut this video" · "trim this clip" · "resize this clip for social" | `~/.openclaw/skills/27-video-editor/` | `universal-sops/video-pipeline-craft/` |
 | **72** motion-video-plus | "make me a motion graphics video" · "make me an animated promo video" · "make me an animated explainer video" | `~/.openclaw/skills/72-motion-video-plus/` | `universal-sops/video-pipeline-craft/` |
-| **75** drama-song-ad-factory | "make me a drama song ad" · "produce a drama-song advertisement" · "song ad for my product" | `~/.openclaw/skills/75-drama-song-ad-factory/` | `universal-sops/video-pipeline-craft/` |
+| **75** drama-song-ad-factory | "make me a drama song ad" · "produce a drama-song advertisement" · "song ad for my product" | `~/.openclaw/skills/75-drama-song-ad-factory/` | `universal-sops/drama-song-ad-pipeline/` · `universal-sops/video-pipeline-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures (Numbered)
