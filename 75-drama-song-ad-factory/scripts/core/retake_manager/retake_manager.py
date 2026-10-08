@@ -39,6 +39,11 @@ import sys
 import uuid
 from pathlib import Path
 
+# G4 call path: the band comes from core/target_engine (which reads the
+# G10 numbers in core/spoken_share) -- never a second band in this file.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import target_engine  # noqa: E402
+
 TOOL_NAME = "retake_manager"
 TOOL_VERSION = "1.0.0"
 EXIT = {"ok": 0, "error": 1, "waiting": 3, "parked": 4, "rejected": 5}
@@ -174,8 +179,33 @@ def plan(req, profile_path=None):
     reason = req.get("reason")
     if reason is not None and (not isinstance(reason, str) or not reason):
         errors.append("reason must be a non-empty string when present")
+    gap = req.get("target_gap_pts")
+    if gap is not None and (isinstance(gap, bool)
+                            or not isinstance(gap, (int, float))):
+        errors.append("target_gap_pts must be a number (percentage points)")
     if errors:
         return _reject("INVALID_REQUEST", "; ".join(errors))
+
+    # G4 band gate: a measured target miss only warrants a retake past
+    # FLAG_PTS. Within 5 points the take is accepted; 5-10 is accepted
+    # with a flag in the receipt -- neither is redone (order 1240 item 3).
+    if gap is not None:
+        band = target_engine.band_for_gap(abs(float(gap)))
+        if band != target_engine.BAND_REDO:
+            return {
+                "outcome": "rejected",
+                "code": "TARGET_IN_BAND",
+                "reason": ("target gap %.4g points is %s (band: within %d "
+                           "points accept, %d-%d accept with a flag, past %d "
+                           "redo); no retake for an in-band take"
+                           % (abs(float(gap)), band,
+                              target_engine.ACCEPT_PTS,
+                              target_engine.ACCEPT_PTS,
+                              target_engine.FLAG_PTS,
+                              target_engine.FLAG_PTS)),
+                "band": band,
+                "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+            }
 
     prof_path = (profile_path or req.get("profile")
                  or os.environ.get("ACCEPTANCE_PROFILE_JSON")
