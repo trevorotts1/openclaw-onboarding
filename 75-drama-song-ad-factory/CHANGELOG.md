@@ -6,6 +6,17 @@ frontmatter `version:` field).
 
 ---
 
+## v2.8.3 - 2026-10-08 - G9: words-fit preflight before spend
+
+Unit W-G-009 (order 2026-10-08 11:50 Part G, review G7). Before any paid
+Suno call, the word mix is checked against the carded length at measured
+delivery speeds. LeAnne Dolce's ~220-word script at 90 s is flagged
+WORDS_DO_NOT_FIT with three options and their numbers (longer ad / lower
+sung target / fewer words); the reference mix at 300 s passes. Suno
+`duration` is stamped with planned time + 15% headroom. New package
+`core/words_fit`; wired into `music_director.build_generate_request`
+when `length_s` is given. Skill bump v2.8.2 to v2.8.3.
+
 ## v2.8.2 - 2026-10-08 - G3b: sung detector v2
 
 The sung detector no longer reads gap-free speech as sung (unit #1666). Skill bump v2.8.1 to v2.8.2.
