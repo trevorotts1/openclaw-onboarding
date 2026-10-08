@@ -1,3 +1,7 @@
+## [v26.4.10]  -  2026-10-08  -  Batch MGB004: eight Skill 75 units (drama song ad factory v2.8.3)
+
+Released as one batch. Units: #1674 F3 per-line lip-sync cuts and multi-voice stub analyzer; #1675 G8 every share measured from audio, never from labels; #1676 the user's model and agent choice wins, no Fable pin; #1677 the main window orchestrates only, no silent failure; #1679 F16 delivery fails when the video model check fails; #1680 W4-PROOF proof-run harness matches landed main; #1682 G1 delivery map in every style prompt, negative-tag ban out; #1683 doubled lip-sync (6-8 clips of 4-6 s) plus the lip-sync image gate. Each unit's detail is in 75-drama-song-ad-factory/CHANGELOG.md v2.8.3. Skill 75 v2.8.3. Not in this batch: #1678 (G5, conflicts with G8), #1681, #1653.
+
 ## [v26.4.9]  -  2026-10-08  -  Merge train: #1639 feat(onboarding): standard company placeholder after 14 days without…; #1666 G3b: sung detector no longer reads gap-free speech as sung, skill 75…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

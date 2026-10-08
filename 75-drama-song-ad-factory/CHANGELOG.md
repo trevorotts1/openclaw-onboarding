@@ -6,7 +6,11 @@ frontmatter `version:` field).
 
 ---
 
-## Unreleased - doubled lip-sync and the lip-sync image gate
+## v2.8.3 - 2026-10-08 - Batch MGB004: F3, G8, G1, F16, W4-PROOF, doubled lip-sync, user model choice, orchestrate-only
+
+One batch release of eight units (#1674 F3 lipsync_cuts, #1675 G8 audio shares, #1676 user model choice, #1677 orchestrate-only and no silent failure, #1679 F16 video model gate, #1680 W4-PROOF, #1682 G1 delivery map, #1683 doubled lip-sync and image gate). Entries below are each unit's own notes. Skill 75 is now v2.8.3.
+
+### Doubled lip-sync and the lip-sync image gate (#1683)
 
 Owner order (Trevor, 2026-10-08). No version bump in this unit.
 
