@@ -36,7 +36,11 @@ FLAG_SHORT = 1            # one short: accept with a flag; more: regenerate
 
 
 def _words(text):
-    return re.findall(r"[a-z0-9]+(?:'[a-z]+)?", str(text).lower())
+    """Word tokens; hyphen-held vowels (sma-a-all) and doubled letters fold so a
+    held word matches its plain spelling on both sides of every comparison."""
+    t = re.sub(r"(?<=[a-z])-(?=[a-z])", "", str(text).lower())
+    return [re.sub(r"([a-z])\1+", r"\1", w)
+            for w in re.findall(r"[a-z0-9]+(?:'[a-z]+)?", t)]
 
 
 def hook_count(length_s):
@@ -102,8 +106,8 @@ def check_sheet_count(sheet, hook_lines, length_s):
            and tuple(_words(" ".join(s["lines"]))) == key]
     if len(idx) != n:
         errs.append("hook appears %d times, %d s needs %d" % (len(idx), length_s, n))
-    if idx and idx[0] > 1:
-        errs.append("first hook is section #%d, want the first or second" % (idx[0] + 1))
+    if idx and idx[0] > 3:
+        errs.append("first hook is section #%d, want within the first four (intro, vocalise, one verse, hook)" % (idx[0] + 1))
     sung = [i for i, s in enumerate(sheet) if s.get("delivery") == "sung"]
     if idx and sung and idx[-1] != sung[-1]:
         errs.append("last sung section is not the hook")
