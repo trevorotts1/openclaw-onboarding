@@ -40,6 +40,15 @@ Rules:
 - E3 minimum shot length: load_timeline fails closed on any segment
   under 1.5 s (1.0 s when marked beat_cut) via
   shot_planner.validate_timeline_min_shot.
+- F8 (manual Part F): the final sung/spoken line must end before the
+  end card starts. The end card is marked by an optional top-level
+  "endcard_start_s" (validated in load_timeline when present; no key =
+  not checked — old timelines assemble unchanged). Sung/spoken line
+  windows come from the optional "lines" list ({line_id, start_s,
+  end_s}, the same absolute-window shape other checks read). When the
+  end card key is present, check_last_line_before_endcard(plan) runs
+  at assembly and a line ending after the card fails with
+  LAST_LINE_OVER_ENDCARD.
 """
 import argparse
 import json
@@ -73,6 +82,13 @@ MIN_SHOT_S = 1.5
 BEAT_CUT_MIN_SHOT_S = 1.0
 
 EXIT = {"ok": 0, "error": 1, "unavailable": 3}
+
+# --- F8: last line before the end card (manual Part F F8) --------------------
+# The ad's final sung/spoken line must end before the end card begins.
+# The card is marked with the optional timeline key "endcard_start_s"
+# (validated in load_timeline when present; no key = not checked).
+# Sung/spoken line windows come from the optional "lines" list.
+LAST_LINE_OVER_ENDCARD = "LAST_LINE_OVER_ENDCARD"
 
 # --- E2: transitions (manual Part E E2) --------------------------------------
 # Default: fade 0.4 s (manual allows 0.3-0.5) at every scene change;
@@ -288,6 +304,35 @@ def load_timeline(path):
             raise ValueError(
                 f"TIMELINE_BAD_SEGMENT: segments[{i}].lip_sync must be "
                 "boolean")
+    # F8: optional end card marker (and sung/spoken line windows) are
+    # validated here, at load, when present — fail closed on bad shape.
+    if tl.get("endcard_start_s") is not None:
+        ec = tl["endcard_start_s"]
+        if (isinstance(ec, bool) or not isinstance(ec, (int, float))
+                or ec != ec or ec <= 0):
+            raise ValueError(
+                "TIMELINE_BAD_ENDCARD: endcard_start_s must be a positive "
+                "number of seconds")
+    if tl.get("lines") is not None:
+        ls = tl["lines"]
+        if not isinstance(ls, list):
+            raise ValueError("TIMELINE_BAD_LINES: lines must be a list")
+        for i, ln in enumerate(ls):
+            if not isinstance(ln, dict) \
+                    or not str(ln.get("line_id") or "").strip():
+                raise ValueError(
+                    f"TIMELINE_BAD_LINES: lines[{i}] needs line_id")
+            st, en = ln.get("start_s"), ln.get("end_s")
+            for name, v in (("start_s", st), ("end_s", en)):
+                if (isinstance(v, bool) or not isinstance(v, (int, float))
+                        or v != v):
+                    raise ValueError(
+                        f"TIMELINE_BAD_LINES: lines[{i}].{name} must be a "
+                        "number")
+            if en <= st:
+                raise ValueError(
+                    f"TIMELINE_BAD_LINES: lines[{i}] end must be after "
+                    "start")
     min_shot_errs = check_timeline_min_shot(tl)
     if min_shot_errs:
         raise ValueError(
@@ -444,7 +489,77 @@ def plan_timeline(tl, base_dir=".", probe=None):
     return {"fps": fps, "width": width, "height": height,
             "song_path": tl.get("song_path"),
             "segments": items, "total_frames": total_frames,
-            "total_dur": total_frames / fps}
+            "total_dur": total_frames / fps,
+            # F8: card marker + line windows ride the plan so
+            # check_last_line_before_endcard(plan) runs off the plan.
+            "endcard_start_s": tl.get("endcard_start_s"),
+            "lines": tl.get("lines")}
+
+
+# --- F8: last line before the end card (manual Part F F8) --------------------
+#
+# The failed 2026-10-08 ad let its last sung line run INTO the end card:
+# the words were still playing when the CTA card appeared and the whole
+# close was cut off. The check is timeline-based, needs no media:
+#   * line windows come from the optional timeline key "lines"
+#     ([{line_id, start_s, end_s}], absolute seconds, the same shape
+#     other timing checks read);
+#   * the card's start is the optional timeline key "endcard_start_s"
+#     (validated in load_timeline when present; no key = not checked);
+#   * plan_timeline copies both onto the plan so the gate runs off the
+#     plan, like every other assembler gate.
+# Reason code: LAST_LINE_OVER_ENDCARD — a line whose END lands after the
+# card's start on the timeline. Any gate error raises ValueError with a
+# reason code (fail closed), never silently passes.
+
+
+def check_last_line_before_endcard(plan):
+    """F8 gate: final sung/spoken line ends before the end card starts.
+
+    plan: plan_timeline() output (must carry "endcard_start_s" and
+    "lines" copied from the timeline, or neither — the check is a no-op
+    without the card marker).
+
+    Returns [] on pass or when not checked; else a list of reason
+    strings — ["LAST_LINE_OVER_ENDCARD"] when any final sung/spoken
+    line's end time lands after the end card's start time on the
+    timeline. Malformed plan shapes raise ValueError (fail closed,
+    never a silent pass).
+    """
+    ec = plan.get("endcard_start_s")
+    if ec is None:
+        return []                              # no card key = not checked
+    ls = plan.get("lines")
+    if ls is None:
+        raise ValueError(
+            "LAST_LINE_WINDOW_UNKNOWN: endcard_start_s present but the "
+            "timeline carries no lines to check against")
+    if not isinstance(ec, (int, float)) or isinstance(ec, bool) \
+            or not isinstance(ls, list):
+        raise ValueError(
+            "LAST_LINE_INPUT_BAD: endcard_start_s must be a number and "
+            "lines a list")
+    for i, ln in enumerate(ls):
+        if not isinstance(ln, dict):
+            raise ValueError(
+                "LAST_LINE_INPUT_BAD: lines[%d] must be an object" % i)
+        end = ln.get("end_s")
+        if isinstance(end, bool) or not isinstance(end, (int, float)):
+            raise ValueError(
+                "LAST_LINE_INPUT_BAD: lines[%d].end_s must be a number"
+                % i)
+    if all(float(ln["end_s"]) <= float(ec) for ln in ls):
+        return []
+    return [LAST_LINE_OVER_ENDCARD]
+
+
+def _last_line_over_detail(plan):
+    """Evidence for a LAST_LINE_OVER_ENDCARD failure: the offending lines."""
+    ec = float(plan["endcard_start_s"])
+    return [{"line_id": str(ln.get("line_id") or i),
+             "end_s": float(ln["end_s"]), "endcard_start_s": ec}
+            for i, ln in enumerate(plan["lines"])
+            if float(ln["end_s"]) > ec]
 
 
 # --- Part E E5: lip-sync clips stay whole (atomic) --------------------------
@@ -692,6 +807,20 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     except ValueError as exc:
         msg = str(exc)
         return _fail(msg.split(":")[0], next_action=msg, evidence={})
+    # F8: the final sung/spoken line must end before the end card starts.
+    # No endcard_start_s key on the timeline = not checked (backward
+    # compatible); a bad line window already failed in load_timeline.
+    try:
+        over = check_last_line_before_endcard(plan)
+    except ValueError as exc:
+        msg = str(exc)
+        return _fail(msg.split(":")[0], next_action=msg, evidence={})
+    if over:
+        return _fail(over[0],
+                     next_action=("move the final sung/spoken line's end "
+                                  "before the end card starts (manual "
+                                  "Part F F8)"),
+                     evidence={"over": _last_line_over_detail(plan)})
     if timeout is None:
         _threads, _nice, timeout = size_ffmpeg(
             plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
