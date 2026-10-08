@@ -114,3 +114,8 @@ proves nothing about new helpers.
 Bump rule: any contract change re-qualifies consumers via parity/lockstep
 tests (directive 2.3) and records migration + rollback in the release
 manifest (schema: `release-manifest.schema.json`).
+
+Lip-sync sync check (LSL001): `scripts/core/lip_sync/lip_gate/mouth_landmarks.py` needs
+`mediapipe`, `opencv-python-headless`, `numpy` and Google's `face_landmarker.task`
+(float16, ~4 MB; path in env `LIPSYNC_FACE_MODEL` or beside the module; not committed).
+If any is missing the clip reads UNMEASURED (reported, never a pass).
