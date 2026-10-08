@@ -342,6 +342,50 @@ def lipsync_gate(plan):
     return _fail(res["reason_code"], next_action=res["detail"],
                  evidence=res["evidence"])
 
+def face_speaks_gate(plan):
+    """Part H H4 final edit QC: every shot where a face is visibly speaking
+    is a lip-sync clip of that character's own line, and lip-sync coverage
+    sits in the target band.
+
+    Opt-in by data: runs only when the timeline "lines" carry "speaker"
+    (otherwise None, nothing to judge). Then every segment must declare
+    "faces_on_screen" (optional "speaking_faces"); a missing declaration
+    fails closed FACE_DATA_MISSING. Returns the _fail receipt or None; the
+    shot table (shot / time / line / lip-sync) rides in evidence.
+    """
+    lines = [l for l in (plan.get("lines") or []) if l.get("speaker")]
+    if not lines:
+        return None
+    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    from shot_planner import face_speaks as fs
+    fps, shots = plan["fps"], []
+    for i, s in enumerate(plan["segments"]):
+        if not isinstance(s.get("faces_on_screen"), list):
+            return _fail("FACE_DATA_MISSING",
+                         next_action="segments[%d] must declare "
+                         "faces_on_screen when lines carry speakers" % i,
+                         evidence={})
+        start = s["offset_frames"] / fps
+        shots.append({"shot_id": s.get("shot_id") or "seg%d" % i,
+                      "start": start, "end": start + s["frames"] / fps,
+                      "faces_on_screen": s["faces_on_screen"],
+                      "speaking_faces": s.get("speaking_faces"),
+                      "lip_sync_line_ids": s.get("lip_sync_line_ids")})
+    res = fs.check_face_speaks(shots, plan["lines"])
+    if not res["pass"]:
+        return _fail(res["reason_code"], next_action=res["detail"],
+                     evidence={"speaking_face_rows": res["rows"]})
+    marked = [s for s in plan["segments"] if s.get("lip_sync_line_ids")]
+    band = fs.check_coverage_band(plan["total_dur"], sum(
+        s["snapped_dur"] for s in marked), len(marked))
+    if not band["pass"]:
+        return _fail(band["reason_code"],
+                     next_action="lip-sync coverage is below the target band "
+                     "(manual Part H H4)", evidence=band["evidence"])
+    return None
+
 # F9 frame-text check: sampled frames per lip-sync clip, extractor stub
 # default (OCR optional; register_extractor installs it). No ffmpeg needed
 # on the stub path, so dry runs and tests run it too -- the done-when is
@@ -603,6 +647,10 @@ def plan_timeline(tl, base_dir=".", probe=None):
         item["stretch"] = round(_h5_stretch({**s, "dur": dur}), 3)
         if s.get("shows_line_ids"):
             item["shows_line_ids"] = list(s["shows_line_ids"])
+        # Part H H4: who is on screen / visibly speaking, for the face gate.
+        for k in ("shot_id", "faces_on_screen", "speaking_faces"):
+            if s.get(k) is not None:
+                item[k] = s[k]
         items.append(item)
     for i in range(1, len(items)):
         ov = round(items[i]["xfade_dur"] * fps)
@@ -1065,6 +1113,7 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     # E6 lip-sync coverage result rides in every receipt; only a FAIL
     # blocks the render. The dry-run receipt exists for exactly this.
     cov = lipsync_gate(plan)
+    face = face_speaks_gate(plan)        # Part H H4
     # F9 frame-text check runs on EVERY lip-sync clip (stub mode when
     # there is no real ffmpeg or on dry runs; extract mode on real
     # renders). Rows ride the receipt either way; only a flagged row
@@ -1085,7 +1134,7 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                             "frame_text": frows,
                             "motion": motion, "h5": _h5_ev},
                "state_version": 0}
-        blocked = cov if cov is not None else ffail
+        blocked = next((b for b in (cov, face, ffail) if b is not None), None)
         if blocked is not None:  # blocked before spend, but evidence stays
             out["outcome"] = "error"
             out["reason_code"] = blocked["reason_code"]
@@ -1093,7 +1142,7 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             out.setdefault("evidence", {}).setdefault("gate_evidence", {})
             out["evidence"]["gate_evidence"] = blocked["evidence"]
         return out
-    for blocked in (cov, ffail):   # gate FAILs: no render spend (17.5)
+    for blocked in (cov, face, ffail):   # gate FAILs: no render spend (17.5)
         if blocked is not None:
             return blocked
     try:
