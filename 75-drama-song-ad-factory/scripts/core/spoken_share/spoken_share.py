@@ -407,7 +407,20 @@ def check_spoken_word_budget(sections):
             "flags": ["FLAG: " + text] if verdict == VERDICT_FLAG else []}
 
 
-def check_share(share, segments=None, basis=BASIS_MEASURED):
+#: Per-ad spoken share setting (percent range): the default stays 20-25; an ad
+#: (BSW Power in the Climb) can set its own, e.g. (15, 20).
+DEFAULT_AD_RANGE_PCT = (20.0, 25.0)
+
+
+def target_for_range(range_pct=None):
+    """Midpoint percent of an ad's own spoken range (default 20-25 -> 22.5)."""
+    lo, hi = DEFAULT_AD_RANGE_PCT if range_pct is None else range_pct
+    if not 0 < lo <= hi < 100:
+        raise SpokenShareError("BAD_RANGE", "spoken range must be 0 < lo <= hi < 100, got %r" % ((lo, hi),))
+    return (float(lo) + float(hi)) / 2.0
+
+
+def check_share(share, segments=None, basis=BASIS_MEASURED, target_pct=None):
     """Enforce the band on one measured share. Never raises on a share that
     is merely out of band -- that is a FAIL verdict, not an error.
 
@@ -457,24 +470,26 @@ def check_share(share, segments=None, basis=BASIS_MEASURED):
     reasons = []
     if share < 0.0 or share > 1.0:
         reasons.append("share %r is not a fraction in 0..1" % share)
-    gap = round((share - TARGET) * 100.0, 6)
+    tgt = SPOKEN_TARGET_PCT if target_pct is None else float(target_pct)
+    result["target_pct"] = tgt
+    gap = round(share * 100.0 - tgt, 6)
     verdict = VERDICT_FAIL if reasons else judge_gap(gap)
     if verdict == VERDICT_FAIL and not reasons:
         reasons.append("spoken share %.1f%% is %.1f points from the %g%% "
                        "goal, past %d: redo (rap counts as spoken-style "
                        "delivery)" % (share_pct(share), abs(gap),
-                                      SPOKEN_TARGET_PCT, FLAG_PTS))
+                                      tgt, FLAG_PTS))
     flags = []
     if verdict == VERDICT_FLAG:
         flags.append("spoken share %.1f%% is %.1f points from the %g%% "
                      "goal (past %d, within %d): accepted with a flag"
-                     % (share_pct(share), abs(gap), SPOKEN_TARGET_PCT,
+                     % (share_pct(share), abs(gap), tgt,
                         ACCEPT_PTS, FLAG_PTS))
     result.update({
         "verdict": verdict,
         "in_band": abs(gap) <= ACCEPT_PTS,
         "gap_pts": abs(gap),
-        "delta_from_target": round(share - TARGET, 6),
+        "delta_from_target": round(share - tgt / 100.0, 6),
         "reasons": reasons,
         "flags": flags,
     })
@@ -772,5 +787,7 @@ __all__ = [
     "plan_refusal",
     "refusal",
     "seconds_for",
+    "target_for_range",
+    "DEFAULT_AD_RANGE_PCT",
     "share_pct",
 ]

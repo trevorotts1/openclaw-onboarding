@@ -317,23 +317,34 @@ LeAnne Dolce songs land. The code is `scripts/core/suno_recipe/`; every Suno
 request goes through `suno_recipe.prepare()` and the `music_director` seam
 refuses a raw Suno style that skipped it.
 
-The four rules:
+The four rules (recipe v2, replaces G12):
 
-1. Suno is told plainly which lines to sing and which to speak.
-2. A repeated sung hook is built from the client's own words.
-3. Singing starts early.
+1. Spoken tags only in [Intro] and [Outro]; spoken is named once in the style
+   text, and the style says the full band keeps playing under the spoken lines.
+2. Sung lines are short (5-6 syllables aimed, 8 at most), rhymed, with
+   hyphen-held vowels, after a wordless sung vocalise.
+3. The first hook comes after the vocalise, never at 0 s; the hook is the
+   client's own words, repeated by length (`core/sung_hook`).
 4. Each take's singing is measured, not taken from its labels.
 
-In plain terms: tag every lyric section Sung or Spoken, and put the same map
-in the style text ("SUNG: Hook. SPOKEN: Verse 1, Verse 2."). Write one short
-hook out of words the client actually said and repeat it. Get to the first
-sung line early (target: 15% of the runtime). After Suno returns a take, run
-the detector and judge the sung and spoken shares from what it measured.
+Word budget, section plan, hook repeats, spoken placement, instrumental breaks
+and the extend plan for any length come from ONE function,
+`core/length_formula.plan(L, spoken_share_pct)`; L=60 gives the measured
+65-word recipe. Style text is 1000 characters or less. Negative tags are
+`rap, rapping, choir, reverb, echo, band dropout, acapella sections,
+talk-singing, monotone delivery` (never "spoken word"; the rap style drops the
+rap pair). KIE: V6, customMode true, styleWeight 0.75, weirdnessConstraint
+0.3, variety 0, vocalGender per brief. Trevor's dry close-vocal rule stays.
+`core/song_dispatch` judges EVERY take (singcheck v2, spoken share band, sung
+of voice, 6 s stretch, hook sung 2+, script words, length, music under speech,
+clean ending, first sung), stops at the first pass, saves the stem and
+timestamps of every take, regenerates whole tracks only, and refuses
+openai-whisper.
 
 The targets (Trevor, 2026-10-08, SPK001): speaking is **20-25% of the
-runtime** (center 22.5), and the lyric writer budgets spoken lines at about
-15-18% of the lyric words, because Suno stretches spoken parts into long
-talking. Singing is measured against **voice time**, sung / (sung + spoken),
+runtime** by default (center 22.5; each ad can set its own, Black Successful
+Women uses 15-20), and the lyric writer budgets spoken lines from the length
+formula, because Suno stretches spoken parts into long talking. Singing is measured against **voice time**, sung / (sung + spoken),
 with a default target of **77.5%** (75-80): a music-only intro, gaps and the
 end card never count against it. Both numbers use Trevor's band: within 5
 points accept, over 5 up to 10 accept with a flag, over 10 redo. The only
