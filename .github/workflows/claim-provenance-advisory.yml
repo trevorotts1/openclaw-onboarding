@@ -26,6 +26,10 @@ on:
       - .github/workflows/claim-provenance-advisory.yml
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   claim-provenance:
     name: Claim-provenance advisory (labels, never blocks)

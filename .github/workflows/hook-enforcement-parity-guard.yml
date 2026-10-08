@@ -1,7 +1,12 @@
 name: hook-enforcement parity guard
 on:
   push:
+    branches: [main]
   pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   hook-enforcement-parity:
     name: hook-enforcement parity guard

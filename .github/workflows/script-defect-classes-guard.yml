@@ -149,6 +149,10 @@ on:
       - ".github/workflows/script-defect-classes-guard.yml"
       - "**.sh"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   defect-classes:
     name: defect classes A-G stay fixed
