@@ -1,5 +1,15 @@
 """fps_conform: motion-compensated fps conform for the final assembler
-(manual 02 Part E E1, Critical).
+(manual 02 Part E E1, Critical; amended by Part H H3).
+
+Part H H3 policy (replaces the old E1 line "output = the clips' native
+rate", which let a builder hard-code 24 and drop 1 of every 5 Kling
+frames):
+- the master is ALWAYS 30 fps (MASTER_FPS);
+- Kling clips are natively 30 fps and pass through with NO conform
+  filter, so every lip-sync mouth frame survives;
+- MiniMax H3 clips are natively 24 fps and are motion-interpolated up to
+  30 (minterpolate mci), never the plain `fps` filter;
+- every segment is checked for duplicate frames (SEGMENT_DUP_CAP).
 
 Problem: the plain ffmpeg `fps` filter conforms clips by DUPLICATING
 frames (or dropping them), which shows up in the finished ad as visible
@@ -32,6 +42,17 @@ import re
 # Part E E1 "Done when": a conforming master must drop <= 2% of its
 # frames under mpdecimate; a master above this fails the final QC gate.
 DUP_FRAMES_CAP = 2.0
+
+# Part H H3: the master frame rate, and the per-segment duplicate cap
+# (mpdecimate), checked on top of the whole-master cap above.
+MASTER_FPS = 30
+SEGMENT_DUP_CAP = 2.0
+TIMELINE_SEGMENT_DUP_FRAMES = "TIMELINE_SEGMENT_DUP_FRAMES"
+
+# Native output rate per generator (measured on Kiesett's ad: Kling 3/3 at
+# 30, MiniMax H3 13/13 at 24). A segment may carry "fps" itself (wins) or
+# a "model" name matched here by substring.
+NATIVE_FPS = {"kling": 30.0, "minimax": 24.0, "hailuo": 24.0, "h3": 24.0}
 
 # E1 reason code, emitted exactly for a dup-ratio gate failure.
 TIMELINE_DUP_FRAMES = "TIMELINE_DUP_FRAMES"
@@ -158,3 +179,61 @@ def conform_record(source_fps, timeline_fps):
     src = parse_fps(source_fps)
     dst = parse_fps(timeline_fps)
     return {"source_fps": round(src, 3), "output_fps": round(dst, 3)}
+
+
+# --- Part H H3: native rate lookup + real mpdecimate measurement --------
+
+def native_fps(model):
+    """Native fps for a model name (case-insensitive substring), else None."""
+    m = str(model or "").lower()
+    for key, fps in NATIVE_FPS.items():
+        if key in m:
+            return fps
+    return None
+
+
+def measure_dup_pct(path, ffmpeg="ffmpeg", start=None, dur=None, run=None):
+    """Run mpdecimate over a file (or a time window of it) and return the
+    duplicate percentage. This is a REAL measurement: the debug-level
+    stderr of `-vf mpdecimate -f null -` is what mpdecimate_dup_ratio
+    parses. `run(argv) -> stderr text` is injectable for tests.
+    """
+    argv = [ffmpeg, "-hide_banner", "-loglevel", "debug", "-threads", "4"]
+    if start is not None:
+        argv += ["-ss", "%.6f" % start]
+    if dur is not None:
+        argv += ["-t", "%.6f" % dur]
+    argv += ["-i", str(path), "-vf", "mpdecimate", "-an", "-f", "null", "-"]
+    if run is None:
+        import subprocess
+        proc = subprocess.run(argv, capture_output=True, text=True,
+                              check=False)
+        if proc.returncode != 0:
+            raise RuntimeError("DUP_MEASURE_FAILED: " + (proc.stderr or "")[-300:])
+        return mpdecimate_dup_ratio(proc.stderr)
+    return mpdecimate_dup_ratio(run(argv))
+
+
+def segment_dup_report(master, plan, ffmpeg="ffmpeg", cap=SEGMENT_DUP_CAP,
+                       run=None):
+    """Per-segment duplicate check on the rendered master (H3).
+
+    One row per plan segment: {index, src, start_s, dur_s, dup_pct, hold,
+    pass}. Cross-fade overlaps are excluded from the window. A segment
+    marked hold (a deliberate still) is reported but never fails. Returns
+    (rows, failed_rows).
+    """
+    fps = plan["fps"]
+    segs = plan["segments"]
+    rows = []
+    for i, s in enumerate(segs):
+        lead = s.get("xfade_frames", 0)
+        tail = segs[i + 1].get("xfade_frames", 0) if i + 1 < len(segs) else 0
+        start = (s["offset_frames"] + lead) / fps
+        dur = (s["frames"] - lead - tail) / fps
+        pct = measure_dup_pct(master, ffmpeg, start, dur, run=run)
+        hold = bool(s.get("hold"))
+        rows.append({"index": i, "src": s["src"], "start_s": start,
+                     "dur_s": dur, "dup_pct": pct, "hold": hold,
+                     "pass": hold or pct <= cap})
+    return rows, [r for r in rows if not r["pass"]]

@@ -6,6 +6,27 @@ frontmatter `version:` field).
 
 ---
 
+## v2.6.1 - 2026-10-08 - Part H H3: 30 fps master, Kling pass-through, H3 interpolation, per-segment duplicate check
+
+Root cause (Kiesett Stop Stale ad): builders hard-coded 24 fps and bypassed
+the assembler, dropping 1 in 5 Kling lip-sync frames; the master duplicate
+gate also read the render's own stderr, which carries no mpdecimate markers,
+so it never measured anything.
+
+- `final_assembler/fps_conform.py`: `MASTER_FPS = 30`, `NATIVE_FPS`
+  (Kling 30, MiniMax H3 24), `native_fps()`, `measure_dup_pct()` (real
+  mpdecimate run, `-threads 4`), `segment_dup_report()` (per segment, 2%
+  cap, `hold` exempt).
+- `final_assembler/assembler.py`: `TIMELINE_FPS_NOT_30` unless the choice
+  card sets the rate; per-segment `model` picks source fps (Kling
+  pass-through, H3 minterpolate); conformed segments are trimmed to the exact
+  slot after interpolation (minterpolate loses ~2 frames at a cut); every
+  chain ends on one timebase (a pass-through clip next to an interpolated clip
+  failed to render in xfade); master and per-segment duplicates now measured
+  on the rendered file (`TIMELINE_DUP_FRAMES`, `TIMELINE_SEGMENT_DUP_FRAMES`).
+- E1 wording updated in `SKILL.md` and the `fps_conform.py` header.
+- Test: `final_assembler/test_fps_h3.py`.
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
