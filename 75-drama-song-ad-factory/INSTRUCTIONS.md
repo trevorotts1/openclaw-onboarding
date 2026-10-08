@@ -297,12 +297,19 @@ card. The answers and the time answered go into the receipt
   first, and are listed on the approval card. Each is a paid job, so the cost
   roughly doubles and a plan past the spend cap is refused loudly. Every
   lip-sync source picture passes the lip-sync image gate before any paid job
-  (straight at the camera, head and shoulders 9:16, face 35-40% of the frame
-  height, mouth closed or slightly parted, nothing over mouth or jaw, soft even
-  light, same character as the storyboard, sharp and at least 1080x1920). Model order is
+  (front or three-quarter, yaw and pitch within 15 degrees, roll within 12;
+  chest-up 9:16, face 30-40% of the frame height, accepted 24-45%; lips relaxed
+  and very slightly parted; nothing over mouth or jaw, soft even light, same
+  character as the storyboard, sharp and at least 720x1280, a crop is fine when
+  it passes). Each clip is cut from the lead-vocal stem on phrase boundaries with
+  0.30 s before and 0.20 s after, prompted with "sings" or "says", and measured
+  by `event_sync` (SYNCED, WEAK, UNMEASURABLE, NOT_SYNCED; hard defects only
+  trigger a retry). Two tries at most per segment, every name variant counted,
+  then the best take is kept and flagged `KEPT_BEST_OF_2`. Model order is
   Kling avatar `kling/ai-avatar-standard` first (a front-facing close-up
   image plus that character's own isolated line), InfiniTalk
-  `infinitalk/from-audio` as backup, **Volcengine dropped**. Tight
+  `infinitalk/from-audio` as backup [OPEN DECISION for Trevor: the code never
+  calls InfiniTalk; see SKILL.md], **Volcengine dropped**. Tight
   front-facing close-ups only. The input clip contains only the on-screen
   speaker's line - never a narrator, never another character, never a mixed
   vocal stem. Narrator, phone, voicemail and laptop voices may play as

@@ -22,7 +22,8 @@ def png(w, h):
 
 
 GOOD = {"face_box": [340, 560, 400, 730], "yaw_deg": 2.0, "pitch_deg": -3.0,
-        "mouth_open_ratio": 0.05, "teeth_smile": False, "mouth_occluded": False,
+        "roll_deg": 1.0, "mouth_open_ratio": 0.05, "smile_score": 0.1,
+        "teeth_visible": False, "mouth_occluded": False,
         "jaw_occluded": False, "light_evenness": 0.9, "mouth_hard_shadow": False,
         "background_separation": 0.4, "reference_similarity": 0.93,
         "sharpness": 220.0, "provenance": "generated"}
@@ -40,20 +41,21 @@ def with_(**kw):
 def test_good_picture_passes():
     r, nums = G.check_image(SIZE, GOOD)
     assert r == [], r
-    assert 0.35 <= nums["face_height_share"] <= 0.40
+    assert 0.30 <= nums["face_height_share"] <= 0.40
 
 
 def test_each_rule_refuses_with_its_own_code():
     cases = [
-        ((720, 1280), GOOD, G.RESOLUTION),
+        ((640, 1138), GOOD, G.RESOLUTION),
         ((1920, 1080), GOOD, G.NOT_PORTRAIT),
         (SIZE, with_(face_box=[200, 300, 700, 1400]), G.FACE_SIZE),   # 73%
         (SIZE, with_(face_box=[400, 700, 150, 200]), G.FACE_SIZE),    # 10%
         (SIZE, with_(face_box=[0, 560, 400, 730]), G.FRAMING),
         (SIZE, with_(yaw_deg=25.0), G.NOT_FRONTAL),
-        (SIZE, with_(pitch_deg=-15.0), G.NOT_FRONTAL),
+        (SIZE, with_(pitch_deg=-18.0), G.NOT_FRONTAL),
+        (SIZE, with_(roll_deg=13.0), G.NOT_FRONTAL),
         (SIZE, with_(mouth_open_ratio=0.5), G.MOUTH_OPEN),
-        (SIZE, with_(teeth_smile=True), G.TOOTHY_SMILE),
+        (SIZE, with_(smile_score=0.95, teeth_visible=True), G.TOOTHY_SMILE),
         (SIZE, with_(mouth_occluded=True), G.OCCLUDED),
         (SIZE, with_(jaw_occluded=True), G.OCCLUDED),
         (SIZE, with_(light_evenness=0.3), G.LIGHT),
@@ -61,7 +63,6 @@ def test_each_rule_refuses_with_its_own_code():
         (SIZE, with_(background_separation=0.02), G.BACKGROUND),
         (SIZE, with_(reference_similarity=0.4), G.WRONG_CHARACTER),
         (SIZE, with_(sharpness=20.0), G.SOFT),
-        (SIZE, with_(provenance="cropped_from_wide"), G.CROPPED),
         (SIZE, with_(provenance="upscaled"), G.CROPPED),
     ]
     for size, a, code in cases:
@@ -69,12 +70,34 @@ def test_each_rule_refuses_with_its_own_code():
 
 
 def test_accept_band_edges_but_not_beyond():
-    for share in (0.31, 0.44):
+    for share in (0.25, 0.44):          # 0.26 = the approved LeAnne close-ups
         h = int(1920 * share)
         assert G.FACE_SIZE not in codes(SIZE, with_(face_box=[340, 500, 400, h]))
-    for share in (0.28, 0.47):
+    for share in (0.22, 0.47):
         h = int(1920 * share)
         assert G.FACE_SIZE in codes(SIZE, with_(face_box=[340, 500, 400, h]))
+
+
+def test_leanne_control_numbers_pass():
+    # approved close-ups that synced: face 26% of height, roll 10.5, smile .82
+    a = with_(face_box=[340, 560, 400, int(1920 * 0.26)], roll_deg=10.5,
+              smile_score=0.82, teeth_visible=True)
+    r, nums = G.check_image((720, 1280), dict(a, face_box=[227, 373, 267, 333]))
+    assert r == [], r
+    assert nums["flags"], "smile .82 is a flag, not silence"
+
+
+def test_smile_band_flag_vs_refusal():
+    assert G.TOOTHY_SMILE not in codes(SIZE, with_(smile_score=0.95, teeth_visible=False))
+    assert G.TOOTHY_SMILE not in codes(SIZE, with_(smile_score=0.89, teeth_visible=True))
+    assert G.TOOTHY_SMILE in codes(SIZE, with_(smile_score=0.90, teeth_visible=True))
+    assert G.check_image(SIZE, with_(smile_score=0.5))[1]["flags"] == []
+
+
+def test_crop_allowed_when_it_passes_but_upscale_refused():
+    assert G.CROPPED not in codes((720, 1280), with_(provenance="cropped_from_wide",
+                                  face_box=[227, 373, 267, 333]))
+    assert G.CROPPED in codes(SIZE, with_(provenance="upscaled"))
 
 
 def test_unmeasured_is_a_refusal_never_a_pass():
@@ -83,10 +106,12 @@ def test_unmeasured_is_a_refusal_never_a_pass():
         del a[k]
         assert G.UNMEASURED in codes(SIZE, a), k
     assert G.UNMEASURED in codes(None, GOOD)
+    assert G.UNMEASURED in codes(SIZE, with_(roll_deg=None))
 
 
 def test_reports_every_reason_at_once():
-    c = codes((720, 1280), with_(yaw_deg=40, teeth_smile=True, sharpness=1.0))
+    c = codes((640, 1138), with_(yaw_deg=40, smile_score=0.95,
+                                 teeth_visible=True, sharpness=1.0))
     assert {G.RESOLUTION, G.NOT_FRONTAL, G.TOOTHY_SMILE, G.SOFT} <= c
 
 
@@ -100,7 +125,7 @@ def test_file_header_size_and_detector_failure():
         bad = G.check_source_image(p, lambda i: 1 / 0)
         assert not bad["pass"] and bad["reasons"][0][0] == G.UNMEASURED
         small = os.path.join(d, "s.png")
-        open(small, "wb").write(png(540, 960))
+        open(small, "wb").write(png(540, 960))     # below 720x1280
         assert not G.check_source_image(small, lambda i: GOOD)["pass"]
         assert G.check_source_image({"path": ""}, lambda i: GOOD)["reasons"][0][0] == G.IMAGE_MISSING
 
@@ -116,7 +141,7 @@ def test_run_gate_refuses_before_any_paid_job():
                       G.SOFT),
                      ({"source_image": "x.png", "image_check": lambda i: None}, G.UNMEASURED)):
         try:
-            L.run_gate("l1", gen, meas, {}, **kw)
+            L.run_gate("l1", gen, meas, **kw)
         except G.LipsyncImageRefused as e:
             assert e.reasons[0][0] == code, e.reasons
         else:
@@ -127,11 +152,12 @@ def test_run_gate_refuses_before_any_paid_job():
 def test_prompt_template_carries_every_requirement():
     p = G.closeup_prompt("A tired mother in her thirties, curly brown hair",
                          "soft 3D render", "ref set image 1")
-    for need in ("same 3D character", "9:16", "1080x1920", "35-40 percent",
-                 "straight into the camera", "closed or very slightly parted",
+    for need in ("same 3D character", "9:16", "720x1280", "30-40 percent",
+                 "straight into the camera",
+                 "lips relaxed and very slightly parted",
                  "no big toothy smile", "no hands", "no microphone", "hat brim",
                  "soft even light", "no hard shadow", "separated from the head",
-                 "not cropped from a wide shot", "sharp focus", "soft 3D render"):
+                 "sharp focus", "soft 3D render"):
         assert need in p, need
     try:
         G.closeup_prompt(" ")

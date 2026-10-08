@@ -9,16 +9,19 @@ never passes silently: a measurement that could not be made is a refusal
 What a good lip-sync picture is, and how each point is checked:
 
   1. face looks straight at the camera   yaw/pitch from the injected detector
-  2. head-and-shoulders, portrait 9:16,   image size + face box height / frame
-     face ~35-40% of frame height          height (accept 30-45%), face centred
-  3. mouth closed or slightly parted,     mouth_open_ratio, teeth_smile flag
-     neutral, no big toothy smile
+  2. chest-up / waist-up, portrait 9:16,  image size + face height (landmark 10
+     face 24-45% of frame height (aim      to 152, "face_height_share") / frame
+     30-40%), roll <= 12 degrees           height, face centred, roll_deg
+  3. lips relaxed and slightly parted,    mouth_open_ratio; smile_score >= 0.90
+     calm; a wide toothy grin is refused   WITH teeth refuses, 0.60-0.90 only
+                                           FLAGS (approved close-ups sync at .82)
   4. nothing over mouth or jaw            mouth_occluded / jaw_occluded flags
   5. soft even light, no hard shadow      light_evenness, mouth_hard_shadow;
      across the mouth, background           background_separation
      separated from the head
   6. same 3D character as the storyboard  reference_similarity vs the reference
-  7. sharp, >= 1080x1920, never cropped   size, sharpness, provenance
+  7. sharp, >= 720x1280, a crop is fine   size, sharpness, provenance
+     when the result passes every check
 
 Stdlib only, no network, no spend. The face detector / pose estimator is
 INJECTED (`analyze(path) -> dict`, fields below) so tests run at $0 and the
@@ -35,20 +38,23 @@ import struct
 TOOL_NAME = "lipsync_image_gate"
 
 # --- thresholds (calibrate on first real runs; every one is a named knob) ----
-MIN_W, MIN_H = 1080, 1920
+MIN_W, MIN_H = 720, 1280              # Kling standard outputs 720p
 ASPECT = 9.0 / 16.0
 ASPECT_TOL = 0.02
-FACE_H_TARGET = (0.35, 0.40)            # the aim; the prompt asks for this
-FACE_H_ACCEPT = (0.30, 0.45)            # the gate accepts this
-MAX_YAW_DEG = 10.0
-MAX_PITCH_DEG = 10.0
+FACE_H_TARGET = (0.30, 0.40)            # the aim; the prompt asks for this
+FACE_H_ACCEPT = (0.24, 0.45)            # face height share, mediapipe landmark 10 to 152
+MAX_YAW_DEG = 15.0
+MAX_PITCH_DEG = 15.0
+MAX_ROLL_DEG = 12.0                     # approved close-ups reach 10.5
+SMILE_REFUSE = 0.90                     # smile blendshape, refuse only WITH teeth showing
+SMILE_FLAG = 0.60                       # 0.60-0.90 is a flag, not a refusal
 CENTER_X = (0.35, 0.65)                 # face centre, share of frame width
 MAX_MOUTH_OPEN = 0.15                   # lip gap / mouth width: closed..parted
 MIN_LIGHT_EVENNESS = 0.70               # dim-side / bright-side face luma
 MIN_BG_SEPARATION = 0.15                # head-vs-background luma/colour gap
 MIN_SHARPNESS = 100.0                   # Laplacian variance on the face crop
 MIN_REF_SIMILARITY = 0.80               # same character as the storyboard ref
-BAD_PROVENANCE = ("cropped_from_wide", "upscaled")
+BAD_PROVENANCE = ("upscaled",)          # a crop is allowed when it passes every check
 
 # --- reason codes -----------------------------------------------------------
 IMAGE_MISSING = "LIPSYNC_IMAGE_MISSING"
@@ -119,13 +125,14 @@ def image_size(path):
 def check_image(size, a):
     """Pure rules. size=(w, h) or None; a = analysis dict. -> (reasons, nums).
 
-    a keys: face_box [x, y, w, h] px; yaw_deg; pitch_deg; mouth_open_ratio;
-    teeth_smile (bool); mouth_occluded (bool); jaw_occluded (bool);
+    a keys: face_box [x, y, w, h] px (h = landmark 10 to 152); yaw_deg;
+    pitch_deg; roll_deg; mouth_open_ratio; smile_score 0-1 (smile blendshape);
+    teeth_visible (bool); mouth_occluded (bool); jaw_occluded (bool);
     light_evenness 0-1; mouth_hard_shadow (bool); background_separation 0-1;
     reference_similarity 0-1 (vs the storyboard character reference);
     sharpness; provenance (str, e.g. "generated").
     """
-    r, nums = [], {}
+    r, nums, flags = [], {}, []
 
     def need(field, ok=_num):
         v = a.get(field)
@@ -160,28 +167,38 @@ def check_image(size, a):
         nums.update(face_height_share=round(share, 4), face_center_x=round(cx, 4))
         if not FACE_H_ACCEPT[0] <= share <= FACE_H_ACCEPT[1]:
             r.append((FACE_SIZE, "face is %.0f%% of frame height; need about "
-                      "%d-%d%% (accept %d-%d%%)" % (
+                      "%d-%d%% (accept %d-%d%%) of frame height" % (
                           share * 100, FACE_H_TARGET[0] * 100,
                           FACE_H_TARGET[1] * 100, FACE_H_ACCEPT[0] * 100,
                           FACE_H_ACCEPT[1] * 100)))
         if not CENTER_X[0] <= cx <= CENTER_X[1]:
             r.append((FRAMING, "face centre is at %.0f%% of the width; keep "
                       "the head centred (head and shoulders)" % (cx * 100)))
-    yaw, pitch = need("yaw_deg"), need("pitch_deg")
-    if yaw is not None and pitch is not None:
-        nums.update(yaw_deg=yaw, pitch_deg=pitch)
+    yaw, pitch, roll = need("yaw_deg"), need("pitch_deg"), need("roll_deg")
+    if yaw is not None and pitch is not None and roll is not None:
+        nums.update(yaw_deg=yaw, pitch_deg=pitch, roll_deg=roll)
         if abs(yaw) > MAX_YAW_DEG or abs(pitch) > MAX_PITCH_DEG:
             r.append((NOT_FRONTAL, "head turned yaw %.1f / pitch %.1f deg; "
-                      "must look straight at the camera (+/-%d)" % (
+                      "front or three-quarter only (+/-%d)" % (
                           yaw, pitch, MAX_YAW_DEG)))
+        if abs(roll) > MAX_ROLL_DEG:
+            r.append((NOT_FRONTAL, "head tilted roll %.1f deg; keep it within "
+                      "+/-%d" % (roll, MAX_ROLL_DEG)))
     mo = need("mouth_open_ratio")
     if mo is not None:
         nums["mouth_open_ratio"] = mo
         if mo > MAX_MOUTH_OPEN:
             r.append((MOUTH_OPEN, "mouth open ratio %.2f > %.2f; closed or "
                       "slightly parted only" % (mo, MAX_MOUTH_OPEN)))
-    if flag("teeth_smile"):
-        r.append((TOOTHY_SMILE, "big toothy smile; neutral expression needed"))
+    smile, teeth = need("smile_score"), flag("teeth_visible")
+    if smile is not None and teeth is not None:
+        nums["smile_score"] = smile
+        if smile >= SMILE_REFUSE and teeth:
+            r.append((TOOTHY_SMILE, "wide toothy grin (smile %.2f >= %.2f with "
+                      "teeth showing); calm expression needed" % (smile, SMILE_REFUSE)))
+        elif smile >= SMILE_FLAG:
+            flags.append("smile %.2f is in the %.2f-%.2f flag band (not a refusal)"
+                         % (smile, SMILE_FLAG, SMILE_REFUSE))
     if flag("mouth_occluded") or flag("jaw_occluded"):
         r.append((OCCLUDED, "something covers the mouth or jaw (hand, "
                   "microphone, hair or hat brim)"))
@@ -214,8 +231,9 @@ def check_image(size, a):
     if not isinstance(prov, str) or not prov:
         r.append((UNMEASURED, "provenance was not recorded"))
     elif prov in BAD_PROVENANCE:
-        r.append((CROPPED, "picture is %s; generate it natively at 9:16"
-                  % prov))
+        r.append((CROPPED, "picture is %s; use a native or cropped 9:16 "
+                  "picture of at least %dx%d" % (prov, MIN_W, MIN_H)))
+    nums["flags"] = flags
     return r, nums
 
 
@@ -262,14 +280,13 @@ def closeup_prompt(character, style_clause="", reference_note=""):
         character.strip().rstrip("."),
         "same 3D character, face and styling as the approved storyboard "
         "reference" + (" (%s)" % reference_note.strip() if reference_note.strip() else ""),
-        "portrait 9:16, 1080x1920 or larger, generated natively at this "
-        "frame, not cropped from a wide shot",
-        "head-and-shoulders portrait, the face filling about 35-40 percent "
-        "of the frame height, head centred",
+        "portrait 9:16, 720x1280 or larger",
+        "chest-up portrait, the face filling about 30-40 percent of the "
+        "frame height, head centred",
         "face looking straight into the camera, eyes to lens, shoulders "
         "square, no head turn or tilt",
-        "mouth closed or very slightly parted, calm neutral expression, "
-        "lips relaxed, no big toothy smile, no teeth showing",
+        "lips relaxed and very slightly parted, calm neutral expression, "
+        "no big toothy smile, no teeth showing",
         "nothing covering the mouth or jaw: no hands, no microphone, no "
         "hair across the face, no hat brim, no scarf",
         "soft even light across the whole face, no hard shadow on the mouth "

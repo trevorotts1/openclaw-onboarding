@@ -6,6 +6,20 @@ frontmatter `version:` field).
 
 ---
 
+## Unreleased - 2026-10-08 - LSR001: lip-sync best practice (event_sync, 2 tries, keep the best)
+
+No version bump (the operator batches the release). Design: Opus fix document 13, from the Perplexity Kling lip-sync report. Root cause: the gate measured loudness correlation against the final mix, which cannot score singing and could not reject wrong audio; it then drove 104 of 153 paid jobs as re-rolls no new take could change.
+
+- **`lip_gate.event_sync`** replaces `measure` and `judge`: mouth opening at voiced onsets, closing at offsets and lip closure on p, b, m words, +/-0.2 s, against the lead-vocal span, with shifted (+/-0.5 s, +/-1.0 s) and other-line controls. SYNCED (hit 0.70+, margin 0.20+), WEAK (kept, flagged), UNMEASURABLE (under 4 events or face under 90%: human mouth strip), NOT_SYNCED (hard defects only). `mouth_series` is now the mediapipe inner-lip gap inside `heavy_slot`; `envelope` takes the stem span; new `voiced_runs` and `events`. `lip_gate.py selftest` fails if any negative control reads SYNCED.
+- **Two tries, then the best take, in code.** `run_gate` allows at most 2 Kling standard jobs per segment (`prior_jobs` counts every name variant; a 3rd raises `LipTryLimit` before any spend); try 2 only on a hard defect and only with a changed input; the InfiniTalk A/B is removed; `_row` returns `KEPT_BEST_OF_2` with a flag, numbers and mouth-strip path; `score` ranks no hard defect, verdict tier, hit and margin, smaller |lag|; `qc_check` accepts flagged kept rows. Every paid submit goes through `load_governor.kie_request`. `IMPROVED_INPUT` (0.30 s lead-in, 0.20 s tail) is the default for try 1. New `kling_prompt` ("sings" or "says", one emotion, steady camera).
+- **`lipsync_clips`**: `choose_window` (phrase-boundary cuts from Suno word timestamps, 0.30 s and 0.20 s padding, 4-6 s, 1.5+ onsets per second, no held word over 1.2 s, p/b/m/f/v/w preferred, a different hook line per clip), `MAX_TRIES = 2`, `count_jobs` and `check_try_limit`, and the cost default is now `attempts=2`.
+- **`image_gate`**: face share 0.24-0.45 (landmark 10 to 152), roll 12 or less, yaw and pitch 15 or less, smile refused only at 0.90+ with teeth (0.60-0.90 flagged), minimum 720x1280, crops allowed when they pass; `closeup_prompt` says "lips relaxed and very slightly parted".
+- Tests: `test_lip_gate_h2.py` and `test_image_gate.py` updated; new `test_event_sync.py` and `test_choose_window.py`; try-limit tests in `test_lipsync_clips.py`. Docs: SKILL.md, INSTRUCTIONS.md, QC.md H4, QC checklist items 8 and 11 (keep-best-of-2 carve-out).
+- **Open decision for Trevor:** the SKILL.md and INSTRUCTIONS.md sentence naming InfiniTalk as the lip-sync backup conflicts with the locked Kling-only model and the 2-try rule. It is kept, marked OPEN DECISION; the code never calls InfiniTalk. `references/price-menu.md`, `references/choice-card-spec.md` and the catalog calculator roster still list InfiniTalk as a priced backup and are untouched.
+- All thresholds in `event_sync` are design values (unverified) until the control battery is run on real clips and Trevor or the operator marks about 10 sung takes by eye.
+
+---
+
 ## v2.8.4 - 2026-10-08 - Batch MGB005: song recipe v2, load governor, G5, G9, H10, G2, H3-TEST
 
 One batch release of nine units. #1653 CIO002 run each check once per commit (push main-only, per-PR concurrency, 93 fast guards folded); #1678 G5 honest receipts (measured sung/spoken/rap/no-voice, target, gap, every take); #1681 song recipe v2, song length formula and song dispatcher; #1684 G9 words-fit preflight before spend and Suno duration with 15% headroom; #1685 H10 each line's voice must fit the character on screen; #1687 H3-TEST fps policy (30 fps master, Kling pass-through, per-segment duplicate gate); #1688 KIE rate limit reference; #1689 G2 the builder enforces the lint it ships; #1690 load governor (machine-wide heavy-job gate, bounded ffmpeg, stage cleanup, KIE pacing). Integration: the song dispatcher sends every generation through the load governor (new requests use the 20 per 10 s bucket, a 429 is resubmitted).

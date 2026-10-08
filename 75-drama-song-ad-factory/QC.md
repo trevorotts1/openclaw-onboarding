@@ -169,8 +169,21 @@ to self-approve a run.
   `LIPSYNC_COVERAGE_BELOW_BAND`. The planner (`plan_lipsync_lines`) picks the
   lines (every sung hook, the spoken opener and closing first, each cut to 6 s).
 - Lip-sync source pictures: every one passes `lip_gate.image_gate` before any
-  paid lip-sync job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a
-  measurement that could not be made is a refusal, never a pass.
+  paid lip-sync job (face 24-45% of frame height, roll within 12, yaw and pitch
+  within 15, at least 720x1280, smile refused only at 0.90+ with teeth); a
+  refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that could not
+  be made is a refusal, never a pass.
+- Lip-sync verdicts (`lip_gate.event_sync`, measured on the lead-vocal span, not
+  the mix): SYNCED (hit 0.70+, margin 0.20+), WEAK (kept and flagged), UNMEASURABLE
+  (a sung one goes to the human 8-frame mouth strip; it is never a redo trigger),
+  NOT_SYNCED (hard defects only: still mouth, closed through voice, moving through
+  a rest over 0.5 s, hit 0.40 or less with 6+ events). `lip_gate.py selftest` must
+  pass: it fails if any wrong-audio control reads SYNCED.
+- Two-try rule (Trevor 2026-10-08): at most 2 paid Kling standard jobs per segment,
+  every name variant counted; try 2 only on a hard defect with a changed input;
+  then the best take is kept with a `KEPT_BEST_OF_2 (tN)` receipt row, its numbers,
+  flag and mouth-strip path. `lip_gate.qc_check` accepts such a flagged row and
+  rejects a segment with more than 2 jobs.
 
 ## Clean ending (I5)
 
