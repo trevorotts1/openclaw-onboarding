@@ -58,6 +58,10 @@ on:
       - "23-ai-workforce-blueprint/templates/role-library/video/sops/*.md"
       - ".github/workflows/video-pipeline-lockstep.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   video-pipeline-lockstep:
     name: Movie Producer manifest/code/ruleset lockstep + GOOD/BAD self-test

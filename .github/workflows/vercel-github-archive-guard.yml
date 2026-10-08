@@ -38,6 +38,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   vercel-github-archive-guard:
     name: GitHub archival (non-blocking) + reconciliation sweep

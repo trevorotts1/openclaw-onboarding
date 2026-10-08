@@ -158,6 +158,10 @@ on:
 
       # SOPs call this canonical-entry copy (Fix 52) -- a change here must fire the gate
       - "23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   presentations-drift-gates:
     name: drift-gates + Skill-51 verify.sh (${{ matrix.platform }})

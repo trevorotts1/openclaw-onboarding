@@ -36,6 +36,10 @@ on:
   push:
     tags: ["v*"]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check-tag-on-main:
     name: Verify the pushed tag's commit is on origin/main
