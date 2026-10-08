@@ -1,3 +1,7 @@
+## [v26.4.7]  -  2026-10-08  -  fix(skill 75, Part H H13): cross-fades finish before the first word; long gaps held on the speaking face
+
+- final_assembler: a segment may carry `first_word_s`; the fade into it shrinks (to a cut if needed) so it ends at least 0.1 s before the word (the Kiesett Stop Stale clip had its first word 0.25 s in, under a 0.3 s fade). New gates FADE_COVERS_FIRST_WORD and LONG_GAP_CUTAWAY (a line with an inner word gap above 0.5 s must sit inside one lip-sync clip, never cut away). Test: `test_fade_words_h13.py`. Skill 75 v2.6.1.
+
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
