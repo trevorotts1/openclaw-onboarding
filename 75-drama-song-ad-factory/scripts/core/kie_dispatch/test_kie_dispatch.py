@@ -85,12 +85,15 @@ def job_row(db, logical_key, attempt_id):
 
 def run_case(script, label, adapter_path=None, prompt=None, cost=100,
              model="gpt-image-2-5-sunburst-text-to-image", request=None,
-             lock_model="unset"):
+             lock_model="unset", no_card=False):
     """One dispatch against a fake Skill 74.
 
     lock_model: F14 pre-lock for video jobs, by default the menu default
     (MiniMax H3 768P) so F15 card flow is assumed; pass None to leave the
     run un-locked (lock-missing cases).
+
+    no_card: F15 card-gate refusal case; pass True for a request without
+    the recorded choice-card receipt.
     """
     tmp = tempfile.mkdtemp(prefix="kie-dispatch-test-")
     db = os.path.join(tmp, "spend.db")
@@ -107,8 +110,17 @@ def run_case(script, label, adapter_path=None, prompt=None, cost=100,
         ML.lock_run_model(state_db, "run-" + label, lock_model)
     save_dir = os.path.join(tmp, "out")
     fake = Fake74(script)
-    req = request if request is not None else {
-        "model": "m", "input": {"prompt": "p" * 200}}
+    # F15 (owner order 2026-10-08): every paid dispatch carries the recorded
+    # choice-card receipt; a request without one refuses CARD_UNANSWERED
+    # before the ledger. The default stub request gains the stamp; a case
+    # that needs the refusal passes no_card=True.
+    if no_card:
+        req = {"model": "m", "input": {"prompt": "p" * 200}}
+    else:
+        req = request if request is not None else {
+            "model": "m", "input": {"prompt": "p" * 200}}
+        if "card_receipt" not in req and "run_state" not in req:
+            req = dict(req, card_receipt=STAMPED_CARD)
     env = D.dispatch(
         model=model,
         request=req,
@@ -119,6 +131,41 @@ def run_case(script, label, adapter_path=None, prompt=None, cost=100,
         adapter_path=adapter_path or os.path.abspath(__file__),
         runner=fake, state_store=state_db)
     return env, db, fake, tmp
+
+
+#: The recorded card receipt the stub runs carry (the four F15 answers,
+#: stamped). One dict, reused; dispatch only reads it.
+STAMPED_CARD = {"answers": {"video_style": "Lifelike 3D",
+                            "audio_style": "Soul Ballad",
+                            "length": 60,
+                            "video_model": "MiniMax H3 768P"},
+                "who": "W1 dispatch test",
+                "at": "2026-10-08T09:00:00Z"}
+
+
+def test_f15_unanswered_card_refuses_dispatch():
+    """F15 done-when: a run without the four card answers refuses ANY paid
+    job, fail-closed, and reserves nothing."""
+    env, db, fake, tmp = run_case(BASE_SCRIPT, "f15-nocard", no_card=True)
+    check("F15 no card: outcome waiting", env.get("outcome") == "waiting",
+          repr(env.get("outcome")))
+    check("F15 no card: reason CARD_UNANSWERED",
+          env.get("reason_code") == "CARD_UNANSWERED",
+          repr(env.get("reason_code")))
+    check("F15 no card: nothing generated",
+          (env.get("evidence") or {}).get("generated") is False,
+          repr(env.get("evidence")))
+    check("F15 no card: fake 74 never called",
+          fake.calls == [] if hasattr(fake, "calls") else True,
+          repr(getattr(fake, "calls", "n/a")))
+    conn = sqlite3.connect(db)
+    try:
+        n = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE logical_key=?",
+            ("f15-nocard-job",)).fetchone()[0]
+    finally:
+        conn.close()
+    check("F15 no card: ledger reserved nothing", n == 0, str(n))
 
 
 HEALTH_ACTIVE = (0, {"adapter_mode": "active", "state": "success"})
@@ -547,6 +594,7 @@ def test_no_operator_paths_and_no_private_kie_client():
 
 
 TESTS = [
+    test_f15_unanswered_card_refuses_dispatch,
     test_ok,
     test_video_wait_budget,
     test_request_timeout_overrides,

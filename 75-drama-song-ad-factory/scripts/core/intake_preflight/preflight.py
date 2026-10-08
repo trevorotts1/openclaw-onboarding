@@ -7,6 +7,7 @@ Successful exit never means paid submission occurred.
 import importlib
 import os
 import shutil
+import sys
 
 # ponytail: no network/catalog probe; add provider allowlist fetch when needed.
 
@@ -42,6 +43,54 @@ def check_storage_writable(path):
 def check_credentials(names, env=None):
     env = env if env is not None else os.environ
     return {n: bool(env.get(n)) for n in (names or [])}  # presence only, values never returned
+
+
+def _load_card_gate():
+    """card_gate (F15) from core/style_defaults, or None; caller fails closed."""
+    try:
+        core = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))))
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        from style_defaults import card_gate as CG  # noqa: PLC0415
+        return CG
+    except Exception:  # noqa: BLE001 - fall back to the local fail-closed check
+        return None
+
+
+def check_card_receipt(run_state, card_receipt):
+    """F15 (Critical, owner order 2026-10-08): before ANY paid job the run
+    state must carry the recorded choice-card receipt -- one card, four
+    answers (video_style, audio_style, length, video_model). ``card_receipt``
+    overrides; else ``run_state['card_receipt']`` (or the run state's own
+    card record) is read. Never silently passes: a missing/blank answer is
+    reason ``CARD_UNANSWERED``."""
+    cg = _load_card_gate()
+    record = card_receipt if card_receipt is not None else run_state
+    if cg is not None:
+        ok, refusal = cg.gate_run_state(record if isinstance(record, dict) else None)
+        if not ok:
+            return refusal
+        return None
+    # Local fail-closed copy for the (defensive) case card_gate cannot import.
+    answers = record if isinstance(record, dict) else None
+    if isinstance(answers, dict):
+        for key in ("answers", "card_answers", "card", "choice_card"):
+            inner = answers.get(key)
+            if isinstance(inner, dict):
+                answers = inner
+                break
+    missing = [f for f in ("video_style", "audio_style", "length", "video_model")
+               if not isinstance(answers, dict)
+               or answers.get(f) is None
+               or (isinstance(answers.get(f), str) and not answers.get(f).strip())]
+    if missing:
+        return {"reason_code": "CARD_UNANSWERED", "missing": missing,
+                "next_action": "Show the choice card and record all four "
+                               "answers (video style, audio style, length, "
+                               "video model), with who and when, before any "
+                               "paid job."}
+    return None
 
 
 def _inside(root, p):
@@ -138,5 +187,15 @@ def check(payload):
     if scope not in ("campaign", dgst):
         return {"outcome": "rejected", "reason_code": "approval-out-of-scope",
                 "checks": checks, "next_action": "Bind authorization to this campaign summary digest."}
+    card_refusal = check_card_receipt(p.get("run_state"), p.get("card_receipt"))
+    # F15: paid work (which is what preflight gates) never starts on an
+    # unanswered card, whichever entry path launched the run.
+    if card_refusal is not None:
+        checks["card_recorded"] = False
+        return {"outcome": "waiting", "reason_code": card_refusal["reason_code"],
+                "checks": checks, "missing": card_refusal.get("missing", []),
+                "next_action": card_refusal.get(
+                    "next_action", "Show and answer the choice card first.")}
+    checks["card_recorded"] = True
     return {"outcome": "ok", "reason_code": "preflight-pass",
             "checks": checks, "next_action": "Proceed to claim eligible stage."}

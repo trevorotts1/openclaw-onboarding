@@ -50,6 +50,51 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
 import kie_dispatch.model_lock as ML  # noqa: E402  (F14 video-model lock)
 
+#: F15 card gate (Critical, owner order 2026-10-08): dispatch refuses ANY
+#: paid job for a run whose state lacks all four choice-card answers. The
+#: import is soft -- the module must keep working when style_defaults is not
+#: importable -- and the local fail-closed copy below keeps the gate shut.
+try:
+    from style_defaults import card_gate as _CG  # noqa: E402
+except Exception:  # noqa: BLE001 - gate stays fail-closed without the module
+    _CG = None
+
+#: The exposed gate for W-F-U16: whoever holds the run state calls
+#: ``card_gate_refusal(run_state)`` and refuses any paid job when it returns
+#: non-None. Run state is read from ``request["card_receipt"]`` (the
+#: recorded receipt block from style_defaults.card_gate.answered_stamped)
+#: or from ``request["run_state"]["card_receipt"]``.
+def card_gate_refusal(request):
+    """-> None when the card is answered and stamped, else the refusal dict
+    with reason CARD_UNANSWERED. Fail-closed: no receipt is unanswered."""
+    req = request if isinstance(request, dict) else {}
+    record = req.get("card_receipt")
+    if not isinstance(record, dict):
+        rs = req.get("run_state")
+        record = rs.get("card_receipt") if isinstance(rs, dict) else None
+        if not isinstance(record, dict) and isinstance(rs, dict):
+            inner = rs.get("card") or rs.get("choice_card")
+            record = inner if isinstance(inner, dict) else None
+    if _CG is not None:
+        ok, refusal = _CG.gate_run_state(record)
+        return refusal if not ok else None
+    if not isinstance(record, dict):
+        return {"reason_code": "CARD_UNANSWERED",
+                "missing": ["video_style", "audio_style", "length",
+                            "video_model"],
+                "next_action": "Show the choice card and record all four "
+                               "answers (video style, audio style, length, "
+                               "video model), with who and when, before any "
+                               "paid job."}
+    missing = [f for f in ("video_style", "audio_style", "length", "video_model")
+               if record.get(f) is None
+               or (isinstance(record.get(f), str) and not record.get(f).strip())]
+    if missing:
+        return {"reason_code": "CARD_UNANSWERED", "missing": missing,
+                "next_action": "Show the choice card and record all four "
+                               "answers before any paid job."}
+    return None
+
 TOOL_NAME = "kie_dispatch"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "blackceo.kie-dispatch/envelope/v1"
@@ -306,6 +351,14 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         "name the model id; this module never picks one",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
+    refusal = card_gate_refusal(request)
+    if refusal is not None:                 # F15: no paid job on an unanswered card
+        return envelope("dispatch", "waiting", refusal["reason_code"],
+                        refusal.get("next_action", ""),
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"missing_card_fields": refusal["missing"],
+                                  "generated": False})
     if not isinstance(estimated_cost, int) or estimated_cost < 0:
         return envelope("dispatch", "rejected", "UNKNOWN_PRICE",
                         "record an estimated cost before dispatch",

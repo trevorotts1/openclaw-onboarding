@@ -68,7 +68,9 @@ def cmd_preflight(a):
                "schema_version": a.schema_version,
                "allowed_schemas": json.loads(a.allowed_schemas or "[]") or None,
                "credentials": a.credential or [], "auth": _load(a.auth_file) if a.auth_file else None,
-               "summary_digest": a.summary_digest}
+               "summary_digest": a.summary_digest,
+               "run_state": _load(a.run_state_file) if a.run_state_file else None,
+               "card_receipt": _load(a.card_receipt_file) if a.card_receipt_file else None}
     try:
         r = _check(payload)
     except Exception as e:
@@ -105,6 +107,12 @@ def main(argv=None):
     p.add_argument("--auth-file", default=None)
     p.add_argument("--summary-digest", default=None)
     p.add_argument("--min-free-bytes", type=int, default=0)
+    p.add_argument("--run-state-file", default=None,
+                   help="Run-state JSON; must carry the recorded F15 choice-"
+                        "card receipt before any paid job.")
+    p.add_argument("--card-receipt-file", default=None,
+                   help="The recorded choice-card receipt (answers, who, at); "
+                        "overrides the run-state record.")
     a = ap.parse_args(argv)
     env = cmd_intake(a) if a.cmd == "intake" else cmd_preflight(a)
     json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)
