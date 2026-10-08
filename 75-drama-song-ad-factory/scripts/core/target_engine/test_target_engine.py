@@ -123,7 +123,7 @@ def test_all_spoken_reject_and_regenerate():
     def gen(i, adj):
         if i == 1:
             return [cand("spoken-only", 1.00, 0.00, 90.0)]
-        return [cand("real-%d" % i, 0.48, 0.52, 90.0)]
+        return [cand("real-%d" % i, 0.22, 0.78, 90.0)]
 
     def gen_always_spoken(i, adj):
         verdicts.append(None)

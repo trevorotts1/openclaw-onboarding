@@ -119,7 +119,7 @@ def test_menu_values_pass_and_invented_numbers_refuse():
           "length": ["60s", "90", "3m", "600", 180, 90],
           "length_option": [60, 90, 180, 300, 600],
           "target_length_s": [60, 90, 180, 300, 600],
-          "spoken_share": [0.40, 0.45, 0.55]}
+          "spoken_share": [0.15, 0.225, 0.30]}
     for key, values in ok.items():
         for v in values:
             check("menu value passes: %s=%r" % (key, v),

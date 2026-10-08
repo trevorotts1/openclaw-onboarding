@@ -7,11 +7,13 @@ Owner decisions (2026-10-07):
         45% of runtime, never more than 55%, never less than 40%, for EVERY
         length and EVERY style; rap is spoken-style delivery. The earlier
         wider ceiling and the per-length targets are retired: there is one
-        band now, not a table. The spoken opener stays short and the first real
+        band now, not a table.
+  SPK001 (Trevor, 2026-10-08) - retargeted: spoken 22.5% of runtime (20-25),
+        judged by Trevor's 5/10 band, so the redo edges are 12.5 and 32.5. The spoken opener stays short and the first real
         singing is targeted at 15% of runtime (H6).
 
 Enforcement lives here: check_share() refuses any spoken share outside
-0.40..0.55 for every style and every length. The three numbers are read
+the redo edges (12.5%..32.5%) for every style and every length. The three numbers are read
 from core/spoken_share (the single source for the retarget), never kept as
 a second copy here. Voice gender is NOT ours -- that is V2B-AUDIO-U1
 (core/audio_c3), so prompts say "lead vocal" only.
@@ -75,8 +77,8 @@ class MusicStyleError(Exception):
 #: The three offered styles (D18). Prompts are Suno style-field text: comma
 #: separated tags, no lyric text, no character gender (voice casting is U1).
 #: Every style carries the SAME D15 share rule: one band, not a table.
-_SHARE_RULE = ("target %d%% of runtime, never more than %d%%, never less "
-               "than %d%% (rap counts as spoken)"
+_SHARE_RULE = ("target %g%% of runtime, redo past %g%% or under %g%% "
+               "(rap counts as spoken)"
                % (_SS.SPOKEN_TARGET_PCT, _SS.SPOKEN_MAX_PCT,
                   _SS.SPOKEN_MIN_PCT))
 STYLES = {
@@ -220,9 +222,9 @@ def d15_range(length):
 def spoken_target(style_id, length):
     """Spoken-share target for one style at one length.
 
-    target is the point the song brief aims at (45% of runtime); floor/cap
-    are the hard band (40%..55%) and they are identical for every style and
-    every length. Rap counts toward the target as spoken-style delivery.
+    target is the point the song brief aims at (22.5% of runtime); floor/cap
+    are the redo edges (12.5%..32.5%) and they are identical for every style
+    and every length. Rap counts toward the target as spoken-style delivery.
 
     The earlier per-length target table and the earlier per-style upper end
     are retired: there is one target now.
@@ -237,7 +239,7 @@ def spoken_target(style_id, length):
         "d15_max": SPOKEN_SHARE_MAX,
         "target": SPOKEN_SHARE_TARGET,
         "target_mode": "d15",
-        "target_note": ("target %.0f%% of runtime; rap counts as spoken-style"
+        "target_note": ("target %g%% of runtime; rap counts as spoken-style"
                         % (SPOKEN_SHARE_TARGET * 100.0)),
         "floor": SPOKEN_SHARE_MIN,
         "cap": SPOKEN_SHARE_MAX,
@@ -376,16 +378,16 @@ def check_share(style_id, length, share, segments=None):
     if share < 0.0 or share > 1.0:
         reasons.append("share %r is not a fraction in 0..1" % share)
     if share < target["floor"]:
-        reasons.append("spoken share %.1f%% below the D15 floor %.0f%%"
+        reasons.append("spoken share %.1f%% below the D15 floor %g%%"
                        % (share_pct(share), share_pct(target["floor"])))
     if share > target["cap"]:
         if target["target_mode"] == "d15-upper":
-            reasons.append("spoken share %.1f%% above the R&B cap %.0f%% "
+            reasons.append("spoken share %.1f%% above the R&B cap %g%% "
                            "(rap counts as spoken-style delivery)"
                            % (share_pct(share), share_pct(target["cap"])))
         else:
-            reasons.append("spoken share %.1f%% above the D15 cap %.0f%% "
-                           "(target %.0f%%, rap counts as spoken-style "
+            reasons.append("spoken share %.1f%% above the D15 cap %g%% "
+                           "(target %g%%, rap counts as spoken-style "
                            "delivery)"
                            % (share_pct(share), share_pct(target["cap"]),
                               share_pct(target["target"])))

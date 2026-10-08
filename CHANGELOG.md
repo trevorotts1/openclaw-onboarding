@@ -1,3 +1,11 @@
+## [v26.4.9]  -  2026-10-08  -  SPK001: spoken share cut to 20-25 percent, singing judged against voice time (skill 75 v2.8.2)
+
+Trevor, 2026-10-08: "Okay, let's go to your recommendation that cut it to about 20-25%." Suno turns spoken lyric lines into long talking, and the old targets did not add up (spoken 35-40 percent of runtime plus a music-only intro and end card left at most about 50 percent for singing, never the 55-60 percent goal). Builds on BND001 (#1655).
+
+- Skill 75 v2.8.2: spoken share target 22.5 percent of runtime (20-25); the lyric writer budgets spoken lines at about 15-18 percent of the lyric words; singing is measured against voice time, sung / (sung + spoken), default target 77.5 percent (75-80), and a music-only intro, gaps and the end card never count against it. One constants set (`core/spoken_share`) feeds the lyric writer, the Suno recipe, the share check, the sung vocal guard, the QC gate, the choice card line, SKILL.md and the docs.
+- Same band on both numbers: within 5 accept, 5 to 10 accept with a flag, over 10 redo. Hard reject only: no sung stretch of 6 s.
+- Tests: spoken 22% accept / 31% flag / 37% redo; sung of voice 76% accept / 69% flag / 60% redo; a song with a 10 s intro and a 5 s end card is not penalized.
+
 ## [v26.4.8]  -  2026-10-08  -  BND001: sung share judged only by Trevor's band (skill 75 v2.8.1)
 
 Removes the hard 55 percent sung floor that batch #1652 kept; sung share is judged against the ad's own target with the 5/10 point band, and the first real singing is targeted at 15 percent of runtime (H6, supersedes #1637). See the skill 75 CHANGELOG v2.8.1.

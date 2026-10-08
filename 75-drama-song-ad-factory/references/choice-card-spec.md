@@ -327,6 +327,16 @@ hook out of words the client actually said and repeat it. Get to the first
 sung line early (target: 15% of the runtime). After Suno returns a take, run
 the detector and judge the sung and spoken shares from what it measured.
 
+The targets (Trevor, 2026-10-08, SPK001): speaking is **20-25% of the
+runtime** (center 22.5), and the lyric writer budgets spoken lines at about
+15-18% of the lyric words, because Suno stretches spoken parts into long
+talking. Singing is measured against **voice time**, sung / (sung + spoken),
+with a default target of **77.5%** (75-80): a music-only intro, gaps and the
+end card never count against it. Both numbers use Trevor's band: within 5
+points accept, over 5 up to 10 accept with a flag, over 10 redo. The only
+hard reject is no sung stretch of at least 6 seconds. One constants set holds
+the numbers: `scripts/core/spoken_share/spoken_share.py`.
+
 The only exemption is the Velvet Voiceover version (the spoken Google voice
 over the song, id `velvet_voiceover`), which keeps its own flow. Almost
 nobody asks for it. Every other style, including the All Suno voice default,

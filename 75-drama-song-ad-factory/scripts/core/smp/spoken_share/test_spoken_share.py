@@ -76,11 +76,12 @@ def seg(delivery, seconds, start=None):
 
 
 def in_band_ad():
-    """45.0% spoken-style, first sung at 15.0s (15%) -- the exact target, in band."""
+    """22.5% spoken-style, 77.5% sung of voice, first sung at 15.0s (15%) -- all targets exact."""
     return [
         seg("spoken", 15, 0.0),
         seg("sung", 55, 15.0),
-        seg("spoken", 30, 70.0),
+        seg("spoken", 7.5, 70.0),
+        seg("sung", 22.5, 77.5),
     ], 100.0
 
 
@@ -115,16 +116,17 @@ class ThinnessTests(unittest.TestCase):
 
 class ConstantsTests(unittest.TestCase):
     def test_owner_numbers_are_exact(self):
-        self.assertEqual(M.SPOKEN_TARGET_PCT, 45)
-        self.assertEqual(M.SPOKEN_MIN_PCT, 40)
-        self.assertEqual(M.SPOKEN_MAX_PCT, 55)
+        self.assertEqual(M.SPOKEN_TARGET_PCT, 22.5)
+        self.assertEqual(M.SPOKEN_MIN_PCT, 12.5)
+        self.assertEqual(M.SPOKEN_MAX_PCT, 32.5)
+        self.assertEqual(M.SUNG_TARGET_PCT, 77.5)
         self.assertEqual(M.FIRST_SUNG_TARGET_PCT, 15)
         self.assertFalse(hasattr(M, "FIRST_SUNG_WITHIN_SECONDS"))
 
     def test_band_is_floor_then_ceiling(self):
-        self.assertEqual(M.FLOOR, 0.40)
-        self.assertEqual(M.CAP, 0.55)
-        self.assertEqual(M.TARGET, 0.45)
+        self.assertEqual(M.FLOOR, 0.125)
+        self.assertEqual(M.CAP, 0.325)
+        self.assertEqual(M.TARGET, 0.225)
         self.assertEqual(M.TARGET, M.SPOKEN_TARGET_PCT / 100.0)
         self.assertEqual(M.FLOOR, M.SPOKEN_MIN_PCT / 100.0)
         self.assertEqual(M.CAP, M.SPOKEN_MAX_PCT / 100.0)
@@ -152,13 +154,13 @@ class ConstantsTests(unittest.TestCase):
         self.assertEqual(band["applies_to"],
                          "every length and every music style")
         self.assertIs(band["rap_counts_as_spoken"], True)
-        self.assertEqual(band["floor_pct"], 40)
-        self.assertEqual(band["cap_pct"], 55)
+        self.assertEqual(band["floor_pct"], 12.5)
+        self.assertEqual(band["cap_pct"], 32.5)
         # the same fractions for 60 s and 600 s -- nothing keyed by length
-        self.assertEqual(M.seconds_for(60)["target_s"], 27.0)
-        self.assertEqual(M.seconds_for(600)["target_s"], 270.0)
-        self.assertEqual(M.seconds_for(60)["floor_s"], 24.0)
-        self.assertEqual(M.seconds_for(60)["cap_s"], 33.0)
+        self.assertEqual(M.seconds_for(60)["target_s"], 13.5)
+        self.assertEqual(M.seconds_for(600)["target_s"], 135.0)
+        self.assertEqual(M.seconds_for(60)["floor_s"], 7.5)
+        self.assertEqual(M.seconds_for(60)["cap_s"], 19.5)
 
 
 class MeasurementTests(unittest.TestCase):
@@ -168,7 +170,7 @@ class MeasurementTests(unittest.TestCase):
 
     def test_share_is_a_percent_of_runtime_at_one_decimal(self):
         lines, _duration = in_band_ad()
-        self.assertEqual(M.measure_share(lines)["share_pct"], 45.0)
+        self.assertEqual(M.measure_share(lines)["share_pct"], 22.5)
         self.assertEqual(M.measure_share(
             [seg("spoken", 1), seg("sung", 3)])["share_pct"], 25.0)
         self.assertEqual(M.measure_share(
@@ -252,49 +254,49 @@ class FirstSungTests(unittest.TestCase):
 
 class ShareCheckTests(unittest.TestCase):
     def test_in_band_share_passes(self):
-        out = M.check_share(0.45)
+        out = M.check_share(0.225)
         self.assertEqual(out["verdict"], "PASS", out["reasons"])
         self.assertEqual(out["reasons"], [])
-        self.assertEqual(out["share_pct"], 45.0)
+        self.assertEqual(out["share_pct"], 22.5)
 
     def test_band_boundaries_are_inclusive(self):
-        self.assertEqual(M.check_share(0.40)["verdict"], "PASS")
-        self.assertEqual(M.check_share(0.50)["verdict"], "PASS")
-        self.assertEqual(M.check_share(0.55)["verdict"], "FLAG")   # H8 band
+        self.assertEqual(M.check_share(0.175)["verdict"], "PASS")
+        self.assertEqual(M.check_share(0.275)["verdict"], "PASS")
+        self.assertEqual(M.check_share(0.325)["verdict"], "FLAG")   # H8 band
 
     def test_below_the_floor_fails(self):
-        out = M.check_share(0.20)
+        out = M.check_share(0.10)
         self.assertEqual(out["verdict"], "FAIL")
         self.assertEqual(len(out["reasons"]), 1, out["reasons"])
         self.assertIn("redo", out["reasons"][0])
 
     def test_above_the_ceiling_fails(self):
-        out = M.check_share(0.60)
+        out = M.check_share(0.40)
         self.assertEqual(out["verdict"], "FAIL")
         self.assertEqual(len(out["reasons"]), 1, out["reasons"])
         self.assertIn("redo", out["reasons"][0])
 
     def test_rag_is_counted_so_a_rap_heavy_ad_is_not_under_the_floor(self):
-        # 5 spoken + 45 rap + 5 spoken = 55% spoken-style: in band
-        lines = [seg("spoken", 5, 0.0), seg("sung", 45, 5.0),
-                 seg("rap", 45, 50.0), seg("spoken", 5, 95.0)]
+        # 5 spoken + 15 rap + 5 spoken = 25% spoken-style: in band
+        lines = [seg("spoken", 5, 0.0), seg("sung", 40, 5.0),
+                 seg("rap", 15, 45.0), seg("spoken", 5, 60.0),
+                 seg("sung", 35, 65.0)]
         measured = M.measure_share(lines)
-        self.assertEqual(measured["spoken_style_seconds"], 55.0)
-        self.assertEqual(measured["share_pct"], 55.0)
-        # 10 points off the 45% goal: accepted with a flag under the H8 band
-        self.assertEqual(M.check_share(measured["share"])["verdict"], "FLAG")
-        # the identical ad with rap sung instead measures 10%: under the floor
+        self.assertEqual(measured["spoken_style_seconds"], 25.0)
+        self.assertEqual(measured["share_pct"], 25.0)
+        self.assertEqual(M.check_share(measured["share"])["verdict"], "PASS")
+        # the identical ad with rap counted as sung measures 5%: under the band
         no_rap = [lines[0], lines[1],
-                  {"delivery": "sung", "seconds": 45, "start": 50},
-                  lines[3]]
+                  {"delivery": "sung", "seconds": 15, "start": 45},
+                  lines[3], lines[4]]
         below = M.check_share(M.measure_share(no_rap)["share"])
         self.assertEqual(below["verdict"], "FAIL")
         self.assertTrue(any("redo" in r for r in below["reasons"]),
                         below["reasons"])
 
     def test_refusal_text_is_compact_and_empty_when_passing(self):
-        self.assertEqual(M.refusal(0.45), "")
-        self.assertTrue(M.refusal(0.20).startswith("REFUSED"))
+        self.assertEqual(M.refusal(0.225), "")
+        self.assertTrue(M.refusal(0.40).startswith("REFUSED"))
 
     def test_check_share_refuses_a_malformed_share(self):
         with self.assertRaises(M.SpokenShareError):
@@ -304,8 +306,8 @@ class ShareCheckTests(unittest.TestCase):
 
     def test_check_share_is_deterministic(self):
         import json
-        first = json.dumps(M.check_share(0.45), sort_keys=True)
-        second = json.dumps(M.check_share(0.45), sort_keys=True)
+        first = json.dumps(M.check_share(0.225), sort_keys=True)
+        second = json.dumps(M.check_share(0.225), sort_keys=True)
         self.assertEqual(first, second)
 
 
@@ -314,7 +316,7 @@ class PlanTests(unittest.TestCase):
         lines, duration = in_band_ad()
         out = M.check_plan(duration, lines)
         self.assertEqual(out["verdict"], "PASS", out["reasons"])
-        self.assertEqual(out["share_pct"], 45.0)
+        self.assertEqual(out["share_pct"], 22.5)
         self.assertEqual(out["length_s"], 100.0)
 
     def test_plan_fails_on_band_and_on_the_hook_together(self):
@@ -322,7 +324,8 @@ class PlanTests(unittest.TestCase):
         lines = [seg("spoken", 90, 0.0), seg("sung", 10, 90.0)]
         out = M.check_plan(100.0, lines)
         self.assertEqual(out["verdict"], "FAIL")
-        self.assertEqual(len(out["reasons"]), 2, out["reasons"])
+        # spoken band, late first singing, and sung-of-voice all fail (SPK001)
+        self.assertEqual(len(out["reasons"]), 3, out["reasons"])
 
     def test_plan_refusal_is_compact_and_empty_when_passing(self):
         lines, duration = in_band_ad()
@@ -342,7 +345,7 @@ class ZeroSpendTests(unittest.TestCase):
                         side_effect=AssertionError("network call")):
             lines, duration = in_band_ad()
             self.assertEqual(M.check_plan(duration, lines)["verdict"], "PASS")
-            self.assertEqual(M.check_share(0.45)["verdict"], "PASS")
+            self.assertEqual(M.check_share(0.225)["verdict"], "PASS")
 
     def test_mocked_socket_is_actually_armed(self):
         with mock.patch("socket.socket",
@@ -394,8 +397,8 @@ class ZeroSpendTests(unittest.TestCase):
 
     def test_zero_paid_calls_helper_surface_is_pure(self):
         # the numbers this planner reads are arithmetic, not a quote
-        self.assertEqual(M.seconds_for(120)["target_s"], 54.0)
-        self.assertEqual(M.SPOKEN_TARGET_PCT, 45)
+        self.assertEqual(M.seconds_for(120)["target_s"], 27.0)
+        self.assertEqual(M.SPOKEN_TARGET_PCT, 22.5)
 
 
 class ImportTests(unittest.TestCase):
@@ -407,7 +410,7 @@ class ImportTests(unittest.TestCase):
                               cwd=tempfile.gettempdir(),
                               capture_output=True, text=True, timeout=60)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual(proc.stdout.strip(), "45 40 55 15")
+        self.assertEqual(proc.stdout.strip(), "22.5 12.5 32.5 15")
 
     def test_package_exports_every_name_the_core_package_hands_out(self):
         core_init = os.path.abspath(os.path.join(

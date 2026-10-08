@@ -202,8 +202,8 @@ def score_take(take, hook_text=None, words=None, length_s=None):
 
     take = {"segments": [{"delivery", "start", "end", "source": "measured"}]}.
     A take with no segments, or any segment not measured (labels), fails.
-    Checks the spoken share band (core/spoken_share) and first singing by 15%
-    of runtime on the 5/10 band. With hook_text, Suno aligned words and
+    Checks the spoken share of runtime (target 22.5), the sung share of voice
+    time (target 77.5) and first singing by 15% of runtime, all on the 5/10 band. With hook_text, Suno aligned words and
     length_s, the sung hook count is measured too (I8, Trevor band) and the
     receipt is returned under "hook". Returns {"verdict": PASS|FLAG|FAIL, "reasons"}.
     """
@@ -217,6 +217,13 @@ def score_take(take, hook_text=None, words=None, length_s=None):
     band = _SS.check_share(shares["share"], segs)
     if band["verdict"] == "FAIL":
         reasons += band["reasons"]
+    flags += band.get("flags", [])
+    # SPK001: singing is judged against VOICE time (sung / (sung + spoken)),
+    # target 77.5; intro, gaps and end card never count against it.
+    if shares["sung_seconds"] + shares["spoken_style_seconds"] > 0:
+        voice = _SS.check_sung_of_voice(segs)
+        reasons += voice["reasons"]
+        flags += voice["flags"]
     sung = [s["start"] for s in segs if s["delivery"] == "sung"]
     total = shares["total_seconds"]
     if not sung:
