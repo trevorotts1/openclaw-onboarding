@@ -219,7 +219,11 @@ def check_style_text(text):
     errs = []
     if len(text) > SUNO_STYLE_FIELD_MAX:
         errs.append("style text is %d chars, limit %d" % (len(text), SUNO_STYLE_FIELD_MAX))
-    n = len(_SPOKEN_WORD_RE.findall(text))
+    # G1 delivery map (merged on main) is the one mandated spoken clause; it is
+    # not counted against the at-most-once rule.
+    own = text.replace(_MS.DELIVERY_MAP_CLAUSES[0][1], "")
+    own = own.replace(_MS.DELIVERY_MAP_CLAUSES[1][1], "").replace(_MS.DELIVERY_MAP_CLAUSES[2][1], "")
+    n = len(_SPOKEN_WORD_RE.findall(own))
     if n > 1:
         errs.append("style text names spoken delivery %d times, at most once" % n)
     if "band keeps playing" not in text.lower():
