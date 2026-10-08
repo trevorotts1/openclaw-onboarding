@@ -104,7 +104,8 @@ Every envelope carries `schema_version` = `blackceo.intake-preflight/envelope/v1
 Every paid path reserves through `core/spend_ledger.py` with a recorded
 ceiling first (no recorded ceiling = no paid call), keeps
 reserved/submitted/unknown/reconciled protocol, and never auto-resubmits an
-uncertain outcome.
+uncertain outcome. Always show the client the sentence from
+`references/client-messages.md`, never the reason code.
 
 ## Shared canonical core (read, never duplicate)
 
