@@ -135,7 +135,9 @@ class Outbox:
     """Durable board outbox bound to ONE workspace (tenant isolation)."""
 
     def __init__(self, db_path=":memory:", base_url=None, workspace=None, sender=None):
-        self.base_url = (base_url or os.environ.get("CC_BASE_URL", "http://127.0.0.1:4000")).rstrip("/")
+        # CC_PORT is what Command Center's ecosystem.config.cjs exports; default stays 4000.
+        default_url = "http://127.0.0.1:%s" % (os.environ.get("CC_PORT") or "4000")
+        self.base_url = (base_url or os.environ.get("CC_BASE_URL") or default_url).rstrip("/")
         self.workspace = workspace or os.environ.get("CC_WORKSPACE", "")
         if not self.workspace:
             raise BoardSyncError("workspace binding required (pass workspace= or set CC_WORKSPACE)")

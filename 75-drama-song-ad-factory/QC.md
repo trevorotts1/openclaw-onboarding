@@ -12,7 +12,7 @@ it advances. Standard library only; no credential value is ever printed.
 ## 2. Installation Checks
 - [ ] Skill folder exists and contains `SKILL.md`, `EXAMPLES.md`, `QC.md`,
       `DEPENDENCY-MANIFEST.md`, `THIRD_PARTY_NOTICES.md`, `skill-version.txt`,
-      `references/`, `scripts/core/`, `tests/`, `test-fixtures/`.
+      `references/`, `scripts/core/`, `tests/`.
 - [ ] `scripts/core/contracts/` contains `campaign-schema.json`,
       `artifact-schema.json`, `qc-schema.json` and all parse as valid JSON;
       `qc-schema.json` verdict enum is exactly PASS / FAIL / UNAVAILABLE and

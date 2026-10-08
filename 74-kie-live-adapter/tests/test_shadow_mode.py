@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from fakes import K, MODEL, make, std_routes
 
@@ -66,6 +67,46 @@ class Modes(unittest.TestCase):
         self.assertEqual(K.Adapter(env={"HOME": self.tmp, "OC_CONFIG": oc}).mode, "active")
         self.assertEqual(K.Adapter(env={"HOME": self.tmp, "OC_CONFIG": oc, "KIE_LIVE_ADAPTER_MODE": "off"}).mode, "off")
         self.assertEqual(K.Adapter(env={"HOME": self.tmp, "OC_CONFIG": os.path.join(oc, "openclaw.json")}).mode, "active")
+
+    def test_mode_lookup_reads_data_openclaw_home(self):
+        """M8/H7 done-when: HOME=/tmp/h, no OC_CONFIG, injected /data/.openclaw mode file = active."""
+        h = os.path.join(self.tmp, "h")
+        os.makedirs(h)
+        fake = os.path.join(self.tmp, "data", ".openclaw")
+        os.makedirs(fake)
+        with open(os.path.join(fake, "kie-live-adapter-mode.conf"), "w") as f:
+            f.write("active\n")
+        claude = os.path.join(self.tmp, "claude")
+        os.makedirs(claude)
+        with open(os.path.join(claude, "kie-live-adapter-mode.conf"), "w") as f:
+            f.write("off\n")
+        with mock.patch.object(K, "DATA_OC_ROOT", fake):
+            env = {"HOME": h, "CLAUDE_CONFIG_DIR": claude}
+            self.assertNotIn("OC_CONFIG", env)
+            self.assertEqual(K.Adapter(env=env).mode, "active")
+            # OC_CONFIG still wins over the injected /data path.
+            env["OC_CONFIG"] = h
+            with open(os.path.join(h, "kie-live-adapter-mode.conf"), "w") as f:
+                f.write("off\n")
+            self.assertEqual(K.Adapter(env=env).mode, "off")
+
+    def test_mode_lookup_falls_through_to_claude_config_dir(self):
+        """H7: a Claude Code machine with no OpenClaw folder switches on via ~/.claude."""
+        h = os.path.join(self.tmp, "h")
+        os.makedirs(os.path.join(h, ".claude"))
+        with open(os.path.join(h, ".claude", "kie-live-adapter-mode.conf"), "w") as f:
+            f.write("active\n")
+        claude = os.path.join(self.tmp, "claude")
+        os.makedirs(claude)
+        with open(os.path.join(claude, "kie-live-adapter-mode.conf"), "w") as f:
+            f.write("off\n")
+        real_isdir = os.path.isdir
+        with mock.patch("os.path.isdir", side_effect=lambda p: False if p == K.DATA_OC_ROOT else real_isdir(p)):
+            self.assertEqual(K.Adapter(env={"HOME": h}).mode, "active")
+            # explicit CLAUDE_CONFIG_DIR wins over ~/.claude
+            self.assertEqual(K.Adapter(env={"HOME": h, "CLAUDE_CONFIG_DIR": claude}).mode, "off")
+            # no mode file anywhere -> shadow
+            self.assertEqual(K.Adapter(env={"HOME": os.path.join(self.tmp, "empty")}).mode, "shadow")
 
     def test_validation_failure_in_active_blocks(self):
         a, tr, c = make(self.tmp, std_routes(), mode="active")
