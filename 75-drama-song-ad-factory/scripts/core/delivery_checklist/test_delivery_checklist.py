@@ -99,6 +99,30 @@ def full_answered_receipt():
         "HONEST_RECEIPT": {"measured_fields": 14, "unmeasured_fields": 0,
                            "source_measured_fields": "receipt audit",
                            "source_unmeasured_fields": "receipt audit"},
+        "LIP_SYNC": {"source": "lipsync_gate(H2) envelope xcorr", "clips": [
+            {"clip": "ls1", "offset_s": 0.02, "correlation": 0.71,
+             "control_correlation": 0.20, "frozen_s": 0.3},
+            {"clip": "ls2", "offset_s": -0.04, "correlation": 0.60,
+             "control_correlation": 0.30, "frozen_s": 0.0},
+        ]},
+        "FIRST_SUNG": {"source": "singing-detector vocal stem",
+                       "detector": "singing-detector(vocal-stem)",
+                       "first_sung_pct": 14.0},
+        "PICTURES_MATCH": {"source": "H5 shot-to-line map, Suno timestamps",
+                           "shots": [
+            {"shot": "s1", "time_s": 4.2, "line": "the house went quiet",
+             "match": True, "slowdown": 1.0},
+            {"shot": "s2", "time_s": 9.8, "line": "she picked up the phone",
+             "match": True, "slowdown": 1.1},
+        ]},
+        "GOALS_BAND": {"source": "target engine receipt", "goals": [
+            {"name": "sung_share", "measured": 61.0, "target": 60.0},
+            {"name": "spoken_share", "measured": 49.0, "target": 45.0},
+            {"name": "length_s", "measured": 63.0, "target": 60.0,
+             "unit": "s"},
+            {"name": "first_sung", "measured": 21.0, "target": 15.0,
+             "flag": "FLAG first_sung 21 vs 15 (6 off, over 5)"},
+        ]},
     }
 
 
@@ -127,7 +151,7 @@ class G7DoneWhen(unittest.TestCase):
         self.assertTrue(res["pass"], res["detail"])
         self.assertEqual(res["repair_scope"], [])
         self.assertEqual(res["reason_code"], "CHECKLIST_ALL_MEASURED_PASS")
-        self.assertEqual(len(res["answers"]), 7)
+        self.assertEqual(len(res["answers"]), 11)
         self.assertTrue(all(a["answer"] == "yes"
                             for a in res["answers"].values()))
 
@@ -141,6 +165,10 @@ class G7DoneWhen(unittest.TestCase):
             ("VOICE_MUSIC", {"music_ok": "yes"}),
             ("MODELS", {"models_ok": True}),
             ("HONEST_RECEIPT", {"honest": "yes"}),
+            ("LIP_SYNC", {"lip_sync_ok": "yes"}),
+            ("FIRST_SUNG", {"singing_early": True}),
+            ("PICTURES_MATCH", {"pictures_ok": "yes"}),
+            ("GOALS_BAND", {"all_within": "yes"}),
         ):
             receipt = full_answered_receipt()
             receipt[q] = bare
@@ -243,6 +271,81 @@ class G7DoneWhen(unittest.TestCase):
         with self.assertRaises(dc.ChecklistError):
             dc.evaluate(None)
 
+    # ---- H11: Q8-Q11 --------------------------------------------------
+    def test_h11_q8_shifted_clip_fails_good_passes(self):
+        receipt = full_answered_receipt()
+        self.assertTrue(dc.evaluate(receipt)["pass"])
+        receipt["LIP_SYNC"]["clips"][1]["offset_s"] = 0.20     # shifted
+        res = dc.evaluate(receipt)
+        self.assertEqual(res["repair_scope"], ["LIP_SYNC"])
+        self.assertIn("ls2", res["detail"])
+        self.assertIn("0.200s", res["detail"])
+
+    def test_h11_q8_control_gap_and_frozen_face_fail(self):
+        for k, v in (("control_correlation", 0.50), ("frozen_s", 1.0),
+                     ("correlation", 0.40)):
+            receipt = full_answered_receipt()
+            receipt["LIP_SYNC"]["clips"][0][k] = v
+            self.assertEqual(dc.evaluate(receipt)["repair_scope"],
+                             ["LIP_SYNC"], k)
+
+    def test_h11_q9_first_sung_band(self):
+        for pct, want in ((10.0, "ACCEPT"), (20.0, "ACCEPT"),
+                          (23.0, "ACCEPT_WITH_FLAG")):
+            r = full_answered_receipt()
+            r["FIRST_SUNG"]["first_sung_pct"] = pct
+            r["GOALS_BAND"]["goals"][3]["measured"] = 15.0   # keep Q11 clean
+            res = dc.evaluate(r)
+            self.assertTrue(res["pass"], (pct, res["detail"]))
+            self.assertEqual(res["evidence"]["first_sung_band"], want)
+        r = full_answered_receipt()
+        r["FIRST_SUNG"]["first_sung_pct"] = 3.3     # Kiesett v3: late
+        res = dc.evaluate(r)
+        self.assertEqual(res["repair_scope"], ["FIRST_SUNG"])
+        r["FIRST_SUNG"].pop("detector")
+        self.assertFalse(dc.evaluate(r)["pass"])    # no label-only answers
+
+    def test_h11_q10_mismatched_shot_or_slowmo_fails(self):
+        r = full_answered_receipt()
+        r["PICTURES_MATCH"]["shots"][1]["match"] = False
+        res = dc.evaluate(r)
+        self.assertEqual(res["repair_scope"], ["PICTURES_MATCH"])
+        self.assertIn("s2", res["detail"])
+        r = full_answered_receipt()
+        r["PICTURES_MATCH"]["shots"][0]["slowdown"] = 1.26
+        self.assertEqual(dc.evaluate(r)["repair_scope"], ["PICTURES_MATCH"])
+        r = full_answered_receipt()
+        del r["PICTURES_MATCH"]["shots"][0]["line"]
+        self.assertEqual(dc.evaluate(r)["repair_scope"], ["PICTURES_MATCH"])
+
+    def test_h11_band_edges(self):
+        self.assertEqual(dc.band(5.0), "ACCEPT")
+        self.assertEqual(dc.band(5.1), "ACCEPT_WITH_FLAG")
+        self.assertEqual(dc.band(10.0), "ACCEPT_WITH_FLAG")
+        self.assertEqual(dc.band(10.1), "REDO")
+
+    def test_h11_q11_flag_must_be_shown_and_over_10_redone(self):
+        r = full_answered_receipt()
+        del r["GOALS_BAND"]["goals"][3]["flag"]       # 6 off, no flag shown
+        res = dc.evaluate(r)
+        self.assertEqual(res["repair_scope"], ["GOALS_BAND"])
+        self.assertIn("no flag", res["detail"])
+        r = full_answered_receipt()
+        r["GOALS_BAND"]["goals"][0]["measured"] = 71.5   # 11.5 off: redo
+        res = dc.evaluate(r)
+        self.assertEqual(res["repair_scope"], ["GOALS_BAND"])
+        self.assertIn("redo", res["detail"])
+        self.assertEqual(res["evidence"]["goals_flagged"], 1)
+
+    def test_h11_q2_uses_band_flag_ok_redo_fails(self):
+        r = full_answered_receipt()
+        r["ON_TARGET"]["shares"]["spoken"]["measured_pct"] = 52.0   # 7 off
+        res = dc.evaluate(r)
+        self.assertTrue(res["pass"], res["detail"])
+        self.assertTrue(res["evidence"]["on_target_flags"])
+        r["ON_TARGET"]["shares"]["spoken"]["measured_pct"] = 56.0   # 11 off
+        self.assertEqual(dc.evaluate(r)["repair_scope"], ["ON_TARGET"])
+
     # ---- gate wiring ------------------------------------------------------
     def test_record_wires_into_shared_gate(self):
         res = dc.evaluate(full_answered_receipt())
@@ -294,9 +397,12 @@ class G7DoneWhen(unittest.TestCase):
         text = shipped.read_text(encoding="utf-8")
         for marker in ("SUNG?", "ON TARGET?", "WORDS?", "FACES?",
                        "VOICE + MUSIC?", "MODELS?", "HONEST RECEIPT?",
+                       "LIP-SYNC MEASURED?", "FIRST SUNG?",
+                       "PICTURES MATCH THE WORDS?",
+                       "JUDGED BY TREVOR'S BAND?",
                        'A "yes" without a measurement counts as "no"'):
             self.assertIn(marker, text)
-        self.assertEqual(len(dc.QUESTIONS), 7)
+        self.assertEqual(len(dc.QUESTIONS), 11)
 
     # ---- CLI round trip (temp home, no operator paths) ---------------------
     def test_cli_round_trip(self):

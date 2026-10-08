@@ -6,6 +6,17 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.1] - 2026-10-08 - Part H H11: delivery checklist Q8-Q11
+
+The final QC gate 4 delivery checklist (G7, check `delivery_checklist`) grows
+from 7 to 11 measured questions: Q8 lip-sync measured (offset <= 0.05 s,
+correlation >= 0.55 and >= 0.25 above the wrong-audio control, no frozen face
+> 0.75 s), Q9 first-sung % of runtime (goal 15%), Q10 pictures match words
+(shot / Suno time / line / match, no slow-motion above 1.15x), Q11 every
+numeric goal judged by Trevor's band (within 5 accept; over 5 to 10 accept
+WITH a flag shown in the receipt; over 10 REDO, never keep the closest). Q2
+uses the same band. No new gate or framework.
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).

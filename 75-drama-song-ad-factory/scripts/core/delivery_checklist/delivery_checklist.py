@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""delivery_checklist.py: the 7-question delivery QC (Trevor order 2026-10-08).
+"""delivery_checklist.py: the 11-question delivery QC (Trevor order 2026-10-08).
 
 Simple on purpose. This module is the ONE independent checker step that
 rides on the existing Final edit QC gate (17.5, qc_gate check "final_edit").
@@ -10,9 +10,15 @@ QC passes in its records array to core/qc_gate.py evaluate (G7 wiring:
 "--required final_edit,delivery_checklist").
 
 The checklist lives verbatim at
-references/QC-CHECKLIST-BEFORE-DELIVERY.md; its 7 questions are answered
+references/QC-CHECKLIST-BEFORE-DELIVERY.md; its 11 questions are answered
 from MEASURED evidence in the delivery receipt -- each answer carries a
 yes/no plus the measurement that proves it.
+
+H11 (Part H, order 1225) adds Q8 LIP_SYNC (H2 numbers), Q9 FIRST_SUNG
+(H6 first-sung % of runtime), Q10 PICTURES_MATCH (H5 shot/time/line/match)
+and Q11 GOALS_BAND (every numeric goal judged by Trevor's band: within 5
+accept, over 5 to 10 accept WITH a flag shown, over 10 REDO). Q2 now uses
+the same band. Same gate, same record, same laws -- no new framework.
 
 The three G7 laws (order, verbatim):
   * a "no" re-does only the failing part (the repair_scope names exactly
@@ -54,18 +60,38 @@ Run: python3 core/delivery_checklist/test_delivery_checklist.py
 from __future__ import annotations
 
 TOOL_NAME = "delivery_checklist"
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "1.1.0"
 SCHEMA_VERSION = "1.0.0"          # final_assembler receipt schema
 QC_SCHEMA_VERSION = "1.0.0"       # core/qc_gate.py
 CHECK = "delivery_checklist"      # new required check ON gate 4 (17.5 Final)
 CHECK_ID = "delivery-checklist"   # record id inside the shared gate
 
 CHECKLIST_REF = "references/QC-CHECKLIST-BEFORE-DELIVERY.md"
+# Q1-Q7 = G7; Q8-Q11 = Part H unit H11 (Trevor order 1225): lip-sync
+# measured (H2), first-sung % (H6), pictures match words (H5), and every
+# numeric goal judged by Trevor's band.
 QUESTIONS = ("SUNG", "ON_TARGET", "WORDS", "FACES", "VOICE_MUSIC",
-             "MODELS", "HONEST_RECEIPT")
+             "MODELS", "HONEST_RECEIPT",
+             "LIP_SYNC", "FIRST_SUNG", "PICTURES_MATCH", "GOALS_BAND")
 
-#: Question 2: "within about 5 percentage points of its target".
-CHECKLIST_TOLERANCE_PCT = 5.0
+#: Trevor's TARGET RULE (2026-10-08 12:30, verbatim): "We always want to try
+#: to be within 5% of the goal. Once you get past 5%, 5% to 7% gets a flag.
+#: Once you get past 10%, it's got to be redone."  Within 5 points = ACCEPT;
+#: over 5 up to 10 = ACCEPT_WITH_FLAG (the flag is shown in the receipt);
+#: over 10 = REDO (never keep the closest).
+CHECKLIST_TOLERANCE_PCT = 5.0       # Q2 / Q11 clean-accept limit
+CHECKLIST_REDO_PCT = 10.0           # Q2 / Q11 redo line
+BAND_ACCEPT, BAND_FLAG, BAND_REDO = "ACCEPT", "ACCEPT_WITH_FLAG", "REDO"
+
+#: Q8 lip-sync gate: the H2 measured numbers (report 05, order 1225).
+LIPSYNC_MAX_OFFSET_S = 0.05         # mouth-vs-voice offset
+LIPSYNC_MIN_CORR = 0.55             # mouth/voice envelope correlation
+LIPSYNC_MIN_CONTROL_GAP = 0.25      # above the wrong-audio control
+LIPSYNC_MAX_FROZEN_S = 0.75         # longest frozen face
+#: Q9: first real singing (vocal stem) target, share of runtime (H6).
+FIRST_SUNG_TARGET_PCT = 15.0
+#: Q10: no slow-motion above this speed-down factor (H5).
+MAX_SLOWDOWN = 1.15
 
 #: Question 1: a sung ad must show a measured sung share above zero.
 SUNG_MIN_PCT = 1.0
@@ -95,6 +121,10 @@ REASON_CODES = {
     "VOICE_MUSIC": "CHECKLIST_VOICE_MUSIC_BROKEN",
     "MODELS": "CHECKLIST_WRONG_MODEL",
     "HONEST_RECEIPT": "CHECKLIST_NOT_HONEST",
+    "LIP_SYNC": "CHECKLIST_LIPSYNC_FAILED",
+    "FIRST_SUNG": "CHECKLIST_FIRST_SUNG_OFF",
+    "PICTURES_MATCH": "CHECKLIST_PICTURE_MISMATCH",
+    "GOALS_BAND": "CHECKLIST_GOAL_REDO",
     "ANSWER_MISSING": "CHECKLIST_ANSWER_MISSING",
     "NO_MEASUREMENT": "CHECKLIST_NO_MEASUREMENT",
 }
@@ -106,6 +136,10 @@ CHECKLIST_FACE_MISMATCH = REASON_CODES["FACES"]
 CHECKLIST_VOICE_MUSIC_BROKEN = REASON_CODES["VOICE_MUSIC"]
 CHECKLIST_WRONG_MODEL = REASON_CODES["MODELS"]
 CHECKLIST_NOT_HONEST = REASON_CODES["HONEST_RECEIPT"]
+CHECKLIST_LIPSYNC_FAILED = REASON_CODES["LIP_SYNC"]
+CHECKLIST_FIRST_SUNG_OFF = REASON_CODES["FIRST_SUNG"]
+CHECKLIST_PICTURE_MISMATCH = REASON_CODES["PICTURES_MATCH"]
+CHECKLIST_GOAL_REDO = REASON_CODES["GOALS_BAND"]
 CHECKLIST_ANSWER_MISSING = REASON_CODES["ANSWER_MISSING"]
 CHECKLIST_NO_MEASUREMENT = REASON_CODES["NO_MEASUREMENT"]
 
@@ -173,6 +207,29 @@ def _clamp_pct(v):
     return min(max(v, 0.0), 100.0)
 
 
+def band(delta):
+    """Trevor's band for a distance from goal (points or relative percent)."""
+    if delta <= CHECKLIST_TOLERANCE_PCT + 1e-6:
+        return BAND_ACCEPT
+    if delta <= CHECKLIST_REDO_PCT + 1e-6:
+        return BAND_FLAG
+    return BAND_REDO
+
+
+def _flag_text(name, got, want, delta):
+    return "FLAG %s %.1f vs goal %.1f (%.1f off, over %.0f)" % (
+        name, got, want, delta, CHECKLIST_TOLERANCE_PCT)
+
+
+def _source_named(ans, codes, q):
+    """A new-question answer must name its instrument (honest receipt)."""
+    src = ans.get("source")
+    if isinstance(src, str) and src.strip():
+        return src.strip()
+    codes.append("%s:%s answer names no source" % (CHECKLIST_NO_MEASUREMENT, q))
+    return None
+
+
 # ------------------------------------------------------------------ Q1 SUNG
 def _q1_sung(receipt, ans, codes, details):
     """Measured sung/spoken percents from the vocal-stem detector."""
@@ -210,8 +267,8 @@ def _q1_sung(receipt, ans, codes, details):
 # ------------------------------------------------------------- Q2 ON TARGET
 def _q2_on_target(receipt, ans, codes, details):
     """Every measured share and the length within 5 points of its target."""
-    tol = CHECKLIST_TOLERANCE_PCT
     ok = True
+    flags = []
     shares = ans.get("shares")
     measured = {}
     if isinstance(shares, dict):
@@ -225,32 +282,40 @@ def _q2_on_target(receipt, ans, codes, details):
                              % (CHECKLIST_NO_MEASUREMENT, name))
                 ok = False
                 continue
+            delta = abs(got - want)
             measured[name] = {"measured_pct": got, "target_pct": want,
-                              "delta_pts": round(abs(got - want), 1)}
-            if abs(got - want) > tol + 1e-6:
+                              "delta_pts": round(delta, 1)}
+            if band(delta) == BAND_REDO:
                 codes.append("%s:ON_TARGET %s %.1f%% vs target %.1f%% "
-                             "(> %.0f pts)" % (CHECKLIST_OFF_TARGET, name,
-                                               got, want, tol))
+                             "(> %.0f pts, redo)" % (
+                                 CHECKLIST_OFF_TARGET, name, got, want,
+                                 CHECKLIST_REDO_PCT))
                 ok = False
+            elif band(delta) == BAND_FLAG:
+                flags.append(_flag_text(name, got, want, delta))
     length_s = _num(ans.get("length_s", ans.get("measured_length_s")))
     target_s = _num(ans.get("target_length_s"))
     if length_s is not None and target_s is not None and target_s > 0:
-        # length shares the 5-point tolerance, expressed on the length
+        # length shares the band, expressed relative to the target length
         delta_pct = abs(length_s - target_s) / target_s * 100.0
         measured["length"] = {"measured_s": length_s, "target_s": target_s,
                               "delta_pct": round(delta_pct, 1)}
-        if delta_pct > tol + 1e-6:
+        if band(delta_pct) == BAND_REDO:
             codes.append("%s:ON_TARGET length %.1fs vs target %.1fs "
-                         "(%.1f%% off, tol %.0f%%)"
+                         "(%.1f%% off, redo over %.0f%%)"
                          % (CHECKLIST_OFF_TARGET, length_s, target_s,
-                            delta_pct, tol))
+                            delta_pct, CHECKLIST_REDO_PCT))
             ok = False
+        elif band(delta_pct) == BAND_FLAG:
+            flags.append(_flag_text("length", length_s, target_s, delta_pct))
     if not measured:
         codes.append("%s:ON_TARGET no measured shares or length in the "
                      "receipt" % CHECKLIST_NO_MEASUREMENT)
         return False
     details["measured"] = measured
-    details["tolerance_pts"] = tol
+    details["tolerance_pts"] = CHECKLIST_TOLERANCE_PCT
+    if flags:
+        details["on_target_flags"] = flags
     return ok
 
 
@@ -487,9 +552,177 @@ def _q7_honest(receipt, ans, codes, details):
     return ok
 
 
+# --------------------------------------------------------- Q8 LIP-SYNC
+def _q8_lip_sync(receipt, ans, codes, details):
+    """Every lip-sync clip passes the H2 measured gate; numbers shown."""
+    clips = ans.get("clips")
+    src = _source_named(ans, codes, "LIP_SYNC")
+    if not isinstance(clips, list) or not clips:
+        codes.append("%s:LIP_SYNC no per-clip offset/correlation list"
+                     % CHECKLIST_NO_MEASUREMENT)
+        return False
+    ok = src is not None
+    worst_off, worst_corr = 0.0, 1.0
+    for i, c in enumerate(clips):
+        cid = c.get("clip", "clip-%d" % (i + 1)) if isinstance(c, dict) \
+            else "clip-%d" % (i + 1)
+        vals = {k: _num(c.get(k)) if isinstance(c, dict) else None
+                for k in ("offset_s", "correlation", "control_correlation",
+                          "frozen_s")}
+        missing = [k for k, v in vals.items() if v is None]
+        if missing:
+            codes.append("%s:LIP_SYNC %s missing %s"
+                         % (CHECKLIST_NO_MEASUREMENT, cid, "/".join(missing)))
+            ok = False
+            continue
+        bad = []
+        if abs(vals["offset_s"]) > LIPSYNC_MAX_OFFSET_S + 1e-9:
+            bad.append("offset %.3fs > %.2fs" % (vals["offset_s"],
+                                                 LIPSYNC_MAX_OFFSET_S))
+        if vals["correlation"] < LIPSYNC_MIN_CORR:
+            bad.append("corr %.2f < %.2f" % (vals["correlation"],
+                                              LIPSYNC_MIN_CORR))
+        if vals["correlation"] - vals["control_correlation"] \
+                < LIPSYNC_MIN_CONTROL_GAP - 1e-9:
+            bad.append("only %.2f above wrong-audio control (need %.2f)" % (
+                vals["correlation"] - vals["control_correlation"],
+                LIPSYNC_MIN_CONTROL_GAP))
+        if vals["frozen_s"] > LIPSYNC_MAX_FROZEN_S + 1e-9:
+            bad.append("frozen face %.2fs > %.2fs" % (vals["frozen_s"],
+                                                      LIPSYNC_MAX_FROZEN_S))
+        if bad:
+            codes.append("%s:LIP_SYNC %s %s" % (CHECKLIST_LIPSYNC_FAILED, cid,
+                                                  ", ".join(bad)))
+            ok = False
+        worst_off = max(worst_off, abs(vals["offset_s"]))
+        worst_corr = min(worst_corr, vals["correlation"])
+    details["lipsync_clips"] = len(clips)
+    details["lipsync_worst_offset_s"] = worst_off
+    details["lipsync_worst_corr"] = worst_corr
+    return ok
+
+
+# --------------------------------------------------------- Q9 FIRST SUNG
+def _q9_first_sung(receipt, ans, codes, details):
+    """First real singing (vocal stem) lands near 15% of runtime, in the band."""
+    src = _source_named(ans, codes, "FIRST_SUNG")
+    got = _num(ans.get("first_sung_pct"))
+    if got is None:
+        codes.append("%s:FIRST_SUNG missing measured first_sung_pct"
+                     % CHECKLIST_NO_MEASUREMENT)
+        return False
+    want = _num(ans.get("target_pct"))
+    want = FIRST_SUNG_TARGET_PCT if want is None else want
+    detector = ans.get("detector") or receipt.get("detector") or ""
+    if not (isinstance(detector, str) and detector.strip()):
+        codes.append("%s:FIRST_SUNG detector (vocal-stem) not named"
+                     % CHECKLIST_NO_MEASUREMENT)
+        return False
+    delta = abs(got - want)
+    details["first_sung_pct"] = got
+    details["first_sung_band"] = band(delta)
+    if band(delta) == BAND_REDO:
+        codes.append("%s:FIRST_SUNG first singing at %.1f%% vs goal %.1f%% "
+                     "(%.1f off, redo over %.0f)" % (
+                         CHECKLIST_FIRST_SUNG_OFF, got, want, delta,
+                         CHECKLIST_REDO_PCT))
+        return False
+    if band(delta) == BAND_FLAG:
+        details["first_sung_flag"] = _flag_text("first_sung", got, want, delta)
+    return src is not None
+
+
+# ------------------------------------------------------ Q10 PICTURES MATCH
+def _q10_pictures(receipt, ans, codes, details):
+    """Every shot names its line and its real Suno time; subject matches."""
+    src = _source_named(ans, codes, "PICTURES_MATCH")
+    shots = ans.get("shots")
+    if not isinstance(shots, list) or not shots:
+        codes.append("%s:PICTURES_MATCH no shot/time/line/match list"
+                     % CHECKLIST_NO_MEASUREMENT)
+        return False
+    ok = src is not None
+    bad = []
+    matched = 0
+    for i, s in enumerate(shots):
+        sid = s.get("shot", "shot-%d" % (i + 1)) if isinstance(s, dict) \
+            else "shot-%d" % (i + 1)
+        if not isinstance(s, dict) or _num(s.get("time_s")) is None \
+                or not isinstance(s.get("line"), str) or not s["line"].strip() \
+                or not _truthy_measured(s.get("match")):
+            codes.append("%s:PICTURES_MATCH %s missing time_s/line/match"
+                         % (CHECKLIST_NO_MEASUREMENT, sid))
+            ok = False
+            continue
+        speed = _num(s.get("slowdown"))
+        if s["match"] is False:
+            bad.append("%s @%.1fs" % (sid, _num(s["time_s"])))
+        elif speed is not None and speed > MAX_SLOWDOWN + 1e-9:
+            bad.append("%s slowed %.2fx > %.2fx" % (sid, speed, MAX_SLOWDOWN))
+        else:
+            matched += 1
+    if bad:
+        codes.append("%s:PICTURES_MATCH picture does not match its line: %s"
+                     % (CHECKLIST_PICTURE_MISMATCH, "; ".join(bad[:10])))
+        ok = False
+    details["pictures_matched"] = matched
+    details["pictures_total"] = len(shots)
+    return ok
+
+
+# ------------------------------------------------------- Q11 GOALS BAND
+def _q11_goals(receipt, ans, codes, details):
+    """Every numeric goal judged by Trevor's band; the flag is shown."""
+    src = _source_named(ans, codes, "GOALS_BAND")
+    goals = ans.get("goals")
+    if not isinstance(goals, list) or not goals:
+        codes.append("%s:GOALS_BAND no numeric goals listed"
+                     % CHECKLIST_NO_MEASUREMENT)
+        return False
+    ok = src is not None
+    flags = 0
+    for i, g in enumerate(goals):
+        name = g.get("name", "goal-%d" % (i + 1)) if isinstance(g, dict) \
+            else "goal-%d" % (i + 1)
+        got = _num(g.get("measured")) if isinstance(g, dict) else None
+        want = _num(g.get("target")) if isinstance(g, dict) else None
+        if got is None or want is None:
+            codes.append("%s:GOALS_BAND %s missing measured/target"
+                         % (CHECKLIST_NO_MEASUREMENT, name))
+            ok = False
+            continue
+        if g.get("unit", "pct") == "pct":           # points of a percent
+            delta = abs(got - want)
+        elif want != 0:                             # relative percent
+            delta = abs(got - want) / abs(want) * 100.0
+        else:
+            codes.append("%s:GOALS_BAND %s target 0 with a non-pct unit"
+                         % (CHECKLIST_NO_MEASUREMENT, name))
+            ok = False
+            continue
+        b = band(delta)
+        if b == BAND_REDO:
+            codes.append("%s:GOALS_BAND %s %.1f vs goal %.1f (%.1f off, "
+                         "over %.0f: redo)" % (CHECKLIST_GOAL_REDO, name, got,
+                                              want, delta,
+                                              CHECKLIST_REDO_PCT))
+            ok = False
+        elif b == BAND_FLAG:
+            flags += 1
+            flag = g.get("flag")
+            if not (isinstance(flag, str) and flag.strip()):
+                codes.append("%s:GOALS_BAND %s is %.1f off (5-10 band) but "
+                             "the receipt shows no flag"
+                             % (CHECKLIST_NO_MEASUREMENT, name, delta))
+                ok = False
+    details["goals_judged"] = len(goals)
+    details["goals_flagged"] = flags
+    return ok
+
+
 # ----------------------------------------------------------------- evaluate
 def evaluate(receipt):
-    """Answer the 7 questions from the delivery receipt.
+    """Answer the 11 questions from the delivery receipt.
 
     receipt maps question names (or "answers") to answer dicts carrying the
     MEASURED evidence. Returns:
@@ -536,6 +769,14 @@ def evaluate(receipt):
             qok = _q6_models(receipt, ans, qcodes, qdetails)
         elif q == "HONEST_RECEIPT":
             qok = _q7_honest(receipt, ans, qcodes, qdetails)
+        elif q == "LIP_SYNC":
+            qok = _q8_lip_sync(receipt, ans, qcodes, qdetails)
+        elif q == "FIRST_SUNG":
+            qok = _q9_first_sung(receipt, ans, qcodes, qdetails)
+        elif q == "PICTURES_MATCH":
+            qok = _q10_pictures(receipt, ans, qcodes, qdetails)
+        elif q == "GOALS_BAND":
+            qok = _q11_goals(receipt, ans, qcodes, qdetails)
         codes.extend(qcodes)
         details.update(qdetails)
         if qok:
@@ -588,6 +829,20 @@ def _measurement_line(q, ans, qdetails):
     if q == "MODELS":
         return ", ".join("%s=%s" % (k, v)
                          for k, v in d.get("models", {}).items())
+    if q == "LIP_SYNC":
+        return "%d clip(s), worst offset %.3fs, worst corr %.2f" % (
+            d.get("lipsync_clips", 0), d.get("lipsync_worst_offset_s", 0.0),
+            d.get("lipsync_worst_corr", 0.0))
+    if q == "FIRST_SUNG":
+        return "first real singing at %.1f%% of runtime (%s)%s" % (
+            d.get("first_sung_pct", 0.0), d.get("first_sung_band", ""),
+            (" " + d["first_sung_flag"]) if "first_sung_flag" in d else "")
+    if q == "PICTURES_MATCH":
+        return "%d/%d pictures match their line" % (
+            d.get("pictures_matched", 0), d.get("pictures_total", 0))
+    if q == "GOALS_BAND":
+        return "%d goal(s) judged, %d flagged" % (
+            d.get("goals_judged", 0), d.get("goals_flagged", 0))
     return "source: %s" % d.get("source", "per-field source refs")
 
 
@@ -620,9 +875,10 @@ def to_qc_record(result, run_id, stage, reviewer, check_id=None,
     lines = ["%s=%s(%s)" % (q, a["answer"], a["measurement"][:80])
              for q, a in sorted(answers.items())]
     passed = bool(result["pass"])
-    summary = ("delivery checklist %s: %d/7 measured%s | %s"
+    summary = ("delivery checklist %s: %d/%d measured%s | %s"
                % ("pass" if passed else "FAIL",
                   sum(1 for a in answers.values() if a["answer"] == "yes"),
+                  len(QUESTIONS),
                   (" [%s]" % result["reason_code"]) if not passed else "",
                   "; ".join(lines)))
     return {
