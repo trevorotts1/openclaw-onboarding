@@ -1,0 +1,71 @@
+{
+ "distinct_line_count": 4,
+ "errors": [],
+ "flagged_only": true,
+ "line_ids": [
+  "beat04",
+  "beat07",
+  "cta12",
+  "beat09"
+ ],
+ "next_action": "Proceed to the next stage.",
+ "outcome": "ok",
+ "provider_order": [
+  "volcengine/video-to-video-lip-sync",
+  "infinitalk/from-audio"
+ ],
+ "reason_code": "SELECTED",
+ "schema_version": "blackceo.lip-sync/v1",
+ "selected": [
+  {
+   "duration": 5.0,
+   "end": 19.0,
+   "line_id": "beat04",
+   "section_id": "wound",
+   "start": 14.0,
+   "text": "The whole crew knew and they figured I knew too",
+   "type": "pain_peak"
+  },
+  {
+   "duration": 5.0,
+   "end": 35.0,
+   "line_id": "beat07",
+   "section_id": "turn",
+   "start": 30.0,
+   "text": "Brother flew in with the Oslo pouch on the counter",
+   "type": "product"
+  },
+  {
+   "duration": 5.0,
+   "end": 60.0,
+   "line_id": "cta12",
+   "section_id": "cta",
+   "start": 55.0,
+   "text": "Link is below and the first pouch ships tonight",
+   "type": "cta"
+  },
+  {
+   "duration": 5.0,
+   "end": 44.0,
+   "line_id": "beat09",
+   "section_id": "turn",
+   "start": 39.0,
+   "text": "Sharp strong awake alive",
+   "type": "chorus_hook"
+  }
+ ],
+ "tool": "lip_sync",
+ "tool_version": "1.0.0",
+ "total_seconds": 20.0,
+ "types": [
+  "pain_peak",
+  "product",
+  "cta",
+  "chorus_hook"
+ ],
+ "typical_band_seconds": [
+  15.0,
+  20.0
+ ],
+ "within_typical_band": true
+}

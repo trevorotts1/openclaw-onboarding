@@ -1,0 +1,21 @@
+{
+  "models": [
+    {"id": "minimax-h3/image-to-video", "task": "video", "family": "minimax-h3", "resolution": "768P", "status": "APPROVED", "max_shot_seconds": 15, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": true},
+    {"id": "bytedance/seedance-2-mini", "task": "video", "family": "seedance", "resolution": "720p (no 1080p)", "status": "APPROVED", "max_shot_seconds": 15, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": true},
+    {"id": "veo-3-1", "task": "video", "family": "veo", "resolution": "720p, 1080p", "status": "APPROVED", "max_shot_seconds": 8, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": true},
+    {"id": "kling-3.0/video", "task": "video", "family": "kling", "resolution": "720p, 1080p", "status": "APPROVED", "max_shot_seconds": 15, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": true},
+    {"id": "google/gemini-omni-flash-1-1", "task": "video", "family": "gemini-omni", "resolution": "720p and 1080p (same price)", "status": "APPROVED", "max_shot_seconds": 10, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": true},
+    {"id": "wan/3-0-video", "task": "video", "family": "wan", "resolution": "720p, 1080p", "status": "APPROVED", "max_shot_seconds": 30, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": true},
+    {"id": "happyhorse-1-1/text-to-video", "task": "video", "family": "happyhorse", "resolution": "720p, 1080p", "status": "APPROVED", "max_shot_seconds": 15, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": true},
+    {"id": "bytedance/seedance-2-5", "task": "video", "family": "seedance", "resolution": "720p, 1080p", "status": "APPROVED", "max_shot_seconds": 30, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": true},
+    {"id": "minimax-h4/video", "task": "video", "family": "minimax", "resolution": "720p", "status": "DISCOVERED", "max_shot_seconds": 30, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": true},
+    {"id": "kling-2.5-turbo/video", "task": "video", "family": "kling", "resolution": "720p", "status": "BLOCKED", "max_shot_seconds": 15, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": true},
+    {"id": "hailuo-3-0/video", "task": "video", "family": "hailuo", "resolution": "720p", "status": "UNKNOWN-DRIFT", "max_shot_seconds": 15, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": true},
+    {"id": "pixverse-6/video", "task": "video", "family": "pixverse", "resolution": "720p", "status": "APPROVED", "max_shot_seconds": 15, "shapes": ["9:16", "16:9"], "image_to_video": false, "silent": true},
+    {"id": "grok-imagine-3/video", "task": "video", "family": "grok", "resolution": "16:9 only", "status": "APPROVED", "max_shot_seconds": 15, "shapes": ["16:9"], "image_to_video": true, "silent": true},
+    {"id": "runway-g4/video", "task": "video", "family": "runway", "resolution": "720p", "status": "APPROVED", "max_shot_seconds": 10, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": false},
+    {"id": "ai-music-api/generate", "task": "music", "family": "suno", "status": "APPROVED"},
+    {"id": "google/imagen4-fast", "task": "image", "family": "imagen", "status": "APPROVED"},
+    {"id": "gpt-image-2-flare", "task": "image", "family": "gpt-image", "status": "APPROVED"}
+  ]
+}

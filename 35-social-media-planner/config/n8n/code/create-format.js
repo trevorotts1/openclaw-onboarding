@@ -14,7 +14,9 @@ for(const title of order){
   while(ids.has(nextId))nextId++;
   const id=existing ? existing.properties.sheetId : nextId++;
   ids.add(id); numeric[title]=id;
-  const columns=title==='Images'?16:title==='Videos'?19:title==='Weekly Overview'?21:templates[title].headings.length;
+  // 1.3.0: Weekly Overview headings already carry cycle_id (U) and the five
+  // drama-song columns (V–Z), so its width is contract-derived like every tab.
+  const columns=title==='Images'?16:title==='Videos'?19:templates[title].headings.length;
   if(!existing)newSheetRequests.push({addSheet:{properties:{sheetId:id,title,gridProperties:{rowCount:1000,columnCount:columns}}}});
   const grid=existing?.properties.gridProperties || {};
   formatRequests.push({updateSheetProperties:{properties:{sheetId:id,index:order.indexOf(title),gridProperties:{frozenRowCount:1,frozenColumnCount:templates[title].frozen_columns||0,rowCount:Math.max(grid.rowCount||0,1000),columnCount:Math.max(grid.columnCount||0,columns)}},fields:'index,gridProperties'}});
@@ -24,7 +26,6 @@ for(const title of order){
   formatRequests.push({updateCells:{range:{sheetId:id},fields:'userEnteredValue,note,dataValidation'}});
   for(let i=(existing?.conditionalFormats||[]).length-1;i>=0;i--)formatRequests.push({deleteConditionalFormatRule:{sheetId:id,index:i}});
   const headings=[...templates[title].headings];
-  if(title==='Weekly Overview')headings[20]='cycle_id';
   if(title==='Images')headings[15]='Image preview';
   if(title==='Videos'){headings[17]='Video poster';headings[18]='Watch video';}
   formatRequests.push({updateCells:{start:{sheetId:id,rowIndex:0,columnIndex:0},rows:[{values:Array.from(headings,h=>({userEnteredValue:{stringValue:h||''}}))}],fields:'userEnteredValue'}});
@@ -64,7 +65,7 @@ for(const sheet of current){
 formatRequests.push({updateSpreadsheetProperties:{properties:{title:ctx.sheetName,timeZone:ctx.timezone},fields:'title,timeZone'}});
 // Required for IMAGE previews; set only while false (true is read-only).
 if(metadata.properties?.importFunctionsExternalUrlAccessAllowed!==true)formatRequests.push({updateSpreadsheetProperties:{properties:{importFunctionsExternalUrlAccessAllowed:true},fields:'importFunctionsExternalUrlAccessAllowed'}});
-for(const [key,value] of Object.entries({skill35_company_id:ctx.company_id,skill35_planner_kind:ctx.planner_kind,skill35_template_schema:'1.2.0'})){
+for(const [key,value] of Object.entries({skill35_company_id:ctx.company_id,skill35_planner_kind:ctx.planner_kind,skill35_template_schema:'1.3.0'})){
   const entries=(metadata.developerMetadata||[]).filter(m=>m.metadataKey===key);
   for(const entry of entries)formatRequests.push({deleteDeveloperMetadata:{dataFilter:{developerMetadataLookup:{metadataId:entry.metadataId}}}});
   formatRequests.push({createDeveloperMetadata:{developerMetadata:{metadataKey:key,metadataValue:value,location:{spreadsheet:true},visibility:'DOCUMENT'}}});
