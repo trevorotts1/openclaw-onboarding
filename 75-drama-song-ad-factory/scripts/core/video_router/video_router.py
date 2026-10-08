@@ -4,8 +4,10 @@
 Directive sections 16.1-16.3 + 24.5 (model capability/pin validated before
 submission). Stdlib only. No network, no secrets, no hardcoded model catalog:
 the Skill 67 registry is READ at runtime from models.json (or --catalog /
-$KIE_MODELS_JSON). Policy tokens (capability names, task tags used for ranking)
-are routing vocabulary, never catalog rows.
+$KIE_MODELS_JSON). The default catalog is resolved the way kie_dispatch
+does: walk up from this file looking for 67-kie-video/models.json. Policy
+tokens (capability names, task tags used for ranking) are routing vocabulary,
+never catalog rows.
 
 Contract:
 - Planner asks CAPABILITIES (text-to-video, image-to-video, first/last frame
@@ -44,8 +46,34 @@ TOOL_NAME = "video_router"
 TOOL_VERSION = "1.0.0"
 EXIT = {"ok": 0, "error": 1, "waiting": 3, "parked": 4, "rejected": 5}
 
-DEFAULT_CATALOG = os.path.expanduser(
-    "~/openclaw-onboarding/67-kie-video/models.json")
+#: Relative catalog candidates walked up from this file (kie_dispatch pattern).
+CATALOG_RELS = (
+    ("67-kie-video", "models.json"),
+    ("scripts", "core", "67-kie-video", "models.json"),
+    ("installer-registration", "helpers", "67-kie-video", "models.json"),
+)
+CATALOG_ENV_VAR = "KIE_MODELS_JSON"
+
+
+def resolve_catalog(explicit=None):
+    """Resolve Skill 67 models.json the way kie_dispatch.resolve_adapter does.
+
+    explicit (already non-empty) -> env $KIE_MODELS_JSON -> walk up from this
+    file for CATALOG_RELS. Returns a path string or None. Never a hard-coded
+    user-home default.
+    """
+    if explicit:
+        return explicit if os.path.isfile(explicit) else None
+    env = os.environ.get(CATALOG_ENV_VAR)
+    if env and os.path.isfile(env):
+        return env
+    start = Path(__file__).resolve()
+    for parent in (start,) + tuple(start.parents):
+        for rel in CATALOG_RELS:
+            cand = parent.joinpath(*rel)
+            if cand.is_file():
+                return str(cand)
+    return None
 
 # Capability vocabulary from directive 16.1 (normalized spellings only).
 CAP_ALIASES = {
@@ -486,8 +514,14 @@ def route(req, catalog_path=None):
 
     req = dict(req)
     req["audio"] = audio_mode
-    path = (catalog_path or req.get("catalog")
-            or os.environ.get("KIE_MODELS_JSON") or DEFAULT_CATALOG)
+    path = resolve_catalog(catalog_path or req.get("catalog"))
+    if path is None:
+        return {"outcome": "error", "code": "CATALOG_UNAVAILABLE",
+                "reason": ("no Skill 67 models.json found via --catalog, "
+                           "request catalog, $KIE_MODELS_JSON, or walk-up "
+                           "from %s" % __file__),
+                "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
+                "recovery": "install Skill 67 (models.json) or pass --catalog"}
     try:
         data, models = load_catalog(path)
     except CatalogError as exc:
@@ -715,7 +749,8 @@ def main(argv=None):
                         help="capability request JSON file, or - for stdin")
     parser.add_argument("--catalog", default=None,
                         help="path to Skill 67 models.json "
-                             "(default: %s or $KIE_MODELS_JSON)" % DEFAULT_CATALOG)
+                             "(default: walk-up for 67-kie-video/models.json "
+                             "or $KIE_MODELS_JSON)")
     args = parser.parse_args(argv)
     try:
         if args.request == "-":
