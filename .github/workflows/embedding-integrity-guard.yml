@@ -34,6 +34,7 @@ name: embedding-integrity-guard
 
 on:
   push:
+    branches: [main]
     paths:
       - shared-utils/embedding_engine.py
       - shared-utils/detect_platform.py
@@ -122,6 +123,10 @@ on:
       - tests/unit/sop-library-update-path-ingest.test.sh
       - .github/workflows/embedding-integrity-guard.yml
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   hard-gate:

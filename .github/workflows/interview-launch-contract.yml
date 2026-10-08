@@ -65,6 +65,10 @@ on:
       - 'tests/unit/interview-completion.test.py'
       - '.github/workflows/interview-launch-contract.yml'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   isolated-launch:
     runs-on: ubuntu-latest

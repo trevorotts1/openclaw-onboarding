@@ -29,6 +29,7 @@ name: lean-bootstrap guard
 
 on:
   push:
+    branches: [main]
     paths:
       - scripts/compact-bootstrap.py
       - scripts/bootstrap-pointerize.py
@@ -65,6 +66,10 @@ on:
       - 38-conversational-ai-system/scripts/05-update-agents-md.sh
       - .github/workflows/lean-bootstrap-guard.yml
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lean-bootstrap:

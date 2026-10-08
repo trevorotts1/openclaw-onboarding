@@ -30,6 +30,10 @@ on:
       - '**/*.sh'
       - '**/*.py'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   full-env-dump-guard:
     name: full-env-dump guard (pm2 jlist/prettylist/--json ban, warn-mode)

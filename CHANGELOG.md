@@ -1,3 +1,5 @@
+## [v26.4.8]  -  2026-10-08  -  ci(CIO002): each check once per commit - push triggers main-only, per-PR concurrency, 93 fast guards folded into one fast-guards job
+
 ## [v26.4.7]  -  2026-10-08  -  batch: mega MGB001 (24 units; skill 75 v2.8.0)
 
 One batch release of 24 unit pull requests (merged together in one batch pull request; none were merged one at a time). Version, README and this entry are bumped once for the whole batch.

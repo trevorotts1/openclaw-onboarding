@@ -142,6 +142,10 @@ on:
       - "scripts/probe/test-p206-floor-short-probe.sh"
       - ".github/workflows/floor-wipe-fix-guard.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   floor-wipe-fix-guard:
     name: P2-06 floor-wipe fix (5 hermetic suites)

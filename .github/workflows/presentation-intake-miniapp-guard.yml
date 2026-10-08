@@ -14,6 +14,10 @@ on:
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/**
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
       - .github/workflows/presentation-intake-miniapp-guard.yml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   intake-miniapp-guard:
     name: Intake mini-app guard
