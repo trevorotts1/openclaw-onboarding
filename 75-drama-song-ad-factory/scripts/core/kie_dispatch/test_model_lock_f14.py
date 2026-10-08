@@ -87,7 +87,18 @@ def disp(script, label, model, lock=None, state_db=None, tmp=None,
     L.init_run(db, "run-f14", 10000)
     fake = Fake74(s)
     env = D.dispatch(
-        model=model, request={"model": "m", "input": {"prompt": "p" * 200}},
+        model=model, request={"model": "m", "input": {"prompt": "p" * 200},
+                              # F15 seam: the F14 lock tests run past the
+                              # card gate, so their stub carries the recorded
+                              # receipt (both acceptance criteria satisfied).
+                              "card_receipt": {
+                                  "answers": {
+                                      "video_style": "Lifelike 3D",
+                                      "audio_style": "Soul Ballad",
+                                      "length": 60,
+                                      "video_model": "MiniMax H3 768P"},
+                                  "who": "F14 lock test",
+                                  "at": "2026-10-08T09:00:00Z"}},
         save_dir=os.path.join(tmp, "out"), ledger_db=db, run_id="run-f14",
         logical_key=label + "-job", attempt_id="att-1", estimated_cost=100,
         prompt="q" * 200, adapter_path=os.path.abspath(__file__),

@@ -34,14 +34,16 @@ CORE = HERE.parent                                       # scripts/core/
 SKILL = CORE.parent.parent                               # 75-drama-song-ad-factory/
 PRICE_MENU = SKILL / "references" / "price-menu.md"
 sys.path.insert(0, str(CORE))                            # core/ on path
-sys.path.insert(0, str(CORE / "kie_dispatch"))           # kie_dispatch.py
 sys.path.insert(0, str(CORE / "intake_preflight"))       # intake.py / preflight.py
 
 from style_defaults import card_gate as CG                # noqa: E402
 from style_defaults import defaults as D                  # noqa: E402
 from style_defaults import answers_recorded, answered_stamped, CardGateError  # noqa: E402
 
-import kie_dispatch as KD                                 # noqa: E402
+import kie_dispatch.kie_dispatch as KD                    # noqa: E402
+                                                          # (package: F14's
+                                                          # model_lock must
+                                                          # resolve)
 import intake as I                                        # noqa: E402
 import preflight as P                                     # noqa: E402
 
