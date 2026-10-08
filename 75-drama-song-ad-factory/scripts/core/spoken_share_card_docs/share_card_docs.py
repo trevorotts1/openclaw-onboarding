@@ -5,8 +5,8 @@ Source: Decision log 37 (D15 retarget) 2026-10-07; plan 6.7. The packet's
 decision file carries the same order as "spoken share 45%, never more than
 55%": *target 45% of the runtime, never more than 55%, never less than 40%,
 same for every length and every music style (rap counts as spoken). The
-spoken opener stays short and the first sung line starts within about 10
-seconds. It replaces the earlier 40-to-70 percent band and the per-length
+spoken opener stays short and the first real singing (measured on the vocal
+stem) is targeted at 15% of the runtime. It replaces the earlier 40-to-70 percent band and the per-length
 targets.*
 
 This package owns the canonical card line and the canonical docs wording for
@@ -39,7 +39,7 @@ import os
 SPOKEN_TARGET_PCT = 45          # the target, same for every length and style
 SPOKEN_MAX_PCT = 55             # hard ceiling: never more than this
 SPOKEN_MIN_PCT = 40             # hard floor: never less than this
-FIRST_SUNG_WITHIN_SECONDS = 10  # music arrives sooner; spoken opener is short
+FIRST_SUNG_TARGET_PCT = 15      # H6: first real singing, measured, as a share of runtime
 
 #: The retired band, kept only so tests can name what was replaced.
 RETIRED_BAND_PCT = (40, 70)
@@ -61,9 +61,9 @@ _CARD_SPACING = " " * (13 - len(SPOKEN_LINE_PREFIX))
 
 CARD_LINE = (
     "%s%s%d%% of the runtime (never above %d%%, never below %d%%)  /  "
-    "short spoken opener  /  first sung line within about %d seconds"
+    "short spoken opener  /  first real singing at about %d%% of the ad"
     % (SPOKEN_LINE_PREFIX, _CARD_SPACING, SPOKEN_TARGET_PCT, SPOKEN_MAX_PCT,
-       SPOKEN_MIN_PCT, FIRST_SUNG_WITHIN_SECONDS)
+       SPOKEN_MIN_PCT, FIRST_SUNG_TARGET_PCT)
 )
 
 #: The one field this line reports on; it writes nothing by itself.
@@ -74,10 +74,10 @@ DOCS_STATEMENT = (
     "Spoken share (D15, owner 2026-10-07): target %d%% of the ad's runtime, "
     "never more than %d%%, never less than %d%%, for every length and every "
     "music style -- rap counts as spoken. The spoken opener stays short and "
-    "the first sung line starts within about %d seconds. This replaces the "
+    "the first real singing, measured on the vocal stem, is targeted at %d%% of the runtime. This replaces the "
     "earlier %d-to-%d percent band and the per-length targets."
     % (SPOKEN_TARGET_PCT, SPOKEN_MAX_PCT, SPOKEN_MIN_PCT,
-       FIRST_SUNG_WITHIN_SECONDS, RETIRED_BAND_PCT[0], RETIRED_BAND_PCT[1])
+       FIRST_SUNG_TARGET_PCT, RETIRED_BAND_PCT[0], RETIRED_BAND_PCT[1])
 )
 
 REFERENCE_NOTE = (
@@ -136,8 +136,8 @@ _CARD_REQUIRED = (
     ("never above %d%%" % SPOKEN_MAX_PCT, "states the 55 percent ceiling"),
     ("never below %d%%" % SPOKEN_MIN_PCT, "states the 40 percent floor"),
     ("short spoken opener", "keeps the spoken opener short"),
-    ("first sung line within about %d seconds" % FIRST_SUNG_WITHIN_SECONDS,
-     "first sung line within about 10 seconds"),
+    ("first real singing at about %d%% of the ad" % FIRST_SUNG_TARGET_PCT,
+     "first real singing at about 15 percent of the ad"),
 )
 
 _DOCS_REQUIRED = (
@@ -146,8 +146,8 @@ _DOCS_REQUIRED = (
     ("never less than %d%%" % SPOKEN_MIN_PCT, "states the 40 percent floor"),
     ("rap counts as spoken", "counts rap as spoken"),
     ("opener stays short", "keeps the spoken opener short"),
-    ("first sung line starts within about %d seconds" % FIRST_SUNG_WITHIN_SECONDS,
-     "first sung line within about 10 seconds"),
+    ("targeted at %d%% of the runtime" % FIRST_SUNG_TARGET_PCT,
+     "first real singing targeted at 15 percent of the runtime"),
     ("%.1f%%" % REFERENCE_SPOKEN_PCT, "carries the 57 percent reference figure"),
     ("over the new %d%% limit" % SPOKEN_MAX_PCT,
      "says the reference figure is over the new limit"),
@@ -185,7 +185,7 @@ def check_docs_text(text):
 __all__ = [
     "CARD_LINE",
     "DOCS_STATEMENT",
-    "FIRST_SUNG_WITHIN_SECONDS",
+    "FIRST_SUNG_TARGET_PCT",
     "REFERENCE_LENGTH_SECONDS",
     "REFERENCE_NAME",
     "REFERENCE_NOTE",

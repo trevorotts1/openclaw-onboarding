@@ -2,7 +2,7 @@
 from .share_card_docs import (  # noqa: F401
     CARD_LINE,
     DOCS_STATEMENT,
-    FIRST_SUNG_WITHIN_SECONDS,
+    FIRST_SUNG_TARGET_PCT,
     REFERENCE_LENGTH_SECONDS,
     REFERENCE_NAME,
     REFERENCE_NOTE,
@@ -32,7 +32,7 @@ from .share_card_docs import (  # noqa: F401
 __all__ = [
     "CARD_LINE",
     "DOCS_STATEMENT",
-    "FIRST_SUNG_WITHIN_SECONDS",
+    "FIRST_SUNG_TARGET_PCT",
     "REFERENCE_LENGTH_SECONDS",
     "REFERENCE_NAME",
     "REFERENCE_NOTE",
