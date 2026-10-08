@@ -135,10 +135,52 @@ def test_qc_gate_mismatched_clip_fails():
           res4["outcome"] == "rejected", res4["reason_code"])
 
 
+def test_qc_fixes_regression():
+    # DEFECT 1 regression: a pain lyric with a MISLABELLED joyful contract
+    # emotion must still fail a happy frame — pain is derivable from the
+    # lyric alone and overrides the label.
+    bad = {"shot_id": "K20", "story_stage": "return_cta",
+           "lyric_line_ids": ["L1"],
+           "contract": {"lyric_text":
+                        "so the exhaustion went quiet, the smile got "
+                        "professional",
+                        "visible_emotion": "proud-joyful"}}
+    res = FE.qc_frame_gate([bad], {"K20": [{"happy": True}]})
+    check("mislabelled joyful contract under pain line still rejected",
+          res["outcome"] == "rejected", res["reason_code"])
+    # matched pair on a genuinely joyful line still passes
+    good = {"shot_id": "K21", "story_stage": "return_cta",
+            "contract": {"lyric_text": "you set it down and came home",
+                         "visible_emotion": "proud-joyful"}}
+    res2 = FE.qc_frame_gate([good], {"K21": [{"happy": True}]})
+    check("matched joyful pair still passes", res2["outcome"] == "ok",
+          res2["reason_code"])
+
+    # DEFECT 2 regression: TWO smile phrases in one prompt both swept —
+    # the done-when is "zero smile/happy face tokens".
+    two = ("she nods with a professional smile, then a small fading smile. "
+           "cinematic 3D, warm bright golden light, lips closed.")
+    swept, reasons = FE.strip_warm_face(two, "resigned")
+    check("two smile phrases both swept", "smile" not in swept.lower(),
+          swept[:120])
+    check("warm light token survives double sweep",
+          FE.WARM_LIGHT_TOKEN in swept, swept[:120])
+    check("double sweep reason recorded once",
+          reasons.count(FE.REASON_WARM_FACE) == 1, reasons)
+    # cosmetic: no doubled article after substitution
+    one = "she glances down with a small fading smile."
+    swept1, _ = FE.strip_warm_face(one, "stuck")
+    import re
+    check("no doubled article after sweep",
+          re.search(r"\b(a|an|the)\s+\1\b", swept1, re.IGNORECASE) is None,
+          swept1)
+
+
 def main():
     test_builder_pain_lines_no_smile_warm_in_light()
     test_arc_drives_emotion_separately()
     test_qc_gate_mismatched_clip_fails()
+    test_qc_fixes_regression()
     # selftest embedded too
     if FE.selftest() != 0:
         FAILS.append("selftest")
