@@ -48,6 +48,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
+import kie_dispatch.model_lock as ML  # noqa: E402  (F14 video-model lock)
 
 TOOL_NAME = "kie_dispatch"
 TOOL_VERSION = "1.0.0"
@@ -246,11 +247,60 @@ def _hold_unknown(db, run_id, logical_key, attempt_id, owner, extra):
         evidence=ev, state_version=unk.get("state_version", 0))
 
 
+def _is_menu_video(model, _registry_probe=None):
+    """True when model is a price-menu video family member (F14 lock scope)."""
+    for pat in ML.ALLOWED_VIDEO_MODELS:
+        if ML.matches_family(model, pat):
+            return True
+    return False
+
+
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
-             timeout=300):
-    """Run the plan 5.4 pipeline once. Returns one envelope; never raises."""
+             timeout=300, state_store=None, video_job=None):
+    """Run the plan 5.4 pipeline once. Returns one envelope; never raises.
+
+    F14 video-model lock: video jobs (video_job=True, or a video model on
+    price-menu.md) must match the model locked at the choice card
+    (state_store + run_id). No lock recorded -> refused fail-closed
+    (VIDEO_MODEL_LOCK_MISSING); a different model -> VIDEO_MODEL_MISMATCH.
+    Every model, video or not, must be on price-menu.md (MODEL_NOT_ON_MENU).
+    """
+    # ---- 0. F14 model lock (before any ledger row) ------------------------
+    # Scope: VIDEO jobs only. A video model must be on price-menu.md
+    # (seedance-1.5-pro included) and must equal the card-locked choice.
+    is_video = (bool(video_job) or _is_menu_video(model)
+                or _modality(model) == "video")
+    locked = None
+    if is_video:
+        try:
+            ML.assert_allowed(model)
+        except ML.ModelLockError as e:
+            return envelope("dispatch", "rejected", e.reason,
+                            "the allowed video models are exactly the models "
+                            "on price-menu.md (seedance-1.5-pro included). "
+                            "Take the refusal to the owner.",
+                            run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id)
+        locked = ML.read_locked_model(state_store, run_id)
+        if not locked:
+            return envelope(
+                "dispatch", "rejected", "VIDEO_MODEL_LOCK_MISSING",
+                "no video model is locked for this run; show and answer the "
+                "choice card first (default MiniMax H3 768P) - never "
+                "dispatch an un-locked video job",
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id)
+        if not ML.matches_family(model, locked):
+            return envelope(
+                "dispatch", "rejected", "VIDEO_MODEL_MISMATCH",
+                "the card locked %s for this run; %s differs. Ask the owner "
+                "to re-lock at the choice card, never substitute here."
+                % (locked, model),
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id,
+                evidence={"locked_model": locked, "requested_model": model})
     if not model:
         return envelope("dispatch", "rejected", "MODEL_REQUIRED",
                         "name the model id; this module never picks one",
@@ -438,6 +488,22 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                 ledger_db, run_id, logical_key, attempt_id, "submit",
                 status="fail", task_id=task_id, error=s_err,
                 adapter_state=s_state)
+            if is_video:
+                # F14: no automatic fallback for video. Settle, then stop and
+                # ask the owner with the next approved option and its price.
+                return stop(
+                    "waiting", "VIDEO_MODEL_DOWN",
+                    "the locked video model did not submit (definite submit "
+                    "error: %s); nothing was generated. No automatic "
+                    "fallback - ask the owner with the next approved option "
+                    "from price-menu.md and its price."
+                    % (s_err.get("code") or "unknown"),
+                    {"stage": "submit", "adapter_state": s_state,
+                     "error": s_err, "task_id": task_id or None,
+                     "actual_cost": cost, "generated": False,
+                     "locked_model": locked,
+                     "next_approved_options": ML.ALLOWED_VIDEO_MODELS},
+                    final="failed", cost=cost)
             return stop(
                 "rejected", "kie-submit-failed",
                 "Skill 74 submit refused the job (%s); nothing was generated"
