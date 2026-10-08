@@ -67,6 +67,9 @@ it advances. Standard library only; no credential value is ever printed.
       `tool-unavailable`; unset credential -> 4 `credential-missing`
       (presence only, value never echoed); reference outside root -> 4;
       reference missing -> 1; untrusted schema -> 1 `schema-untrusted`.
+- [ ] Song files (H14): a delivery folder holds `<ad>.mp3` (320 kbps) and `<ad>.wav` (plus
+      `<ad>-instrumental.*` if one exists), all listed in `delivery-receipt.json` and `README.md`;
+      `python3 scripts/core/delivery_variants/song_files.py check <dir> <ad>` exits 0, and exits 5 when any song file is missing.
 - [ ] Spend ledger: `init_run --ceiling` recorded; `reserve` before
       dispatch; duplicate `reserve` exits 5 `BAD_TRANSITION`;
       `can_spend` past ceiling exits 5 `BUDGET_EXCEEDED`; `park_run` exits 4

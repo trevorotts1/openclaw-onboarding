@@ -22,6 +22,8 @@ Run each command from this skill's root (`75-drama-song-ad-factory/`). Substitut
 | final-qc | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage final-qc --records "$RUN/qc/records.json" --makers "$RUN/qc/makers.json" --required <required-checks>` | Approved final-QC verdict records on the rendered master (independent reviewer, UNAVAILABLE never passes). |
 | delivery | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage delivery --records "$RUN/qc/records.json" --makers "$RUN/qc/makers.json" --required <required-checks>` | Delivery gate record over the final package (master + `delivery_variants` plan + receipts); board event follows via `cc_sync` (import-only). |
 
+Song files (H14): before the delivery gate, build the audio-only deliverables with `delivery_variants.build_song_files(mix, $DELIVERY, <ad name>, instrumental)` then `write_song_docs($DELIVERY, rows)` (MP3 320 kbps + WAV named after the ad, plus the instrumental pair if one exists; both listed in `delivery-receipt.json` and `README.md`). Gate it with a `song_files` QC record (`python3 scripts/core/delivery_variants/song_files.py check $DELIVERY <ad name>`, exit 5 = a song file is missing); include `song_files` in the delivery `--required` list.
+
 Note: `music`, `image-keyframes` and `video-generation` share one command shape (the
 Skill 74 `kie_dispatch` route); only the model id, request file and logical key differ.
 Video model ids come from `python3 scripts/core/video_router/video_router.py --request <request.json>`.

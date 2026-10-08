@@ -36,7 +36,7 @@ COMPATIBLE = {"1.0.0"}
 VERDICTS = frozenset({"PASS", "FAIL", "UNAVAILABLE"})
 CHECKS = frozenset({
     "export", "timeline", "lyrics", "timing", "audio", "text_product",
-    "continuity", "creative", "song", "storyboard", "video", "final_edit",
+    "continuity", "creative", "song", "storyboard", "video", "final_edit", "song_files",
 })
 # 17.8 critical categories (identity, lyrics, offer, claim, product_label,
 # CTA) ride on these checks: lyrics carries the critical-word coverage,
