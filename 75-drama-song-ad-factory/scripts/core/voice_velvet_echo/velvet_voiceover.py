@@ -29,8 +29,11 @@ What this module owns (plan 6.12.1):
 Google text-to-speech is the ONLY exception to D22's no-Google rule and it is
 allowed only when the voice choice is ``velvet_voiceover``.
 
-No network module, no provider call, no spend: the catalog is a table and the
-tests synthesize fixture WAVs locally.
+No network module and no provider call in this file: the catalog is a table,
+the tests synthesize fixture WAVs locally, and the one paid call -- the
+Velvet spoken line -- is built here as Skill 74 request JSON (a
+``google/gemini-*-tts`` model) and dispatched by ``kie_dispatch`` like every
+other paid call (manual M2).
 """
 from __future__ import annotations
 
@@ -123,6 +126,39 @@ GOOGLE_VOICES_BY_GENDER = {
     "male": [v for v, g in GOOGLE_VOICES if g == "male"],
     "female": [v for v, g in GOOGLE_VOICES if g == "female"],
 }
+
+
+# ---- manual M2: Velvet spoken lines ride Skill 74 with a gemini TTS model ---
+# Skill 74's registry carries the KIE Market catalog; the TTS models on it are
+# google/gemini-*-tts, whose speaker schema wants a Gemini voice name (Zephyr,
+# Kore, ...), NOT the Wavenet/Neural2 catalog ids above. The static table below
+# therefore maps each catalog gender to a real registry model + a valid
+# voice_name for that gender, so model selection stays a table lookup with no
+# API call (manual M2 step 3; dispatch stays in kie_dispatch).
+SKILL74_TOOL = "74-kie-live-adapter"
+GEMINI_TTS_SCHEMA_VERSION = "blackceo.velvet-voiceover/skill74-request/v1"
+
+# Gender -> (registry model id, Gemini TTS voice name, accent).
+# voice_name values are taken from the Skill 74 registry enum for the model
+# (30 valid names on gemini-2-5-pro-tts / gemini-3-1-flash-tts); accent is a
+# registry enum value too. Flash-lite is the cheap everyday line; Pro is an
+# explicit fallback. Gender labels stay Google's own catalog labels.
+GEMINI_TTS_BY_GENDER = {
+    "female": {
+        "model": "google/gemini-3-1-flash-tts",
+        "voice_name": "Leda",
+        "accent": "Neutral",
+    },
+    "male": {
+        "model": "google/gemini-3-1-flash-tts",
+        "voice_name": "Orus",
+        "accent": "Neutral",
+    },
+}
+GEMINI_TTS_FALLBACK_MODEL = "google/gemini-2-5-pro-tts"
+GEMINI_TTS_MODEL_PREFIX = "google/gemini-"
+GEMINI_TTS_MODEL_SUFFIX = "-tts"
+GEMINI_TTS_MAX_TURN_CHARS = 10000    # registry dialogue_turns text cap
 
 
 class VelvetError(Exception):
@@ -301,6 +337,139 @@ def assign_google_voices(cast, effects=()):
         "d17_rule": "same-gender characters get clearly different voices",
         "exception_rule": GOOGLE_EXCEPTION_RULE,
     }
+
+
+# ------------------------------------------------- Skill 74 request builder --
+
+def gemini_tts_model_for(gender):
+    """Static model pick for one line's gender (no API call, no spend).
+
+    Accepts the gender label the catalog and D17 use (male/female). Unknown
+    genders fail closed like the rest of the module.
+    """
+    if not isinstance(gender, str):
+        raise VelvetError("GENDER_UNKNOWN", "gender must be 'male' or 'female'")
+    g = gender.strip().lower()
+    if g not in GEMINI_TTS_BY_GENDER:
+        raise VelvetError(
+            "GENDER_UNKNOWN",
+            "gender %r has no gemini TTS mapping; D17 needs male/female"
+            % (gender,))
+    return GEMINI_TTS_BY_GENDER[g]["model"]
+
+
+def build_skill74_tts_request(line, model=None, scene=None, temperature=None,
+                              timeout=None):
+    """Build the Skill 74 request JSON for one spoken Velvet line, no network.
+
+    The shape is the one Skill 74's ``submit`` validates and sends to KIE:
+    ``{"model": <google/gemini-*-tts id>, "input": {speakers, dialogue_turns}}``
+    -- speakers carry the Gemini voice_name picked from the static table by the
+    speaker's gender, dialogue_turns carry the line text. Everything
+    ``kie_dispatch.dispatch`` adds on top (ledger ids, save_dir, cost) is its
+    own concern; this function holds no import of kie_dispatch, makes no
+    network call and dispatches nothing (manual M2 step 3: dispatch goes
+    through kie_dispatch like every other paid call).
+
+    Raises (fail closed, same codes as the rest of the module):
+    - LINE_MALFORMED   line is not an object, or has no speaker/text
+    - GENDER_UNKNOWN   speaker gender has no static model mapping
+    - MODEL_UNKNOWN    explicit model is not a google/gemini-*-tts id
+    - TEXT_TOO_LONG    text exceeds the registry's per-turn cap
+    - LINE_MALFORMED   scene/temperature/timeout settings malformed
+    """
+    if not isinstance(line, dict):
+        raise VelvetError("LINE_MALFORMED", "line must be an object")
+    speaker = line.get("speaker")
+    text = line.get("text")
+    if not isinstance(speaker, str) or not speaker.strip():
+        raise VelvetError("LINE_MALFORMED", "line has no speaker")
+    if not isinstance(text, str) or not text.strip():
+        raise VelvetError("LINE_MALFORMED", "line has no spoken text")
+    speaker = speaker.strip()
+    text = text.strip()
+    if len(text) > GEMINI_TTS_MAX_TURN_CHARS:
+        raise VelvetError(
+            "TEXT_TOO_LONG",
+            "spoken text is %d chars; the gemini TTS turn cap is %d"
+            % (len(text), GEMINI_TTS_MAX_TURN_CHARS))
+
+    if model is not None:
+        if not isinstance(model, str) or not (
+            model.startswith(GEMINI_TTS_MODEL_PREFIX)
+            and model.endswith(GEMINI_TTS_MODEL_SUFFIX)
+        ):
+            raise VelvetError(
+                "MODEL_UNKNOWN",
+                "model %r is not a google/gemini-*-tts id (Skill 74 KIE "
+                "Market catalog)" % (model,))
+        chosen = model
+        entry = None
+    else:
+        gender = line.get("gender")
+        if not isinstance(gender, str):
+            raise VelvetError(
+                "GENDER_UNKNOWN",
+                "Velvet line needs a speaker gender for the static gemini "
+                "TTS table, got %r" % (gender,))
+        chosen = gemini_tts_model_for(gender)
+        entry = GEMINI_TTS_BY_GENDER[gender.strip().lower()]
+
+    if entry:
+        voice_name = entry["voice_name"]
+        accent = entry["accent"]
+    else:
+        # Explicit model override: keep the default table's voice pair (the
+        # registry enum carries both names on every google/gemini-*-tts model).
+        entry = GEMINI_TTS_BY_GENDER["female"]
+        voice_name = entry["voice_name"]
+        accent = entry["accent"]
+
+    envelope = {
+        "schema_version": GEMINI_TTS_SCHEMA_VERSION,
+        "tool": TOOL_NAME,
+        "tool_version": TOOL_VERSION,
+        "skill74_skill": SKILL74_TOOL,
+        "voice_choice": VELVET_ID,
+        "request": {
+            "model": chosen,
+            "input": {
+                "speakers": [{
+                    "speaker_id": speaker,
+                    "voice_name": voice_name,
+                    "accent": accent,
+                }],
+                "dialogue_turns": [{
+                    "speaker_id": speaker,
+                    "text": text,
+                }],
+            },
+        },
+        "dispatch_via": "kie_dispatch",
+        "note": GOOGLE_EXCEPTION_RULE,
+    }
+    if scene is not None:
+        if not isinstance(scene, str):
+            raise VelvetError("LINE_MALFORMED", "scene must be a string")
+        envelope["request"]["input"]["scene"] = scene
+    if temperature is not None:
+        if (not isinstance(temperature, (int, float))
+                or isinstance(temperature, bool)
+                or not 0.0 <= temperature <= 2.0):
+            raise VelvetError(
+                "LINE_MALFORMED",
+                "temperature must be a number in 0..2, got %r"
+                % (temperature,))
+        envelope["request"]["input"]["temperature"] = temperature
+    if timeout is not None:
+        if (not isinstance(timeout, (int, float))
+                or isinstance(timeout, bool) or timeout <= 0):
+            raise VelvetError(
+                "LINE_MALFORMED",
+                "timeout must be a positive number of seconds, got %r"
+                % (timeout,))
+        envelope["request"]["timeout"] = timeout
+    return envelope
 
 
 # ------------------------------------------------------- sung-under mix plan --
@@ -591,6 +760,13 @@ __all__ = [
     "EFFECT_BAN",
     "GOOGLE_VOICES",
     "GOOGLE_EXCEPTION_RULE",
+    "GEMINI_TTS_BY_GENDER",
+    "GEMINI_TTS_FALLBACK_MODEL",
+    "GEMINI_TTS_MAX_TURN_CHARS",
+    "GEMINI_TTS_MODEL_PREFIX",
+    "GEMINI_TTS_MODEL_SUFFIX",
+    "GEMINI_TTS_SCHEMA_VERSION",
+    "SKILL74_TOOL",
     "LEGACY_VELVET_IDS",
     "LIPSYNC_SCHEMA",
     "MIN_SUNG_HEADROOM_DB",
@@ -608,9 +784,11 @@ __all__ = [
     "VOICE_REF_DB",
     "assign_google_voices",
     "build_d17_report",
+    "build_skill74_tts_request",
     "check_effects",
     "choice_card_voice_field",
     "gate_before_assembly",
+    "gemini_tts_model_for",
     "google_allowed",
     "lipsync_input_check",
     "normalize_voice_choice",
