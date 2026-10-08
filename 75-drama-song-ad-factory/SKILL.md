@@ -88,6 +88,23 @@ Every envelope carries `schema_version` = `blackceo.intake-preflight/envelope/v1
    reset the ledger, create a fresh campaign to dodge parked state, or
    spend beyond the recorded ceiling.
 
+## Captions and protected names (Part H, H7)
+
+Captions are the approved lyric sheet's own words, timed by the Suno
+timestamps. Speech-to-text is never a caption text source. Character and
+brand names (for example Stale, Stop Stale) are protected words:
+
+- When the lyric sheet is BUILT, the lyric writer may not change a protected
+  name or rewrite a packet line (`core/protected_names.py::check_sheet`,
+  called by `lyric_writer.validate_lyrics` and by
+  `music_director.build_generate_request(packet_lines=..., protected=...)`,
+  so no Suno request is built from a bad sheet).
+- The words check rejects a take where Suno sang a protected name wrong
+  (`music_qc.check_song_qc(..., protected=...)`).
+- Build captions with `protected_names.build_captions(sheet, aligned_words)`;
+  QC fails any caption mismatch (`delivery_variants.checks.check_captions(...,
+  protected=...)`): "the house went still" for "Stale" is a FAIL.
+
 ## Paid generation (what this skill may do)
 
 - Music/lyrics/vocals: Suno via Skill 68 (`68-kie-audio`) — Market
