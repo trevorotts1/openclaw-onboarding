@@ -4,11 +4,21 @@ Every shot carries all 14.2 fields and binds to lyric_line_ids from the
 W2-08 timing map (directive 12.4 shape; fixture timing.json acceptable).
 bind_plan() fails closed: empty plans, duplicate ids, unbound lines and
 windows that do not cover their lines are rejected, never coerced.
+
+E2 (manual Part E): mark_on_beats() sets beat_cut=true on every shot
+whose song_start aligns within BEAT_TOLERANCE_S (0.25 s) of a timing-map
+beat — the assembler honors transition:none only on those boundaries.
 """
 from __future__ import annotations
 
 SCHEMA_VERSION = "1.0.0"
 TOOL_VERSION = "1.0.0"
+
+# E2: a cut is planner-marked on-beat when its song_start (start_s) aligns
+# within 0.25 s of a timing-map beat. Beats come from the timing map's
+# "beats" list when present, else its beat grid (bpm), else lyric line
+# starts (they are the song's musical anchors the planner already binds).
+BEAT_TOLERANCE_S = 0.25
 
 # Directive 14.2: every shot record carries at least these fields.
 SHOT_FIELDS = (
@@ -213,3 +223,64 @@ def bind_plan(shots, timing, contracts=None):
     return {"outcome": "ok", "reason_code": "plan-bound",
             "shots": [s["shot_id"] for s in shots], "bindings": bindings,
             "duration_seconds": t["duration_seconds"]}
+
+
+def _timing_beats(timing):
+    """E2: beat timestamps from the bound timing map.
+
+    Precedence: explicit beats list (top-level or per-section), then beat
+    grid from bpm (0-start grid), then lyric line starts. Deduped, sorted.
+    """
+    if not isinstance(timing, dict):
+        return []
+    lines = timing.get("lines")
+    if isinstance(lines, dict):
+        # already normalized by load_timing_map: line starts are the
+        # musical anchors available
+        return sorted({b["start"] for b in lines.values()
+                       if isinstance(b, dict) and _is_num(b.get("start"))})
+    beats = [b for b in (timing.get("beats") or []) if _is_num(b) and b >= 0]
+    bpm = timing.get("bpm")
+    line_starts = []
+    for sec in timing.get("sections", []) or []:
+        if not isinstance(sec, dict):
+            continue
+        if sec.get("bpm") is not None and bpm is None:
+            bpm = sec.get("bpm")
+        if sec.get("beats"):
+            beats = [b for b in (sec["beats"] or []) if _is_num(b) and b >= 0]
+        for ln in sec.get("lyrics", []) or []:
+            if isinstance(ln, dict) and _is_num(ln.get("start")):
+                line_starts.append(ln["start"])
+    if not beats and bpm:
+        try:
+            period = 60.0 / float(bpm)
+        except (TypeError, ValueError, ZeroDivisionError):
+            period = 0.0
+        dur = timing.get("duration_seconds")
+        if period > 0 and _is_num(dur) and dur > 0:
+            beats = [i * period for i in range(int(dur / period) + 1)]
+    return sorted({float(b) for b in (beats or line_starts)
+                   if _is_num(b) and b >= 0})
+
+
+def mark_on_beats(shots, timing, tolerance_s=BEAT_TOLERANCE_S):
+    """E2: set beat_cut=true on shots whose song_start sits on a beat.
+
+    timing: raw 12.4 map or the normalized load_timing_map output.
+    Mutates and returns the shots list. Each marked shot gains
+    beat_cut=True and beat_cut_delta_s (|start - nearest beat|).
+    """
+    beats = _timing_beats(timing)
+    for sh in shots:
+        if not isinstance(sh, dict) or not _is_num(sh.get("song_start")):
+            continue
+        start = float(sh["song_start"])
+        if not beats:
+            sh["beat_cut"] = False
+            continue
+        nearest = min(beats, key=lambda b: abs(b - start))
+        delta = abs(nearest - start)
+        sh["beat_cut"] = bool(delta <= tolerance_s)
+        sh["beat_cut_delta_s"] = round(delta, 6)
+    return shots
