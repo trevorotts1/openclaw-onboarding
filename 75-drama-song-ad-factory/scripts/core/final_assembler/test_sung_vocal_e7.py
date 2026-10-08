@@ -54,7 +54,60 @@ class SungVocalE7(unittest.TestCase):
                                    profile="all_suno")
         self.assertEqual(out["outcome"], "PASS")
         self.assertEqual(out["reason_code"], "SUNG_COVERAGE_OK")
-        self.assertAlmostEqual(out["sung_coverage"], 0.75, places=3)
+        # G5: timing-map time is LABELLED time, never a sung %.
+        self.assertIsNone(out["sung_coverage"])
+        self.assertAlmostEqual(out["labelled_coverage_pct"], 75.0, places=2)
+        self.assertIn("NOT measured", out["labelled_source"])
+
+    def test_g5_labelled_time_never_reported_as_sung(self):
+        """G5: without a measured detector run, no sung % may be printed."""
+        out = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
+                                   profile="all_suno")
+        for field in ("sung_pct", "sung_share", "sung_share_pct"):
+            self.assertNotIn(field, out)
+        rec = SVG.record_for_gate(out, RUN_ID, STAGE, REVIEWER,
+                                  "sess-e7", "qc-checker")
+        self.assertIn("LABELLED", rec["evidence"]["summary"])
+        self.assertIn("not measured", rec["evidence"]["summary"])
+        self.assertNotIn("MEASURED", rec["evidence"]["summary"])
+
+    def test_g5_measured_detector_drives_verdict_and_receipt(self):
+        """G5: with a G3 detector record, the sung % is source=measured."""
+        det = {"tool": "singing_detector.v1", "tool_version": "1.0.0",
+               "sung_share": 0.02, "confidence": 0.95, "measured": True}
+        out = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
+                                   profile="all_suno",
+                                   detector_result=det)
+        # 2% measured sung < 70% floor -> FAIL even though labels say 75%.
+        self.assertEqual(out["outcome"], "FAIL")
+        self.assertEqual(out["reason_code"], "SUNG_COVERAGE_LOW")
+        self.assertEqual(out["sung_pct"]["source"], "measured")
+        self.assertEqual(out["sung_pct"]["detector"], "singing_detector.v1")
+        self.assertEqual(out["sung_pct"]["confidence"], 0.95)
+        rec = SVG.record_for_gate(out, RUN_ID, STAGE, REVIEWER,
+                                  "sess-e7", "qc-checker")
+        self.assertIn("MEASURED", rec["evidence"]["summary"])
+        self.assertIn("singing_detector.v1", rec["evidence"]["summary"])
+
+    def test_g5_measured_all_spoken_fails_vocal_missing(self):
+        """The failed-ad shape, measured honestly: labels say 75% sung,
+        detector says 0% -> VOCAL_MISSING, never the label number."""
+        det = {"tool": "singing_detector.v1", "tool_version": "1.0.0",
+               "sung_share": 0.0, "confidence": 0.95, "measured": True}
+        out = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
+                                   profile="all_suno",
+                                   detector_result=det)
+        self.assertEqual(out["outcome"], "FAIL")
+        self.assertEqual(out["reason_code"], "VOCAL_MISSING")
+        self.assertEqual(out["sung_pct"]["sung_pct"], 0.0)
+
+    def test_g5_labelled_fields_boxed_on_verdict(self):
+        out = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
+                                   profile="all_suno")
+        self.assertIn("labelled_source", out)
+        self.assertIn("labelled_sung_seconds", out)
+        self.assertIn("labelled_coverage_pct", out)
+        self.assertAlmostEqual(out["labelled_sung_seconds"], 45.0, places=2)
 
     def test_voiceover_only_master_fails_vocal_missing(self):
         out = SVG.check_sung_vocal(timing=_timing(0.0, 60.0),

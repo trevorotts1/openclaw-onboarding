@@ -637,13 +637,44 @@ def _run(cmd, timeout=600):
         raise RuntimeError(f"FFMPEG_UNAVAILABLE: {exc}") from exc
 
 
+def _receipt_evidence():
+    """G5: the honest-receipt module (singing_detector.receipt_evidence).
+
+    ponytail: imported lazily so the assembler stays runnable before G3's
+    package lands on main; when the train resolve merges G3 this is the
+    only import site to flip to a top-level import.
+    """
+    global _RE
+    if _RE is None:
+        core_dir = os.path.dirname(os.path.abspath(__file__))
+        core_dir = os.path.dirname(core_dir)
+        if core_dir not in sys.path:
+            sys.path.insert(0, core_dir)
+        try:
+            from singing_detector import receipt_evidence as _mod
+        except ImportError:      # core/ imported as a top-level package
+            from singing_detector import receipt_evidence as _mod
+        _RE = _mod
+    return _RE
+
+
+_RE = None
+
+
 def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
-             timeout=None, base_dir=".", dry_run=False):
+             timeout=None, base_dir=".", dry_run=False, detector_result=None):
     """Full render: validate -> preflight -> plan -> ffmpeg -> verify.
 
     Returns receipt dict (also written to <output>.receipt.json unless
     dry_run). Post-render ffprobe check: |A-V| and |out - planned|
     each within 1 frame; else outcome error with AV_DRIFT/PLAN_DRIFT.
+
+    G5 honest receipts (Trevor order 1135, Part G): when a sung/spoken
+    % rides the receipt it MUST be the measured block from the G3
+    singing detector (``detector_result``) -- source=measured, detector
+    name + confidence. Label time is boxed under labelled_* fields and
+    never reported as sung. A label-shaped sung % in ``receipt_sung_pct``
+    is refused (fail-closed), never written.
 
     M7: timeout=None means "let lane_size.py (or the Part D fallback)
     bound the render from the plan's own duration" instead of the old
@@ -771,6 +802,14 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                "outcome": "ok", "reason_code": "ASSEMBLED",
                "next_action": "QC per directive 17.5 (independent reviewer)",
                "evidence": evid, "state_version": 0}
+    # G5: a sung % on the receipt only via the measured detector block.
+    if detector_result is not None:
+        try:
+            receipt["sung_pct"] = _receipt_evidence().measured_share(
+                detector_result)
+        except ValueError as exc:
+            return _fail("DISHONEST_SUNG_PCT", next_action=str(exc),
+                         evidence={"detector_result": detector_result})
     try:
         with open(str(output) + ".receipt.json", "w",
                   encoding="utf-8") as fh:
@@ -791,14 +830,26 @@ def main(argv=None):
     ap.add_argument("--timeout", type=int, default=None,
                     help="render cap in seconds; default: lane_size.py "
                          "or Part D max(600, 2 x output s x 1080p factor)")
+    ap.add_argument("--detector-result", default=None,
+                    help="path to the G3 singing-detector result JSON; "
+                         "the only legal source of a receipt sung %% (G5)")
     args = ap.parse_args(argv)
     if not shutil.which(args.ffmpeg) or not shutil.which(args.ffprobe):
         print(json.dumps(_fail("PREREQ_MISSING",
                                next_action="install ffmpeg+ffprobe")))
         return 3
+    det = None
+    if args.detector_result:
+        try:
+            with open(args.detector_result, encoding="utf-8") as fh:
+                det = json.load(fh)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(json.dumps(_fail("DETECTOR_RESULT_UNREADABLE",
+                                   next_action=str(exc))))
+            return 1
     receipt = assemble(args.timeline, args.output, ffmpeg=args.ffmpeg,
                        ffprobe=args.ffprobe, timeout=args.timeout,
-                       dry_run=args.dry_run)
+                       dry_run=args.dry_run, detector_result=det)
     print(json.dumps(receipt, indent=2))
     return EXIT["ok"] if receipt["outcome"] == "ok" else EXIT["error"]
 
