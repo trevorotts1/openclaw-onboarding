@@ -9,7 +9,7 @@ triggers:
   - "build a knowledge graph of my company"
   - "knowledge graph"
   - "/graphify"
-version: 2.0.0
+version: 2.0.1
 ---
 
 # Skill 43: Graphify Knowledge Graph
