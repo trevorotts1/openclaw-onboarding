@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v26.4.7"
+ONBOARDING_VERSION="v26.4.8"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2024,7 +2024,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v26.4.7 - safe_json_edit
+# v26.4.8 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -9794,7 +9794,12 @@ PY
       [ -d "$_gskill" ] || continue
       _gname="$(basename "$_gskill")"
       case "$_gname" in *ARCHIVED*) continue ;; esac
-      if _greason="$(obs_verify_skill "$_gname" "$SKILLS_DIR")"; then
+      # INF002: per-skill QC deadline override. Skill 06 (ghl-install-pages) QC runs live
+      # builder checks and legitimately needs 10 minutes; every other skill keeps the
+      # default (OBS_QC_TIMEOUT_SECONDS, else 180 s) so a hung QC still cannot stall the roll.
+      _g_qc_to="${OBS_QC_TIMEOUT_SECONDS:-}"
+      case "$_gname" in 06-ghl-install-pages) _g_qc_to=600 ;; esac
+      if _greason="$(OBS_QC_TIMEOUT_SECONDS="$_g_qc_to" obs_verify_skill "$_gname" "$SKILLS_DIR")"; then
         echo "    ✓ verified-installed: $_gname"
       else
         echo "    ✗ NOT verified: $_gname -- ${_greason}"

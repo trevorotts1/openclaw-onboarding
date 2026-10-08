@@ -3,7 +3,7 @@
 > **N24 — Use the teach-yourself-protocol (Skill 01):** Before any action in this skill, the installing sub-agent MUST read every file under skills/01-teach-yourself-protocol/ and follow its procedural read-order. No shortcuts.
 
 
-**Skill version:** v2.0.0 (canonical env-var migration + MCP-first routing)
+**Skill version:** v2.1.0 (canonical env-var migration + MCP-first routing + plan 6.15 weekly drama-song setup)
 
 ---
 
@@ -437,6 +437,34 @@ cp ~/.openclaw/skills/35-social-media-planner/scripts/content-calendar.example.j
 | `platforms` | yes | Same list `run-publishing-cycle.sh --platforms` accepts. |
 | `schedule` | no  | `"auto"`, `"now"`, or ISO 8601 timestamp. |
 
+### Step 8.6: (v2.1.0) Weekly drama-song setup (plan 6.15 — optional, fail-soft)
+
+The planner can ship **one 9:16 drama song ad per week** from the Theme of the
+Week. The asking is done by the setup block, the style change by the Saturday
+line, and the generation by `core/smp/weekly_step/` — none of it by heartbeat
+prose.
+
+1. **Answer the First-Run Protocol's drama-song block** (Skill 35 setup
+   questions, `core/smp/initial_questions/`). Defaults are pre-selected:
+   weekly **yes** (only while Skill 74 is active), **Lifelike 3D**,
+   **Soul Ballad**, **All Suno**, **60 seconds** (90 optional), weekly CTA +
+   link defaulting to the planner's own weekly action link.
+2. **Confirm the style file** was written to
+   `~/.openclaw/workspace/social-media-planner/drama-song-style.json`
+   (`enabled, look, music, voice, length, cta_text, cta_link, updated_at`,
+   `schema_version` present).
+3. **Leave the cadence to the crons.** The Monday `weekly-batch.sh` cron runs
+   the ad; the Saturday `skill35-weekly-theme` cron asks for the theme and the
+   `Drama song of the week: keep <style> or change it?` line. Do NOT write a
+   drama-song task into HEARTBEAT.md — the **FURNACE RULE** in Step 9 applies
+   to this work exactly as it does to the theme request: heartbeat prose fires
+   on every tick with no day-of-week gate.
+4. **Leave the KIE gate alone.** With Skill 74 not in active mode the weekly
+   step writes `drama-song-skipped.json`, exits 0 and tells the client media
+   generation is not switched on. That is a normal weekly outcome, not an
+   install failure, and no private KIE client may be configured as a way
+   around it.
+
 ### Step 9: Register the weekly theme cron (AUTOMATED — FAIL-LOUD)
 
 > **FURNACE RULE — HARD BLOCK:** Do NOT add the Saturday theme-request task to HEARTBEAT.md. The agent reads HEARTBEAT.md on every heartbeat tick. Any recurring real-work task written there fires on every tick (potentially every 5–30 minutes) with no day-of-week gate, burning the metered model continuously. This is the proven root cause of the fleet-wide heartbeat token furnace. The correct enforcement mechanism is a hard cron.
@@ -614,6 +642,7 @@ Send the client this exact summary:
 - [ ] `register-weekly-cron.sh` exited 0 (Step 9 — hard fail if not)
 - [ ] QC assert: `openclaw cron list | grep -c skill35-weekly-theme` == 1 (exactly one entry, main target, `0 8 * * 6`)
 - [ ] HEARTBEAT.md does NOT contain the Saturday 8:00 AM theme-request block (ungated block removed if present)
+- [ ] Drama-song style file written to `~/.openclaw/workspace/social-media-planner/drama-song-style.json` (or the client declined the weekly ad — both are acceptable; never a HEARTBEAT.md task)
 - [ ] QC.md run with score 8.5/10+ (or loop completed)
 - [ ] `qc-skill35.sh` exit 0 (if present)
 - [ ] Client confirmation message sent

@@ -288,7 +288,14 @@ def _proof_keyless_paid_parks(manifest, tmp, oc_root) -> list:
     proceed: --recover PARKS it as AF-FBAD-KIE-BALANCE; the legacy --phase path aborts
     (exit 4) in phase0_preflight."""
     f = []
-    saved = os.environ.get("KIE_API_KEY")
+    # Hermetic (INF002): hide every store + alias so a box that holds a REAL key can
+    # never answer a "keyless" proof (that made the installer fail on key boxes).
+    sh = abc._secret_helper()
+    names = sh.alias_list("KIE_API_KEY") if sh else ["KIE_API_KEY"]
+    saved_env = {n: os.environ.pop(n) for n in names if n in os.environ}
+    saved_files = list(sh.ENV_FILE_CANDIDATES) if sh else []
+    if sh:
+        sh.ENV_FILE_CANDIDATES[:] = []
     try:
         for label, val in (("unset", None), ("placeholder", "YOUR_CLIENT_KIE_API_KEY_HERE")):
             if val is None:
@@ -309,10 +316,10 @@ def _proof_keyless_paid_parks(manifest, tmp, oc_root) -> list:
                 if e.code != 4:
                     f.append(f"(F:{label}) phase0_preflight exit {e.code}, expected 4.")
     finally:
-        if saved is None:
-            os.environ.pop("KIE_API_KEY", None)
-        else:
-            os.environ["KIE_API_KEY"] = saved
+        os.environ.pop("KIE_API_KEY", None)
+        os.environ.update(saved_env)
+        if sh:
+            sh.ENV_FILE_CANDIDATES[:] = saved_files
     return f
 
 

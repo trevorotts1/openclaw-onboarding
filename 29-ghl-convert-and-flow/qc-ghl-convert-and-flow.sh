@@ -18,6 +18,13 @@ warn_only(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=
 if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u; fi
 : "${GOHIGHLEVEL_API_KEY:=${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}}"
 : "${GOHIGHLEVEL_LOCATION_ID:=${GHL_LOCATION_ID:-}}"
+# Shared credential lookup (INF002): location id under every name in every store; else the
+# Convert and Flow private integration token -> its location through the GHL API; neither
+# -> the skill installs with a note (below), never a failure.
+for _g in "$(dirname "$0")/../shared-utils/ghl-creds.sh" "$HOME/.openclaw/skills/shared-utils/ghl-creds.sh" "/data/.openclaw/skills/shared-utils/ghl-creds.sh"; do
+  [ -f "$_g" ] && { . "$_g"; break; }
+done
+set +u; command -v ghl_creds_resolve >/dev/null 2>&1 && ghl_creds_resolve; set -u
 
 # Self-locate the skill dir (works in both repo and installed layouts).
 S29="$SKILLS_DIR_DEFAULT/29-ghl-convert-and-flow"
@@ -28,6 +35,15 @@ echo "═══ Skill 29 — GHL Convert and Flow API — Install QC ═══"
 echo ""
 assert "Skill 29 folder present" "[ -d \"$S29\" ]"
 assert "references/ subfolder present (Tier 3 lookup files)" "[ -d \"$S29/references\" ]"
+# Neither a location id nor a pit- token exists (or the token's location is unreadable):
+# the skill is installed, with ONE note naming what is needed. The checks below need an
+# account, so they are skipped rather than failed.
+if [ "${GHL_CREDS_STATUS:-}" = "missing" ] || [ "${GHL_CREDS_STATUS:-}" = "unresolved" ]; then
+  yellow "  ⚠ WARN — $GHL_CREDS_NOTE"; WARN=$((WARN+1))
+  echo ""
+  echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
+  [ $FAIL -gt 0 ] && { red "Skill 29 QC FAILED"; exit 1; } || { green "Skill 29 QC PASS (installed with a note)"; exit 0; }
+fi
 assert "GOHIGHLEVEL_API_KEY (PIT) resolved"  "[ -n \"$GOHIGHLEVEL_API_KEY\" ]"
 assert "GOHIGHLEVEL_LOCATION_ID resolved"    "[ -n \"$GOHIGHLEVEL_LOCATION_ID\" ]"
 assert "Token has pit- prefix (documented PIT format)" "[[ \"$GOHIGHLEVEL_API_KEY\" == pit-* ]]"

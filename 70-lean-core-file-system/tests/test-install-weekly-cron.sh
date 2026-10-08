@@ -121,5 +121,22 @@ unset FAKE_MODELS_FAIL
 
 expect "unknown argument is a usage error" 3 "USAGE" -- --bogus
 
+# INF002: no agent named main -> the box's primary agent, never a failure.
+mkdir -p "$ROOT/oc"
+agent_cfg() { printf '%s\n' "$1" > "$ROOT/oc/openclaw.json"; }
+reset; models "$GOOD_MODELS"
+agent_cfg '{"agents":{"entries":{"alpha":{},"jarvis":{"default":true}}}}'
+expect "no main: the agent marked default is used" 0 "agent=jarvis" -- --apply
+[ "$(job_field agentId)" = "jarvis" ] && ok "job stored under the default agent" || bad "job agent is not jarvis"
+reset; agent_cfg '{"agents":{"entries":{"alpha":{},"beta":{}}}}'
+expect "no main, no default: the first agent is used" 0 "agent=alpha" -- --dry-run
+reset; agent_cfg '{"agents":{"list":[{"id":"zed"},{"id":"main"}]}}'
+expect "main present (legacy list) stays main" 0 "agent=main" -- --dry-run
+reset; agent_cfg '{"agents":{"entries":{"alpha":{}}}}'
+expect "explicit --agent still wins" 0 "agent=beta" -- --dry-run --agent beta
+reset; agent_cfg 'not json'
+expect "unreadable config falls back to main" 0 "agent=main" -- --dry-run
+rm -f "$ROOT/oc/openclaw.json"
+
 echo "install-weekly-cron battery: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -1,5 +1,9 @@
 # Changelog — Skill 48 (Facebook & Instagram Ad Generator)
 
+## [2.0.8] - 2026-10-08 - INF002
+
+- Installer installs with or without a KIE key: a keyless box gets one note (install log + install-status.txt), a box with a key gets none. The self-test no longer fails on a box that holds a real key (the keyless proof now hides every store). The KIE lookup reads every store and alias (adds workspace/.env, workspace/secrets/.env, clawd/secrets, service-env, /home/node root), skips a placeholder in favour of a real key in another store, and the balance check stays a run-time check (INF002 A, G).
+
 ## v2.0.6 - 2026-10-06 - feat: image prompt richness uses the rule 12 band
 
 - `ad_build_check._chk_prompt_richness` no longer carries `PROMPT_MIN_CHARS` 3500 and `PROMPT_MAX_CHARS` 18000. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. Each prompt in the S4 receipt is measured for its image model (`IMAGE_MODEL_DEFAULT` when the receipt names none).

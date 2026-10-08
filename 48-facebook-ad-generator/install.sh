@@ -22,6 +22,7 @@ need "${SKILL_DIR}/scripts/ad_build_check.py"
 need "${SKILL_DIR}/scripts/ad_sync_check.py"
 need "${SKILL_DIR}/scripts/ad_gate_integrity_check.py"
 need "${SKILL_DIR}/scripts/test_ad_preflight.py"
+need "${SKILL_DIR}/scripts/kie_install_note.py"
 need "${SKILL_DIR}/test-fixtures/make-ad-fixtures.sh"
 need "${SKILL_DIR}/tools/ghl_media.py"
 need "${REPO_ROOT}/universal-sops/fb-ad-craft/AD-PIPELINE-MANIFEST.json"
@@ -47,13 +48,19 @@ python3 "${SKILL_DIR}/scripts/ad_sync_check.py" >/dev/null
 python3 "${SKILL_DIR}/scripts/test_ad_preflight.py" >/dev/null
 python3 "${SKILL_DIR}/scripts/test_ad_recovery.py" >/dev/null
 python3 "${SKILL_DIR}/scripts/ad_gate_integrity_check.py" >/dev/null
+python3 "${SKILL_DIR}/scripts/test_kie_install_note.py" >/dev/null 2>&1
 echo "  [ok]   sync + negative-suite + recovery proof + Guard A all green"
 
 # 4) Install QC.
 bash "${SKILL_DIR}/qc-facebook-ad-generator.sh"
 
+# 5) KIE key note (INF002). The skill INSTALLS with or without a key; a missing key is
+# one honest note (install log + install-status.txt), never a failure. The Kie credit
+# balance is a RUN-TIME check (ad_director Phase-0), not an install blocker.
+python3 "${SKILL_DIR}/scripts/kie_install_note.py" "${SKILL_DIR}/install-status.txt" || true
+
 echo ""
 echo "Skill 48 installed. Reminders:"
-echo "  - Generation uses the CLIENT's own KIE_API_KEY (never the operator's)."
+echo "  - Generation uses the CLIENT's own KIE_API_KEY (never the operator's); no key at install is fine, it is checked when a run starts."
 echo "  - Hosting uses the CLIENT's own GoHighLevel LOCATION PIT (medias.write)."
 echo "  - PLAI is the only ad path; no direct Meta API."

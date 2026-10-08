@@ -6,7 +6,8 @@ AF-AE-COMMINGLE (ENGINE-MANIFEST autofail, py_symbol "fingerprint"). This is the
 provisioning gate that provision-anthology-client.sh runs FIRST, before any field
 create, pipeline provision, Drive touch, or webhook mint.
 
-WHAT IT PROVES (all offline, deterministic, no network call -- the live create-feasibility
+WHAT IT PROVES (offline and deterministic; the one network call is the shared lookup's
+location read, made only when no location id is stored but a pit- token is -- the live create-feasibility
 probe of the PIT write scope is a DIFFERENT gate, AF-AE-PIT-SCOPE, owned by
 provision-anthology-client.sh):
 
@@ -726,9 +727,28 @@ def scan_inline_credentials(paths, skip_dirs=None):
 # THE GATE. Orchestrates resolution -> pairing -> fingerprint -> inline scan and returns
 # (exit_code, report). Injectable environ / stores / scan_paths make it self-testable.
 # ---------------------------------------------------------------------------
+def _load_shared_lookup():
+    """INF002: shared-utils/ghl_creds.resolve (every store, every location name, then the
+    pit- token -> its location through the GHL API), or None when it is not installed."""
+    import importlib
+    cands = [str(p / "shared-utils") for p in Path(__file__).resolve().parents]
+    cands += [os.environ.get("OPENCLAW_SHARED_UTILS", ""),
+              os.path.expanduser("~/.openclaw/skills/shared-utils"),
+              "/data/.openclaw/skills/shared-utils", "/home/node/.openclaw/skills/shared-utils"]
+    for c in cands:
+        if c and (Path(c) / "ghl_creds.py").is_file():
+            if c not in sys.path:
+                sys.path.insert(0, c)
+            try:
+                return importlib.import_module("ghl_creds").resolve
+            except Exception:  # noqa: BLE001 - the gate must still run without it
+                return None
+    return None
+
+
 def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
          do_scan=True, include_informational=False, expected=None, deny_fps=None,
-         require_delivery=False, require_families=None):
+         require_delivery=False, require_families=None, shared_lookup=None):
     environ = os.environ if environ is None else environ
     if store_paths is None:
         store_paths = resolve_stores(extended=extended_stores)
@@ -768,6 +788,26 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
             resolution_report[fam] = {
                 "required": False, "present": res.present, "label": res.label,
                 "source": res.source, "presence": _mask(res.value)}
+
+    # INF002: a Convert and Flow pair member this gate's own stores did not carry is looked
+    # up by the shared lookup (every store, every location name; no location stored -> the
+    # pit- token's own location via the GHL API). Only the CLI passes it, so gate() stays
+    # offline for the self-test. Nothing found -> still missing, the caller installs with a note.
+    gap = [f for f in ("convert_and_flow_pit", "convert_and_flow_location")
+           if not resolutions_by_family[f].present]
+    if gap and shared_lookup is not None:
+        try:
+            sl = shared_lookup()
+        except Exception:  # noqa: BLE001
+            sl = None
+        for fam, key, src_key in (("convert_and_flow_location", "location_id", "location_source"),
+                                  ("convert_and_flow_pit", "pit", "pit_source")):
+            if fam in gap and sl and sl.get(key):
+                res = Resolution(fam, "shared-lookup", sl.get(src_key) or "shared-lookup",
+                                 True, sl[key])
+                resolutions_by_family[fam] = res
+                resolution_report[fam].update(
+                    present=True, label=res.label, source=res.source, presence=_mask(res.value))
 
     # Required-label check (exit 2 candidate) -- the base pair AND any promoted secret.
     missing = [fam for fam, _a in active_required
@@ -1279,6 +1319,29 @@ def self_test():
     print("  [20] allowlist-label consistency: match->PASS, mismatch->exit4 "
           "ALLOWLIST_LABEL_MISMATCH (1 vs 2), one-label/neither->clean: OK")
 
+    # 21. INF002 shared lookup: pit- token present but no location in this gate's stores ->
+    #     the shared lookup supplies the location (stored under another name, or read from
+    #     the GHL API) and the gate PASSES; neither found -> still exit 2 (the installer
+    #     turns that into an install-with-a-note). The lookup result never enters the report.
+    no_loc = {"CONVERT_AND_FLOW_PIT": real_pit, "ANTHOLOGY_GATE_TOKEN_SECRET": gate_token}
+    code, rep = gate(environ=dict(no_loc), store_paths=[], do_scan=False)
+    assert code == EX_MISSING and rep["missing"] == ["convert_and_flow_location"], rep
+    code, rep = gate(environ=dict(no_loc), store_paths=[], do_scan=False,
+                     shared_lookup=lambda: {"location_id": real_loc,
+                                            "location_source": "api:/locations/search"})
+    assert code == EX_OK and rep["verdict"] == "PASS", rep
+    assert rep["resolutions"]["convert_and_flow_location"]["label"] == "shared-lookup", rep
+    assert real_loc not in json.dumps(rep), "the looked-up location leaked into the report"
+    code, rep = gate(environ=dict(no_loc), store_paths=[], do_scan=False,
+                     shared_lookup=lambda: {"location_id": None, "pit": None})
+    assert code == EX_MISSING and rep["missing"] == ["convert_and_flow_location"], rep
+    code, rep = gate(environ={"ANTHOLOGY_GATE_TOKEN_SECRET": gate_token}, store_paths=[],
+                     do_scan=False)
+    assert code == EX_MISSING and set(rep["missing"]) == {
+        "convert_and_flow_pit", "convert_and_flow_location"}, rep
+    print("  [21] shared lookup: pit-only + lookup->PASS, nothing found->exit 2 "
+          "(install-with-note), no leak: OK")
+
     print("[caf_credential_gate] self-test: PASS")
     return EX_OK
 
@@ -1366,6 +1429,7 @@ def main(argv=None):
             require_delivery=args.require_delivery,
             require_families=({"anthology_intake_hook_secret"}
                               if args.require_anthology_hook_secret else None),
+            shared_lookup=_load_shared_lookup(),
         )
 
         if args.json:

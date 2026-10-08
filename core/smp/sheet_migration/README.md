@@ -155,8 +155,10 @@ layout, so all three pass.
 * The n8n row-append payload ships staged here; Skill 35's own
   `config/n8n/social-planner-row-append.json` is still stamped 1.1.0 and is not
   this unit's to edit.
-* Docs, SOPs, QC shell scripts and the weekly cycle scripts: SMP-W2-U3
-  (`core/smp/docs/`).
+* Docs, SOPs, QC shell scripts and the weekly cycle scripts: shipped by
+  SMP-W2-U3 through the batch train into `35-social-media-planner/` (the
+  staged `core/smp/docs/` copy is deleted after landing — one copy lives in
+  Skill 35).
 
 ## Run the tests
 

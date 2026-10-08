@@ -1232,15 +1232,17 @@ def real_kie_key(raw):
 
 
 def resolve_kie_key(log=None):
-    """KEF001: the box's KIE key from process env, then every env store the shared
-    resolver knows (secrets/.env, .env, workspace/secrets.env) under any alias
-    (KIE_API_KEY / KIE_AI_KEY / KIEAI_API_KEY ...). Placeholder -> None. Logs only the
-    source (file/name) through ``log``, never the value."""
+    """KEF001/INF002: the box's KIE key from the process env, then every store the
+    shared resolver knows (secrets/.env, .env, workspace/secrets.env, workspace/.env,
+    workspace/secrets/.env, clawd/secrets/.env, service-env/*.env; Mac, /data and
+    /home/node roots) under any alias (KIE_API_KEY / KIE_AI_KEY / KIEAI_API_KEY ...).
+    A placeholder is skipped in favour of a real key in any other store; none -> None.
+    Logs only the source (file/name) through ``log``, never the value."""
     sh = _secret_helper()
     if not sh:
         return None
-    val, src = sh.resolve_secret_with_source("KIE_API_KEY")
-    if val and sh.looks_like_real_key(val, "KIE_API_KEY"):
+    val, src = sh.resolve_real_secret_with_source("KIE_API_KEY")
+    if val:
         if log:
             log("KIE key resolved from " + src)
         return val

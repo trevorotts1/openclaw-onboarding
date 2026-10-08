@@ -2,7 +2,7 @@
 
 Simple on purpose. One independent checker (never the builder) answers these 11 questions on the FINISHED file, each with a MEASURED number or a frame, written into the receipt. A "no" sends back ONLY the failing part to be redone; it never cancels the ad.
 
-1. SUNG? If the client chose a sung style, does the singing detector (measured on the vocal stem, never section labels) find real singing? Measured sung % and spoken % shown.
+1. SUNG? If the client chose a sung style, does the singing detector (measured on the vocal stem, never section labels) find real singing? Measured spoken % of runtime (target 22.5, band 20-25) and sung % of voice time, sung / (sung + spoken) (target 77.5, band 75-80), shown; a music-only intro, gaps and the end card never count against singing. The only hard reject is no sung stretch of 6 s.
 2. ON TARGET? Is every share (sung, spoken) and the length within Trevor's band of its target (see question 11): within 5 points accept, over 5 up to 10 accept WITH A FLAG, over 10 adjust and regenerate (bounded) and redo.
 3. WORDS? Is every script word present, in order, with nothing invented (diff shown)?
 4. FACES? For each shot, one sampled frame: does the face's emotion match its line (no smiling under a pain line)? Frame + line listed.
