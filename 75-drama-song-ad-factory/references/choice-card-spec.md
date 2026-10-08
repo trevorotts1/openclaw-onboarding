@@ -135,7 +135,9 @@ Owner decision D10, superseded 2026-10-07, plan 6.3 and decision 33.
 
 Lip-sync is applied to **selected lines only** - three to four lines, about
 15 to 20 seconds per ad, chosen by the factory and listed on the approval
-card:
+card. Enforced at the final edit QC gate (Part E E6): at least 3 lip-sync
+lines, at least 15 s in a 60-90 s ad, scaling to at least 12% of runtime
+for longer or shorter ads:
 
 1. the most painful moment (`pain_peak` on the highest-scoring wound beat),
 2. the product line,

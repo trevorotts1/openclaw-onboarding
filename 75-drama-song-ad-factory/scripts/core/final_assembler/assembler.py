@@ -54,6 +54,11 @@ try:                                    # E1 module (this package)
 except ImportError:                     # direct-script fallback
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import fps_conform  # noqa: E402
+# E6 sibling checker (same package): the lip-sync coverage rule in code.
+try:
+    from .lipsync_coverage import check_lipsync_coverage
+except ImportError:  # direct script run from inside this directory
+    from lipsync_coverage import check_lipsync_coverage  # type: ignore
 
 TOOL_NAME = "final_assembler"
 TOOL_VERSION = "1.0.1"
@@ -226,6 +231,24 @@ def check_timeline_min_shot(tl, floor=None):
         sys.path.insert(0, core_dir)
     import shot_planner as sp
     return sp.validate_timeline_min_shot(tl, floor=floor)
+def lipsync_gate(plan):
+    """E6 final edit QC: lip-sync coverage on the planned timeline.
+
+    plan segments carry "lip_sync" markers from plan_timeline; the gate
+    counts distinct marked LINES as segments (each whole line one segment,
+    per E5's atomicity) and totals their snapped footage. Returns the
+    _fail receipt on a short ad, or None when coverage holds (or the plan
+    declares no lip-sync markers at all, which the QC review layer reads
+    as a FAIL via the emitted coverage report — never silently as none).
+    """
+    marked = [s for s in plan["segments"] if s.get("lip_sync")]
+    lines = len(marked)
+    total = sum(s["snapped_dur"] for s in marked)
+    res = check_lipsync_coverage(plan["total_dur"], lines, total)
+    if res["pass"]:
+        return None
+    return _fail(res["reason_code"], next_action=res["detail"],
+                 evidence=res["evidence"])
 
 
 def load_timeline(path):
@@ -263,6 +286,12 @@ def load_timeline(path):
         raise ValueError(
             "SEGMENT_TOO_SHORT: minimum shot length failed: "
             + "; ".join(min_shot_errs[:4]))
+        # E6: a optional per-segment lip-sync marker must be a boolean, so
+        # the coverage gate below counts exactly what the planner intended.
+        if not isinstance(s.get("lip_sync", False), bool):
+            raise ValueError(
+                f"TIMELINE_BAD_SEGMENT: segments[{i}].lip_sync must be "
+                "boolean")
     return tl
 
 
@@ -396,6 +425,9 @@ def plan_timeline(tl, base_dir=".", probe=None):
         if isinstance(lids, list) and lids:
             item["lip_sync_line_ids"] = list(lids)
         items.append(item)
+        items.append({"src": s["src"], "frames": frames,
+                      "snapped_dur": frames / fps, "transition": trans,
+                      "xfade_dur": xd, "lip_sync": bool(s.get("lip_sync"))})
     for i in range(1, len(items)):
         ov = round(items[i]["xfade_dur"] * fps)
         lo = min(items[i - 1]["frames"], items[i]["frames"])
@@ -667,13 +699,24 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
             plan.get("height", DEFAULT_HEIGHT))
     argv = build_argv(plan, output, ffmpeg)
+    # E6 lip-sync coverage result rides in every receipt; only a FAIL
+    # blocks the render. The dry-run receipt exists for exactly this.
+    cov = lipsync_gate(plan)
     if dry_run:
-        return {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
-                "tool_version": TOOL_VERSION, "command": "assemble",
-                "outcome": "ok", "reason_code": "DRY_RUN",
-                "next_action": "rerun without dry_run to render",
-                "evidence": {"argv": argv, "plan": plan,
-                             "timeout_s": timeout}, "state_version": 0}
+        out = {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
+               "tool_version": TOOL_VERSION, "command": "assemble",
+               "outcome": "ok", "reason_code": "DRY_RUN",
+               "next_action": "rerun without dry_run to render",
+               "evidence": {"argv": argv, "plan": plan,
+                            "timeout_s": timeout, "lipsync": cov},
+               "state_version": 0}
+        if cov is not None:  # blocked before spend, but evidence stays
+            out["outcome"] = "error"
+            out["reason_code"] = cov["reason_code"]
+            out["next_action"] = cov["next_action"]
+        return out
+    if cov is not None:   # gate FAIL: no render spend (17.5 fail-closed)
+        return cov
     try:
         proc = _run(argv, timeout)
     except RuntimeError as exc:
