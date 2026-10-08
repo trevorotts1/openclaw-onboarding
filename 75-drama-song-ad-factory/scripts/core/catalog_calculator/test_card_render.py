@@ -137,6 +137,9 @@ if B is not None:
           priced_card.get("price_usd"))
     check("batch-start-allowed-gated", priced_card["start_allowed"] is True)
     tmp = os.path.join(os.sep + "tmp", "w75-W2-C-U1-materialize-check")
+    import shutil
+    if os.path.isdir(tmp):          # reruns must be idempotent
+        shutil.rmtree(tmp)
     _card_out = B.materialize(priced_card, tmp,
                               price_fn=lambda b, f: 1.25, check=False)
     check("materialize-with-price-writes-manifest",
