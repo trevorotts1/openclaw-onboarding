@@ -31,6 +31,7 @@ name: hardening bounded-brew + fleet-standards legacy exec.mode guard
 
 on:
   push:
+    branches: [main]
     paths:
       - scripts/install-hardening.sh
       - scripts/apply-fleet-standards.sh
@@ -50,6 +51,10 @@ on:
       - scripts/ensure-burn-guard.sh
       - tests/unit/burn-guard.test.sh
       - .github/workflows/hardening-and-fleet-standards-exec-guard.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   structural:

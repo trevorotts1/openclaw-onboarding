@@ -19,7 +19,7 @@ import suno_recipe as R            # noqa: E402
 
 CLIENT = "We keep the lights on for every family. Come home to Dolce, come home tonight."
 HOOK = ["Come home to Dolce", "come home tonight"]
-VERSES = [{"tag": "Verse %d" % i, "delivery": "spoken", "lines": ["We keep the lights on"]}
+VERSES = [{"tag": "Verse %d" % i, "delivery": "sung", "lines": ["We keep the lights on"]}
           for i in range(1, 5)]
 STYLE = "all_suno"
 
@@ -78,10 +78,12 @@ class Sheet(unittest.TestCase):
 
     def test_recipe_enforces_count_for_every_suno_style(self):
         for sid in R.suno_style_ids():
-            sheet = H.build_lyric_sheet(VERSES, HOOK, 118)
+            lead = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
+                    {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-oh"]}]
+            sheet = lead + H.build_lyric_sheet(VERSES, HOOK, 118)
             self.assertEqual(R.prepare(sid, sheet, CLIENT, 118)["exempt"], False)
             with self.assertRaises(R.RecipeError):
-                R.prepare(sid, H.build_lyric_sheet(VERSES, HOOK, 58), CLIENT, 118)
+                R.prepare(sid, lead + H.build_lyric_sheet(VERSES, HOOK, 58), CLIENT, 118)
 
     def test_voiceover_exempt(self):
         self.assertEqual(R.hook_target("velvet_voiceover", 118), 0)

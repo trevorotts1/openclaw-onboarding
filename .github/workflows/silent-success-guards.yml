@@ -46,6 +46,10 @@ on:
       - "50-email-engine/EMAIL-MANIFEST.json"
       - ".github/workflows/silent-success-guards.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   onb-46-001:
     name: "ONB-46-001: a run with zero deliverables is never marked done"

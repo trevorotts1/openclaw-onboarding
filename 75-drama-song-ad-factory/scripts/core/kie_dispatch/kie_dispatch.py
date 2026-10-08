@@ -57,6 +57,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import load_governor as _LG  # noqa: E402  (core/ is on sys.path just above)
 
 import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
 import kie_dispatch.model_lock as ML  # noqa: E402  (F14 video-model lock)
@@ -449,13 +450,25 @@ def resolve_adapter(explicit=None):
     return None
 
 
+# Skill 74 commands that create a NEW KIE generation task (image, video, lip-sync,
+# music, extend all go through submit). Everything else is a read.
+GENERATION_CMDS = frozenset({"submit", "create", "generate", "extend"})
+
+
 def make_runner(timeout=300):
     """Real Skill 74 subprocess. The tests never use this."""
     def _run(argv):
-        r = subprocess.run([sys.executable] + list(argv),
-                           capture_output=True, text=True, timeout=timeout,
-                           env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
-        return r.returncode, r.stdout
+        def once():
+            r = subprocess.run([sys.executable] + list(argv),
+                               capture_output=True, text=True, timeout=timeout,
+                               env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+            return r.returncode, r.stdout
+        # Load governor: only NEW generation requests (submit) draw from the
+        # 20-per-10-s bucket; health/preflight/wait/save use the gentle poll
+        # limiter. A 429 means the job did not run: back off and resubmit.
+        cmd = str(argv[1]) if len(argv) > 1 else ""
+        return _LG.kie_request(once, label=" ".join(str(a) for a in argv[1:4]),
+                               generation=cmd in GENERATION_CMDS)
     return _run
 
 
@@ -463,6 +476,10 @@ def _call(runner, adapter, args):
     """One Skill 74 command -> (rc, parsed_or_None, raw). No exception escapes."""
     try:
         rc, out = runner([adapter] + list(args))
+    except _LG.KieRateLimitError as e:
+        # 429 retries exhausted: the job did NOT run. Say so, never "unknown".
+        return -1, {"state": "rate_limited",
+                    "error": {"code": "KIE_RATE_LIMITED", "message": str(e)}}, str(e)
     except Exception as e:                                  # noqa: BLE001
         return -1, None, "runner-error: %s" % e
     rc = rc if isinstance(rc, int) else -1
@@ -821,6 +838,15 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                                {"rc": s_rc, "raw": (s_raw or "")[-400:]})
 
         s_state = s.get("state")
+        if s_state == "rate_limited":
+            return stop(
+                "waiting", "kie-rate-limited-not-submitted",
+                "KIE answered HTTP 429 to every retry for job %s: it did NOT run "
+                "and is not queued. Not submitted, not dropped; resubmit it."
+                % logical_key,
+                {"stage": "submit", "error": s.get("error"), "generated": False,
+                 "disposition": "not-submitted", "job": logical_key},
+                final="failed", cost=0)
         task_id = s.get("task_id") or ""
         s_err = s.get("error") if isinstance(s.get("error"), dict) else {}
 

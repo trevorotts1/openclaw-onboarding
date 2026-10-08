@@ -24,6 +24,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ghl-activation-resilience-guard:
     name: GHL Layer-2 activation resilience guard (no single-shot regression)

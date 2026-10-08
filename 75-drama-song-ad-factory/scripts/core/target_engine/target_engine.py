@@ -341,15 +341,15 @@ def adjustment_for(metrics, tg, grace_pct=GRACE_PCT):
     if t_share is not None and m_share is not None:
         if m_share > t_share:
             knobs["spoken_budget"] = (
-                "reduce spoken budget: tighten the opener, drop mid-track "
-                "spoken blocks (at most 3 for 60-150 s)")
+                "reduce spoken budget: tighten the opener, shorten the "
+                "[Intro]/[Outro] spoken blocks (spoken only there, never mid-song)")
         else:
             knobs["spoken_budget"] = (
                 "raise spoken budget: re-add opener / turn / call-to-action "
                 "spoken blocks within the cap")
         knobs["style_text"] = (
-            "sung delivery wording only; no spoken word / speech / narration "
-            "/ rap / talk markers")
+            "style names spoken at most once, says the full band keeps playing "
+            "under it, and holds no rap / talk-singing wording")
     t_len, m_len = tg.get("length_s"), metrics.get("length_s")
     if t_len is not None and m_len is not None:
         knobs["length"] = ("trim sung lines (keep meter and rhyme)"

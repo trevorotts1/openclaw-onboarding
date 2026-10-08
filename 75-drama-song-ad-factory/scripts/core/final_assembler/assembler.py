@@ -58,6 +58,13 @@ import shutil
 import subprocess
 import sys
 
+# Skill 75 load governor: every heavy local job goes through it (see load_governor/).
+import os as _gos, sys as _gsys
+_gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..'))
+if _gcore not in _gsys.path:
+    _gsys.path.insert(0, _gcore)
+import load_governor as _LG  # noqa: E402
+
 try:                                    # E1 module (this package)
     from . import fps_conform
 except ImportError:                     # direct-script fallback
@@ -473,6 +480,13 @@ def load_timeline(path):
     fps = tl.get("fps", 30)
     if not isinstance(fps, (int, float)) or fps <= 0:
         raise ValueError("TIMELINE_BAD_FPS: fps must be positive")
+    # Part H H3: the master is 30 fps. Another rate needs the choice card
+    # to set it explicitly (top-level "fps_set_by_choice_card": true).
+    if (abs(fps - fps_conform.MASTER_FPS) > 1e-3
+            and tl.get("fps_set_by_choice_card") is not True):
+        raise ValueError(
+            "TIMELINE_FPS_NOT_30: master fps must be %d (got %g); only the "
+            "choice card may set another rate" % (fps_conform.MASTER_FPS, fps))
     for i, s in enumerate(segs):
         if not isinstance(s, dict) or not s.get("src"):
             raise ValueError(f"TIMELINE_BAD_SEGMENT: segments[{i}] needs src")
@@ -654,8 +668,13 @@ def plan_timeline(tl, base_dir=".", probe=None):
         # per-segment "fps" key (absent on legacy timelines) is the clip's
         # requested source rate; fall back to the timeline fps so the
         # manifest records an equal-fps pass-through for legacy inputs.
+        # Part H H3: explicit per-segment fps wins, then the model's known
+        # native rate (Kling 30 pass-through, MiniMax H3 24 interpolated).
+        src_fps = s.get("fps")
+        if src_fps is None:
+            src_fps = fps_conform.native_fps(s.get("model"))
         rec = fps_conform.conform_record(
-            s.get("fps", fps) if s.get("fps") is not None else fps, fps)
+            src_fps if src_fps is not None else fps, fps)
         item = {"src": s["src"], "frames": frames,
                 "snapped_dur": frames / fps, "transition": trans,
                 "xfade_dur": xd, "lip_sync": bool(s.get("lip_sync")), **rec}
@@ -967,7 +986,8 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
     threads, nice, _timeout = size_ffmpeg(
         plan.get("total_dur", 0), w, h)
     segs = plan["segments"]
-    cmd = ["nice", "-n", str(nice), ffmpeg, "-y", "-threads", str(threads)]
+    # Load governor: nice -n 10 + -threads min(4, size_ffmpeg) on every ffmpeg argv.
+    cmd = _LG.ffmpeg_argv(["-y"], ffmpeg, threads)
     for s in segs:
         cmd += ["-i", s["src"]]
     song = plan.get("song_path")
@@ -981,11 +1001,22 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
         # recorded source_fps decides pass-through vs minterpolate.
         conform = fps_conform.build_conform_argv(
             s.get("source_fps", fps), fps, w, h)
-        step = f"setpts=PTS-STARTPTS,"
         if conform:
-            step += f"{conform},"
-        fc.append(f"[{i}:v]trim=duration={s['snapped_dur']:.6f},"
-                  f"{step}"
+            # H3: minterpolate cannot extrapolate, so it loses ~2 frames at
+            # the cut. Trim a margin in, conform, then trim to the exact
+            # slot so the segment keeps its planned frame count.
+            step = (f"trim=duration={s['snapped_dur'] + 0.25:.6f},"
+                    f"setpts=PTS-STARTPTS,{conform},"
+                    f"trim=duration={s['snapped_dur']:.6f},"
+                    "setpts=PTS-STARTPTS,")
+        else:
+            step = (f"trim=duration={s['snapped_dur']:.6f},"
+                    "setpts=PTS-STARTPTS,")
+        # H3: a pass-through Kling clip (source timebase 1/15360) and an
+        # interpolated H3 clip (timebase 1/30) cannot meet in xfade/concat
+        # unless every chain ends on the same timebase.
+        step += f"settb=1/{fps:g},"
+        fc.append(f"[{i}:v]{step}"
                   f"scale={w}:{h},setsar=1[v{i}]")
     if len(segs) == 1:
         vlast = "[v0]"
@@ -1028,19 +1059,76 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
 
 def _run(cmd, timeout=600):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=timeout, check=False)
+        return _LG.run_ffmpeg(cmd, "ffmpeg-render", capture_output=True,
+                              text=True, timeout=timeout, check=False)
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError(f"FFMPEG_UNAVAILABLE: {exc}") from exc
 
 
+def _receipt_evidence():
+    """G5: the honest-receipt module (singing_detector.receipt_evidence).
+
+    ponytail: imported lazily so the assembler stays runnable before G3's
+    package lands on main; when the train resolve merges G3 this is the
+    only import site to flip to a top-level import.
+    """
+    global _RE
+    if _RE is None:
+        core_dir = os.path.dirname(os.path.abspath(__file__))
+        core_dir = os.path.dirname(core_dir)
+        if core_dir not in sys.path:
+            sys.path.insert(0, core_dir)
+        try:
+            from singing_detector import receipt_evidence as _mod
+        except ImportError:      # core/ imported as a top-level package
+            from singing_detector import receipt_evidence as _mod
+        _RE = _mod
+    return _RE
+
+
+_RE = None
+
+def _attach_evidence(receipt, detector_result, target, takes, verdict,
+                     planned):
+    """G5 amend: put the measured block on ANY receipt this module emits.
+
+    Dry-run receipts are receipts too -- they are what QC reads before a
+    spend -- so they carry the same measured sung/spoken/rap/no-voice
+    percent + seconds, target, gap and takes as the rendered receipt.
+    Raises receipt_evidence.ReceiptEvidenceError (a ValueError) on a
+    dishonest or incomplete detector record; the caller refuses it.
+    """
+    if detector_result is None:
+        return receipt
+    receipt.update(_receipt_evidence().receipt_block(
+        detector_result, target=target, takes=takes, verdict=verdict,
+        planned=planned))
+    return receipt
+
+
 def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
-             timeout=None, base_dir=".", dry_run=False, chosen_length_s=None):
+             timeout=None, base_dir=".", dry_run=False, chosen_length_s=None,
+             detector_result=None, target=None, takes=None, verdict=None,
+             planned=None):
     """Full render: validate -> preflight -> plan -> ffmpeg -> verify.
 
     Returns receipt dict (also written to <output>.receipt.json unless
     dry_run). Post-render ffprobe check: |A-V| and |out - planned|
     each within 1 frame; else outcome error with AV_DRIFT/PLAN_DRIFT.
+
+    G5 honest receipts (Trevor order 1135, Part G, AMENDED by order 1150
+    part G / review G8): when a delivery % rides the receipt it MUST be
+    the measured block from the G3 singing detector (``detector_result``)
+    -- source=measured, detector name + confidence, the measured sung /
+    spoken / rap / no-voice percent AND seconds -- plus ``target``,
+    ``gap`` and every take tried. Label time is boxed under labelled_*
+    / the ``planned`` heading and never reported as sung. A label-shaped
+    sung % is refused (fail-closed), never written.
+
+    ``target`` / ``takes`` / ``verdict`` / ``planned`` feed the amended
+    receipt block (singing_detector.receipt_evidence.receipt_block): a
+    target-engine ``verdict`` supplies its targets, rounds used and the
+    selected take when the caller does not pass them.
 
     M7: timeout=None means "let lane_size.py (or the Part D fallback)
     bound the render from the plan's own duration" instead of the old
@@ -1188,6 +1276,12 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             out["next_action"] = blocked["next_action"]
             out.setdefault("evidence", {}).setdefault("gate_evidence", {})
             out["evidence"]["gate_evidence"] = blocked["evidence"]
+        try:
+            _attach_evidence(out, detector_result, target, takes, verdict,
+                             planned)
+        except ValueError as exc:
+            return _fail("DISHONEST_SUNG_PCT", next_action=str(exc),
+                         evidence={"detector_result": detector_result})
         return out
     for blocked in (cov, face, ffail):   # gate FAILs: no render spend (17.5)
         if blocked is not None:
@@ -1219,8 +1313,17 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     # accepted dup source is source fps == timeline fps; with the E1
     # conform a failure here means a bad conform (or a passthrough used
     # where interpolation was owed) and the render is refused.
-    dup_pct = fps_conform.mpdecimate_dup_ratio(proc.stderr or "")
+    # H3: measure the rendered master with mpdecimate (the render's own
+    # stderr carries no mpdecimate markers, so it can never measure this).
+    try:
+        dup_pct = fps_conform.measure_dup_pct(output, ffmpeg)
+        seg_rows, seg_bad = fps_conform.segment_dup_report(
+            output, plan, ffmpeg)
+    except RuntimeError as exc:
+        return _fail("DUP_MEASURE_FAILED", next_action=str(exc),
+                     evidence=evid)
     evid["dup_frame_pct"] = dup_pct
+    evid["segment_dups"] = seg_rows
     evid["frame_text"] = frows   # F9: one row per lip-sync clip, in receipt
     try:
         fps_conform.assert_no_dupe_frames(dup_pct)
@@ -1232,6 +1335,14 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                                   "fps_conform.build_conform_argv (mci, "
                                   "never the plain fps filter)"
                                   % fps_conform.DUP_FRAMES_CAP),
+                     evidence=evid)
+    if seg_bad:
+        return _fail(fps_conform.TIMELINE_SEGMENT_DUP_FRAMES,
+                     next_action=("segments above %s%% duplicated frames: "
+                                  "%s; regenerate the clip or mark a "
+                                  "deliberate still hold"
+                                  % (fps_conform.SEGMENT_DUP_CAP,
+                                     [r["index"] for r in seg_bad])),
                      evidence=evid)
     if chosen is not None:  # I4: the measured file, not only the plan
         mc = master_length.check_master(chosen, vdur)
@@ -1252,6 +1363,12 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             return _fail("AV_DRIFT",
                          next_action="audio/video differ by >1 frame",
                          evidence=evid)
+    # Load governor: the master is verified; delete the stage intermediates the
+    # timeline lists (never deliverables), log each deletion, record heavy-job waits.
+    reg = _LG.StageRegistry()
+    reg.register("assemble", [abspath(p) for p in tl.get("intermediates", [])])
+    evid["cleanup"] = reg.consumed("assemble", output)
+    evid["load_governor"] = _LG.receipt()
     receipt = {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
                "tool_version": TOOL_VERSION, "command": "assemble",
                "outcome": "ok", "reason_code": "ASSEMBLED",
@@ -1260,6 +1377,16 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                # H12: QC fails any master this receipt does not vouch for.
                "produced_by": master_provenance.producer_stamp(),
                "master_sha256": master_provenance.sha256_file(output)}
+    # G5 (amended): a delivery % on the receipt only via the measured
+    # detector block, and it arrives with target, gap and every take tried.
+    if detector_result is not None:
+        try:
+            receipt.update(_receipt_evidence().receipt_block(
+                detector_result, target=target, takes=takes,
+                verdict=verdict, planned=planned))
+        except ValueError as exc:
+            return _fail("DISHONEST_SUNG_PCT", next_action=str(exc),
+                         evidence={"detector_result": detector_result})
     # No silent failure: every recorded FAILURE/WARNING rides the receipt.
     _loud_attach(receipt)
     try:
@@ -1286,15 +1413,62 @@ def main(argv=None):
     ap.add_argument("--timeout", type=int, default=None,
                     help="render cap in seconds; default: lane_size.py "
                          "or Part D max(600, 2 x output s x 1080p factor)")
+    ap.add_argument("--detector-result", default=None,
+                    help="path to the G3 singing-detector result JSON; "
+                         "the only legal source of a receipt sung %% (G5)")
+    ap.add_argument("--target", default=None,
+                    help="inline JSON target set (e.g. "
+                         "'{\"sung_share\":0.55}') for the receipt's "
+                         "target/gap fields (G5 amend)")
+    ap.add_argument("--takes", default=None,
+                    help="path to the JSON list of every take tried, each "
+                         "measured or carrying its reason (G5 amend)")
+    ap.add_argument("--verdict", default=None,
+                    help="path to a target_engine verdict JSON; supplies "
+                         "target, rounds used and the selected take")
     args = ap.parse_args(argv)
     if not shutil.which(args.ffmpeg) or not shutil.which(args.ffprobe):
         print(json.dumps(_fail("PREREQ_MISSING",
                                next_action="install ffmpeg+ffprobe")))
         return 3
+
+    def _load_json(path, what):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(json.dumps(_fail("%s_UNREADABLE" % what.upper(),
+                                   next_action=str(exc))))
+            return None
+
+    det = None
+    if args.detector_result:
+        det = _load_json(args.detector_result, "detector_result")
+        if det is None:
+            return 1
+    tgt = None
+    if args.target:
+        try:
+            tgt = json.loads(args.target)
+        except json.JSONDecodeError as exc:
+            print(json.dumps(_fail("TARGET_UNREADABLE",
+                                   next_action=str(exc))))
+            return 1
+    tks = None
+    if args.takes:
+        tks = _load_json(args.takes, "takes")
+        if tks is None:
+            return 1
+    ver = None
+    if args.verdict:
+        ver = _load_json(args.verdict, "verdict")
+        if ver is None:
+            return 1
     receipt = assemble(args.timeline, args.output, ffmpeg=args.ffmpeg,
                        chosen_length_s=args.chosen_length_s,
                        ffprobe=args.ffprobe, timeout=args.timeout,
-                       dry_run=args.dry_run)
+                       dry_run=args.dry_run, detector_result=det,
+                       target=tgt, takes=tks, verdict=ver)
     receipt = _loud_attach(receipt)
     print(json.dumps(receipt, indent=2))
     for ln in (receipt.get("warnings") or []) + (receipt.get("failures") or []):

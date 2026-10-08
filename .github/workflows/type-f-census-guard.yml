@@ -31,6 +31,10 @@ on:
       - 'scripts/tests/type-f-census-guard.negative-fixture.sh'
       - '.github/workflows/type-f-census-guard.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   guard:
     runs-on: ubuntu-latest

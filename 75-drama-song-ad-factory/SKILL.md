@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.8.3
+version: v2.8.4
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -101,23 +101,39 @@ LeAnne Dolce songs land. The code is `scripts/core/suno_recipe/`; every Suno
 request goes through `suno_recipe.prepare()` and the `music_director` seam
 refuses a raw Suno style that skipped it.
 
-The four rules:
+The four rules (recipe v2, replaces G12):
 
-1. Suno is told plainly which lines to sing and which to speak.
-2. A repeated sung hook is built from the client's own words.
-3. Singing starts early.
+1. Spoken tags only in [Intro] and [Outro]; spoken is named once in the style
+   text, and the style says the full band keeps playing under the spoken lines.
+2. Sung lines are short (5-6 syllables aimed, 8 at most), rhymed, with
+   hyphen-held vowels, after a wordless sung vocalise.
+3. The first hook comes after the vocalise, never at 0 s; the hook is the
+   client's own words, repeated by length (`core/sung_hook`).
 4. Each take's singing is measured, not taken from its labels.
 
-In plain terms: tag every lyric section Sung or Spoken, and put the same map
-in the style text ("SUNG: Hook. SPOKEN: Verse 1, Verse 2."). Write one short
-hook out of words the client actually said and repeat it. Get to the first
-sung line early (target: 15% of the runtime). After Suno returns a take, run
-the detector and judge the sung and spoken shares from what it measured.
+Word budget, section plan, hook repeats, spoken placement, instrumental breaks
+and the extend plan for any length come from ONE function,
+`core/length_formula.plan(L, spoken_share_pct)`; L=60 gives the measured
+65-word recipe. Style text is 1000 characters or less. Negative tags are
+`rap, rapping, choir, reverb, echo, band dropout, acapella sections,
+talk-singing, monotone delivery` (never "spoken word"; the rap style drops the
+rap pair). KIE (snake_case input, checked against the live docs): model V6, custom_mode
+true, instrumental false, style_weight 0.75, weirdness_constraint 0.3, variety
+0, vocal_gender per brief, duration 10-360 s. A longer song is a base take plus
+extends: extend input is audio_id, continue_at (seconds, inside the source
+take) and model (must equal the source take's model); extend has no duration
+field, so the extended length is measured, never assumed. Trevor's dry close-vocal rule stays.
+`core/song_dispatch` judges EVERY take (singcheck v2, spoken share band, sung
+of voice, 6 s stretch, hook sung 2+, script words, length, music under speech,
+clean ending, first sung), stops at the first pass, saves the stem and
+timestamps of every take, regenerates whole tracks only, and refuses
+openai-whisper.
 
 The targets (Trevor, 2026-10-08, SPK001): speaking is **20-25% of the
-runtime** (center 22.5), and the lyric writer budgets spoken lines at about
-15-18% of the lyric words, because Suno stretches spoken parts into long
-talking. Singing is measured against **voice time**, sung / (sung + spoken),
+runtime** by default (center 22.5; each ad can set its own, Black Successful
+Women uses 15-20), and the lyric writer derives its spoken word budget from the ad's
+own spoken target and the length formula's measured word rates (no fixed
+word percent). Singing is measured against **voice time**, sung / (sung + spoken),
 with a default target of **77.5%** (75-80): a music-only intro, gaps and the
 end card never count against it. Both numbers use Trevor's band: within 5
 points accept, over 5 up to 10 accept with a flag, over 10 redo. The only
@@ -215,6 +231,7 @@ uncertain outcome. Always show the client the sentence from
   `max_at_once = len(submitted)` (or the provider cap, named in
   `capped_by`, when that binds). Never submit clips in dribbles or wait for
   one clip before sending the next.
+- **KIE rate limit:** new generation submits are paced to 20 or fewer per rolling 10 s per KIE key; a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
 
 ## Scenes must match the song and the faces (Part I I2)
 
@@ -299,6 +316,34 @@ This skill never picks, forces or recommends a model, an alias or an agent.
   allowed to fail silently. Report it right away, in plain words, with what
   broke and what was trying to run. Do not retry quietly, skip the step,
   swap to another model, or carry on as if it worked.
+
+## Local load safety (enforced in code, not advice)
+
+Heavy local jobs (any ffmpeg render, encode, concat or decode, audio cutting and stem
+separation, the singing detector, transcription, image and video post-processing) go
+through `scripts/core/load_governor/`. Nothing can skip it: the call sites in this skill
+already route through it, and a test fails if one stops.
+
+- At most 2 heavy jobs run at once across the whole Mac, every window and process
+  together (file locks in `~/.cache/drama-song-ad-factory/heavy-slots/`; the cap can be
+  changed with `DSAF_HEAVY_SLOTS`).
+- A job never starts while system free memory is under 30%. It waits and re-checks every
+  15 seconds, prints one visible line when it waits, starts and ends, and after 20 minutes
+  fails loudly naming the job. It never runs anyway and never skips silently. The wait
+  time goes into the run receipt.
+- Every ffmpeg command carries `nice -n 10` and `-threads 4` (or a lower sized value).
+- Intermediate render files are deleted as soon as the next stage has used them and its
+  output is verified. Masters, SRT files, the song, stems needed for lip-sync and receipts
+  are never deleted. Every deletion is logged in the receipt; a failed one prints a WARNING.
+- KIE pacing follows `references/kie-rate-limit.md`. Only NEW generation requests (submit
+  and create task: image, video, lip-sync, music, extend) draw from the bucket of at most 20
+  per rolling 10 seconds, shared across all processes, one bucket per KIE key. Status polls,
+  health checks and record-info reads use a separate gentler limiter (1 request per second
+  per process by default, `DSAF_KIE_POLL_INTERVAL_S`) and never consume generation tokens.
+  A 429 on a generation request means the job did NOT run and is not queued: back off and
+  resubmit. It is never counted as submitted and never dropped; if retries run out the run
+  fails loudly naming the job.
+- Never the OpenAI whisper stack. Transcription is faster-whisper through `lyric_timing.py`.
 
 ## Installation
 

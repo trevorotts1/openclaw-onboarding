@@ -84,8 +84,12 @@ class T(unittest.TestCase):
     def test_assembler_receipt_carries_stamp(self):
         with tempfile.TemporaryDirectory() as tmp:
             clip = os.path.join(tmp, "c.mp4")
+            # H3: the dup gate now measures the rendered master with
+            # mpdecimate, so the fixture must carry moving content —
+            # `testsrc` yields ~56% duplicate frames at 64x64 and is
+            # refused; `testsrc2` animates every frame (0%).
             subprocess.run(["ffmpeg", "-v", "error", "-threads", "2", "-f",
-                            "lavfi", "-i", "testsrc=s=64x64:r=30:d=1.6",
+                            "lavfi", "-i", "testsrc2=s=64x64:r=30:d=1.6",
                             "-pix_fmt", "yuv420p", clip], check=True)
             tl = os.path.join(tmp, "timeline.json")
             with open(tl, "w") as f:

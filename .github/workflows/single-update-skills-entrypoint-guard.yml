@@ -49,6 +49,10 @@ on:
       - "32-command-center-setup/CORE_UPDATES.md"
       - ".github/workflows/single-update-skills-entrypoint-guard.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   single-update-skills-entrypoint-guard:
     name: scripts/update-skills.sh can never succeed; no live doc points at it

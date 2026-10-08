@@ -69,7 +69,7 @@ check("floor-is-12.5", SS.SPOKEN_MIN_PCT == 12.5, SS.SPOKEN_MIN_PCT)
 check("cap-is-32.5", SS.SPOKEN_MAX_PCT == 32.5, SS.SPOKEN_MAX_PCT)
 check("sung-of-voice-target-is-77.5", SS.SUNG_TARGET_PCT == 77.5,
       SS.SUNG_TARGET_PCT)
-check("lyric-spoken-word-budget-is-15-18", SS.LYRIC_SPOKEN_WORD_PCT == (15.0, 18.0))
+check("lyric-word-pct-constant-gone", not hasattr(SS, "LYRIC_SPOKEN_WORD_PCT"))
 check("fractions", (SS.TARGET, SS.FLOOR, SS.CAP) == (0.225, 0.125, 0.325),
       (SS.TARGET, SS.FLOOR, SS.CAP))
 check("cap-is-not-70", SS.CAP != 0.70, SS.CAP)
@@ -401,9 +401,17 @@ check("spk001-hard-reject-is-only-no-6s-stretch",
       ["verdict"] == "FAIL"
       and SS.check_real_singing([{"delivery": "sung", "seconds": 6.0}])
       ["verdict"] == "PASS")
-# Lyric word budget: spoken lines ~15-18% of the lyric words.
+# Lyric word budget: derived from the ad's spoken target + measured word rates.
+check("spk001-word-pct-measured-bsw",
+      abs(SS.spoken_word_pct(17.5) - 21.8) < 0.1, SS.spoken_word_pct(17.5))
+lo_w, hi_w = SS.spoken_word_budget_pct()
+check("spk001-word-budget-follows-default-range",
+      lo_w == round(SS.spoken_word_pct(20), 3) and hi_w == round(SS.spoken_word_pct(25), 3),
+      (lo_w, hi_w))
 check("spk001-word-budget-for-200-words",
-      SS.spoken_word_budget(200) == (30.0, 36.0), SS.spoken_word_budget(200))
+      SS.spoken_word_budget(200) == (round(200 * lo_w / 100, 1), round(200 * hi_w / 100, 1)))
+check("spk001-word-budget-follows-per-ad-range",
+      SS.spoken_word_budget_pct((15, 20))[0] < lo_w)
 
 
 def sheet_with(spoken_words, sung_words):
@@ -411,12 +419,12 @@ def sheet_with(spoken_words, sung_words):
             {"delivery": "spoken", "lines": [" ".join(["ha"] * spoken_words)]}]
 
 
-check("spk001-budget-16pct-accept",
-      SS.check_spoken_word_budget(sheet_with(16, 84))["verdict"] == "PASS")
-check("spk001-budget-25pct-flag",
-      SS.check_spoken_word_budget(sheet_with(25, 75))["verdict"] == "FLAG")
-check("spk001-budget-35pct-redo",
-      SS.check_spoken_word_budget(sheet_with(35, 65))["verdict"] == "FAIL")
+check("spk001-budget-27pct-accept",
+      SS.check_spoken_word_budget(sheet_with(27, 73))["verdict"] == "PASS")
+check("spk001-budget-40pct-flag",
+      SS.check_spoken_word_budget(sheet_with(40, 60))["verdict"] == "FLAG")
+check("spk001-budget-45pct-redo",
+      SS.check_spoken_word_budget(sheet_with(45, 55))["verdict"] == "FAIL")
 
 # --------------------------------------------- 6. malformed input = caller bug
 check("empty-segments-raises",
@@ -445,7 +453,7 @@ check("error-code-is-caller-bug", e is not None and e.code == "BAD_SHARE",
 MODULE_FILES = [os.path.join(HERE, f) for f in ("__init__.py",
                                                 "spoken_share.py")]
 PERMIT = {"__future__", "argparse", "collections", "functools", "itertools",
-          "json", "math", "os", "pathlib", "re", "sys", "typing"}
+          "json", "length_formula", "math", "os", "pathlib", "re", "sys", "typing"}
 NETWORK = {"urllib", "socket", "http", "requests", "ssl", "ftplib",
            "smtplib", "aiohttp"}
 PAID = {"createTask", "playwright", "pm2", "curl", "subprocess"}
