@@ -473,6 +473,13 @@ def load_timeline(path):
     fps = tl.get("fps", 30)
     if not isinstance(fps, (int, float)) or fps <= 0:
         raise ValueError("TIMELINE_BAD_FPS: fps must be positive")
+    # Part H H3: the master is 30 fps. Another rate needs the choice card
+    # to set it explicitly (top-level "fps_set_by_choice_card": true).
+    if (abs(fps - fps_conform.MASTER_FPS) > 1e-3
+            and tl.get("fps_set_by_choice_card") is not True):
+        raise ValueError(
+            "TIMELINE_FPS_NOT_30: master fps must be %d (got %g); only the "
+            "choice card may set another rate" % (fps_conform.MASTER_FPS, fps))
     for i, s in enumerate(segs):
         if not isinstance(s, dict) or not s.get("src"):
             raise ValueError(f"TIMELINE_BAD_SEGMENT: segments[{i}] needs src")
@@ -654,8 +661,13 @@ def plan_timeline(tl, base_dir=".", probe=None):
         # per-segment "fps" key (absent on legacy timelines) is the clip's
         # requested source rate; fall back to the timeline fps so the
         # manifest records an equal-fps pass-through for legacy inputs.
+        # Part H H3: explicit per-segment fps wins, then the model's known
+        # native rate (Kling 30 pass-through, MiniMax H3 24 interpolated).
+        src_fps = s.get("fps")
+        if src_fps is None:
+            src_fps = fps_conform.native_fps(s.get("model"))
         rec = fps_conform.conform_record(
-            s.get("fps", fps) if s.get("fps") is not None else fps, fps)
+            src_fps if src_fps is not None else fps, fps)
         item = {"src": s["src"], "frames": frames,
                 "snapped_dur": frames / fps, "transition": trans,
                 "xfade_dur": xd, "lip_sync": bool(s.get("lip_sync")), **rec}
@@ -981,11 +993,22 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
         # recorded source_fps decides pass-through vs minterpolate.
         conform = fps_conform.build_conform_argv(
             s.get("source_fps", fps), fps, w, h)
-        step = f"setpts=PTS-STARTPTS,"
         if conform:
-            step += f"{conform},"
-        fc.append(f"[{i}:v]trim=duration={s['snapped_dur']:.6f},"
-                  f"{step}"
+            # H3: minterpolate cannot extrapolate, so it loses ~2 frames at
+            # the cut. Trim a margin in, conform, then trim to the exact
+            # slot so the segment keeps its planned frame count.
+            step = (f"trim=duration={s['snapped_dur'] + 0.25:.6f},"
+                    f"setpts=PTS-STARTPTS,{conform},"
+                    f"trim=duration={s['snapped_dur']:.6f},"
+                    "setpts=PTS-STARTPTS,")
+        else:
+            step = (f"trim=duration={s['snapped_dur']:.6f},"
+                    "setpts=PTS-STARTPTS,")
+        # H3: a pass-through Kling clip (source timebase 1/15360) and an
+        # interpolated H3 clip (timebase 1/30) cannot meet in xfade/concat
+        # unless every chain ends on the same timebase.
+        step += f"settb=1/{fps:g},"
+        fc.append(f"[{i}:v]{step}"
                   f"scale={w}:{h},setsar=1[v{i}]")
     if len(segs) == 1:
         vlast = "[v0]"
@@ -1282,8 +1305,17 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     # accepted dup source is source fps == timeline fps; with the E1
     # conform a failure here means a bad conform (or a passthrough used
     # where interpolation was owed) and the render is refused.
-    dup_pct = fps_conform.mpdecimate_dup_ratio(proc.stderr or "")
+    # H3: measure the rendered master with mpdecimate (the render's own
+    # stderr carries no mpdecimate markers, so it can never measure this).
+    try:
+        dup_pct = fps_conform.measure_dup_pct(output, ffmpeg)
+        seg_rows, seg_bad = fps_conform.segment_dup_report(
+            output, plan, ffmpeg)
+    except RuntimeError as exc:
+        return _fail("DUP_MEASURE_FAILED", next_action=str(exc),
+                     evidence=evid)
     evid["dup_frame_pct"] = dup_pct
+    evid["segment_dups"] = seg_rows
     evid["frame_text"] = frows   # F9: one row per lip-sync clip, in receipt
     try:
         fps_conform.assert_no_dupe_frames(dup_pct)
@@ -1295,6 +1327,14 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                                   "fps_conform.build_conform_argv (mci, "
                                   "never the plain fps filter)"
                                   % fps_conform.DUP_FRAMES_CAP),
+                     evidence=evid)
+    if seg_bad:
+        return _fail(fps_conform.TIMELINE_SEGMENT_DUP_FRAMES,
+                     next_action=("segments above %s%% duplicated frames: "
+                                  "%s; regenerate the clip or mark a "
+                                  "deliberate still hold"
+                                  % (fps_conform.SEGMENT_DUP_CAP,
+                                     [r["index"] for r in seg_bad])),
                      evidence=evid)
     if chosen is not None:  # I4: the measured file, not only the plan
         mc = master_length.check_master(chosen, vdur)
