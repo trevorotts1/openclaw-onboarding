@@ -539,6 +539,13 @@ def materialize(card, root, price_fn=None, outbox=None,
             "show_name": book["title"],
             "slug": book["slug"],
             "run_id": book["run_id"],
+            # H3 step 2: no separate 12-stage parent board — the batch id and
+            # the parent job id live here and on the epic's provenance instead.
+            "batch_parent": {
+                "parent_cc_job_id": card["batch_id"],
+                "book_position": book["position"],
+                "book_count": len(books),
+            },
             "deliverable": {
                 "title": book["title"],
                 "author": book["author"],
@@ -554,7 +561,12 @@ def materialize(card, root, price_fn=None, outbox=None,
 
         if outbox is not None:
             outbox.enqueue_create(
-                book["cc_job_id"], book["title"], stages, workspace=workspace,
+                book["cc_job_id"],
+                "Book %d of %d — %s (batch %s)"
+                % (book["position"], len(books), book["title"], card["batch_id"]),
+                stages, workspace=workspace,
+                department="video", title_prefix="Drama Song Ad",
+                agent_id="vsl-video-sales-letter-specialist",
                 money_ceiling_usd=book["ceiling_usd"],
                 estimated_cost_usd=book["price_usd"])
 
@@ -592,12 +604,9 @@ def materialize(card, root, price_fn=None, outbox=None,
     }
     _write_json(manifest_path, manifest)
 
-    if outbox is not None:
-        outbox.enqueue_create(
-            card["batch_id"], "Batch of %d books" % len(entries), stages,
-            workspace=workspace, money_ceiling_usd=card["price_usd"],
-            estimated_cost_usd=card["subtotal_usd"])
-
+    # H3 step 2: the separate 12-stage parent board is SKIPPED -- the batch
+    # id is recorded on each book's epic show_name ("Book N of M — title
+    # (batch <id>)") and each cc-register.json instead. No second create.
     if check:
         from .isolation import assert_isolated   # lazy: isolation imports here
         assert_isolated(manifest)
