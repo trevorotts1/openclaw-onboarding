@@ -117,8 +117,12 @@ and the extend plan for any length come from ONE function,
 65-word recipe. Style text is 1000 characters or less. Negative tags are
 `rap, rapping, choir, reverb, echo, band dropout, acapella sections,
 talk-singing, monotone delivery` (never "spoken word"; the rap style drops the
-rap pair). KIE: V6, customMode true, styleWeight 0.75, weirdnessConstraint
-0.3, variety 0, vocalGender per brief. Trevor's dry close-vocal rule stays.
+rap pair). KIE (snake_case input, checked against the live docs): model V6, custom_mode
+true, instrumental false, style_weight 0.75, weirdness_constraint 0.3, variety
+0, vocal_gender per brief, duration 10-360 s. A longer song is a base take plus
+extends: extend input is audio_id, continue_at (seconds, inside the source
+take) and model (must equal the source take's model); extend has no duration
+field, so the extended length is measured, never assumed. Trevor's dry close-vocal rule stays.
 `core/song_dispatch` judges EVERY take (singcheck v2, spoken share band, sung
 of voice, 6 s stretch, hook sung 2+, script words, length, music under speech,
 clean ending, first sung), stops at the first pass, saves the stem and
@@ -127,8 +131,9 @@ openai-whisper.
 
 The targets (Trevor, 2026-10-08, SPK001): speaking is **20-25% of the
 runtime** by default (center 22.5; each ad can set its own, Black Successful
-Women uses 15-20), and the lyric writer budgets spoken lines from the length
-formula, because Suno stretches spoken parts into long talking. Singing is measured against **voice time**, sung / (sung + spoken),
+Women uses 15-20), and the lyric writer derives its spoken word budget from the ad's
+own spoken target and the length formula's measured word rates (no fixed
+word percent). Singing is measured against **voice time**, sung / (sung + spoken),
 with a default target of **77.5%** (75-80): a music-only intro, gaps and the
 end card never count against it. Both numbers use Trevor's band: within 5
 points accept, over 5 up to 10 accept with a flag, over 10 redo. The only
