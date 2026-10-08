@@ -100,6 +100,10 @@ for _s in _VELVET_SPELLINGS:
 #: ebur128/astats floor: anything at or below this is silence, not a bed.
 SILENCE_FLOOR_LUFS = -70.0
 
+#: G5: the honest stamp on label-derived time (never a sung %).
+LABELLED_NOTE = ("labelled time from the 12.4 timing map ([Verse]/[Chorus] "
+                 "section labels), NOT measured singing")
+
 MODE_UNKNOWN = "VOICE_MODE_UNKNOWN"
 
 
@@ -291,10 +295,56 @@ def vocal_presence(stderr_text, floor_lufs=None):
 
 
 # ----------------------------------------------------------------- check ----
+# ------------------------------------------------------------- honest % -----
+# G5 (Trevor order 1135, Part G item 5): the timing-map ratio is section
+# LABEL time, never a measurement. It is reported only under labelled_*
+# fields with source="labelled"; a receipt sung % must be source="measured"
+# carrying the G3 detector name and confidence. When the caller supplies
+# ``detector_result`` (the G3 measured record), the measured block drives
+# the verdict; without it the verdict stays label-based and says so.
+
+def measured_share(detector_result):
+    """The G5 measured block from a G3 detector record (thin re-export).
+
+    Kept here so every sung-coverage producer in final_assembler reads the
+    one API; raises ReceiptEvidenceError on a label-shaped or incomplete
+    record -- the failed-ad shape can never be printed again.
+    """
+    _import_receipt_evidence()
+    return _RE.measured_share(detector_result)
+
+
+def labelled_coverage_block(ratio, dur_s):
+    """Section-label coverage, boxed under labelled_* fields, never sung."""
+    _import_receipt_evidence()
+    lab = _RE.labelled_share(round(ratio * float(dur_s), 6), float(dur_s))
+    return lab
+
+
+def _import_receipt_evidence():
+    global _RE
+    if _RE is None:
+        try:
+            from singing_detector import receipt_evidence as _mod
+        except ImportError:      # core/ imported as a top-level package
+            from singing_detector import receipt_evidence as _mod
+        _RE = _mod
+    return _RE
+
+
+_RE = None
+
+
 def check_sung_vocal(timing=None, runtime_s=None, profile=None,
                      master_path=None, scan_stderr=None,
-                     spoken_section_ids=None, target=None, segments=None):
+                     spoken_section_ids=None, target=None, segments=None,
+                     detector_result=None):
     """E7 verdict: the master is sung (All Suno) or has its bed (Velvet).
+
+    G5 honesty: label time is stamped ``labelled_*`` and is never a sung %.
+    ``detector_result`` (the G3 measured record) is the first path: its
+    measured block (source="measured", detector + confidence) drives the
+    verdict and receipt fields.
 
     Primary path  -- ``segments`` (G8 / review G1): the singing detector's
                      OWN output on the vocal stem, every segment carrying
@@ -330,6 +380,48 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
            "target": round(target, 4), "evidence_path": None,
            "sung_coverage": None, "outcome": "FAIL", "reason_code": None,
            "next_action": None, "flags": []}
+    # ---- G5: a measured detector run overrides label time ------------------
+    if detector_result is not None:
+        block = measured_share(detector_result)
+        ver["evidence_path"] = "singing_detector"
+        ver["sung_pct"] = block
+        ver["labelled_source"] = LABELLED_NOTE
+        ver["share_basis"] = "measured"
+        ver["sung_coverage"] = round(block["sung_pct"] / 100.0, 4)
+        if mode != VELVET:
+            if block["sung_pct"] <= 0.0:
+                ver["outcome"] = "FAIL"
+                ver["reason_code"] = "VOCAL_MISSING"
+                ver["next_action"] = (
+                    "measured singing %.1f%% by %s (confidence %.2f): the "
+                    "master carries no real singing; re-cut with the Suno "
+                    "song master" % (block["sung_pct"], block["detector"],
+                                     block["confidence"]))
+                return ver
+            j = _SS.judge_gap(block["sung_pct"], target * 100.0)
+            ver["gap_pts"] = j["gap_pts"]
+            if j["verdict"] == _SS.VERDICT_FAIL:
+                ver["outcome"] = "FAIL"
+                ver["reason_code"] = "SUNG_COVERAGE_LOW"
+                ver["next_action"] = (
+                    "measured sung %.1f%% is %.1f points from the %g%% target "
+                    "(detector %s, confidence %.2f): redo"
+                    % (block["sung_pct"], j["gap_pts"], target * 100.0,
+                       block["detector"], block["confidence"]))
+                return ver
+            if j["verdict"] == _SS.VERDICT_FLAG:
+                ver["flags"] = [
+                    "measured sung %.1f%% is %.1f points from the %g%% "
+                    "target: accepted with a flag"
+                    % (block["sung_pct"], j["gap_pts"], target * 100.0)]
+        ver["outcome"] = "PASS"
+        ver["reason_code"] = ("VELVET_BED_PRESENT" if mode == VELVET
+                              else "SUNG_COVERAGE_OK")
+        ver["next_action"] = (
+            "measured by %s (confidence %.2f); labelled time is reported "
+            "only under labelled_* fields" % (block["detector"],
+                                             block["confidence"]))
+        return ver
     # ---- primary (G8): measured segments from the vocal-stem detector ----
     if segments is not None:
         if _SS.segment_basis(segments) != _SS.MEASURED_SOURCE:
@@ -416,6 +508,11 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
         ver["share_basis"] = "planned"
         ver["sung_coverage"] = round(ratio, 4)
         ver["measured_over"] = "voice_time"
+        # G5: label time is boxed under labelled_* and is NEVER a measured %.
+        ver["labelled_source"] = LABELLED_NOTE
+        ver["labelled_sung_seconds"] = round(
+            sung_voice_seconds_from_timing(timing, spoken_section_ids)[0], 4)
+        ver["labelled_coverage_pct"] = round(ratio * 100.0, 2)
         if mode == VELVET:
             if ratio <= 0.0:
                 # Velvet's bed is the song: a map with no song windows means
@@ -506,13 +603,36 @@ def record_for_gate(verdict, run_id, stage, reviewer_identity,
             "24.4: record_for_gate needs reviewer_session and "
             "reviewer_authority (a blank record can never advance a stage)")
     reason = verdict.get("reason_code") or "SUNG_GUARD"
+    block = verdict.get("sung_pct")
     if verdict["outcome"] == "PASS":
-        summary = ("sung_vocal_guard %s: %s (mode=%s, sung_coverage=%s)%s"
-                   % (TOOL_VERSION, reason, verdict.get("voice_mode"),
-                      verdict.get("sung_coverage"),
-                      "".join(" FLAG: " + f for f in verdict.get("flags", []))))
+        if block:
+            summary = ("sung_vocal_guard %s: %s (mode=%s, sung %.1f%% "
+                       "MEASURED by %s confidence %.2f)%s"
+                       % (TOOL_VERSION, reason, verdict.get("voice_mode"),
+                          block["sung_pct"], block["detector"],
+                          block["confidence"],
+                          "".join(" FLAG: " + f for f in verdict.get("flags", []))))
+        elif verdict.get("share_basis") == "planned":
+            summary = ("sung_vocal_guard %s: %s (mode=%s, sung coverage "
+                       "from LABELLED timing-map time, not measured: "
+                       "labelled %.2f%% of voice time)%s"
+                       % (TOOL_VERSION, reason, verdict.get("voice_mode"),
+                          verdict.get("labelled_coverage_pct") or 0.0,
+                          "".join(" FLAG: " + f for f in verdict.get("flags", []))))
+        else:
+            summary = ("sung_vocal_guard %s: %s (mode=%s, sung_coverage=%s)%s"
+                       % (TOOL_VERSION, reason, verdict.get("voice_mode"),
+                          verdict.get("sung_coverage"),
+                          "".join(" FLAG: " + f for f in verdict.get("flags", []))))
+    elif block:
+        summary = ("%s: %s (sung %.1f%% MEASURED by %s confidence %.2f)"
+                   % (reason, verdict.get("next_action"), block["sung_pct"],
+                      block["detector"], block["confidence"]))
     else:
         summary = ("%s: %s" % (reason, verdict.get("next_action")))
+    if not block and verdict.get("share_basis") == "planned" \
+            and "LABELLED" not in summary:
+        summary += " [LABELLED timing-map time, not measured]"
     rec = {"schema_version": "1.0.0", "check_id": "final:audio:sung_vocal",
            "run_id": run_id, "stage": stage, "check": "audio",
            "verdict": "PASS" if verdict["outcome"] == "PASS" else "FAIL",
