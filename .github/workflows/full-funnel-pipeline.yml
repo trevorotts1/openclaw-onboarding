@@ -40,6 +40,10 @@ on:
 env:
   PYTHONUNBUFFERED: "1"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   persona-selector:
     name: "persona-selector (web-dev funnel surface + A7)"

@@ -152,6 +152,10 @@ on:
       - "tests/unit/test_skill23_build_nondestructive.py"
       - ".github/workflows/skill23-provisioning-tests.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   skill23-provisioning-tests:
     name: Skill-23 provisioning tests (12 hermetic suites)

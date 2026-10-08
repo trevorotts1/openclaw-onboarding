@@ -27,6 +27,7 @@ name: presentation-schedules-guard
 
 on:
   push:
+    branches: [main]
     paths:
       - install.sh
       - update-skills.sh
@@ -48,6 +49,10 @@ on:
       - tests/unit/presentation-schedules-installed.test.sh
       - tests/unit/pres034-scheduler-reconcile.test.sh
       - .github/workflows/presentation-schedules-guard.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   presentation-schedules-guard:

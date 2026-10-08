@@ -1,0 +1,3274 @@
+[
+ {
+  "name": "anthology-shared-run-dir-guard",
+  "was": "anthology-shared-run-dir-guard.yml",
+  "script": "scripts/ci/fast-guards.d/anthology-shared-run-dir-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "59-anthology-engine/scripts/stage_s*.py",
+     "59-anthology-engine/tests/test_stage_run_dir_shared.py",
+     "59-anthology-engine/tests/test_s9_assembly_runner_confirm_order.py",
+     "54-anthology-writer/run_anthology.py",
+     "54-anthology-writer/scripts/prove_aw_intake.py",
+     ".github/workflows/anthology-shared-run-dir-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "59-anthology-engine/scripts/stage_s*.py",
+     "59-anthology-engine/tests/test_stage_run_dir_shared.py",
+     "59-anthology-engine/tests/test_s9_assembly_runner_confirm_order.py",
+     "54-anthology-writer/run_anthology.py",
+     "54-anthology-writer/scripts/prove_aw_intake.py",
+     ".github/workflows/anthology-shared-run-dir-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "backup-prune-after-verify-guard",
+  "was": "backup-prune-after-verify-guard.yml",
+  "script": "scripts/ci/fast-guards.d/backup-prune-after-verify-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "02-back-yourself-up-protocol/scripts/full-backup.sh",
+     "02-back-yourself-up-protocol/back-yourself-up-protocol-full.md",
+     "tests/unit/full-backup-prune-after-verify.test.sh",
+     ".github/workflows/backup-prune-after-verify-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "02-back-yourself-up-protocol/scripts/full-backup.sh",
+     "02-back-yourself-up-protocol/back-yourself-up-protocol-full.md",
+     "tests/unit/full-backup-prune-after-verify.test.sh",
+     ".github/workflows/backup-prune-after-verify-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "board-join-chain-guard",
+  "was": "board-join-chain-guard.yml",
+  "script": "scripts/ci/fast-guards.d/board-join-chain-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/prove-board-join.py",
+     "23-ai-workforce-blueprint/scripts/test-board-join-chain.sh",
+     "tests/unit/test_board_join_stray_template_depts.py",
+     "23-ai-workforce-blueprint/scripts/build-workforce.py",
+     "23-ai-workforce-blueprint/scripts/department-floor.py",
+     "32-command-center-setup/scripts/seed-workspaces.py",
+     "shared-utils/canonical_slug.py",
+     "shared-utils/resolve_db.py",
+     "scripts/qc-assert-workspace-departments-built.sh",
+     "scripts/qc-system-integrity.sh",
+     ".github/workflows/board-join-chain-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/prove-board-join.py",
+     "23-ai-workforce-blueprint/scripts/test-board-join-chain.sh",
+     "tests/unit/test_board_join_stray_template_depts.py",
+     "23-ai-workforce-blueprint/scripts/build-workforce.py",
+     "23-ai-workforce-blueprint/scripts/department-floor.py",
+     "32-command-center-setup/scripts/seed-workspaces.py",
+     "shared-utils/canonical_slug.py",
+     "shared-utils/resolve_db.py",
+     "scripts/qc-assert-workspace-departments-built.sh",
+     "scripts/qc-system-integrity.sh",
+     ".github/workflows/board-join-chain-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "book-routing-receipt-guard",
+  "was": "book-routing-receipt-guard.yml",
+  "script": "scripts/ci/fast-guards.d/book-routing-receipt-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "52-avatar-alchemist/scripts/aa_director.py",
+     "52-avatar-alchemist/AA-GATE-HASHES.json",
+     "53-book-writer/scripts/bw_intake_accept.py",
+     "53-book-writer/scripts/prove_bw_intake.py",
+     "tests/unit/book-routing-requires-a-receipt.test.py",
+     ".github/workflows/book-routing-receipt-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "52-avatar-alchemist/scripts/aa_director.py",
+     "52-avatar-alchemist/AA-GATE-HASHES.json",
+     "53-book-writer/scripts/bw_intake_accept.py",
+     "53-book-writer/scripts/prove_bw_intake.py",
+     "tests/unit/book-routing-requires-a-receipt.test.py",
+     ".github/workflows/book-routing-receipt-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "bounded-resume-cron-guard",
+  "was": "bounded-resume-cron-guard.yml",
+  "script": "scripts/ci/fast-guards.d/bounded-resume-cron-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "lib-onboarding-resume-cron.sh",
+     "scripts/resume-onboarding.sh",
+     "scripts/resume-onboarding-prompt.txt",
+     "tests/unit/bounded-resume-cron.test.sh",
+     "tests/unit/update-skills-resume-cron.test.sh",
+     ".github/workflows/bounded-resume-cron-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "lib-onboarding-resume-cron.sh",
+     "scripts/resume-onboarding.sh",
+     "scripts/resume-onboarding-prompt.txt",
+     "tests/unit/bounded-resume-cron.test.sh",
+     "tests/unit/update-skills-resume-cron.test.sh",
+     ".github/workflows/bounded-resume-cron-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "browser-session-truth-guard",
+  "was": "browser-session-truth-guard.yml",
+  "script": "scripts/ci/fast-guards.d/browser-session-truth-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "06-ghl-install-pages/tools/browser_manager.sh",
+     "06-ghl-install-pages/tools/browser_manager.py",
+     "06-ghl-install-pages/tools/ghl_verify.py",
+     "06-ghl-install-pages/tools/ghl_builder.py",
+     "tests/unit/browser-manager-open-status-and-detach-ownership.test.sh",
+     "tests/unit/ghl-verify-live-browser-session.test.py",
+     ".github/workflows/browser-session-truth-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "06-ghl-install-pages/tools/browser_manager.sh",
+     "06-ghl-install-pages/tools/browser_manager.py",
+     "06-ghl-install-pages/tools/ghl_verify.py",
+     "06-ghl-install-pages/tools/ghl_builder.py",
+     "tests/unit/browser-manager-open-status-and-detach-ownership.test.sh",
+     "tests/unit/ghl-verify-live-browser-session.test.py",
+     ".github/workflows/browser-session-truth-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "capacity-dual-key-heal-guard",
+  "was": "capacity-dual-key-heal-guard.yml",
+  "script": "scripts/ci/fast-guards.d/capacity-dual-key-heal-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "install.sh",
+     "scripts/capacity-monitor.sh",
+     "tests/unit/capacity-dual-key-heal.test.sh",
+     ".github/workflows/capacity-dual-key-heal-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "install.sh",
+     "scripts/capacity-monitor.sh",
+     "tests/unit/capacity-dual-key-heal.test.sh",
+     ".github/workflows/capacity-dual-key-heal-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "cc-app-dir-resolution-guard",
+  "was": "cc-app-dir-resolution-guard.yml",
+  "script": "scripts/ci/fast-guards.d/cc-app-dir-resolution-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "scripts/test-cc-app-dir-resolution.sh",
+     ".github/workflows/cc-app-dir-resolution-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "scripts/test-cc-app-dir-resolution.sh",
+     ".github/workflows/cc-app-dir-resolution-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "cc-company-id-registry-repair-guard",
+  "was": "cc-company-id-registry-repair-guard.yml",
+  "script": "scripts/ci/fast-guards.d/cc-company-id-registry-repair-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "shared-utils/service_env.py",
+     "tests/unit/cc-company-id-registry-repair.test.sh",
+     ".github/workflows/cc-company-id-registry-repair-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "shared-utils/service_env.py",
+     "tests/unit/cc-company-id-registry-repair.test.sh",
+     ".github/workflows/cc-company-id-registry-repair-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "cc-update-only-credential-and-git-sync-guard",
+  "was": "cc-update-only-credential-and-git-sync-guard.yml",
+  "script": "scripts/ci/fast-guards.d/cc-update-only-credential-and-git-sync-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "scripts/fleet-roll/preflight-credential-guard.sh",
+     "scripts/test-cc-update-only-credential-and-git-sync.sh",
+     ".github/workflows/cc-update-only-credential-and-git-sync-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "scripts/fleet-roll/preflight-credential-guard.sh",
+     "scripts/test-cc-update-only-credential-and-git-sync.sh",
+     ".github/workflows/cc-update-only-credential-and-git-sync-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "cc-watchdog-cron-guard",
+  "was": "cc-watchdog-cron-guard.yml",
+  "script": "scripts/ci/fast-guards.d/cc-watchdog-cron-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "32-command-center-setup/qc-command-center-setup.sh",
+     "tests/unit/cc-watchdog-cron-registration.test.sh",
+     ".github/workflows/cc-watchdog-cron-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "32-command-center-setup/qc-command-center-setup.sh",
+     "tests/unit/cc-watchdog-cron-registration.test.sh",
+     ".github/workflows/cc-watchdog-cron-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "ceo-tools-root-schema-guard",
+  "was": "ceo-tools-root-schema-guard.yml",
+  "script": "scripts/ci/fast-guards.d/ceo-tools-root-schema-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/apply-fleet-standards.sh",
+     "scripts/apply-routing-fix.sh",
+     "scripts/grant-ceo-consent.sh",
+     "scripts/verify-routing.sh",
+     "scripts/test-ceo-tool-gate.sh",
+     "hooks/lib-ceo-tool-gate.sh",
+     "23-ai-workforce-blueprint/scripts/build-workforce.py",
+     ".github/workflows/ceo-tools-root-schema-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/apply-fleet-standards.sh",
+     "scripts/apply-routing-fix.sh",
+     "scripts/grant-ceo-consent.sh",
+     "scripts/verify-routing.sh",
+     "scripts/test-ceo-tool-gate.sh",
+     "hooks/lib-ceo-tool-gate.sh",
+     "23-ai-workforce-blueprint/scripts/build-workforce.py",
+     ".github/workflows/ceo-tools-root-schema-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "checker-false-fail-guards",
+  "was": "checker-false-fail-guards.yml",
+  "script": "scripts/ci/fast-guards.d/checker-false-fail-guards.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "31-upgraded-memory-system/qc-upgraded-memory-system.sh",
+     "44-convert-and-flow-operator/qc-convert-and-flow.sh",
+     "35-social-media-planner/qc-skill35.sh",
+     "05-ghl-setup/qc-ghl-setup.sh",
+     "10-github-setup/qc-github-setup.sh",
+     "10-github-setup/SKILL.md",
+     "08-vercel-setup/qc-vercel-setup.sh",
+     "08-vercel-setup/SKILL.md",
+     "docs/tools/check_lattice_citation.py",
+     "docs/lattice-citations.json",
+     "tests/unit/qc-upgraded-memory-key-resolution.test.sh",
+     "tests/unit/qc-convert-and-flow-layout-and-path.test.sh",
+     "tests/unit/qc-skill35-installed-layout.test.sh",
+     "tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh",
+     "tests/unit/qc-sovereign-lock-forbidden-cli.test.sh",
+     ".github/workflows/checker-false-fail-guards.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "31-upgraded-memory-system/qc-upgraded-memory-system.sh",
+     "44-convert-and-flow-operator/qc-convert-and-flow.sh",
+     "35-social-media-planner/qc-skill35.sh",
+     "05-ghl-setup/qc-ghl-setup.sh",
+     "10-github-setup/qc-github-setup.sh",
+     "10-github-setup/SKILL.md",
+     "08-vercel-setup/qc-vercel-setup.sh",
+     "08-vercel-setup/SKILL.md",
+     "docs/tools/check_lattice_citation.py",
+     "docs/lattice-citations.json",
+     "tests/unit/qc-upgraded-memory-key-resolution.test.sh",
+     "tests/unit/qc-convert-and-flow-layout-and-path.test.sh",
+     "tests/unit/qc-skill35-installed-layout.test.sh",
+     "tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh",
+     "tests/unit/qc-sovereign-lock-forbidden-cli.test.sh",
+     ".github/workflows/checker-false-fail-guards.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "cinematic-forge-delivery-guard",
+  "was": "cinematic-forge-delivery-guard.yml",
+  "script": "scripts/ci/fast-guards.d/cinematic-forge-delivery-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "28-cinematic-forge/**",
+     "tests/unit/cinematic-forge-delivery-gate.test.sh",
+     ".github/workflows/cinematic-forge-delivery-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "28-cinematic-forge/**",
+     "tests/unit/cinematic-forge-delivery-gate.test.sh",
+     ".github/workflows/cinematic-forge-delivery-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "class-kit-gate",
+  "was": "class-kit-gate.yml",
+  "script": "scripts/ci/fast-guards.d/class-kit-gate.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/qc-class-kit-gate.sh",
+     "23-ai-workforce-blueprint/test-fixtures/make-class-kit-fixtures.sh",
+     "23-ai-workforce-blueprint/DEPT-KIT-TEMPLATE.md",
+     ".github/workflows/class-kit-gate.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/qc-class-kit-gate.sh",
+     "23-ai-workforce-blueprint/test-fixtures/make-class-kit-fixtures.sh",
+     "23-ai-workforce-blueprint/DEPT-KIT-TEMPLATE.md",
+     ".github/workflows/class-kit-gate.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "closeout-watchdog-guard",
+  "was": "closeout-watchdog-guard.yml",
+  "script": "scripts/ci/fast-guards.d/closeout-watchdog-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh",
+     "23-ai-workforce-blueprint/scripts/update-interview-state.sh",
+     "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh",
+     "23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh",
+     "23-ai-workforce-blueprint/build-state-schema.json",
+     "37-zhc-closeout/scripts/run-closeout.sh",
+     "37-zhc-closeout/scripts/generate-infographics.sh",
+     "37-zhc-closeout/scripts/create-notion-closeout.sh",
+     "37-zhc-closeout/scripts/fleet-stuck-clients.sh",
+     "37-zhc-closeout/scripts/fleet-sweep-closeouts.sh",
+     "37-zhc-closeout/scripts/resume-closeout-cron.sh",
+     "37-zhc-closeout/scripts/test-closeout-watchdog.sh",
+     "shared-utils/nudge-incomplete-interviews.py",
+     "scripts/ensure-pipeline-crons.sh",
+     "install.sh",
+     ".github/workflows/closeout-watchdog-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh",
+     "23-ai-workforce-blueprint/scripts/update-interview-state.sh",
+     "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh",
+     "23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh",
+     "23-ai-workforce-blueprint/build-state-schema.json",
+     "37-zhc-closeout/scripts/run-closeout.sh",
+     "37-zhc-closeout/scripts/generate-infographics.sh",
+     "37-zhc-closeout/scripts/create-notion-closeout.sh",
+     "37-zhc-closeout/scripts/fleet-stuck-clients.sh",
+     "37-zhc-closeout/scripts/fleet-sweep-closeouts.sh",
+     "37-zhc-closeout/scripts/resume-closeout-cron.sh",
+     "37-zhc-closeout/scripts/test-closeout-watchdog.sh",
+     "shared-utils/nudge-incomplete-interviews.py",
+     "scripts/ensure-pipeline-crons.sh",
+     "install.sh",
+     ".github/workflows/closeout-watchdog-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "command-center-runtime-config-update-guard",
+  "was": "command-center-runtime-config-update-guard.yml",
+  "script": "scripts/ci/fast-guards.d/command-center-runtime-config-update-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "shared-utils/reconcile_command_center_runtime.py",
+     "tests/unit/update-command-center-runtime-config.test.sh",
+     ".github/workflows/command-center-runtime-config-update-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "shared-utils/reconcile_command_center_runtime.py",
+     "tests/unit/update-command-center-runtime-config.test.sh",
+     ".github/workflows/command-center-runtime-config-update-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "core-updates-wiring-guard",
+  "was": "core-updates-wiring-guard.yml",
+  "script": "scripts/ci/fast-guards.d/core-updates-wiring-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "tests/unit/core-updates-all-skills-wired.test.sh",
+     ".github/workflows/core-updates-wiring-guard.yml",
+     "**/CORE_UPDATES.md"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "tests/unit/core-updates-all-skills-wired.test.sh",
+     ".github/workflows/core-updates-wiring-guard.yml",
+     "**/CORE_UPDATES.md"
+    ]
+   }
+  }
+ },
+ {
+  "name": "cron-owner-chat-guard",
+  "was": "cron-owner-chat-guard.yml",
+  "script": "scripts/ci/fast-guards.d/cron-owner-chat-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "lib-onboarding-resume-cron.sh",
+     "force-update.sh",
+     "check-updates.sh",
+     "cron-prompt.txt",
+     "AGENTS.md",
+     "shared-utils/**",
+     "scripts/**",
+     "15-blackceo-team-management/**",
+     "23-ai-workforce-blueprint/scripts/**",
+     "37-zhc-closeout/scripts/**",
+     "tests/unit/cron-owner-chat-guard.test.sh",
+     "tests/unit/no-operator-comingle-template.test.sh",
+     ".github/workflows/cron-owner-chat-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "lib-onboarding-resume-cron.sh",
+     "force-update.sh",
+     "check-updates.sh",
+     "cron-prompt.txt",
+     "AGENTS.md",
+     "shared-utils/**",
+     "scripts/**",
+     "15-blackceo-team-management/**",
+     "23-ai-workforce-blueprint/scripts/**",
+     "37-zhc-closeout/scripts/**",
+     "tests/unit/cron-owner-chat-guard.test.sh",
+     "tests/unit/no-operator-comingle-template.test.sh",
+     ".github/workflows/cron-owner-chat-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "cron-template-delivery-guard",
+  "was": "cron-template-delivery-guard.yml",
+  "script": "scripts/ci/fast-guards.d/cron-template-delivery-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "cron-prompt.txt",
+     "direct-to-agent-install.md",
+     "install.sh",
+     "update-skills.sh",
+     "lib-onboarding-resume-cron.sh",
+     "**/*.cron.json",
+     "**/*prompt*.txt",
+     "scripts/check-cron-template-delivery.py",
+     "scripts/ensure-pipeline-crons.sh",
+     "tests/unit/cron-template-delivery.test.sh",
+     ".github/workflows/cron-template-delivery-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "cron-prompt.txt",
+     "direct-to-agent-install.md",
+     "install.sh",
+     "update-skills.sh",
+     "lib-onboarding-resume-cron.sh",
+     "**/*.cron.json",
+     "**/*prompt*.txt",
+     "scripts/check-cron-template-delivery.py",
+     "scripts/ensure-pipeline-crons.sh",
+     "tests/unit/cron-template-delivery.test.sh",
+     ".github/workflows/cron-template-delivery-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "department-runtime-parity-guard",
+  "was": "department-runtime-parity-guard.yml",
+  "script": "scripts/ci/fast-guards.d/department-runtime-parity-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/guard-department-runtime-parity.py",
+     "32-command-center-setup/scripts/test_guard_department_runtime_parity.py",
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "shared-utils/resolve_db.py",
+     "shared-utils/canonical_slug.py",
+     "update-skills.sh",
+     ".github/workflows/department-runtime-parity-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/guard-department-runtime-parity.py",
+     "32-command-center-setup/scripts/test_guard_department_runtime_parity.py",
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "shared-utils/resolve_db.py",
+     "shared-utils/canonical_slug.py",
+     "update-skills.sh",
+     ".github/workflows/department-runtime-parity-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "documented-entrypoints-and-archived-tombstones-guard",
+  "was": "documented-entrypoints-and-archived-tombstones-guard.yml",
+  "script": "scripts/ci/fast-guards.d/documented-entrypoints-and-archived-tombstones-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "*/SKILL.md",
+     "*-ARCHIVED/**",
+     "docs/tools/check_documented_entrypoints.py",
+     "docs/archived-skill-tombstones.json",
+     "tests/unit/documented-entrypoint-paths.test.py",
+     "tests/unit/archived-skill-tombstones.test.py",
+     ".github/workflows/documented-entrypoints-and-archived-tombstones-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "*/SKILL.md",
+     "*-ARCHIVED/**",
+     "docs/tools/check_documented_entrypoints.py",
+     "docs/archived-skill-tombstones.json",
+     "tests/unit/documented-entrypoint-paths.test.py",
+     "tests/unit/archived-skill-tombstones.test.py",
+     ".github/workflows/documented-entrypoints-and-archived-tombstones-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "fail-closed-doctrine-gate",
+  "was": "fail-closed-doctrine-gate.yml",
+  "script": "scripts/ci/fast-guards.d/fail-closed-doctrine-gate.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "AGENTS.md",
+     "scripts/qc-assert-fail-closed-doctrine.sh",
+     "scripts/apply-fleet-standards.sh",
+     "61-loop-protection-system/scripts/loop_detectors.py",
+     "61-loop-protection-system/scripts/loop_watchdog.py",
+     "61-loop-protection-system/config/thresholds.json",
+     "61-loop-protection-system/config/signatures.json",
+     "tests/unit/fail-closed-doctrine-gate.test.sh",
+     ".github/workflows/fail-closed-doctrine-gate.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "AGENTS.md",
+     "scripts/qc-assert-fail-closed-doctrine.sh",
+     "scripts/apply-fleet-standards.sh",
+     "61-loop-protection-system/scripts/loop_detectors.py",
+     "61-loop-protection-system/scripts/loop_watchdog.py",
+     "61-loop-protection-system/config/thresholds.json",
+     "61-loop-protection-system/config/signatures.json",
+     "tests/unit/fail-closed-doctrine-gate.test.sh",
+     ".github/workflows/fail-closed-doctrine-gate.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "fleet-roll-handoff-guard",
+  "was": "fleet-roll-handoff-guard.yml",
+  "script": "scripts/ci/fast-guards.d/fleet-roll-handoff-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "docs/FLEET-ROLL-RUNBOOK.md",
+     "shared-utils/sop-embed-once/build-and-publish.sh",
+     "scripts/pre-july14-embedding-migration-check.sh",
+     "tests/unit/fleet-roll-handoff-push-client-embeddings.test.py",
+     ".github/workflows/fleet-roll-handoff-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "docs/FLEET-ROLL-RUNBOOK.md",
+     "shared-utils/sop-embed-once/build-and-publish.sh",
+     "scripts/pre-july14-embedding-migration-check.sh",
+     "tests/unit/fleet-roll-handoff-push-client-embeddings.test.py",
+     ".github/workflows/fleet-roll-handoff-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "fleet-standing-fail-open-guard",
+  "was": "fleet-standing-fail-open-guard.yml",
+  "script": "scripts/ci/fast-guards.d/fleet-standing-fail-open-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "tests/unit/fleet-standing-gate.test.sh",
+     ".github/workflows/fleet-standing-fail-open-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "tests/unit/fleet-standing-gate.test.sh",
+     ".github/workflows/fleet-standing-fail-open-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "fleet-validation-harness-guard",
+  "was": "fleet-validation-harness-guard.yml",
+  "script": "scripts/ci/fast-guards.d/fleet-validation-harness-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "shared-utils/fleet_ledger.py",
+     "shared-utils/fleet_validation_harness.py",
+     "scripts/fleet-validate.sh",
+     "tests/unit/fleet-ledger-harness.test.py",
+     "tests/unit/fleet-validation-harness.test.sh",
+     "docs/FLEET-VALIDATION-HARNESS.md",
+     ".github/workflows/fleet-validation-harness-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "shared-utils/fleet_ledger.py",
+     "shared-utils/fleet_validation_harness.py",
+     "scripts/fleet-validate.sh",
+     "tests/unit/fleet-ledger-harness.test.py",
+     "tests/unit/fleet-validation-harness.test.sh",
+     "docs/FLEET-VALIDATION-HARNESS.md",
+     ".github/workflows/fleet-validation-harness-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "funnel-automation-libraries-guard",
+  "was": "funnel-automation-libraries-guard.yml",
+  "script": "scripts/ci/fast-guards.d/funnel-automation-libraries-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "06-ghl-install-pages/funnel-templates/**",
+     "06-ghl-install-pages/tools/funnel_matcher*.py",
+     "06-ghl-install-pages/tools/v2_dispatcher.py",
+     "06-ghl-install-pages/tools/persona_bundle_ladder.py",
+     "06-ghl-install-pages/tools/cc_board.py",
+     "06-ghl-install-pages/tools/catalog-index.json",
+     "06-ghl-install-pages/qc-built-funnel.sh",
+     "06-ghl-install-pages/tests/test_funnel_matcher.py",
+     "06-ghl-install-pages/tests/test_v2_dispatcher.py",
+     "06-ghl-install-pages/scripts/prove_skill6_block_u22.py",
+     "06-ghl-install-pages/tests/test_prove_skill6_block_u22.py",
+     "06-ghl-install-pages/tools/skill6_convergence.py",
+     "06-ghl-install-pages/tests/test_a_u7_convergence.py",
+     "06-ghl-install-pages/tests/test_a_u9_exemplar_injection.py",
+     "06-ghl-install-pages/exemplars/**",
+     "35-social-media-planner/exemplars/**",
+     "44-convert-and-flow-operator/automation-templates/**",
+     "44-convert-and-flow-operator/qc-built-workflow.sh",
+     "44-convert-and-flow-operator/tests/test_automation_matcher.py",
+     "49-signature-funnel/scripts/copy_persona_blend_seam.py",
+     "49-signature-funnel/scripts/test_copy_persona_blend_seam.py",
+     "shared-utils/fab_qc.py",
+     "shared-utils/fab_artifact.py",
+     "shared-utils/persona_crosswalk.py",
+     "shared-utils/persona-crosswalk.json",
+     "shared-utils/exemplar_injection.py",
+     "shared-utils/test_exemplar_injection.py",
+     "23-ai-workforce-blueprint/scripts/persona_blend.py",
+     "22-book-to-persona-coaching-leadership-system/persona-categories.json",
+     "universal-sops/funnel-automation-build-quality-rubric.md",
+     "tests/unit/fab-qc.test.py",
+     "tests/unit/fab-artifact.test.py",
+     "tests/unit/persona-crosswalk.test.py",
+     "shared-utils/page_qc.py",
+     "tests/unit/page-qc.test.py",
+     "tests/unit/page-qc-gate-guard.test.sh",
+     "tests/unit/u117-comms-qc-conformance.test.py",
+     "tests/unit/u117-comms-qc-guard.test.sh",
+     "scripts/check-funnel-automation-library-drift.py",
+     "scripts/guard-fab-qc-gate.sh",
+     ".github/workflows/funnel-automation-libraries-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "06-ghl-install-pages/funnel-templates/**",
+     "06-ghl-install-pages/tools/funnel_matcher*.py",
+     "06-ghl-install-pages/tools/v2_dispatcher.py",
+     "06-ghl-install-pages/tools/persona_bundle_ladder.py",
+     "06-ghl-install-pages/tools/cc_board.py",
+     "06-ghl-install-pages/tools/catalog-index.json",
+     "06-ghl-install-pages/qc-built-funnel.sh",
+     "06-ghl-install-pages/tests/test_funnel_matcher.py",
+     "06-ghl-install-pages/tests/test_v2_dispatcher.py",
+     "06-ghl-install-pages/scripts/prove_skill6_block_u22.py",
+     "06-ghl-install-pages/tests/test_prove_skill6_block_u22.py",
+     "06-ghl-install-pages/tools/skill6_convergence.py",
+     "06-ghl-install-pages/tests/test_a_u7_convergence.py",
+     "06-ghl-install-pages/tests/test_a_u9_exemplar_injection.py",
+     "06-ghl-install-pages/exemplars/**",
+     "35-social-media-planner/exemplars/**",
+     "44-convert-and-flow-operator/automation-templates/**",
+     "44-convert-and-flow-operator/qc-built-workflow.sh",
+     "44-convert-and-flow-operator/tests/test_automation_matcher.py",
+     "49-signature-funnel/scripts/copy_persona_blend_seam.py",
+     "49-signature-funnel/scripts/test_copy_persona_blend_seam.py",
+     "shared-utils/fab_qc.py",
+     "shared-utils/fab_artifact.py",
+     "shared-utils/persona_crosswalk.py",
+     "shared-utils/persona-crosswalk.json",
+     "shared-utils/exemplar_injection.py",
+     "shared-utils/test_exemplar_injection.py",
+     "23-ai-workforce-blueprint/scripts/persona_blend.py",
+     "22-book-to-persona-coaching-leadership-system/persona-categories.json",
+     "universal-sops/funnel-automation-build-quality-rubric.md",
+     "tests/unit/fab-qc.test.py",
+     "tests/unit/fab-artifact.test.py",
+     "tests/unit/persona-crosswalk.test.py",
+     "shared-utils/page_qc.py",
+     "tests/unit/page-qc.test.py",
+     "tests/unit/page-qc-gate-guard.test.sh",
+     "tests/unit/u117-comms-qc-conformance.test.py",
+     "tests/unit/u117-comms-qc-guard.test.sh",
+     "scripts/check-funnel-automation-library-drift.py",
+     "scripts/guard-fab-qc-gate.sh",
+     ".github/workflows/funnel-automation-libraries-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "ghl-token-only-guard",
+  "was": "ghl-token-only-guard.yml",
+  "script": "scripts/ci/fast-guards.d/ghl-token-only-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": null
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": null
+   }
+  }
+ },
+ {
+  "name": "gip-band-routing-reconciliation-guard",
+  "was": "gip-band-routing-reconciliation-guard.yml",
+  "script": "scripts/ci/fast-guards.d/gip-band-routing-reconciliation-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "45-design-intelligence-library/library/_system/prompt-bands.json",
+     "45-design-intelligence-library/library/social-media-designs/_RULES.md",
+     "45-design-intelligence-library/scripts/diu_validator.py",
+     "45-design-intelligence-library/scripts/prove_gip_prompt_floor.py",
+     "45-design-intelligence-library/scripts/test_prompt_band_cli.py",
+     "shared-utils/kie_prompt_enforcer.py",
+     "35-social-media-planner/scripts/pregen_prompt_gate.py",
+     "35-social-media-planner/scripts/test_pregen_prompt_gate.py",
+     "23-ai-workforce-blueprint/templates/role-library/graphics/**",
+     "23-ai-workforce-blueprint/scripts/hash-content-manifest.py",
+     ".github/workflows/gip-band-routing-reconciliation-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "45-design-intelligence-library/library/_system/prompt-bands.json",
+     "45-design-intelligence-library/library/social-media-designs/_RULES.md",
+     "45-design-intelligence-library/scripts/diu_validator.py",
+     "45-design-intelligence-library/scripts/prove_gip_prompt_floor.py",
+     "45-design-intelligence-library/scripts/test_prompt_band_cli.py",
+     "shared-utils/kie_prompt_enforcer.py",
+     "35-social-media-planner/scripts/pregen_prompt_gate.py",
+     "35-social-media-planner/scripts/test_pregen_prompt_gate.py",
+     "23-ai-workforce-blueprint/templates/role-library/graphics/**",
+     "23-ai-workforce-blueprint/scripts/hash-content-manifest.py",
+     ".github/workflows/gip-band-routing-reconciliation-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "kie-prompt-enforcer-guard",
+  "was": "kie-prompt-enforcer-guard.yml",
+  "script": "scripts/ci/fast-guards.d/kie-prompt-enforcer-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": null
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/kie_prompt_enforcer.py",
+     "shared-utils/kie_prompt_gates.json",
+     "shared-utils/social_prompt_compiler.py",
+     "shared-utils/social_prompt_policy.json",
+     "74-kie-live-adapter/scripts/kie_live_adapter.py",
+     "tests/unit/kie-prompt-enforcer-and-gates.test.py",
+     "tests/unit/kie-prompt-enforcer-embedded-lock.test.py",
+     "scripts/embed-kie-prompt-enforcer.py",
+     "06-ghl-install-pages/tools/**",
+     "scripts/qc_gip_agnes_prompt_band.py",
+     "25-video-creator/scripts/ai_providers.py",
+     "35-social-media-planner/scripts/pregen_prompt_gate.py",
+     "45-design-intelligence-library/scripts/**",
+     "66-kie-image/scripts/validate_prompt.py",
+     "67-kie-video/scripts/validate_prompt.py",
+     "68-kie-audio/scripts/validate_audio_request.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prompt_gate.py",
+     ".github/workflows/kie-prompt-enforcer-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "library-lockstep",
+  "was": "library-lockstep.yml",
+  "script": "scripts/ci/fast-guards.d/library-lockstep.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": null
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/templates/role-library/**",
+     "23-ai-workforce-blueprint/templates/persona-library/**",
+     "23-ai-workforce-blueprint/scripts/register-library-additions.py",
+     "23-ai-workforce-blueprint/scripts/test-library-register.sh",
+     "23-ai-workforce-blueprint/scripts/hash-content-manifest.py",
+     "23-ai-workforce-blueprint/scripts/tag_role_classes.py",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     ".github/workflows/library-lockstep.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "memory-activator-guard",
+  "was": "memory-activator-guard.yml",
+  "script": "scripts/ci/fast-guards.d/memory-activator-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "31-upgraded-memory-system/**",
+     "tests/unit/memory-activator-correct-atomic.test.sh",
+     ".github/workflows/memory-activator-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "31-upgraded-memory-system/**",
+     "tests/unit/memory-activator-correct-atomic.test.sh",
+     ".github/workflows/memory-activator-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "memory-cache-prune-guard",
+  "was": "memory-cache-prune-guard.yml",
+  "script": "scripts/ci/fast-guards.d/memory-cache-prune-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "31-upgraded-memory-system/install.sh",
+     "31-upgraded-memory-system/scripts/memory-cache-prune.sh",
+     "31-upgraded-memory-system/scripts/memory-index-check.sh",
+     "shared-utils/cron-lib.sh",
+     "tests/unit/memory-cache-prune.test.sh",
+     ".github/workflows/memory-cache-prune-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "31-upgraded-memory-system/install.sh",
+     "31-upgraded-memory-system/scripts/memory-cache-prune.sh",
+     "31-upgraded-memory-system/scripts/memory-index-check.sh",
+     "shared-utils/cron-lib.sh",
+     "tests/unit/memory-cache-prune.test.sh",
+     ".github/workflows/memory-cache-prune-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "memory-corpus-guard",
+  "was": "memory-corpus-guard.yml",
+  "script": "scripts/ci/fast-guards.d/memory-corpus-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "31-upgraded-memory-system/**",
+     "32-command-center-setup/**",
+     "install.sh",
+     "tests/unit/memory-corpus-no-defaults-extrapaths.test.sh",
+     ".github/workflows/memory-corpus-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "31-upgraded-memory-system/**",
+     "32-command-center-setup/**",
+     "install.sh",
+     "tests/unit/memory-corpus-no-defaults-extrapaths.test.sh",
+     ".github/workflows/memory-corpus-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "model-selector-guard",
+  "was": "model-selector-guard.yml",
+  "script": "scripts/ci/fast-guards.d/model-selector-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": null
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": null
+   }
+  }
+ },
+ {
+  "name": "no-backup-copies-guard",
+  "was": "no-backup-copies-guard.yml",
+  "script": "scripts/ci/fast-guards.d/no-backup-copies-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/skills-rollback.sh",
+     "update-skills.sh",
+     "02-back-yourself-up-protocol/scripts/full-backup.sh",
+     "tests/unit/skills-rollback-no-copy.test.sh",
+     "tests/unit/full-backup-no-repo-skills-copy.test.sh",
+     ".github/workflows/no-backup-copies-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "scripts/skills-rollback.sh",
+     "update-skills.sh",
+     "02-back-yourself-up-protocol/scripts/full-backup.sh",
+     "tests/unit/skills-rollback-no-copy.test.sh",
+     "tests/unit/full-backup-no-repo-skills-copy.test.sh",
+     ".github/workflows/no-backup-copies-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "one-front-door-full-path-guard",
+  "was": "one-front-door-full-path-guard.yml",
+  "script": "scripts/ci/fast-guards.d/one-front-door-full-path-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "force-update.sh",
+     "scripts/weekly-full-update.sh",
+     "scripts/fleet-refresh.sh",
+     "shared-utils/oct4_frontdoor.py",
+     "shared-utils/lib-frontdoor.sh",
+     "tests/unit/one-front-door-full-path.test.sh",
+     ".github/workflows/one-front-door-full-path-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "force-update.sh",
+     "scripts/weekly-full-update.sh",
+     "scripts/fleet-refresh.sh",
+     "shared-utils/oct4_frontdoor.py",
+     "shared-utils/lib-frontdoor.sh",
+     "tests/unit/one-front-door-full-path.test.sh",
+     ".github/workflows/one-front-door-full-path-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "owner-sends-hold-guard",
+  "was": "owner-sends-hold-guard.yml",
+  "script": "scripts/ci/fast-guards.d/owner-sends-hold-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/owner_sends_hold.py",
+     "23-ai-workforce-blueprint/scripts/send-presentation-dept-welcome.sh",
+     "23-ai-workforce-blueprint/scripts/verify-library-gate.sh",
+     "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh",
+     "37-zhc-closeout/scripts/run-closeout.sh",
+     "37-zhc-closeout/scripts/resume-closeout-cron.sh",
+     "37-zhc-closeout/scripts/send-telegram-celebration.sh",
+     "37-zhc-closeout/scripts/lib-closeout-state.sh",
+     "32-command-center-setup/scripts/seed-dashboard-content.py",
+     "32-command-center-setup/scripts/seed-workspaces.py",
+     "32-command-center-setup/scripts/repair-board-company.py",
+     "tests/unit/test_owner_sends_hold.py",
+     "tests/unit/test_board_company_repair.py",
+     "tests/unit/test_no_department_for_default_lane.py",
+     "32-command-center-setup/scripts/scaffold-agent-files.sh",
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "tests/unit/test_starter_tasks_gate.sh",
+     ".github/workflows/owner-sends-hold-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/owner_sends_hold.py",
+     "23-ai-workforce-blueprint/scripts/send-presentation-dept-welcome.sh",
+     "23-ai-workforce-blueprint/scripts/verify-library-gate.sh",
+     "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh",
+     "37-zhc-closeout/scripts/run-closeout.sh",
+     "37-zhc-closeout/scripts/resume-closeout-cron.sh",
+     "37-zhc-closeout/scripts/send-telegram-celebration.sh",
+     "37-zhc-closeout/scripts/lib-closeout-state.sh",
+     "32-command-center-setup/scripts/seed-dashboard-content.py",
+     "32-command-center-setup/scripts/seed-workspaces.py",
+     "32-command-center-setup/scripts/repair-board-company.py",
+     "tests/unit/test_owner_sends_hold.py",
+     "tests/unit/test_board_company_repair.py",
+     "tests/unit/test_no_department_for_default_lane.py",
+     "32-command-center-setup/scripts/scaffold-agent-files.sh",
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "tests/unit/test_starter_tasks_gate.sh",
+     ".github/workflows/owner-sends-hold-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "pending-sops-runner-guard",
+  "was": "pending-sops-runner-guard.yml",
+  "script": "scripts/ci/fast-guards.d/pending-sops-runner-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py",
+     "23-ai-workforce-blueprint/scripts/fill-pending-howtos.py",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh",
+     "23-ai-workforce-blueprint/templates/role-library/**",
+     "tests/unit/test_pending_sops_runner.py",
+     ".github/workflows/pending-sops-runner-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/populate-sops-from-manifest.py",
+     "23-ai-workforce-blueprint/scripts/fill-pending-howtos.py",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh",
+     "23-ai-workforce-blueprint/templates/role-library/**",
+     "tests/unit/test_pending_sops_runner.py",
+     ".github/workflows/pending-sops-runner-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "persona-blend-match-quality-guard",
+  "was": "persona-blend-match-quality-guard.yml",
+  "script": "scripts/ci/fast-guards.d/persona-blend-match-quality-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/persona_blend.py",
+     "23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py",
+     "23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py",
+     "23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py",
+     "23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py",
+     "23-ai-workforce-blueprint/scripts/test-a-u4-conversion-goal.py",
+     "23-ai-workforce-blueprint/scripts/persona-selector-v2.py",
+     "23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py",
+     "23-ai-workforce-blueprint/scripts/test-u115-part-persona-governance.py",
+     "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json",
+     "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json",
+     "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json",
+     "22-book-to-persona-coaching-leadership-system/persona-categories.json",
+     "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py",
+     "22-book-to-persona-coaching-leadership-system/pipeline/persona_fleet.py",
+     "22-book-to-persona-coaching-leadership-system/pipeline/backfill-schema14-registers.py",
+     "22-book-to-persona-coaching-leadership-system/pipeline/schema14_register_assignments.py",
+     "shared-utils/persona_grounding_health_probe.py",
+     "shared-utils/fleet_refresh_runner.py",
+     "tests/unit/persona-match-score-log.test.py",
+     "tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py",
+     "tests/unit/persona-duality-tags-pipeline.test.sh",
+     "tests/unit/schema14-enrichment-complete.test.py",
+     "tests/unit/persona-fleet-schema14-sync.test.py",
+     "tests/unit/persona-grounding-health-probe.test.py",
+     ".github/workflows/persona-blend-match-quality-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/persona_blend.py",
+     "23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py",
+     "23-ai-workforce-blueprint/scripts/test-persona-match-regression-corpus.py",
+     "23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py",
+     "23-ai-workforce-blueprint/scripts/test-a-u2-blend-directive-v2.py",
+     "23-ai-workforce-blueprint/scripts/test-a-u4-conversion-goal.py",
+     "23-ai-workforce-blueprint/scripts/persona-selector-v2.py",
+     "23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py",
+     "23-ai-workforce-blueprint/scripts/test-u115-part-persona-governance.py",
+     "23-ai-workforce-blueprint/scripts/testdata/persona-categories.fixture.json",
+     "23-ai-workforce-blueprint/scripts/testdata/persona-categories.v12.fixture.json",
+     "23-ai-workforce-blueprint/scripts/testdata/persona-match-regression-corpus.json",
+     "22-book-to-persona-coaching-leadership-system/persona-categories.json",
+     "22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py",
+     "22-book-to-persona-coaching-leadership-system/pipeline/persona_fleet.py",
+     "22-book-to-persona-coaching-leadership-system/pipeline/backfill-schema14-registers.py",
+     "22-book-to-persona-coaching-leadership-system/pipeline/schema14_register_assignments.py",
+     "shared-utils/persona_grounding_health_probe.py",
+     "shared-utils/fleet_refresh_runner.py",
+     "tests/unit/persona-match-score-log.test.py",
+     "tests/unit/p4-01-book-to-persona-matcher-selectable-e2e.test.py",
+     "tests/unit/persona-duality-tags-pipeline.test.sh",
+     "tests/unit/schema14-enrichment-complete.test.py",
+     "tests/unit/persona-fleet-schema14-sync.test.py",
+     "tests/unit/persona-grounding-health-probe.test.py",
+     ".github/workflows/persona-blend-match-quality-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "persona-task-mode-wiring-guard",
+  "was": "persona-task-mode-wiring-guard.yml",
+  "script": "scripts/ci/fast-guards.d/persona-task-mode-wiring-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "update-skills.sh",
+     "shared-utils/embedding_engine.py",
+     "22-book-to-persona-coaching-leadership-system/CORE_UPDATES.md",
+     "23-ai-workforce-blueprint/persona-matching-protocol.md",
+     "23-ai-workforce-blueprint/full-funnel-pipeline/funnel_rubrics.py",
+     "23-ai-workforce-blueprint/templates/role-library/**",
+     "tests/unit/persona-task-mode-wiring.test.sh",
+     "tests/unit/section-tagger-indexer-agreement.test.sh",
+     "23-ai-workforce-blueprint/scripts/gemini-section-indexer.py",
+     "23-ai-workforce-blueprint/scripts/section-tag-migration.py",
+     "32-command-center-setup/scripts/move-task.py",
+     "shared-utils/fleet-heartbeat-persona-probe.sh",
+     "tests/unit/move-task-persona-lifecycle.test.sh",
+     "tests/unit/no-naked-dispatch.test.sh",
+     ".github/workflows/persona-task-mode-wiring-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "update-skills.sh",
+     "shared-utils/embedding_engine.py",
+     "22-book-to-persona-coaching-leadership-system/CORE_UPDATES.md",
+     "23-ai-workforce-blueprint/persona-matching-protocol.md",
+     "23-ai-workforce-blueprint/full-funnel-pipeline/funnel_rubrics.py",
+     "23-ai-workforce-blueprint/templates/role-library/**",
+     "tests/unit/persona-task-mode-wiring.test.sh",
+     "tests/unit/section-tagger-indexer-agreement.test.sh",
+     "23-ai-workforce-blueprint/scripts/gemini-section-indexer.py",
+     "23-ai-workforce-blueprint/scripts/section-tag-migration.py",
+     "32-command-center-setup/scripts/move-task.py",
+     "shared-utils/fleet-heartbeat-persona-probe.sh",
+     "tests/unit/move-task-persona-lifecycle.test.sh",
+     "tests/unit/no-naked-dispatch.test.sh",
+     ".github/workflows/persona-task-mode-wiring-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "phase-6i-reachability-guard",
+  "was": "phase-6i-reachability-guard.yml",
+  "script": "scripts/ci/fast-guards.d/phase-6i-reachability-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "update-skills.sh",
+     "tests/unit/cc-mtime-portable.test.sh",
+     "tests/unit/phase-6i-slug-readers.test.sh",
+     ".github/workflows/phase-6i-reachability-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "update-skills.sh",
+     "tests/unit/cc-mtime-portable.test.sh",
+     "tests/unit/phase-6i-slug-readers.test.sh",
+     ".github/workflows/phase-6i-reachability-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "podbean-publish-provisioning-guard",
+  "was": "podbean-publish-provisioning-guard.yml",
+  "script": "scripts/ci/fast-guards.d/podbean-publish-provisioning-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "install.sh",
+     "tests/unit/podbean-publish-provisioning.test.sh",
+     ".github/workflows/podbean-publish-provisioning-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "install.sh",
+     "tests/unit/podbean-publish-provisioning.test.sh",
+     ".github/workflows/podbean-publish-provisioning-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "power-resilience-guard",
+  "was": "power-resilience-guard.yml",
+  "script": "scripts/ci/fast-guards.d/power-resilience-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "platform/mac/power-resilience/**",
+     "platform/mac/bootstrap.sh",
+     "platform/mac/tunnel-hardening/harden-mac-tunnel.sh",
+     "platform/mac/tunnel-hardening/rescue-tunnel-watchdog.sh",
+     "platform/mac/tunnel-hardening/install-rescue-tunnel-watchdog.sh",
+     "platform/mac/tunnel-hardening/com.blackceo.rescue-tunnel-watchdog.plist.template",
+     "32-command-center-setup/scripts/setup-tunnel-daemon.sh",
+     "scripts/fix-power-resilience.sh",
+     "tests/unit/power-resilience-gate.test.sh",
+     ".github/workflows/power-resilience-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "platform/mac/power-resilience/**",
+     "platform/mac/bootstrap.sh",
+     "platform/mac/tunnel-hardening/harden-mac-tunnel.sh",
+     "platform/mac/tunnel-hardening/rescue-tunnel-watchdog.sh",
+     "platform/mac/tunnel-hardening/install-rescue-tunnel-watchdog.sh",
+     "platform/mac/tunnel-hardening/com.blackceo.rescue-tunnel-watchdog.plist.template",
+     "32-command-center-setup/scripts/setup-tunnel-daemon.sh",
+     "scripts/fix-power-resilience.sh",
+     "tests/unit/power-resilience-gate.test.sh",
+     ".github/workflows/power-resilience-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "prereqs-declaration-guard",
+  "was": "prereqs-declaration-guard.yml",
+  "script": "scripts/ci/fast-guards.d/prereqs-declaration-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "05-ghl-setup/PREREQS.json",
+     "06-ghl-install-pages/PREREQS.json",
+     "shared-utils/check-skill-prereqs.sh",
+     "scripts/qc-prereqs-json.sh",
+     "tests/unit/prereqs-declared-mandatory-skills.test.sh",
+     ".github/workflows/prereqs-declaration-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "05-ghl-setup/PREREQS.json",
+     "06-ghl-install-pages/PREREQS.json",
+     "shared-utils/check-skill-prereqs.sh",
+     "scripts/qc-prereqs-json.sh",
+     "tests/unit/prereqs-declared-mandatory-skills.test.sh",
+     ".github/workflows/prereqs-declaration-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "prereqs-schema-guard",
+  "was": "prereqs-schema-guard.yml",
+  "script": "scripts/ci/fast-guards.d/prereqs-schema-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "**/PREREQS.json",
+     "shared-utils/check-skill-prereqs.sh",
+     "scripts/qc-prereqs-json.sh",
+     "scripts/test-prereqs-schema-enforcement.sh",
+     ".github/workflows/prereqs-schema-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "**/PREREQS.json",
+     "shared-utils/check-skill-prereqs.sh",
+     "scripts/qc-prereqs-json.sh",
+     "scripts/test-prereqs-schema-enforcement.sh",
+     ".github/workflows/prereqs-schema-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "presentation-deck-intake-driver-workspace-guard",
+  "was": "presentation-deck-intake-driver-workspace-guard.yml",
+  "script": "scripts/ci/fast-guards.d/presentation-deck-intake-driver-workspace-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/deck-intake-turngate.py",
+     "tests/unit/presentation-deck-intake-driver-workspace.test.sh",
+     ".github/workflows/presentation-deck-intake-driver-workspace-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/deck-intake-turngate.py",
+     "tests/unit/presentation-deck-intake-driver-workspace.test.sh",
+     ".github/workflows/presentation-deck-intake-driver-workspace-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "presentation-deps-gate",
+  "was": "presentation-deps-gate.yml",
+  "script": "scripts/ci/fast-guards.d/presentation-deps-gate.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "install.sh",
+     "23-ai-workforce-blueprint/scripts/qc-completeness.sh",
+     "tests/unit/presentation-deps-gate.test.sh",
+     ".github/workflows/presentation-deps-gate.yml",
+     "23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "install.sh",
+     "23-ai-workforce-blueprint/scripts/qc-completeness.sh",
+     "tests/unit/presentation-deps-gate.test.sh",
+     ".github/workflows/presentation-deps-gate.yml",
+     "23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
+    ]
+   }
+  }
+ },
+ {
+  "name": "presentation-intake-conversation-guard",
+  "was": "presentation-intake-conversation-guard.yml",
+  "script": "scripts/ci/fast-guards.d/presentation-intake-conversation-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "51-signature-presentation/intake/sp-8-questions.json",
+     "51-signature-presentation/SKILL.md",
+     "51-signature-presentation/scripts/prove_sp_intake.py",
+     "tests/unit/presentation-intake-conversation.test.sh",
+     ".github/workflows/presentation-intake-conversation-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "51-signature-presentation/intake/sp-8-questions.json",
+     "51-signature-presentation/SKILL.md",
+     "51-signature-presentation/scripts/prove_sp_intake.py",
+     "tests/unit/presentation-intake-conversation.test.sh",
+     ".github/workflows/presentation-intake-conversation-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "presentation-intelligence-engines-workspace-guard",
+  "was": "presentation-intelligence-engines-workspace-guard.yml",
+  "script": "scripts/ci/fast-guards.d/presentation-intelligence-engines-workspace-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/intelligence_engines_check.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/phase_verifiers.py",
+     "tests/unit/presentation-intelligence-engines-workspace.test.sh",
+     ".github/workflows/presentation-intelligence-engines-workspace-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/intelligence_engines_check.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/phase_verifiers.py",
+     "tests/unit/presentation-intelligence-engines-workspace.test.sh",
+     ".github/workflows/presentation-intelligence-engines-workspace-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "presentation-type-contract-guard",
+  "was": "presentation-type-contract-guard.yml",
+  "script": "scripts/ci/fast-guards.d/presentation-type-contract-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json",
+     "23-ai-workforce-blueprint/scripts/deck-intake-turngate.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
+     "tests/unit/presentation-type-contract.test.sh",
+     ".github/workflows/presentation-type-contract-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json",
+     "23-ai-workforce-blueprint/scripts/deck-intake-turngate.py",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py",
+     "tests/unit/presentation-type-contract.test.sh",
+     ".github/workflows/presentation-type-contract-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "presentations-lockstep",
+  "was": "presentations-lockstep.yml",
+  "script": "scripts/ci/fast-guards.d/presentations-lockstep.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": null
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/**",
+     ".github/workflows/presentations-lockstep.yml",
+     "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json",
+     "universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/*.md",
+     "23-ai-workforce-blueprint/templates/role-library/presentations/sops/*.md",
+     "universal-sops/presentation-slide-craft/*.md",
+     "universal-sops/presentation-slide-craft/*.json",
+     "universal-sops/presentation-design-system/**",
+     "universal-sops/presentation-image-library/**",
+     "universal-sops/PRESENTATION-MASTER-DOCTRINE.md",
+     "universal-sops/CLIENT-WEBINAR-DECK-SOP.md",
+     "51-signature-presentation/**",
+     "23-ai-workforce-blueprint/scripts/presentation-canonical-entry.sh"
+    ]
+   }
+  }
+ },
+ {
+  "name": "prove-zhe-cc-db-agents-entries-guard",
+  "was": "prove-zhe-cc-db-agents-entries-guard.yml",
+  "script": "scripts/ci/fast-guards.d/prove-zhe-cc-db-agents-entries-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/prove-zhe.py",
+     "23-ai-workforce-blueprint/scripts/prove-board-join.py",
+     "shared-utils/canonical_slug.py",
+     "tests/unit/test_prove_zhe_cc_db_and_agents_entries.py",
+     ".github/workflows/prove-zhe-cc-db-agents-entries-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/prove-zhe.py",
+     "23-ai-workforce-blueprint/scripts/prove-board-join.py",
+     "shared-utils/canonical_slug.py",
+     "tests/unit/test_prove_zhe_cc_db_and_agents_entries.py",
+     ".github/workflows/prove-zhe-cc-db-agents-entries-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "provisioning-completeness-gate-guard",
+  "was": "provisioning-completeness-gate-guard.yml",
+  "script": "scripts/ci/fast-guards.d/provisioning-completeness-gate-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/fleet_refresh_runner.py",
+     "scripts/fleet-refresh.sh",
+     "tests/unit/provisioning-completeness-gate.test.py",
+     ".github/workflows/provisioning-completeness-gate-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/fleet_refresh_runner.py",
+     "scripts/fleet-refresh.sh",
+     "tests/unit/provisioning-completeness-gate.test.py",
+     ".github/workflows/provisioning-completeness-gate-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "qc-departments-tree-guard",
+  "was": "qc-departments-tree-guard.yml",
+  "script": "scripts/ci/fast-guards.d/qc-departments-tree-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/_qc_paths.py",
+     "23-ai-workforce-blueprint/scripts/_qc_company_info.py",
+     "23-ai-workforce-blueprint/scripts/department-floor.py",
+     "23-ai-workforce-blueprint/scripts/qc-completeness.sh",
+     "23-ai-workforce-blueprint/scripts/floor-fill-driver.py",
+     "23-ai-workforce-blueprint/scripts/detect-stale-artifacts.py",
+     "23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh",
+     "23-ai-workforce-blueprint/department-naming-map.json",
+     "tests/unit/qc-departments-tree-resolution.test.sh",
+     "shared-utils/detect_platform.py",
+     "23-ai-workforce-blueprint/lib/detect_platform.py",
+     "32-command-center-setup/scripts/materialize-dept-agents.sh",
+     "23-ai-workforce-blueprint/scripts/test-gate-company-dir-resolution.sh",
+     "tests/unit/test_company_root_resolution.py",
+     ".github/workflows/qc-departments-tree-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/_qc_paths.py",
+     "23-ai-workforce-blueprint/scripts/_qc_company_info.py",
+     "23-ai-workforce-blueprint/scripts/department-floor.py",
+     "23-ai-workforce-blueprint/scripts/qc-completeness.sh",
+     "23-ai-workforce-blueprint/scripts/floor-fill-driver.py",
+     "23-ai-workforce-blueprint/scripts/detect-stale-artifacts.py",
+     "23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh",
+     "23-ai-workforce-blueprint/department-naming-map.json",
+     "tests/unit/qc-departments-tree-resolution.test.sh",
+     "shared-utils/detect_platform.py",
+     "23-ai-workforce-blueprint/lib/detect_platform.py",
+     "32-command-center-setup/scripts/materialize-dept-agents.sh",
+     "23-ai-workforce-blueprint/scripts/test-gate-company-dir-resolution.sh",
+     "tests/unit/test_company_root_resolution.py",
+     ".github/workflows/qc-departments-tree-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "records-pipeline-fail-closed-guard",
+  "was": "records-pipeline-fail-closed-guard.yml",
+  "script": "scripts/ci/fast-guards.d/records-pipeline-fail-closed-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "39-real-estate-playbook/**",
+     "40-zhc-public-records-scraper/**",
+     "tests/unit/records-pipeline-fail-closed.test.sh",
+     "tests/unit/re-routing-fair-housing.test.sh",
+     ".github/workflows/records-pipeline-fail-closed-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "39-real-estate-playbook/**",
+     "40-zhc-public-records-scraper/**",
+     "tests/unit/records-pipeline-fail-closed.test.sh",
+     "tests/unit/re-routing-fair-housing.test.sh",
+     ".github/workflows/records-pipeline-fail-closed-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "refresh-stale-roles-retirement-guard",
+  "was": "refresh-stale-roles-retirement-guard.yml",
+  "script": "scripts/ci/fast-guards.d/refresh-stale-roles-retirement-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/refresh-stale-roles.py",
+     "23-ai-workforce-blueprint/scripts/canonical_decline.py",
+     "23-ai-workforce-blueprint/scripts/department-floor.py",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     "23-ai-workforce-blueprint/templates/role-library/_index.json",
+     "tests/unit/refresh-stale-roles.test.sh",
+     ".github/workflows/refresh-stale-roles-retirement-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/refresh-stale-roles.py",
+     "23-ai-workforce-blueprint/scripts/canonical_decline.py",
+     "23-ai-workforce-blueprint/scripts/department-floor.py",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     "23-ai-workforce-blueprint/templates/role-library/_index.json",
+     "tests/unit/refresh-stale-roles.test.sh",
+     ".github/workflows/refresh-stale-roles-retirement-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "rescue-rangers-rr015-gates",
+  "was": "rescue-rangers-rr015-gates.yml",
+  "script": "scripts/ci/fast-guards.d/rescue-rangers-rr015-gates.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "scripts/lib/rescue_admission.py",
+     "60-zhc-early-warning-system/scripts/ews_alert.py",
+     "60-zhc-early-warning-system/scripts/ews_common.py",
+     "60-zhc-early-warning-system/scripts/ews_fleet.py",
+     "60-zhc-early-warning-system/scripts/ews_ledger.py",
+     "tests/rescue/RR-015/**",
+     ".github/workflows/rescue-rangers-rr015-gates.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "scripts/lib/rescue_admission.py",
+     "60-zhc-early-warning-system/scripts/ews_alert.py",
+     "60-zhc-early-warning-system/scripts/ews_common.py",
+     "60-zhc-early-warning-system/scripts/ews_fleet.py",
+     "60-zhc-early-warning-system/scripts/ews_ledger.py",
+     "tests/rescue/RR-015/**",
+     ".github/workflows/rescue-rangers-rr015-gates.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "rescue-rangers-rr023-gates",
+  "was": "rescue-rangers-rr023-gates.yml",
+  "script": "scripts/ci/fast-guards.d/rescue-rangers-rr023-gates.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/migrate-rescue-staticdata.py",
+     "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/rescue_ledger.py",
+     "tests/unit/rescue-migration-rr023.test.py",
+     ".github/workflows/rescue-rangers-rr023-gates.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/migrate-rescue-staticdata.py",
+     "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/rescue_ledger.py",
+     "tests/unit/rescue-migration-rr023.test.py",
+     ".github/workflows/rescue-rangers-rr023-gates.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "rescue-rangers-rr027-gates",
+  "was": "rescue-rangers-rr027-gates.yml",
+  "script": "scripts/ci/fast-guards.d/rescue-rangers-rr027-gates.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "shared-utils/rescue-env.sh",
+     "65-rescue-receiver/wire.sh",
+     "65-rescue-receiver/rescue-poll.sh",
+     "scripts/seed-rr-agent-map.sh",
+     "tests/unit/rr027-*.test.sh",
+     "tests/rescue/RR-004/**",
+     ".github/workflows/rescue-rangers-rr027-gates.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "shared-utils/rescue-env.sh",
+     "65-rescue-receiver/wire.sh",
+     "65-rescue-receiver/rescue-poll.sh",
+     "scripts/seed-rr-agent-map.sh",
+     "tests/unit/rr027-*.test.sh",
+     "tests/rescue/RR-004/**",
+     ".github/workflows/rescue-rangers-rr027-gates.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "rescue-rangers-rr030-gates",
+  "was": "rescue-rangers-rr030-gates.yml",
+  "script": "scripts/ci/fast-guards.d/rescue-rangers-rr030-gates.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/**",
+     "scripts/rescue-rangers-harness.sh",
+     "scripts/rr-triage.sh",
+     "tests/unit/rr030-*.test.sh",
+     "tests/unit/rr030-*.test.py",
+     "tests/unit/rr029-*.test.sh",
+     "tests/unit/rr029-*.test.py",
+     "shared-utils/oc-env-descriptor.sh",
+     ".github/workflows/rescue-rangers-rr030-gates.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/templates/role-library/rescue-rangers/scripts/**",
+     "scripts/rescue-rangers-harness.sh",
+     "scripts/rr-triage.sh",
+     "tests/unit/rr030-*.test.sh",
+     "tests/unit/rr030-*.test.py",
+     "tests/unit/rr029-*.test.sh",
+     "tests/unit/rr029-*.test.py",
+     "shared-utils/oc-env-descriptor.sh",
+     ".github/workflows/rescue-rangers-rr030-gates.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "resolve-oc-root-guard",
+  "was": "resolve-oc-root-guard.yml",
+  "script": "scripts/ci/fast-guards.d/resolve-oc-root-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/resolve-oc-root.sh",
+     "tests/unit/resolve-oc-root.test.sh",
+     "tests/unit/build-state-path-resolution.test.sh",
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "update-skills.sh",
+     "37-zhc-closeout/scripts/run-closeout.sh",
+     "37-zhc-closeout/scripts/resume-closeout-cron.sh",
+     "37-zhc-closeout/scripts/fleet-stuck-clients.sh",
+     "23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh",
+     "23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh",
+     "32-command-center-setup/scripts/backfill-per-dept-healer.sh",
+     "32-command-center-setup/scripts/materialize-dept-agents.sh",
+     ".github/workflows/resolve-oc-root-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/resolve-oc-root.sh",
+     "tests/unit/resolve-oc-root.test.sh",
+     "tests/unit/build-state-path-resolution.test.sh",
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "update-skills.sh",
+     "37-zhc-closeout/scripts/run-closeout.sh",
+     "37-zhc-closeout/scripts/resume-closeout-cron.sh",
+     "37-zhc-closeout/scripts/fleet-stuck-clients.sh",
+     "23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh",
+     "23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh",
+     "32-command-center-setup/scripts/backfill-per-dept-healer.sh",
+     "32-command-center-setup/scripts/materialize-dept-agents.sh",
+     ".github/workflows/resolve-oc-root-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "retired-artifacts-ledger-guard",
+  "was": "retired-artifacts-ledger-guard.yml",
+  "script": "scripts/ci/fast-guards.d/retired-artifacts-ledger-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/templates/role-library/**",
+     "23-ai-workforce-blueprint/scripts/gen-retired-artifacts-ledger.py",
+     "23-ai-workforce-blueprint/scripts/hash-content-manifest.py",
+     ".github/workflows/retired-artifacts-ledger-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/templates/role-library/**",
+     "23-ai-workforce-blueprint/scripts/gen-retired-artifacts-ledger.py",
+     "23-ai-workforce-blueprint/scripts/hash-content-manifest.py",
+     ".github/workflows/retired-artifacts-ledger-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "roll-converges-gateway-watchdog-guard",
+  "was": "roll-converges-gateway-watchdog-guard.yml",
+  "script": "scripts/ci/fast-guards.d/roll-converges-gateway-watchdog-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "update-skills.sh",
+     "platform/mac/service-selfheal/**",
+     "tests/unit/roll-converges-gateway-watchdog.test.sh",
+     "tests/unit/full-update-path-contract.test.sh",
+     ".github/workflows/roll-converges-gateway-watchdog-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "update-skills.sh",
+     "platform/mac/service-selfheal/**",
+     "tests/unit/roll-converges-gateway-watchdog.test.sh",
+     "tests/unit/full-update-path-contract.test.sh",
+     ".github/workflows/roll-converges-gateway-watchdog-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "routing-mode-switch-guard",
+  "was": "routing-mode-switch-guard.yml",
+  "script": "scripts/ci/fast-guards.d/routing-mode-switch-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "shared-utils/routing_switch.py",
+     "shared-utils/model_route.py",
+     "shared-utils/jev_live.py",
+     "shared-utils/decision-engine.py",
+     "shared-utils/decision_engine/modes/modes.py",
+     "shared-utils/decision_engine/contracts/schema.py",
+     "shared-utils/decision_engine/fallback/__init__.py",
+     "scripts/routing-mode.sh",
+     "scripts/health/routing-check.sh",
+     "tests/unit/routing-mode-switch.test.sh",
+     "tests/unit/test_rf014_model_mode.py",
+     "tests/unit/test_jev_live_chain.py",
+     ".github/workflows/routing-mode-switch-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "shared-utils/routing_switch.py",
+     "shared-utils/model_route.py",
+     "shared-utils/jev_live.py",
+     "shared-utils/decision-engine.py",
+     "shared-utils/decision_engine/modes/modes.py",
+     "shared-utils/decision_engine/contracts/schema.py",
+     "shared-utils/decision_engine/fallback/__init__.py",
+     "scripts/routing-mode.sh",
+     "scripts/health/routing-check.sh",
+     "tests/unit/routing-mode-switch.test.sh",
+     "tests/unit/test_rf014_model_mode.py",
+     "tests/unit/test_jev_live_chain.py",
+     ".github/workflows/routing-mode-switch-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "run-retries-ceiling-guard",
+  "was": "run-retries-ceiling-guard.yml",
+  "script": "scripts/ci/fast-guards.d/run-retries-ceiling-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "install.sh",
+     "scripts/wire-run-retries.sh",
+     "tests/unit/run-retries-ceiling-wiring.test.sh",
+     ".github/workflows/run-retries-ceiling-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "install.sh",
+     "scripts/wire-run-retries.sh",
+     "tests/unit/run-retries-ceiling-wiring.test.sh",
+     ".github/workflows/run-retries-ceiling-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "skill-frontmatter-version-guard",
+  "was": "skill-frontmatter-version-guard.yml",
+  "script": "scripts/ci/fast-guards.d/skill-frontmatter-version-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "**/SKILL.md",
+     "**/skill-version.txt",
+     "scripts/qc-assert-skill-frontmatter-version.sh",
+     ".github/workflows/skill-frontmatter-version-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "**/SKILL.md",
+     "**/skill-version.txt",
+     "scripts/qc-assert-skill-frontmatter-version.sh",
+     ".github/workflows/skill-frontmatter-version-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "skill-manifest-reaper-guard",
+  "was": "skill-manifest-reaper-guard.yml",
+  "script": "scripts/ci/fast-guards.d/skill-manifest-reaper-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "install.sh",
+     "scripts/generate-manifest.sh",
+     "scripts/test-skill-manifest-reaper.sh",
+     ".github/workflows/skill-manifest-reaper-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "install.sh",
+     "scripts/generate-manifest.sh",
+     "scripts/test-skill-manifest-reaper.sh",
+     ".github/workflows/skill-manifest-reaper-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "skill-version-newline-guard",
+  "was": "skill-version-newline-guard.yml",
+  "script": "scripts/ci/fast-guards.d/skill-version-newline-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "**/skill-version.txt",
+     "scripts/qc-assert-skill-version-newline.sh",
+     ".github/workflows/skill-version-newline-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "**/skill-version.txt",
+     "scripts/qc-assert-skill-version-newline.sh",
+     ".github/workflows/skill-version-newline-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "skill23-role-floor-guard",
+  "was": "skill23-role-floor-guard.yml",
+  "script": "scripts/ci/fast-guards.d/skill23-role-floor-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/build-workforce.py",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     "23-ai-workforce-blueprint/scripts/reconcile-role-floor.py",
+     "23-ai-workforce-blueprint/scripts/floor-fill-driver.py",
+     "23-ai-workforce-blueprint/suggested-roles/**",
+     "23-ai-workforce-blueprint/templates/role-library/_index.json",
+     "tests/unit/test_build_library_role_floor.py",
+     "tests/unit/test_reconcile_role_floor.py",
+     ".github/workflows/skill23-role-floor-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/build-workforce.py",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     "23-ai-workforce-blueprint/scripts/reconcile-role-floor.py",
+     "23-ai-workforce-blueprint/scripts/floor-fill-driver.py",
+     "23-ai-workforce-blueprint/suggested-roles/**",
+     "23-ai-workforce-blueprint/templates/role-library/_index.json",
+     "tests/unit/test_build_library_role_floor.py",
+     "tests/unit/test_reconcile_role_floor.py",
+     ".github/workflows/skill23-role-floor-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "skill38-agents-md-content-version-gate",
+  "was": "skill38-agents-md-content-version-gate.yml",
+  "script": "scripts/ci/fast-guards.d/skill38-agents-md-content-version-gate.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "scripts/onboarding-state.sh",
+     "lib-onboarding-state.sh",
+     "38-conversational-ai-system/scripts/05-update-agents-md.sh",
+     "38-conversational-ai-system/scripts/11-run-qc-checklist.sh",
+     "38-conversational-ai-system/scripts/qc-segmentation.sh",
+     "38-conversational-ai-system/scripts/qc-multi-tenant.sh",
+     "38-conversational-ai-system/scripts/qc-client-test-mode.sh",
+     "38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh",
+     "38-conversational-ai-system/scripts/qc-ab-testing.sh",
+     "38-conversational-ai-system/scripts/qc-zhc-pixel.sh",
+     "38-conversational-ai-system/scripts/qc-webhook-chaining.sh",
+     "38-conversational-ai-system/scripts/qc-workflow-exits.sh",
+     "38-conversational-ai-system/scripts/qc-tool-gating.sh",
+     "tests/unit/skill38-agents-md-wiring.test.sh",
+     "tests/unit/skill38-qc-gates-live-agentsmd-awareness.test.sh",
+     ".github/workflows/skill38-agents-md-content-version-gate.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "scripts/onboarding-state.sh",
+     "lib-onboarding-state.sh",
+     "38-conversational-ai-system/scripts/05-update-agents-md.sh",
+     "38-conversational-ai-system/scripts/11-run-qc-checklist.sh",
+     "38-conversational-ai-system/scripts/qc-segmentation.sh",
+     "38-conversational-ai-system/scripts/qc-multi-tenant.sh",
+     "38-conversational-ai-system/scripts/qc-client-test-mode.sh",
+     "38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh",
+     "38-conversational-ai-system/scripts/qc-ab-testing.sh",
+     "38-conversational-ai-system/scripts/qc-zhc-pixel.sh",
+     "38-conversational-ai-system/scripts/qc-webhook-chaining.sh",
+     "38-conversational-ai-system/scripts/qc-workflow-exits.sh",
+     "38-conversational-ai-system/scripts/qc-tool-gating.sh",
+     "tests/unit/skill38-agents-md-wiring.test.sh",
+     "tests/unit/skill38-qc-gates-live-agentsmd-awareness.test.sh",
+     ".github/workflows/skill38-agents-md-content-version-gate.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "social-cron-migration-guard",
+  "was": "social-cron-migration-guard.yml",
+  "script": "scripts/ci/fast-guards.d/social-cron-migration-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "57-social-media-in-a-box/scripts/register-social-cron.sh",
+     "57-social-media-in-a-box/scripts/migrate-35-to-57.sh",
+     "57-social-media-in-a-box/scripts/preflight_gate.py",
+     "57-social-media-in-a-box/cc-compat.json",
+     "35-social-media-planner/scripts/register-weekly-cron.sh",
+     "scripts/wire-social-media.sh",
+     "tests/unit/social-cron-migration.test.sh",
+     ".github/workflows/social-cron-migration-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "57-social-media-in-a-box/scripts/register-social-cron.sh",
+     "57-social-media-in-a-box/scripts/migrate-35-to-57.sh",
+     "57-social-media-in-a-box/scripts/preflight_gate.py",
+     "57-social-media-in-a-box/cc-compat.json",
+     "35-social-media-planner/scripts/register-weekly-cron.sh",
+     "scripts/wire-social-media.sh",
+     "tests/unit/social-cron-migration.test.sh",
+     ".github/workflows/social-cron-migration-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "social-planner-suite-guard",
+  "was": "social-planner-suite-guard.yml",
+  "script": "scripts/ci/fast-guards.d/social-planner-suite-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "35-social-media-planner/scripts/test_run_publishing_cycle.py",
+     "35-social-media-planner/scripts/prove_content_conversation_loop.py",
+     "35-social-media-planner/scripts/pregen_prompt_gate.py",
+     "35-social-media-planner/scripts/run-publishing-cycle.sh",
+     "35-social-media-planner/scripts/kie_media_plan.py",
+     "35-social-media-planner/scripts/test_kie_media_plan.py",
+     "35-social-media-planner/scripts/validate_podcast_publish_payload.py",
+     "35-social-media-planner/scripts/test_validate_podcast_publish_payload.py",
+     "57-social-media-in-a-box/run_social_media.py",
+     "57-social-media-in-a-box/scripts/ghl_contracts.py",
+     "shared-utils/social_cycle_service.py",
+     "shared-utils/social_prompt_compiler.py",
+     "35-social-media-planner/config/**",
+     "scripts/social-completion-audit.py",
+     "tests/social-planner/**",
+     ".github/workflows/social-planner-suite-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "35-social-media-planner/scripts/test_run_publishing_cycle.py",
+     "35-social-media-planner/scripts/prove_content_conversation_loop.py",
+     "35-social-media-planner/scripts/pregen_prompt_gate.py",
+     "35-social-media-planner/scripts/run-publishing-cycle.sh",
+     "35-social-media-planner/scripts/kie_media_plan.py",
+     "35-social-media-planner/scripts/test_kie_media_plan.py",
+     "35-social-media-planner/scripts/validate_podcast_publish_payload.py",
+     "35-social-media-planner/scripts/test_validate_podcast_publish_payload.py",
+     "57-social-media-in-a-box/run_social_media.py",
+     "57-social-media-in-a-box/scripts/ghl_contracts.py",
+     "shared-utils/social_cycle_service.py",
+     "shared-utils/social_prompt_compiler.py",
+     "35-social-media-planner/config/**",
+     "scripts/social-completion-audit.py",
+     "tests/social-planner/**",
+     ".github/workflows/social-planner-suite-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "status-writer-resolution-defects-guard",
+  "was": "status-writer-resolution-defects-guard.yml",
+  "script": "scripts/ci/fast-guards.d/status-writer-resolution-defects-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py",
+     "tests/unit/status-writer-resolution-defects.test.sh",
+     ".github/workflows/status-writer-resolution-defects-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py",
+     "tests/unit/status-writer-resolution-defects.test.sh",
+     ".github/workflows/status-writer-resolution-defects-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "stuck-build-park-guard",
+  "was": "stuck-build-park-guard.yml",
+  "script": "scripts/ci/fast-guards.d/stuck-build-park-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh",
+     "23-ai-workforce-blueprint/resume-prompt.txt",
+     "scripts/ensure-pipeline-crons.sh",
+     "scripts/unpark-build.sh",
+     "06-ghl-install-pages/tools/browser_manager.sh",
+     "install.sh",
+     "tests/unit/bounded-workforce-build-resume.test.sh",
+     ".github/workflows/stuck-build-park-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh",
+     "23-ai-workforce-blueprint/resume-prompt.txt",
+     "scripts/ensure-pipeline-crons.sh",
+     "scripts/unpark-build.sh",
+     "06-ghl-install-pages/tools/browser_manager.sh",
+     "install.sh",
+     "tests/unit/bounded-workforce-build-resume.test.sh",
+     ".github/workflows/stuck-build-park-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "toolsearch-directory-guard",
+  "was": "toolsearch-directory-guard.yml",
+  "script": "scripts/ci/fast-guards.d/toolsearch-directory-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "scripts/apply-fleet-standards.sh",
+     "scripts/guard-toolsearch-directory.sh",
+     "scripts/ensure-pipeline-crons.sh",
+     "install.sh",
+     "tests/unit/toolsearch-directory-shape.test.sh",
+     ".github/workflows/toolsearch-directory-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "scripts/apply-fleet-standards.sh",
+     "scripts/guard-toolsearch-directory.sh",
+     "scripts/ensure-pipeline-crons.sh",
+     "install.sh",
+     "tests/unit/toolsearch-directory-shape.test.sh",
+     ".github/workflows/toolsearch-directory-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "u10-anti-copy-guard",
+  "was": "u10-anti-copy-guard.yml",
+  "script": "scripts/ci/fast-guards.d/u10-anti-copy-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "shared-utils/anti_copy_guard.py",
+     "shared-utils/fab_qc.py",
+     "shared-utils/exemplar_injection.py",
+     "06-ghl-install-pages/exemplars/**",
+     "tests/unit/u10-anti-copy-guard.test.py",
+     "scripts/guard-fab-qc-gate.sh",
+     ".github/workflows/u10-anti-copy-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "shared-utils/anti_copy_guard.py",
+     "shared-utils/fab_qc.py",
+     "shared-utils/exemplar_injection.py",
+     "06-ghl-install-pages/exemplars/**",
+     "tests/unit/u10-anti-copy-guard.test.py",
+     "scripts/guard-fab-qc-gate.sh",
+     ".github/workflows/u10-anti-copy-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "u108-department-optout-guard",
+  "was": "u108-department-optout-guard.yml",
+  "script": "scripts/ci/fast-guards.d/u108-department-optout-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/department-optout-sync.py",
+     "23-ai-workforce-blueprint/scripts/test-department-optout-sync.sh",
+     "23-ai-workforce-blueprint/scripts/department-loss-warning.py",
+     "23-ai-workforce-blueprint/scripts/test-opt-out-loss-warning.sh",
+     "23-ai-workforce-blueprint/scripts/record-dept-decision.sh",
+     "23-ai-workforce-blueprint/scripts/lib-interview-rate-limit.sh",
+     "23-ai-workforce-blueprint/scripts/canonical_decline.py",
+     "23-ai-workforce-blueprint/scripts/department-floor.py",
+     "23-ai-workforce-blueprint/scripts/materialize-missing-departments.py",
+     "23-ai-workforce-blueprint/department-naming-map.json",
+     ".github/workflows/u108-department-optout-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/department-optout-sync.py",
+     "23-ai-workforce-blueprint/scripts/test-department-optout-sync.sh",
+     "23-ai-workforce-blueprint/scripts/department-loss-warning.py",
+     "23-ai-workforce-blueprint/scripts/test-opt-out-loss-warning.sh",
+     "23-ai-workforce-blueprint/scripts/record-dept-decision.sh",
+     "23-ai-workforce-blueprint/scripts/lib-interview-rate-limit.sh",
+     "23-ai-workforce-blueprint/scripts/canonical_decline.py",
+     "23-ai-workforce-blueprint/scripts/department-floor.py",
+     "23-ai-workforce-blueprint/scripts/materialize-missing-departments.py",
+     "23-ai-workforce-blueprint/department-naming-map.json",
+     ".github/workflows/u108-department-optout-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "u11-winner-harvest",
+  "was": "u11-winner-harvest.yml",
+  "script": "scripts/ci/fast-guards.d/u11-winner-harvest.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "shared-utils/winner_harvest.py",
+     "shared-utils/test_winner_harvest.py",
+     "shared-utils/exemplar_injection.py",
+     ".github/workflows/u11-winner-harvest.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "shared-utils/winner_harvest.py",
+     "shared-utils/test_winner_harvest.py",
+     "shared-utils/exemplar_injection.py",
+     ".github/workflows/u11-winner-harvest.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "u111-any-content-blend-guard",
+  "was": "u111-any-content-blend-guard.yml",
+  "script": "scripts/ci/fast-guards.d/u111-any-content-blend-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "shared-utils/persona_for_job.py",
+     "50-email-engine/tools/persona_canonical.py",
+     "57-social-media-in-a-box/scripts/persona_adapter.py",
+     "tests/unit/u111-any-content-blend-proof.test.py",
+     ".github/workflows/u111-any-content-blend-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "shared-utils/persona_for_job.py",
+     "50-email-engine/tools/persona_canonical.py",
+     "57-social-media-in-a-box/scripts/persona_adapter.py",
+     "tests/unit/u111-any-content-blend-proof.test.py",
+     ".github/workflows/u111-any-content-blend-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "u114-no-exemption-blend-governance-conformance-guard",
+  "was": "u114-no-exemption-blend-governance-conformance-guard.yml",
+  "script": "scripts/ci/fast-guards.d/u114-no-exemption-blend-governance-conformance-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "shared-utils/persona_for_job.py",
+     "shared-utils/tone-writing-core/tone_persona_autopick.py",
+     "shared-utils/tone-writing-core/**",
+     "51-signature-presentation/scripts/**",
+     "58-podcast-production-engine/scripts/**",
+     "54-anthology-writer/scripts/**",
+     "59-anthology-engine/scripts/**",
+     "tests/unit/u98-blend-governs-product-voice-engines.test.py",
+     "tests/unit/u114-no-exemption-blend-governance-conformance.test.py",
+     ".github/workflows/u114-no-exemption-blend-governance-conformance-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "shared-utils/persona_for_job.py",
+     "shared-utils/tone-writing-core/tone_persona_autopick.py",
+     "shared-utils/tone-writing-core/**",
+     "51-signature-presentation/scripts/**",
+     "58-podcast-production-engine/scripts/**",
+     "54-anthology-writer/scripts/**",
+     "59-anthology-engine/scripts/**",
+     "tests/unit/u98-blend-governs-product-voice-engines.test.py",
+     "tests/unit/u114-no-exemption-blend-governance-conformance.test.py",
+     ".github/workflows/u114-no-exemption-blend-governance-conformance-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "u116-comms-audience-trigger-guard",
+  "was": "u116-comms-audience-trigger-guard.yml",
+  "script": "scripts/ci/fast-guards.d/u116-comms-audience-trigger-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "shared-utils/persona_for_job.py",
+     "shared-utils/comms_audience_trigger.py",
+     "23-ai-workforce-blueprint/scripts/persona_blend.py",
+     "23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py",
+     "23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py",
+     "tests/unit/u116-comms-audience-trigger-proof.test.py",
+     ".github/workflows/u116-comms-audience-trigger-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "shared-utils/persona_for_job.py",
+     "shared-utils/comms_audience_trigger.py",
+     "23-ai-workforce-blueprint/scripts/persona_blend.py",
+     "23-ai-workforce-blueprint/scripts/test-persona-blend-matcher.py",
+     "23-ai-workforce-blueprint/scripts/test-a-u5-scoped-bundle.py",
+     "tests/unit/u116-comms-audience-trigger-proof.test.py",
+     ".github/workflows/u116-comms-audience-trigger-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "u14-blueprint-section-map-guard",
+  "was": "u14-blueprint-section-map-guard.yml",
+  "script": "scripts/ci/fast-guards.d/u14-blueprint-section-map-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "22-book-to-persona-coaching-leadership-system/personas/**/persona-blueprint.md",
+     "22-book-to-persona-coaching-leadership-system/personas/_section-map.json",
+     "22-book-to-persona-coaching-leadership-system/scripts/build-section-map.py",
+     "shared-utils/persona_for_job.py",
+     "23-ai-workforce-blueprint/CHANGELOG.md",
+     "tests/unit/u14-blueprint-section-map.test.py",
+     ".github/workflows/u14-blueprint-section-map-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "22-book-to-persona-coaching-leadership-system/personas/**/persona-blueprint.md",
+     "22-book-to-persona-coaching-leadership-system/personas/_section-map.json",
+     "22-book-to-persona-coaching-leadership-system/scripts/build-section-map.py",
+     "shared-utils/persona_for_job.py",
+     "23-ai-workforce-blueprint/CHANGELOG.md",
+     "tests/unit/u14-blueprint-section-map.test.py",
+     ".github/workflows/u14-blueprint-section-map-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "u53-crown-executor-single-path-guard",
+  "was": "u53-crown-executor-single-path-guard.yml",
+  "script": "scripts/ci/fast-guards.d/u53-crown-executor-single-path-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "tests/probe/test-u53-hl-u68-crown-executor-single-path.sh",
+     ".github/workflows/u53-crown-executor-single-path-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "tests/probe/test-u53-hl-u68-crown-executor-single-path.sh",
+     ".github/workflows/u53-crown-executor-single-path-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "u59-devils-advocate-guard",
+  "was": "u59-devils-advocate-guard.yml",
+  "script": "scripts/ci/fast-guards.d/u59-devils-advocate-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "shared-utils/devils-advocate.py",
+     "shared-utils/devils-advocate-bridge.py",
+     "ledgers/evidence/U59-JM-U55/**",
+     "tests/unit/u59-devils-advocate-generator-proof.test.py",
+     "tests/unit/u59-devils-advocate-bridge.test.py",
+     ".github/workflows/u59-devils-advocate-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "shared-utils/devils-advocate.py",
+     "shared-utils/devils-advocate-bridge.py",
+     "ledgers/evidence/U59-JM-U55/**",
+     "tests/unit/u59-devils-advocate-generator-proof.test.py",
+     "tests/unit/u59-devils-advocate-bridge.test.py",
+     ".github/workflows/u59-devils-advocate-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "u98-blend-governs-product-voice-engines-guard",
+  "was": "u98-blend-governs-product-voice-engines-guard.yml",
+  "script": "scripts/ci/fast-guards.d/u98-blend-governs-product-voice-engines-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/persona_blend.py",
+     "shared-utils/persona_for_job.py",
+     "shared-utils/tone-writing-core/tone_persona_autopick.py",
+     "shared-utils/tone-writing-core/prompts/**",
+     "35-social-media-planner/scripts/daily_blend_bundle.py",
+     "51-signature-presentation/scripts/blend_voice_governance.py",
+     "51-signature-presentation/scripts/sacred-structure-hashes.json",
+     "51-signature-presentation/MASTERDOC.md",
+     "51-signature-presentation/frame-templates/**",
+     "51-signature-presentation/structure/sp_structure.json",
+     "58-podcast-production-engine/scripts/blend_voice_governance.py",
+     "58-podcast-production-engine/scripts/style-engine-format-hashes.json",
+     "58-podcast-production-engine/style-engines/**",
+     "52-avatar-alchemist/scripts/verify_tone_core_sync.py",
+     "53-book-writer/scripts/verify_tone_core_sync.py",
+     "54-anthology-writer/scripts/verify_tone_core_sync.py",
+     "tests/unit/u98-blend-governs-product-voice-engines.test.py",
+     ".github/workflows/u98-blend-governs-product-voice-engines-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/persona_blend.py",
+     "shared-utils/persona_for_job.py",
+     "shared-utils/tone-writing-core/tone_persona_autopick.py",
+     "shared-utils/tone-writing-core/prompts/**",
+     "35-social-media-planner/scripts/daily_blend_bundle.py",
+     "51-signature-presentation/scripts/blend_voice_governance.py",
+     "51-signature-presentation/scripts/sacred-structure-hashes.json",
+     "51-signature-presentation/MASTERDOC.md",
+     "51-signature-presentation/frame-templates/**",
+     "51-signature-presentation/structure/sp_structure.json",
+     "58-podcast-production-engine/scripts/blend_voice_governance.py",
+     "58-podcast-production-engine/scripts/style-engine-format-hashes.json",
+     "58-podcast-production-engine/style-engines/**",
+     "52-avatar-alchemist/scripts/verify_tone_core_sync.py",
+     "53-book-writer/scripts/verify_tone_core_sync.py",
+     "54-anthology-writer/scripts/verify_tone_core_sync.py",
+     "tests/unit/u98-blend-governs-product-voice-engines.test.py",
+     ".github/workflows/u98-blend-governs-product-voice-engines-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "unify-backup-retention-guard",
+  "was": "unify-backup-retention-guard.yml",
+  "script": "scripts/ci/fast-guards.d/unify-backup-retention-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     "tests/unit/unify-backup-retention.test.sh",
+     "tests/unit/unify-backup-global-reclaim.test.sh",
+     "tests/unit/unify_backup_retention_py.py",
+     ".github/workflows/unify-backup-retention-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "23-ai-workforce-blueprint/scripts/create_role_workspaces.py",
+     "tests/unit/unify-backup-retention.test.sh",
+     "tests/unit/unify-backup-global-reclaim.test.sh",
+     "tests/unit/unify_backup_retention_py.py",
+     ".github/workflows/unify-backup-retention-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "updater-skill-box-state-guard",
+  "was": "updater-skill-box-state-guard.yml",
+  "script": "scripts/ci/fast-guards.d/updater-skill-box-state-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "59-anthology-engine/preflight.sh",
+     "tests/unit/updater-preserves-skill-box-state.test.sh",
+     ".github/workflows/updater-skill-box-state-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "59-anthology-engine/preflight.sh",
+     "tests/unit/updater-preserves-skill-box-state.test.sh",
+     ".github/workflows/updater-skill-box-state-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "updater-traps-1-and-3-guard",
+  "was": "updater-traps-1-and-3-guard.yml",
+  "script": "scripts/ci/fast-guards.d/updater-traps-1-and-3-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "shared-utils/fleet_refresh_runner.py",
+     "shared-utils/cc_runtime_preflight.py",
+     "cc-compat.json",
+     "tests/unit/cc-runtime-preflight.test.py",
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "scripts/test-updater-traps-1-and-3.sh",
+     "scripts/test-loop-protection-wiring.sh",
+     "scripts/setup-weekly-update.sh",
+     "tests/unit/fleet-refresh-cc-main-convergence.test.py",
+     "tests/unit/full-update-path-contract.test.sh",
+     "tests/unit/update-skills-full-scripts-tree.test.sh",
+     ".github/workflows/updater-traps-1-and-3-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "shared-utils/fleet_refresh_runner.py",
+     "shared-utils/cc_runtime_preflight.py",
+     "cc-compat.json",
+     "tests/unit/cc-runtime-preflight.test.py",
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "scripts/test-updater-traps-1-and-3.sh",
+     "scripts/test-loop-protection-wiring.sh",
+     "scripts/setup-weekly-update.sh",
+     "tests/unit/fleet-refresh-cc-main-convergence.test.py",
+     "tests/unit/full-update-path-contract.test.sh",
+     "tests/unit/update-skills-full-scripts-tree.test.sh",
+     ".github/workflows/updater-traps-1-and-3-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "updater-write-preflight-guard",
+  "was": "updater-write-preflight-guard.yml",
+  "script": "scripts/ci/fast-guards.d/updater-write-preflight-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "tests/unit/updater-write-preflight-permission-block.test.sh",
+     ".github/workflows/updater-write-preflight-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "update-skills.sh",
+     "tests/unit/updater-write-preflight-permission-block.test.sh",
+     ".github/workflows/updater-write-preflight-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "wave-list-integrity-guard",
+  "was": "wave-list-integrity-guard.yml",
+  "script": "scripts/ci/fast-guards.d/wave-list-integrity-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": null
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": null
+   }
+  }
+ },
+ {
+  "name": "wire-no-match-guard",
+  "was": "wire-no-match-guard.yml",
+  "script": "scripts/ci/fast-guards.d/wire-no-match-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "tests/unit/wire-no-match-completes.test.sh",
+     ".github/workflows/wire-no-match-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "install.sh",
+     "update-skills.sh",
+     "tests/unit/wire-no-match-completes.test.sh",
+     ".github/workflows/wire-no-match-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "workforce-build-pipeline-guard",
+  "was": "workforce-build-pipeline-guard.yml",
+  "script": "scripts/ci/fast-guards.d/workforce-build-pipeline-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh",
+     "23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh",
+     "23-ai-workforce-blueprint/scripts/update-interview-state.sh",
+     "23-ai-workforce-blueprint/scripts/lib-interview-rate-limit.sh",
+     "37-zhc-closeout/scripts/resume-closeout-cron.sh",
+     "scripts/ensure-pipeline-crons.sh",
+     "tests/unit/bounded-workforce-build-resume.test.sh",
+     "tests/unit/closeout-watchdog-stuck-classes.test.sh",
+     "tests/unit/closeout-resume-cron-routing.test.sh",
+     "tests/fixtures/fake-openclaw-cron.py",
+     ".github/workflows/workforce-build-pipeline-guard.yml"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "23-ai-workforce-blueprint/scripts/resume-workforce-build.sh",
+     "23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh",
+     "23-ai-workforce-blueprint/scripts/update-interview-state.sh",
+     "23-ai-workforce-blueprint/scripts/lib-interview-rate-limit.sh",
+     "37-zhc-closeout/scripts/resume-closeout-cron.sh",
+     "scripts/ensure-pipeline-crons.sh",
+     "tests/unit/bounded-workforce-build-resume.test.sh",
+     "tests/unit/closeout-watchdog-stuck-classes.test.sh",
+     "tests/unit/closeout-resume-cron-routing.test.sh",
+     "tests/fixtures/fake-openclaw-cron.py",
+     ".github/workflows/workforce-build-pipeline-guard.yml"
+    ]
+   }
+  }
+ }
+]

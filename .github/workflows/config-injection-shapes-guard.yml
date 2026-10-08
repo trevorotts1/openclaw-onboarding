@@ -45,6 +45,10 @@ on:
       - "update-skills.sh"
       - ".github/workflows/config-injection-shapes-guard.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   config-injection-shapes-guard:
     name: flat active-memory / helpChatId / channels.bindings cannot ship
