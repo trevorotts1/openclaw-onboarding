@@ -29,6 +29,9 @@ Rules:
 - ffmpeg is bounded (manual M7): argv starts with `nice -n 10`, carries
   `-threads N`, and the render cap grows with output length instead of a
   flat 600 s (see size_ffmpeg / lane_size.py Part D).
+- E3 minimum shot length: load_timeline fails closed on any segment
+  under 1.5 s (1.0 s when marked beat_cut) via
+  shot_planner.validate_timeline_min_shot.
 """
 import argparse
 import json
@@ -39,9 +42,16 @@ import subprocess
 import sys
 
 TOOL_NAME = "final_assembler"
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "1.0.1"
 SCHEMA_VERSION = "1.0.0"
 TIMELINE_SCHEMA = "blackceo.timeline/v1"
+
+# E3 minimum shot length floors (shot_planner is the source of truth).
+# ponytail: import inside check_timeline_min_shot so an absent/broken
+# shot_planner cannot break every assemble; the check fails closed by
+# raising there instead.
+MIN_SHOT_S = 1.5
+BEAT_CUT_MIN_SHOT_S = 1.0
 
 EXIT = {"ok": 0, "error": 1, "unavailable": 3}
 
@@ -180,8 +190,29 @@ def _fail(reason, **kw):
     return out
 
 
+def check_timeline_min_shot(tl, floor=None):
+    """E3 QC wiring: run shot_planner.validate_timeline_min_shot on the
+    loaded timeline. Returns [reason strings]; a non-empty list is a FAIL
+    for the final gate (same check path W-E's dup-frames check uses).
+    Refuses silently-losing the check when shot_planner is absent.
+    """
+    if floor is None:
+        floor = MIN_SHOT_S
+    core_dir = os.path.dirname(os.path.abspath(__file__))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    import shot_planner as sp
+    return sp.validate_timeline_min_shot(tl, floor=floor)
+
+
 def load_timeline(path):
-    """Load + validate timeline.json. Returns dict or raises ValueError."""
+    """Load + validate timeline.json. Returns dict or raises ValueError.
+
+    E3: after the structural pass, the minimum-shot-length QC check runs
+    fail-closed — a timeline with any segment under its applicable floor
+    (1.5 s, or 1.0 s when that segment is marked beat_cut) is rejected;
+    run shot planner floor remediation before assembling.
+    """
     try:
         with open(path, encoding="utf-8") as fh:
             tl = json.load(fh)
@@ -204,6 +235,11 @@ def load_timeline(path):
         if s.get("dur") is not None and s["dur"] <= 0:
             raise ValueError(
                 f"TIMELINE_BAD_SEGMENT: segments[{i}].dur must be positive")
+    min_shot_errs = check_timeline_min_shot(tl)
+    if min_shot_errs:
+        raise ValueError(
+            "SEGMENT_TOO_SHORT: minimum shot length failed: "
+            + "; ".join(min_shot_errs[:4]))
     return tl
 
 
