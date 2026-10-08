@@ -98,6 +98,13 @@ LAST_LINE_OVER_ENDCARD = "LAST_LINE_OVER_ENDCARD"
 DEFAULT_TRANSITION = "fade"
 TRANSITION_DURATION = 0.4
 HARD_CUT_UNMARKED = "HARD_CUT_UNMARKED"
+# H13: a cross-fade into a lip-sync clip ends at least this long before
+# the clip's first word; a gap inside one line longer than LONG_GAP_S is
+# held on the speaking face (no cut-away inside the line window).
+FADE_WORD_MARGIN_S = 0.1
+LONG_GAP_S = 0.5
+FADE_COVERS_FIRST_WORD = "FADE_COVERS_FIRST_WORD"
+LONG_GAP_CUTAWAY = "LONG_GAP_CUTAWAY"
 
 # --- M7 bounding: processor share + wall-clock cap (manual 02 M7, Part D) ----
 #
@@ -510,6 +517,16 @@ def plan_timeline(tl, base_dir=".", probe=None):
             tl, s) if i > 0 and "transition" in s else (
             DEFAULT_TRANSITION if i > 0 else "none")
         xd = round(default_xd * fps) / fps if trans != "none" else 0.0
+        # H13: optional first_word_s (seconds into the clip). The fade
+        # shrinks (down to a cut) so it ends FADE_WORD_MARGIN_S before it.
+        fw = s.get("first_word_s")
+        if i > 0 and fw is not None and xd > 0:
+            cap = math.floor(max(0.0, fw - FADE_WORD_MARGIN_S) * fps
+                             + 1e-9) / fps
+            if cap < xd:
+                xd = cap
+                if xd == 0:
+                    trans = "none"
         # Part E E1(3): carry source/output fps per segment. The timeline's
         # per-segment "fps" key (absent on legacy timelines) is the clip's
         # requested source rate; fall back to the timeline fps so the
@@ -519,6 +536,8 @@ def plan_timeline(tl, base_dir=".", probe=None):
         item = {"src": s["src"], "frames": frames,
                 "snapped_dur": frames / fps, "transition": trans,
                 "xfade_dur": xd, "lip_sync": bool(s.get("lip_sync")), **rec}
+        if fw is not None:
+            item["first_word_s"] = float(fw)
         # Part F F12: the timeline's per-segment motion_score (the
         # motion_score() dict written by the scoring step) rides the plan
         # so the pre-assembly gate and the receipt read the same row.
@@ -616,6 +635,49 @@ def _last_line_over_detail(plan):
              "end_s": float(ln["end_s"]), "endcard_start_s": ec}
             for i, ln in enumerate(plan["lines"])
             if float(ln["end_s"]) > ec]
+
+
+# --- H13: cross-fades vs words ------------------------------------------------
+
+
+def check_fade_before_first_word(plan):
+    """H13 gate: the fade into a clip ends FADE_WORD_MARGIN_S before its
+    first word. Returns [] or [FADE_COVERS_FIRST_WORD]."""
+    eps = 1e-6
+    for s in plan["segments"]:
+        fw = s.get("first_word_s")
+        if fw is not None and s.get("xfade_dur", 0) > 0 \
+                and s["xfade_dur"] + FADE_WORD_MARGIN_S > fw + eps:
+            return [FADE_COVERS_FIRST_WORD]
+    return []
+
+
+def check_long_gap_hold(plan):
+    """H13 gate: a line with an internal word gap above LONG_GAP_S must sit
+    wholly inside the fully-opaque span of ONE lip-sync segment (held on
+    the speaking face). Lines carry optional words [{start_s, end_s}].
+    Returns [] or [LONG_GAP_CUTAWAY]."""
+    fps, segs = plan["fps"], plan["segments"]
+    spans = []
+    for i, s in enumerate(segs):
+        nxt = segs[i + 1].get("xfade_frames", 0) if i + 1 < len(segs) else 0
+        a = (s["offset_frames"] + s.get("xfade_frames", 0)) / fps
+        b = (s["offset_frames"] + s["frames"] - nxt) / fps
+        spans.append((a, b, s))
+    for ln in plan.get("lines") or []:
+        w = ln.get("words") or []
+        if not any(w[k + 1]["start_s"] - w[k]["end_s"] > LONG_GAP_S
+                   for k in range(len(w) - 1)):
+            continue
+        held = any(
+            s.get("lip_sync") or s.get("lip_sync_line_ids")
+            for a, b, s in spans
+            if a - 1e-6 <= ln["start_s"] and ln["end_s"] <= b + 1e-6
+            and (not s.get("lip_sync_line_ids")
+                 or ln["line_id"] in s["lip_sync_line_ids"]))
+        if not held:
+            return [LONG_GAP_CUTAWAY]
+    return []
 
 
 # --- Part E E5: lip-sync clips stay whole (atomic) --------------------------
@@ -877,6 +939,15 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                                   "before the end card starts (manual "
                                   "Part F F8)"),
                      evidence={"over": _last_line_over_detail(plan)})
+    # H13: fades finish before the first word; long in-line gaps are held.
+    for gate, why in (
+            (check_fade_before_first_word, "shorten the fade or add "
+             "pre-roll so it ends 0.1 s before the first word (H13)"),
+            (check_long_gap_hold, "hold the speaking face through the "
+             "gap; do not cut away inside one line (H13)")):
+        bad = gate(plan)
+        if bad:
+            return _fail(bad[0], next_action=why, evidence={})
     # Part F F12: clips must move. Every planned clip carries its motion
     # score in the receipt; a near-still clip fails before any render spend
     # (CLIP_LOW_MOTION). Scored rows come from the timeline segments
