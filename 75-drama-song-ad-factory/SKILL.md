@@ -64,7 +64,8 @@ python3 scripts/core/intake_preflight/factory.py preflight --root "$STORAGE"
 
 Exit map is code-owned: `EXIT = {"ok": 0, "waiting": 2, "parked": 3, "rejected": 4, "error": 1}`
 in `scripts/core/intake_preflight/__init__.py` — identical in both distributions
-(`tests/test_clean_install_discovery.py` / `tests/test_openclaw_adapter.py` enforce it).
+and re-verified at packaging time by the cross-distribution parity suites
+(build-tree tooling, not shipped in the client tree).
 
 Every envelope carries `schema_version` = `blackceo.intake-preflight/envelope/v1`.
 
@@ -133,7 +134,75 @@ build — byte-identical, proven by `tests/test_parity_layout.py`):
 ## Department wiring
 
 Owning department: **video** (per `23-ai-workforce-blueprint/skill-department-map.json`).
-Primary role: `video-editor`; support roles: `head-of-video-production`,
-`storyboard-pre-production-specialist`. Copy/audio QC judgment rides the
-video department's SOPs; paid-media ceilings ride the run's spend ledger,
-not any department's informal allowance.
+Lead role: `vsl-video-sales-letter-specialist` (decision 1; owner BUILD-OUT
+order 2026-10-07). Support roles: `video-editor`,
+`storyboard-pre-production-specialist`, `qc-specialist-video`. Copy/audio QC
+judgment rides the video department's SOPs; paid-media ceilings ride the run's
+spend ledger, not any department's informal allowance. Pipeline SOP:
+`23-ai-workforce-blueprint/templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md`.
+
+## Version 2 production options (owner BUILD-OUT 2026-10-07)
+
+Everything in this section is shared doctrine: identical in both
+distributions. Field-level rules live in `references/choice-card-spec.md`;
+human price snapshot in `references/price-menu.md`; stage order and QC in the
+SOP named above.
+
+- **Intake.** Quick mode by default (one sentence), Concept mode for a
+  client with their own story. At most three questions total, and ONE choice
+  card with every default pre-selected, so a client can approve with one
+  click.
+- **Lengths:** 60 seconds, 90 seconds, 3 minutes, 5 minutes, and a
+  **10-minute long version**. Each length is its own song and timing map.
+- **Shapes:** 9:16, 16:9, or both, each generated natively - never a crop of
+  the other.
+- **Clips:** automatic 60- or 90-second clips are offered for the **5-minute
+  and 10-minute lengths only**. Cutting a clip is free (FFmpeg); the AI that
+  picks the moments runs on the client's own AI plan.
+- **Five looks (decision 29):** Lifelike 3D (default), 2D Hand-Painted,
+  Sketch to Life, Canvas to Life, Canvas to 3D. Each look owns its style
+  bible block, its own switching rules and its own QC. The three hybrids
+  switch sketch or paint to realism (or to lifelike 3D for Canvas to 3D) on
+  matched poses, 0.3-0.4 s dissolve, at least 3 seconds held per style, no
+  flicker, identity locked; golden realism carries the transformation and
+  payoff.
+- **Music (decision 30):** Soul Ballad (default), R&B Flow, Soul Rise.
+- **Voice (decisions 27, 31):** All Suno (default) - sung and spoken lines
+  all from Suno, spoken lines over the music bed only, no singing-underneath
+  layer - or **Velvet Voiceover**: Google text-to-speech for the spoken
+  lines, one distinct voice per character, the sung version of each spoken
+  line playing softly underneath with the music bed dipped, **no echo effect
+  and no reverb**. The option was renamed from its earlier echo-flavoured name; that earlier string is
+  forbidden everywhere. Velvet Voiceover is the only exception to the
+  all-Suno rule.
+- **Per-character voice packs:** no two characters share a voice, in any look
+  or music style.
+- **Lip-sync model order (decision 33):** Kling avatar
+  (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
+  that character's own isolated line; InfiniTalk (`infinitalk/from-audio`)
+  as backup; **Volcengine is dropped**. Tight close-ups only. The lip-sync
+  input contains only the on-screen speaker's line: never a narrator, never
+  another character, never a mixed vocal stem. Narrator, phone, voicemail
+  and laptop voices may play as voice-over but are never lip-synced onto a
+  person. Lip-sync applies to the pain peak, the product line, the call to
+  action and the chorus hook - three to four lines, about 15 to 20 seconds,
+  listed on the approval card; every other shot stays as the video model
+  made it.
+- **Speaker contract:** the person visible while a line plays is the one
+  speaking it, or the voice's source device. QC checks the picture for every
+  spoken line, and measures pitch against the character's gender range with
+  an octave-error guard.
+- **Suno extend** is used only to hit an exact length or to repair a
+  section, never as routine billing.
+- **Unknown KIE job results** are resolved by querying KIE task status;
+  they are never left open and never blindly re-submitted.
+- **Book campaigns and batch mode (decision 34):** the cover is the product
+  image; one choice card covers the whole batch; one ad per book with its own
+  campaign folder, receipt, spend-ledger run and Command Center deliverable;
+  books and authors are never mixed; the card shows the batch total.
+- **Pricing:** every figure on the card - video, both shapes, lip-sync
+  close-ups, voice packs, clips and the batch total - comes from Skill 74
+  `price`. This skill never computes or hard-codes a rate.
+- **Command Center:** one deliverable per ad, one Kanban card per ad and one
+  parent card per batch; department lead role
+  `vsl-video-sales-letter-specialist`.

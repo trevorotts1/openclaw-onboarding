@@ -1,0 +1,107 @@
+{
+  "minimax-h3/image-to-video": {
+    "unit": "per-second",
+    "tier_credits": 13,
+    "source": "registry",
+    "note": "Skill 74 estimate = highest listed tier (2K 13 credits/s) x units; conservative by contract"
+  },
+  "bytedance/seedance-2-mini": {
+    "unit": "per-second",
+    "tier_credits": 8.2,
+    "source": "catalog:live"
+  },
+  "veo-3-1": {
+    "unit": "per-job",
+    "tier_credits": 370,
+    "source": "catalog:live",
+    "note": "per-job: Skill 74 ignores --units; calculator multiplies by shots"
+  },
+  "kling-3.0/video": {
+    "unit": "per-second",
+    "tier_credits": 67,
+    "source": "catalog:live"
+  },
+  "google/gemini-omni-flash-1-1": {
+    "unit": "per-job",
+    "tier_credits": 252,
+    "source": "catalog:live"
+  },
+  "wan/3-0-video": {
+    "unit": "per-second",
+    "tier_credits": 32,
+    "source": "catalog:live"
+  },
+  "happyhorse-1-1/text-to-video": {
+    "unit": "per-second",
+    "tier_credits": 29,
+    "source": "catalog:live"
+  },
+  "bytedance/seedance-2-5": {
+    "unit": "per-second",
+    "tier_credits": 158,
+    "source": "catalog:live"
+  },
+  "minimax-h4/video": {
+    "unit": "per-second",
+    "tier_credits": 2,
+    "source": "catalog:live",
+    "note": "cheapest but DISCOVERED: must never be offered"
+  },
+  "kling-2.5-turbo/video": {
+    "unit": "per-second",
+    "tier_credits": 1,
+    "source": "catalog:live",
+    "note": "cheapest but BLOCKED: must never be offered"
+  },
+  "hailuo-3-0/video": {
+    "unit": "per-second",
+    "tier_credits": 1,
+    "source": "catalog:live",
+    "note": "cheapest but UNKNOWN-DRIFT: must never be offered"
+  },
+  "pixverse-6/video": {
+    "unit": "per-second",
+    "tier_credits": 2,
+    "source": "catalog:live",
+    "note": "cheap but no image-to-video: must never be offered"
+  },
+  "grok-imagine-3/video": {
+    "unit": "per-second",
+    "tier_credits": 3,
+    "source": "catalog:live",
+    "note": "cheap but 16:9 only: must never be offered for 9:16"
+  },
+  "runway-g4/video": {
+    "unit": "per-second",
+    "tier_credits": 4,
+    "source": "catalog:live",
+    "note": "cheap but not silent: must never be offered"
+  },
+  "ai-music-api/generate": {
+    "unit": "per-job",
+    "tier_credits": 12,
+    "source": "catalog:live"
+  },
+  "google/imagen4-fast": {
+    "unit": "per-image",
+    "tier_credits": 4,
+    "source": "registry"
+  },
+  "gpt-image-2-flare": {
+    "unit": "per-image",
+    "tier_credits": 6,
+    "source": "registry"
+  },
+  "kling/ai-avatar-standard": {
+    "unit": "per-second",
+    "tier_credits": 8,
+    "source": "registry",
+    "note": "D33 roster 1, Kling avatar 720P; per-second over the close-up seconds"
+  },
+  "infinitalk/from-audio": {
+    "unit": "per-second",
+    "tier_credits": 12,
+    "source": "catalog:live",
+    "note": "D33 roster 2, InfiniTalk backup 720p; per-second over the close-up seconds"
+  }
+}
