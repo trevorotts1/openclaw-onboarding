@@ -28,29 +28,34 @@ import time
 TOOL_NAME = "lipsync_picture_gate"
 RECEIPT_SUFFIX = ".picture-gate.json"
 
-# ============================ CONSTANTS (ONE BLOCK) ============================
-# Same names and values in onboarding skill 75 and 999-setup skill 75. Change both.
-# Calibrated on the real pictures: 30-Day original 28.1% / smile 0.62 fails; Perfect
-# Daughter original 34.4% / roll -7.8 / smile 0.83 fails; Perfect Daughter fix 37.8% /
-# roll -4.3 / smile 0.36 passes; 30-Day crop 36.8% / smile 0.59 passes.
-MIN_FACE_H_PCT = 35.0     # forehead(10)-chin(152) as % of frame height; NO upper limit
+# ============================================================================
+# ONE constants block. Same names, same values in onboarding and 999-setup.
+# Evidence: 30-Day original 28.1% / smile 0.62 FAIL; Perfect Daughter original
+# 34.4% / roll -7.8 / smile 0.83 FAIL; Perfect Daughter fix 37.8% / roll -4.3 /
+# smile 0.36 PASS; 30-Day crop 36.8% / smile 0.59 PASS.
+# ============================================================================
+REQUIRED_FACE_COUNT = 1
+MIN_FACE_HEIGHT_PCT = 35.0      # forehead(10)-chin(152) as % of frame height
+MAX_FACE_HEIGHT_PCT = None      # no upper limit unless proven needed
 MAX_ABS_ROLL_DEG = 5.0
-MAX_ABS_YAW = 0.12        # nose offset / face width
-MAX_SMILE = 0.60          # mean mouthSmileL/R
+MAX_ABS_YAW = 0.12
+MAX_SMILE = 0.60
 MAX_JAW_OPEN = 0.15
-MAX_INNER_GAP_PCT = 1.0   # lip gap / face height (the teeth check)
-MIN_SHARP = 100.0         # Laplacian variance, face crop resized to 256 wide
-CROP_TARGET_PCT = 37.0    # the free local crop aims here
-MAX_LOCAL_CROPS = 1       # one free local crop for a small face
-MAX_REGENERATIONS = 2     # Trevor's 2-try rule: paid regenerations, then refuse
+MAX_LIP_GAP_PCT = 1.0           # lip gap / face height (the teeth check)
+MIN_SHARPNESS = 100.0           # Laplacian variance, face crop 256 px wide
+CROP_TARGET_FACE_PCT = 38.0     # the free crop aims here
+MAX_FREE_CROPS = 1              # one free local crop for a small face
+MAX_PAID_REGENS = 2             # Trevor's 2-try rule, then refuse
 REGEN_MODEL = "gpt-image-2-image-to-image"
 REGEN_PROMPT = "neutral expression, lips closed, facing camera, head level"
+# ============================================================================
+# Face model (pinned; installed by scripts/install_face_model.py)
 FACE_MODEL_NAME = "face_landmarker.task"
 FACE_MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/face_landmarker/"
                   "face_landmarker/float16/latest/face_landmarker.task")
 FACE_MODEL_SHA256 = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
 FACE_MODEL_ENV = "LIPSYNC_FACE_MODEL"
-# ===============================================================================
+# ============================================================================
 
 
 class PictureRefused(Exception):
@@ -140,16 +145,16 @@ def measure_picture(path):
 def judge_picture(n):
     """Pure rules: numbers -> (verdict, [(code, text)]). Anything not measured fails."""
     f = lambda k: n.get(k) if isinstance(n.get(k), (int, float)) and not isinstance(n.get(k), bool) else None  # noqa: E731
-    if n.get("faces") != 1:
-        return "FAIL", [("PICTURE_FACE_COUNT", "need exactly one face, found %s" % n.get("faces"))]
+    if n.get("faces") != REQUIRED_FACE_COUNT:
+        return "FAIL", [("PICTURE_FACE_COUNT", "need exactly %d face, found %s" % (REQUIRED_FACE_COUNT, n.get("faces")))]
     r = []
-    chk = [("face_h_pct", lambda v: v >= MIN_FACE_H_PCT, "PICTURE_FACE_SMALL", "face %.1f%% of frame height; need >= %.0f%%" % (f("face_h_pct") or 0, MIN_FACE_H_PCT)),
+    chk = [("face_h_pct", lambda v: v >= MIN_FACE_HEIGHT_PCT and (MAX_FACE_HEIGHT_PCT is None or v <= MAX_FACE_HEIGHT_PCT), "PICTURE_FACE_SMALL", "face %.1f%% of frame height; need >= %.0f%%" % (f("face_h_pct") or 0, MIN_FACE_HEIGHT_PCT)),
            ("roll_deg", lambda v: abs(v) <= MAX_ABS_ROLL_DEG, "PICTURE_HEAD_TILT", "head roll %s deg; limit +/-%.0f" % (n.get("roll_deg"), MAX_ABS_ROLL_DEG)),
            ("yaw", lambda v: abs(v) <= MAX_ABS_YAW, "PICTURE_HEAD_TURN", "head yaw %s; limit +/-%.2f" % (n.get("yaw"), MAX_ABS_YAW)),
            ("smile", lambda v: v <= MAX_SMILE, "PICTURE_SMILE", "smile %s > %.2f; neutral mouth needed" % (n.get("smile"), MAX_SMILE)),
            ("jaw_open", lambda v: v <= MAX_JAW_OPEN, "PICTURE_MOUTH_OPEN", "jawOpen %s > %.2f" % (n.get("jaw_open"), MAX_JAW_OPEN)),
-           ("inner_gap_pct", lambda v: v <= MAX_INNER_GAP_PCT, "PICTURE_TEETH", "lip gap %s%% of face; teeth showing (limit %.1f)" % (n.get("inner_gap_pct"), MAX_INNER_GAP_PCT)),
-           ("sharp", lambda v: v >= MIN_SHARP, "PICTURE_SOFT", "sharpness %s < %.0f" % (n.get("sharp"), MIN_SHARP))]
+           ("inner_gap_pct", lambda v: v <= MAX_LIP_GAP_PCT, "PICTURE_TEETH", "lip gap %s%% of face; teeth showing (limit %.1f)" % (n.get("inner_gap_pct"), MAX_LIP_GAP_PCT)),
+           ("sharp", lambda v: v >= MIN_SHARPNESS, "PICTURE_SOFT", "sharpness %s < %.0f" % (n.get("sharp"), MIN_SHARPNESS))]
     for k, ok, code, text in chk:
         v = f(k)
         if v is None:
@@ -193,7 +198,7 @@ def receipt_refusal(path):
     return None
 
 
-def crop_to_face(path, out, numbers, target_pct=CROP_TARGET_PCT):
+def crop_to_face(path, out, numbers, target_pct=CROP_TARGET_FACE_PCT):
     """Free local 9:16 crop centred on the face so it fills target_pct of height."""
     import cv2
     img = cv2.imread(path)
@@ -223,8 +228,8 @@ def read_receipt(path):
 def fix_picture(path, regenerate=None, measure=None, crop=None, dispatch_ctx=None):
     """Gate a picture, fixing it for free first. Returns (final_path, PASS receipt).
 
-    Free: ONE local crop for a small face (MAX_LOCAL_CROPS). Paid: at most
-    MAX_REGENERATIONS regenerations for smile / teeth / tilt, then refuse.
+    Free: ONE local crop for a small face (MAX_FREE_CROPS). Paid: at most
+    MAX_PAID_REGENS regenerations for smile / teeth / tilt, then refuse.
     regenerate(path, prompt) -> new image path. Default (regenerate=None with
     dispatch_ctx given) is kie_dispatch.make_picture_regenerator(**dispatch_ctx):
     gpt-image-2 image-to-image from the 3D character through kie_dispatch, so it
@@ -245,16 +250,16 @@ def fix_picture(path, regenerate=None, measure=None, crop=None, dispatch_ctx=Non
             return cur, rec
         codes = {c for c, _ in rec["reasons"]}
         n = rec["numbers"]
-        if codes & _CROPPABLE and n.get("faces") == 1 and crops < MAX_LOCAL_CROPS:   # free local crop
+        if codes & _CROPPABLE and n.get("faces") == 1 and crops < MAX_FREE_CROPS:   # free local crop
             crops += 1
             base, ext = os.path.splitext(cur)
             cur = crop(cur, base + "-crop" + ext, n)
             steps.append("local crop")
             continue
-        if regenerate is not None and regens < MAX_REGENERATIONS and n.get("faces") == 1:
+        if regenerate is not None and regens < MAX_PAID_REGENS and n.get("faces") == 1:
             regens += 1
             cur = regenerate(cur, REGEN_PROMPT)
             crops = 0                       # a fresh picture may take its own free crop
-            steps.append("regenerated %d/%d (paid, counts against cap)" % (regens, MAX_REGENERATIONS))
+            steps.append("regenerated %d/%d (paid, counts against cap)" % (regens, MAX_PAID_REGENS))
             continue
         raise PictureRefused(rec["reasons"], cur)

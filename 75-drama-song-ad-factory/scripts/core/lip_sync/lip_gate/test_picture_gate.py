@@ -28,9 +28,9 @@ def img(name, body=b"x"):
 
 
 def test_constants_are_the_one_block():
-    assert (P.MIN_FACE_H_PCT, P.MAX_ABS_ROLL_DEG, P.MAX_ABS_YAW, P.MAX_SMILE, P.MAX_JAW_OPEN,
-            P.MAX_INNER_GAP_PCT, P.MIN_SHARP) == (35.0, 5.0, 0.12, 0.60, 0.15, 1.0, 100.0)
-    assert (P.MAX_LOCAL_CROPS, P.MAX_REGENERATIONS) == (1, 2)
+    assert (P.MIN_FACE_HEIGHT_PCT, P.MAX_ABS_ROLL_DEG, P.MAX_ABS_YAW, P.MAX_SMILE, P.MAX_JAW_OPEN,
+            P.MAX_LIP_GAP_PCT, P.MIN_SHARPNESS) == (35.0, 5.0, 0.12, 0.60, 0.15, 1.0, 100.0)
+    assert (P.MAX_FREE_CROPS, P.MAX_PAID_REGENS) == (1, 2) and P.MAX_FACE_HEIGHT_PCT is None and P.REQUIRED_FACE_COUNT == 1 and P.CROP_TARGET_FACE_PCT == 38.0
     assert P.REGEN_PROMPT == "neutral expression, lips closed, facing camera, head level"
     assert P.REGEN_MODEL == "gpt-image-2-image-to-image"
     assert P.FACE_MODEL_URL == ("https://storage.googleapis.com/mediapipe-models/face_landmarker/"
