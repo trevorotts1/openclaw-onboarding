@@ -4,8 +4,9 @@
 stdlib only, zero paid calls, no ffmpeg binary required (the scan path is
 exercised through the pure parsers over canned stderr text).
 
-Acceptance proven:
+Acceptance proven (floor amended to 55 % per Addendum 3 / Decision 39):
   timing map with 75% sung coverage              -> PASS
+  timing map with 55% sung coverage (the floor)  -> PASS
   voiceover-only master (0% sung)                -> FAIL VOCAL_MISSING
   50% sung coverage                              -> FAIL SUNG_COVERAGE_LOW
   Velvet profile with a song bed present         -> PASS
@@ -56,6 +57,15 @@ class SungVocalE7(unittest.TestCase):
         self.assertEqual(out["reason_code"], "SUNG_COVERAGE_OK")
         self.assertAlmostEqual(out["sung_coverage"], 0.75, places=3)
 
+    def test_timing_map_55pct_floor_passes(self):
+        """E7 amended (Decision 39): floor 55% -- a 55% master now passes."""
+        self.assertEqual(SVG.MIN_SUNG_COVERAGE, 0.55)
+        out = SVG.check_sung_vocal(timing=_timing(33.0, 60.0),
+                                   profile="all_suno")
+        self.assertEqual(out["outcome"], "PASS")
+        self.assertEqual(out["reason_code"], "SUNG_COVERAGE_OK")
+        self.assertAlmostEqual(out["sung_coverage"], 0.55, places=3)
+
     def test_voiceover_only_master_fails_vocal_missing(self):
         out = SVG.check_sung_vocal(timing=_timing(0.0, 60.0),
                                    profile="all_suno")
@@ -63,6 +73,7 @@ class SungVocalE7(unittest.TestCase):
         self.assertEqual(out["reason_code"], "VOCAL_MISSING")
 
     def test_50pct_fails_sung_coverage_low(self):
+        """E7 amended (Decision 39): 50% stays below the 55% floor."""
         out = SVG.check_sung_vocal(timing=_timing(30.0, 60.0),
                                    profile="all_suno")
         self.assertEqual(out["outcome"], "FAIL")

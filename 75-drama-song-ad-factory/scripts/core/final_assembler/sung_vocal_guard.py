@@ -11,7 +11,7 @@ but the shared final QC gate had no record proving the master is sung.
 What this module owns and nothing else:
 
 1. the **coverage check** -- ``check_sung_vocal()`` decides a master carries
-   the sung vocal across >= ``MIN_SUNG_COVERAGE`` (70 %) of its run for All
+   the sung vocal across >= ``MIN_SUNG_COVERAGE`` (55 %) of its run for All
    Suno ads, or a song bed under the voiceover for Velvet Voiceover ads;
 2. two **code-only evidence paths** (no paid call):
    primary  -- the 12.4 song timing map (shot_planner.load_timing_map)
@@ -33,7 +33,8 @@ What this module owns and nothing else:
 Reason codes (exactly the manual's two):
   VOCAL_MISSING      -- all-spoken master: no sung vocal detected
                         (0 % sung coverage, or no vocal energy on master);
-  SUNG_COVERAGE_LOW  -- sung vocal present but below the 70 % floor.
+  SUNG_COVERAGE_LOW  -- sung vocal present but below the 55 % floor
+                        (Decision 39: at least 55 % sung, spoken 35-40 %).
 
 stdlib only. No network module, no provider call, no spend, no absolute
 operator path.
@@ -59,9 +60,9 @@ except ImportError:                      # core/ imported as a top-level package
 TOOL_NAME = "final_assembler.sung_vocal_guard"
 TOOL_VERSION = "1.0.0"
 
-#: Manual 02 E7: "carry the Suno sung vocal across most of its runtime
-#: (e.g. >= 70 % for All Suno ...)". One floor, one module.
-MIN_SUNG_COVERAGE = 0.70
+#: Manual 02 E7 as amended (Addendum 3 / Decision 39): "at least 55 % sung,
+#: spoken 35-40 %" -- the pre-amendment floor is superseded. One floor, one module.
+MIN_SUNG_COVERAGE = 0.55
 
 #: Canonical intake voice ids (plan 4.1 / voice_velvet_echo constants);
 #: copied here so the guard never needs the voice catalog to decide mode.
