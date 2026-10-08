@@ -85,7 +85,15 @@ CREATE TABLE IF NOT EXISTS card_state(
   status TEXT NOT NULL,
   PRIMARY KEY (job_id, stage_slug)
 );
+CREATE TABLE IF NOT EXISTS epic_ids(
+  job_id TEXT PRIMARY KEY,
+  epic_id TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 """
+
+#: CC deliverable types (src/lib/validation.ts CreateDeliverableSchema).
+DELIVERABLE_TYPES = ("file", "url", "artifact", "image")
 
 
 class BoardSyncError(Exception):
@@ -167,7 +175,8 @@ class Outbox:
 
     def enqueue_create(self, job_id, show_name, stages, workspace, owner=None,
                        department=None, agent_id=None, money_ceiling_usd=None,
-                       estimated_cost_usd=None, show_date=None):
+                       estimated_cost_usd=None, show_date=None,
+                       title_prefix=None):
         self._bind(workspace)
         if not (1 <= len(job_id) <= 128):
             raise BoardSyncError("job_id length out of range")
@@ -184,6 +193,12 @@ class Outbox:
             payload["owner"] = owner
         if department is not None:
             payload["department"] = department
+        if title_prefix is not None:
+            # H3 step 1: CC renders "<title_prefix> — <show_name>" on the epic
+            # title (CreateAdCampaignSchema.title_prefix, max 60 chars).
+            if not (1 <= len(title_prefix) <= 60):
+                raise BoardSyncError("title_prefix length out of range (max 60)")
+            payload["title_prefix"] = title_prefix
         if workspace is not None:
             payload["workspace"] = workspace
         if agent_id is not None:
@@ -197,6 +212,36 @@ class Outbox:
         if stages:
             payload["stages"] = [{"slug": s["slug"], **({"title": s["title"]} if s.get("title") else {})} for s in stages]
         return self._insert("create", job_id, None, workspace, payload)
+
+    def enqueue_deliverable(self, epic_id, workspace, path, title,
+                            deliverable_type="file", description=None):
+        """H3 step 3: register the delivered ad file on its epic card.
+
+        POST /api/tasks/<epic id>/deliverables with
+        ``{deliverable_type, path, title}`` (CreateDeliverableSchema). The
+        epic id is the create response's ``parent_id`` — the id of the card
+        whose stage_slug is 'epic'. Same durable-outbox pattern: pending ->
+        sent -> acked, duplicate intents collapse on the derived key.
+        """
+        self._bind(workspace)
+        if not (1 <= len(epic_id) <= 128):
+            raise BoardSyncError("epic_id length out of range")
+        if deliverable_type not in DELIVERABLE_TYPES:
+            raise BoardSyncError("unknown deliverable_type %r" % (deliverable_type,))
+        if not (path or "").strip():
+            raise BoardSyncError("deliverable path required")
+        if not (1 <= len(title) <= 500):
+            raise BoardSyncError("deliverable title length out of range")
+        payload = {"deliverable_type": deliverable_type, "path": path, "title": title}
+        if description is not None:
+            payload["description"] = description
+        return self._insert("deliverable", epic_id, None, workspace, payload)
+
+    def epic_id(self, job_id):
+        """The epic card id recorded for this campaign's create, or None."""
+        row = self.db.execute("SELECT epic_id FROM epic_ids WHERE job_id=?",
+                              (job_id,)).fetchone()
+        return row[0] if row else None
 
     def enqueue_move(self, job_id, stage_slug, status, actor, workspace, reason=None,
                      evidence=None, reviewer=None, blocked_reason=None,
@@ -261,6 +306,8 @@ class Outbox:
                     self._reconcile(rid, kind, job_id, stage, body, report)
                 elif kind == "create":
                     self._send_create(rid, job_id, body, report)
+                elif kind == "deliverable":
+                    self._send_deliverable(rid, job_id, body, report)
                 else:
                     self._send_move(rid, job_id, stage, body, report)
             except AuthError:
@@ -302,10 +349,52 @@ class Outbox:
         if status in (200, 201):
             self._seed_cards(job_id, (resp or {}).get("stages", []))
             # created:false on 200 = server replay proof: already exists, zero writes, no duplicate.
+            # parent_id is the epic card's task id (stage_slug 'epic') — H3 step 3
+            # needs it to POST the deliverable; record both directions.
+            epic = (resp or {}).get("parent_id")
+            if epic:
+                self.db.execute(
+                    "INSERT OR REPLACE INTO epic_ids(job_id,epic_id,updated_at) VALUES(?,?,?)",
+                    (job_id, epic, _now()))
+                self.db.commit()
             self._resolve(rid, ACKED, {"http": status, "created": bool((resp or {}).get("created"))})
             report["acked"].append(rid)
         else:
             self._resolve(rid, REJECTED, {"http": status, "code": (resp or {}).get("code", "BAD_REQUEST")})
+            report["rejected"].append(rid)
+
+    def _send_deliverable(self, rid, epic_id, body, report):
+        self._mark_sent(rid)
+        status, resp = self.sender("POST", "/api/tasks/%s/deliverables" % epic_id, body)
+        if status in (200, 201):
+            self._resolve(rid, ACKED, {"http": status, "deliverable": epic_id})
+            report["acked"].append(rid)
+        elif status == 404:
+            # Unknown epic: reconciled against the board before any retry —
+            # update-existing-only, never auto-created here.
+            self._reconcile_deliverable(rid, epic_id, body, report)
+        else:
+            self._resolve(rid, REJECTED, {"http": status, "code": (resp or {}).get("code", "DELIVERABLE_FAILED")})
+            report["rejected"].append(rid)
+
+    def _reconcile_deliverable(self, rid, epic_id, body, report):
+        """404 on the deliverable POST: GET the epic's deliverable list; ack
+        when the registration already landed (server replay), otherwise the
+        epic itself is gone — terminal, operator reconciles."""
+        try:
+            status, resp = self.sender("GET", "/api/tasks/%s/deliverables" % epic_id, None)
+        except TransportOutage as e:
+            raise e
+        known = [d for d in (resp or []) if isinstance(d, dict)]
+        if status == 200 and any(
+                d.get("deliverable_type") == body.get("deliverable_type")
+                and d.get("path") == body.get("path")
+                for d in known):
+            self._resolve(rid, ACKED, {"http": 200, "reconciled": True,
+                                       "deliverable": epic_id})
+            report["acked"].append(rid)
+        else:
+            self._resolve(rid, REJECTED, {"http": status, "code": (resp or {}).get("code", "EPIC_NOT_FOUND") if status != 200 else "EPIC_NOT_FOUND"})
             report["rejected"].append(rid)
 
     def _send_move(self, rid, job_id, stage, body, report):

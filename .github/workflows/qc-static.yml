@@ -2975,3 +2975,57 @@ jobs:
           # The test uses python3 (not jq) so it works in any CI runner.
           bash tests/unit/standard-first-cron-awareness.test.sh
           echo "✓ All standard-first cron awareness checks pass (S1-S8, N1-N5 + mutation proofs)"
+
+      # Manual 02 B6 — empty-home + path-leak discipline for the drama song
+      # skill (Skill 75). C3, B4 and the video-catalog default passed on the
+      # operator Mac and failed everywhere else because the operator box is a
+      # contaminated test bed: code under scripts/core/ reached into
+      # ~/Downloads and the build workspace when HOME was full. Two layers:
+      #
+      #   1. EMPTY HOME — every test file under skill 75 scripts/core/ runs
+      #      with HOME pointed at a fresh empty mktemp dir. The invocation is
+      #      per-file `python3 <test file>` because the skill's tests are
+      #      script-style self-checks (check/FAILS pattern, sys.exit(main())),
+      #      one level of sys.path per file; a single `unittest discover`
+      #      cannot import them (name collisions, sibling imports) and the
+      #      skill's own docstrings each pin the per-file invocation.
+      #   2. PATH LEAK — a static check that FAILS when any non-test file
+      #      under scripts/core/ (not matching test_*.py) contains 'Downloads',
+      #      'drama-song-factory-build' or the path-like 'openclaw-onboarding/'
+      #      so operator boxes and build workspaces can never be load-bearers
+      #      again (operator-default removals C3 shipped on main first).
+      #
+      # The runner has no ~/openclaw-onboarding and no ~/Downloads, so these
+      # steps run on a genuinely clean box; the static check makes any future
+      # reintroduction of an operator path a red build, not a silent pass.
+      - name: Skill 75 empty-home test suite (manual 02 B6)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The static check itself (layer 2 of B6): FAIL on any 'Downloads',
+          # 'drama-song-factory-build' or path-like 'openclaw-onboarding/'
+          # string in a non-test file under the skill's scripts/core/.
+          # Non-test files only: test_*.py deliberately plant the needles at
+          # run time to prove the ban bites, so they are exempt by design —
+          # the same class of exemption the no-personal-data gates give to
+          # .md evidence docs that cite scan paths.
+          bash 75-drama-song-ad-factory/scripts/qc-operator-path-leak.sh
+          echo "✓ No operator/build-workspace path stored in skill 75 scripts/core (B6 static check)"
+          # Layer 1: real suites under an empty HOME, the exact per-file
+          # invocation each test docstring documents (self-maintaining: the
+          # loop re-discovers test_*.py, so the next wave's tests join
+          # without edits).
+          tests_rc=0
+          empty_home=""
+          while IFS= read -r t; do
+            empty_home="$(mktemp -d)"
+            if [ -n "$(find "$empty_home" -mindepth 1 | head -1)" ]; then
+              echo "mktemp -d returned a non-empty home: $empty_home"; exit 1
+            fi
+            if ! (HOME="$empty_home" python3 "$t"); then
+              echo "✗ empty-home FAIL: $t"; tests_rc=1
+            fi
+            rmdir --ignore-fail-on-non-empty -p "$empty_home" 2>/dev/null || true
+          done < <(find 75-drama-song-ad-factory/scripts/core -type f -name 'test_*.py' -not -path '*/__pycache__/*' | sort)
+          [ "$tests_rc" -eq 0 ] || exit 1
+          echo "✓ Skill 75 scripts/core test suites pass with a fresh empty HOME"

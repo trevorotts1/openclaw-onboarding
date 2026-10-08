@@ -79,6 +79,19 @@ Do NOT mint a new key. `FISH_AUDIO_API_KEY` / `FISH_AUDIO_VOICE_ID` are
 only needed for spoken voiceover stages (Skill 30); sung-only campaigns
 skip them.
 
+Command Center board sync (`scripts/core/cc_sync.py`) also needs these
+three environment variables (names only - values live in the env stores,
+never printed):
+
+- `CC_WORKSPACE` - the workspace binding the outbox enforces (required;
+  without it the sync refuses to start).
+- `MC_API_TOKEN` - the Bearer token Command Center's middleware checks.
+- `WEBHOOK_SECRET` - the HMAC secret for the `x-webhook-signature` header.
+
+A **403** from the board means Command Center credentials are missing;
+the ad still finishes locally. The board sync reports an auth error and
+stops sending - the campaign folder, receipt and delivery are unchanged.
+
 ## Step 4: Helper skills are NOT installed by reference
 
 Build-directive section 2.4: references to onboarding Skills
