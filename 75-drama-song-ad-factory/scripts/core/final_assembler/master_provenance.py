@@ -33,6 +33,18 @@ _HAND_RE = re.compile(
     re.I)
 
 
+def _loud(kind, code, detail):
+    """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
+    import os as _os, sys as _sys
+    d = _os.path.dirname(_os.path.abspath(__file__))
+    while d != _os.path.dirname(d) and not _os.path.exists(_os.path.join(d, "loud_failure.py")):
+        d = _os.path.dirname(d)
+    if d not in _sys.path:
+        _sys.path.insert(0, d)
+    import loud_failure
+    getattr(loud_failure, kind)(code, detail)
+
+
 def sha256_file(path):
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -60,7 +72,9 @@ def scan_run_scripts(run_dir):
                 with open(p, encoding="utf-8", errors="replace") as fh:
                     if _HAND_RE.search(fh.read()):
                         bad.append(os.path.relpath(p, run_dir))
-            except OSError:
+            except OSError as exc:
+                _loud("fail", "HAND_WRITTEN_SCAN_UNREADABLE",
+                      "%s could not be scanned: %r" % (p, exc))
                 continue
     return sorted(bad)
 

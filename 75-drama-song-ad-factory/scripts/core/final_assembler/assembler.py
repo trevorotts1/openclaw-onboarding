@@ -138,6 +138,23 @@ MIN_TIMEOUT_S = 600              # Part D floor for ffmpeg_timeout_s
 DEFAULT_WIDTH, DEFAULT_HEIGHT = 1920, 1080
 
 
+def _loud(kind, code, detail):
+    """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
+    import os as _os, sys as _sys
+    d = _os.path.dirname(_os.path.abspath(__file__))
+    while d != _os.path.dirname(d) and not _os.path.exists(_os.path.join(d, "loud_failure.py")):
+        d = _os.path.dirname(d)
+    if d not in _sys.path:
+        _sys.path.insert(0, d)
+    import loud_failure
+    getattr(loud_failure, kind)(code, detail)
+
+
+def _loud_attach(receipt):
+    import loud_failure
+    return loud_failure.attach(receipt)
+
+
 def _effective_cores():
     """Container quota beats host total, else physical/dedicated cores (Part D D1)."""
     for path in ("/sys/fs/cgroup/cpu.max",):          # cgroup v2
@@ -186,7 +203,10 @@ def _lane_size_threads():
         sys.path.insert(0, core_dir)
     try:
         import lane_size                    # noqa: F401  (guarded: W2-A unit)
-    except Exception:                       # noqa: BLE001  absent/broken/odd name
+    except ImportError:                     # absent: documented, not an error
+        return None
+    except Exception as exc:                # noqa: BLE001  broken module
+        _loud("warn", "LANE_SIZE_BROKEN", "lane_size import failed: %r" % (exc,))
         return None
     for name in ("ffmpeg_threads", "threads"):   # tolerant of H4's final spelling
         val = getattr(lane_size, name, None)
@@ -196,9 +216,11 @@ def _lane_size_threads():
             except TypeError:
                 try:
                     val = val(output_seconds=0, height=DEFAULT_HEIGHT)
-                except Exception:           # noqa: BLE001
+                except Exception as exc:    # noqa: BLE001
+                    _loud("warn", "LANE_SIZE_BROKEN", "%s(): %r" % (name, exc))
                     continue
-            except Exception:               # noqa: BLE001
+            except Exception as exc:        # noqa: BLE001
+                _loud("warn", "LANE_SIZE_BROKEN", "%s(): %r" % (name, exc))
                 continue
         if isinstance(val, bool):
             continue
@@ -210,7 +232,8 @@ def _lane_size_threads():
             continue
         try:
             out = fn()
-        except Exception:                   # noqa: BLE001
+        except Exception as exc:            # noqa: BLE001
+            _loud("warn", "LANE_SIZE_BROKEN", "%s(): %r" % (name, exc))
             continue
         if isinstance(out, dict):
             for key in ("ffmpeg_threads", "threads"):
@@ -1237,12 +1260,16 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                # H12: QC fails any master this receipt does not vouch for.
                "produced_by": master_provenance.producer_stamp(),
                "master_sha256": master_provenance.sha256_file(output)}
+    # No silent failure: every recorded FAILURE/WARNING rides the receipt.
+    _loud_attach(receipt)
     try:
         with open(str(output) + ".receipt.json", "w",
                   encoding="utf-8") as fh:
             json.dump(receipt, fh, indent=2)
-    except OSError:
-        pass
+    except OSError as exc:
+        _loud("fail", "RECEIPT_WRITE_FAILED",
+              "%s.receipt.json: %s" % (output, exc))
+        _loud_attach(receipt)
     return receipt
 
 
@@ -1268,7 +1295,11 @@ def main(argv=None):
                        chosen_length_s=args.chosen_length_s,
                        ffprobe=args.ffprobe, timeout=args.timeout,
                        dry_run=args.dry_run)
+    receipt = _loud_attach(receipt)
     print(json.dumps(receipt, indent=2))
+    for ln in (receipt.get("warnings") or []) + (receipt.get("failures") or []):
+        print("%s %s: %s" % (ln["kind"], ln["code"], ln["detail"]),
+              file=sys.stderr)
     return EXIT["ok"] if receipt["outcome"] == "ok" else EXIT["error"]
 
 

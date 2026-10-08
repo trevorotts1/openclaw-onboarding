@@ -76,6 +76,18 @@ _DEFAULTS = {"route": "ai-music-api/generate",
 CALLBACK_URL = "https://example.invalid/cb"
 
 
+def _loud(kind, code, detail):
+    """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
+    import os as _os, sys as _sys
+    d = _os.path.dirname(_os.path.abspath(__file__))
+    while d != _os.path.dirname(d) and not _os.path.exists(_os.path.join(d, "loud_failure.py")):
+        d = _os.path.dirname(d)
+    if d not in _sys.path:
+        _sys.path.insert(0, d)
+    import loud_failure
+    getattr(loud_failure, kind)(code, detail)
+
+
 def _workcopy():
     """(route, version) for suno-generate from the repo's work copy, or None."""
     root = Path(__file__).resolve().parents[4]
@@ -86,8 +98,8 @@ def _workcopy():
             if e.get("canonical_model_id") == "suno-generate":
                 route = e["route_models"]["current"].split()[0]
                 return str(route), str(e["model_default"])
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        _loud("warn", "SUNO_ROUTE_UNREADABLE", "%s: %r" % (doc, exc))
     return None
 
 

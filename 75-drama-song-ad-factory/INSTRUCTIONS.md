@@ -195,6 +195,8 @@ critical identity/lyrics/offer/claim/product/CTA defect (17.8).
 
 ## WHAT THIS SKILL MUST NEVER DO
 
+- Do hands-on work in the main window. The main window only orchestrates: all work runs in visible workflows and agents.
+- Fail silently. A wrong, broken or skipped gate must be a named entry in the final receipt (`failures`, or `warnings` for documented fail-soft paths) and in the message to the user.
 - Spend without a recorded ceiling, or re-submit an uncertain job.
 - Silently swap providers/models to make a gate pass.
 - Restart intake from scratch on resume, or reset the ledger.
