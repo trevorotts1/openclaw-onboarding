@@ -10,8 +10,10 @@ not add up (spoken 35-40% of runtime plus a music-only intro and end card left
 at most about 50% for singing, never the 55-60% goal). Now:
 
   * spoken share of RUNTIME: 20-25%, target 22.5 (SPOKEN_TARGET_PCT);
-  * the lyric writer budgets spoken lines at about 15-18% of the lyric WORDS
-    (LYRIC_SPOKEN_WORD_PCT), because Suno stretches spoken parts;
+  * the lyric writer's spoken WORD share is DERIVED, not a constant: the ad's
+    spoken target (target_for_range) run through the length formula's measured
+    words-per-second rates (spoken_word_pct); the measured BSW passes use
+    about 21% of the words for a 17.5% runtime share;
   * singing is measured against VOICE time, sung / (sung + spoken), target
     77.5 (SUNG_TARGET_PCT). A music-only intro, gaps and the end card never
     count against it;
@@ -78,10 +80,6 @@ FIRST_SUNG_TARGET_PCT = 15
 #: no target of its own; music-only intro, gaps and the end card never count
 #: against it. The ad's own target always wins (sung_vocal_guard).
 SUNG_TARGET_PCT = 77.5   # sung share of VOICE time, sung / (sung + spoken); 75-80
-#: The lyric writer budgets spoken lines at this share of the lyric WORDS
-#: (min, max), because Suno stretches spoken parts so the same words take far
-#: more runtime than sung ones. Lands the runtime share near SPOKEN_TARGET_PCT.
-LYRIC_SPOKEN_WORD_PCT = (15.0, 18.0)
 #: The only hard reject when singing was chosen: no real singing, i.e. no
 #: sung stretch this long (seconds). Same number as the singing detector's.
 NO_REAL_SINGING_STRETCH_S = 6.0
@@ -365,24 +363,47 @@ def check_sung_of_voice(segments=None, target_pct=None, sung_s=None,
     return out
 
 
-def spoken_word_budget(total_words):
+def spoken_word_pct(target_pct):
+    """Spoken share of the lyric WORDS for a spoken runtime share (percent).
+
+    Derived from the length formula's measured rates (SPOKEN_WPS spoken and
+    SUNG_WPS sung words per second), so there is no second constant to drift:
+    17.5 -> about 21.8 (the BSW passes), 22.5 -> about 27.5.
+    """
+    import os, sys  # lazy import below: length_formula imports this module
+    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    import length_formula as LF
+    f = float(target_pct) / 100.0
+    sp = f * LF.SPOKEN_WPS
+    return 100.0 * sp / (sp + (1.0 - f) * LF.SUNG_WPS)
+
+
+def spoken_word_budget_pct(range_pct=None):
+    """(min, max) spoken word share for an ad's own spoken range (default
+    DEFAULT_AD_RANGE_PCT), each edge run through spoken_word_pct."""
+    lo, hi = DEFAULT_AD_RANGE_PCT if range_pct is None else range_pct
+    target_for_range((lo, hi))  # validates the range
+    return (round(spoken_word_pct(lo), 3), round(spoken_word_pct(hi), 3))
+
+
+def spoken_word_budget(total_words, range_pct=None):
     """Spoken words the lyric writer should plan for ``total_words`` lyric
-    words: (min, max) at LYRIC_SPOKEN_WORD_PCT (15-18%). Suno stretches
-    spoken parts, so this small word share lands near the 22.5% runtime
-    target."""
+    words: (min, max) from the ad's spoken range via spoken_word_budget_pct."""
     total_words = _number(total_words, "total_words", "BAD_WORDS")
     if total_words <= 0:
         raise SpokenShareError("BAD_WORDS", "total_words must be positive")
-    lo, hi = LYRIC_SPOKEN_WORD_PCT
+    lo, hi = spoken_word_budget_pct(range_pct)
     return (round(total_words * lo / 100.0, 1),
             round(total_words * hi / 100.0, 1))
 
 
-def check_spoken_word_budget(sections):
-    """Judge a lyric sheet's spoken words against the 15-18% budget.
+def check_spoken_word_budget(sections, range_pct=None):
+    """Judge a lyric sheet's spoken words against the ad's derived word budget.
 
     ``sections`` = [{"delivery": "sung"|"spoken"|"rap", "lines": [str]}].
-    Inside 15-18% is on target; outside, the gap is points to the nearest
+    Inside the derived budget is on target; outside, the gap is points to the nearest
     edge and Trevor's band applies (5 accept, 5-10 flag, past 10 redo).
     Returns {"verdict", "spoken_word_pct", "budget_pct", "gap_pts",
     "reasons", "flags"}.
@@ -396,7 +417,7 @@ def check_spoken_word_budget(sections):
     if total <= 0:
         raise SpokenShareError("BAD_WORDS", "sheet has no lyric words")
     pct = round(spoken / total * 100.0, 3)
-    lo, hi = LYRIC_SPOKEN_WORD_PCT
+    lo, hi = spoken_word_budget_pct(range_pct)
     gap = lo - pct if pct < lo else (pct - hi if pct > hi else 0.0)
     verdict = judge_gap(gap)
     text = ("spoken lines are %.1f%% of the lyric words, budget %g-%g%% "
@@ -758,7 +779,8 @@ __all__ = [
     "check_spoken_word_budget",
     "spoken_word_budget",
     "sung_of_voice_pct",
-    "LYRIC_SPOKEN_WORD_PCT",
+    "spoken_word_pct",
+    "spoken_word_budget_pct",
     "judge_gap",
     "judge_seconds",
     "longest_sung_stretch_s",

@@ -47,7 +47,7 @@ TOOL_VERSION = "1.0.0"
 END_EARLY_S = 2
 SPOKEN_WPS = 1.4          # measured: BSW passes, 14 words in ~10 s
 SUNG_WPS = 1.07           # calibrated so L=60 gives 65 words at f=0.175
-MAX_GEN_S = 300           # KIE V6 accepts up to 360; stay under it
+MAX_GEN_S = 300           # KIE generate-music duration 10-360 s (V6, custom_mode only); stay under
 EXTEND_OVERLAP_S = 30     # continue_at = audio length - 30
 EXTEND_NEW_S = MAX_GEN_S - EXTEND_OVERLAP_S
 OPENER_MAX_WORDS_SHORT = 3        # up to 90 s: the measured pass
@@ -105,8 +105,17 @@ def extend_plan(delivered_s):
         cont = covered - EXTEND_OVERLAP_S
         new = min(EXTEND_NEW_S, delivered_s - covered)
         covered = covered + new
+        # KIE extend-music (KIE docs, suno-api/extend-music, checked 2026-10-08):
+        # job model "ai-music-api/extend", input {audio_id, continue_at,
+        # model}; model must equal the source take's; 0 < continue_at < source
+        # duration. The extend input has NO duration field, so new_s is an
+        # EXPECTATION: measure the returned take and re-plan from its real length.
         segs.append({"kind": "extend", "continue_at_s": cont, "new_s": round(new, 1),
-                     "covers_to_s": round(covered, 1), "model_must_equal_source": True})
+                     "covers_to_s": round(covered, 1), "model_must_equal_source": True,
+                     "new_s_is_expected_not_requested": True,
+                     "request": {"model": "ai-music-api/extend",
+                                 "input": {"audio_id": "<previous take id>",
+                                           "continue_at": cont, "model": "V6"}}})
     return segs
 
 
