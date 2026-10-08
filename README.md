@@ -1,15 +1,15 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v26.4.2 — Skill 76 local embedder hardened (QC fixes).** A fresh install on a client Mac no longer fails after switching memory search: every Ollama, model and cloud-protection check now passes before the config is written. Re-index and brew calls are time-bounded, memory search keeps one vector space (fallback `none`), the Ollama app is stopped with SIGTERM, and per-agent memory overrides are reported, never rewritten. Builds on v26.1.0 (Skill 76). Paired Command Center: **v7.6.102**.
+> **v26.4.3 — Skill 76 local embedder hardened (QC fixes).** A fresh install on a client Mac no longer fails after switching memory search: every Ollama, model and cloud-protection check now passes before the config is written. Re-index and brew calls are time-bounded, memory search keeps one vector space (fallback `none`), the Ollama app is stopped with SIGTERM, and per-agent memory overrides are reported, never rewritten. Builds on v26.1.0 (Skill 76). Paired Command Center: **v7.6.102**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v26.4.2.
+> **Version:** see `/version` - this repo at v26.4.3.
 
 
 
 Private interview invitations last up to **24 hours**; the paired Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v26.4.2
+## Current release: v26.4.3
 
 v26.4.2: `mc-route.sh existing status|update|cancel` no longer fails a whole Command Center board because a few legacy cards have no id. Those cards are skipped (they can never be the match); a board with no usable card at all still escalates instead of saying "not found" (see CHANGELOG v26.4.2).
 
@@ -169,7 +169,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v26.4.2** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v26.4.3** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
@@ -301,7 +301,7 @@ That file is the master instruction file. It contains:
 | 73-diagnose-explain-fix | **Diagnose / Explain / Fix (v1.0.0)** — the `/def` command: finds the actual root cause of a named problem, explains it in fifth-grader plain language, then hands the repair to a subagent carrying the full diagnosis, plan, and reason; asks exactly one question (which model performs the fix). Instruction-only; no binaries, keys, or config writes. Moved here from a hand-installed slot-70 folder that collided with 70-lean-core-file-system; `update-skills.sh` retires the old `70-diagnose-explain-fix` folder. |
 | 74-kie-live-adapter | **KIE Live Adapter (v1.0.0)** — infrastructure for skills 66, 67 and 68: a standard-library Python tool that reads KIE's live model catalog and schema, validates payloads, uploads files, submits to the schema-declared path, polls and saves results, and reads the credit balance. Shadow mode by default (records drift, never dispatches a paid job); never picks or changes a model. |
 | 75-drama-song-ad-factory | **Drama Song Ad Factory (v1.0.0)** — end-to-end drama-song advertisement factory: intake preflight, shared canonical core (state/ledger/qc/assembler), Command Center ad-campaigns integration, 999 Claude-Nine/Claude Code distribution, fault-boundary suite, operating docs. |
-| 76-local-embedder | **Local Embedder (v1.0.1)**: client Macs only. Free local embeddings for OpenClaw memory search: reuses a running Ollama 0.36.0 or newer untouched, upgrades an older one in place only when idle, or installs the checksum-verified headless Ollama CLI 0.40.0 under the LaunchAgent `com.blackceo.ollama-serve` (no GUI, no sudo). Pulls `embeddinggemma-2:740m`, pins `num_ctx 8192` on that same tag, then (after every guard passes) writes only `memory.search.*` with fallback `none` and re-indexes each agent once, time-bounded. Ollama Cloud sign-in, cloud tags, key files, `OLLAMA_*` env and chat-model config are verified unchanged (fail closed). VPS and Contabo boxes skip it. |
+| 76-local-embedder | **Local Embedder (v1.3.0)**: client Macs only. Free local embeddings for OpenClaw memory search: reuses a running Ollama 0.36.0 or newer untouched, upgrades an older one in place only when idle, or installs the checksum-verified headless Ollama CLI 0.40.0 under the LaunchAgent `com.blackceo.ollama-serve` (no GUI, no sudo). Pulls `embeddinggemma-2:740m`, pins `num_ctx 8192` on that same tag, then (after every guard passes) writes only `memory.search.*` with fallback `none` and re-indexes each agent once, time-bounded. Ollama Cloud sign-in, cloud tags, key files, `OLLAMA_*` env and chat-model config are verified unchanged (fail closed). VPS and Contabo boxes skip it. |
 
 **Total: 76 numbered skill folders** (01–76): **71 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
 

@@ -1,3 +1,11 @@
+## [v26.4.3]  -  2026-10-07  -  Merge train: #1586 fix(embeddings): skill 76 per-agent multimodal, re-index retries, 5c…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1586 — fix(embeddings): skill 76 per-agent multimodal, re-index retries, 5c after CC refresh (v26.4.1, skill 76 v1.3.0)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v26.4.2]  -  2026-10-07  -  Merge train: #1588 fix(mc-route): skip id-less legacy cards instead of failing the whole…; #1589 docs(75): drop retired updater path from PACKAGING-DECISION (unblocks…; #1591 OPR-R-BM01: purge v1 drama-song-factory root files from…; #1592 drama-song-factory A2R2-BM01: kie_dispatch into skill 75 (A2-R2 U1…; #1593 fix(75): route style bible prompt cap through the one KIE enforcer…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
@@ -9485,6 +9493,17 @@ so guard G3 does not apply, and all ten version markers continue to agree at the
 - unit/PKG-01-U1: test(PKG-01-U1): extended distribution parity — enumerate both packaged skill folders, diff every packaged module + doc, zero byte drift (merge 3c89df2be966)
 - unit/OPR-U1: Source: Owner 2026-10-07 purge order + conductor CI scan 2026-10-07 (only external refs: shared-utils/kie_prompt_gates.json lines 60+186) (merge d546500db40e)
 - unit/A2-U2: A2-R2-U2: re-package kie_dispatch from the FIXED canonical core (sha cb19f18b) (merge 57c9e33ef21a)
+- unit/AF-ECHO-U1: AF-ECHO-U1: core/audio_c3/no_echo — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 8b904dd962ac)
+- unit/AF-ECHO-U2: AF-ECHO-U2: core/qc_reverb_tail — audio-fix wave D36-D38 (owner order 2026-10-07) (merge a8e42f1384b0)
+- unit/AF-ECHO-U3: AF-ECHO-U3: core/qc_voice_match/pitch_ban — audio-fix wave D36-D38 (owner order 2026-10-07) (merge e285e7b8b51b)
+- unit/AF-SHARE-U1: AF-SHARE-U1: core/spoken_share — audio-fix wave D36-D38 (owner order 2026-10-07) (merge b6c80b500f10)
+- unit/AF-SHARE-U2: AF-SHARE-U2: core/spoken_share_card_docs — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 41fd879667f5)
+- unit/AF-STL-U1: AF-STL-U1: core/choice_card/stl_voice_guard — audio-fix wave D36-D38 (owner order 2026-10-07) (merge cbd172e0bdf6)
+- unit/AF-SMP-U1: AF-SMP-U1: core/smp/no_echo — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 9d6eb3bc4cb4)
+- unit/AF-SMP-U2: AF-SMP-U2: core/smp/spoken_share — audio-fix wave D36-D38 (owner order 2026-10-07) (merge 4306cda66e40)
+- unit/SMP-W2-U1: SMP-W2-U1: sheet schema 1.3.0 — drama-song fields on Weekly Overview (plan 6.15 / D27) (merge abf442bd0db9)
+- unit/SMP-W2-U3: SMP-W2-U3: Skill 35 docs set for the weekly drama-song ad (plan 6.15) (merge 01fe3cf25e60)
+- unit/V2-W4R-U1: merge origin/main into unit/V2-W4R-U1: resolve skill-75 CHANGELOG (keep branch Unreleased + main v2.4.3) so the locked batch train can merge it (merge 06e020d09307)
 
 ## [v21.7.3]  -  2026-08-03  -  GHL credential names: the "alias" claim was false, and the doc that said so is corrected
 

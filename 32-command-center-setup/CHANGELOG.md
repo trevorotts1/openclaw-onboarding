@@ -1,5 +1,9 @@
 # Changelog — 32-command-center-setup
 
+## v13.1.43 - 2026-10-07 - Test: new department agents are scaffolded with multimodal off
+
+`materialize-dept-agents-roster-shape.test.sh` now asserts that newly scaffolded department agents carry `memory.search.multimodal.enabled=false` (the scaffold already did; this pins it so a text-only local embedder never meets a multimodal agent). No script change.
+
 ## v13.1.41 - 2026-10-06 - Persona company contexts are written by every update
 
 `TENANT-CONFIGURATION.md` no longer says operators add `MC_PERSONA_COMPANY_CONTEXTS_JSON` by hand: `shared-utils/ensure_persona_contexts.py` writes and verifies it on every update.

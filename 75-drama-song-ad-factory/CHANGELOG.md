@@ -6,6 +6,52 @@ frontmatter `version:` field).
 
 ---
 
+## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
+
+Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
+
+Packaging unit `BO-PKG2-U2` regenerated `scripts/core/` from the canonical
+build core (`<build>/core/`) so this copy carries the version 2 BUILD-OUT
+outputs, byte-identical to the Claude-Nine / Claude Code copy; entrypoint,
+exit map and the 14 production modules unchanged.
+
+### Added (BUILD-OUT owned outputs, whole modules)
+- `audio_c3/extend/`, `audio_c3/voice_packs/`, `batch_mode/`,
+  `catalog_calculator/extensions/`, `choice_card/looks/`, `intake_book/`,
+  `kie_dispatch/unknown_resolution/`, `shot_planner/speaker_check/`,
+  `style_bibles/canvas_to_3d/`, `style_bibles/canvas_to_life/`
+- import closure those modules need to load: `audio_c3/voice_casting.py`,
+  `choice_card/stl_voice_guard/`, `lip_sync/narrator_rule/`, `music_styles/`,
+  `qc_voice_match/` (root package only), `spoken_share/`, `style_bibles/hybrid/`,
+  `style_defaults/`, `voice_velvet_echo/`
+
+### Changed
+- `SKILL.md` exit-map note: removed the dead build-tree test path
+  (`tests/distribution-parity/run_parity.sh`), plan G5 packaging step.
+
+### Not shipped here, on record
+- `core/docs_rename_velvet_voiceover/` — build-tree sweep tool carrying
+  operator absolute paths; build tooling, never client skill code.
+- `core/lip_sync/kling_first/`, `core/qc_voice_match/octave_guard/` — not yet
+  present in build core (unit outputs still in their lanes).
+- `core/kie_dispatch/kie_dispatch.py` — packaging owned by unit `A2-R2-U2`,
+  whose canonical module is under fix; shipped only from the fixed core.
+
+`version:` stays `v2.3.0`: the release bump belongs to the V2-W4 ship lane.
+
+
+## [v2.4.3] - 2026-10-07 - audio-fix wave D36-D38: no-echo rule, spoken-share band, reverb-tail QC, pitch ban, Sketch-to-Life voice guard
+
+### Added
+- `scripts/core/audio_c3/no_echo/` - every Suno request (song and voice-pack) stamps dry close-microphone vocals plus the seven negative tags and refuses spacious / cinematic / choir in spoken parts (D22a).
+- `scripts/core/smp/no_echo/` - the same no-echo rule on the Skill 35 weekly drama-song request.
+- `scripts/core/qc_reverb_tail/` - QC measures the reverb tail after each spoken line; a ringing line fails QC (D22a).
+- `scripts/core/qc_voice_match/pitch_ban/` - pitch ban guard for voice-match QC.
+- `scripts/core/spoken_share/` - spoken share retarget: target 45 percent, band 40-55, rap counts as spoken, first sung line within about 10 seconds (D15).
+- `scripts/core/spoken_share_card_docs/` - card and docs lines carrying that spoken-share rule.
+- `scripts/core/smp/spoken_share/` - the same spoken-share rule on the Skill 35 planner wave (D15).
+- `scripts/core/choice_card/stl_voice_guard/` - Sketch to Life is always All Suno; Velvet Voiceover is refused for that look (D25).
+
 ## [v2.4.2] - 2026-10-07 - fix: style bible compiler routes its prompt cap through the one KIE enforcer
 
 ### Fixed
