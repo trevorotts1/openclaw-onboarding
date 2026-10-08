@@ -1,6 +1,6 @@
 # Social Media Planner / Content Publishing Engine — Execution Instructions
 
-**Version:** v10.13.0 (closes Audit Phase 12 — complete-answer playbook for owner scope questions)
+**Version:** v10.16.0 (plan 6.15 — weekly drama-song ad integration)
 **Skill:** 35-social-media-planner (a.k.a. Content Publishing Engine)
 **Status:** Required runtime guide. Referenced from `SKILL.md` as part of the TYP read-order.
 
@@ -15,7 +15,7 @@ Orchestrate 15 production agents + 6 QC agents to research, create, produce, sch
 **Primary GHL Social Planner channels** (the agent publishes to all that are connected):
 Facebook (feed posts + carousels + Stories/Reels), Instagram (feed posts + Reels + carousels + Stories), LinkedIn (feed posts + PDF carousels), X/Twitter, TikTok, Pinterest, Google Business Profile.
 
-**Content types produced every week**: daily social posts for all enabled platforms, Thursday carousels, short-form videos/Reels, unique comments with the client's action link (1-2 min after every post), blog post (Day 7), HTML email newsletter (Tuesday), podcast episode (if Fish Audio configured — gracefully skipped otherwise).
+**Content types produced every week**: daily social posts for all enabled platforms, Thursday carousels, short-form videos/Reels, unique comments with the client's action link (1-2 min after every post), blog post (Day 7), HTML email newsletter (Tuesday), podcast episode (if Fish Audio configured — gracefully skipped otherwise), plus one 9:16 drama song video from the Theme of the Week (Skill 75 through Skill 74 — skipped with a client-facing reason when KIE is off).
 
 **Optional add-on channels** (direct integrations, never required): WordPress, Medium, Substack, YouTube.
 
@@ -153,6 +153,65 @@ Proposals may change formats, hooks, timing and creative — never the saved
 provider/model selection or publishing policy/consent (F31/F37).
 
 ---
+
+## Weekly drama-song step (plan 6.15, owner D27/D35)
+
+Once a week the planner produces **one 9:16 drama song ad** from the week's
+Theme of the Week and the schedule posts it to every connected channel that
+accepts its length. The modules live under `core/smp/` and ship through the
+onboarding batch train.
+
+### Modules the cycle wires
+
+| Module | Called with | Effect |
+|---|---|---|
+| `core/smp/initial_questions/` | `build_block(kie_active, weekly_action_link)` | one added setup block: weekly yes/no (default yes only while Skill 74 is active), then look / music / voice / length once (Lifelike 3D / Soul Ballad / All Suno / 60 seconds, 90 optional) and the weekly CTA + link |
+| `core/smp/saturday_prompt/` | `build_saturday_prompt(...)` | adds `Drama song of the week: keep <style> or change it?` to the Saturday theme question; no reply means keep, so the style persists across weeks |
+| `core/smp/weekly_step/` | `weekly_step.py --theme <t> --out-dir <d>` | one ad per week through Skill 74 active mode only |
+| `core/smp/length_routing/` | `validate_duration`, `route_channels` | 59.0 s cap, 88.0-95.0 s window, per-channel accept/refuse rows with a reason each |
+| `core/smp/stories_teaser/` | `plan_teaser(...)` | 15-second Stories teaser: peak moment + "Watch the full video" end card |
+| `core/smp/sheet_schema_130/` | contract only (SMP-W2-U1) | Weekly Overview schema 1.3.0 drama-song columns |
+| `core/smp/sheet_migration/` | contract only (SMP-W2-U2) | 1.2.0 to 1.3.0 migration, row-append payload, validator |
+
+### Where it runs
+
+`scripts/weekly-batch.sh` invokes the weekly step once per batch (one ad per
+week, never one per topic) after resolving the theme from `DRAMA_SONG_THEME`
+or from the Saturday cron marker
+`~/.openclaw/data/skill35/weekly-theme-last-run.json`. Both zero-work exits
+(idle week) still run it, so an empty content calendar never silently drops
+the ad. The step is **fail-soft**: a missing module logs a warning, and a
+KIE-off skip exits 0, so the Monday batch keeps its own exit contract
+(0 work done, 10 idle, 4+ error).
+
+### Gate, length, routing
+
+1. **Skill 74 active mode only.** Mode precedence is env
+   `KIE_LIVE_ADAPTER_MODE`, then `$OC_CONFIG/kie-live-adapter-mode.conf`, then
+   `shadow`. Anything but active writes `drama-song-skipped.json`, prints a
+   plain-English client-facing reason and exits 0. **There is never a fallback
+   to a private KIE client, and Skill 74 stays the only KIE path.**
+2. **59.0 s hard cap** for the 60-second option — an approved ad at 62-63 s is
+   refused by name, not silently trimmed. The 90-second option must land in
+   **88.0-95.0 s**.
+3. **Per-channel routing.** 60 seconds reaches Instagram Reels, Facebook
+   Reels, TikTok, YouTube Shorts, LinkedIn, Instagram feed and Threads.
+   90 seconds posts **only** to Facebook Reels, Instagram Reels, TikTok and
+   LinkedIn. **Google Business Profile is refused** until a limit is verified.
+   **Stories take the 15-second teaser only.** Every row carries a reason; the
+   client-facing answer quotes it.
+4. **Zero paid calls when the gate is closed** — no dispatch, no media file,
+   no spend.
+
+### Weekly Overview row (schema 1.3.0)
+
+After the ad is produced, the cycle logs the week's row through the
+`social-planner-row-append` webhook. Schema 1.3.0 adds the drama-song fields —
+style chosen, status, KIE cost, video link, channels posted. Exact key names
+come from `config/sheet-template.schema.json` (SMP-W2-U1); the migration and
+validator wiring comes from `scripts/migrate-template.py` and
+`config/validate-sheet-format.py` (SMP-W2-U2). Never invent a column name in
+this skill.
 
 ## QC gates (the 6 QC agents)
 
@@ -406,6 +465,7 @@ See also: `docs/HEARTBEAT-GUARD-PATTERN.md` (fleet-wide reference).
 - `INSTALL.md` — one-time setup
 - `QC.md` — runtime QC rubric
 - `references/<platform>.md` — per-platform API specifics
+- `core/smp/` — the weekly drama-song modules (weekly_step, initial_questions, saturday_prompt, length_routing, stories_teaser, sheet_schema_130, sheet_migration)
 - Skill 36 — Paid Ads counterpart
 - Skill 22 — persona pipeline (the brand voice persona is consumed by the Strategist)
 - Skill 45 (`45-design-intelligence-library`) — owner of the negative-prompting SOP and the social-media-designs category rules every image prompt this skill writes MUST load before authoring (playbook.md Section 8b); Skill 45's graphics-department deliverables are gated into this skill's pipeline via the Section 19a input-quality gate (SOP-GIP-02 receipt >= 8.5, `scripts/pregen_prompt_gate.py --asset-source graphics-department`)

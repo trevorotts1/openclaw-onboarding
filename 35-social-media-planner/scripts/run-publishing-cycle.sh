@@ -21,7 +21,7 @@
 # ============================================================
 set -euo pipefail
 
-SCRIPT_VERSION="v10.15.0"
+SCRIPT_VERSION="v10.16.0"
 SCRIPT_NAME="run-publishing-cycle.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -153,6 +153,15 @@ GOOGLE SHEET CONTENT CALENDAR (manual webhook sequence)
        preview_url; the webhook sizes the preview columns/row via batchUpdate.
        If a webhook call fails, log to
        ~/.openclaw/data/skill35/content-log.jsonl and retry next cycle.
+
+       Plan 6.15 (sheet schema 1.3.0): the same row-append payload also
+       carries the Weekly Overview drama-song fields — style chosen, status,
+       KIE cost, video link and channels posted. Their exact key names come
+       from config/sheet-template.schema.json (core/smp/sheet_schema_130/,
+       SMP-W2-U1); scripts/migrate-template.py and
+       config/validate-sheet-format.py (core/smp/sheet_migration/, SMP-W2-U2)
+       own the 1.2.0 -> 1.3.0 migration and the validator wiring. This script
+       never invents a column name.
 
   These calls are issued by the publishing agent at runtime, not by this script.
 
@@ -1256,6 +1265,38 @@ manifest = {
     "skill_version": Path(version_file).read_text().strip(),
     "publication_evidence_contract": "references/publication-verification.md",
     "media": media_plan,
+    # plan 6.15 — the weekly drama-song ad this cycle belongs to. Pure
+    # contract data: the script never dispatches it (scripts/weekly-batch.sh
+    # does, once per week), and every field below is owned by a core/smp
+    # module, never invented here.
+    "drama_song": {
+        "shape": "9:16",
+        "one_per_week": True,
+        "source": "Theme of the Week",
+        "kie_path": "skill-74",
+        "kie_mode_required": "active",
+        "owner": "75-drama-song-ad-factory (Skill 75) behind 74-kie-live-adapter",
+        "skip_artifact": "drama-song-skipped.json",
+        "skip_is_not_success": True,
+        "second_kie_client": False,
+        "hard_cap_s": 59.0,
+        "ninety_window_s": [88.0, 95.0],
+        "stories": "15-second teaser only",
+        "google_business_profile": "refused until a limit is verified",
+        "style_file": "~/.openclaw/workspace/social-media-planner/drama-song-style.json",
+        "sheet_schema_version": "1.3.0",
+        "sheet_fields": [
+            "style chosen", "status", "KIE cost", "video link", "channels posted",
+        ],
+        "row_append_webhook": "social-planner-row-append",
+        "owners": {
+            "weekly_step": "core/smp/weekly_step/",
+            "length_routing": "core/smp/length_routing/",
+            "stories_teaser": "core/smp/stories_teaser/",
+            "sheet_schema_130": "core/smp/sheet_schema_130/ (SMP-W2-U1)",
+            "sheet_migration": "core/smp/sheet_migration/ (SMP-W2-U2)",
+        },
+    },
     "run_id": run_id,
     "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     "topic": topic,
