@@ -77,3 +77,29 @@ except SD.DispatchError:
 else:
     raise AssertionError("patch/short duration accepted")
 print("ok: song_dispatch")
+
+# load governor wiring: every generation is a NEW request on the 20-per-10-s bucket; a 429 is resubmitted
+calls = []
+def _kie(fn, label, generation=False):
+    calls.append((label, generation))
+    r = fn()
+    return r if r else _kie(fn, label, generation)
+tries = []
+def flaky(rq):
+    tries.append(1)
+    return [] if len(tries) == 1 else [dict(GOOD), dict(GOOD)]
+SD.run_takes(req, plan, flaky, lambda t: {}, lambda t, r: None, script, hook, (15, 20), kie=_kie)
+assert calls and all(g is True for _, g in calls), calls
+import load_governor as LG  # noqa: E402
+seen = []
+n429 = []
+def g429(rq):
+    n429.append(1)
+    if len(n429) == 1:
+        raise RuntimeError("HTTP 429 rate limit")
+    return [dict(GOOD), dict(GOOD)]
+SD.run_takes(req, plan, g429, lambda t: {}, lambda t, r: None, script, hook, (15, 20),
+             kie=lambda fn, label, generation=False: LG.kie_request(fn, label, generation=generation,
+                                                                      sleep=lambda s: None, acquire=lambda: seen.append(1)))
+assert len(n429) == 2 and len(seen) == 2, (n429, seen)
+print("PASS song_dispatch load-governor wiring")

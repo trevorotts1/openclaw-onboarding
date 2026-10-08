@@ -29,6 +29,7 @@ _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
+import load_governor as _LG   # noqa: E402
 import spoken_share as _SS   # noqa: E402
 import suno_recipe as _R     # noqa: E402
 import sung_hook as _SH      # noqa: E402
@@ -144,13 +145,16 @@ def _finish(g):
 
 
 def run_takes(request, plan, generate, measure, save, script_words, hook_text,
-              spoken_range_pct=None, cap_cents=SPEND_CAP_CENTS, cost_cents=GEN_COST_CENTS):
+              spoken_range_pct=None, cap_cents=SPEND_CAP_CENTS, cost_cents=GEN_COST_CENTS,
+              kie=_LG.kie_request):
     """Generate until a take passes or the cap is spent.
 
     generate(request) -> list of takes (2 per generation, each with audio ids);
     measure(take) -> the measured fields for judge_take; save(take, receipt)
     must store the vocal stem and timestamps (called for EVERY take, even
-    failures). Returns {delivered, verdict, receipts, spent_cents}.
+    failures). Every generation goes through the load governor (``kie``): a NEW
+    request draws from the 20-per-10-s bucket and a 429 is resubmitted.
+    Returns {delivered, verdict, receipts, spent_cents}.
     """
     if request.get("duration") != plan["delivered_s"]:
         raise DispatchError("whole tracks only: request duration %r != planned %r (never patch)"
@@ -159,7 +163,7 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     spent, receipts, best = 0, [], None
     while spent + cost_cents <= cap_cents:
         spent += cost_cents
-        for take in generate(request):
+        for take in kie(lambda: generate(request), "song generate", generation=True):
             take = dict(take, **measure(take))
             rcpt = judge_take(take, plan, script_words, hook_text, spoken_range_pct)
             save(take, rcpt)                               # stem + timestamps, every take
