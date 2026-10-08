@@ -6,6 +6,14 @@ frontmatter `version:` field).
 
 ---
 
+## v2.8.2 - 2026-10-08 - Sung detector no longer reads gap-free speech as sung (singing_detector 2.0.0)
+
+Builds on v2.8.1 (PR 1656). Measured bug: sung share from the density of pitched voice read fully spoken audio as sung (macOS say Samantha 100%, 10 of 13 say voices 74-100%, rap 91.7%).
+
+- `scripts/core/singing_detector` 1.0.0 -> 2.0.0, same public interface. A window is sung only when steady-note share of voiced time >= 0.45, pitch-class concentration of note pitches >= 0.70, note-to-note intervals within 0.22 semitone of whole semitones, and enough notes per second. Pitched-voice density alone never decides. Sustained-note share and note range are reported, not gated. Window 8 s; a second is sung when half or more of its windows vote sung.
+- Control table is now the test (`test_singing_detector.py`, `fixtures/` a few seconds each, plus 13 macOS `say` voices generated in the test): every spoken control <= 15% sung, every sung control >= 85% sung. Result: say voices, Suno spoken, Gemini TTS and an O3a spoken stem all 0% sung; Chanel and BSW hook lines all 100% sung.
+- Band logic untouched. Same change ships in 999-setup as drama-song-ad-factory 2.7.19.
+
 ## v2.8.1 - 2026-10-08 - W-G-003 (G3) calibrated sung detector
 
 - Added `scripts/core/singing_detector/` (detector, `__init__`, self-test): measures sung seconds per second and per line from the isolated vocal stem (pitch stability, voicing continuity, note alignment; ffmpeg + numpy, no ASR, no spend, Part D load guard). Every share it returns carries `source: measured` and is never computed from section labels. Calibrated against the reference fixtures (bsw sung lines, O3 spoken lines). Test: `scripts/core/singing_detector/test_singing_detector.py`.
