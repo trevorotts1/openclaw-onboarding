@@ -1,3 +1,5 @@
+## [v26.4.7]  -  2026-10-08  -  Skill 75 Part H H1: measure stem-vs-mix offset per track and compensate when cutting and placing lip-sync clips; LIPSYNC_RETIMED placement gate
+
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

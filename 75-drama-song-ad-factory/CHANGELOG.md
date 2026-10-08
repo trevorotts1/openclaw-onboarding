@@ -6,6 +6,19 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.1] - 2026-10-08 - Part H H1 lip-sync stem offset
+
+- New `scripts/core/lip_sync/stem_offset/`: `measure_offset` (envelope
+  cross-correlation, offset > 0 = the vocal stem runs LATE vs the full mix;
+  Kiesett measured +0.066 s) and `cut_plan` (cut the stem at mix word start +
+  offset minus lead-in; place the clip at the line's real Suno start minus
+  the lead-in, never re-timed).
+- `final_assembler.validate_lipsync_placement` (gate `LIPSYNC_RETIMED`): a
+  lip-sync segment carrying `lip_lead_s` must sit within one frame of its
+  line start minus that lead. Runs in `assemble()` after the E5 atomic gate.
+- Tests: `lip_sync/stem_offset/test_stem_offset_h1.py`,
+  `final_assembler/test_lipsync_placement_h1.py`.
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).

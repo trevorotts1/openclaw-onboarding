@@ -526,6 +526,8 @@ def plan_timeline(tl, base_dir=".", probe=None):
             item["motion_score"] = s["motion_score"]
         if isinstance(lids, list) and lids:
             item["lip_sync_line_ids"] = list(lids)
+            if isinstance(s.get("lip_lead_s"), (int, float)):
+                item["lip_lead_s"] = float(s["lip_lead_s"])   # Part H H1
         items.append(item)
     for i in range(1, len(items)):
         ov = round(items[i]["xfade_dur"] * fps)
@@ -675,6 +677,36 @@ def _timing_lines(tl):
                     % ln["line_id"])
             lines[ln["line_id"]] = float(en) - float(st)
     return lines
+
+
+def validate_lipsync_placement(plan, tl):
+    """Part H H1 gate: a lip-sync clip sits at its line's real Suno start
+    minus its lead-in (segment key "lip_lead_s", written by the lip stage),
+    within one frame -- never re-timed. Segments without "lip_lead_s" are
+    not checked (legacy timelines). Raises ValueError LIPSYNC_RETIMED.
+    Returns the checked count."""
+    fps, n = plan["fps"], 0
+    starts = {ln["line_id"]: float(ln["start"])
+              for sec in (tl.get("timing") or {}).get("sections", [])
+              for ln in sec.get("lyrics", [])}
+    for s in plan["segments"]:
+        lids = s.get("lip_sync_line_ids")
+        if not lids or "lip_lead_s" not in s:
+            continue
+        if lids[0] not in starts:
+            raise ValueError("LIPSYNC_WINDOW_UNKNOWN: lip-sync line %r "
+                             "missing from the timing map" % (lids[0],))
+        want = starts[lids[0]] - s["lip_lead_s"]
+        got = s["offset_frames"] / fps
+        if abs(got - want) > 1 / fps + 1e-9:
+            raise ValueError(
+                "LIPSYNC_RETIMED: %r placed at %.3fs but line %r starts at "
+                "%.3fs with %.2fs lead-in (want %.3fs); a lip-sync clip is "
+                "placed at its real Suno timestamp, never re-timed (Part H "
+                "H1)" % (s["src"], got, lids[0], starts[lids[0]],
+                         s["lip_lead_s"], want))
+        n += 1
+    return n
 
 
 def validate_lipsync_atomic(plan, tl=None):
@@ -860,6 +892,7 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     # path runs, at assembly validation. Render only a plan that passes.
     try:
         validate_lipsync_atomic(plan, tl)
+        validate_lipsync_placement(plan, tl)
     except ValueError as exc:
         msg = str(exc)
         return _fail(msg.split(":")[0], next_action=msg, evidence={})
