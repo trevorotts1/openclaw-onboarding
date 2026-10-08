@@ -91,6 +91,7 @@ def default_choice(card):
         "model": DEFAULT_VIDEO_MODEL,
         "music_model": DEFAULT_MUSIC_MODEL,
         "image_model": DEFAULT_IMAGE_MODEL,
+        "main_characters": card.get("main_characters") or 1,
     }
 
 
@@ -169,6 +170,12 @@ def render(card, price_fn):
         lines.append("  %-12s %s%s" % (row + ":", values[row],
                                        ("   " + figure) if figure else ""))
 
+    plan = ((envelope or {}).get("card") or {}).get("image_plan") if priced_ok else None
+    if plan:
+        lines.append("  %-12s %d character reference pictures + %d shot pictures "
+                     "(added $%.2f for the reference pictures, included in the total)"
+                     % ("Images:", plan["reference_images"], plan["keyframe_images"],
+                        plan["reference_set_usd"]))
     if priced_ok and total is not None:
         retake = RETAKE_RATE * total
         lines.append("")

@@ -96,6 +96,13 @@ def dispatch_events(db):
         conn.close()
 
 
+#: F15: every paid dispatch carries the recorded choice-card receipt.
+STAMPED_CARD = {"answers": {"video_style": "Lifelike 3D",
+                            "audio_style": "Soul Ballad", "length": 60,
+                            "video_model": "MiniMax H3 768P"},
+                "who": "w8 merge test", "at": "2026-10-08T09:00:00Z"}
+
+
 def run_case(script, label, request=None, model="gpt-image-2-5-sunburst-text-to-image"):
     tmp = tempfile.mkdtemp(prefix="kie-f10-test-")
     db = os.path.join(tmp, "spend.db")
@@ -104,6 +111,7 @@ def run_case(script, label, request=None, model="gpt-image-2-5-sunburst-text-to-
     fake = Fake74(script)
     req = request if request is not None else {
         "model": "m", "input": {"prompt": "p" * 200}}
+    req = dict(req, card_receipt=STAMPED_CARD)
     env = D.dispatch(
         model=model,
         request=req,
@@ -282,7 +290,7 @@ def test_failure_after_second_poll_answer_still_single_report():
 
 def test_placeholder_still_refused_with_no_adapter():
     """Order check: the placeholder gate fires before the adapter search."""
-    req = {"model": "m",
+    req = {"model": "m", "card_receipt": STAMPED_CARD,
            "input": {"prompt": "Text {{UNFILLED}} in frame. Warm shot." * 6}}
     tmp = tempfile.mkdtemp(prefix="kie-f10-order-")
     db = os.path.join(tmp, "spend.db")

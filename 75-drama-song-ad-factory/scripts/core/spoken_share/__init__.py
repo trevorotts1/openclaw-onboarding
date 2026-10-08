@@ -2,6 +2,16 @@
 band, every length and every style, first sung line within about 10 seconds).
 Stdlib only, no network, no spend."""
 from .spoken_share import (  # noqa: F401
+    ACCEPT_PTS,
+    FLAG_PTS,
+    NO_REAL_SINGING_STRETCH_S,
+    VERDICT_FAIL,
+    VERDICT_FLAG,
+    VERDICT_PASS,
+    check_real_singing,
+    judge_gap,
+    judge_seconds,
+    longest_sung_stretch_s,
     CAP,
     DELIVERIES,
     FIRST_SUNG_WITHIN_SECONDS,
@@ -29,6 +39,16 @@ from .spoken_share import (  # noqa: F401
 )
 
 __all__ = [
+    "ACCEPT_PTS",
+    "FLAG_PTS",
+    "NO_REAL_SINGING_STRETCH_S",
+    "VERDICT_FAIL",
+    "VERDICT_FLAG",
+    "VERDICT_PASS",
+    "check_real_singing",
+    "judge_gap",
+    "judge_seconds",
+    "longest_sung_stretch_s",
     "CAP",
     "DELIVERIES",
     "FIRST_SUNG_WITHIN_SECONDS",

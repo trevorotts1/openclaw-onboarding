@@ -13,6 +13,10 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import protected_names  # noqa: E402  H7 build gate
+
 SCHEMA_VERSION = "blackceo.lyric-writer/v1"
 TOOL_VERSION = "0.1.0"
 
@@ -141,6 +145,14 @@ def validate_lyrics(lines, brief=None):
                     errors.append({"error": "pronunciation-key-absent",
                                    "detail": "%s: map key %r not in line text" % (lid, k)})
         ok_lines.append(ln)
+
+    # H7: the sheet may not change a protected name or rewrite a packet line.
+    packet = brief.get("packet_lines")
+    if packet is not None:
+        for msg in protected_names.check_sheet(
+                lines, packet, protected_names.protected_list(brief)):
+            errors.append({"error": msg.split()[0].lower().replace("_", "-"),
+                           "detail": msg})
 
     covered = {w for ln in ok_lines if ln.get("critical") is True
                for w in crit_words & set(words(ln.get("text") or ""))}

@@ -14,8 +14,13 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import unicodedata
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import protected_names  # noqa: E402  H7 words check
 
 TOOL_NAME = "music_qc"
 TOOL_VERSION = "1.0.0"
@@ -117,7 +122,7 @@ def diff_lyrics(approved_lines, observed_lines, pronunciation_map=None):
 
 
 def check_song_qc(approved_lines, observed_lines, checks,
-                  pronunciation_map=None):
+                  pronunciation_map=None, protected=()):
     """17.2 song QC verdict. checks: continuity flags the provider cannot
     self-report (persona/genre/tempo continuity, clipping, transitions,
     duration); FAIL/UNAVAILABLE reasons outrank any average."""
@@ -135,6 +140,13 @@ def check_song_qc(approved_lines, observed_lines, checks,
         findings.append(("FAIL", "adlib",
                          "unapproved words damage meaning: %s"
                          % ",".join(diff["adlib_words"][:8])))
+    # H7: a take where a protected name (character/brand) was sung wrong fails
+    # outright, whatever the overall coverage average says.
+    for msg in protected_names.check_sung_names(
+            [ln.get("text", "") for ln in approved_lines or []],
+            " ".join(ln.get("text", "") for ln in observed_lines or []),
+            protected):
+        findings.append(("FAIL", "protected_name", msg))
     for key in ("persona_continuity", "genre_continuity",
                 "tempo_continuity", "clipping", "transitions",
                 "master_duration"):
