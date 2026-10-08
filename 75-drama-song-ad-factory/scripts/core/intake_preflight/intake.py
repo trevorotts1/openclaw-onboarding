@@ -300,6 +300,18 @@ def missing_essentials(fields, prov):
     return qs[:3]
 
 
+def _master_max(length_s):
+    """I4: the master is planned and QC'd to chosen length minus 2 seconds."""
+    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    from master_length import master_max_s  # noqa: PLC0415
+    try:
+        return master_max_s(length_s)
+    except ValueError:
+        return None
+
+
 def summarize(fields, auth_status="missing"):
     summary = {
         "offer": fields.get("offer"),
@@ -310,6 +322,7 @@ def summarize(fields, auth_status="missing"):
         "placement": fields.get("placement"),
         "format": fields.get("aspect_ratio"),
         "target_length_s": fields.get("target_length_s"),
+        "master_max_s": _master_max(fields.get("target_length_s")),
         "length_option": fields.get("length_option"),
         "shape": fields.get("shape"),
         "look": fields.get("look"),

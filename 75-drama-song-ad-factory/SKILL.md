@@ -294,6 +294,12 @@ SOP named above.
   click.
 - **Lengths:** 60 seconds, 90 seconds, 3 minutes, 5 minutes, and a
   **10-minute long version**. Each length is its own song and timing map.
+- **Ends 2 seconds early (Part I, I4):** the master for a chosen length L is
+  at most L-2 seconds (60 becomes 58, 30 becomes 28, 90 becomes 88, 120
+  becomes 118), because a 60-second video that runs to 1:02 cannot be used in
+  Stories, Reels or a Facebook ad. This is a hard maximum, not a band: the
+  song, the shot plan and the end card are all planned to L-2, and final QC
+  fails any master longer than that (`core/master_length`).
 - **Shapes:** 9:16, 16:9, or both, each generated natively - never a crop of
   the other.
 - **Clips:** automatic 60- or 90-second clips are offered for the **5-minute

@@ -235,7 +235,8 @@ class SungVocalE7(unittest.TestCase):
             RUN_ID, "final", records,
             {"final:audio:sung_vocal": MAKER, "x:export": MAKER,
              "x:timeline": MAKER, "x:final_edit": MAKER},
-            ["final_edit", "export", "timeline", "audio"])
+            ["final_edit", "export", "timeline", "audio"],
+            master={"chosen_length_s": 60, "measured_s": 58})
         self.assertEqual(res["gate"], "FAIL")
         self.assertEqual(res["repair_scope"], ["final:audio:sung_vocal"])
 
