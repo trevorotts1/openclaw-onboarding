@@ -45,7 +45,7 @@ MODEL DOCTRINE — client-owned providers, NEVER Anthropic
 ---------------------------------------------------------
 Fallback order: Ollama Cloud → OpenRouter equivalent → Gemini last-resort.
 ``thinking=high`` on every rung. MiniMax M2 is BANNED; execution uses
-MiniMax M3 only → DeepSeek v4 pro. Vision QC goes to MiniMax M3 only.
+MiniMax M3 only → DeepSeek V4.1 Flash. Vision QC goes to MiniMax M3 only.
 ``assert_model_sovereignty`` hard-blocks any Anthropic slug before dispatch.
 
 COMMAND CENTER HOOKS (fail-soft — never block the build)
@@ -360,7 +360,7 @@ THINK_LADDER: List[dict] = [
         "note": "Kimi via Ollama Cloud ONLY; never kimi-2.6 (wrong slug)",
     },
     {
-        "rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4-pro:cloud",
+        "rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4.1-flash:cloud",
         "role": "reasoning", "thinking": "high",
     },
     {
@@ -372,7 +372,7 @@ THINK_LADDER: List[dict] = [
         "role": "reasoning", "thinking": "high",
     },
     {
-        "rung": 6, "provider": "openrouter", "model": "deepseek/deepseek-v4-pro",
+        "rung": 6, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash",
         "role": "reasoning", "thinking": "high",
     },
     {
@@ -394,11 +394,11 @@ EXECUTE_LADDER: List[dict] = [
         "role": "browser-control", "thinking": "high", "probe_gated": True,
     },
     {
-        "rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4-pro:cloud",
+        "rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4.1-flash:cloud",
         "role": "browser-control", "thinking": "high",
     },
     {
-        "rung": 4, "provider": "openrouter", "model": "deepseek/deepseek-v4-pro",
+        "rung": 4, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash",
         "role": "browser-control", "thinking": "high",
     },
     {

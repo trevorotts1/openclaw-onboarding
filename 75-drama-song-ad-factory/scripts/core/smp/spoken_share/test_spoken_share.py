@@ -201,7 +201,7 @@ class FirstSungTests(unittest.TestCase):
         out = M.check_first_sung([seg("spoken", 10), seg("rap", 10)])
         self.assertEqual(out["verdict"], "FAIL")
         self.assertIsNone(out["first_sung_start_s"])
-        self.assertTrue(any("no sung line" in r for r in out["reasons"]),
+        self.assertTrue(any("no real singing" in r for r in out["reasons"]),
                         out["reasons"])
 
     def test_rap_never_satisfies_the_rule(self):
@@ -228,9 +228,15 @@ class FirstSungTests(unittest.TestCase):
         self.assertEqual(out["first_sung_start_s"], 10.0)
 
     def test_late_hook_is_refused(self):
-        out = M.check_first_sung([seg("spoken", 15, 0.0),
-                                  seg("sung", 55, 15.0),
-                                  seg("spoken", 30, 70.0)])
+        # H8: 15 s of a 100 s cut is 5 points past the 10 s goal: accepted;
+        # 20 s is 10 points: flag; 25 s is 15 points: redo.
+        def hook(first):
+            return M.check_first_sung([seg("spoken", first, 0.0),
+                                       seg("sung", 55, first),
+                                       seg("spoken", 45 - first, 55 + first)])
+        self.assertEqual(hook(15)["verdict"], "PASS")
+        self.assertEqual(hook(20)["verdict"], "FLAG")
+        out = hook(25)
         self.assertEqual(out["verdict"], "FAIL")
         self.assertTrue(any("10 s" in r or "10.0" in r
                             for r in out["reasons"]), out["reasons"])
@@ -251,19 +257,20 @@ class ShareCheckTests(unittest.TestCase):
 
     def test_band_boundaries_are_inclusive(self):
         self.assertEqual(M.check_share(0.40)["verdict"], "PASS")
-        self.assertEqual(M.check_share(0.55)["verdict"], "PASS")
+        self.assertEqual(M.check_share(0.50)["verdict"], "PASS")
+        self.assertEqual(M.check_share(0.55)["verdict"], "FLAG")   # H8 band
 
     def test_below_the_floor_fails(self):
         out = M.check_share(0.20)
         self.assertEqual(out["verdict"], "FAIL")
         self.assertEqual(len(out["reasons"]), 1, out["reasons"])
-        self.assertIn("below the floor 40%", out["reasons"][0])
+        self.assertIn("redo", out["reasons"][0])
 
     def test_above_the_ceiling_fails(self):
         out = M.check_share(0.60)
         self.assertEqual(out["verdict"], "FAIL")
         self.assertEqual(len(out["reasons"]), 1, out["reasons"])
-        self.assertIn("above the ceiling 55%", out["reasons"][0])
+        self.assertIn("redo", out["reasons"][0])
 
     def test_rag_is_counted_so_a_rap_heavy_ad_is_not_under_the_floor(self):
         # 5 spoken + 45 rap + 5 spoken = 55% spoken-style: in band
@@ -272,15 +279,16 @@ class ShareCheckTests(unittest.TestCase):
         measured = M.measure_share(lines)
         self.assertEqual(measured["spoken_style_seconds"], 55.0)
         self.assertEqual(measured["share_pct"], 55.0)
-        self.assertEqual(M.check_share(measured["share"])["verdict"], "PASS")
+        # 10 points off the 45% goal: accepted with a flag under the H8 band
+        self.assertEqual(M.check_share(measured["share"])["verdict"], "FLAG")
         # the identical ad with rap sung instead measures 10%: under the floor
         no_rap = [lines[0], lines[1],
                   {"delivery": "sung", "seconds": 45, "start": 50},
                   lines[3]]
         below = M.check_share(M.measure_share(no_rap)["share"])
         self.assertEqual(below["verdict"], "FAIL")
-        self.assertTrue(any("below the floor" in r
-                            for r in below["reasons"]), below["reasons"])
+        self.assertTrue(any("redo" in r for r in below["reasons"]),
+                        below["reasons"])
 
     def test_refusal_text_is_compact_and_empty_when_passing(self):
         self.assertEqual(M.refusal(0.45), "")

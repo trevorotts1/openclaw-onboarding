@@ -74,7 +74,7 @@ def _profile(ceiling=None, plan=None):
         ".schema_version": 1,
         "providers": {
             "deepseek-direct": _wired("deepseek-direct",
-                                      ["deepseek-flash", "deepseek-v4-pro"]),
+                                      ["deepseek-flash", "deepseek-v4.1-flash"]),
             "openrouter": _wired("openrouter",
                                  ["z-ai/glm-5.3-flash", "z-ai/glm-5.3"]),
         },
@@ -132,7 +132,7 @@ _DS_PROVIDER = model_router.resolve_alias("deepseek-flash")["provider"]
 #: classes, so Economy's re-point changes nothing there. These tests pin the
 #: MECHANISM; that test pins the shipped-table fact beside it, so neither is
 #: ever mistaken for the other.
-_PRO_FIRST = [{"alias": "deepseek-v4-pro", "allow_flash_fallback": False},
+_PRO_FIRST = [{"alias": "deepseek-v4.1-flash", "allow_flash_fallback": False},
               {"alias": "glm-5.3"}]
 
 
@@ -209,8 +209,8 @@ def test_economy_repoints_only_under_economy(monkeypatch, tmp_path):
     assert seen["economy"][1][0] == "deepseek-flash", seen["economy"]
     assert seen["economy"][0]["model"] == "deepseek-flash", seen["economy"]
     for other in ("ultra", "standard"):
-        assert seen[other][1][0] == "deepseek-v4-pro", seen[other]
-        assert seen[other][0]["model"] == "deepseek-v4-pro", seen[other]
+        assert seen[other][1][0] == "deepseek-v4.1-flash", seen[other]
+        assert seen[other][0]["model"] == "deepseek-v4.1-flash", seen[other]
     assert "deepseek-flash" not in seen["ultra"][1], seen["ultra"]
 
 
@@ -389,7 +389,7 @@ def test_a_declared_workhorse_is_not_overridden_by_economy(monkeypatch,
                                  "model": "z-ai/glm-5.3"}, decision
     assert decision["client_plan"]["applied"] is True
     # and Economy did not reorder the fallbacks behind the client's row either
-    assert _models(decision)[:2] == ["z-ai/glm-5.3", "deepseek-v4-pro"], decision
+    assert _models(decision)[:2] == ["z-ai/glm-5.3", "deepseek-v4.1-flash"], decision
     assert "deepseek-flash" not in _models(decision), decision
     assert "suppressed" in decision["client_plan"]["economy_repoint"]
 

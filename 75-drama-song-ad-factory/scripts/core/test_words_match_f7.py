@@ -112,7 +112,8 @@ class SeamTests(unittest.TestCase):
                           "it changed my mornings forever"])
         self.assertEqual(req["input"]["lyrics"],
                          "I'm gonna show you the kitchen\n"
-                         "It changed my mornings forever.")
+                         "It changed my mornings forever."
+                         "\n\n[Outro]\n[Resolve on final chord]\n")  # I5 ending
 
     def test_gonna_rewrite_raises_and_builds_nothing(self):
         with self.assertRaises(ValueError) as cm:
@@ -134,7 +135,8 @@ class SeamTests(unittest.TestCase):
         req = self.md.build_generate_request(
             "I'm gonna show you the kitchen", "ballad", "T")
         self.assertEqual(req["input"]["lyrics"],
-                         "I'm gonna show you the kitchen")
+                         "I'm gonna show you the kitchen"
+                         "\n\n[Outro]\n[Resolve on final chord]\n")  # I5 ending
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ triggers:
   - "build a knowledge graph of my company"
   - "knowledge graph"
   - "/graphify"
-version: 2.0.0
+version: 2.0.1
 ---
 
 # Skill 43: Graphify Knowledge Graph
@@ -67,7 +67,7 @@ By default, **the client's OWN workforce/workspace** — the `zero-human-company
 
 Graphify's semantic pass runs on the **CLIENT'S OWN model**:
 - Preferred: the client's **genuinely-local Ollama** model (`--backend ollama`, `OLLAMA_BASE_URL=http://localhost:11434/v1` — the `/v1` suffix is **required**, or the OpenAI-style `POST /chat/completions` 404s and every map fails), using a model that runs ON the box with **no `:cloud` suffix** (e.g. `qwen2.5-coder:7b`, or whatever LOCAL model the client has pulled). Only a genuinely-local model is **free + nothing leaves the box**.
-- ⚠️ **`:cloud` models are NOT local.** A `:cloud`-suffixed model (e.g. `deepseek-v4-pro:cloud`) runs on **Ollama Cloud servers off the box** and **bills the client's Ollama Cloud account** — it is neither free nor fully private. Use a `:cloud` model ONLY with the owner's **explicit opt-in**, and disclose the billing.
+- ⚠️ **`:cloud` models are NOT local.** A `:cloud`-suffixed model (e.g. `deepseek-v4.1-flash:cloud`) runs on **Ollama Cloud servers off the box** and **bills the client's Ollama Cloud account** — it is neither free nor fully private. Use a `:cloud` model ONLY with the owner's **explicit opt-in**, and disclose the billing.
 - Otherwise: whatever model the client already has configured.
 - **NEVER** the operator's Anthropic/OpenAI/etc. keys, and **always pin `--backend ollama`** — a bare re-map lets graphify's `detect_backend()` auto-pick a resident key and can route the client's corpus to a paid/Anthropic backend. The operator does not pay for or route a client's graph build.
 

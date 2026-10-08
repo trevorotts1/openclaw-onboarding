@@ -83,7 +83,7 @@ from presentation_job import resource_profile  # noqa: E402
 # ---------------------------------------------------------------------------
 #: A phase whose capability (prompt_authoring) routes to DeepSeek on the
 #: shipped catalog, and a phase whose capability (vision_ocr) falls back to
-#: Ollama Cloud once deepseek-v4-pro is not among the client's wired models.
+#: Ollama Cloud once deepseek-v4.1-flash is not among the client's wired models.
 #: MEASURED against the shipped model_catalog.json on this box 2026-09-07 --
 #: test_the_fixture_really_does_split_the_two_routes re-proves it every run
 #: instead of trusting this comment.

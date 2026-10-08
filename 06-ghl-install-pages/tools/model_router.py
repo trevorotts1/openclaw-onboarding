@@ -5,15 +5,15 @@ ROLES (aliases in parentheses)
 -------------------------------
   content          — copy writing: welcome slides, prompts; primary: Kimi 2.6
   html  (code)     — code-block fix-loop; primary: GLM 5.2
-  reasoning (funnel) — structure and planning; primary: GLM 5.2 + DeepSeek v4 pro
-  execution        — browser-click drive loop; primary: MiniMax M3 (probe-gated) + DeepSeek v4 pro
+  reasoning (funnel) — structure and planning; primary: GLM 5.2 + DeepSeek V4.1 Flash
+  execution        — browser-click drive loop; primary: MiniMax M3 (probe-gated) + DeepSeek V4.1 Flash
   qc               — vision QC on screenshots + DOM; primary: MiniMax M3 (probe-gated, vision)
 
 FALLBACK ORDER — every role, no exceptions
 ------------------------------------------
   Tier 1  Ollama Cloud FIRST  (`:cloud` suffix, `baseUrl=ollama.com`, `id_ed25519` device key)
   Tier 2  OpenRouter equivalent  (only if Ollama Cloud fails)
-  Tier 3  Universal backup: DeepSeek v4 pro appended to every ladder EXCEPT `qc`
+  Tier 3  Universal backup: DeepSeek V4.1 Flash appended to every ladder EXCEPT `qc`
            (DeepSeek has no confirmed vision; QC tasks must stay vision-capable)
   Last    OpenRouter Gemini 3.5 Flash on every ladder (only if live + credits)
 
@@ -22,7 +22,7 @@ FALLBACK ORDER — every role, no exceptions
 BANNED
 ------
   MiniMax M2   — PURGED. Never appears in any rung, table, or recommendation.
-                 Execution uses MiniMax M3 only, falling back to DeepSeek v4 pro.
+                 Execution uses MiniMax M3 only, falling back to DeepSeek V4.1 Flash.
   Anthropic    — Hard-blocked by both `assert_no_anthropic` (internal, build-time)
                  AND `assert_model_sovereignty` (shared-utils, per-slug at select-time).
   Kimi direct  — Kimi 2.6 is NEVER used "direct". Only via:
@@ -35,8 +35,8 @@ ENV OVERRIDES (per-rung MODEL_ROUTER_<KEY>)
   MODEL_ROUTER_OPENROUTER_KIMI          default: moonshotai/kimi-k2.6
   MODEL_ROUTER_OLLAMA_GLM               default: glm-5.2:cloud
   MODEL_ROUTER_OPENROUTER_GLM           default: z-ai/glm-5.2
-  MODEL_ROUTER_OLLAMA_DEEPSEEK          default: deepseek-v4-pro:cloud
-  MODEL_ROUTER_OPENROUTER_DEEPSEEK      default: deepseek/deepseek-v4-pro
+  MODEL_ROUTER_OLLAMA_DEEPSEEK          default: deepseek-v4.1-flash:cloud
+  MODEL_ROUTER_OPENROUTER_DEEPSEEK      default: deepseek/deepseek-v4.1-flash
   MODEL_ROUTER_OLLAMA_MINIMAX_M3        default: minimax-m3:cloud
   MODEL_ROUTER_OPENROUTER_MINIMAX_M3    default: minimax/minimax-m3
   MODEL_ROUTER_OPENROUTER_GEMINI        default: google/gemini-3.5-flash
@@ -177,7 +177,7 @@ def _build_content_ladder(env: dict) -> list:
             "thinking": THINKING_EFFORT, "vision": False,
             "notes": "universal-backup",
             "models": [
-                {"slug": _slug(env, "OPENROUTER_DEEPSEEK", "deepseek/deepseek-v4-pro"),
+                {"slug": _slug(env, "OPENROUTER_DEEPSEEK", "deepseek/deepseek-v4.1-flash"),
                  "family": "deepseek", "slug_confidence": "repo-documented"},
             ],
         },
@@ -222,7 +222,7 @@ def _build_html_ladder(env: dict) -> list:
             "thinking": THINKING_EFFORT, "vision": False,
             "notes": "universal-backup",
             "models": [
-                {"slug": _slug(env, "OPENROUTER_DEEPSEEK", "deepseek/deepseek-v4-pro"),
+                {"slug": _slug(env, "OPENROUTER_DEEPSEEK", "deepseek/deepseek-v4.1-flash"),
                  "family": "deepseek", "slug_confidence": "repo-documented"},
             ],
         },
@@ -259,7 +259,7 @@ def _build_reasoning_ladder(env: dict) -> list:
             "thinking": THINKING_EFFORT, "vision": False,
             "max_tokens": OLLAMA_CLOUD_MAX_TOKENS,
             "models": [
-                {"slug": _slug(env, "OLLAMA_DEEPSEEK", "deepseek-v4-pro:cloud"),
+                {"slug": _slug(env, "OLLAMA_DEEPSEEK", "deepseek-v4.1-flash:cloud"),
                  "family": "deepseek", "slug_confidence": "repo-documented"},
             ],
         },
@@ -277,7 +277,7 @@ def _build_reasoning_ladder(env: dict) -> list:
             "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
             "thinking": THINKING_EFFORT, "vision": False,
             "models": [
-                {"slug": _slug(env, "OPENROUTER_DEEPSEEK", "deepseek/deepseek-v4-pro"),
+                {"slug": _slug(env, "OPENROUTER_DEEPSEEK", "deepseek/deepseek-v4.1-flash"),
                  "family": "deepseek", "slug_confidence": "repo-documented"},
             ],
         },
@@ -314,7 +314,7 @@ def _build_execution_ladder(env: dict) -> list:
             "thinking": THINKING_EFFORT, "vision": False,
             "max_tokens": OLLAMA_CLOUD_MAX_TOKENS,
             "models": [
-                {"slug": _slug(env, "OLLAMA_DEEPSEEK", "deepseek-v4-pro:cloud"),
+                {"slug": _slug(env, "OLLAMA_DEEPSEEK", "deepseek-v4.1-flash:cloud"),
                  "family": "deepseek", "slug_confidence": "repo-documented"},
             ],
         },
@@ -332,7 +332,7 @@ def _build_execution_ladder(env: dict) -> list:
             "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
             "thinking": THINKING_EFFORT, "vision": False,
             "models": [
-                {"slug": _slug(env, "OPENROUTER_DEEPSEEK", "deepseek/deepseek-v4-pro"),
+                {"slug": _slug(env, "OPENROUTER_DEEPSEEK", "deepseek/deepseek-v4.1-flash"),
                  "family": "deepseek", "slug_confidence": "repo-documented"},
             ],
         },

@@ -21,7 +21,7 @@ THE TRAP THIS FIX HAD TO SURVIVE (the DEFECT-5 class, on the governor's bucket)
 
 Provider identity has TWO live spellings here. MEASURED on this box:
 
-    model_router.resolve_alias("deepseek-v4-pro")["provider"] -> 'deepseek'
+    model_router.resolve_alias("deepseek-v4.1-flash")["provider"] -> 'deepseek'
     capacity.probe()["provider"]                              -> 'deepseek-direct'
 
 and the two config authorities disagree the same way:

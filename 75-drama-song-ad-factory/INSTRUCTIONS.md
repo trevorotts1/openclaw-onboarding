@@ -108,6 +108,16 @@ guard that already failed.
    `variants/`, `checkpoints/`, `receipts/`, `delivery/`,
    `lessons/`. One run state authority only - never two writers.
 
+   **Order of stages (Part H H5): audio, then timestamps, then shot plan, then
+   pictures.** Never generate pictures before the song exists. Plan shots with
+   `shot_planner.plan_from_timestamps` from the REAL Suno timestamps
+   (`audio_c3/lyric_timing.py` output); every shot names the line it shows
+   (`shows_line_ids`) and its picture is generated at its window's length. No
+   slow motion above 1.15x (`SLOWMO_OVER_LIMIT`). QC lists shot / time / line /
+   match (`pictures_match_gate`, Q10 on the delivery checklist) and fails any
+   mismatch (`PICTURE_LINE_MISMATCH`); the assembler enforces both before any
+   render.
+
 6. **Connect Command Center context when present (step 6).** If a
    Command Center is configured for this box, read ad-campaigns context
    (campaign record, board, approvals) through its API as context only;
@@ -208,11 +218,36 @@ message, and the options are presented as ONE choice card with every default
 pre-selected, so a client can approve with a single click. On resume the
 card shows only what changed.
 
+**Asking the six intake questions (H9).** Build them with
+`python3 scripts/core/intake_preflight/factory.py card` (Claude Code chat:
+show stdout as is; Telegram: `--format openclaw-json --target <chat id>`,
+run each argv without a shell). Never type them free hand or send them as one
+line: one block per question, one numbered option per line, a blank line
+between questions. See `references/choice-card-spec.md` section 2.1.
+
+**Ask them one at a time (I7).** Do not send the whole card. Run
+`factory.py card --step` (add one `--reply <what the client said>` per answer so
+far, in order; Telegram: `--format openclaw-json --target <chat id>`), send
+only the one message it prints, wait for the client's answer, run it again
+with that reply added, and repeat until it prints the recap. When the client
+replies yes to the recap, the command prints "Locked in" (JSON `done: true`)
+and you start. Each message holds one question, a one-sentence why, numbered
+options, and the RECOMMENDED option with its reason. See spec section 2.2.
+
+**F15 gate (Critical, owner order 2026-10-08): no run starts any paid job
+until the choice card is shown and its four answers - video style, audio
+style, length, video model - are recorded.** A brief pre-fills the
+RECOMMENDED picks but never skips the card; direct launches, Social Media
+Planner runs and operator/agent brief-launched runs all answer the same
+card. The answers and the time answered go into the receipt
+(`core/style_defaults/card_gate.py`; intake and preflight refuse with
+`CARD_UNANSWERED` until the record exists).
+
 **The card, in order:**
 
 | Row | Values | Default |
 |---|---|---|
-| Length | 60 seconds, 90 seconds, 3 minutes, 5 minutes, 10-minute long version | from the brief, else 60 seconds |
+| Length | 60 seconds, 90 seconds, 2 minutes, 3 minutes, 5 minutes, 10-minute long version | brief pre-fills the RECOMMENDED pick, else 60 seconds - the card still shows and the answers still record |
 | Shape | 9:16, 16:9, both | 9:16 |
 | Style | Lifelike 3D, 2D Hand-Painted, Sketch to Life, Canvas to Life, Canvas to 3D | Lifelike 3D |
 | Music | Soul Ballad, R&B Flow, Soul Rise | Soul Ballad |
@@ -220,8 +255,9 @@ card shows only what changed.
 | Clips | 60-second and 90-second clips | offered for the 5-minute and 10-minute lengths only |
 | Video model | MiniMax H3 768P (RECOMMENDED) and the full APPROVED list | MiniMax H3 at 768P |
 
-- **Lengths** 60 s / 90 s / 3 min / 5 min / **10-minute long version**;
-  each is its own song and timing map, never a cut-down.
+- **Lengths** 60 s / 90 s / **2 minutes (new, added by F15)** / 3 min /
+  5 min / **10-minute long version**; each is its own song and timing map,
+  never a cut-down.
 - **Shapes** 9:16, 16:9 or both, each generated natively - never a squash
   or crop of the other. "Both shapes" shows its own price before approval.
 - **Clips:** automatic 60- or 90-second clips are offered **only** for the
@@ -235,15 +271,22 @@ card shows only what changed.
   close-ups.
 - **Music styles:** Soul Ballad (default), R&B Flow, Soul Rise. The song
   brief, the Suno style prompt and the spoken/sung balance follow the choice.
-- **Voice:** All Suno (default) makes every line with Suno and plays spoken
-  lines over the music bed only - no singing-underneath layer. **Velvet
-  Voiceover** voices the spoken lines with Google text-to-speech, one
-  distinct voice per character, with the sung version of each line playing
-  softly underneath and the music bed dipped: **no echo effect, no reverb**.
-  It is the only exception to the all-Suno rule, and the option was renamed
-  from its earlier echo-flavoured spelling, which must not appear anywhere.
-- **Per-character voice packs:** no two characters share a voice, in any
-  look or music style.
+- **Voice (F1, one track):** ONE Suno generation makes the whole soundtrack.
+  1. Write every spoken passage into the song's own lyrics, tagged as
+     spoken (`[Spoken]` plus the character's voice tag), so Suno performs
+     the spoken words over the music inside the same track.
+  2. No separate spoken takes, no gaps in the song for takes to sit in,
+     no added music bed. The old voice-pack spoken-take route is
+     superseded.
+  3. Record the one generation id in the receipt; a failed take is redone
+     as a whole track.
+  **Velvet Voiceover** remains the one exception: it voices the spoken
+  lines with Google text-to-speech, one distinct voice per character,
+  with the sung version of each line playing softly underneath and the
+  music bed dipped: **no echo effect, no reverb**. It was renamed from
+  its earlier echo-flavoured spelling, which must not appear anywhere.
+- **Per-character voice registry:** no two characters share a voice, in any
+  look or music style. Distinctness still holds inside the one track.
 - **Lip-sync (decision 33):** selected lines only - the pain peak, the
   product line, the call to action and the chorus hook; three to four lines,
   about 15 to 20 seconds, listed on the approval card. Model order is

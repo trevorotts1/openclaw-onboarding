@@ -59,6 +59,52 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
+import kie_dispatch.model_lock as ML  # noqa: E402  (F14 video-model lock)
+
+#: F15 card gate (Critical, owner order 2026-10-08): dispatch refuses ANY
+#: paid job for a run whose state lacks all four choice-card answers. The
+#: import is soft -- the module must keep working when style_defaults is not
+#: importable -- and the local fail-closed copy below keeps the gate shut.
+try:
+    from style_defaults import card_gate as _CG  # noqa: E402
+except Exception:  # noqa: BLE001 - gate stays fail-closed without the module
+    _CG = None
+
+#: The exposed gate for W-F-U16: whoever holds the run state calls
+#: ``card_gate_refusal(run_state)`` and refuses any paid job when it returns
+#: non-None. Run state is read from ``request["card_receipt"]`` (the
+#: recorded receipt block from style_defaults.card_gate.answered_stamped)
+#: or from ``request["run_state"]["card_receipt"]``.
+def card_gate_refusal(request):
+    """-> None when the card is answered and stamped, else the refusal dict
+    with reason CARD_UNANSWERED. Fail-closed: no receipt is unanswered."""
+    req = request if isinstance(request, dict) else {}
+    record = req.get("card_receipt")
+    if not isinstance(record, dict):
+        rs = req.get("run_state")
+        record = rs.get("card_receipt") if isinstance(rs, dict) else None
+        if not isinstance(record, dict) and isinstance(rs, dict):
+            inner = rs.get("card") or rs.get("choice_card")
+            record = inner if isinstance(inner, dict) else None
+    if _CG is not None:
+        ok, refusal = _CG.gate_run_state(record)
+        return refusal if not ok else None
+    if not isinstance(record, dict):
+        return {"reason_code": "CARD_UNANSWERED",
+                "missing": ["video_style", "audio_style", "length",
+                            "video_model"],
+                "next_action": "Show the choice card and record all four "
+                               "answers (video style, audio style, length, "
+                               "video model), with who and when, before any "
+                               "paid job."}
+    missing = [f for f in ("video_style", "audio_style", "length", "video_model")
+               if record.get(f) is None
+               or (isinstance(record.get(f), str) and not record.get(f).strip())]
+    if missing:
+        return {"reason_code": "CARD_UNANSWERED", "missing": missing,
+                "next_action": "Show the choice card and record all four "
+                               "answers before any paid job."}
+    return None
 
 try:  # F4: no automatic Suno sound effects (audio_c3/sfx_off)
     import audio_c3.sfx_off as _sfx_off  # noqa: E402
@@ -351,7 +397,8 @@ def _one_submit(job, ledger, timeout):
             units=job.get("units", 1), stage=job.get("stage", "kie"),
             owner=job.get("owner", "kie-dispatch"),
             adapter_path=job.get("adapter_path"), runner=job.get("runner"),
-            timeout=timeout)
+            timeout=timeout,
+            state_store=job.get("state_store"))   # F14: run-state lock store
         return env, job
     except Exception as e:                                  # noqa: BLE001
         return envelope("dispatch", "error", "SUBMIT_ALL_READY-EXCEPTION",
@@ -453,6 +500,13 @@ def _hold_unknown(db, run_id, logical_key, attempt_id, owner, extra):
         evidence=ev, state_version=unk.get("state_version", 0))
 
 
+def _is_menu_video(model, _registry_probe=None):
+    """True when model is a price-menu video family member (F14 lock scope)."""
+    for pat in ML.ALLOWED_VIDEO_MODELS:
+        if ML.matches_family(model, pat):
+            return True
+    return False
+
 # ---- F6: no animation before storyboard approval -------------------------
 try:
     import storyboard_director as _SD                     # sibling core/ pkg
@@ -498,13 +552,63 @@ def check_storyboard_approval(shots, review, request=None):
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
-             timeout=300):
-    """Run the plan 5.4 pipeline once. Returns one envelope; never raises."""
+             timeout=300, state_store=None, video_job=None):
+    """Run the plan 5.4 pipeline once. Returns one envelope; never raises.
+
+    F14 video-model lock: video jobs (video_job=True, or a video model on
+    price-menu.md) must match the model locked at the choice card
+    (state_store + run_id). No lock recorded -> refused fail-closed
+    (VIDEO_MODEL_LOCK_MISSING); a different model -> VIDEO_MODEL_MISMATCH.
+    Every model, video or not, must be on price-menu.md (MODEL_NOT_ON_MENU).
+    """
+    # ---- 0. F14 model lock (before any ledger row) ------------------------
+    # Scope: VIDEO jobs only. A video model must be on price-menu.md
+    # (seedance-1.5-pro included) and must equal the card-locked choice.
+    is_video = (bool(video_job) or _is_menu_video(model)
+                or _modality(model) == "video")
+    locked = None
+    if is_video:
+        try:
+            ML.assert_allowed(model)
+        except ML.ModelLockError as e:
+            return envelope("dispatch", "rejected", e.reason,
+                            "the allowed video models are exactly the models "
+                            "on price-menu.md (seedance-1.5-pro included). "
+                            "Take the refusal to the owner.",
+                            run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id)
+        locked = ML.read_locked_model(state_store, run_id)
+        if not locked:
+            return envelope(
+                "dispatch", "rejected", "VIDEO_MODEL_LOCK_MISSING",
+                "no video model is locked for this run; show and answer the "
+                "choice card first (default MiniMax H3 768P) - never "
+                "dispatch an un-locked video job",
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id)
+        if not ML.matches_family(model, locked):
+            return envelope(
+                "dispatch", "rejected", "VIDEO_MODEL_MISMATCH",
+                "the card locked %s for this run; %s differs. Ask the owner "
+                "to re-lock at the choice card, never substitute here."
+                % (locked, model),
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id,
+                evidence={"locked_model": locked, "requested_model": model})
     if not model:
         return envelope("dispatch", "rejected", "MODEL_REQUIRED",
                         "name the model id; this module never picks one",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
+    refusal = card_gate_refusal(request)
+    if refusal is not None:                 # F15: no paid job on an unanswered card
+        return envelope("dispatch", "waiting", refusal["reason_code"],
+                        refusal.get("next_action", ""),
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"missing_card_fields": refusal["missing"],
+                                  "generated": False})
+
     # F4 gate: a Suno sound-effects job is refused unless the request itself
     # carries the run's explicit manual order (``sound_effects: [...]``).
     # The catalog's suno-sounds surface is NEVER auto-queued: default runs
@@ -724,6 +828,22 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                 ledger_db, run_id, logical_key, attempt_id, "submit",
                 status="fail", task_id=task_id, error=s_err,
                 adapter_state=s_state)
+            if is_video:
+                # F14: no automatic fallback for video. Settle, then stop and
+                # ask the owner with the next approved option and its price.
+                return stop(
+                    "waiting", "VIDEO_MODEL_DOWN",
+                    "the locked video model did not submit (definite submit "
+                    "error: %s); nothing was generated. No automatic "
+                    "fallback - ask the owner with the next approved option "
+                    "from price-menu.md and its price."
+                    % (s_err.get("code") or "unknown"),
+                    {"stage": "submit", "adapter_state": s_state,
+                     "error": s_err, "task_id": task_id or None,
+                     "actual_cost": cost, "generated": False,
+                     "locked_model": locked,
+                     "next_approved_options": ML.ALLOWED_VIDEO_MODELS},
+                    final="failed", cost=cost)
             return stop(
                 "rejected", "kie-submit-failed",
                 "Skill 74 submit refused the job (%s); nothing was generated"

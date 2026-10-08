@@ -57,7 +57,7 @@ loopback endpoint — this is the documented "Cloud + Local" hybrid flow.
            "apiKey": "ollama-local",
            "models": [
              { "id": "kimi-k2.6:cloud",       "maxTokens": 64000 },
-             { "id": "deepseek-v4-pro:cloud", "maxTokens": 64000 },
+             { "id": "deepseek-v4.1-flash:cloud", "maxTokens": 64000 },
              { "id": "gemma4",                "maxTokens": 64000 }
            ]
          }
@@ -105,7 +105,7 @@ Ollama Cloud with the client's own key.
            "apiKey": "{{OLLAMA_API_KEY}}",
            "models": [
              { "id": "kimi-k2.6:cloud",       "maxTokens": 64000 },
-             { "id": "deepseek-v4-pro:cloud", "maxTokens": 64000 }
+             { "id": "deepseek-v4.1-flash:cloud", "maxTokens": 64000 }
            ]
          }
        }

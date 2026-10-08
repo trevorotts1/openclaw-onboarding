@@ -67,6 +67,9 @@ it advances. Standard library only; no credential value is ever printed.
       `tool-unavailable`; unset credential -> 4 `credential-missing`
       (presence only, value never echoed); reference outside root -> 4;
       reference missing -> 1; untrusted schema -> 1 `schema-untrusted`.
+- [ ] Song files (H14): a delivery folder holds `<ad>.mp3` (320 kbps) and `<ad>.wav` (plus
+      `<ad>-instrumental.*` if one exists), all listed in `delivery-receipt.json` and `README.md`;
+      `python3 scripts/core/delivery_variants/song_files.py check <dir> <ad>` exits 0, and exits 5 when any song file is missing.
 - [ ] Spend ledger: `init_run --ceiling` recorded; `reserve` before
       dispatch; duplicate `reserve` exits 5 `BAD_TRANSITION`;
       `can_spend` past ceiling exits 5 `BUDGET_EXCEEDED`; `park_run` exits 4
@@ -90,11 +93,12 @@ schema violation all refuse the stage (exit 5).
 | Song QC | 17.2 | `song`, `lyrics` (critical) | all required lyrics present, no omitted sales lines, no meaning-damaging ad-libs, understandable + correct product pronunciation, singer/persona continuity, genre/style and tempo continuity, no clipping, no broken transitions, sufficient master duration |
 | Storyboard QC | 17.3 | `storyboard` | lyric match, emotional expression, character reference correctness, wardrobe, location, product timing, composition, visual variety, generatability, adjacent-shot continuity |
 | Video QC | 17.4 | `video`, `continuity` | MULTIPLE frames inspected (not frame zero only): correct character, face/body continuity, wardrobe, location, product appearance, physical plausibility, motion coherence, camera intent, no unwanted text, no warped hands/faces/objects, no temporal artifacts, lyric match, start/end continuity, no accidental lip movement in non-speaking shots |
-| Final edit QC | 17.5 | `final_edit`, `export`, `timeline`, `audio`, `text_product` (critical) | audio/video duration vs profile, sync to lyric timing, no gaps/frozen/black frames, no missing assets, caption correctness when enabled, packshot correctness, CTA readability, audio levels, final format/resolution, required aspect ratio, complete manifest/receipts |
+| Final edit QC | 17.5 | `final_edit`, `export`, `timeline`, `audio`, `text_product` (critical) | audio/video duration vs profile, master no longer than chosen length minus 2 seconds (`core/master_length`, reason `MASTER_TOO_LONG`), sync to lyric timing, no gaps/frozen/black frames, no missing assets, caption correctness when enabled, packshot correctness, CTA readability, audio levels, final format/resolution, required aspect ratio, complete manifest/receipts |
 | Independent verifier law | 17.6 | all | reviewer identity differs from the maker binding; `reviewer.session` and `reviewer.authority` present; same records re-submitted unchanged cannot pass (`MAKER_SELF_REVIEW` observed exit 5) |
 | Targeted repair | 17.7 | failing check only | gate returns `repair_scope` naming only the failed `check_id`s; repair runs with new attempt ids; approved assets stand; repair cost travels through the ledger `repair-cap`, and once the configured budget is spent the run PARKS - never an unbounded retry loop |
 | Acceptance profile + UNAVAILABLE | 17.8 | `timing` (profile-bound) | `--profile acceptance-profile.json --expect-profile <version>` matches or the gate refuses `PROFILE_MISMATCH`; UNAVAILABLE on any required check = `UNAVAILABLE_MANDATORY`, never PASS; a `timing` record carries `timing_detail` {sample_ref, confidence, annotation_method} plus median/p95/critical ms against profile thresholds (100/250/100 ms baseline); export 1080p30 H.264+AAC 48 kHz, A/V duration delta <= 1 frame, lyric coverage 100% critical / >= 98% overall, loudness -14 LUFS +/-1 and true peak <= -1 dBTP, CTA hold >= 3 s reviewed at 360 px width; threshold changes require a documented decision before the affected run |
 | Claims / narrative integrity | 17.9 | `creative` + `text_product` | factual product claims carry evidence refs from the brief into the QC record; fictional/simulated narrative is distinguished from real testimonials; original assets and provenance preserved; resemblance or third-party spend anecdotes are never reported as effectiveness evidence |
+| Protected names + captions (H7) | 17.2, 17.5 | `lyrics`, `song`, `text_product` | the sheet keeps every protected name (character/brand) and every packet line verbatim (`PROTECTED_NAME_CHANGED`, `PACKET_LINE_REWRITTEN`); no take where a protected name was sung wrong (`PROTECTED_NAME_SUNG_WRONG`); caption text equals the approved sheet word for word and was never speech-to-text (`CAPTION_MISMATCH`, `CAPTION_SOURCE_NOT_SHEET`); "still" for "Stale" fails |
 
 - [ ] Critical checks (`lyrics`, `text_product` by default, overridable via
       `--critical`) produce `critical_failures` on any FAIL/UNAVAILABLE, and
@@ -104,6 +108,15 @@ schema violation all refuse the stage (exit 5).
 - [ ] Every production run publishes its `acceptance-profile.json` BEFORE
       generation; a campaign target may deviate only with a documented
       alternative recorded in the profile.
+
+### 5.1 Master provenance (Part H H12)
+
+Run `check_master_provenance(<run folder>, <master>)` from
+`final_assembler/master_provenance.py` and record it as the `final_edit`
+check. FAIL when the master has no assembler receipt (`produced_by.module`,
+`master_sha256`), or any run-folder script calls ffmpeg or writes captions.
+Builders call the skill's assembler, lip-sync and caption modules, never
+their own scripts.
 
 ## 6. Cost / No-Double-Spend Checks (directive 18, enforced with section 17)
 - [ ] Every paid submission has a prior `reserve` and a later `reconcile`
@@ -142,3 +155,28 @@ failed checks. After the 5th failed round, stop and escalate to the owner.
 A maker never signs its own gate: the final verdict for any production
 stage comes from an independent reviewer, and this document is never used
 to self-approve a run.
+
+## Part H H4: speaking faces and lip-sync coverage
+
+- Run `shot_planner.face_speaks.check_face_speaks(shots, lines)`: it lists every
+  shot where a face is visibly speaking (shot / time / line / lip-sync). Any
+  speaking face that is not a lip-sync clip of that character's own line fails
+  `FACE_SPEAKS_NO_LIPSYNC`; a lip-sync clip whose speaker is not on screen fails
+  `LIPSYNC_WRONG_FACE`.
+- Run `face_speaks.check_coverage_band(ad_length_s, lipsync_s, lines)`: 15-20 s
+  in a 60-90 s ad with a 5-point grace; below the band fails
+  `LIPSYNC_COVERAGE_BELOW_BAND`. The planner (`plan_lipsync_lines`) picks the lines.
+
+## Clean ending (I5)
+
+The last 2 s of the master must not stop abruptly: audio level decays, the last sung word
+is not cut, the picture fades to the end card, and the end card (4-5 s) ends by target
+length minus 2 s. Check: `scripts/core/ending_qc/` (`check_ending`).
+
+## I1: caption spelling and website
+
+Every caption word must be a real word or a protected word (names, brands, the
+client's website). An unknown word fails with the word shown
+(`CAPTION_MISSPELLED`). When the ad sends people to a website, intake asks for
+the exact address; it is stored as a protected word and must appear verbatim in
+the lyrics, captions and end card (`WEBSITE_NOT_VERBATIM`).

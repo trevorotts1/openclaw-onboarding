@@ -11,7 +11,7 @@
 #       and call_ollama_cloud sends NO Authorization header (the signed-in
 #       daemon needs none) — never the dead 21-char key that 401s on
 #       ollama.com. An explicit non-local OLLAMA_BASE_URL still sends the key.
-#   T2  max_tokens CLAMP (bug 4): _clamp_max_tokens caps deepseek-v4-pro
+#   T2  max_tokens CLAMP (bug 4): _clamp_max_tokens caps deepseek-v4.1-flash
 #       (both ':cloud' and 'deepseek/…' forms) at 65536; a 120000 ask is
 #       clamped; an in-range ask is untouched.
 #   T3  FAIL-FAST 4xx (bug 5): call_ollama_cloud AND call_openrouter make
@@ -19,7 +19,7 @@
 #       no MAX_RETRIES retry-storm — and raise so the caller's fallback runs.
 #       A 500/429 still retries (MAX_RETRIES calls).
 #   T4  bug 1/2 regression: get_keys dequotes KEY="…"; _openrouter_fallback_model
-#       maps ollama/deepseek-v4-pro:cloud -> deepseek/deepseek-v4-pro.
+#       maps ollama/deepseek-v4.1-flash:cloud -> deepseek/deepseek-v4.1-flash.
 #
 # Fully offline + hermetic: a fake `aiohttp` is injected so CI needs no
 # network stack; a sandbox HOME + a fake OPENROUTER_API_KEY env satisfy the
@@ -85,10 +85,10 @@ else:
 
 # ── T2: max_tokens clamp ─────────────────────────────────────────────────────
 cases = [
-    ("deepseek-v4-pro:cloud", 120000, 65536),
-    ("deepseek/deepseek-v4-pro", 120000, 65536),
-    ("ollama/deepseek-v4-pro:cloud", 120000, 65536),
-    ("deepseek-v4-pro:cloud", 16000, 16000),
+    ("deepseek-v4.1-flash:cloud", 120000, 65536),
+    ("deepseek/deepseek-v4.1-flash", 120000, 65536),
+    ("ollama/deepseek-v4.1-flash:cloud", 120000, 65536),
+    ("deepseek-v4.1-flash:cloud", 16000, 16000),
     ("google/gemini-3.1-flash-lite-preview", 120000, 65536),  # default cap
 ]
 t2_ok = True
@@ -97,7 +97,7 @@ for model, req, want in cases:
     if got != want:
         t2_ok = False; bad(f"T2: clamp({model},{req})={got} want {want}")
 if t2_ok:
-    ok("T2: _clamp_max_tokens caps deepseek-v4-pro (both forms) + default at 65536; in-range untouched")
+    ok("T2: _clamp_max_tokens caps deepseek-v4.1-flash (both forms) + default at 65536; in-range untouched")
 
 # ── fake HTTP plumbing for the call_* fail-fast tests ─────────────────────────
 class _Resp:
@@ -119,7 +119,7 @@ class _Session:
 
 # ── T1b: local mode sends NO Authorization header ────────────────────────────
 sess = _Session(200)
-_run(orch.call_ollama_cloud(sess, "deepseek-v4-pro:cloud", "sys", "user", max_tokens=16000))
+_run(orch.call_ollama_cloud(sess, "deepseek-v4.1-flash:cloud", "sys", "user", max_tokens=16000))
 if "Authorization" not in (sess.last_headers or {}):
     ok("T1b: local Ollama route sends NO Authorization header (signed-in daemon)")
 else:
@@ -128,7 +128,7 @@ else:
 # ── T3: fail-fast on deterministic 4xx, retry on 5xx ─────────────────────────
 def _drive(coro_fn, session):
     try:
-        _run(coro_fn(session, "deepseek/deepseek-v4-pro", "s", "u", max_tokens=16000))
+        _run(coro_fn(session, "deepseek/deepseek-v4.1-flash", "s", "u", max_tokens=16000))
         return None
     except Exception as e:
         return e
@@ -177,9 +177,9 @@ if keys.get("OPENROUTER_API_KEY") == "sk-or-quoted-fake-value-not-a-real-key" \
 else:
     bad(f"T4a: get_keys dequote broke: {keys.get('OPENROUTER_API_KEY')!r}")
 
-fb = orch._openrouter_fallback_model("ollama/deepseek-v4-pro:cloud")
+fb = orch._openrouter_fallback_model("ollama/deepseek-v4.1-flash:cloud")
 fb2 = orch._openrouter_fallback_model("ollama/kimi-k2.6:cloud")
-if fb == "deepseek/deepseek-v4-pro" and fb2 == "moonshotai/kimi-k2.6":
+if fb == "deepseek/deepseek-v4.1-flash" and fb2 == "moonshotai/kimi-k2.6":
     ok("T4b: _openrouter_fallback_model maps ollama ids to vendor/model (bug 2)")
 else:
     bad(f"T4b: fallback mapping wrong: {fb!r} {fb2!r}")

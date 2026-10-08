@@ -176,7 +176,7 @@ def test_launcher_writes_ultra_mode_and_client_route_sidecars(tmp_path, monkeypa
     profile = resource_profile.new_profile()
     profile['providers']['deepseek-direct'] = {
         'provider': 'deepseek-direct', 'presence': True, 'detected': True,
-        'wired_models': ['deepseek-flash', 'deepseek-v4-pro'], 'consented': True,
+        'wired_models': ['deepseek-flash', 'deepseek-v4.1-flash'], 'consented': True,
     }
     profile['model_plan'] = _profile_with_direct_flash()['model_plan']
     resource_profile.save_profile(profile, profile_dir)
