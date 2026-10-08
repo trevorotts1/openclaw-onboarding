@@ -15,6 +15,7 @@ from .assembler import (
     plan_timeline,
     qc_transitions,
     size_ffmpeg,
+    validate_lipsync_atomic,
 )
 
 __all__ = [
@@ -33,4 +34,5 @@ __all__ = [
     "plan_timeline",
     "qc_transitions",
     "size_ffmpeg",
+    "validate_lipsync_atomic",
 ]
