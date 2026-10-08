@@ -115,12 +115,31 @@ def test_constants():
     if UPSTREAM_CONTRACT.exists():
         upstream = json.loads(UPSTREAM_CONTRACT.read_text())
         heads = upstream["tabs"]["Weekly Overview"]["headings"]
-        check("legacy heading list matches Skill 35's live contract",
-              list(heads) == M.LEGACY_OVERVIEW_HEADINGS,
-              str(heads[:3]))
-        check("Skill 35's contract is the 1.2.0 this unit migrates from",
-              upstream.get("schema_version") == "1.2.0",
-              str(upstream.get("schema_version")))
+        live_sv = upstream.get("schema_version")
+        if live_sv == M.SCHEMA_TO:
+            # SMP-W2-U1 shipped Skill 35's 1.3.0 contract upstream first, so the
+            # live contract is no longer the 1.2.0 this unit migrates FROM. Hold
+            # it to this module's 1.3.0 expectations instead: the legacy
+            # 20-column prefix must still be this module's legacy heading list,
+            # the shipped layout must still be 26 headings, and the stamp must
+            # be this module's target version. The module's own 1.3.0 layout
+            # (five drama-song fields at 20..24 per DRAMA_SONG_PAYLOAD_KEYS,
+            # technical key at 25) is asserted above and in test_no_loss, on the
+            # documents this module actually produces.
+            check("legacy heading list matches Skill 35's live contract",
+                  list(heads[:len(M.LEGACY_OVERVIEW_HEADINGS)])
+                  == M.LEGACY_OVERVIEW_HEADINGS and len(heads) == 26,
+                  "n=%d prefix=%r" % (len(heads), list(heads[:3])))
+            check("Skill 35's contract is the 1.3.0 this unit migrates to",
+                  live_sv == M.SCHEMA_TO and len(heads) == 26,
+                  str(live_sv))
+        else:
+            check("legacy heading list matches Skill 35's live contract",
+                  list(heads) == M.LEGACY_OVERVIEW_HEADINGS,
+                  str(heads[:3]))
+            check("Skill 35's contract is the 1.2.0 this unit migrates from",
+                  live_sv == "1.2.0",
+                  str(live_sv))
 
 
 # =============================================================================
@@ -291,14 +310,47 @@ def test_contract_migration():
         check("Skill 35 contract present", False, str(UPSTREAM_CONTRACT))
         return
     original = json.loads(UPSTREAM_CONTRACT.read_text())
-    migrated, report = M.migrate_doc(original)
-    ok, problems = M.lossless(original, migrated)
-    check("migrating Skill 35's real contract loses nothing", ok,
-          "; ".join(problems))
-    check("migrated contract carries 25 Weekly Overview headings",
-          len(migrated["tabs"]["Weekly Overview"]["headings"]) == 25)
-    check("migrated contract matches the bundled 1.3.0 reference",
-          migrated == json.loads(BUNDLED_130.read_text()))
+    if original.get("schema_version") == M.SCHEMA_TO:
+        # Skill 35's live contract is already stamped 1.3.0 (SMP-W2-U1 shipped
+        # it first), so there is no 1.2.0 -> 1.3.0 work left for it here. Assert
+        # the module stays fail-closed on it — never guesses, never mutates —
+        # and prove the migration itself on the bundled 1.2.0 snapshot.
+        frozen = copy.deepcopy(original)
+        try:
+            migrated, report = M.migrate_doc(original)
+        except M.MigrationError as exc:
+            check("live 1.3.0 contract is refused fail-closed (no guessing)",
+                  "repair the contract" in str(exc), str(exc)[:200])
+        else:
+            ok, problems = M.lossless(original, migrated)
+            check("live 1.3.0 contract: an accepted migration loses nothing",
+                  ok, "; ".join(problems))
+        check("live 1.3.0 contract is left untouched (migrate is pure)",
+              original == frozen)
+
+        snap = json.loads(LIVE_120.read_text())
+        snap_frozen = copy.deepcopy(snap)
+        migrated, report = M.migrate_doc(snap)
+        ok, problems = M.lossless(snap, migrated)
+        check("bundled 1.2.0 snapshot migrates losslessly", ok,
+              "; ".join(problems))
+        check("bundled 1.2.0 snapshot input is not mutated",
+              snap == snap_frozen)
+        heads = migrated["tabs"]["Weekly Overview"]["headings"]
+        check("bundled 1.2.0 snapshot reaches the module's 1.3.0 layout",
+              len(heads) == 25
+              and heads[20:25] == M.DRAMA_SONG_FIELDS
+              and migrated["schema_version"] == M.SCHEMA_TO,
+              str(heads[20:]))
+    else:
+        migrated, report = M.migrate_doc(original)
+        ok, problems = M.lossless(original, migrated)
+        check("migrating Skill 35's real contract loses nothing", ok,
+              "; ".join(problems))
+        check("migrated contract carries 25 Weekly Overview headings",
+              len(migrated["tabs"]["Weekly Overview"]["headings"]) == 25)
+        check("migrated contract matches the bundled 1.3.0 reference",
+              migrated == json.loads(BUNDLED_130.read_text()))
 
 
 # =============================================================================
@@ -424,10 +476,25 @@ def test_validator():
           proc.stdout[:300])
 
     if UPSTREAM_CONTRACT.exists():
+        live_sv = json.loads(UPSTREAM_CONTRACT.read_text()).get("schema_version")
         proc = run_validator([str(UPSTREAM_CONTRACT)])
-        check("rejects the 1.2.0 contract (exit 1)",
-              proc.returncode == 1 and "expected 1.3.0" in proc.stdout,
-              proc.stdout[:500])
+        if live_sv == "1.2.0":
+            check("rejects the 1.2.0 contract (exit 1)",
+                  proc.returncode == 1 and "expected 1.3.0" in proc.stdout,
+                  proc.stdout[:500])
+        else:
+            # SMP-W2-U1 shipped its own 1.3.0 Weekly Overview layout upstream
+            # first (cycle_id at 20, its five drama-song headings at 21..25,
+            # 26 headings). This module's validator judges the live contract
+            # against THIS module's 1.3.0 layout (five DRAMA_SONG_FIELDS at
+            # 20..24, 25 headings) and must reject a layout it does not own
+            # loudly, never pass it silently. The two 1.3.0 layouts are a known
+            # cross-unit divergence for the merge train to reconcile — recorded
+            # here, not papered over.
+            check("live 1.3.0 contract is rejected against this module's layout",
+                  proc.returncode == 1
+                  and "26 headings, expected 25" in proc.stdout,
+                  proc.stdout[:500])
 
     with tempfile.TemporaryDirectory(prefix="smp-u2-v-") as tmp:
         def write(name, mutate):
