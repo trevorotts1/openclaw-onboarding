@@ -6,6 +6,18 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.1] - 2026-10-08 - Part H H12: no hand-written pipeline scripts
+
+- New `scripts/core/final_assembler/master_provenance.py`: the assembler receipt
+  now carries `produced_by` (module `final_assembler.assembler`) and
+  `master_sha256`; `check_master_provenance(run_dir, master)` FAILS a run whose
+  master has no matching skill receipt, or whose run folder holds a script that
+  calls ffmpeg or writes captions itself (the Kiesett `edit/final.py` case).
+  `master_provenance_qc_record` emits the `final_edit` record for `qc_gate`.
+- Test: `scripts/core/final_assembler/test_master_provenance_h12.py`.
+
+---
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
