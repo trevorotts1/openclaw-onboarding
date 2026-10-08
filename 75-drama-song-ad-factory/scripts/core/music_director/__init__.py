@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import music_qc
 import spend_ledger as L
+import words_match
 
 TOOL_NAME = "music_director"
 TOOL_VERSION = "1.0.0"
@@ -89,8 +90,21 @@ def _checked_version(version, catalog_id=GENERATE_CATALOG_ID):
 
 def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
-                           duration=None, callback_url="https://example.invalid/cb"):
-    """Current-envelope generate payload. Lyrics are verbatim (floor-exempt)."""
+                           duration=None, callback_url="https://example.invalid/cb",
+                           packet_lines=None):
+    """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
+
+    F7 (words match the script exactly): when ``packet_lines`` is given, the
+    lyric text is word-checked against the packet before any payload is
+    built — a rewritten word ("gonna" where the packet says "going to") or
+    an invented line raises ValueError ``(CAPTION_WORD_MISMATCH ...)`` and
+    the master request is never built. ``packet_lines=None`` keeps the old
+    behavior (packet binding happens upstream in lyric QC).
+    """
+    if packet_lines is not None:
+        errors = words_match.validate_words_match(lyrics_text, packet_lines)
+        if errors:
+            raise ValueError("; ".join(errors))
     ver = _checked_version(version)
     req = {"endpoint": CREATE_TASK_ENDPOINT,
            "model": route_model(GENERATE_CATALOG_ID),
