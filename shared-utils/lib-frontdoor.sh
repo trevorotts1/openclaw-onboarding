@@ -101,93 +101,91 @@ print("[front-door] stage status: %s" % d.get("status","failed"), file=sys.stder
   esac
 }
 
-# ── 999-setup refresh (only where it is ALREADY installed) ──────────────────
-# The same guard-fenced refresh the fleet roll's runner performs
-# (shared-utils/fleet_refresh_runner.py step_update_999): a git checkout whose
-# origin is trevorotts1/999-setup is pulled --ff-only (local changes are never
-# overwritten), then the checkout's own skill-link installer re-links its
-# skills. Never installs 999 on a box that does not have it, never touches an
-# archive extract, never a hand-managed copy. Ported here so every route (not
-# just the roll) refreshes 999 — issue #10's "999-setup (if installed)" stage.
+# ── 999-setup refresh (every box carries 999) ───────────────────────────────
+# Every roll must leave a CLEAN, current trevorotts1/999-setup checkout and the
+# bundled skills linked to it (NFX001 owner order). Steps:
+#  1. Find every checkout (HOME/999-setup, Documents/999-setup, .claude-nine,
+#     installed skill-link parents). Clean ones are pulled --ff-only. Dirty or
+#     diverged ones are left UNTOUCHED (the owner's work is never overwritten)
+#     and named in one log line.
+#  2. If no clean checkout exists, clone one to $HOME/999-setup (never the full
+#     installer; never 9Router config/models/credentials/.env/providers).
+#  3. Link the skills from the clean checkout, per skill: a hand-managed real
+#     directory is skipped alone, every other skill is linked; symlinks that
+#     pointed at an untouched copy are repointed. Symlinks only, nothing deleted.
 frontdoor_update_999() {
-  local _home repo before after
+  local _home canon cand real repo="" origin before after pull_out
+  local _seen=" " _fail=0 _untouched=""
   _home="$HOME"
   [ -d /data/.openclaw ] && _home="/data"
-  # Candidate checkouts: the known clone locations, then the installed skill
-  # symlinks' resolved parent (the same discovery shape the runner scans).
-  repo=""
-  local cand
-  for cand in "$HOME/.claude-nine" "$HOME/.claude-nine/../999-setup" \
-              "$_home/999-setup" "$HOME/999-setup"; do
-    [ -n "$cand" ] || continue
-    if [ -f "$cand/AGENT_INSTALL.md" ] && [ -f "$cand/CONTROL/bundled-skills.txt" ] \
-       && [ -f "$cand/.claude/skills/nine-router-setup/scripts/setup-macos.sh" ]; then
-      repo="$cand"; break
+  canon="$_home/999-setup"
+  local _cands link
+  _cands="$canon
+$HOME/999-setup
+$canon-clean
+$HOME/Documents/999-setup
+$HOME/.claude-nine/../999-setup
+$HOME/.claude-nine"
+  for link in "$HOME/.claude/skills/nine-router-setup" \
+              "$HOME/.claude-nine/skills/nine-router-setup" \
+              "$_home/.claude/skills/nine-router-setup"; do
+    if [ -L "$link" ]; then
+      cand="$(cd "$link" 2>/dev/null && cd ../../.. 2>/dev/null && pwd -P)" || continue
+      _cands="$_cands
+$cand"
     fi
   done
-  if [ -z "$repo" ]; then
-    # Resolve through an installed skill link when the clones are elsewhere.
-    local link
-    for link in "$HOME/.claude/skills/nine-router-setup" \
-                "$HOME/.claude-nine/skills/nine-router-setup" \
-                "$_home/.claude/skills/nine-router-setup"; do
-      if [ -L "$link" ]; then
-        cand="$(cd "$link" && pwd -P)/../../.."
-        cand="$(cd "$cand" 2>/dev/null && pwd -P)" || continue
-        if [ -f "$cand/AGENT_INSTALL.md" ] && [ -f "$cand/CONTROL/bundled-skills.txt" ]; then
-          repo="$cand"; break
-        fi
+  while IFS= read -r cand; do
+    [ -n "$cand" ] && [ -d "$cand/.git" ] || continue
+    { [ -f "$cand/AGENT_INSTALL.md" ] && [ -f "$cand/CONTROL/bundled-skills.txt" ] \
+      && [ -f "$cand/.claude/skills/nine-router-setup/scripts/setup-macos.sh" ]; } || continue
+    real="$(cd "$cand" && pwd -P)"
+    case "$_seen" in *" $real "*) continue ;; esac
+    _seen="$_seen$real "
+    origin="$(git -C "$real" config --get remote.origin.url 2>/dev/null || echo "")"
+    case "$origin" in
+      *trevorotts1/999-setup*) : ;;
+      *) echo "[front-door] 999-setup at $real: origin is not trevorotts1/999-setup — not touched"; continue ;;
+    esac
+    if [ -n "$(git -C "$real" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+      _untouched="$_untouched $real (local changes)"; continue
+    fi
+    before="$(git -C "$real" rev-parse HEAD || true)"
+    if ! pull_out="$(git -C "$real" pull --ff-only --quiet 2>&1)"; then
+      if [ "$(git -C "$real" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)" != 0 ] \
+         && [ "$(git -C "$real" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)" != 0 ]; then
+        _untouched="$_untouched $real (diverged)"; continue
       fi
-    done
-  fi
-  if [ -z "$repo" ] || [ ! -d "$repo/.git" ]; then
-    # A box that RUNS 9Router (cheap signals: ~/.9router or the claude-nine
-    # launcher) but has no 999-setup checkout would otherwise never get 999
-    # updates (bundled skills, nine-router-setup). Fetch a read-only checkout so
-    # the guarded --skills-only path below can run. The full installer is NEVER
-    # used on such a box and models/credentials are never touched: the
-    # skills-only step runs between two checksum snapshots. A box with no
-    # 9Router signal still gets nothing installed.
-    local _clone_dest="$_home/999-setup"
-    [ "$_home" = "$HOME" ] && _clone_dest="$HOME/999-setup"
-    if { [ -d "$HOME/.9router" ] || [ -f "$HOME/.local/bin/claude-nine" ]; } \
-       && command -v git >/dev/null 2>&1 && [ ! -e "$_clone_dest" ]; then
-      echo "[front-door] 999-setup: 9Router box without a checkout — cloning $_clone_dest for the guarded skills-only refresh"
-      if git clone --depth 1 --quiet https://github.com/trevorotts1/999-setup.git "$_clone_dest" 2>&1 | sed 's/^/[front-door]   /'; \
-         [ -f "$_clone_dest/AGENT_INSTALL.md" ] && [ -d "$_clone_dest/.git" ]; then
-        repo="$_clone_dest"
-      else
-        rm -rf "$_clone_dest" 2>/dev/null
-        echo "[front-door] 999-setup: clone failed — skipping (try again next roll)" >&2
-        return 0
-      fi
+      echo "[front-door] 999-setup: git pull --ff-only FAILED at $real — left unchanged: ${pull_out:0:200}" >&2
+      _fail=1
     else
-      echo "[front-door] 999-setup: not installed (no checkout, no 9Router signal) — skipping (never installs it)"
-      return 0
+      after="$(git -C "$real" rev-parse HEAD || true)"
+      [ "$after" = "$before" ] && echo "[front-door] 999-setup: $real already current (${after:0:12})" \
+                               || echo "[front-door] 999-setup: $real ${before:0:12} -> ${after:0:12}"
+    fi
+    [ -n "$repo" ] || repo="$real"
+  done <<FDEOF
+$_cands
+FDEOF
+  if [ -z "$repo" ]; then
+    local _clone_dest="$canon"
+    [ -e "$_clone_dest" ] && _clone_dest="$canon-clean"
+    if [ -e "$_clone_dest" ]; then
+      echo "[front-door] 999-setup: no clean checkout and $_clone_dest is occupied — cannot clone" >&2
+      return 1
+    fi
+    command -v git >/dev/null 2>&1 || { echo "[front-door] 999-setup: git missing — cannot clone" >&2; return 1; }
+    echo "[front-door] 999-setup: no clean checkout — cloning $_clone_dest (links only; installer never run)"
+    if git clone --depth 1 --quiet https://github.com/trevorotts1/999-setup.git "$_clone_dest" 2>&1 | sed 's/^/[front-door]   /'; \
+       [ -f "$_clone_dest/AGENT_INSTALL.md" ] && [ -d "$_clone_dest/.git" ]; then
+      repo="$(cd "$_clone_dest" && pwd -P)"
+    else
+      rm -rf "$_clone_dest" 2>/dev/null
+      echo "[front-door] 999-setup: clone FAILED — 999 not refreshed this roll" >&2
+      return 1
     fi
   fi
-  local origin
-  origin="$(git -C "$repo" remote get-url origin 2>/dev/null || echo "")"
-  case "$origin" in
-    *trevorotts1/999-setup*) : ;;
-    *) echo "[front-door] 999-setup at $repo: origin is not trevorotts1/999-setup — not touched"
-       return 0 ;;
-  esac
-  if [ -n "$(git -C "$repo" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
-    echo "[front-door] 999-setup at $repo has local changes — not updated (the owner's work is never overwritten)"
-    return 0
-  fi
-  before="$(git -C "$repo" rev-parse HEAD || true)"
-  echo "[front-door] 999-setup: refreshing $repo (${before:0:12}) ..."
-  local pull_out
-  if ! pull_out="$(git -C "$repo" pull --ff-only --quiet 2>&1)"; then
-    echo "[front-door] 999-setup: git pull --ff-only FAILED — leaving $repo unchanged: ${pull_out:0:200}" >&2
-    return 1
-  fi
-  [ -n "$pull_out" ] && printf '%s\n' "$pull_out" | sed 's/^/[front-door]   /'
-  after="$(git -C "$repo" rev-parse HEAD || true)"
-  [ "$after" = "$before" ] && echo "[front-door] 999-setup: already current (${after:0:12})" \
-                           || echo "[front-door] 999-setup: ${before:0:12} -> ${after:0:12}"
+  [ -z "$_untouched" ] || echo "[front-door] 999-setup: UNTOUCHED (owner's work kept):$_untouched — using clean copy $repo for skill links"
   # A box that already runs 9Router NEVER takes the link/installer path below
   # (it replaces ~/.claude/skills/nine-router-setup and can touch the launcher).
   # It gets the 999 installer's `--skills-only` between two checksum snapshots
@@ -214,51 +212,52 @@ frontdoor_update_999() {
       *) echo "[front-door] 999-setup: 9Router skills-only failed (rc=$_nr_rc)" >&2; return 1 ;;
     esac
   fi
-  # Re-link the skills the SAME WAY the roll's installer step does — the
-  # runner's _999_LINK_SCRIPT, run verbatim in its own bash so the installer's
-  # `set -euo pipefail` can never leak into this shell. The link script
-  # self-identifies (last line must be the main entrypoint) before anything is
-  # sourced, refuses an entrypoint change, and leaves hand-managed copies alone.
+  # Link the skills per skill, from the clean checkout, in a bash of their own so
+  # the installer's `set -euo pipefail` never leaks here. Only the link
+  # functions are taken from setup-macos.sh (entrypoint self-check kept); it is
+  # sourced from its own scripts dir so its $0-derived paths resolve (B4), and
+  # NINE_SETUP_SCRIPT_DIR carries the real dir for checkouts that honor it.
   local link_script="$repo/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
   if [ ! -f "$link_script" ]; then
-    echo "[front-door] 999-setup: installer not found at $link_script — links not re-run"
-    return 0
+    echo "[front-door] 999-setup: installer not found at $link_script — links not re-run" >&2
+    return 1
   fi
-  local bash4
-  bash4="$(command -v bash || true)"
-  [ -n "$bash4" ] || { echo "[front-door] 999-setup: no bash on PATH — links not re-run" >&2; return 1; }
-  echo "[front-door] 999-setup: re-running the installer's skill-link step..."
+  command -v bash >/dev/null 2>&1 || { echo "[front-door] 999-setup: no bash on PATH — links not re-run" >&2; return 1; }
+  echo "[front-door] 999-setup: linking skills from $repo (per skill)..."
   local out rc=0
   out="$(FRONTDOOR_999_REPO="$repo" bash -c '
     set -euo pipefail
-    R="$FRONTDOOR_999_REPO"; S="$R/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
-    [ "$(tail -n 1 "$S")" = '"'"'main "$@"'"'"' ] || { echo "installer entrypoint changed: last line of $S is not main \"\$@\"" >&2; exit 3; }
+    R="$FRONTDOOR_999_REPO"; D="$R/.claude/skills/nine-router-setup/scripts"; S="$D/setup-macos.sh"
+    [ "$(tail -n 1 "$S")" = '"'"'main "$@"'"'"' ] || { echo "installer entrypoint changed: last line of $S is not main" >&2; exit 3; }
     T="$(mktemp)"; trap '"'"'rm -f "$T"'"'"' EXIT
     sed '"'"'$d'"'"' "$S" > "$T"
+    cd "$D"; export NINE_SETUP_SCRIPT_DIR="$D"
     . "$T"
-    declare -F link_skills_into_root >/dev/null 2>&1 || { echo "installer has no link_skills_into_root" >&2; exit 3; }
+    declare -F link_one_skill >/dev/null 2>&1 || { echo "installer has no link_one_skill" >&2; exit 3; }
     REPO_ROOT="$R"; REPO_SKILL_DIR="$R/.claude/skills/nine-router-setup"
     PRIMARY="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
     ROOTS="$PRIMARY"
     [ -f "$HOME/.claude-nine/settings.json" ] && [ "$HOME/.claude-nine" != "$PRIMARY" ] && ROOTS="$ROOTS $HOME/.claude-nine"
-    hand=""
+    rc=0
     for root in $ROOTS; do
+      mkdir -p "$root/skills"
       while IFS= read -r s; do
-        [ -n "$s" ] && [ -e "$root/skills/$s" ] && [ ! -L "$root/skills/$s" ] && hand="$hand $root/skills/$s"
+        [ -n "$s" ] || continue
+        dst="$root/skills/$s"
+        if [ -e "$dst" ] && [ ! -L "$dst" ]; then echo "skill HAND-MANAGED, skipped: $s ($dst)"; continue; fi
+        src="$(resolve_skill_source "$s")"
+        if [ -z "$src" ]; then echo "skill ERROR: $s: no source in $R" >&2; rc=$((rc + 1)); continue; fi
+        [ "$src" != "$dst" ] || continue
+        link_one_skill "$src" "$dst" "$s" || rc=$((rc + 1))
       done < <(bundled_skills)
     done
-    if [ -n "$hand" ]; then echo "HAND-MANAGED:$hand"; exit 0; fi
-    rc=0
-    for root in $ROOTS; do REPO_ROOT="$R" REPO_SKILL_DIR="$R/.claude/skills/nine-router-setup" link_skills_into_root "$root" || rc=$((rc + $?)); done
     exit "$rc"' 2>&1)" || rc=$?
   printf '%s\n' "$out" | sed 's/^/[front-door]   /'
-  case "$out" in
-    HAND-MANAGED:*) echo "[front-door] 999-setup: skill links left alone (hand-managed copies present)"; return 0 ;;
-  esac
   if [ "$rc" -ne 0 ]; then
     echo "[front-door] 999-setup: installer skill step exited $rc" >&2
     return "$rc"
   fi
+  [ "$_fail" = 0 ] || { echo "[front-door] 999-setup: links done but a pull failed (see above)" >&2; return 1; }
   echo "[front-door] 999-setup: skill links verified"
   return 0
 }
