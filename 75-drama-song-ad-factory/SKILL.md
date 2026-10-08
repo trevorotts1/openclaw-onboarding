@@ -171,29 +171,35 @@ SOP named above.
   flicker, identity locked; golden realism carries the transformation and
   payoff.
 - **Music (decision 30):** Soul Ballad (default), R&B Flow, Soul Rise.
-- **Voice (decisions 27, 31):** All Suno (default) - sung and spoken lines
-  all from Suno, spoken lines over the music bed only, no singing-underneath
-  layer - or **Velvet Voiceover**: Google text-to-speech for the spoken
+- **One-track soundtrack (decisions 27, 31, F1):** ONE Suno generation makes
+  the whole soundtrack. Every spoken passage is written into the song's own
+  lyrics, tagged as spoken (`[Spoken]` + the character's voice tag), so Suno
+  performs the spoken words over the music in the same track. **No separate
+  spoken takes, no gaps in the song for takes to sit in, no added bed.** A
+  failed take is redone as a whole track, never stitched from pieces.
+- **Velvet Voiceover (decision 31):** Google text-to-speech for the spoken
   lines, one distinct voice per character, the sung version of each spoken
   line playing softly underneath with the music bed dipped, **no echo effect
   and no reverb**. The option was renamed from its earlier echo-flavoured name; that earlier string is
   forbidden everywhere. Velvet Voiceover is the only exception to the
   all-Suno rule.
-- **Per-character voice packs:** no two characters share a voice, in any look
-  or music style.
+- **Per-character voice packs:** the distinct-voice registry still stands --
+  no two characters share a voice. Its spoken-only separate-take packs are
+  SUPERSEDED by the one-track rule: spoken words inside the song's lyrics.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
-  that character's own isolated line; InfiniTalk (`infinitalk/from-audio`)
-  as backup; **Volcengine is dropped**. Tight close-ups only. The lip-sync
-  input contains only the on-screen speaker's line: never a narrator, never
-  another character, never a mixed vocal stem. Narrator, phone, voicemail
-  and laptop voices may play as voice-over but are never lip-synced onto a
-  person. Lip-sync applies to the pain peak, the product line, the call to
-  action and the chorus hook - three to four lines, about 15 to 20 seconds,
-  listed on the approval card; every other shot stays as the video model
-  made it. For an All Suno shot the isolated line is produced by Skill 74's
-  `ai-music-api/separate-vocals`, which splits the mixed vocal stem before
-  the avatar ever sees it. The Kling-avatar-first order itself is a **rule
+  that character's own line cut from the one track's vocal stem; InfiniTalk
+  (`infinitalk/from-audio`) as backup; **Volcengine is dropped**. Tight
+  close-ups only. The lip-sync input contains only the on-screen speaker's
+  line: never a narrator, never another character. Narrator, phone,
+  voicemail and laptop voices may play as voice-over but are never lip-synced
+  onto a person. Lip-sync applies to the pain peak, the product line, the
+  call to action and the chorus hook - three to four lines, about 15 to 20
+  seconds, listed on the approval card; every other shot stays as the video
+  model made it. For an All Suno run the isolated line is cut from the one
+  track's vocal stem by Skill 74's `ai-music-api/separate-vocals`; the stem
+  is only the lip-sync input, never in the final mix. The Kling-avatar-first
+  order itself is a **rule
   followed by the agent; code check not yet shipped**: `scripts/core/lip_sync/`
   carries `narrator_rule/` only, no `kling_first/` (see CHANGELOG.md
   "Not shipped here, on record").
