@@ -193,6 +193,7 @@ uncertain outcome. Always show the client the sentence from
   `max_at_once = len(submitted)` (or the provider cap, named in
   `capped_by`, when that binds). Never submit clips in dribbles or wait for
   one clip before sending the next.
+- **KIE rate limit:** new generation submits are paced to 20 or fewer per rolling 10 s per KIE key; a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
 
 ## Scenes must match the song and the faces (Part I I2)
 
