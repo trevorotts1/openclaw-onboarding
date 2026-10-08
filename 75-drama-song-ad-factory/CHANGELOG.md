@@ -6,6 +6,25 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.4] - 2026-10-08 - Part H H7: captions use the approved words + protected names
+
+Kiesett's Stop Stale ad captioned "the house went still" for "Stale": the lyric
+sheet itself said "still" (136 Suno requests), Suno sang it, the caption copied
+the sheet. Fixed at the source.
+
+### Added
+- `scripts/core/protected_names.py` (+ `test_protected_names_h7.py`): sheet BUILD
+  gate, sung-take words check, sheet-text captions timed from Suno timestamps,
+  caption QC. Codes `PROTECTED_NAME_CHANGED`, `PACKET_LINE_REWRITTEN`,
+  `PROTECTED_NAME_SUNG_WRONG`, `CAPTION_MISMATCH`, `CAPTION_SOURCE_NOT_SHEET`.
+
+### Changed
+- `lyric_writer.validate_lyrics`: brief `packet_lines` + protected names reject a changed name or rewritten packet line.
+- `music_director.build_generate_request(..., protected=)`: no Suno request from a bad sheet.
+- `music_qc.check_song_qc(..., protected=)`: a take that sang a protected name wrong FAILS.
+- `delivery_variants.checks.check_captions(..., protected=, text_source=)`: speech-to-text source or any mismatch FAILS.
+- `QC.md` / `SKILL.md`: H7 gate row and rule.
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).

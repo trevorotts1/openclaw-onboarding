@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.6.0
+version: v2.6.4
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -87,6 +87,23 @@ Every envelope carries `schema_version` = `blackceo.intake-preflight/envelope/v1
    decisions and the exact next stage. Never rerun the whole questionnaire,
    reset the ledger, create a fresh campaign to dodge parked state, or
    spend beyond the recorded ceiling.
+
+## Captions and protected names (Part H, H7)
+
+Captions are the approved lyric sheet's own words, timed by the Suno
+timestamps. Speech-to-text is never a caption text source. Character and
+brand names (for example Stale, Stop Stale) are protected words:
+
+- When the lyric sheet is BUILT, the lyric writer may not change a protected
+  name or rewrite a packet line (`core/protected_names.py::check_sheet`,
+  called by `lyric_writer.validate_lyrics` and by
+  `music_director.build_generate_request(packet_lines=..., protected=...)`,
+  so no Suno request is built from a bad sheet).
+- The words check rejects a take where Suno sang a protected name wrong
+  (`music_qc.check_song_qc(..., protected=...)`).
+- Build captions with `protected_names.build_captions(sheet, aligned_words)`;
+  QC fails any caption mismatch (`delivery_variants.checks.check_captions(...,
+  protected=...)`): "the house went still" for "Stale" is a FAIL.
 
 ## Paid generation (what this skill may do)
 
