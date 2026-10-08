@@ -6,6 +6,10 @@ frontmatter `version:` field).
 
 ---
 
+## v2.8.2 - 2026-10-08 - G3b: sung detector v2
+
+The sung detector no longer reads gap-free speech as sung (unit #1666). Skill bump v2.8.1 to v2.8.2.
+
 ## v2.8.1 - 2026-10-08 - Batch MGB002: LPC001, BND001, W-G-003 (G3), SPK001
 
 One combined release of four units (#1654, #1655, #1656, #1659), one skill bump from v2.8.0 to v2.8.1. Each unit's own entry follows.
