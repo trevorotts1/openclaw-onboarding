@@ -197,6 +197,18 @@ brand names (for example Stale, Stop Stale) are protected words:
 - Build captions with `protected_names.build_captions(sheet, aligned_words)`;
   QC fails any caption mismatch (`delivery_variants.checks.check_captions(...,
   protected=...)`): "the house went still" for "Stale" is a FAIL.
+- **Caption and lyric QC run on measured timing (Part F F18):** word timings
+  come from the ONE transcription step (`audio_c3/lyric_timing.provide_word_timings`,
+  F17 — Suno alignedWords → faster-whisper local → client cloud STT). Pass
+  that receipt as `timing=` and the caption check builds its cue clock from
+  the measured timestamps (text still the sheet's own, `caption_timing.captions`,
+  reported as "cue timing measured from <source>") while the lyric check
+  judges coverage, critical words and ad-libs from the measured words
+  (`caption_timing.lyric_observed`, `lyric_diff.observed_source =
+  "measured-timing:<source>"`). Timing the check cannot use is UNAVAILABLE,
+  never a PASS; without a `timing` argument each check keeps its text
+  comparison, and a run measures first via `caption_timing.captions(sheet)` /
+  `lyric_observed(approved_lines)`.
 
 ## Paid generation (what this skill may do)
 
