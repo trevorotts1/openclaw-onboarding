@@ -272,7 +272,20 @@ def main(argv=None):
                                     "how many lanes may run (manual 02 B1).")
     n.add_argument("--run-dir", required=True,
                    help="Run dir that holds control/state.sqlite3.")
-    a = ap.parse_args(argv)
+    ch = sub.add_parser("character", help="Per-client character library: ask / save / "
+                                          "list / use / card (Part I, I6). Extra args pass through.")
+    args = sys.argv[1:] if argv is None else list(argv)
+    if args[:1] == ["character"]:      # own parser; passes --client-dir etc. through
+        a = argparse.Namespace(cmd="character", rest=args[1:])
+    else:
+        a = ap.parse_args(argv)
+    if a.cmd == "character":
+        import os
+        core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        from character_library import character_library as _cl  # noqa: PLC0415
+        return _cl.main(a.rest)
     if a.cmd == "intake":
         env = cmd_intake(a)
     elif a.cmd == "preflight":
