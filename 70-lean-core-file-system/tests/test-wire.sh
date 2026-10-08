@@ -68,7 +68,7 @@ mkdir -p "$ROOT/bin"
 printf '#!/bin/sh\nexec python3 "%s/fake-openclaw.py" "$@"\n' "$HERE" > "$ROOT/bin/openclaw"; chmod +x "$ROOT/bin/openclaw"
 export OPENCLAW_BIN="$ROOT/bin/openclaw" FAKE_JOBS_FILE="$ROOT/jobs.json" FAKE_MODELS_FILE="$ROOT/models.json"
 echo '[]' > "$FAKE_JOBS_FILE"
-echo '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud"}]}' > "$FAKE_MODELS_FILE"
+echo '{"models":[{"key":"openrouter/deepseek/deepseek-v4.1-flash"}]}' > "$FAKE_MODELS_FILE"
 rm -rf "$ROOT/ws3"; mkdir -p "$ROOT/ws3"; echo '# rules' > "$ROOT/ws3/AGENTS.md"
 OPENCLAW_WORKSPACE="$ROOT/ws3" bash "$SKILL/wire.sh" --idempotent >/dev/null 2>&1; rc=$?
 [ "$rc" = "4" ] && grep -q 'BEGIN skill:70-lean-core-file-system:agents' "$ROOT/ws3/AGENTS.md" \
@@ -76,6 +76,13 @@ OPENCLAW_WORKSPACE="$ROOT/ws3" bash "$SKILL/wire.sh" --idempotent >/dev/null 2>&
 echo '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud"},{"key":"openrouter/deepseek/deepseek-v4.1-flash"}]}' > "$FAKE_MODELS_FILE"
 OPENCLAW_WORKSPACE="$ROOT/ws3" bash "$SKILL/wire.sh" --idempotent >/dev/null 2>&1; rc=$?
 [ "$rc" = "0" ] && [ "$(grep -c lean-core-file-system-weekly "$FAKE_JOBS_FILE")" = "1" ] && ok "provable models: wire.sh creates the job and exits 0" || bad "cron path (exit $rc)"
+
+# UPF002/U3: a client box with its own default model (no DeepSeek pair) wires its cron in a sandbox HOME
+echo '[]' > "$FAKE_JOBS_FILE"
+echo '{"models":[{"key":"agnes/agnes-2.5","tags":["default"]}]}' > "$FAKE_MODELS_FILE"
+mkdir -p "$ROOT/home"
+HOME="$ROOT/home" OPENCLAW_WORKSPACE="$ROOT/ws3" bash "$SKILL/wire.sh" --idempotent >/dev/null 2>&1; rc=$?
+[ "$rc" = "0" ] && [ "$(grep -c lean-core-file-system-weekly "$FAKE_JOBS_FILE")" = "1" ] && ok "non-DeepSeek box: wire.sh wires its weekly cron and exits 0" || bad "non-DeepSeek cron path (exit $rc)"
 
 echo "wire.sh battery: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

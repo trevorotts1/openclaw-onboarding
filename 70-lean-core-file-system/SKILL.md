@@ -1,6 +1,6 @@
 ---
 name: lean-core-file-system
-version: 1.0.0
+version: 1.0.1
 description: Keeps an OpenClaw agent's core files (AGENTS.md, TOOLS.md, MEMORY.md, and also USER.md, IDENTITY.md, SOUL.md) under 40,000 characters each by moving situational blocks into one-playbook-per-system documents in the master files folder and leaving a one-line pointer (WHAT, WHERE, WHEN) behind, while always-on rules stay inline. Ships an audit script (sizes, candidate blocks, broken pointers, orphans, duplicates, index consistency, content-preservation proof) and a quiet weekly OpenClaw cron job. Use when a core file is too long or truncated, before adding a long block to a core file, or when the user mentions core files, core.md files, bootstrap files, bloat, slimming down, playbooks, or pointers.
 ---
 
