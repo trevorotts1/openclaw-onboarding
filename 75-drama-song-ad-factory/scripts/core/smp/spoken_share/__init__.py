@@ -3,14 +3,24 @@
 One implementation lives in ``core/spoken_share/spoken_share.py`` (manual L1);
 this package re-exports it so ``import spoken_share`` under ``core/smp/`` keeps
 resolving to the same rule (45% target, 40-55 band, every length and style,
-rap counts as spoken, first sung line within about 10 seconds). Skill 74 stays
+rap counts as spoken, first real singing at 15% of runtime). Skill 74 stays
 the sole KIE path. Plan measuring and verification only — no network, no
 spend. stdlib only.
 """
 from .spoken_share import (  # noqa: F401
+    ACCEPT_PTS,
+    FLAG_PTS,
+    NO_REAL_SINGING_STRETCH_S,
+    VERDICT_FAIL,
+    VERDICT_FLAG,
+    VERDICT_PASS,
+    check_real_singing,
+    judge_gap,
+    judge_seconds,
+    longest_sung_stretch_s,
     CAP,
     DELIVERIES,
-    FIRST_SUNG_WITHIN_SECONDS,
+    FIRST_SUNG_TARGET_PCT,
     FLOOR,
     SCHEMA_VERSION,
     SOURCE,
@@ -26,6 +36,8 @@ from .spoken_share import (  # noqa: F401
     check_first_sung,
     check_plan,
     check_share,
+    segments_from_sung_stretches,
+    steer_first_sung,
     is_spoken_style,
     measure_share,
     plan_refusal,
@@ -35,9 +47,19 @@ from .spoken_share import (  # noqa: F401
 )
 
 __all__ = [
+    "ACCEPT_PTS",
+    "FLAG_PTS",
+    "NO_REAL_SINGING_STRETCH_S",
+    "VERDICT_FAIL",
+    "VERDICT_FLAG",
+    "VERDICT_PASS",
+    "check_real_singing",
+    "judge_gap",
+    "judge_seconds",
+    "longest_sung_stretch_s",
     "CAP",
     "DELIVERIES",
-    "FIRST_SUNG_WITHIN_SECONDS",
+    "FIRST_SUNG_TARGET_PCT",
     "FLOOR",
     "SCHEMA_VERSION",
     "SOURCE",
@@ -53,6 +75,8 @@ __all__ = [
     "check_first_sung",
     "check_plan",
     "check_share",
+    "segments_from_sung_stretches",
+    "steer_first_sung",
     "is_spoken_style",
     "measure_share",
     "plan_refusal",

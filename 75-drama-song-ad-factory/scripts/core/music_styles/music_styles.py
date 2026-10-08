@@ -7,8 +7,8 @@ Owner decisions (2026-10-07):
         45% of runtime, never more than 55%, never less than 40%, for EVERY
         length and EVERY style; rap is spoken-style delivery. The earlier
         wider ceiling and the per-length targets are retired: there is one
-        band now, not a table. The spoken opener stays short and the first
-        sung line starts within about 10 seconds.
+        band now, not a table. The spoken opener stays short and the first real
+        singing is targeted at 15% of runtime (H6).
 
 Enforcement lives here: check_share() refuses any spoken share outside
 0.40..0.55 for every style and every length. The three numbers are read
@@ -34,11 +34,10 @@ SCHEMA_VERSION = "blackceo.music-styles/v1"
 SPOKEN_SHARE_TARGET = _SS.TARGET
 SPOKEN_SHARE_MIN = _SS.FLOOR
 SPOKEN_SHARE_MAX = _SS.CAP
-#: Music arrives sooner: the spoken opener is short and the first sung line
-#: starts within about this many seconds (owner D12 + D15 retarget). The
-#: planner-side rule itself lives in core/spoken_share and is re-exported
+#: H6: first real singing (measured on the vocal stem) targets this share of
+#: runtime. The rule itself lives in core/spoken_share and is re-exported
 #: here so the planner/QC read one copy of it.
-FIRST_SUNG_WITHIN_SECONDS = _SS.FIRST_SUNG_WITHIN_SECONDS
+FIRST_SUNG_TARGET_PCT = _SS.FIRST_SUNG_TARGET_PCT
 check_first_sung = _SS.check_first_sung
 
 #: Offered lengths (owner D6 + D23) -> accepted spellings.
@@ -242,7 +241,7 @@ def spoken_target(style_id, length):
                         % (SPOKEN_SHARE_TARGET * 100.0)),
         "floor": SPOKEN_SHARE_MIN,
         "cap": SPOKEN_SHARE_MAX,
-        "first_sung_within_seconds": FIRST_SUNG_WITHIN_SECONDS,
+        "first_sung_target_pct": FIRST_SUNG_TARGET_PCT,
         "rap_counts_as_spoken": True,
         "source": "%s; %s" % (SOURCE_D18, SOURCE_D15),
     }

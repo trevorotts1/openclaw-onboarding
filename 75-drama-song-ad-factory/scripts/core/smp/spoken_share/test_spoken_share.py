@@ -76,11 +76,11 @@ def seg(delivery, seconds, start=None):
 
 
 def in_band_ad():
-    """45.0% spoken-style, first sung at 5.0s -- the exact target, in band."""
+    """45.0% spoken-style, first real singing at 15.0s (15%) -- both targets."""
     return [
-        seg("spoken", 5, 0.0),
-        seg("sung", 55, 5.0),
-        seg("spoken", 40, 60.0),
+        seg("spoken", 15, 0.0),
+        seg("sung", 55, 15.0),
+        seg("spoken", 30, 70.0),
     ], 100.0
 
 
@@ -118,7 +118,7 @@ class ConstantsTests(unittest.TestCase):
         self.assertEqual(M.SPOKEN_TARGET_PCT, 45)
         self.assertEqual(M.SPOKEN_MIN_PCT, 40)
         self.assertEqual(M.SPOKEN_MAX_PCT, 55)
-        self.assertEqual(M.FIRST_SUNG_WITHIN_SECONDS, 10)
+        self.assertEqual(M.FIRST_SUNG_TARGET_PCT, 15)
 
     def test_band_is_floor_then_ceiling(self):
         self.assertEqual(M.FLOOR, 0.40)
@@ -209,37 +209,29 @@ class FirstSungTests(unittest.TestCase):
         self.assertEqual(out["verdict"], "FAIL")
         self.assertIsNone(out["first_sung_start_s"])
 
-    def test_first_sung_is_the_earliest_sung_start(self):
-        lines = [seg("sung", 10, 3.0), seg("sung", 5, 40.0),
-                 seg("spoken", 45, 45.0)]
+    def test_first_sung_is_the_earliest_real_sung_stretch(self):
+        # a 2 s blip at 3 s is not real singing; the 10 s stretch at 40 s is.
+        lines = [seg("sung", 2, 3.0), seg("spoken", 35, 5.0),
+                 seg("sung", 10, 40.0), seg("spoken", 50, 50.0)]
         out = M.check_first_sung(lines)
-        self.assertEqual(out["verdict"], "PASS", out["reasons"])
-        self.assertEqual(out["first_sung_start_s"], 3.0)
+        self.assertEqual(out["first_sung_start_s"], 40.0)
 
     def test_start_falls_back_to_the_running_cursor(self):
         out = M.check_first_sung([seg("spoken", 6), seg("sung", 10)])
         self.assertEqual(out["first_sung_start_s"], 6.0)
 
-    def test_starting_exactly_at_ten_seconds_is_in_time(self):
-        out = M.check_first_sung([seg("spoken", 10, 0.0),
-                                  seg("sung", 45, 10.0),
-                                  seg("spoken", 45, 55.0)])
-        self.assertEqual(out["verdict"], "PASS", out["reasons"])
-        self.assertEqual(out["first_sung_start_s"], 10.0)
-
-    def test_late_hook_is_refused(self):
-        # H8: 15 s of a 100 s cut is 5 points past the 10 s goal: accepted;
-        # 20 s is 10 points: flag; 25 s is 15 points: redo.
+    def test_target_is_15_percent_and_judged_by_the_band(self):
+        # 100 s cut: target 15 s; accept 10-20 s, flag to 25 s / 5 s, redo past.
         def hook(first):
             return M.check_first_sung([seg("spoken", first, 0.0),
-                                       seg("sung", 55, first),
-                                       seg("spoken", 45 - first, 55 + first)])
+                                       seg("sung", 100 - first, first)])
         self.assertEqual(hook(15)["verdict"], "PASS")
-        self.assertEqual(hook(20)["verdict"], "FLAG")
-        out = hook(25)
+        self.assertEqual(hook(20)["verdict"], "PASS")
+        self.assertEqual(hook(24)["verdict"], "FLAG")
+        self.assertEqual(hook(7)["verdict"], "FLAG")
+        out = hook(30)
         self.assertEqual(out["verdict"], "FAIL")
-        self.assertTrue(any("10 s" in r or "10.0" in r
-                            for r in out["reasons"]), out["reasons"])
+        self.assertTrue(any("redo" in r for r in out["reasons"]), out["reasons"])
 
     def test_bad_input_is_refused(self):
         with self.assertRaises(M.SpokenShareError):
@@ -400,12 +392,12 @@ class ImportTests(unittest.TestCase):
     def test_import_from_another_working_directory(self):
         code = ("import sys; sys.path.insert(0, %r); import spoken_share as M;"
                 "print(M.SPOKEN_TARGET_PCT, M.SPOKEN_MIN_PCT,"
-                "M.SPOKEN_MAX_PCT, M.FIRST_SUNG_WITHIN_SECONDS)" % HERE)
+                "M.SPOKEN_MAX_PCT, M.FIRST_SUNG_TARGET_PCT)" % HERE)
         proc = subprocess.run([sys.executable, "-c", code],
                               cwd=tempfile.gettempdir(),
                               capture_output=True, text=True, timeout=60)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual(proc.stdout.strip(), "45 40 55 10")
+        self.assertEqual(proc.stdout.strip(), "45 40 55 15")
 
     def test_package_exports_every_name_the_core_package_hands_out(self):
         core_init = os.path.abspath(os.path.join(
