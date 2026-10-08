@@ -2,6 +2,10 @@
 
 - frontdoor_update_999 now finds every checkout (incl. ~/Documents/999-setup), fast-forwards clean ones, leaves dirty/diverged ones untouched and uses a clean ~/999-setup (cloned if absent) as the link source, links per skill (hand-managed real dirs skipped alone), and sources the link functions from the scripts dir. Never runs the full installer or touches 9Router config.
 
+## [v26.4.6]  -  2026-10-08  -  Mint: skill 75 fix-wave W1 + Wave E (E1-E7) + Wave 2 (manual 02 B/M units) land since v26.4.4
+
+Batches merged on main between the v26.4.4 bump and this mint: #1603 (CCP001 cc-roll blockers), #1605 (W1-BM01: W1-A-U4, W1-A-U5, W1-C-U2, W1-C-U4, W1-D-U1), #1607 (W1-BM02: W1-A-U3, W1-B-U1..U4), #1609 (W1-BM03: W1-A-U1, W1-A-U2, W1-C-U1, W1-C-U3), #1611 (W5BM: Wave E E1-E7 + Wave 2 ready units), #1612 (NFX001 updater clean 999-setup + per-skill links), #1613 (UPF002 update reliability U1-U5), #1615 (W6: W2-C-U3, W2-D-U1/U1C, W2-A-U2, W2-B-U2). Skill 75 moved v2.4.4 -> v2.5.0 across these batches; PR #1620 (W8: F1/F14/F15/E7-AMEND) is NOT in this mint - it is open and conflicting, and will mint later.
+
 ## [v26.4.4]  -  2026-10-08  -  fix(cc): bound the CC contract check (stdin /dev/null + 120s alarm) and raise CC pin to v7.6.110 (skill 32 v13.1.44)
 
 ## [v26.4.3]  -  2026-10-07  -  Merge train: #1586 fix(embeddings): skill 76 per-agent multimodal, re-index retries, 5c…
