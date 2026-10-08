@@ -48,6 +48,7 @@ name: legacy-agents-list-gate
 
 on:
   push:
+    branches: [main]
     paths:
       - scripts/qc-assert-legacy-agents-list.sh
       - scripts/oc-atomic-upgrade.sh
@@ -75,6 +76,10 @@ on:
       - tests/unit/legacy-agents-list-gate.test.sh
       - tests/unit/oc-atomic-upgrade.test.sh
       - .github/workflows/legacy-agents-list-gate.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   legacy-agents-list-gate:

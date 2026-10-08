@@ -16,6 +16,7 @@ name: persona-set-asset-consistency-guard
 
 on:
   push:
+    branches: [main]
     paths:
       - 22-book-to-persona-coaching-leadership-system/personas/**
       - 22-book-to-persona-coaching-leadership-system/persona-categories.json
@@ -32,6 +33,10 @@ on:
       - shared-utils/prebuilt-index/assert-install-doc-consistency.py
       - .github/workflows/persona-set-asset-consistency-guard.yml
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   persona-set-triad:
