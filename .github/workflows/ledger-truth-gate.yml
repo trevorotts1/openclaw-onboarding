@@ -56,6 +56,10 @@ on:
       - ".github/workflows/ledger-truth-gate.yml"
       - "scripts/ledger-truth-gate.py"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ledger-truth-gate:
     name: "Reject ledger rows claiming verified/done that git + check-run history cannot prove"

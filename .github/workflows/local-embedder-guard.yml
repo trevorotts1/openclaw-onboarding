@@ -5,6 +5,7 @@ name: local-embedder-guard
 
 on:
   push:
+    branches: [main]
     paths:
       - 76-local-embedder/**
       - install.sh
@@ -22,6 +23,10 @@ on:
       - 38-conversational-ai-system/scripts/19-configure-dreaming-embeddings.sh
       - shared-utils/embedding_health.py
       - .github/workflows/local-embedder-guard.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   local-embedder:

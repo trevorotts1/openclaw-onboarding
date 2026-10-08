@@ -1,0 +1,39 @@
+name: fast-guards
+
+# CIO002: one job that runs every fast (< 60 s) guard in turn, instead of ~93
+# separate workflows that each paid for their own runner boot + checkout.
+# Each guard keeps the exact event / branch / paths filter its old workflow had;
+# scripts/ci/fast_guards.py applies that filter against the git diff, prints
+# "<guard>: PASS|FAIL|SKIP" per guard, and fails the job if any selected guard
+# fails. Guard logic lives unchanged in scripts/ci/fast-guards.d/<guard>.sh;
+# the filters live in scripts/ci/fast-guards.json. A change to this workflow or
+# to either of those re-runs every guard.
+# Deliberately NOT folded: the 8 required checks, the heavy (>= 60 s) workflows,
+# and any workflow whose file is referenced by another guard.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  fast-guards:
+    name: fast-guards (all folded guards)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run the folded guards
+        run: python3 scripts/ci/fast_guards.py

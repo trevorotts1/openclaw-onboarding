@@ -17,6 +17,7 @@ name: prebuilt-index-section-tagged-guard
 
 on:
   push:
+    branches: [main]
     paths:
       - install.sh
       - update-skills.sh
@@ -42,6 +43,10 @@ on:
         description: "Run full artifact verify (downloads 90MB asset)"
         required: false
         default: "false"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   static-manifest-fixture:
