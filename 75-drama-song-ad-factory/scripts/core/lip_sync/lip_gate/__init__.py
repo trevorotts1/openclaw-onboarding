@@ -12,5 +12,6 @@ from .image_gate import (  # noqa: F401
     require_source_image,
 )
 from .picture_gate import (  # noqa: F401
-    PictureRefused, fix_picture, gate_picture, receipt_refusal,
+    LipsyncPictureNotGated, REGEN_PROMPT, check_numbers, gate_picture,
+    make_regenerate, require_receipt, require_upload_bound, upload_measured,
 )

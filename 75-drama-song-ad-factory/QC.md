@@ -171,14 +171,20 @@ to self-approve a run.
 - Lip-sync source pictures: every one passes `lip_gate.image_gate` before any
   paid lip-sync job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a
   measurement that could not be made is a refusal, never a pass.
-- Picture gate enforced in the dispatcher (LPG001): `kie_dispatch.dispatch` refuses any
-  lip-sync job (`kling/ai-avatar-*`, `infinitalk`) with no PASS receipt for the exact image
-  (sha256). The receipt (`picture_gate.fix_picture`) records the measured numbers (face
-  height %, roll, yaw, smile, jawOpen, lip gap, sharpness, face count) and the verdict for
-  every close-up. Missing receipt, FAIL, stale hash or mediapipe missing = `LIPSYNC_PICTURE_*`
-  refusal. QC reads the receipts; a close-up without one is a QC failure. The URL sent to Kling
-  must be the upload of that exact file (`LIPSYNC_PICTURE_UPLOAD_MISMATCH` otherwise); paid
-  regenerations (max 2) must appear in the spend ledger as `lipsync-picture-regen-N`.
+- LPG001/LPG002/LPG003: the measured close-up gate is enforced IN the dispatcher
+  (`kie_dispatch.lipsync_picture_refusal`): any kling/ai-avatar or infinitalk job without a
+  PASS or ACCEPT_WITH_FLAG `picture_gate` receipt (sha256 of the exact image, numbers and
+  flags recorded), or whose `input.image_url` is not the bound upload of those exact bytes
+  (`picture_gate.upload_measured`), is rejected `LIPSYNC_PICTURE_NOT_GATED` before the
+  ledger. FAIL = clear problems only: face count not 1, face height < 20% of frame,
+  |roll| > 20 deg, |yaw| > 0.25 (side profile), jawOpen > 0.30, sharpness < 60. Smile,
+  teeth, a face under 25%, |roll| > 5, |yaw| > 0.12 and sharpness < 100 are FLAGS
+  (ACCEPT_WITH_FLAG), never a failure and never a paid regeneration. QC fails a run whose
+  close-up receipt is missing or FAIL. mediapipe or the pinned face model missing =
+  refused (install: `python3 scripts/core/lip_sync/lip_gate/install_face_model.py`).
+- LPG003 F14: the locked lip-sync model `kling/ai-avatar-standard` is not a menu video
+  model; `dispatch` lets it past the F14 video lock and holds it to the picture gate
+  instead. Every other off-menu video model is still `MODEL_NOT_ON_MENU`.
 
 ## Clean ending (I5)
 

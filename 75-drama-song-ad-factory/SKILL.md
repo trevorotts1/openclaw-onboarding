@@ -428,28 +428,35 @@ SOP named above.
 - **Per-character voice packs:** the distinct-voice registry still stands --
   no two characters share a voice. Its spoken-only separate-take packs are
   SUPERSEDED by the one-track rule: spoken words inside the song's lyrics.
-- **Picture gate is ENFORCED in the dispatcher (LPG001, 2026-10-08):** `kie_dispatch.dispatch`
-  refuses ANY `kling/ai-avatar-*` / `infinitalk` job unless a receipt
-  (`<image>.picture-gate.json`) exists for that exact image file (sha256) with verdict PASS;
-  no receipt, a FAIL, a changed file, no local image, or mediapipe/model missing = refused,
-  nothing reserved or sent. The receipt is made by `lip_gate/picture_gate.py`
-  (`fix_picture`): a REAL mediapipe FaceLandmarker measurement -- exactly one face; face
-  height >= 35% of the frame (no upper limit); |roll| <= 5 degrees; yaw <= 0.12; smile <= 0.60;
-  jawOpen <= 0.15; lip gap <= 1.0% of face height (teeth); sharpness >= 100. All numbers live in
-  one constants block in `picture_gate.py` (same names in the 999 copy). Free fix first: ONE local
-  crop for a small face and a re-measure; smile/teeth/tilt gets at most 2 paid gpt-image-2
-  image-to-image regenerations from the 3D character ("neutral expression, lips closed, facing
-  camera, head level") then a re-measure, then refuse. The default regeneration
-  (`kie_dispatch.make_picture_regenerator`, passed to `fix_picture` as `dispatch_ctx`) runs through
-  `dispatch()` -> ledger reserve against the author's cap -> Skill 74 -> `load_governor.kie_request`.
-  The picture URL Kling receives is the Skill 74 upload of the exact measured file: the dispatcher
-  copies it once while hashing, refuses on a sha256 different from the receipt (or if the copy
-  changes during the upload), uploads the copy, and never sends a local path.
-  Install: `pip install mediapipe opencv-python-headless numpy`, then
-  `python3 scripts/install_face_model.py` (downloads Google's `face_landmarker.task`, verifies the
-  pinned sha256, places it in `core/lip_sync/lip_gate/`; `LIPSYNC_FACE_MODEL` overrides). A missing
-  model refuses and names that command. The local crop is the one allowed exception to "never
-  cropped" below.
+- **Close-up picture gate, enforced in the dispatcher (LPG001/LPG002/LPG003, 2026-10-08):** the
+  30-Day Reset close-up (face 28% of frame, smile 0.62) and the Perfect Daughter close-up
+  (34%, teeth, roll -7.8) went to paid lip-sync unmeasured. Now
+  `lip_gate/picture_gate.gate_picture()` MEASURES every close-up with mediapipe
+  FaceLandmarker (one rule set: the constants block at the top of `picture_gate.py`, same
+  names in the onboarding repo). LPG003 loosened it (Trevor: "loosen the checks so it's not
+  as strict"), calibrated so every Trevor-approved Kiesett version 2 and LeAnne Dolce
+  picture passes or flags. Three verdicts. FAIL (refused) is for clear problems only: face
+  count not 1, face height under 20%, |roll| over 20 deg, |yaw| over 0.25 (side profile),
+  jawOpen over 0.30 (wide-open mouth), sharpness under 60. ACCEPT_WITH_FLAG (goes to Kling,
+  flags written to the receipt): smile over 0.60, lip gap over 1.0% (teeth), face under 25%,
+  |roll| over 5, |yaw| over 0.12, jawOpen over 0.15, sharpness under 100. Auto-fix only for a
+  FAIL: ONE free local crop for a too-small face, then at most 2 paid regenerations
+  (`make_regenerate()`: gpt-image-2 image-to-image from the 3D character, "neutral
+  expression, lips closed, facing camera, head level", dispatched through `kie_dispatch` so
+  it reserves against the author's cap and the ledger and rides `load_governor.kie_request`)
+  for a FAIL a crop cannot fix, then refuse. Smile and teeth never trigger a regeneration.
+  Every picture tried gets a receipt (`<dir>/.lipgate/<sha256>.json`). `upload_measured()`
+  uploads the exact measured bytes (hashed at upload time, refused on mismatch) and returns
+  the URL for `input.image_url`. `kie_dispatch.dispatch` REFUSES any `ai-avatar` or
+  `infinitalk` job with `LIPSYNC_PICTURE_NOT_GATED` unless `request["lipsync_image_path"]`
+  has a PASS or ACCEPT_WITH_FLAG receipt for its exact bytes and `input.image_url` is that
+  bound upload. The locked lip-sync model `kling/ai-avatar-standard` passes the F14 video
+  lock (it is not a menu video model) and goes to this gate. No receipt, FAIL, changed
+  file, or mediapipe / face model missing = refused, never a silent pass. Install the model:
+  `python3 scripts/core/lip_sync/lip_gate/install_face_model.py` (sha256-pinned, from
+  Google's official bucket, to `assets/face_landmarker.task`); mediapipe is declared in
+  `PREREQS.json` (`python-mediapipe`, `face-landmarker-model`).
+  The local crop is the one allowed exception to "never cropped" below.
 - **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
   includes one lip-sync close-up per speaking/singing character. It is MADE from the
   template `lip_gate.closeup_prompt()` and CHECKED by the lip-sync image gate

@@ -119,7 +119,7 @@
       "label": "Python 3 (control layer)",
       "check": { "binary": "python3" },
       "severity": "required",
-      "satisfy": "python3 must be on PATH: the shared control layer (factory.py intake/preflight, state, ledger, QC gates) is Python 3 standard library only, no pip packages (the one exception is the optional lip-sync picture gate: see mediapipe-picture-gate). Verify: python3 --version. If missing, install Python 3 (Mac: brew install python3; VPS: apt-get install -y python3) and re-run."
+      "satisfy": "python3 must be on PATH: the shared control layer (factory.py intake/preflight, state, ledger, QC gates) is Python 3 standard library only, no pip packages (the one exception is the optional lip-sync picture gate: see python-mediapipe). Verify: python3 --version. If missing, install Python 3 (Mac: brew install python3; VPS: apt-get install -y python3) and re-run."
     },
     {
       "id": "ffmpeg-binary",
@@ -138,24 +138,20 @@
       "satisfy": "pip install faster-whisper, then fetch the small.en model at int8 (WhisperModel(\"small.en\", compute_type=\"int8\")); installed ONLY when the tier-2 local fallback is enabled (tier 1 Suno timestamped lyrics stays the default). One model at a time in lyric_timing.py's WhisperSession; NEVER openai-whisper (the dispatcher and qc-no-local-asr.sh both refuse it)."
     },
     {
-      "id": "mediapipe-picture-gate",
-      "type": "manual",
+      "id": "python-mediapipe",
+      "type": "python-package",
       "label": "mediapipe + OpenCV (lip-sync picture gate)",
-      "check": {
-        "note": "LPG001: the measured lip-sync picture gate imports mediapipe, opencv and numpy. Without them every lip-sync job is refused (PICTURE_MEDIAPIPE_MISSING). Everything else in the skill stays standard-library only."
-      },
+      "check": {"pythonImports": ["mediapipe", "cv2", "numpy"]},
       "severity": "optional",
       "satisfy": "python3 -m pip install 'mediapipe>=0.10.14' opencv-python-headless numpy ; verify: python3 -c 'import mediapipe, cv2, numpy'."
     },
     {
       "id": "face-landmarker-model",
-      "type": "manual",
+      "type": "file",
       "label": "mediapipe face_landmarker.task (lip-sync picture gate model)",
-      "check": {
-        "note": "LPG001: the gate looks for LIPSYNC_FACE_MODEL, else scripts/core/lip_sync/lip_gate/face_landmarker.task. A missing or wrong-hash model refuses every lip-sync job (PICTURE_MODEL_MISSING / PICTURE_MODEL_CORRUPT). Not committed (3.7 MB); installed from Google's official URL with a pinned sha256."
-      },
+      "check": {"file": "assets/face_landmarker.task", "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"},
       "severity": "optional",
-      "satisfy": "python3 $SKILLS_DIR/75-drama-song-ad-factory/scripts/install_face_model.py (downloads storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task, verifies sha256 64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff, places it where the gate looks). Re-run after every skill update."
+      "satisfy": "The picture gate looks for assets/face_landmarker.task (or the path in LIPSYNC_FACE_MODEL) and refuses every lip-sync job without the pinned file. From the skill folder run: python3 scripts/core/lip_sync/lip_gate/install_face_model.py (downloads Google's official float16 model from storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task, verifies the pinned sha256, places it). Re-running with a good file is a no-op. Re-run after every skill update."
     }
   ]
 }

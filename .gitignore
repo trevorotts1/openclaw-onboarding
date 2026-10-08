@@ -99,5 +99,5 @@ client-roster.txt
 .fleet-refresh-summary.json.*
 .fleet-retirement-triggered
 
-# LPG001: downloaded mediapipe face model (installed by scripts/install_face_model.py, never committed)
-75-drama-song-ad-factory/scripts/core/lip_sync/lip_gate/face_landmarker.task
+# LPG001: downloaded mediapipe face model (installed by lip_gate/install_face_model.py, never committed)
+75-drama-song-ad-factory/assets/face_landmarker.task

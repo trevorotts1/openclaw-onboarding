@@ -47,8 +47,6 @@ Output: a single JSON object (the envelope) on stdout.
 from __future__ import annotations
 
 import argparse
-import copy
-import hashlib
 import json
 import os
 import sqlite3
@@ -121,140 +119,35 @@ def card_gate_refusal(request):
                                "answers before any paid job."}
     return None
 
-#: LPG001 picture gate: lip-sync jobs need a PASS receipt for the exact image.
-_LIPSYNC_CUES = ("ai-avatar", "infinitalk", "lip-sync", "lipsync")
-_IMG_KEYS = ("source_image_path", "image_url", "source_image")
-
-
-def _is_lipsync(model):
-    return any(c in (model or "").lower() for c in _LIPSYNC_CUES)
-
-
-def _lipsync_image(request):
-    """-> (container, key, local_path) of the lip-sync source picture, or (None, None, None)."""
-    req = request if isinstance(request, dict) else {}
-    inp = req.get("input") if isinstance(req.get("input"), dict) else {}
-    for box in (req, inp):
-        for k in _IMG_KEYS:
-            if isinstance(box.get(k), str) and os.path.isfile(box[k]):
-                return box, k, box[k]
-    return None, None, None
-
-
-def _picture_gate():
-    core = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    if core not in sys.path:
-        sys.path.insert(0, core)
-    from lip_sync.lip_gate import picture_gate as _PG
-    return _PG
-
-
-def picture_gate_refusal(model, request):
-    """-> None for non-lip-sync jobs or when the source picture has a PASS
-    receipt (sha256 of that exact file); else (code, text). Fail-closed."""
-    if not _is_lipsync(model):
-        return None
-    _, _, path = _lipsync_image(request)
-    try:
-        _PG = _picture_gate()
-    except Exception as e:  # noqa: BLE001 - never a silent pass
-        return ("LIPSYNC_PICTURE_GATE_UNAVAILABLE", "picture gate not importable: %r" % e)
-    return _PG.receipt_refusal(path)
-
-
-class UploadBindingError(Exception):
-    def __init__(self, code, text):
-        self.code = code
-        super().__init__(text)
-
-
-def _upload_exact(run, adapter, path, tmp, want_sha=None):
-    """Upload the exact bytes that were measured. Copy the file ONCE while hashing,
-    refuse if the hash is not want_sha, upload that copy through Skill 74, then
-    re-hash the copy: refuse if it changed during the upload. -> (url, sha256)."""
-    h, dst = hashlib.sha256(), os.path.join(tmp, "up-" + os.path.basename(path))
-    with open(path, "rb") as src, open(dst, "wb") as out:
-        for b in iter(lambda: src.read(1 << 20), b""):
-            h.update(b)
-            out.write(b)
-    sha = h.hexdigest()
-    if want_sha and sha != want_sha:
-        raise UploadBindingError("LIPSYNC_PICTURE_UPLOAD_MISMATCH",
-                                 "file sha256 %s at upload time is not the measured %s" % (sha[:12], want_sha[:12]))
-    _, u, raw = _call(run, adapter, ["upload", "--file", dst, "--json"])
-    url = ((u or {}).get("data") or {}).get("download_url") if isinstance(u, dict) else None
-    if not url or (u or {}).get("state") == "fail":
-        raise UploadBindingError("LIPSYNC_PICTURE_UPLOAD_FAILED",
-                                 "Skill 74 upload gave no url: %s" % (raw or "")[-200:])
-    h2 = hashlib.sha256()
-    with open(dst, "rb") as f:
-        for b in iter(lambda: f.read(1 << 20), b""):
-            h2.update(b)
-    if h2.hexdigest() != sha:
-        raise UploadBindingError("LIPSYNC_PICTURE_UPLOAD_MISMATCH",
-                                 "the file changed while it was being uploaded")
-    return url, sha
-
-
-def _bind_uploads(run, adapter, model, request, tmp):
-    """Return (request_to_send, evidence). Lip-sync: the picture URL sent to Kling is the
-    upload of the exact file the receipt measured (sha256 checked at upload time).
-    Any model: local-file entries in input.input_urls are uploaded the same way."""
-    req = copy.deepcopy(request)
-    ev = {}
-    if _is_lipsync(model):
-        box, key, path = _lipsync_image(req)
-        rec = _picture_gate().read_receipt(path) or {}
-        url, sha = _upload_exact(run, adapter, path, tmp, rec.get("sha256"))
-        for b in (req, req.get("input") if isinstance(req.get("input"), dict) else {}):
-            for k in _IMG_KEYS:
-                if k != "image_url" and isinstance(b.get(k), str) and os.path.isfile(b[k]):
-                    del b[k]
-        req.setdefault("input", {})["image_url"] = url
-        ev = {"lipsync_image_sha256": sha, "lipsync_image_url": url}
-    urls = (req.get("input") or {}).get("input_urls") if isinstance(req.get("input"), dict) else None
-    if isinstance(urls, list):
-        req["input"]["input_urls"] = [
-            _upload_exact(run, adapter, u, tmp)[0] if isinstance(u, str) and os.path.isfile(u) else u
-            for u in urls]
-    return req, ev
-
-
-def make_picture_regenerator(*, character_image, save_dir, ledger_db, run_id, owner="kie-dispatch",
-                             estimated_cost=16, request_extra=None, dispatch_fn=None, **dispatch_kw):
-    """Default paid regeneration for picture_gate.fix_picture: gpt-image-2
-    image-to-image from the 3D character (character_image, a local file) with the
-    gate's REGEN_PROMPT. It goes through dispatch() -> ledger plan/reserve (the
-    author's cap) -> Skill 74 -> load_governor.kie_request, never a private client.
-    Returns regenerate(failed_path, prompt) -> new local image path; raises
-    PictureRefused when dispatch does not return a saved image."""
-    _PG = _picture_gate()
-    go = dispatch_fn or dispatch
-    n = [0]
-
-    def regenerate(failed_path, prompt):
-        n[0] += 1
-        src = character_image or failed_path
-        env = go(model=_PG.REGEN_MODEL,
-                 request=dict(request_extra or {}, model=_PG.REGEN_MODEL,
-                              input={"prompt": prompt, "input_urls": [src],
-                                     "aspect_ratio": "9:16", "resolution": "2K"}),
-                 save_dir=save_dir, ledger_db=ledger_db, run_id=run_id,
-                 logical_key="lipsync-picture-regen-%d" % n[0], attempt_id="a1",
-                 estimated_cost=estimated_cost, prompt=prompt, stage="lipsync-picture",
-                 owner=owner, **dispatch_kw)
-        saved = (env.get("evidence") or {}).get("saved_paths") or []
-        if env.get("outcome") != "ok" or not saved:
-            raise _PG.PictureRefused([("PICTURE_REGEN_FAILED", "%s: %s" % (
-                env.get("reason_code"), env.get("next_action")))], failed_path)
-        return saved[0]
-    return regenerate
-
-
 try:  # F4: no automatic Suno sound effects (audio_c3/sfx_off)
     import audio_c3.sfx_off as _sfx_off  # noqa: E402
 except ImportError:  # pragma: no cover - flat script path
     from audio_c3 import sfx_off as _sfx_off  # type: ignore # noqa: E402
+
+
+def lipsync_picture_refusal(model, request):
+    """LPG001/LPG002 hard block: a lip-sync job (kling ai-avatar, infinitalk)
+    needs a PASS or ACCEPT_WITH_FLAG picture-gate receipt for the exact bytes
+    (sha256) of request["lipsync_image_path"], AND request["input"]["image_url"] must be the
+    upload of those exact bytes (picture_gate.upload_measured).
+    -> None (not lip-sync, or all bound) else the refusal text. Fail-closed:
+    a missing path, receipt, binding, or an unimportable gate is a refusal."""
+    if not any(c in str(model or "").lower() for c in ("ai-avatar", "infinitalk")):
+        return None
+    req = request if isinstance(request, dict) else {}
+    try:
+        lg = str(Path(__file__).resolve().parents[1] / "lip_sync" / "lip_gate")
+        if lg not in sys.path:
+            sys.path.insert(0, lg)
+        import picture_gate as _PG
+        _PG.require_receipt(req.get("lipsync_image_path"),
+                            req.get("lipsync_receipt_dir"))
+        inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+        _PG.require_upload_bound(req["lipsync_image_path"], inp.get("image_url"),
+                                 req.get("lipsync_receipt_dir"))
+    except Exception as exc:                                # noqa: BLE001
+        return str(exc) or type(exc).__name__
+    return None
 
 TOOL_NAME = "kie_dispatch"
 TOOL_VERSION = "1.0.0"
@@ -724,19 +617,14 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
     (VIDEO_MODEL_LOCK_MISSING); a different model -> VIDEO_MODEL_MISMATCH.
     Every model, video or not, must be on price-menu.md (MODEL_NOT_ON_MENU).
     """
-    pic = picture_gate_refusal(model, request)
-    if pic is not None:                     # LPG001: no paid lip-sync on an unmeasured picture
-        return envelope("dispatch", "rejected", pic[0],
-                        pic[1] + " Measure it (free) and fix it first: "
-                        "lip_sync.lip_gate.picture_gate.fix_picture.",
-                        run_id=run_id, logical_key=logical_key,
-                        attempt_id=attempt_id, evidence={"generated": False})
-
     # ---- 0. F14 model lock (before any ledger row) ------------------------
     # Scope: VIDEO jobs only. A video model must be on price-menu.md
     # (seedance-1.5-pro included) and must equal the card-locked choice.
-    is_video = (bool(video_job) or _is_menu_video(model)
-                or _modality(model) == "video")
+    # The locked lip-sync model (kling/ai-avatar-standard) is not a menu video
+    # model: it skips the video lock and is held to the picture gate below.
+    is_video = (not ML.is_locked_lipsync(model)
+                and (bool(video_job) or _is_menu_video(model)
+                     or _modality(model) == "video"))
     locked = None
     if is_video:
         try:
@@ -766,6 +654,12 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                 run_id=run_id, logical_key=logical_key,
                 attempt_id=attempt_id,
                 evidence={"locked_model": locked, "requested_model": model})
+    pic = lipsync_picture_refusal(model, request)
+    if pic is not None:                     # LPG001: no paid lip-sync on an ungated picture
+        return envelope("dispatch", "rejected", "LIPSYNC_PICTURE_NOT_GATED",
+                        pic + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
     if not model:
         return envelope("dispatch", "rejected", "MODEL_REQUIRED",
                         "name the model id; this module never picks one",
@@ -949,10 +843,6 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
         # timer used to fire before Skill 74's own wait, so a long video left
         # an unknown row with no task id and the resolver zero-settled spend.
         req_file = os.path.join(tmp, "request.json")
-        try:                                # LPG001: send the upload of the exact measured file
-            request, bound = _bind_uploads(run, adapter, model, request, tmp)
-        except UploadBindingError as e:
-            return stop("rejected", e.code, str(e) + " Nothing was sent.", {"generated": False})
         with open(req_file, "w", encoding="utf-8") as f:
             json.dump(request, f, sort_keys=True)
         os.makedirs(save_dir, exist_ok=True)
@@ -1148,7 +1038,7 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                       "saved_paths": saved,
                       "credits_consumed": credits,
                       "actual_cost": actual, "warnings": warn,
-                      "wait_timeout_s": wait_s, "retries": 0, **bound},
+                      "wait_timeout_s": wait_s, "retries": 0},
             state_version=rec.get("state_version", 0))
     except Exception as e:                                  # noqa: BLE001
         return stop("error", "dispatch-internal-error",
