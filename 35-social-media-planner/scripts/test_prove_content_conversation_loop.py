@@ -89,6 +89,15 @@ def test_evidence_bundle_read_backs_present_and_typed(tmp_path):
     assert "matched_template" in legs["leg5_gap_c_matcher"]["matcher_receipt"]
 
 
+def _drop_ts(o):
+    """Strip wall-clock 'ts' stamps (1s resolution) at any depth; two runs can straddle a second."""
+    if isinstance(o, dict):
+        return {k: _drop_ts(v) for k, v in o.items() if k != "ts"}
+    if isinstance(o, list):
+        return [_drop_ts(v) for v in o]
+    return o
+
+
 def test_offline_fixture_run_is_deterministic():
     """Same fixtures in, same result out (minus the timestamp/tempdir path)."""
     _, bundle_a = proof.run()
@@ -100,7 +109,7 @@ def test_offline_fixture_run_is_deterministic():
         for entry in b["legs"]["leg4_comment_handoff"]["handed_off"]:
             entry.pop("log_path", None)
         b["step_f_preflight"] = None  # subprocess timing-dependent, not content
-    assert bundle_a == bundle_b
+    assert _drop_ts(bundle_a) == _drop_ts(bundle_b)
 
 
 def test_evidence_bundle_default_tempdir_is_cleaned_up_after_run():
