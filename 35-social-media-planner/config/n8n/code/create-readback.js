@@ -8,6 +8,6 @@ if (existingFile) {
   if (!existingFile.id || p.skill35_company_id!==src.company_id || p.skill35_provisioning_key!==src.provisioningKey)
     throw new Error('Existing planner ownership is unverified; migrate from verified registry before retry');
   if (!['initializing','formatted','ready'].includes(p.skill35_provisioning_state)) throw new Error('Existing planner state requires verified migration');
-  if (p.skill35_template_schema!=='1.2.0') throw new Error('Existing planner schema requires a preserving migration');
+  if (p.skill35_template_schema!=='1.3.0') throw new Error('Existing planner schema requires a preserving migration');
 }
 return [{json:{...src,existing:!!existingFile,existingFile}}];
