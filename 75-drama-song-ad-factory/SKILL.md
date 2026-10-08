@@ -96,7 +96,12 @@ Every envelope carries `schema_version` = `blackceo.intake-preflight/envelope/v1
 - Image and video: Skill 66 (`66-kie-image`) / Skill 67 (`67-kie-video`).
 - Live transport/polling/credit checks: Skill 74 (`74-kie-live-adapter`),
   shadow-first — submit never chooses or changes a model.
-- Spoken voiceover: Fish Audio via Skill 30 (`30-fish-audio-api-reference`).
+- Spoken voiceover: Velvet Voiceover voices go through Skill 74
+  (`74-kie-live-adapter`) with a `google/gemini-*-tts` model — request JSON
+  built by `core/voice_velvet_echo/velvet_voiceover.py`, dispatched through
+  `core/kie_dispatch` like every other paid call (same reserve/submit/wait/
+  reconcile protocol, no private KIE client). Fish Audio (Skill 30) is not
+  used by drama song ads.
 - Account setup: Skill 07 (`07-kie-setup`); callback relay: Skill 46
   (`46-kie-callback-relay`).
 - Ordinary FFmpeg editing needs ride Skills 25 / 27.

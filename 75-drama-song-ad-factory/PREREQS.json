@@ -95,7 +95,7 @@
       "label": "Skill 30 - Fish Audio API reference",
       "check": { "skill": "30-fish-audio-api-reference" },
       "severity": "optional",
-      "satisfy": "Install Skill 30 (30-fish-audio-api-reference) before any spoken-voiceover stage: TTS to Fish Audio rides Skill 30; sung music never needs it (build-directive section 10.3 - no new ElevenLabs dependency). From an onboarding checkout run: bash update-skills.sh; verify the 30-fish-audio-api-reference folder exists in SKILLS_DIR."
+      "satisfy": "NOT USED by drama song ads: Fish Audio (Skill 30) was the spoken-voiceover route in an earlier draft; spoken voiceover is now built as Skill 74 request JSON (a google/gemini-*-tts model) and dispatched through core/kie_dispatch (manual M2). Do not install Skill 30 for this skill and do not spend on Fish Audio; sung music never needed it."
     },
     {
       "id": "kie-api-key",
@@ -108,10 +108,10 @@
     {
       "id": "fish-audio-api-key",
       "type": "credential",
-      "label": "Fish Audio API key (spoken voiceover only)",
+      "label": "Fish Audio API key (not used by drama song ads)",
       "check": { "envVar": "FISH_AUDIO_API_KEY" },
       "severity": "optional",
-      "satisfy": "FISH_AUDIO_API_KEY (and FISH_AUDIO_VOICE_ID) are needed only for spoken voiceover stages via Skill 30; a song with sung vocals never needs them. Confirm presence without printing values: ~/.openclaw/secrets/.env (Mac) or /data/.openclaw/secrets/.env (VPS), chmod 600. If absent and voiceover is in scope, ask the operator to add them there, then run: openclaw config set env.vars.FISH_AUDIO_API_KEY \"$FISH_AUDIO_API_KEY\". Do NOT mint a new key."
+      "satisfy": "NOT USED by drama song ads: FISH_AUDIO_API_KEY (and FISH_AUDIO_VOICE_ID) were the spoken-voiceover credential in an earlier draft; spoken voiceover now rides Skill 74 with a google/gemini-*-tts model on KIE_API_KEY (manual M2), so no Fish Audio credential is ever needed. Do not mint, add or check a Fish Audio key for this skill."
     },
     {
       "id": "python3-binary",
