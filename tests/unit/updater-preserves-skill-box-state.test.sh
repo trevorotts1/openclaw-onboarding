@@ -87,7 +87,7 @@ TRAP_LINE="$(awk '/^main\(\) *\{/{on=1} on && /^  trap .* EXIT$/{print; exit}' "
 # --- fixture: a box with skill 59 installed and its model map pinned ----------
 # Two client models. Unpinned, JUDGE falls onto the HEAVY-WRITER model; the
 # JUDGE pin is what keeps them independent (the live box's shape).
-HW=ollama/deepseek-v4-pro:cloud
+HW=ollama/deepseek-v4.1-flash:cloud
 JG=ollama/mystery-x:cloud
 mkdir -p "$WORK/home"
 cat > "$WORK/openclaw.json" <<EOF

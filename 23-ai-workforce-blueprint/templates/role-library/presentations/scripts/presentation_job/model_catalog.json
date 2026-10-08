@@ -1,7 +1,7 @@
 {
   "catalog_version": "1.3.2",
   "updated": "2026-10-06",
-  "source": "FIX 13 central model catalog — the ONLY place a literal model ID for the presentations dept is allowed to live. Dept code paths resolve aliases here (presentation_job/model_catalog.py); operator bumps go to the override catalog dir, never to pipeline code. Unit costs: deepseek-flash $0.15/$0.60 per M + $0.003 cache-read (live openclaw.json models.providers.deepseek, 2026-09-11; supersedes R12 deepseek-v4-flash $0.22/$0.66 peak), deepseek-v4-pro $0.66/$1.98, z-ai/glm-5.3-flash $0.075/$0.25 promo (reverts $0.15/$0.50 on 2026-09-09), z-ai/glm-5.3 $1.17/$3.96, GPT Image 2.5 Sunburst 2K ~= $0.05/image, ollama-cloud 0 (monthly pool).",
+  "source": "FIX 13 central model catalog — the ONLY place a literal model ID for the presentations dept is allowed to live. Dept code paths resolve aliases here (presentation_job/model_catalog.py); operator bumps go to the override catalog dir, never to pipeline code. Unit costs: deepseek-flash $0.15/$0.60 per M + $0.003 cache-read (live openclaw.json models.providers.deepseek, 2026-09-11; supersedes R12 deepseek-v4-flash $0.22/$0.66 peak), deepseek-v4.1-flash $0.66/$1.98, z-ai/glm-5.3-flash $0.075/$0.25 promo (reverts $0.15/$0.50 on 2026-09-09), z-ai/glm-5.3 $1.17/$3.96, GPT Image 2.5 Sunburst 2K ~= $0.05/image, ollama-cloud 0 (monthly pool).",
   "compat": {
     "legacy_aliases": {
       "deepseek-v4-flash": "deepseek-flash"
@@ -59,17 +59,17 @@
     },
     "text.strong": {
       "provider": "deepseek",
-      "model": "deepseek-v4-pro",
+      "model": "deepseek-v4.1-flash",
       "note": "Reasoning-heavy authoring (FIX 7 routing table). Alias only; call sites never carry the literal.",
       "unit_costs": {
         "per_million_tokens_in_usd": 0.66,
         "per_million_tokens_out_usd": 1.98,
         "status": "priced",
-        "basis": "R12: deepseek-v4-pro $0.66 in / $1.98 out per M (peak pricing; half off-peak)"
+        "basis": "R12: deepseek-v4.1-flash $0.66 in / $1.98 out per M (peak pricing; half off-peak)"
       },
       "served_ids": {
-        "deepseek-direct": "deepseek-v4-pro",
-        "deepseek": "deepseek-v4-pro"
+        "deepseek-direct": "deepseek-v4.1-flash",
+        "deepseek": "deepseek-v4.1-flash"
       }
     },
     "text.fast": {

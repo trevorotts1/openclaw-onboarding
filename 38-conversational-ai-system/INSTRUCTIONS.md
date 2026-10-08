@@ -46,7 +46,7 @@ Skill 38 does NOT manage cloudflared installation; that's Phase 1 of the playboo
 Source: `references/v6.0-source-playbook.md` Steps 3, 3.5, 4.
 
 - Step 3 — Configure OpenClaw's `hooks.mappings` for GHL inbound.
-- Step 3.5 — Model selection wizard (REAL-TIME vs ASYNC tier). Recommend HIGHEST-REASONING available (DeepSeek V4 Pro thinking:max, Kimi 2.6+, etc. — see source playbook for the current recommendation list).
+- Step 3.5 — Model selection wizard (REAL-TIME vs ASYNC tier). Recommend HIGHEST-REASONING available (DeepSeek V4.1 Flash thinking:max, Kimi 2.6+, etc. — see source playbook for the current recommendation list).
 - Step 3.5 addendum (U-8, model fallback chain): the wizard also records a PRIMARY plus up to two FALLBACK models (different providers where possible) in `skill38.model_chain.primary` + `skill38.model_chain.fallbacks` (config-safe writes). Per-reply failover is an HONEST RUNTIME DEPENDENCY, so `scripts/32-verify-model-failover-support.sh` preflights the installed gateway and records `failover_mode` (full vs degraded) in the run manifest. Full design (Mode A per-reply failover; Mode B monitor-and-switch with the launchctl-kickstart / docker-compose-restart commands; operator-approved recovery) plus the U-10 per-workflow `model-tier` enum: `references/model-fallback-chain.md`.
 - Step 4 — End-to-end test through the public tunnel.
 - Checkpoint C — OpenClaw responds to inbound webhooks.

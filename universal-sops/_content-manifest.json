@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-08T09:37:10Z",
+  "generated_at": "2026-10-08T15:28:03Z",
   "file_count": 115,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -33,8 +33,8 @@
       "bytes": 7408
     },
     "anthology-craft/SOP-ANTHOLOGY-01-ENGINE-RUNBOOK.md": {
-      "sha256": "f33d9bfd61bfe51407debeb7c7bf6b2252d5b9689d416d4c85d748b9e71a50c9",
-      "bytes": 13946
+      "sha256": "674d761859a0912be3ea6bf8571dd0b94dc0b4da9e8eb7af6a1bfb3e74313aa1",
+      "bytes": 13950
     },
     "anthology-craft/SOP-ANTHOLOGY-02-CLIENT-ONBOARDING.md": {
       "sha256": "3f0217aea3e6e71bdb2494bea1a7dac4ba340d3b01defa1f9324edd97c530c8d",
@@ -153,16 +153,16 @@
       "bytes": 4931
     },
     "form-craft/FORM-PIPELINE-MANIFEST.json": {
-      "sha256": "62d1f0c1fdc172cfb3439346c7d88a82ae014ef4b652a2f31fc8765bd8d1ffc2",
-      "bytes": 9013
+      "sha256": "7f79dd88dc1b1ce75cc3d63f743147985a139b9b6ceb31e127605a4bea1f7dcd",
+      "bytes": 9017
     },
     "form-craft/MASTER-FORM-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "6002aebce02d266f95faf9f07684d5e1d7ede5ace95df001452eef02337366d2",
-      "bytes": 5179
+      "sha256": "771aa0c2b242145eef8eaf1d94b8f51876792b5be7746020c1c59347463f9f7e",
+      "bytes": 5183
     },
     "form-craft/README.md": {
-      "sha256": "f8bdc36e40140f23e080d544a289f5459d88aaa606cbee9cc42e94ad7f3222d6",
-      "bytes": 8945
+      "sha256": "edfb54589a0271cd3932d5b08a11541bfbcb146e5d41750eb994f23afc2d99f7",
+      "bytes": 8953
     },
     "form-craft/SOP-FORM-01-INTAKE.md": {
       "sha256": "a32d22a91322528970b8f81697a89fe3ca7545c680678a63c2f9cc97ae60af0f",

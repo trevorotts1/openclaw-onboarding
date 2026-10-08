@@ -227,7 +227,7 @@
       {
         "rung": 3,
         "provider": "ollama-cloud",
-        "model": "deepseek-v4-pro:cloud",
+        "model": "deepseek-v4.1-flash:cloud",
         "role": "reasoning",
         "thinking": "high"
       },
@@ -241,7 +241,7 @@
       {
         "rung": 5,
         "provider": "openrouter",
-        "model": "deepseek/deepseek-v4-pro",
+        "model": "deepseek/deepseek-v4.1-flash",
         "role": "reasoning",
         "thinking": "high"
       },
@@ -274,14 +274,14 @@
       {
         "rung": 3,
         "provider": "ollama-cloud",
-        "model": "deepseek-v4-pro:cloud",
+        "model": "deepseek-v4.1-flash:cloud",
         "role": "browser-control",
         "thinking": "high"
       },
       {
         "rung": 4,
         "provider": "openrouter",
-        "model": "deepseek/deepseek-v4-pro",
+        "model": "deepseek/deepseek-v4.1-flash",
         "role": "browser-control",
         "thinking": "high"
       },

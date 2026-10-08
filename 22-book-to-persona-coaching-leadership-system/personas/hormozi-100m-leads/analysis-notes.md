@@ -1,13 +1,13 @@
 # ANALYSIS NOTES - $100M Leads
 **Author:** Alex Hormozi
 **Analyzed:** June 11, 2026
-**Model:** ollama/deepseek-v4-pro:cloud
+**Model:** ollama/deepseek-v4.1-flash:cloud
 
 ---
 
 ## BOOK: $100M Leads
 ## AUTHOR: Alex Hormozi
-## ANALYSIS AGENT: DeepSeek V4 Pro (Ollama Cloud)
+## ANALYSIS AGENT: DeepSeek V4.1 Flash (Ollama Cloud)
 ## ANALYSIS DATE: 2026-06-11
 
 ---

@@ -2,7 +2,7 @@
 """test_model_plan.py -- the client's model choice is the client's.
 
 OPERATOR REQUIREMENT (2026-09-04, verbatim):
-    "whatever is forcing this thing to use DeepSeek V4 Pro, I don't want to be
+    "whatever is forcing this thing to use DeepSeek V4.1 Flash, I don't want to be
      forced to do anything. So as a client should be able to choose whatever
      they want to be their primary workhorse or authoring model."
 
@@ -71,7 +71,7 @@ TWO_PROVIDER_PROFILE = {
     ".schema_version": 1,
     "providers": {
         "deepseek-direct": _wired("deepseek-direct",
-                                  ["deepseek-flash", "deepseek-v4-pro"]),
+                                  ["deepseek-flash", "deepseek-v4.1-flash"]),
         "openrouter": _wired("openrouter",
                              ["z-ai/glm-5.3-flash", "z-ai/glm-5.3"]),
     },
@@ -187,14 +187,14 @@ def test_a_standard_workhorse_falls_back_visibly_on_a_long_context_class(
     }))
     decision = model_router.resolve_route("P3-ARC")
     assert decision["capability"] == "reasoning_long"
-    assert decision["route"]["model"] == "deepseek-v4-pro", decision
+    assert decision["route"]["model"] == "deepseek-v4.1-flash", decision
     assert "client_plan" not in decision
     floor = decision["client_plan_floor"]
     assert floor["via"] == "workhorse-spill"
     assert floor["declared"]["model"] == "deepseek-flash"
     assert floor["floor"]["ok"] is False
     assert "long" in floor["floor"]["reason"]
-    assert floor["fallback_alias"] == "deepseek-v4-pro"
+    assert floor["fallback_alias"] == "deepseek-v4.1-flash"
 
 
 def test_an_explicitly_waived_reasoning_slot_is_honoured(monkeypatch, tmp_path):
@@ -222,7 +222,7 @@ def test_a_waiver_does_not_leak_to_an_unwaived_class(monkeypatch, tmp_path):
     assert model_router.resolve_route("P3-ARC")["route"]["model"] == "deepseek-flash"
     other = model_router.resolve_route("P-CONVERTER")
     assert other["capability"] == "long_synthesis"
-    assert other["route"]["model"] == "deepseek-v4-pro", other
+    assert other["route"]["model"] == "deepseek-v4.1-flash", other
     assert other["client_plan_floor"]["floor"]["ok"] is False
 
 
@@ -250,7 +250,7 @@ def test_judge_can_be_pointed_at_ollama_cloud(monkeypatch, tmp_path):
     deepseek-flash / glm-flash / glm-5.3, none of them on ollama-cloud."""
     providers = {
         "deepseek-direct": _wired("deepseek-direct",
-                                  ["deepseek-flash", "deepseek-v4-pro"]),
+                                  ["deepseek-flash", "deepseek-v4.1-flash"]),
         "ollama-cloud": _wired("ollama-cloud", ["glm-5.3-flash"]),
     }
     _profile_env(monkeypatch, tmp_path, _with_plan({
@@ -373,7 +373,7 @@ def test_record_model_plan_names_the_wired_inventory_it_checked(monkeypatch, tmp
             {"workhorse": "nope@deepseek-direct"}, source="cli")
     msg = str(exc.value)
     assert "not in deepseek-direct's wired inventory" in msg
-    assert "deepseek-flash" in msg and "deepseek-v4-pro" in msg
+    assert "deepseek-flash" in msg and "deepseek-v4.1-flash" in msg
 
 
 def test_record_model_plan_names_the_providers_that_do_exist(monkeypatch, tmp_path):
@@ -582,7 +582,7 @@ def test_the_real_driver_records_a_model_plan_from_one_merged_turn(tmp_path):
     (cfg / resource_profile.PROFILE_FILENAME).write_text(
         json.dumps({".schema_version": 1, "providers": {
             "deepseek-direct": _wired("deepseek-direct",
-                                      ["deepseek-flash", "deepseek-v4-pro"]),
+                                      ["deepseek-flash", "deepseek-v4.1-flash"]),
             "ollama-cloud": _wired("ollama-cloud", ["glm-5.3-flash"]),
         }}, indent=2), encoding="utf-8")
     run_dir = tmp_path / "run"
@@ -623,7 +623,7 @@ def test_the_real_driver_preserves_a_workhorse_across_separate_answers(tmp_path)
     (cfg / resource_profile.PROFILE_FILENAME).write_text(
         json.dumps({".schema_version": 1, "providers": {
             "deepseek-direct": _wired("deepseek-direct",
-                                      ["deepseek-flash", "deepseek-v4-pro"]),
+                                      ["deepseek-flash", "deepseek-v4.1-flash"]),
             "ollama-cloud": _wired("ollama-cloud", ["glm-5.3-flash"]),
         }}, indent=2), encoding="utf-8")
     run_dir = tmp_path / "run"
@@ -650,7 +650,7 @@ def test_the_real_driver_refuses_an_unwired_model_at_intake(tmp_path):
     (cfg / resource_profile.PROFILE_FILENAME).write_text(
         json.dumps({".schema_version": 1, "providers": {
             "deepseek-direct": _wired("deepseek-direct",
-                                      ["deepseek-flash", "deepseek-v4-pro"]),
+                                      ["deepseek-flash", "deepseek-v4.1-flash"]),
         }}, indent=2), encoding="utf-8")
     run_dir = tmp_path / "run"
     run_dir.mkdir()

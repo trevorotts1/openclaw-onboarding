@@ -141,7 +141,7 @@ sess = _Session(401)
 saw_abort = False
 for _ in range(500):  # a naive storm would make 500+ requests
     try:
-        _run(orch.call_openrouter(sess, "deepseek/deepseek-v4-pro", "s", "u", max_tokens=16000))
+        _run(orch.call_openrouter(sess, "deepseek/deepseek-v4.1-flash", "s", "u", max_tokens=16000))
     except orch._BuildAbort:
         saw_abort = True
         break
@@ -162,7 +162,7 @@ sess = _Session([401, 402, 403])            # every call fails fast, different c
 saw_abort = False
 for _ in range(500):
     try:
-        _run(orch.call_openrouter(sess, "deepseek/deepseek-v4-pro", "s", "u", max_tokens=16000))
+        _run(orch.call_openrouter(sess, "deepseek/deepseek-v4.1-flash", "s", "u", max_tokens=16000))
     except orch._BuildAbort:
         saw_abort = True
         break
@@ -182,7 +182,7 @@ def _one_call(status):
     s = _Session(status)
     err = None
     try:
-        _run(orch.call_openrouter(s, "deepseek/deepseek-v4-pro", "s", "u", max_tokens=16000))
+        _run(orch.call_openrouter(s, "deepseek/deepseek-v4.1-flash", "s", "u", max_tokens=16000))
     except Exception as e:
         err = e
     return s.calls, err
@@ -202,7 +202,7 @@ if t6_ok:
 
 # ── T7: G2 preflight aborts on a dead provider, passes a healthy one ──────────
 async def _preflight(session):
-    return await orch.preflight_providers(session, ["openrouter/deepseek/deepseek-v4-pro"])
+    return await orch.preflight_providers(session, ["openrouter/deepseek/deepseek-v4.1-flash"])
 orch._STORM = None
 dead = _Session(401)
 pf_aborted = False

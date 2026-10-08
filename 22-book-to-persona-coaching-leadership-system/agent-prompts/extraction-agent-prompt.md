@@ -2,9 +2,9 @@
 ## Model: Resolved at runtime via `shared-utils/select_model.py --purpose-tier heavy`
 
 The selector picks the highest-tier model the client has installed, in this order:
-1. `ollama/deepseek-v4-pro:cloud` (or latest `ollama/deepseek-v*-pro:cloud`) — Ollama Cloud DeepSeek V4-pro, 1M context, subscription
+1. `ollama/deepseek-v4.1-flash:cloud` (or latest `ollama/deepseek-v*-pro:cloud`) — Ollama Cloud DeepSeek V4.1 Flash, 1M context, subscription
 2. `ollama/kimi-k2.6:cloud` (or latest `ollama/kimi-k*:cloud`) — Ollama Cloud Kimi 2.6, 262K context, subscription
-3. `openrouter/deepseek/deepseek-v4-pro` (or latest) — Same DeepSeek V4-pro via OpenRouter, per-token
+3. `openrouter/deepseek/deepseek-v4.1-flash` (or latest) — Same DeepSeek V4.1 Flash via OpenRouter, per-token
 4. `openrouter/moonshot/kimi-k2.6` (or latest) — Same Kimi via OpenRouter, per-token
 5. OAuth GPT (Codex) — Last resort
 

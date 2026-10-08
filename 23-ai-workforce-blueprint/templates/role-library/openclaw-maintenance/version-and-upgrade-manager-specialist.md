@@ -293,7 +293,7 @@ See full procedure in `sops/sop-proactive-fix-guardrail.md`. Summary: back up `o
 
 "UPGRADE ASSESSMENT 2026-06-16 — Cycle W24.
 
-RESEARCH: Read docs.openclaw.ai/changes for 2026.6.5 → 2026.6.9 (4 patch releases). Read GitHub releases for each. Known-issues cross-referenced against this box's config (heartbeat enabled, dreaming disabled, ghl-mcp on :8765, deepseek-v4-pro:cloud as primary model, 3 active crons).
+RESEARCH: Read docs.openclaw.ai/changes for 2026.6.5 → 2026.6.9 (4 patch releases). Read GitHub releases for each. Known-issues cross-referenced against this box's config (heartbeat enabled, dreaming disabled, ghl-mcp on :8765, deepseek-v4.1-flash:cloud as primary model, 3 active crons).
 
 FINDING: 2026.6.7 known-issue #447 (`heartbeat.target=none` ignored in some gateway restart paths, reverts to `last`). This box has `heartbeat.target=none` set — this known issue directly applies.
 

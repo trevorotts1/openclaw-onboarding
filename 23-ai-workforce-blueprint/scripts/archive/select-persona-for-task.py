@@ -235,7 +235,7 @@ def score_candidate(persona_id, task_text, dept_kpis, company_kpis, owner_values
 
     # DEPRECATED v1 SCORING — kept for backward compatibility only.
     # Per Wave 3 (2026-05-19) the production path is persona-selector-v2.py,
-    # which uses real LLM evaluation (DeepSeek V4 Pro via Ollama Cloud, with
+    # which uses real LLM evaluation (DeepSeek V4.1 Flash via Ollama Cloud, with
     # OpenRouter fallback). v1 still returns flat constants for Layers 1-4
     # because the v1 callers tolerate it; new callers should use v2.
     #
@@ -426,7 +426,7 @@ def main():
     print(
         "[select-persona-for-task v1] DEPRECATION NOTICE: this entry point still "
         "uses flat-constant scoring for Layers 1-4. Use persona-selector-v2.py "
-        "for real LLM-based scoring (DeepSeek V4 Pro via Ollama Cloud, OpenRouter "
+        "for real LLM-based scoring (DeepSeek V4.1 Flash via Ollama Cloud, OpenRouter "
         "fallback). v1 is kept for backward compatibility with existing callers.",
         file=sys.stderr,
     )

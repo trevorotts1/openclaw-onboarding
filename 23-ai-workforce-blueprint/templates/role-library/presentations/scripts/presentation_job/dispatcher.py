@@ -361,7 +361,7 @@ def _govern_refusal_text(provider: str, admission: "_GovernAdmission") -> str:
 #
 # THE DEFECT. Provider identity has two live spellings in this tree, MEASURED
 # on this box today:
-#     model_router.resolve_alias("deepseek-v4-pro")["provider"] -> 'deepseek'
+#     model_router.resolve_alias("deepseek-v4.1-flash")["provider"] -> 'deepseek'
 #     capacity.probe()["provider"]                              -> 'deepseek-direct'
 # and providers.yaml keys the SHORT form ('deepseek', 'ollama') while
 # capacity.CAP_TABLE keys the LONG one ('deepseek-direct', 'ollama-cloud').
@@ -537,7 +537,7 @@ def _govern_retry_after(exc: BaseException) -> Optional[float]:
 # never hardcoded from documentation guesswork. Base URL / model id / api
 # shape read from models.providers.deepseek; "thinking MAX" request fields
 # (`thinking.type=enabled` + `reasoning_effort=max`) are the EXACT fields
-# deepseek-v4-pro already carries in this box's own agents.defaults.models
+# deepseek-v4.1-flash already carries in this box's own agents.defaults.models
 # params block for the sibling model on the SAME native endpoint -- proven
 # live (not guessed) with a real smoketest call against deepseek-flash
 # before this module was wired in: HTTP 200, a populated `reasoning_content`
@@ -2091,7 +2091,7 @@ def _load_deepseek_key() -> str:
 
 # ---------------------------------------------------------------------------
 # The DeepSeek call. Thinking MAX via the exact field names this box's own
-# openclaw.json already uses for deepseek-v4-pro's params block on the SAME
+# openclaw.json already uses for deepseek-v4.1-flash's params block on the SAME
 # native endpoint (proven, not guessed -- see module docstring).
 # ---------------------------------------------------------------------------
 class DeepSeekCallError(RuntimeError):
@@ -2136,7 +2136,7 @@ def deepseek_complete(system_prompt: str, user_prompt: str, *,
     data = json.dumps(body).encode("utf-8")
     # FIX 16 dispatcher debug log: the exact request body that leaves this
     # box, one JSON line per attempt (proof a Pro route shows
-    # "model": "deepseek-v4-pro" in the body). Prompt text is redacted so the
+    # "model": "deepseek-v4.1-flash" in the body). Prompt text is redacted so the
     # log stays small and carries no artifact content; never the key.
     if run_dir is not None:
         try:
@@ -4312,7 +4312,7 @@ def _routing_stamp(run_dir: Optional[Path] = None,
                 # provider string straight through, and model_catalog.json
                 # spells DeepSeek "deepseek". Measured live on the shipped
                 # table, this box, 2026-09-05:
-                #     resolve_alias("deepseek-v4-pro")["provider"] -> 'deepseek'
+                #     resolve_alias("deepseek-v4.1-flash")["provider"] -> 'deepseek'
                 #     capacity.probe()["provider"]                 -> 'deepseek-direct'
                 # so the raw `probe_provider == routed_provider` this replaces
                 # was FALSE on every DeepSeek route -- the department default

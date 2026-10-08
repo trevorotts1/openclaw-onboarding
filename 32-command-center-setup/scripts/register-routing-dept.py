@@ -277,8 +277,8 @@ def main() -> None:
             "primary": "ollama/kimi-k2.6:cloud",
             "fallbacks": [
                 "openrouter/moonshotai/kimi-k2.6",
-                "ollama/deepseek-v4-pro:cloud",
-                "openrouter/deepseek/deepseek-v4-pro",
+                "ollama/deepseek-v4.1-flash:cloud",
+                "openrouter/deepseek/deepseek-v4.1-flash",
             ],
         },
     }

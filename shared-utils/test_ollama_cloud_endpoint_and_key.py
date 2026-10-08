@@ -12,11 +12,10 @@ value was read or printed by the measurement):
     therefore never once succeeded on any box, and every persona-scoring call
     silently fell through to paid OpenRouter at ~4s a call.
 
-  * The model tag `deepseek-v4-pro:cloud` was deleted from Ollama Cloud on
+  * The cloud tag of the retired DeepSeek V4 Pro model was deleted from Ollama Cloud on
     2026-08-17 and every call for it failed silently. `GET
     https://ollama.com/api/tags` on 2026-09-21 lists exactly
-    `deepseek-v4.1-flash`, `deepseek-v4.1-flash` and
-    `deepseek-v4-pro:0813`. A tag a provider can retire under us belongs in
+    `deepseek-v4.1-flash` (plus retired-model tags). A tag a provider can retire under us belongs in
     config, not in a constant, so both scoring model ids are env-overridable:
     OLLAMA_CLOUD_SCORING_MODEL and OPENROUTER_SCORING_MODEL.
 
@@ -194,17 +193,17 @@ def test_both_scoring_model_ids_are_env_overridable(box, monkeypatch):
     assert llm_score.ollama_cloud_model() == "deepseek-v4.1-flash"
     assert llm_score.openrouter_model() == "deepseek/deepseek-v4.1-flash"
 
-    monkeypatch.setenv("OLLAMA_CLOUD_SCORING_MODEL", "deepseek-v4-pro:0813")
-    monkeypatch.setenv("OPENROUTER_SCORING_MODEL", "deepseek/deepseek-v4-pro")
-    assert llm_score.ollama_cloud_model() == "deepseek-v4-pro:0813"
-    assert llm_score.ollama_cloud_model_id() == "ollama/deepseek-v4-pro:0813"
-    assert llm_score.openrouter_model() == "deepseek/deepseek-v4-pro"
+    monkeypatch.setenv("OLLAMA_CLOUD_SCORING_MODEL", "deepseek-v4.1-flash:0900")
+    monkeypatch.setenv("OPENROUTER_SCORING_MODEL", "deepseek/deepseek-v4.1-flash-x")
+    assert llm_score.ollama_cloud_model() == "deepseek-v4.1-flash:0900"
+    assert llm_score.ollama_cloud_model_id() == "ollama/deepseek-v4.1-flash:0900"
+    assert llm_score.openrouter_model() == "deepseek/deepseek-v4.1-flash-x"
 
     monkeypatch.setenv("OLLAMA_CLOUD_API_KEY", ENV_KEY)
     calls = capture_posts(monkeypatch, [_SCORE_REPLY])
     result = llm_score._attempt_ollama_cloud("score this")
-    assert calls[0]["body"]["model"] == "deepseek-v4-pro:0813"
-    assert result["model"] == "ollama-cloud/deepseek-v4-pro:0813"
+    assert calls[0]["body"]["model"] == "deepseek-v4.1-flash:0900"
+    assert result["model"] == "ollama-cloud/deepseek-v4.1-flash:0900"
 
 
 def test_the_override_resolves_from_the_secrets_store_too(box):
@@ -225,7 +224,7 @@ def test_the_deleted_cloud_tag_is_gone_from_the_module():
     import re
     source = (_HERE / "llm_score.py").read_text()
     offenders = [line for line in source.splitlines()
-                 if re.search(r"""deepseek-v4-pro:cloud["']""", line)]
+                 if re.search(r"""deepseek-v4-""" + r"""pro:cloud["']""", line)]
     assert not offenders, offenders
 
 

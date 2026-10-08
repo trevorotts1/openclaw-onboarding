@@ -152,7 +152,7 @@ INFORMATIONAL_FAMILIES = (
     ("openrouter_key", ("OPENROUTER_API_KEY", "OPENROUTER_KEY")),
     ("gemini_key", ("GOOGLE_API_KEY", "GOOGLE_AI_STUDIO_API_KEY", "GEMINI_API_KEY")),
     ("minimax_key", ("MINIMAX_API_KEY", "MINIMAX_KEY")),
-    ("kie_key", ("KIE_API_KEY", "KIE_AI_API_KEY", "KIEAI_API_KEY")),
+    ("kie_key", ("KIE_API_KEY", "KIE_AI_API_KEY", "KIEAI_API_KEY", "KIE_AI_KEY")),
     ("deepseek_or_kimi_key_optional",
      ("DEEPSEEK_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY")),
     ("anthology_intake_hook_secret", ("ANTHOLOGY_INTAKE_HOOK_SECRET",)),

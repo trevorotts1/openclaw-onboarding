@@ -73,7 +73,7 @@ C. If both are clean (buildCompletedAt set AND closeoutStatus in {done, sent}) �
    ```
 
    This is MANDATORY when state is fully terminal. Failing to remove the
-   cron burns DeepSeek-V4-Pro tokens every 15 min for no reason - that is
+   cron burns DeepSeek-V4.1-Flash tokens every 15 min for no reason - that is
    the exact bug v10.14.36 was shipped to prevent. Do not skip this step.
 
 ═══════════════════════════════════════════════════════════════════

@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: "3.6.14"
+version: "3.6.15"
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -161,7 +161,7 @@ The orchestrator above drives tool-calls and sub-agent fan-out. Tier each sub-ag
 
 | Role group | Job type | Model (Ollama Cloud preferred → OpenRouter backup) |
 |---|---|---|
-| Researcher, Strategist | high reasoning / strategy | DeepSeek v4 pro **or** GLM 5.2 |
+| Researcher, Strategist | high reasoning / strategy | DeepSeek V4.1 Flash **or** GLM 5.2 |
 | Writer, Editor, Image Prompt Engineer, Email Designer (article/script/HTML/caption copy) | content & HTML writing | GLM 5.2 |
 | Publisher (GHL tool-calls / scheduling) + all 6 QC agents | browser control / tool-calls / QC | MiniMax 3 |
 | Video Producer (FFmpeg), Audio Generator, media upload | mechanical (no model judgement) | client's configured/default model |

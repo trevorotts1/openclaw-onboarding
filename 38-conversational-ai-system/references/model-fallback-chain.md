@@ -35,7 +35,7 @@ out the whole chain.
 Example chain (illustrative, not a mandate; the operator picks from the client's OWN provider
 capabilities per the never-substitute-model rule):
 
-- primary: Ollama Cloud DeepSeek V4 Pro (thinking:max)
+- primary: Ollama Cloud DeepSeek V4.1 Flash (thinking:max)
 - fallback 1: OpenRouter Kimi 2.6+
 - fallback 2: a third provider the client already pays for
 

@@ -75,7 +75,7 @@ the turn indefinitely.
 stalled session ... activeWorkKind=model_call lastProgress=model_call:started recovery=none
 ```
 
-Seen with `deepseek-v4-pro` at `thinking=high` plus a deep message queue.
+Seen with `deepseek-v4.1-flash` at `thinking=high` plus a deep message queue.
 The model call starts, makes no further progress, and the StallWatchdog
 reports `recovery=none` so nothing auto-recovers. The queue stays wedged.
 

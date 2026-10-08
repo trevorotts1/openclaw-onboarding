@@ -139,7 +139,7 @@ The whole thing is one pipeline. A break anywhere downstream of Skill 22 cascade
 | 3.4 (manual) | Department Routing + Quick Reference present | `grep -E '^## Section (9|14)' <persona-dir>/persona-blueprint.md` | Section 9 (Department Routing) and Section 14 (Quick Reference Card) both present |
 | 3.5 **(runner 3.5)** | persona-categories.json present + valid JSON | `python3 -c 'import json; json.load(open("<coaching-personas-dir>/persona-categories.json"))'` | Valid JSON (canonical path is `workspace/data/coaching-personas/persona-categories.json`; the skill-folder copy under `22-book-to-persona-coaching-leadership-system/` is the shipped read-only seed) |
 | 3.6 **(runner 3.6, warn-only)** | Model selection is dynamic (not hardcoded) | `grep "moonshot/kimi-k2.6\|deepseek/deepseek-v3.2\|gpt-5.3-codex" ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/_meta.json` | **Empty result** — selector-driven, no pinned model literal |
-| 3.7 **(runner 3.7, warn-only)** | No Anthropic refs in Skill 22 active code | `grep -rn "anthropic/\|claude-opus\|claude-sonnet" ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/*.py` | **Empty result** — N1 (AGENTS.md): the pipeline runs on DeepSeek V4 Pro / Gemini Flash, never Anthropic |
+| 3.7 **(runner 3.7, warn-only)** | No Anthropic refs in Skill 22 active code | `grep -rn "anthropic/\|claude-opus\|claude-sonnet" ~/.openclaw/skills/22-book-to-persona-coaching-leadership-system/pipeline/*.py` | **Empty result** — N1 (AGENTS.md): the pipeline runs on DeepSeek V4.1 Flash / Gemini Flash, never Anthropic |
 
 ## CHECK 4 — Gemini Embeddings 2 (Skill 31)
 

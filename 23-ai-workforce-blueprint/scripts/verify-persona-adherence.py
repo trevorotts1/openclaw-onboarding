@@ -5,7 +5,7 @@ verify-persona-adherence.py — Post-task persona-adherence verification.
 Called by the dispatcher after a task completes. Reads:
   - The assigned persona's blueprint methodology
   - The actual task output
-And asks an LLM (DeepSeek V4 Pro via Ollama Cloud / OpenRouter fallback) to
+And asks an LLM (DeepSeek V4.1 Flash via Ollama Cloud / OpenRouter fallback) to
 score adherence on a 0.0-1.0 scale and surface the top 2-3 deviations.
 
 Result is written:

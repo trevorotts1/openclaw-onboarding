@@ -3,7 +3,7 @@ not provider IDENTITY, and silently fell back to the default wave width.
 
 THE DEFECT (measured on the shipped table, this box, 2026-09-05)
 
-    model_router.resolve_alias("deepseek-v4-pro")["provider"]  -> 'deepseek'
+    model_router.resolve_alias("deepseek-v4.1-flash")["provider"]  -> 'deepseek'
     capacity.probe()["provider"]                               -> 'deepseek-direct'
 
 `route["provider"]` comes from model_catalog.json, which spells the provider
@@ -48,7 +48,7 @@ from presentation_job import resource_profile  # noqa: E402
 
 
 #: What the CATALOG spells (what reaches route["provider"]).
-_ROUTED_SPELLING = model_router.resolve_alias("deepseek-v4-pro")["provider"]
+_ROUTED_SPELLING = model_router.resolve_alias("deepseek-v4.1-flash")["provider"]
 #: What the real capacity probe returns (always canonical).
 _PROBED_SPELLING = capacity.PROVIDER_DEEPSEEK_DIRECT
 
@@ -72,7 +72,7 @@ def _env(monkeypatch, tmp_path):
         ".schema_version": 1,
         "providers": {
             "deepseek-direct": _wired("deepseek-direct",
-                                      ["deepseek-flash", "deepseek-v4-pro"]),
+                                      ["deepseek-flash", "deepseek-v4.1-flash"]),
             "openrouter": _wired("openrouter",
                                  ["z-ai/glm-5.3-flash", "z-ai/glm-5.3"]),
         },

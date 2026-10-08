@@ -11,7 +11,7 @@ Telegram alert through the OpenClaw gateway.
 TIER MAP (config/model-map.template.json, resolved per box by preflight.sh into
 model-map.json; SPEC 8.1). The router NEVER hardcodes a model name and NEVER validates a
 model name against a known list: forward-dated names (GLM 5.2, Gemini 3.5 Flash, Minimax V3,
-DeepSeek V4 Pro, Kimi 2.6, ...) are taken AS-CONFIGURED. The ONLY name it rejects is an
+DeepSeek V4.1 Flash, Kimi 2.6, ...) are taken AS-CONFIGURED. The ONLY name it rejects is an
 Anthropic-family shape.
 
   HEAVY-WRITER : (1) GLM 5.2 on ollama-cloud (baseUrl slotting, maxTokens 65536)
@@ -22,7 +22,7 @@ Anthropic-family shape.
                  resolution than the tier that drafted the piece (judge_harness.py enforces
                  AF-AE-JUDGE-INDEPENDENCE; this router records the honest resolved model so
                  the harness can compare)
-  LONGCTX      : DeepSeek V4 Pro / Kimi 2.6 (~1M ctx) ONLY when the client configured a key;
+  LONGCTX      : DeepSeek V4.1 Flash / Kimi 2.6 (~1M ctx) ONLY when the client configured a key;
                  else S9 chunks on HEAVY-WRITER (the caller falls back, not this router)
   IMAGE        : NOT routed here -- S7 covers go through cover_render.py / Kie / Skills 07+46
 
@@ -1046,7 +1046,7 @@ def _synthetic_resolved_map() -> dict:
         "<CLIENT_LIGHT_PRIMARY_MODEL>": "minimax-v3",
         "<CLIENT_LIGHT_FALLBACK1_MODEL>": "minimaxai/minimax-v3",
         "<CLIENT_JUDGE_PRIMARY_MODEL>": "minimax-v3",
-        "<CLIENT_LONGCTX_MODEL>": "deepseek-v4-pro",
+        "<CLIENT_LONGCTX_MODEL>": "deepseek-v4.1-flash",
         "<CLIENT_IMAGE_MODEL>": "gpt-image-2-5-sunburst-text-to-image",
         "<CLIENT_OLLAMA_CLOUD_KEY_LABEL>": "OLLAMA_API_KEY",
         "<CLIENT_OPENROUTER_KEY_LABEL>": "OPENROUTER_API_KEY",

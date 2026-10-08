@@ -249,7 +249,7 @@ _provider_is_text_only() {
   local p="$1"
   [ -z "$p" ] && return 0  # treat unknown as text-only (safe default)
   for tp in $TEXT_ONLY_PROVIDERS; do
-    # Strip model suffix (e.g. "ollama-cloud/deepseek-v4-pro:cloud" → "ollama-cloud")
+    # Strip model suffix (e.g. "ollama-cloud/deepseek-v4.1-flash:cloud" → "ollama-cloud")
     local base="${p%%/*}"
     base="${base%%-*}"  # handle "ollama-cloud" → check against "ollama" too
     local full_base="${p%%/*}"

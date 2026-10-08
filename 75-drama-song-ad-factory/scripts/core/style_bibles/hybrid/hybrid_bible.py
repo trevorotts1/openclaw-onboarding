@@ -564,6 +564,9 @@ def compile_prompt(shot, mode, aspect_ratio="9:16",
             parts.append(FINALE_BLOCK)
     parts.append("[SHOT:%s] %s [/SHOT]"
                  % (shot["shot_id"], str(shot["base_prompt"]).strip()))
+    # Part F F12: the clip prompt asks for motion (clips must move).
+    parts.append("[MOTION] The subject moves naturally through the frame "
+                 "[/MOTION]")
     prompt = "\n".join(parts)
     return {
         "prompt": prompt,

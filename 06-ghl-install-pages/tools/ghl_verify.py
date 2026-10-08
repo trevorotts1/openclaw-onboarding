@@ -1331,7 +1331,7 @@ def select_html_repair_model(executor=None, env=None) -> dict:
     This is the designated call-site for the code-block repair-and-retry path
     (Wiring-Map §5.A.4, role='html'): when verify_page returns PASS=False due
     to a render error, a repair loop should call this to obtain the GLM-5.2-class
-    model (Ollama Cloud → OpenRouter GLM → DeepSeek v4 pro backup → Gemini
+    model (Ollama Cloud → OpenRouter GLM → DeepSeek V4.1 Flash backup → Gemini
     last-resort) that rewrites / fixes the failing code block.
 
     Uses ``make_stub_executor()`` if no executor is provided (offline receipt only,

@@ -299,7 +299,7 @@ See full procedure in `sops/sop-proactive-fix-guardrail.md`. Summary: before tou
 
 FINDING F1-001: Heartbeat loop on agent `main`. Session `abc123.jsonl` grew from 847 to 1,205 lines (+358) since last sweep. `heartbeat.every` was `30m`, `target=last`. AUTO-FIXED: deep-merged `heartbeat.every=6h`, `target=none`. Config validated clean. Session archived to `/sessions/archive/abc123.jsonl`. Owner notified on-change.
 
-FINDING F3-002: Cron `workforce-build-resume` (`*/15`, agentTurn, deepseek-v4-pro:cloud). Last 24h: 96 fires, 96 errors (`Error: workspace context not found`). CLASSIFIED: broken resume cron (F3). AUTO-FIXED: `openclaw cron disable workforce-build-resume`. Logged in furnace-findings.json with evidence. Owner notified on-change. NEEDS_OWNER_DECISION: whether to delete permanently or repair the context path."
+FINDING F3-002: Cron `workforce-build-resume` (`*/15`, agentTurn, deepseek-v4.1-flash:cloud). Last 24h: 96 fires, 96 errors (`Error: workspace context not found`). CLASSIFIED: broken resume cron (F3). AUTO-FIXED: `openclaw cron disable workforce-build-resume`. Logged in furnace-findings.json with evidence. Owner notified on-change. NEEDS_OWNER_DECISION: whether to delete permanently or repair the context path."
 
 ---
 

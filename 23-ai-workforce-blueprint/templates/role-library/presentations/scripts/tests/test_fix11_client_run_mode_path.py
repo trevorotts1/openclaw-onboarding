@@ -441,13 +441,13 @@ _PROFILE_WITH_PLAN = {
     ".schema_version": 1,
     "providers": {
         "deepseek-direct": _wired("deepseek-direct",
-                                  ["deepseek-flash", "deepseek-v4-pro"]),
+                                  ["deepseek-flash", "deepseek-v4.1-flash"]),
         "ollama-cloud": _wired("ollama-cloud", ["glm-5.3-flash"]),
     },
     "creative_prefs": {}, "consent": {}, "interview": {},
     "model_plan": {
         "workhorse": {"provider": "deepseek-direct", "model": "deepseek-flash"},
-        "reasoning": {"provider": "deepseek-direct", "model": "deepseek-v4-pro"},
+        "reasoning": {"provider": "deepseek-direct", "model": "deepseek-v4.1-flash"},
         "judge": {"provider": "ollama-cloud", "model": "glm-5.3-flash"},
         "thinking": "max",
         "source": "interview",

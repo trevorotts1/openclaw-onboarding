@@ -52,7 +52,7 @@ decide the next action:
 - **Primary model:** `deepseek-v4-flash` (direct, cheap, fast — NOT a `:cloud` metered
   model).
 - **Fallback:** any free/low-cost provider available in the session.
-- **NEVER:** use a `:cloud` metered model (e.g. `deepseek-v4-pro:cloud`,
+- **NEVER:** use a `:cloud` metered model (e.g. `deepseek-v4.1-flash:cloud`,
   `ollama-cloud/...`) for a cheap read-only lookup. A contact lookup is not a reasoning
   task — it is a data-retrieval task. Metered cloud models for lookups waste quota.
 

@@ -42,7 +42,7 @@ _KIE_DUMMY = "dummy-kie-not-a-real-secret"
 # agents.list[].model / models.list[]).
 GOOD_CFG = {
     "agents": {
-        "defaults": {"model": "ollama/deepseek-v4-pro:cloud"},
+        "defaults": {"model": "ollama/deepseek-v4.1-flash:cloud"},
         "list": [
             {"id": "main", "model": {"primary": "ollama/kimi-k2.6:cloud",
                                      "fallbacks": ["openrouter/moonshotai/kimi-k2.6"]}},
@@ -72,7 +72,7 @@ REAL_FLEET_CFG = {
     "agents": {"defaults": {}, "list": []},
     "models": {"list": [
         {"id": "ollama/kimi-k2.6:0711-cloud"},
-        {"id": "ollama/deepseek-v4-pro:0813-cloud"},
+        {"id": "ollama/deepseek-v4.1-flash:cloud"},
         {"id": "ollama/deepseek-v4.1-flash:cloud"},
         {"id": "ollama/minimax-m3:cloud"},
         {"id": "ollama/glm-5.3:cloud"},
@@ -124,7 +124,7 @@ def test_real_client_config_resolves_every_required_tier():
         # Credentials referenced by LABEL only (a label, never a value).
         assert primary["credential_label"] and "_API_KEY" in primary["credential_label"]
     # The client's OWN strongest heavy model is the HEAVY-WRITER primary.
-    assert tiers["HEAVY-WRITER"]["chain"][0]["model"] == "deepseek-v4-pro:cloud"
+    assert tiers["HEAVY-WRITER"]["chain"][0]["model"] == "kimi-k2.6:cloud"
 
     # IMAGE tier resolved via Kie when KIE_API_KEY is set (S7 cover route).
     assert "IMAGE" in tiers, "required IMAGE tier missing when KIE_API_KEY is set"
@@ -162,7 +162,7 @@ def test_resolved_map_routes_without_unresolvedmaperror():
                                 hold_fn=lambda *a, **k: None, alert_fn=lambda *a, **k: None)
         res = router.route("HEAVY-WRITER", [{"role": "user", "content": "write"}],
                            {"deliverable_key": "d1"})
-        assert res.provider == "ollama-cloud" and res.model_used == "deepseek-v4-pro:cloud"
+        assert res.provider == "ollama-cloud" and res.model_used == "kimi-k2.6:cloud"
         assert res.text == "chapter body"
     finally:
         if saved is None:
@@ -252,8 +252,8 @@ def test_real_fleet_cloud_tagged_ids_resolve_and_stay_independent():
     jg = mm["tiers"]["JUDGE"]["chain"][0]
     assert (hw["provider"], hw["model"]) != (jg["provider"], jg["model"]), \
         "HEAVY-WRITER and JUDGE collapsed onto one model: %s" % jg
-    assert hw["model"] == "deepseek-v4-pro:0813-cloud", \
-        "HEAVY-WRITER must take the date-tagged DeepSeek pro build, got %s" % hw["model"]
+    assert hw["model"] == "kimi-k2.6:0711-cloud", \
+        "HEAVY-WRITER must take the date-tagged Kimi build (V4 Pro retired), got %s" % hw["model"]
     assert mm["tiers"]["LIGHT"]["chain"][0]["model"] == "deepseek-v4.1-flash:cloud"
     # The code variant is a different model and must never fill a chat slot.
     assert "kimi-k2.7-code" not in json.dumps(mm["tiers"]["HEAVY-WRITER"])
@@ -269,7 +269,7 @@ def test_owner_pin_survives_re_resolution_at_order_1():
     auto_hw = mm["tiers"]["HEAVY-WRITER"]["chain"][0]["model"]
 
     # Pin HEAVY-WRITER to a DIFFERENT client-owned model, then re-resolve in place.
-    pin = "ollama/kimi-k2.6:cloud"
+    pin = "ollama/minimax-m2:cloud"
     mm["owner_pins"] = {"HEAVY-WRITER": pin}
     mp.write_text(json.dumps(mm), encoding="utf-8")
 
@@ -285,7 +285,7 @@ def test_owner_pin_survives_re_resolution_at_order_1():
     mm2 = json.loads(mp.read_text(encoding="utf-8"))
     chain = mm2["tiers"]["HEAVY-WRITER"]["chain"]
     assert chain[0]["order"] == 1
-    assert chain[0]["model"] == "kimi-k2.6:cloud", "the pin must be order 1, got %s" % chain[0]
+    assert chain[0]["model"] == "minimax-m2:cloud", "the pin must be order 1, got %s" % chain[0]
     # the auto-resolved links survive BEHIND the pin as ordered fallbacks
     assert any(l["model"] == auto_hw for l in chain[1:]), \
         "auto-resolved links must remain as fallbacks: %s" % chain
@@ -346,7 +346,7 @@ def test_owner_pin_for_an_unresolved_role_fails_closed():
 def test_owner_pin_that_breaks_judge_independence_fails_closed():
     # Pins are applied BEFORE the independence invariant, so a pin that collapses
     # JUDGE onto HEAVY-WRITER is caught at resolve, never mid-run at S9 Gate B.
-    r = _repin_and_resolve(GOOD_CFG, {"JUDGE": "ollama/deepseek-v4-pro:cloud"})
+    r = _repin_and_resolve(GOOD_CFG, {"JUDGE": "ollama/kimi-k2.6:cloud"})
     assert r.returncode == 2, "a pin collapsing JUDGE onto HEAVY-WRITER must fail closed"
     assert "AF-AE-JUDGE-INDEPENDENCE" in r.stderr
 

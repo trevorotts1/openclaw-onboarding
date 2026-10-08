@@ -58,7 +58,7 @@ cd "$WORKFORCE"
 #       or whatever LOCAL model the client has pulled. NEVER the operator's keys.
 #   ⚠️ OLLAMA_BASE_URL MUST end in /v1 — graphify passes it verbatim as the OpenAI-style
 #      base_url; without /v1 the POST /chat/completions 404s and every map fails.
-#   ⚠️ A ":cloud" model (e.g. deepseek-v4-pro:cloud) runs on Ollama Cloud OFF the box and
+#   ⚠️ A ":cloud" model (e.g. deepseek-v4.1-flash:cloud) runs on Ollama Cloud OFF the box and
 #      BILLS the client's Ollama account — NOT free, NOT private. Owner opt-in only (see SKILL.md).
 OLLAMA_BASE_URL="http://localhost:11434/v1" \
 OLLAMA_MODEL="qwen2.5-coder:7b" \

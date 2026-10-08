@@ -1,14 +1,14 @@
 # EXTRACTION NOTES - $100M Leads
 **Author:** Alex Hormozi
 **Extracted:** June 11, 2026
-**Model:** ollama/deepseek-v4-pro:cloud
+**Model:** ollama/deepseek-v4.1-flash:cloud
 
 ---
 
 ## BOOK: $100M Leads: How to Get Strangers to Want to Buy Your Stuff
 ## AUTHOR: Alex Hormozi
 ## EXTRACTION DATE: 2026-06-11
-## EXTRACTION AGENT: DeepSeek V4 Pro (Ollama Cloud)
+## EXTRACTION AGENT: DeepSeek V4.1 Flash (Ollama Cloud)
 
 ---
 

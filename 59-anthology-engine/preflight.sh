@@ -91,6 +91,26 @@ if [ -f "$_OC_SECRETS_ENV" ]; then
 fi
 unset _OC_SECRETS_ENV _OC_PREV_EXPORTS
 
+# KEF001: a box may keep the KIE key in ~/.openclaw/.env or workspace/secrets.env
+# (any alias, e.g. KIE_AI_KEY) instead of secrets/.env. Ask the shared resolver
+# (shared-utils/secret_helper.py); log only WHICH file/name, never the value.
+if [ -z "${KIE_API_KEY+set}" ]; then  # unset only: an explicit empty value is a presence probe and must win
+    for _su in "$SELF_DIR/../shared-utils" "$HOME/.openclaw/skills/shared-utils" "/data/.openclaw/skills/shared-utils"; do
+        [ -f "$_su/secret_helper.py" ] || continue
+        _kie_out="$(PYTHONPATH="$_su" python3 -c '
+import sys
+from secret_helper import resolve_secret_with_source as r
+v, src = r("KIE_API_KEY")
+if v:
+    sys.stderr.write("KIE key resolved from " + src + "\n")
+    print(v)
+')" || true
+        [ -n "$_kie_out" ] && export KIE_API_KEY="$_kie_out"
+        break
+    done
+    unset _su _kie_out
+fi
+
 if [ "$MODE" = "gate_credential" ]; then
     CAF_CRED="$SELF_DIR/scripts/caf_credential_gate.py"
     [ -f "$CAF_CRED" ] || { echo "FATAL: caf_credential_gate.py not found: $CAF_CRED" >&2; exit 3; }

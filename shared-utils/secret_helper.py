@@ -38,6 +38,7 @@ __all__ = [
     "canonical_for",
     "resolve_secret",
     "resolve_secret_strict",
+    "resolve_secret_with_source",
     "looks_like_real_key",
     "assert_real_key",
     "is_placeholder",
@@ -50,6 +51,10 @@ __all__ = [
 # VPS containers put the root at /data/.openclaw; Mac boxes at ~/.openclaw.
 # ---------------------------------------------------------------------------
 ENV_FILE_CANDIDATES = [
+    # Lowest priority (later entries win in _build_env_map): the workspace
+    # secrets.env some boxes (e.g. Corey Sams VPS) keep a key in (KEF001).
+    "/data/.openclaw/workspace/secrets.env",
+    os.path.expanduser("~/.openclaw/workspace/secrets.env"),
     "/data/.openclaw/secrets/.env",
     "/data/.openclaw/secrets/secrets.env",
     "/data/.openclaw/.env",
@@ -179,6 +184,22 @@ def resolve_secret(canonical: str, override_env: Optional[Dict[str, str]] = None
         if value:
             return value
     return None
+
+
+def resolve_secret_with_source(
+    canonical: str, override_env: Optional[Dict[str, str]] = None
+) -> "tuple[Optional[str], str]":
+    """Like resolve_secret but also says WHERE: (value, "env:NAME" |
+    "file:PATH:NAME" | ""). The source never contains the value. Same
+    precedence as _build_env_map: override > process env > env files."""
+    stores = [("env", dict(override_env or {})), ("env", dict(os.environ))]
+    stores += [("file:" + p, _parse_env_file(p)) for p in reversed(ENV_FILE_CANDIDATES)]
+    names = alias_list(canonical)
+    for label, vals in stores:
+        for name in names:
+            if (vals.get(name) or "").strip():
+                return vals[name].strip(), f"{label}:{name}"
+    return None, ""
 
 
 def resolve_secret_strict(

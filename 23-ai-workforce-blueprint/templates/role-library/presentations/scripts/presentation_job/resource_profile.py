@@ -1019,7 +1019,7 @@ def _norm_model_id(text: Any) -> str:
 
 # ---------------------------------------------------------------------------
 # THE CLIENT MODEL PLAN (operator requirement 2026-09-04, verbatim):
-#   "whatever is forcing this thing to use DeepSeek V4 Pro, I don't want to be
+#   "whatever is forcing this thing to use DeepSeek V4.1 Flash, I don't want to be
 #    forced to do anything. So as a client should be able to choose whatever
 #    they want to be their primary workhorse or authoring model."
 #

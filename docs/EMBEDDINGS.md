@@ -469,7 +469,7 @@ duplicate no model strings.
   `embedding_engine._read_secret()`.
 - Ollama→OpenRouter fallback converts model ids through
   `orchestrator._openrouter_fallback_model()` (vendor inserted, route prefix
-  stripped: `ollama/deepseek-v4-pro:cloud` → `deepseek/deepseek-v4-pro`).
+  stripped: `ollama/deepseek-v4.1-flash:cloud` → `deepseek/deepseek-v4.1-flash`).
   Never hand `openrouter/…`-prefixed ids to the OpenRouter API.
 
 ## Quick reference — commands

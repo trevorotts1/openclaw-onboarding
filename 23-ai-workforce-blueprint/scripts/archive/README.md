@@ -12,7 +12,7 @@ selector for all new work.
 
 - v2 is the script the Command Center and AGENTS.md rule N16 call.
 - v1 used flat-constant scoring for Layers 1-4; v2 uses LLM-backed scoring
-  (DeepSeek V4 Pro via Ollama Cloud, OpenRouter fallback).
+  (DeepSeek V4.1 Flash via Ollama Cloud, OpenRouter fallback).
 - v2 adds stickiness, adaptive weights, behavioral profile reading, hybrid mode,
   and anti-repetition variety logic.
 - Both selectors now share the same pre-scoring funnel (governing-personas pool,

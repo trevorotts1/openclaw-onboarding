@@ -187,10 +187,10 @@ different engine.
   drive tool calls reliably — MiniMax 3 is the tool-calling primary, PROBE-GATED
   by `tools/model_router.py` because MiniMax priors are flagged-suspect (probe =
   a tiny task that REQUIRES a tool-call/JSON return).
-- **ESCALATION (reasoning over the raw snapshot): DeepSeek v4 pro or GLM 5.2** —
+- **ESCALATION (reasoning over the raw snapshot): DeepSeek V4.1 Flash or GLM 5.2** —
   only for a NEEDS-LIVE-SELECTOR ambiguity / unseen UI variant / recovery pause.
-  Ollama Cloud preferred (`ollama/deepseek-v4-pro:cloud`), OpenRouter backup
-  (`openrouter/deepseek/deepseek-v4-pro`). thinking/reasoning effort = HIGH.
+  Ollama Cloud preferred (`ollama/deepseek-v4.1-flash:cloud`), OpenRouter backup
+  (`openrouter/deepseek/deepseek-v4.1-flash`). thinking/reasoning effort = HIGH.
 - **Page/HTML content writing or a broken-code fix: GLM 5.2** — Ollama Cloud
   preferred, OpenRouter backup (matches the install-pages doc §10 STEP 3).
 - **Mechanical only — model-agnostic (client's configured/default model):**

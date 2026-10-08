@@ -32,15 +32,15 @@ Three tiers, strict priority — every role, every rung, no exceptions:
 |---|---|---|---|---|
 | `content` | — | `kimi-k2.6:cloud` | `moonshotai/kimi-k2.6` | Copy writing, welcome slides, prompts |
 | `html` | `code` | `glm-5.2:cloud` | `z-ai/glm-5.2` | Code-block fix loop, HTML generation |
-| `reasoning` | `funnel` | `glm-5.2:cloud` then `deepseek-v4-pro:cloud` | `z-ai/glm-5.2` then `deepseek/deepseek-v4-pro` | Funnel structure and planning; two Ollama Cloud rungs precede OpenRouter rungs |
-| `execution` | — | `minimax-m3:cloud` (probe-gated) → `deepseek-v4-pro:cloud` | `minimax/minimax-m3` (probe-gated) → `deepseek/deepseek-v4-pro` | Browser-click drive loop; probe gate on M3 rungs only |
+| `reasoning` | `funnel` | `glm-5.2:cloud` then `deepseek-v4.1-flash:cloud` | `z-ai/glm-5.2` then `deepseek/deepseek-v4.1-flash` | Funnel structure and planning; two Ollama Cloud rungs precede OpenRouter rungs |
+| `execution` | — | `minimax-m3:cloud` (probe-gated) → `deepseek-v4.1-flash:cloud` | `minimax/minimax-m3` (probe-gated) → `deepseek/deepseek-v4.1-flash` | Browser-click drive loop; probe gate on M3 rungs only |
 | `qc` | — | `minimax-m3:cloud` (probe-gated, vision) | `minimax/minimax-m3` (probe-gated, vision) | Vision QC on screenshots and DOM; text-only models excluded from this ladder |
 
 **MiniMax M3 probe gate** (on `execution` and `qc`): a live tool-call (`echo_tool {ok:true}`)
 must PASS before the model dispatches. On fail, one backoff retry, then the ladder
 advances. DeepSeek is never probe-gated.
 
-**DeepSeek v4 pro is the universal non-vision backup** appended to every ladder except `qc`.
+**DeepSeek V4.1 Flash is the universal non-vision backup** appended to every ladder except `qc`.
 DeepSeek and GLM have no confirmed vision capability; the `qc` ladder must remain
 vision-capable throughout, so it runs only MiniMax M3 (probe-gated) and Gemini 3.5 Flash.
 
@@ -50,7 +50,7 @@ vision-capable throughout, so it runs only MiniMax M3 (probe-gated) and Gemini 3
 
 **MiniMax M2 — BANNED everywhere.** MiniMax M2 is PURGED from every rung, table,
 recommendation, and doc. The execution role uses MiniMax M3 only, falling back to
-DeepSeek v4 pro if the probe fails. The M2 hyphenated slug form must never appear in
+DeepSeek V4.1 Flash if the probe fails. The M2 hyphenated slug form must never appear in
 code or markdown; the CI step (section 4a) fails the build on any occurrence,
 no exclusions.
 

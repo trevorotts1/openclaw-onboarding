@@ -21,7 +21,7 @@ Usage:
     from provider_adapters import get_adapter, register_adapter, ProviderAdapter
     adapter = get_adapter("deepseek")
     inv = adapter.list_models()          # verified inventory (or discovery)
-    r = adapter.invoke(model_id="deepseek/deepseek-v4-pro", messages=[...])
+    r = adapter.invoke(model_id="deepseek/deepseek-v4.1-flash", messages=[...])
 """
 
 import json
@@ -99,7 +99,7 @@ class DeepSeekAdapter(ProviderAdapter):
     base_url = "https://api.deepseek.com"
     secret_env_name = "DEEPSEEK_API_KEY"
     verified_inventory = [
-        {"id": "deepseek/deepseek-v4-pro", "family": "deepseek-pro",
+        {"id": "deepseek/deepseek-v4.1-flash", "family": "deepseek-pro",
          "capabilities": ["text", "reasoning", "tool_use", "structured_output", "long_context", "streaming"]},
         {"id": "deepseek/deepseek-v4-flash", "family": "deepseek-flash",
          "capabilities": ["text", "tool_use", "structured_output", "streaming"]},

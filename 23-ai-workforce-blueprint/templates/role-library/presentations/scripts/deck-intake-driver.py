@@ -1428,7 +1428,7 @@ def _record_client_model_plan(derived: Dict[str, Any],
     if deepseek_variant == "flash":
         picks["workhorse"] = "deepseek-flash@deepseek-direct"
     elif deepseek_variant == "pro":
-        picks["workhorse"] = "deepseek-v4-pro@deepseek-direct"
+        picks["workhorse"] = "deepseek-v4.1-flash@deepseek-direct"
     if not any(picks.values()) and not thinking and not openrouter_model:
         return 0  # every slot omitted: the department defaults stand
 

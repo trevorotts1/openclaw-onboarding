@@ -157,17 +157,17 @@ class TestM2Purge:
         )
 
 
-# ── Test: execution fallback is DeepSeek v4 pro ──────────────────────────────
+# ── Test: execution fallback is DeepSeek V4.1 Flash ──────────────────────────────
 
 class TestExecutionFallback:
     """When MiniMax M3 probe fails on the execution role, the fallback must be
-    DeepSeek v4 pro (not M2 or anything else)."""
+    DeepSeek V4.1 Flash (not M2 or anything else)."""
 
     def test_execution_rung2_is_deepseek(self):
         ladder = mr.build_ladder({}, role="execution")
         r2 = ladder[1]
         assert r2["models"][0]["family"] == "deepseek"
-        assert "deepseek-v4-pro" in r2["models"][0]["slug"]
+        assert "deepseek-v4.1-flash" in r2["models"][0]["slug"]
         assert r2["probe_gated"] is False
 
     def test_select_execution_minimax_fail_chooses_deepseek(self):
@@ -358,10 +358,10 @@ class TestEnvOverrides:
         assert ladder[0]["models"][0]["slug"] == "kimi-k3.0:cloud"
 
     def test_ollama_deepseek_override_appears_in_execution(self):
-        env = {"MODEL_ROUTER_OLLAMA_DEEPSEEK": "deepseek-v4-pro-custom:cloud"}
+        env = {"MODEL_ROUTER_OLLAMA_DEEPSEEK": "deepseek-v4.1-flash-custom:cloud"}
         ladder = mr.build_ladder(env, role="execution")
         # execution rung 2 is Ollama DeepSeek
-        assert ladder[1]["models"][0]["slug"] == "deepseek-v4-pro-custom:cloud"
+        assert ladder[1]["models"][0]["slug"] == "deepseek-v4.1-flash-custom:cloud"
 
     def test_openrouter_gemini_override_affects_all_roles(self):
         env = {"MODEL_ROUTER_OPENROUTER_GEMINI": "google/gemini-4.0-flash"}

@@ -96,7 +96,7 @@ def _two_provider_profile(deepseek_ceiling=100, ollama_ceiling=8):
         ".schema_version": 1,
         "providers": {
             "deepseek-direct": _wired(
-                "deepseek-direct", ["deepseek-flash", "deepseek-v4-pro"],
+                "deepseek-direct", ["deepseek-flash", "deepseek-v4.1-flash"],
                 concurrency_ceiling=deepseek_ceiling,
                 ceiling_source="declared"),
             "ollama-cloud": _wired(
@@ -313,7 +313,7 @@ def test_a_route_on_the_low_provider_still_gets_its_own_low_ceiling(
     two tests above would pass and the operator's Ollama reserve would be
     gone. A phase that really routes to ollama-cloud must still read 8."""
     prof = _two_provider_profile()
-    # P-IMAGE-QC is vision_ocr: [deepseek-v4-pro, glm-5.3, glm-ocr]. Strip
+    # P-IMAGE-QC is vision_ocr: [deepseek-v4.1-flash, glm-5.3, glm-ocr]. Strip
     # DeepSeek (and never add OpenRouter) so the only eligible candidate left
     # is glm-ocr, whose provider IS ollama-cloud.
     prof["providers"].pop("deepseek-direct")

@@ -206,8 +206,8 @@ assert mr.model_is_sovereign("ollama/whatever:cloud")
 # precedence: defaults -> entries.main -> list-main -> fallbacks
 import json, pathlib
 p = pathlib.Path("'"$B"'")/"oc2.json"
-p.write_text(json.dumps({"agents":{"entries":{"main":{"model":{"primary":"deepseek/deepseek-v4-pro"}}}}}))
-assert mr.resolve_default_model(str(p)) == "deepseek/deepseek-v4-pro"
+p.write_text(json.dumps({"agents":{"entries":{"main":{"model":{"primary":"deepseek/deepseek-v4.1-flash"}}}}}))
+assert mr.resolve_default_model(str(p)) == "deepseek/deepseek-v4.1-flash"
 p.write_text(json.dumps({"agents":{"list":[{"id":"a","model":{"primary":"ollama/first"}},{"name":"Main","model":{"primary":"ollama/main"}}]}}))
 assert mr.resolve_default_model(str(p)) == "ollama/main", mr.resolve_default_model(str(p))
 p.write_text(json.dumps({"agents":{"defaults":{"model":{"fallbacks":["ollama-cloud/fb1"]}}}}))

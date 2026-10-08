@@ -1,12 +1,16 @@
 """audio_c3.no_echo package: the D22a no-echo rule on every Suno payload
-(Owner AF-ECHO-U1, Decision log 36 2026-10-07, plan 6.12 item 3).
+(Owner AF-ECHO-U1, Decision log 36 2026-10-07, plan 6.12 item 3; Part F F13
+owner order 2026-10-08).
 
 The song payload and every voice-pack payload carry the dry close-microphone
-vocal rule and the seven negative tags (reverb, echo, delay, hall, ethereal,
-ambient, choir pad); a spoken part naming spacious, cinematic or choir is
-refused by name. The choice card and the docs each state the dry vocal rule
-in one line. Payload shaping and verification only — no network, no media, no
-operator paths; Skill 74 stays the sole KIE path. stdlib only.
+vocal rule and the short negative tags (reverb, echo, choir); a spoken part
+naming spacious, cinematic or choir is refused by name, and (Part F F13) a
+SONG style naming a banned song-style word (strings, gospel, harmonies,
+cinematic, spacious, prayerful, atmospheric, ethereal, ambient, airy, wet,
+shimmer, hall, room, choir) is refused too. The choice card and the docs
+each state the dry vocal rule in one line. Payload shaping and verification
+only — no network, no media, no operator paths; Skill 74 stays the sole KIE
+path. stdlib only.
 """
 from .no_echo import (  # noqa: F401
     BRIEF_NEGATIVE_TAGS,
@@ -23,6 +27,7 @@ from .no_echo import (  # noqa: F401
     RULE_ID,
     RULE_TEXT,
     SCHEMA_VERSION,
+    SONG_BANNED_STYLE_WORDS,
     SPOKEN_BANNED_STYLE_WORDS,
     STYLE_TEXT_PATHS,
     TAG_LIST_TEXT,
@@ -32,6 +37,7 @@ from .no_echo import (  # noqa: F401
     docs_line,
     main,
     negative_tags,
+    refused_song_style_words,
     refused_style_words,
     rule_text,
     song_request,
@@ -54,6 +60,7 @@ __all__ = [
     "RULE_ID",
     "RULE_TEXT",
     "SCHEMA_VERSION",
+    "SONG_BANNED_STYLE_WORDS",
     "SPOKEN_BANNED_STYLE_WORDS",
     "STYLE_TEXT_PATHS",
     "TAG_LIST_TEXT",
@@ -63,6 +70,7 @@ __all__ = [
     "docs_line",
     "main",
     "negative_tags",
+    "refused_song_style_words",
     "refused_style_words",
     "rule_text",
     "song_request",

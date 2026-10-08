@@ -62,7 +62,7 @@ The install subagent does NOT use the conversational reply model (e.g., Gemini 3
 
 **Recommended install subagent models (in priority order):**
 
-1. **`deepseek/deepseek-v4-pro`** via OpenRouter or Ollama Cloud, with thinking set to `max`. ~1M context, deep reasoning, best long-instruction following.
+1. **`deepseek/deepseek-v4.1-flash`** via OpenRouter or Ollama Cloud, with thinking set to `max`. ~1M context, deep reasoning, best long-instruction following.
 2. **`google/gemini-3.5-flash`** via OpenRouter. ~2M context, very fast, good reasoning. Best if budget is a concern.
 3. **`ollama/deepseek-v4.1-flash:cloud`** with `thinking: max`. Free if Ollama Cloud is configured. Slightly less capable than Pro but workable.
 
@@ -214,7 +214,7 @@ If `EXECUTION_MODE = subagent`, this check still happens BUT the recommendation 
 
 ```
 "I'll spawn the install subagent. My default recommendation is
-deepseek/deepseek-v4-pro with thinking set to 'max' (deep reasoning,
+deepseek/deepseek-v4.1-flash with thinking set to 'max' (deep reasoning,
 large context). Alternatives:
    - gemini-3.5-flash via OpenRouter (faster, slightly less deep)
    - ollama/deepseek-v4.1-flash:cloud with thinking:max (free if Ollama

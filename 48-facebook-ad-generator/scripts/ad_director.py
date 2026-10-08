@@ -446,9 +446,8 @@ def _estimated_cost(run_dir: Path) -> float:
 
 
 def _load_kie_api_key() -> str:
-    import os
-    # A placeholder is NOT-SET (shared secret canon decides).
-    return abc.real_kie_key(os.environ.get("KIE_API_KEY", "")) or ""
+    # Any store/alias (KEF001); a placeholder is NOT-SET (shared secret canon decides).
+    return abc.resolve_kie_key(lambda m: print(m, file=sys.stderr)) or ""
 
 
 def phase0_preflight(run_dir: Path, adhoc: bool = False) -> None:

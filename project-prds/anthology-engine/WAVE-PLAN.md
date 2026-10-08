@@ -38,7 +38,7 @@ Nothing downstream starts until Wave 0's outputs are written to the build-state 
 - W1.6 Webhook layer: route template, per-client secret, T1 to T9 verifier, fixture payloads and unit tests.
 - W1.7 Ledger writer anthology_state.py: base schema, mirror, legal-transition matrix, all subcommands including s9_ready with guards, reconcile.
 - W1.8 Anthology registry and provisioning bindings: AUTO-PROVISION the standard Anthology pipeline in the client's own Convert and Flow account with the client's own token (override binding only by exception); stage map per anthology (drives the per-gate pipeline-stage update); form registration; field create-or-verify.
-- W1.9 Model routing: the GLM 5.2 Ollama Cloud chain (thinking high, temp 0.3), OpenRouter GLM 5.2, Gemini 3.5 Flash, hold-and-alert on exhaustion; Minimax V3 light tier; optional DeepSeek V4 Pro / Kimi 2.6 1M tier; Anthropic deny patterns.
+- W1.9 Model routing: the GLM 5.2 Ollama Cloud chain (thinking high, temp 0.3), OpenRouter GLM 5.2, Gemini 3.5 Flash, hold-and-alert on exhaustion; Minimax V3 light tier; optional DeepSeek V4.1 Flash / Kimi 2.6 1M tier; Anthropic deny patterns.
 - W1.10 Web-search detection ladder (prefer Perplexity; degrade plus flag).
 - W1.11 Drive delivery adapter: drive-tree-provision.py, Doc creation via direct Drive API with the existing service account, view-only sharing, export bundle.
 - W1.12 PDF renderer: deterministic HTML-to-PDF, house templates seeded from the harvested formatter content rules (the [UNCHANGED]-restored text), guard-font-floor.py.

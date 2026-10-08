@@ -6,7 +6,7 @@ WHY THIS EXISTS
 Before this module, the presentation dispatcher hardcoded DeepSeek
 V4 Flash as the ONLY authoring model (dispatcher.deepseek_complete). Nothing
 routed by what the client actually owns: a client with OpenRouter-GLM and no
-DeepSeek key could not be served, a client owning DeepSeek V4 Pro never got
+DeepSeek key could not be served, a client owning DeepSeek V4.1 Flash never got
 the stronger model for reasoning phases, and QC judges could silently ride
 the same model identity that authored the artifact.
 
@@ -33,7 +33,7 @@ call sites (fix spec). Resolution order:
        exposes resolve_alias() -- FIX 13 is authoritative and this module
        defers to it;
     2. the built-in DEFAULT_ALIAS_REGISTRY here, which pins only the ids
-       this box has LIVE-CONFIRMED (deepseek-v4-pro / deepseek-flash on
+       this box has LIVE-CONFIRMED (deepseek-v4.1-flash / deepseek-flash on
        the native DeepSeek endpoint) plus the GLM/Ollama/Kie labels from the
        fix-spec table, to be superseded by FIX 13's live catalog the moment
        that module lands.
@@ -110,8 +110,8 @@ def flag_enabled() -> bool:
 # on this box (the DeepSeek native pair); the rest carry the fix-spec table's
 # labels until FIX 13's live catalog lands and resolves them authoritatively.
 DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
-    "deepseek-v4-pro": {"provider": "deepseek-direct",
-                        "model": "deepseek-v4-pro",
+    "deepseek-v4.1-flash": {"provider": "deepseek-direct",
+                        "model": "deepseek-v4.1-flash",
                         "modality": "text", "context_class": "long",
                         "live_confirmed": True},
     "deepseek-flash": {"provider": "deepseek-direct",
@@ -149,7 +149,7 @@ DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
 # the fallback for aliases the catalog does not name (the GLM/OpenRouter
 # labels), never a second source of truth for the ones it does.
 ROUTER_CATALOG_ALIAS: Dict[str, str] = {
-    "deepseek-v4-pro": "text.strong",
+    "deepseek-v4.1-flash": "text.strong",
     "deepseek-flash": "text.fast",
     "gpt-image-2": "image.t2i",
     "gpt-image-2-5": "image.t2i",
@@ -365,25 +365,25 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
     # Do not trust this key to gate anything.
     "authoring": [
         {"alias": "deepseek-flash"},
-        {"alias": "deepseek-v4-pro", "allow_flash_fallback": False},
+        {"alias": "deepseek-v4.1-flash", "allow_flash_fallback": False},
         {"alias": "glm-5.3"},
     ],
     "prompt_authoring": [  # P4-PROMPT: flash -> pro -> GLM
         {"alias": "deepseek-flash"},
-        {"alias": "deepseek-v4-pro", "allow_flash_fallback": False},
+        {"alias": "deepseek-v4.1-flash", "allow_flash_fallback": False},
         {"alias": "glm-5.3"},
     ],
     "reasoning_long": [  # no Flash fallback: long context + reasoning
-        {"alias": "deepseek-v4-pro"},
+        {"alias": "deepseek-v4.1-flash"},
         {"alias": "glm-5.3"},
     ],
     "long_synthesis": [  # research bundle; cannot fall below long context
-        {"alias": "deepseek-v4-pro"},
+        {"alias": "deepseek-v4.1-flash"},
         {"alias": "glm-5.3"},
     ],
     "research_synthesis": [  # FIX 19 owns retrieval; synthesis rides the
                              # same long-context doctrine
-        {"alias": "deepseek-v4-pro"},
+        {"alias": "deepseek-v4.1-flash"},
         {"alias": "glm-5.3"},
     ],
     "cheap_text": [
@@ -408,10 +408,10 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
         # "OLLAMA_CLOUD_API_KEY not set". F30b: OpenRouter credits are
         # exhausted (HTTP 402 at any token budget -- balance is negative),
         # so the OCR readback falls to deepseek-direct (proven live 2026-09-01
-        # with a 1-token smoke call). deepseek-v4-pro is a text model; the
+        # with a 1-token smoke call). deepseek-v4.1-flash is a text model; the
         # P-IMAGE-QC OCR readback is text-QC over baked-prompt text, not raw
         # pixel vision, so a text model satisfies the verifier.
-        {"alias": "deepseek-v4-pro"},
+        {"alias": "deepseek-v4.1-flash"},
         {"alias": "glm-5.3"},
         {"alias": "glm-ocr"},
     ],
@@ -420,7 +420,7 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
         {"alias": "gpt-image-2-5"},
     ],
     "speech_text": [
-        {"alias": "deepseek-v4-pro"},
+        {"alias": "deepseek-v4.1-flash"},
         {"alias": "glm-5.3"},
     ],
     "mechanical": [],  # no LLM route, ever
@@ -429,7 +429,7 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
 
 # ---------------------------------------------------------------------------
 # CLIENT MODEL PLAN (operator requirement 2026-09-04, verbatim):
-#   "whatever is forcing this thing to use DeepSeek V4 Pro, I don't want to be
+#   "whatever is forcing this thing to use DeepSeek V4.1 Flash, I don't want to be
 #    forced to do anything. So as a client should be able to choose whatever
 #    they want to be their primary workhorse or authoring model."
 #
@@ -592,7 +592,7 @@ def _registry_capability_meta(model_id: str) -> Dict[str, Any]:
     WHY THIS EXISTS (verified 2026-09-04): model_catalog.json declares ZERO
     capability metadata -- `context_class` and `modality` appear 0 times in the
     whole file -- so resolve_alias()'s setdefault() hands back "standard"/"text"
-    for EVERY catalog-backed alias, deepseek-v4-pro included. The catalog is
+    for EVERY catalog-backed alias, deepseek-v4.1-flash included. The catalog is
     authoritative for the literal ids (FIX 17b) and says nothing about
     capability; this registry is where capability is actually declared. Reading
     the floor off the catalog's defaults would judge the department's own

@@ -133,7 +133,7 @@ def _seed_execution_stamps(rd: pathlib.Path) -> None:
         rows = [
             {"kind": "author", "execution_id": author_exec,
              "phase_id": phase_id, "artifact": f"working/qc/{name}",
-             "artifact_sha256": sha, "model": "deepseek-v4-pro",
+             "artifact_sha256": sha, "model": "deepseek-v4.1-flash",
              "provider": "deepseek-direct", "model_class": "deepseek",
              "stamped_at": "2026-09-08T12:00:00+01:00"},
             {"kind": "reviewer", "execution_id": reviewer_exec,
@@ -152,7 +152,7 @@ def _seed_execution_stamps(rd: pathlib.Path) -> None:
             rows.append(
                 {"kind": "author", "execution_id": producer_exec,
                  "phase_id": "P-PRODUCER-FIXTURE", "artifact": crel,
-                 "artifact_sha256": csha, "model": "deepseek-v4-pro",
+                 "artifact_sha256": csha, "model": "deepseek-v4.1-flash",
                  "provider": "deepseek-direct", "model_class": "deepseek",
                  "stamped_at": "2026-09-08T12:00:00+01:00"})
             rows.append(

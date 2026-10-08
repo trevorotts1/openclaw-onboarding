@@ -667,7 +667,7 @@ def resolve_model_for_role(
 
 # Trevor's full lineup (realistic client box)
 TREVOR_LINEUP = [
-    "ollama/deepseek-v4-pro:cloud",
+    "ollama/deepseek-v4.1-flash:cloud",
     "ollama/kimi-k2.6:cloud",
     "ollama/minimax-m1:cloud",
     "openrouter/xiaomi/mimo-v2.5-pro",

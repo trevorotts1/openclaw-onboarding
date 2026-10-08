@@ -555,7 +555,7 @@ blocks in CORE_UPDATES.md (reply-to-sender, {{OWNER_CHAT_ID}}). The
 - All team Telegram IDs: see TEAM_CONFIG.md
 - To check a worker's conversation: sessions_history(sessionKey) or sessions_list to find the session
 - To relay between workers: dispatcher reads source worker history, summarizes, sends to target worker or target DM
-- Worker sub-agent model must support tool calls (verified at selection time: Kimi 2.6+, Codex GPT, DeepSeek V4-pro all support tools; reasoning-only models are filtered)
+- Worker sub-agent model must support tool calls (verified at selection time: Kimi 2.6+, Codex GPT, DeepSeek V4.1 Flash all support tools; reasoning-only models are filtered)
 
 
 [ADD TO MEMORY.md]

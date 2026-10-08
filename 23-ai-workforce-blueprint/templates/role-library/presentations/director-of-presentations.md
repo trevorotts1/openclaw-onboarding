@@ -230,7 +230,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 - Capacity probe: free -h, nproc, uptime, df -h
 - Checkpoint files: working/checkpoints/*.json
 - Master SOP: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
-- Model routing: kimi-k2.6:cloud primary, DeepSeek v4 Pro fallback, minimax-m3:cloud for QC
+- Model routing: kimi-k2.6:cloud primary, DeepSeek V4.1 Flash fallback, minimax-m3:cloud for QC
 
 ---
 

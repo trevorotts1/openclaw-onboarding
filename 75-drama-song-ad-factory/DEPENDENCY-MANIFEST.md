@@ -14,6 +14,22 @@ Source of CLI shape: directive 24.1 (`scripts/factory.py`, `release_check.py`).
 Source of faster-whisper fallback: directive 12.4 (provider-native lyric
 timing first, faster-whisper/Whisper-based alignment second).
 
+Source of the ONE transcription step (F17, owner order 2026-10-08, Critical):
+`scripts/core/audio_c3/lyric_timing.py` — every consumer needing words/word
+timing (lyric check, captions, lip-sync line windows, talk/sing split) calls
+`provide_word_timings()` there; tier order is 1) Suno's own timestamped
+lyrics via KIE `ai-music-api/timeStamped-lyrics` through `core/kie_dispatch`
+(alignedWords startS/endS; default, no local model), 2) fallback
+faster-whisper LOCAL — ONE model loaded at a time, tracks one after another
+in that single process, smallest model that passes (small/medium int8); NEVER
+openai-whisper, 3) third fallback cloud speech-to-text with word timestamps,
+the CLIENT's own key only (never operator keys). The Part D load guard
+(`memory_guard`, lane_size/capacity-monitor numbers) runs before any local
+model load and refuses with LOCAL_MODEL_LOAD_REFUSED. Builders may never
+write their own whisper/asr scripts: `scripts/qc-no-local-asr.sh` (the F14
+lock, extended) fails a hand-written whisper/asr/transcription script in a
+run folder or core non-test file.
+
 Canonical-core default architecture: onboarding-owned canonical core with
 thin OpenClaw and 999 runtime adapters (directive 2.4). Exact source path
 and release mechanism recorded in `ARCHITECTURE-DECISIONS.md` before coding.
@@ -57,7 +73,7 @@ absent (INSTALL-CONTRACT Rule 16, build-directive section 2.4).
 
 | Package | Role | Pin status (scaffold) |
 |---|---|---|
-| `faster-whisper` | Local lyric-alignment fallback when provider-native timestamps are insufficient (directive 12.4). Approved lyrics stay source of truth; ASR gives timing/mismatch evidence only | NOT INSTALLED on this box (verified 2026-10-06: `import faster_whisper` → `ModuleNotFoundError`; no `pip` on PATH; Python 3.14.7). Pin + hash + Python/tool versions at release after verification on both clean installs |
+| `faster-whisper` | Local lyric-alignment fallback when provider-native timestamps are insufficient (directive 12.4; F17 owner order 2026-10-08: installed ONLY when the tier-2 fallback is enabled — `PREREQS.json` `faster-whisper-optional` carries the same condition). Tier 2 loads ONE model at a time in `scripts/core/audio_c3/lyric_timing.py` (ONE process per run, tracks transcribed one after another, small/medium int8); the Part D load guard refuses a load past the machine's limit. NEVER openai-whisper (qc-no-local-asr.sh). Approved lyrics stay source of truth; ASR gives timing/mismatch evidence only | NOT INSTALLED on this box (verified 2026-10-06: `import faster_whisper` → `ModuleNotFoundError`; no `pip` on PATH; Python 3.14.7). Pin + hash + Python/tool versions at release after verification on both clean installs |
 | `ffmpeg` | Frame stitch, scene join, voiceover mux, -14 LUFS finish | PRESENT on this box (verified 2026-10-06: `/opt/homebrew/bin/ffmpeg`, version 8.1.1). Pin minimum version + verify on both clean installs at release |
 | Python stdlib | State, hashing, paths, CLI parsing, cost arithmetic (directive 24.4) | preferred; no pin needed |
 

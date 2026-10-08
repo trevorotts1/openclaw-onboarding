@@ -55,7 +55,7 @@ def _report(rd: pathlib.Path, graded_by: str = "qc-specialist-presentations") ->
 
 
 def _stamp(rd: pathlib.Path, *, author_exec: str, reviewer_exec: str,
-           author_model: str = "deepseek-v4-pro", reviewer_model: str = "kimi-v4-a",
+           author_model: str = "deepseek-v4.1-flash", reviewer_model: str = "kimi-v4-a",
            sha: str = None, reviewed_artifact_rel: str = ARTIFACT_REL,
            rubric_version: str = "manifest-test") -> None:
     p = rd / ARTIFACT_REL
@@ -195,7 +195,7 @@ def test_opposite_model_policy_enforced_when_demanded(tmp_path):
     rd = _rd(tmp_path)
     _report(rd)
     _stamp(rd, author_exec="exec-A", reviewer_exec="exec-B",
-           author_model="deepseek-v4-pro", reviewer_model="deepseek-flash")
+           author_model="deepseek-v4.1-flash", reviewer_model="deepseek-flash")
     assert es.qc_independence_reason(rd, PHASE, None, rd / ARTIFACT_REL) == "", \
         "default policy does not demand opposite models"
     reason = es.qc_independence_reason(rd, PHASE, None, rd / ARTIFACT_REL,
@@ -203,7 +203,7 @@ def test_opposite_model_policy_enforced_when_demanded(tmp_path):
     assert reason and "opposite implementation/QC model" in reason
     # A genuinely opposite class passes the demanded policy.
     _stamp(rd, author_exec="exec-A2", reviewer_exec="exec-B2",
-           author_model="deepseek-v4-pro", reviewer_model="claude-opus-4")
+           author_model="deepseek-v4.1-flash", reviewer_model="claude-opus-4")
     assert es.qc_independence_reason(rd, PHASE, None, rd / ARTIFACT_REL,
                                      require_opposite_model=True) == ""
 
@@ -318,7 +318,7 @@ def test_production_topology_report_plus_consumed_passes_aggregate(tmp_path):
                             "working/copy/slides_copy.md"])}.items():
         rp = rd / report_rel
         rev_id = f"qc-{phase_id}-prod-1"
-        _es.author_stamp(rd, phase_id, rp, model="deepseek-v4-pro",
+        _es.author_stamp(rd, phase_id, rp, model="deepseek-v4.1-flash",
                          provider="deepseek-direct")
         _es.qc_stamp(rd, phase_id, rp, reviewer_execution_id=rev_id,
                      model="kimi-v4-a", provider="moonshot",
@@ -327,7 +327,7 @@ def test_production_topology_report_plus_consumed_passes_aggregate(tmp_path):
             cp = rd / crel
             if not any(r.get("artifact") == crel
                        for r in _es._load_stamps(rd, "P-PROD").get("rows", [])):
-                _es.author_stamp(rd, "P-PROD", cp, model="deepseek-v4-pro",
+                _es.author_stamp(rd, "P-PROD", cp, model="deepseek-v4.1-flash",
                                  provider="deepseek-direct")
             _es.qc_stamp(rd, phase_id, cp, reviewer_execution_id=rev_id,
                          model="kimi-v4-a", provider="moonshot",
@@ -350,7 +350,7 @@ def test_upstream_mutation_after_pass_blocks_until_fresh_review(tmp_path):
     upstream.parent.mkdir(parents=True, exist_ok=True)
     upstream.write_text("# deck copy v1\n", encoding="utf-8")
     # Production mints a producer author stamp at the artifact write sites.
-    _es.author_stamp(rd, "P-PROD", upstream, model="deepseek-v4-pro",
+    _es.author_stamp(rd, "P-PROD", upstream, model="deepseek-v4.1-flash",
                      provider="deepseek-direct")
     up_sha = _es.sha256_file(upstream)
     store = rd / "working" / "execution-stamps" / f"{PHASE}.stamp.json"
@@ -370,7 +370,7 @@ def test_upstream_mutation_after_pass_blocks_until_fresh_review(tmp_path):
     assert reasons and "CURRENT content" in reasons[0]
     # Fresh review of the NEW bytes restores coverage (production re-stamps
     # the producer author row at the repair write site, then QC re-stamps).
-    _es.author_stamp(rd, "P-PROD", upstream, model="deepseek-v4-pro",
+    _es.author_stamp(rd, "P-PROD", upstream, model="deepseek-v4.1-flash",
                      provider="deepseek-direct")
     obj = json.loads(store.read_text(encoding="utf-8"))
     obj["rows"].append(
@@ -403,7 +403,7 @@ def test_dispatcher_reviewer_stamp_covers_manifest_consumes_in_repo_layout(tmp_p
     upstream = rd / "working" / "copy" / "slides_copy.md"
     upstream.parent.mkdir(parents=True, exist_ok=True)
     upstream.write_text("# deck copy (production topology)\n", encoding="utf-8")
-    es.author_stamp(rd, "P4-COPY", upstream, model="deepseek-v4-pro",
+    es.author_stamp(rd, "P4-COPY", upstream, model="deepseek-v4.1-flash",
                     provider="deepseek-direct")
     report = _report(rd)
     # No state.json manifest pin: exercise the dept-sops / walk-up legs.

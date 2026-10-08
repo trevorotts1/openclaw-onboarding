@@ -53,7 +53,7 @@ sm = _load("select_model", "select_model.py")
 
 # Representative client inventory (mirrors model_selector.TREVOR_LINEUP shape).
 INV_FULL = [
-    "ollama/deepseek-v4-pro:cloud",          # T1 heavy text
+    "ollama/deepseek-v4.1-flash:cloud",          # T1 heavy text
     "ollama/kimi-k2.6:cloud",                # T1 heavy text
     "ollama/minimax-m1:cloud",               # T1 mid text
     "ollama/deepseek-v4.1-flash:cloud",   # T1 fast text (live 2026-08-06 fleet build)
@@ -62,7 +62,7 @@ INV_FULL = [
     "openrouter/free",                       # T3 free
 ]
 INV_NO_VISION = [
-    "ollama/deepseek-v4-pro:cloud",
+    "ollama/deepseek-v4.1-flash:cloud",
     "ollama/deepseek-v4.1-flash:cloud",
     "openrouter/free",
 ]
@@ -233,7 +233,7 @@ class TestUnknownGenerationGate(unittest.TestCase):
 
     def test_recognized_text_models_unaffected(self):
         # the gate must NOT disturb recognized text LLMs.
-        for mid in ("ollama/deepseek-v4-pro:cloud",
+        for mid in ("ollama/deepseek-v4.1-flash:cloud",
                     "ollama/kimi-k2.6:cloud",
                     "openrouter/z-ai/glm-4.5"):
             self.assertIn("text", sm.capabilities_for_model(mid),
