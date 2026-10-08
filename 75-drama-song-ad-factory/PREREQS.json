@@ -92,10 +92,10 @@
     {
       "id": "skill-30-fish-audio",
       "type": "skill",
-      "label": "Skill 30 - Fish Audio API reference",
+      "label": "Skill 30 - Fish Audio API reference (not used by drama song ads)",
       "check": { "skill": "30-fish-audio-api-reference" },
       "severity": "optional",
-      "satisfy": "Install Skill 30 (30-fish-audio-api-reference) before any spoken-voiceover stage: TTS to Fish Audio rides Skill 30; sung music never needs it (build-directive section 10.3 - no new ElevenLabs dependency). From an onboarding checkout run: bash update-skills.sh; verify the 30-fish-audio-api-reference folder exists in SKILLS_DIR."
+      "satisfy": "NOT USED by drama song ads: Fish Audio (Skill 30) was the spoken-voiceover route in an earlier draft; spoken voiceover is now built as Skill 74 request JSON (a google/gemini-*-tts model) and dispatched through core/kie_dispatch (manual M2). Do not install Skill 30 for this skill and do not spend on Fish Audio; sung music never needed it."
     },
     {
       "id": "kie-api-key",
@@ -108,10 +108,10 @@
     {
       "id": "fish-audio-api-key",
       "type": "credential",
-      "label": "Fish Audio API key (spoken voiceover only)",
+      "label": "Fish Audio API key (not used by drama song ads)",
       "check": { "envVar": "FISH_AUDIO_API_KEY" },
       "severity": "optional",
-      "satisfy": "FISH_AUDIO_API_KEY (and FISH_AUDIO_VOICE_ID) are needed only for spoken voiceover stages via Skill 30; a song with sung vocals never needs them. Confirm presence without printing values: ~/.openclaw/secrets/.env (Mac) or /data/.openclaw/secrets/.env (VPS), chmod 600. If absent and voiceover is in scope, ask the operator to add them there, then run: openclaw config set env.vars.FISH_AUDIO_API_KEY \"$FISH_AUDIO_API_KEY\". Do NOT mint a new key."
+      "satisfy": "NOT USED by drama song ads: FISH_AUDIO_API_KEY (and FISH_AUDIO_VOICE_ID) were the spoken-voiceover credential in an earlier draft; spoken voiceover now rides Skill 74 with a google/gemini-*-tts model on KIE_API_KEY (manual M2), so no Fish Audio credential is ever needed. Do not mint, add or check a Fish Audio key for this skill."
     },
     {
       "id": "python3-binary",
@@ -132,10 +132,10 @@
     {
       "id": "faster-whisper-optional",
       "type": "manual",
-      "label": "faster-whisper lyric-alignment fallback (optional)",
-      "check": { "note": "Optional local lyric-alignment fallback (DEPENDENCY-MANIFEST section 3): provider-native timing is the default (build-directive section 12.4); faster-whisper gives timing/mismatch evidence only and is NOT installed on the audited box (verified 2026-10-06, import faster_whisper -> ModuleNotFoundError). Pin + hash arrive at release. Approved lyrics remain the source of truth; never treat ASR output as new approved text." },
+      "label": "faster-whisper lyric-timing fallback (only when the tier-2 fallback is enabled)",
+      "check": { "note": "F17 owner order 2026-10-08 (manual Part F F17, Critical): word timing comes from Suno's own timestamped lyrics via KIE ai-music-api/timeStamped-lyrics through core/kie_dispatch (tier 1, default, no local model). faster-whisper is the tier-2 LOCAL fallback, installed ONLY when this fallback is enabled, and it loads ONE model at a time in scripts/core/audio_c3/lyric_timing.py (one session per run, tracks transcribed one after another, small/medium int8); the Part D load guard (memory_guard, lane_size numbers) refuses a load past the machine's limit (LOCAL_MODEL_LOAD_REFUSED). NEVER openai-whisper (scripts/qc-no-local-asr.sh fails a hand-written whisper/asr script). Tier 3 is cloud speech-to-text with word timestamps on the CLIENT's own key only, never operator keys. Approved lyrics remain the source of truth; ASR output is timing/mismatch evidence only. Verified 2026-10-06 on the audited box: import faster_whisper -> ModuleNotFoundError; no pip on PATH; Python 3.14.7. Pin + hash arrive at release." },
       "severity": "optional",
-      "satisfy": "Install faster-whisper only when a campaign needs the local alignment fallback; pin per DEPENDENCY-MANIFEST section 3 at release."
+      "satisfy": "Install faster-whisper ONLY when the tier-2 local fallback is enabled for a campaign (tier 1 Suno timestamped lyrics stays the default); pin per DEPENDENCY-MANIFEST section 3 at release. One model at a time in lyric_timing.py's WhisperSession; never openai-whisper."
     }
   ]
 }

@@ -140,7 +140,7 @@ def write_orchestrator_rcb():
         "Sub-agent timeout per call (seconds)": 5400,
         "2nd-opinion model family": "MiniMax (minimax-m2.7:cloud)",
         "QC model family": "Kimi (kimi-k2.6:cloud)",
-        "Writer model family": "DeepSeek (deepseek-v4-pro:cloud)",
+        "Writer model family": "DeepSeek (deepseek-v4.1-flash:cloud)",
     }
     content = f"# Orchestrator Reading Compliance Block (RCB)\n\n"
     content += f"Generated: {now_iso()}\n\n"
@@ -183,13 +183,13 @@ def preflight_validate():
         with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=5) as r:
             ollama_models = [m["name"] for m in json.loads(r.read()).get("models", [])]
         checks.append(("ollama_reachable", True, f"{len(ollama_models)} models"))
-        for variant in ["deepseek-v4-pro:cloud", "deepseek-v4.1-flash:cloud",
+        for variant in ["deepseek-v4.1-flash:cloud", "deepseek-v4.1-flash:cloud",
                         "kimi-k2.6:cloud", "minimax-m2.7:cloud", "gemma-31b:cloud"]:
             found = any(variant in m for m in ollama_models)
             checks.append((f"ollama_cloud_{variant}", found, "found" if found else "MISSING"))
     except Exception as e:
         checks.append(("ollama_reachable", False, str(e)))
-        for v in ["deepseek-v4-pro:cloud", "deepseek-v4.1-flash:cloud",
+        for v in ["deepseek-v4.1-flash:cloud", "deepseek-v4.1-flash:cloud",
                   "kimi-k2.6:cloud", "minimax-m2.7:cloud", "gemma-31b:cloud"]:
             checks.append((f"ollama_cloud_{v}", False, "ollama unreachable"))
 
@@ -483,10 +483,10 @@ def spawn_writers(state):
             "prompt_file": str(SKILL_ROOT / "prompts" / "writer-prompt-v2.9.md"),
             "manifest_path": str(MANIFESTS_DIR / f"segment-{seg:02d}.json"),
             "model": {
-                "primary": {"provider": "ollama", "model": "deepseek-v4-pro:cloud",
+                "primary": {"provider": "ollama", "model": "deepseek-v4.1-flash:cloud",
                              "reasoning": "xhigh", "max_tokens": 8000,
                              "temperature": 0.6, "timeout_seconds": 5400},
-                "fallback_1": {"provider": "openrouter", "model": "deepseek/deepseek-v4-pro",
+                "fallback_1": {"provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash",
                                 "reasoning": "xhigh", "max_tokens": 8000,
                                 "temperature": 0.6, "timeout_seconds": 5400},
                 "no_silent_downgrade": True, "no_anthropic": True, "no_gpt": True,

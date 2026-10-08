@@ -593,6 +593,57 @@ def test_no_operator_paths_and_no_private_kie_client():
                                               "parked": 4, "rejected": 5})
 
 
+def test_sfx_default_run_zero_jobs_f4():
+    """F4: a Suno sounds job refuses without an explicit order in request."""
+    env, db, fake, tmp = run_case(
+        BASE_SCRIPT, "f4-sfx", model="ai-music-api/sounds", cost=50,
+        request={"model": "V6", "endpoint": "/api/v1/jobs/createTask",
+                 "input": {"prompt": "thunder roll"}})
+    check("f4: sounds job on default run rejected",
+          env["outcome"] == "rejected"
+          and env["reason_code"] == "SFX_JOB_NOT_ORDERED", str(env))
+    check("f4: refusal left no ledger row",
+          job_row(db, "f4-sfx-job", "att-1") is None
+          or job_row(db, "f4-sfx-job", "att-1")[0] == "rejected", "")
+
+    song_script = dict(BASE_SCRIPT)
+    song_script.update({
+        "submit": (0, {"state": "queued", "task_id": "t-song",
+                       "raw_family": "market"}),
+        "wait": (0, {"state": "success", "task_id": "t-song",
+                     "raw_family": "market", "credits_consumed": 10}),
+        "save": (0, {"state": "success", "task_id": "t-song",
+                     "saved_paths": ["/tmp/f4-song.mp3"], "credits_consumed": 10}),
+    })
+    env2, db2, fake2, tmp2 = run_case(
+        song_script, "f4-song", model="ai-music-api/generate", cost=100,
+        request={"model": "V6", "endpoint": "/api/v1/jobs/createTask",
+                 "input": {"custom_mode": True, "instrumental": False}})
+    check("f4: song generation unaffected",
+          env2["outcome"] == "ok", str(env2["outcome"]))
+    check("f4: song job reconciled in ledger",
+          job_row(db2, "f4-song-job", "att-1") is not None
+          and job_row(db2, "f4-song-job", "att-1")[1] == "succeeded", "")
+
+    ordered_script = dict(BASE_SCRIPT)
+    ordered_script.update({
+        "submit": (0, {"state": "queued", "task_id": "t-sfx",
+                       "raw_family": "market"}),
+        "wait": (0, {"state": "success", "task_id": "t-sfx",
+                     "raw_family": "market", "credits_consumed": 3}),
+        "save": (0, {"state": "success", "task_id": "t-sfx",
+                     "saved_paths": ["/tmp/f4-sfx.mp3"], "credits_consumed": 3}),
+    })
+    env3, _, _, tmp3 = run_case(
+        ordered_script, "f4-sfx-ordered", model="ai-music-api/sounds", cost=50,
+        request={"model": "V6", "endpoint": "/api/v1/jobs/createTask",
+                 "sound_effects": ["thunder roll"],
+                 "input": {"prompt": "thunder roll"}})
+    check("f4: explicit order in request allows the sounds job",
+          env3["outcome"] == "ok",
+          str({k: env3[k] for k in ("outcome", "reason_code")}))
+
+
 TESTS = [
     test_f15_unanswered_card_refuses_dispatch,
     test_ok,
@@ -608,6 +659,7 @@ TESTS = [
     test_submit_crash_is_unknown_no_retry,
     test_submit_skipped_is_not_generated,
     test_adapter_missing_fails_closed,
+    test_sfx_default_run_zero_jobs_f4,
     test_resolver_no_remote_task_undeterminable_without_evidence,
     test_resolver_zero_settles_only_with_submit_error_evidence,
     test_no_operator_paths_and_no_private_kie_client,

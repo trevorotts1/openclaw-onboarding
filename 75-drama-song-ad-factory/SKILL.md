@@ -96,7 +96,12 @@ Every envelope carries `schema_version` = `blackceo.intake-preflight/envelope/v1
 - Image and video: Skill 66 (`66-kie-image`) / Skill 67 (`67-kie-video`).
 - Live transport/polling/credit checks: Skill 74 (`74-kie-live-adapter`),
   shadow-first — submit never chooses or changes a model.
-- Spoken voiceover: Fish Audio via Skill 30 (`30-fish-audio-api-reference`).
+- Spoken voiceover: Velvet Voiceover voices go through Skill 74
+  (`74-kie-live-adapter`) with a `google/gemini-*-tts` model — request JSON
+  built by `core/voice_velvet_echo/velvet_voiceover.py`, dispatched through
+  `core/kie_dispatch` like every other paid call (same reserve/submit/wait/
+  reconcile protocol, no private KIE client). Fish Audio (Skill 30) is not
+  used by drama song ads.
 - Account setup: Skill 07 (`07-kie-setup`); callback relay: Skill 46
   (`46-kie-callback-relay`).
 - Ordinary FFmpeg editing needs ride Skills 25 / 27.
@@ -106,6 +111,16 @@ ceiling first (no recorded ceiling = no paid call), keeps
 reserved/submitted/unknown/reconciled protocol, and never auto-resubmits an
 uncertain outcome. Always show the client the sentence from
 `references/client-messages.md`, never the reason code.
+
+- **All ready KIE clips go out at once (Part F F5):** once reference images
+  and keyframes exist, EVERY ready clip is submitted together in one pass —
+  no "test batch first" unless the owner orders it. Stage order stays
+  reference images → keyframes → clips; the clips stage is the single
+  all-ready pass. `core/kie_dispatch/kie_dispatch.py::submit_all_ready(jobs,
+  max_concurrency=None)` runs it and the receipt carries
+  `max_at_once = len(submitted)` (or the provider cap, named in
+  `capped_by`, when that binds). Never submit clips in dribbles or wait for
+  one clip before sending the next.
 
 ## Shared canonical core (read, never duplicate)
 

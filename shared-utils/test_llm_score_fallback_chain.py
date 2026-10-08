@@ -195,10 +195,10 @@ def test_the_backstop_tag_is_read_per_call_not_at_import(box, monkeypatch):
     freeze whatever the environment held at import, which under launchd and
     the openclaw cron is nothing at all."""
     before = llm_score.scoring_chain()[4]
-    monkeypatch.setenv("OLLAMA_CLOUD_SCORING_MODEL", "deepseek-v4-pro:0813")
+    monkeypatch.setenv("OLLAMA_CLOUD_SCORING_MODEL", "deepseek-v4.1-flash:cloud")
     after = llm_score.scoring_chain()[4]
     assert before == ("ollama-cloud", "deepseek-v4.1-flash")
-    assert after == ("ollama-cloud", "deepseek-v4-pro:0813")
+    assert after == ("ollama-cloud", "deepseek-v4.1-flash:cloud")
 
 
 def test_every_step_is_attempted_in_order_when_each_one_fails(box, monkeypatch):
@@ -449,9 +449,9 @@ def test_the_override_replaces_the_table_outright(box, monkeypatch):
 
 def test_the_override_splits_on_the_first_colon_only(box, monkeypatch):
     """An Ollama tag carries its own colon. Splitting anywhere else would
-    turn deepseek-v4-pro:0813 into a model named 'deepseek-v4-pro'."""
-    monkeypatch.setenv("LLM_SCORE_CHAIN", "ollama-cloud:deepseek-v4-pro:0813")
-    assert llm_score.scoring_chain() == [("ollama-cloud", "deepseek-v4-pro:0813")]
+    turn deepseek-v4.1-flash:cloud into a model named 'deepseek-v4.1-flash'."""
+    monkeypatch.setenv("LLM_SCORE_CHAIN", "ollama-cloud:deepseek-v4.1-flash:cloud")
+    assert llm_score.scoring_chain() == [("ollama-cloud", "deepseek-v4.1-flash:cloud")]
 
 
 def test_an_unknown_provider_is_skipped_with_one_warning(box, monkeypatch, capsys):

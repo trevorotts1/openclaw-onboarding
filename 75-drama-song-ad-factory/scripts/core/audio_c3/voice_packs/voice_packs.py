@@ -24,8 +24,8 @@ Rules implemented:
 2. PACK GENERATION RECORDS THE IDENTITY. Every pack carries the character's
    full voice identity plus provider suno, pack_kind spoken-only, cut_into
    lead-vocal-stem, recipe hybrid-occ-5min-rnb-flow and the dry close-mic
-   negative tags (D22a / D37: no reverb, echo, delay or hall, ever; spoken
-   parts never use "spacious", "cinematic" or "choir").
+   negative tags (D22a / D37 / F13: reverb, echo, choir; spoken parts never
+   use "spacious", "cinematic" or "choir").
 3. COLLISION PATH - the reference recipe. The main take gave the female
    guests the same pitch as the lead, so the host and the HR voicemail became
    SUNO VOICE-PACK GENERATIONS, SPOKEN ONLY, cut into the lead-vocal stem.
@@ -66,9 +66,9 @@ CUT_INTO = "lead-vocal-stem"
 #: The lead keeps the main take; colliding non-lead characters get packs.
 LEAD_ROLE = "hero"
 
-#: D22a / D37: dry close-microphone vocal, these are set as negative tags.
-NEGATIVE_TAGS = ("reverb", "echo", "delay", "hall", "ethereal", "ambient",
-                  "choir pad")
+#: D22a / D37 / Part F F13: dry close-microphone vocal; the short negative
+#: tags (reverb, echo, choir) ride on every pack request.
+NEGATIVE_TAGS = ("reverb", "echo", "choir")
 #: D22a: a spoken part never asks for these style words.
 SPOKEN_BANNED_STYLE_WORDS = ("spacious", "cinematic", "choir")
 

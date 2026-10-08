@@ -29,7 +29,7 @@ title/subtitle, blurb, and outline. For a single-author book use **Skill 53
    - Hand-editing `model-map.json` to replace every `<CLIENT_PROVIDER_ID>` with
      a real provider id (e.g. `openrouter`, `ollama-cloud`) and every
      `<CLIENT_MODEL>` with a real model name for your box (e.g.
-     `qwen/qwen3-coder`, `deepseek/deepseek-v4-pro`).
+     `qwen/qwen3-coder`, `deepseek/deepseek-v4.1-flash`).
    
    In all cases, proceed to step 2 only after `model-map.json` is resolved.
 

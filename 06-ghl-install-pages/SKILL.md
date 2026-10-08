@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v26.4.4"
+  version: "v26.4.6"
   priority: HIGH
 ---
 
@@ -222,14 +222,14 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 11. **Role-aware model_router** - `tools/model_router.py` assigns a model to
     every subtask before execution via an Ollama-Cloud-first ladder (five
     roles; aliases in parentheses). `content` = `ollama/kimi-k2.6:cloud` →
-    `openrouter/moonshotai/kimi-k2.6` → deepseek-v4-pro (universal backup) →
+    `openrouter/moonshotai/kimi-k2.6` → deepseek-v4.1-flash (universal backup) →
     Gemini 3.5 Flash (last resort); `html`
-    (`code`) = `glm-5.2:cloud` → `z-ai/glm-5.2` → deepseek-v4-pro →
+    (`code`) = `glm-5.2:cloud` → `z-ai/glm-5.2` → deepseek-v4.1-flash →
     Gemini 3.5 Flash (last resort); `reasoning` (`funnel`) = GLM 5.2 then
-    DeepSeek v4 Pro (Ollama Cloud → OpenRouter) → Gemini 3.5 Flash;
-    `execution` = `minimax-m3:cloud` (probe-gated) → `deepseek-v4-pro:cloud`
+    DeepSeek V4.1 Flash (Ollama Cloud → OpenRouter) → Gemini 3.5 Flash;
+    `execution` = `minimax-m3:cloud` (probe-gated) → `deepseek-v4.1-flash:cloud`
     → `openrouter/minimax/minimax-m3` (probe-gated) →
-    `openrouter/deepseek/deepseek-v4-pro` → `google/gemini-3.5-flash` (last
+    `openrouter/deepseek/deepseek-v4.1-flash` → `google/gemini-3.5-flash` (last
     rung); `qc` (vision) = MiniMax M3 (probe-gated) → Gemini 3.5 Flash last
     resort. MiniMax M2 is PURGED — it never appears in any rung. The
     router is wired into `tools/v2_dispatcher.py` (role selection at every
@@ -386,10 +386,10 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
    - `model_router.py` - role-aware model selector (Ollama-Cloud-first); called
      by `v2_dispatcher.py` and `ghl_verify` to assign a model to every subtask
      before execution. Role → ladder: `content` → `ollama/kimi-k2.6:cloud` →
-     `openrouter/moonshotai/kimi-k2.6` → DeepSeek v4 Pro (universal backup);
-     `html`/`code` → GLM 5.2 → DeepSeek v4 Pro (universal backup); `reasoning` →
-     GLM 5.2 / DeepSeek v4 Pro; `execution` → MiniMax M3 probe-gated →
-     DeepSeek v4 Pro; `qc` (vision) → MiniMax M3 probe-gated. All ladders end
+     `openrouter/moonshotai/kimi-k2.6` → DeepSeek V4.1 Flash (universal backup);
+     `html`/`code` → GLM 5.2 → DeepSeek V4.1 Flash (universal backup); `reasoning` →
+     GLM 5.2 / DeepSeek V4.1 Flash; `execution` → MiniMax M3 probe-gated →
+     DeepSeek V4.1 Flash; `qc` (vision) → MiniMax M3 probe-gated. All ladders end
      at Gemini 3.5 Flash as last resort. MiniMax M2 is PURGED from every rung.
 6. **ghl-install-pages-full.md** - LEGACY v2.0 raw-Playwright reference, kept for
    historical click-path detail only. Superseded by ghl-browser-builder-full.md.

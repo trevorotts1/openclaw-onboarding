@@ -78,7 +78,7 @@ what it bans), and the build root is found by walking up from this file.
 ## Owner rules observed
 
 - no `SWARM-PLAN.json`, `launch-*.json` or `workflow-*.js` touched;
-- `qualification/` and the owner's packet in the Downloads folder read only;
+- `qualification/` and the owner's read-only input packet read only;
 - no media file, no absolute operator path, no spend, no provider call;
 - KIE access: none in this unit — no request is built here; if a later unit
   calls KIE for this rule, it goes through the Skill 74 live adapter path only;

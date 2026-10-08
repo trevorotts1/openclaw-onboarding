@@ -64,7 +64,7 @@ ROLLBACK_MODELS: Dict[str, str] = {
     # retired in the live catalog (the =1 path can never resolve to it); the
     # =0 rollback restores the old string verbatim for parity, nothing else.
     "image.fallback": "nano-banana-2",
-    "text.strong": "deepseek-v4-pro",
+    "text.strong": "deepseek-v4.1-flash",
     "text.fast": "deepseek-flash",
     "text.judge": "deepseek-flash",
     "vision.ocr": "glm-ocr",

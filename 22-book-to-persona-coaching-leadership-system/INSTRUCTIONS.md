@@ -62,7 +62,7 @@ The skill accepts FOUR source types. Route via `scripts/add-persona-from-source.
 **Model chain (N1: NO Anthropic):**
 1. Ollama Cloud — latest Kimi (`ollama/kimi-k2.6` or newer)
 2. OpenRouter — latest Kimi (`openrouter/moonshotai/kimi-k2.6`)
-3. OpenRouter — DeepSeek V4 Pro (`openrouter/deepseek/deepseek-v4-pro`)
+3. OpenRouter — DeepSeek V4.1 Flash (`openrouter/deepseek/deepseek-v4.1-flash`)
 4. OpenRouter — Gemini 3.1 Pro (`openrouter/google/gemini-3.1-pro`)
 5. OpenRouter — Gemini 3.1 Flash Lite (last-resort)
 6. OAuth GPT (codex / chatgpt-cli) — emergency only
@@ -90,7 +90,7 @@ If none of these are available, **STOP** and ask the owner. Do not silently subs
 1. OAuth GPT (codex / chatgpt-cli)
 2. Ollama Cloud — latest Kimi
 3. OpenRouter — latest Kimi
-4. OpenRouter — DeepSeek V4 Pro
+4. OpenRouter — DeepSeek V4.1 Flash
 
 **Inputs:** `extraction-notes.md` + `analysis-notes.md`
 **Output:** `personas/<persona-slug>/persona-blueprint.md`
