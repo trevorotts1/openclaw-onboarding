@@ -9,9 +9,10 @@ the dispatcher (kie_dispatch.picture_gate_refusal) refuses any lip-sync job
 without a PASS receipt for that exact file. Missing mediapipe/model/face = FAIL
 receipt or refusal, never a pass.
 
-Free fix first (`fix_picture`): local crop for a small face, then re-measure;
-smile/teeth/tilt -> injected `regenerate` (paid image-to-image, the caller
-charges it against the author's cap), then re-measure. Only a PASS goes on.
+Free fix first (`fix_picture`): one local crop for a small face, then re-measure;
+smile/teeth/tilt -> at most 2 paid regenerations (default: kie_dispatch's
+make_picture_regenerator, so they reserve against the cap), then re-measure,
+then refuse. Only a PASS goes on.
 
 Thresholds are named knobs, calibrated on the real pictures: 28.1/34.4% faces
 fail, the fixed 37.8% close-up (smile 0.36, roll -4.3) and the fixed 36.8% 30-Day
@@ -27,17 +28,29 @@ import time
 TOOL_NAME = "lipsync_picture_gate"
 RECEIPT_SUFFIX = ".picture-gate.json"
 
-MIN_FACE_H_PCT = 35.0     # forehead(10)-chin(152) as % of frame height
-CROP_TARGET_PCT = 37.0    # local crop aims here (inside the 35-40 band)
+# ============================ CONSTANTS (ONE BLOCK) ============================
+# Same names and values in onboarding skill 75 and 999-setup skill 75. Change both.
+# Calibrated on the real pictures: 30-Day original 28.1% / smile 0.62 fails; Perfect
+# Daughter original 34.4% / roll -7.8 / smile 0.83 fails; Perfect Daughter fix 37.8% /
+# roll -4.3 / smile 0.36 passes; 30-Day crop 36.8% / smile 0.59 passes.
+MIN_FACE_H_PCT = 35.0     # forehead(10)-chin(152) as % of frame height; NO upper limit
 MAX_ABS_ROLL_DEG = 5.0
-MAX_ABS_YAW = 0.10        # nose offset / face width
-MAX_SMILE = 0.60          # mean mouthSmileL/R; thin margin: fixed 30-Day crop 0.59 passes, 0.62 fails
+MAX_ABS_YAW = 0.12        # nose offset / face width
+MAX_SMILE = 0.60          # mean mouthSmileL/R
 MAX_JAW_OPEN = 0.15
-MAX_INNER_GAP_PCT = 1.0   # lip gap / face height; above this teeth show
+MAX_INNER_GAP_PCT = 1.0   # lip gap / face height (the teeth check)
 MIN_SHARP = 100.0         # Laplacian variance, face crop resized to 256 wide
-
-REGEN_PROMPT = ("neutral expression, lips closed, facing camera, head level; "
-                "same 3D character, face and styling as the reference image")
+CROP_TARGET_PCT = 37.0    # the free local crop aims here
+MAX_LOCAL_CROPS = 1       # one free local crop for a small face
+MAX_REGENERATIONS = 2     # Trevor's 2-try rule: paid regenerations, then refuse
+REGEN_MODEL = "gpt-image-2-image-to-image"
+REGEN_PROMPT = "neutral expression, lips closed, facing camera, head level"
+FACE_MODEL_NAME = "face_landmarker.task"
+FACE_MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/face_landmarker/"
+                  "face_landmarker/float16/latest/face_landmarker.task")
+FACE_MODEL_SHA256 = "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+FACE_MODEL_ENV = "LIPSYNC_FACE_MODEL"
+# ===============================================================================
 
 
 class PictureRefused(Exception):
@@ -56,8 +69,13 @@ def sha256_file(path):
 
 
 def _model_path():
-    return os.environ.get("LIPSYNC_FACE_MODEL") or os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "face_landmarker.task")
+    return os.environ.get(FACE_MODEL_ENV) or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), FACE_MODEL_NAME)
+
+
+def install_hint():
+    skill = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    return "python3 %s" % os.path.join(skill, "scripts", "install_face_model.py")
 
 
 def measure_picture(path):
@@ -71,11 +89,15 @@ def measure_picture(path):
     except Exception as e:                                  # noqa: BLE001
         raise PictureRefused([("PICTURE_MEDIAPIPE_MISSING",
                                "mediapipe/opencv/numpy not importable: %r; "
-                               "pip install mediapipe opencv-python-headless" % e)], path)
+                               "pip install mediapipe opencv-python-headless numpy "
+                               "(then: %s)" % (e, install_hint()))], path)
     model = _model_path()
     if not os.path.isfile(model):
-        raise PictureRefused([("PICTURE_MODEL_MISSING", "face_landmarker.task not found at %s "
-                               "(set LIPSYNC_FACE_MODEL)" % model)], path)
+        raise PictureRefused([("PICTURE_MODEL_MISSING", "%s not found at %s; install it with: %s "
+                               "(or set %s)" % (FACE_MODEL_NAME, model, install_hint(), FACE_MODEL_ENV))], path)
+    if not os.environ.get(FACE_MODEL_ENV) and sha256_file(model) != FACE_MODEL_SHA256:
+        raise PictureRefused([("PICTURE_MODEL_CORRUPT", "%s does not match the pinned sha256; "
+                               "reinstall with: %s" % (model, install_hint()))], path)
     img = cv2.imread(path)
     if img is None:
         raise PictureRefused([("PICTURE_UNREADABLE", "cannot read image")], path)
@@ -188,10 +210,33 @@ def crop_to_face(path, out, numbers, target_pct=CROP_TARGET_PCT):
 _CROPPABLE = {"PICTURE_FACE_SMALL"}
 
 
-def fix_picture(path, regenerate=None, measure=None, max_regens=1, crop=None):
+def read_receipt(path):
+    """The receipt dict for this file, or None."""
+    try:
+        with open(receipt_path(path)) as fh:
+            rec = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return rec if isinstance(rec, dict) else None
+
+
+def fix_picture(path, regenerate=None, measure=None, crop=None, dispatch_ctx=None):
     """Gate a picture, fixing it for free first. Returns (final_path, PASS receipt).
-    regenerate(path, prompt) -> new image path (PAID, caller counts it against the
-    author's cap). Raises PictureRefused with the last FAIL receipt written."""
+
+    Free: ONE local crop for a small face (MAX_LOCAL_CROPS). Paid: at most
+    MAX_REGENERATIONS regenerations for smile / teeth / tilt, then refuse.
+    regenerate(path, prompt) -> new image path. Default (regenerate=None with
+    dispatch_ctx given) is kie_dispatch.make_picture_regenerator(**dispatch_ctx):
+    gpt-image-2 image-to-image from the 3D character through kie_dispatch, so it
+    reserves against the author's cap and the ledger. No regenerate and no
+    dispatch_ctx = no paid fix. Raises PictureRefused with the last FAIL receipt."""
+    if regenerate is None and dispatch_ctx:
+        import sys
+        core = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        from kie_dispatch import make_picture_regenerator
+        regenerate = make_picture_regenerator(**dispatch_ctx)
     crop, steps, regens, crops = crop or crop_to_face, [], 0, 0
     cur = path
     while True:
@@ -200,15 +245,16 @@ def fix_picture(path, regenerate=None, measure=None, max_regens=1, crop=None):
             return cur, rec
         codes = {c for c, _ in rec["reasons"]}
         n = rec["numbers"]
-        if codes & _CROPPABLE and n.get("faces") == 1 and crops < 2:   # free local crop
+        if codes & _CROPPABLE and n.get("faces") == 1 and crops < MAX_LOCAL_CROPS:   # free local crop
             crops += 1
             base, ext = os.path.splitext(cur)
             cur = crop(cur, base + "-crop" + ext, n)
             steps.append("local crop")
             continue
-        if regenerate is not None and regens < max_regens and n.get("faces") == 1:
+        if regenerate is not None and regens < MAX_REGENERATIONS and n.get("faces") == 1:
             regens += 1
             cur = regenerate(cur, REGEN_PROMPT)
-            steps.append("regenerated (paid, counts against cap)")
+            crops = 0                       # a fresh picture may take its own free crop
+            steps.append("regenerated %d/%d (paid, counts against cap)" % (regens, MAX_REGENERATIONS))
             continue
         raise PictureRefused(rec["reasons"], cur)

@@ -176,7 +176,9 @@ to self-approve a run.
   (sha256). The receipt (`picture_gate.fix_picture`) records the measured numbers (face
   height %, roll, yaw, smile, jawOpen, lip gap, sharpness, face count) and the verdict for
   every close-up. Missing receipt, FAIL, stale hash or mediapipe missing = `LIPSYNC_PICTURE_*`
-  refusal. QC reads the receipts; a close-up without one is a QC failure.
+  refusal. QC reads the receipts; a close-up without one is a QC failure. The URL sent to Kling
+  must be the upload of that exact file (`LIPSYNC_PICTURE_UPLOAD_MISMATCH` otherwise); paid
+  regenerations (max 2) must appear in the spend ledger as `lipsync-picture-regen-N`.
 
 ## Clean ending (I5)
 

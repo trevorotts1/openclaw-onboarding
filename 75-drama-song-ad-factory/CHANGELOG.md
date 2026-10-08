@@ -11,6 +11,10 @@ frontmatter `version:` field).
 Owner order (Trevor, 2026-10-08). No version bump. Two close-ups (30-Day Reset: face 28%, smile 0.62; Perfect Daughter: face 34%, teeth, roll -7.8) were never measured before paid Kling lip-sync.
 - New `lip_gate/picture_gate.py`: real mediapipe measurement, sha256 receipt, free crop then one paid regeneration, re-measure.
 - `kie_dispatch.dispatch` hard-blocks lip-sync models without a PASS receipt (`LIPSYNC_PICTURE_*`).
+- One rule set (same constants block as the 999 copy): one face, face >= 35% of frame (no upper limit), |roll| <= 5, yaw <= 0.12, smile <= 0.60, jawOpen <= 0.15, lip gap <= 1.0%, sharpness >= 100. One free local crop, at most 2 paid regenerations, then refuse.
+- `scripts/install_face_model.py` + PREREQS entries + INSTALL step 2b: mediapipe and Google's `face_landmarker.task` (pinned sha256) ship with the skill; a missing/corrupt model refuses and names the install command.
+- `kie_dispatch.make_picture_regenerator`: default paid regeneration (gpt-image-2 image-to-image) through `dispatch()`, the ledger cap and `load_governor.kie_request`.
+- The picture URL sent to Kling is the Skill 74 upload of the exact measured file (sha256 checked at upload time).
 - Tests: `test_picture_gate.py`, `test_picture_gate_dispatch.py`.
 
 ## v2.8.4 - 2026-10-08 - Batch MGB005: song recipe v2, load governor, G5, G9, H10, G2, H3-TEST

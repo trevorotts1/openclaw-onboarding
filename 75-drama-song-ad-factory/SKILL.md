@@ -434,13 +434,21 @@ SOP named above.
   no receipt, a FAIL, a changed file, no local image, or mediapipe/model missing = refused,
   nothing reserved or sent. The receipt is made by `lip_gate/picture_gate.py`
   (`fix_picture`): a REAL mediapipe FaceLandmarker measurement -- exactly one face; face
-  height >= 35% of frame; head roll within 5 degrees and yaw within 0.10; smile <= 0.60,
-  jawOpen <= 0.15, lip gap <= 1% of face (no teeth); sharpness. Free fix first: a small
-  face gets a local crop (target 37%) and a re-measure; smile/teeth/tilt gets ONE paid
-  gpt-image-2 image-to-image regeneration ("neutral expression, lips closed, facing camera,
-  head level"), which counts against the author's cap, then a re-measure. Needs
-  `pip install mediapipe opencv-python-headless` and the Google `face_landmarker.task`
-  model (`LIPSYNC_FACE_MODEL`). The local crop is the one allowed exception to "never
+  height >= 35% of the frame (no upper limit); |roll| <= 5 degrees; yaw <= 0.12; smile <= 0.60;
+  jawOpen <= 0.15; lip gap <= 1.0% of face height (teeth); sharpness >= 100. All numbers live in
+  one constants block in `picture_gate.py` (same names in the 999 copy). Free fix first: ONE local
+  crop for a small face and a re-measure; smile/teeth/tilt gets at most 2 paid gpt-image-2
+  image-to-image regenerations from the 3D character ("neutral expression, lips closed, facing
+  camera, head level") then a re-measure, then refuse. The default regeneration
+  (`kie_dispatch.make_picture_regenerator`, passed to `fix_picture` as `dispatch_ctx`) runs through
+  `dispatch()` -> ledger reserve against the author's cap -> Skill 74 -> `load_governor.kie_request`.
+  The picture URL Kling receives is the Skill 74 upload of the exact measured file: the dispatcher
+  copies it once while hashing, refuses on a sha256 different from the receipt (or if the copy
+  changes during the upload), uploads the copy, and never sends a local path.
+  Install: `pip install mediapipe opencv-python-headless numpy`, then
+  `python3 scripts/install_face_model.py` (downloads Google's `face_landmarker.task`, verifies the
+  pinned sha256, places it in `core/lip_sync/lip_gate/`; `LIPSYNC_FACE_MODEL` overrides). A missing
+  model refuses and names that command. The local crop is the one allowed exception to "never
   cropped" below.
 - **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
   includes one lip-sync close-up per speaking/singing character. It is MADE from the
