@@ -169,10 +169,11 @@ to self-approve a run.
   `LIPSYNC_COVERAGE_BELOW_BAND`. The planner (`plan_lipsync_lines`) picks the
   lines (every sung hook, the spoken opener and closing first, each cut to 6 s).
 - Lip-sync source pictures: every one passes `lip_gate.image_gate` before any
-  paid lip-sync job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a
-  measurement that could not be made is a refusal, never a pass.
+  paid lip-sync job (its close-up numbers are `picture_gate`'s, one rule set); a
+  refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that could not be
+  made is a refusal, never a pass.
 - LPG001/LPG002/LPG003: the measured close-up gate is enforced IN the dispatcher
-  (`kie_dispatch.lipsync_picture_refusal`): any kling/ai-avatar or infinitalk job without a
+  (`kie_dispatch.lipsync_picture_refusal`): any kling/ai-avatar job (or a manual infinitalk job) without a
   PASS or ACCEPT_WITH_FLAG `picture_gate` receipt (sha256 of the exact image, numbers and
   flags recorded), or whose `input.image_url` is not the bound upload of those exact bytes
   (`picture_gate.upload_measured`), is rejected `LIPSYNC_PICTURE_NOT_GATED` before the
@@ -193,8 +194,13 @@ to self-approve a run.
   receipt row); NOT_SYNCED = FAIL on a spoken line; on a SUNG line WEAK and NOT_SYNCED
   are UNDETERMINED: held for a person to look at a mouth strip, no automatic paid
   redo. UNMEASURABLE and UNDETERMINED fail `lip_gate.qc_check` until a person writes
-  `person_verdict: PASS` on the row. 2-try cap: `run_gate` never makes a third paid
-  job. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
+  `person_verdict: PASS` on the row. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
+  `lip_gate/event_sync.py` is ADVISORY (`advisory_event_sync` in the row), never gating.
+- Two-try rule (Trevor 2026-10-08): at most 2 paid `kling/ai-avatar-standard` jobs per
+  segment, every name variant counted; try 2 only on a hard defect with a changed input;
+  then the best take is kept with a `KEPT_BEST_OF_2 (tN)` receipt row, its numbers, flag
+  and mouth-strip path. `lip_gate.qc_check` accepts such a flagged row and rejects a
+  segment with more than 2 jobs. InfiniTalk is a manual backup only, never automatic.
 
 ## Clean ending (I5)
 

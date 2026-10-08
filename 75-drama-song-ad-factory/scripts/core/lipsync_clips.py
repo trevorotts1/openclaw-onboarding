@@ -17,9 +17,15 @@ when the job would pass the cap (or when the price or the cap is unknown); it
 never trims the plan or spends past a cap silently. Prices are never stored
 here: the per-second rate comes from Skill 74 `price`.
 
+TWO-TRY RULE (Trevor 2026-10-08): at most 2 paid Kling jobs per segment, every
+name variant counted (`count_jobs`, `check_try_limit`); after that the best
+measured take wins. Budgets are priced with attempts=MAX_TRIES.
+
 Stdlib only, no network, no spend.
 """
 from __future__ import annotations
+
+import re
 
 REF_LENGTH_S = 60.0
 CLIPS_PER_REF = (6, 8)          # clips in a 60 s ad
@@ -28,6 +34,13 @@ CLIP_MAX_S = 6.0                # hard cap per clip
 TOTAL_PER_REF_S = (30.0, 40.0)  # lip-sync seconds in a 60 s ad
 MIN_CLIPS_FLOOR = 3             # never fewer than 3, whatever the length
 PRIORITY_ROLES = ("hook", "opener", "closing")   # sung hooks, spoken open/close
+MAX_TRIES = 2                   # paid Kling jobs per segment, then keep the best
+PRE_S, TAIL_S = 0.30, 0.20      # padding around the first/last word
+MIN_ONSETS_PER_S = 1.5
+MAX_HELD_WORD_S = 1.2
+MIN_REST_S = 0.12
+LIP_FRIENDLY = "pbmfvw"         # force a visible lip closure / lip shape
+TRY_LIMIT = "LIPSYNC_TRY_LIMIT"
 
 OVER_CAP = "LIPSYNC_OVER_CAP"
 PRICE_UNKNOWN = "LIPSYNC_PRICE_UNKNOWN"
@@ -92,7 +105,7 @@ def check_clips(clip_seconds, ad_length_s):
             "clips": len(secs), "budget": b}
 
 
-def estimate_cost_usd(total_s, usd_per_s, shapes=1, attempts=1):
+def estimate_cost_usd(total_s, usd_per_s, shapes=1, attempts=MAX_TRIES):
     """Worst-case lip-sync spend: seconds x rate x shapes x attempts. usd_per_s
     is Skill 74's price for kling/ai-avatar-standard (never a stored number)."""
     if not _num(usd_per_s) or usd_per_s <= 0:
@@ -101,7 +114,7 @@ def estimate_cost_usd(total_s, usd_per_s, shapes=1, attempts=1):
     return round(total_s * usd_per_s * shapes * attempts, 4)
 
 
-def check_budget(total_s, usd_per_s, remaining_usd, shapes=1, attempts=1):
+def check_budget(total_s, usd_per_s, remaining_usd, shapes=1, attempts=MAX_TRIES):
     """Pre-dispatch cap check. Raises LipsyncClipsError (OVER_CAP,
     PRICE_UNKNOWN, CAP_UNKNOWN) instead of ever overspending or guessing."""
     if not _num(remaining_usd) or remaining_usd < 0:
@@ -116,3 +129,92 @@ def check_budget(total_s, usd_per_s, remaining_usd, shapes=1, attempts=1):
                                         attempts, remaining_usd))
     return {"pass": True, "cost_usd": cost, "remaining_usd": remaining_usd,
             "left_after_usd": round(remaining_usd - cost, 4)}
+
+
+def count_jobs(job_keys, segment):
+    """Paid lip-sync jobs already made for one segment, every name variant
+    counted: 'lip-ad-ss3', 'lip-ad-ss3-b', 'x/lip-ad-ss3_retry' all count for
+    'ss3'; 'ss30' does not."""
+    pat = re.compile(r".*lip-ad-%s(?![0-9])" % re.escape(segment))
+    return sum(1 for k in job_keys if pat.match(k))
+
+
+def check_try_limit(job_keys, segment):
+    """Refuse a 3rd paid job for a segment BEFORE anything is spent. Returns
+    the tries left; raises LipsyncClipsError(TRY_LIMIT) at 0."""
+    n = count_jobs(job_keys, segment)
+    if n >= MAX_TRIES:
+        raise LipsyncClipsError(TRY_LIMIT, "lip-sync try limit reached for "
+                                "segment %s (%d jobs; limit %d, every name "
+                                "variant counts): use the best-measured take, "
+                                "mark it in the receipt, move on"
+                                % (segment, n, MAX_TRIES))
+    return MAX_TRIES - n
+
+
+def _is_friendly(word):
+    return any(c in LIP_FRIENDLY for c in str(word).lower())
+
+
+def choose_window(word_stamps, role="hook", min_s=CLIP_MIN_S, max_s=CLIP_MAX_S,
+                  pre=PRE_S, tail=TAIL_S, used_lines=()):
+    """Pick the 4-6 s lip-sync window inside a hook/opener/closing.
+
+    word_stamps: [{"word","start","end"}] Suno timestamps (s), in order.
+    The window starts at a word start and ends at a word end (phrase
+    boundaries), then pre/tail padding is added, so pre + words + tail is
+    min_s..max_s. Rules, in order:
+      1. cut at a real rest (gap >= MIN_REST_S) where one exists;
+      2. most word onsets per second, at least MIN_ONSETS_PER_S;
+      3. no held word over MAX_HELD_WORD_S (if every window breaks it, take the
+         shortest held note and mark HELD_NOTE);
+      4. prefer p, b, m, f, v, w words;
+      5. a hook sung 2-3 times: a different line per clip (used_lines holds
+         the word-text of lines already chosen; an identical line is skipped
+         unless it is the only choice).
+    Returns {"start","end","pad_start","pad_end","dur","words","onsets_per_s",
+    "held_s","lip_words","flags"} or raises LipsyncClipsError(BAD_PLAN)."""
+    w = [x for x in word_stamps if x["end"] > x["start"]]
+    if not w:
+        raise LipsyncClipsError(BAD_PLAN, "no word stamps to choose a window from")
+    cands = []
+    for i in range(len(w)):
+        for j in range(i, len(w)):
+            words = w[i:j + 1]
+            span = words[-1]["end"] - words[0]["start"]
+            total = pre + span + tail
+            if total > max_s + 1e-9:
+                break
+            if total < min_s - 1e-9:
+                continue
+            held = max(x["end"] - x["start"] for x in words)
+            rest_l = (w[i]["start"] - w[i - 1]["end"]) if i else 9.0
+            rest_r = (w[j + 1]["start"] - w[j]["end"]) if j + 1 < len(w) else 9.0
+            ops = len(words) / span
+            text = " ".join(str(x["word"]).lower() for x in words)
+            cands.append({
+                "start": words[0]["start"], "end": words[-1]["end"],
+                "pad_start": max(0.0, words[0]["start"] - pre),
+                "pad_end": words[-1]["end"] + tail, "dur": round(total, 3),
+                "words": text, "onsets_per_s": round(ops, 3),
+                "held_s": round(held, 3),
+                "lip_words": sum(_is_friendly(x["word"]) for x in words),
+                "_rest": (rest_l >= MIN_REST_S) + (rest_r >= MIN_REST_S),
+                "_new": text not in used_lines, "flags": []})
+    if not cands:
+        raise LipsyncClipsError(BAD_PLAN, "no %.0f-%.0f s window fits these words"
+                                % (min_s, max_s))
+    ok = [c for c in cands if c["held_s"] <= MAX_HELD_WORD_S]
+    pool = ok or cands
+    key = lambda c: (c["_new"], c["_rest"], c["onsets_per_s"] >= MIN_ONSETS_PER_S,
+                     c["onsets_per_s"], c["lip_words"], -c["held_s"])
+    if not ok:
+        key = lambda c: (c["_new"], -c["held_s"], c["_rest"], c["onsets_per_s"], c["lip_words"])
+    best = dict(max(pool, key=key))
+    if not ok:
+        best["flags"].append("HELD_NOTE")
+    if best["onsets_per_s"] < MIN_ONSETS_PER_S:
+        best["flags"].append("SPARSE_ONSETS")
+    for k in ("_rest", "_new"):
+        best.pop(k)
+    return best

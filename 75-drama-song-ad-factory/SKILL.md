@@ -471,19 +471,23 @@ SOP named above.
   The local crop is the one allowed exception to "never cropped" below.
 - **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
   includes one lip-sync close-up per speaking/singing character. It is MADE from the
-  template `lip_gate.closeup_prompt()` and CHECKED by the lip-sync image gate
-  (`lip_gate/image_gate.py`) before any paid lip-sync job: face looking straight at the
-  camera (yaw and pitch within 10 degrees); head-and-shoulders, portrait 9:16, face about
-  35-40% of the frame height (accepted 30-45%); mouth closed or slightly parted, neutral,
-  no big toothy smile; nothing over the mouth or jaw (hand, microphone, hair, hat brim);
-  soft even light, no hard shadow across the mouth, background separated from the head;
-  the same 3D character as the storyboard reference; sharp, at least 1080x1920, generated
-  natively and never cropped out of a wide shot. A picture that fails any point, or one
-  that cannot be measured, is refused LOUDLY with every reason and no paid job runs
-  (`lip_gate.run_gate(..., source_image=, image_check=)` raises
-  `LipsyncImageRefused`). Every lip-sync job (Kling avatar, InfiniTalk) then uses the
-  picture as its source image. QC: its mouth region must be sharp and unobstructed
-  (`lip_gate.check_reference_set`); a set without it fails.
+  template `lip_gate.closeup_prompt()` (chest-up portrait 9:16, face about 30-40% of the
+  frame height, straight at the camera, lips relaxed and very slightly parted) and CHECKED
+  before any paid lip-sync job by `lip_gate/image_gate.py`, which holds NO close-up
+  thresholds of its own: every number (face count, face height, roll, yaw, jawOpen, smile,
+  teeth, sharpness) is judged by `picture_gate.check_numbers`, the calibrated gate the
+  dispatcher enforces, so there is ONE rule set (the FAIL and flag lines are in the
+  picture-gate bullet above). `image_gate` only adds what that gate does not measure: at
+  least 720x1280 and 9:16 (Kling standard outputs 720p; a crop is fine when it passes),
+  nothing over the mouth or jaw, no hard shadow across the mouth, soft even light,
+  background separated from the head, the same 3D character as the storyboard, and an
+  upscaled picture is refused. A picture that fails any point, or one that cannot be
+  measured, is refused LOUDLY with every reason and no paid job runs
+  (`lip_gate.run_gate(..., source_image=, image_check=)` raises `LipsyncImageRefused`).
+  Every lip-sync job (Kling avatar standard) then uses the picture as its source image.
+  Once a take exists, a picture-gate number alone is never a reason for a new paid job.
+  QC: its mouth region must be sharp and unobstructed (`lip_gate.check_reference_set`);
+  a set without it fails.
 - **Lip-sync sync check (owner order 2026-10-08, looser):** `lip_sync/lip_gate`
   measures mouth opening (mediapipe face landmarks, through the load governor) against
   the voice with the validated `sync_check` algorithm. Verdicts: PASS (SYNCED);
@@ -491,11 +495,17 @@ SOP named above.
   a SPOKEN line); UNDETERMINED (a SUNG line that is WEAK or NOT_SYNCED: held for a
   person to look at a mouth strip, NO automatic paid redo). UNMEASURABLE (no mediapipe,
   no face model, cartoon face, silent audio, too short) is reported, never a pass. At
-  most 2 paid lip-sync jobs per segment, then the best-measured take is kept.
+  most 2 paid lip-sync jobs per segment, then the best-measured take is kept
+  (`KEPT_BEST_OF_2`, below). The calibration table is `lip_gate/calibrate_sync.py`
+  (read-only, real controls); `lip_gate/event_sync.py` is an ADVISORY extra measure
+  (onsets, offsets and p/b/m closures against the lead-vocal span) recorded in the receipt
+  row as `advisory_event_sync`. It never gates and never triggers a redo.
 - **Lip-sync model order (decision 33):** Kling avatar
-  (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
-  that character's own line cut from the one track's vocal stem; InfiniTalk
-  (`infinitalk/from-audio`) as backup; **Volcengine is dropped**. Tight
+  (`kling/ai-avatar-standard`) is THE lip-sync model (Trevor: clearly the best option) - a
+  front-facing close-up image plus that character's own line cut from the one track's
+  vocal stem. InfiniTalk (`infinitalk/from-audio`) is a MANUAL backup only: never called
+  by the code, never on by default, used only when a person asks for it by hand.
+  **Volcengine is dropped**. Tight
   close-ups only. The lip-sync input contains only the on-screen speaker's
   line: never a narrator, never another character. Narrator, phone,
   voicemail and laptop voices may play as voice-over but are never lip-synced
@@ -511,7 +521,29 @@ SOP named above.
   list is shown on the approval card; every other shot stays as the video
   model made it. For an All Suno run the isolated line is cut from the one
   track's vocal stem by Skill 74's `ai-music-api/separate-vocals`; the stem
-  is only the lip-sync input, never in the final mix. The Kling-avatar-first
+  is only the lip-sync input, never in the final mix.
+  **How a clip is cut, prompted, measured and retried (LSR001 + LSC001, 2026-10-08):**
+  (1) The input is the lead-vocal STEM only, never the mix. `lipsync_clips.choose_window`
+  picks the 4-6 s window from the Suno word timestamps: it starts at a word start and
+  ends at a word end (a real rest where one exists), then adds 0.30 s before and 0.20 s
+  after from try 1 (`stem_offset.cut_plan` corrects the stem lateness); at least 1.5
+  word onsets per second, no held word over 1.2 s (else marked `HELD_NOTE`), words with
+  p, b, m, f, v, w preferred, and a different line of a hook that is sung 2-3 times.
+  (2) The prompt (`lip_gate.kling_prompt`) says "sings" on sung lines and "says" on
+  spoken ones, one emotion, minimal head movement, steady locked camera; it never tells
+  the mouth to move in time (the audio does that). (3) The sync gate is `sync_check`
+  (calibrated on real controls, see the sync-check bullet above); `event_sync` is advisory
+  only. (4) **Two tries, then the best take (Trevor 2026-10-08):** at most 2 paid
+  `kling/ai-avatar-standard` jobs per segment, every name variant counted
+  (`lipsync_clips.check_try_limit`; `run_gate(prior_jobs=)` raises `LipTryLimit` before a
+  3rd). Try 2 runs only on a hard defect (a FAIL on a spoken line, or a defect a person
+  saw: garbled face, text across the chest, hand over the mouth) and only with a CHANGED
+  input (the next-best window or the padded cut); ACCEPT_WITH_FLAG, UNDETERMINED and
+  UNMEASURABLE never trigger it. After that the best-measured take is kept and the
+  receipt says `KEPT_BEST_OF_2 (tN), verdict, numbers, flag` with a mouth-strip path. No
+  third job, no model switch. The card prices the worst case at 2 tries
+  (`check_budget(..., attempts=2)`). Every paid submit goes through
+  `load_governor.kie_request`; landmark extraction through `heavy_slot`. The Kling-avatar-first
   order itself is a **rule
   followed by the agent; code check not yet shipped**: `scripts/core/lip_sync/`
   carries `narrator_rule/` only, no `kling_first/` (see CHANGELOG.md
