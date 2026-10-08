@@ -7,6 +7,7 @@ as compiler output. See style_bible_integration.
 from __future__ import annotations
 
 from .shot_planner import (
+    BEAT_TOLERANCE_S,
     SHOT_FIELDS,
     CONTRACT_KEYS,
     PRODUCT_VISIBILITY,
@@ -18,6 +19,7 @@ from .shot_planner import (
     validate_shot,
     validate_contract,
     load_timing_map,
+    mark_on_beats,
     bind_plan as _bind_plan,
 )
 
@@ -70,8 +72,9 @@ def bind_plan(shots, timing, contracts=None, prompts=None):
 
 
 __all__ = [
-    "SHOT_FIELDS", "CONTRACT_KEYS", "PRODUCT_VISIBILITY", "STATUSES",
-    "TREATMENTS", "SCHEMA_VERSION", "TOOL_VERSION", "PlanError",
-    "validate_shot", "validate_contract", "load_timing_map", "bind_plan",
-    "intake_image_prompt", "intake_shot_prompts", "require_compiled",
+    "BEAT_TOLERANCE_S", "SHOT_FIELDS", "CONTRACT_KEYS", "PRODUCT_VISIBILITY",
+    "STATUSES", "TREATMENTS", "SCHEMA_VERSION", "TOOL_VERSION", "PlanError",
+    "validate_shot", "validate_contract", "load_timing_map", "mark_on_beats",
+    "bind_plan", "intake_image_prompt", "intake_shot_prompts",
+    "require_compiled",
 ]

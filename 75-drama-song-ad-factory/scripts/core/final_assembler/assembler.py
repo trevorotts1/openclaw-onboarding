@@ -19,6 +19,14 @@ Timeline schema (blackceo.timeline/v1):
    "segments": [{"src": "clip.mp4", "dur": 2.0 | null,
                  "transition": "fade" | null}]}
 
+E2 (manual Part E): the MISSING transition default is "fade" with
+  TRANSITION_DURATION 0.4 s (manual allows 0.3-0.5) applied at every
+  scene change; "none" is only honored when the segment carries an
+  explicit shot-planner offbeat/on-beat marker (beat_cut: true) — an
+  unmarked hard cut fails QC with HARD_CUT_UNMARKED. Timelines that
+  carry explicit transition values keep them; only the missing default
+  changed (fully backward compatible).
+
 Rules:
 - Video is the master duration; the song is laid under it
   (trimmed/padded to the video duration). Clip audio is ignored:
@@ -44,6 +52,15 @@ SCHEMA_VERSION = "1.0.0"
 TIMELINE_SCHEMA = "blackceo.timeline/v1"
 
 EXIT = {"ok": 0, "error": 1, "unavailable": 3}
+
+# --- E2: transitions (manual Part E E2) --------------------------------------
+# Default: fade 0.4 s (manual allows 0.3-0.5) at every scene change;
+# `none` only when the segment carries the planner's on-beat marker
+# (beat_cut: true — the cut lands ON a song beat, a hard cut is musical
+# there). An unmarked `none` never assembles (QC: HARD_CUT_UNMARKED).
+DEFAULT_TRANSITION = "fade"
+TRANSITION_DURATION = 0.4
+HARD_CUT_UNMARKED = "HARD_CUT_UNMARKED"
 
 # --- M7 bounding: processor share + wall-clock cap (manual 02 M7, Part D) ----
 #
@@ -228,10 +245,64 @@ def probe_duration(path, ffprobe="ffprobe", timeout=30):
     return dur
 
 
+def _beat_cut(seg):
+    """E2: shot planner's on-beat marker (beat_cut: true). Truthy only."""
+    return seg.get("beat_cut") is True
+
+
+def resolve_segments(tl):
+    """E2 + QC: resolve per-segment transitions against the E2 rules.
+
+    Returns (segments, errors). errors is a list of HARD_CUT_UNMARKED
+    records for any non-first segment whose transition is 'none' without
+    the planner's beat_cut=true marker. Explicitly-authored values keep
+    working (fade stays fade; a legacy 'none' authored WITH beat_cut=true
+    stays none); only the missing default changed from none to fade.
+    """
+    errors = []
+    segs = []
+    for i, s in enumerate(tl["segments"]):
+        missing = i > 0 and "transition" not in s
+        if missing:
+            t, marker = DEFAULT_TRANSITION, False   # scene change default
+        else:
+            t = s.get("transition", tl.get("transition", "none"))
+            marker = _beat_cut(s)
+        if t not in ("none", "fade"):
+            raise ValueError(f"TIMELINE_BAD_TRANSITION: {t!r}")
+        if i > 0 and t == "none" and not marker:
+            errors.append({"index": i, "src": s.get("src"),
+                           "reason_code": HARD_CUT_UNMARKED})
+        segs.append(dict(s, transition=t, beat_cut=marker))
+    return segs, errors
+
+
+def qc_transitions(tl):
+    """E2 QC: every scene-boundary hard cut must carry beat_cut=true.
+
+    Returns ok record or _fail(HARD_CUT_UNMARKED).
+    """
+    _segs, errors = resolve_segments(tl)
+    if errors:
+        return _fail(HARD_CUT_UNMARKED,
+                     next_action="mark the cut on-beat in the shot plan "
+                                 "(beat_cut: true) or let the default fade "
+                                 "apply",
+                     evidence={"unmarked_hard_cuts": errors})
+    return {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
+            "tool_version": TOOL_VERSION, "command": "qc_transitions",
+            "outcome": "ok", "reason_code": "transitions-ok",
+            "evidence": {"checked": len(tl["segments"])},
+            "state_version": 0}
+
+
 def _seg_transition(tl, seg):
     t = seg.get("transition", tl.get("transition", "none"))
     if t not in ("none", "fade"):
         raise ValueError(f"TIMELINE_BAD_TRANSITION: {t!r}")
+    if t == "none" and not _beat_cut(seg):
+        raise ValueError(f"{HARD_CUT_UNMARKED}: segment {seg.get('src')!r} "
+                         "transition none without beat_cut=true")
     return t
 
 
@@ -245,7 +316,10 @@ def plan_timeline(tl, base_dir=".", probe=None):
     fps = float(tl.get("fps", 30))
     width = int(tl.get("width", 1920))
     height = int(tl.get("height", 1080))
-    default_xd = float(tl.get("transition_duration", 0.5) or 0)
+    # E2: the resolved default is fade TRANSITION_DURATION; explicit
+    # transition_duration values keep working (manual allows 0.3-0.5).
+    default_xd = float(tl.get("transition_duration",
+                              TRANSITION_DURATION) or 0)
     items = []
     for i, s in enumerate(tl["segments"]):
         dur = s.get("dur")
@@ -256,7 +330,9 @@ def plan_timeline(tl, base_dir=".", probe=None):
                     "and no probe supplied")
             dur = probe(s["src"])
         frames = max(1, round(dur * fps))
-        trans = _seg_transition(tl, s) if i > 0 else "none"
+        trans = _seg_transition(
+            tl, s) if i > 0 and "transition" in s else (
+            DEFAULT_TRANSITION if i > 0 else "none")
         xd = round(default_xd * fps) / fps if trans != "none" else 0.0
         items.append({"src": s["src"], "frames": frames,
                       "snapped_dur": frames / fps, "transition": trans,
@@ -370,6 +446,14 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     except ValueError as exc:
         return _fail(str(exc).split(":")[0], next_action=str(exc),
                      evidence={"timeline": str(timeline_path)})
+    # E2 QC: unmarked hard cuts never assemble.
+    try:
+        qc = qc_transitions(tl)
+    except ValueError as exc:
+        return _fail(str(exc).split(":")[0], next_action=str(exc),
+                     evidence={"timeline": str(timeline_path)})
+    if qc["outcome"] != "ok":
+        return qc
     base = os.path.dirname(os.path.abspath(str(timeline_path))) or base_dir
 
     def abspath(p):

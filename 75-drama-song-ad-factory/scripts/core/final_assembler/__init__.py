@@ -1,28 +1,36 @@
 """final_assembler package: timeline.json -> frame-exact ffmpeg render."""
 from .assembler import (
+    DEFAULT_TRANSITION,
     EXIT,
+    HARD_CUT_UNMARKED,
     NICE_LEVEL,
     SCHEMA_VERSION,
     TIMELINE_SCHEMA,
     TOOL_NAME,
     TOOL_VERSION,
+    TRANSITION_DURATION,
     assemble,
     build_argv,
     load_timeline,
     plan_timeline,
+    qc_transitions,
     size_ffmpeg,
 )
 
 __all__ = [
+    "DEFAULT_TRANSITION",
     "EXIT",
+    "HARD_CUT_UNMARKED",
     "NICE_LEVEL",
     "SCHEMA_VERSION",
     "TIMELINE_SCHEMA",
     "TOOL_NAME",
     "TOOL_VERSION",
+    "TRANSITION_DURATION",
     "assemble",
     "build_argv",
     "load_timeline",
     "plan_timeline",
+    "qc_transitions",
     "size_ffmpeg",
 ]
