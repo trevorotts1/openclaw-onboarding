@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v26.4.3"
+ONBOARDING_VERSION="v26.4.4"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2024,7 +2024,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v26.4.3 - safe_json_edit
+# v26.4.4 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -11199,7 +11199,7 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
       # is where a FULL install makes it fatal.
       _CC_CONTRACT="$_CC_DIR/scripts/openclaw-contract-check.mjs"
       if [ -f "$_CC_CONTRACT" ] && command -v node >/dev/null 2>&1; then
-        if node "$_CC_CONTRACT" >>"$LOG_FILE" 2>&1; then
+        if bash "$SKILLS_DIR/32-command-center-setup/scripts/run-bounded.sh" 120 node "$_CC_CONTRACT" >>"$LOG_FILE" 2>&1; then
           echo "  ✓ CC contract check passed"
         else
           echo "  ⚠ CC contract check reported issues (WARN on an update roll; see $LOG_FILE). Refresh continues." >&2

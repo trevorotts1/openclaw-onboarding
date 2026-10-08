@@ -2758,7 +2758,7 @@ fi
 # is a code-only roll and must not be blocked by it.
 CC_CONTRACT_CHECK="$DASHBOARD_DIR/scripts/openclaw-contract-check.mjs"
 if [[ -f "$CC_CONTRACT_CHECK" ]] && command -v node >/dev/null 2>&1; then
-  if ( cd "$DASHBOARD_DIR" && node "$CC_CONTRACT_CHECK" >>"$LOG_FILE" 2>&1 ); then
+  if ( cd "$DASHBOARD_DIR" && bash "$(dirname "${BASH_SOURCE[0]}")/run-bounded.sh" 120 node "$CC_CONTRACT_CHECK" >>"$LOG_FILE" 2>&1 ); then
     log "INFO" "contract-check: PASS"
     if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterContractCheck = true'; fi
   else
