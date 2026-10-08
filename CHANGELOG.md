@@ -1,3 +1,7 @@
+## [Unreleased]  -  fix(updater): NFX001 every roll leaves a clean 999-setup and links its skills
+
+- frontdoor_update_999 now finds every checkout (incl. ~/Documents/999-setup), fast-forwards clean ones, leaves dirty/diverged ones untouched and uses a clean ~/999-setup (cloned if absent) as the link source, links per skill (hand-managed real dirs skipped alone), and sources the link functions from the scripts dir. Never runs the full installer or touches 9Router config.
+
 ## [v26.4.4]  -  2026-10-08  -  fix(cc): bound the CC contract check (stdin /dev/null + 120s alarm) and raise CC pin to v7.6.110 (skill 32 v13.1.44)
 
 ## [v26.4.3]  -  2026-10-07  -  Merge train: #1586 fix(embeddings): skill 76 per-agent multimodal, re-index retries, 5c…
