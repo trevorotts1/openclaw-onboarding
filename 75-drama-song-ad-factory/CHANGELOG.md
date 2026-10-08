@@ -6,6 +6,16 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.1] - 2026-10-08 - I3 storyboard pictures
+
+- Per main character the planner now lists a reference set (front, three-quarter,
+  side, plus neutral, sad-tired and happy-relieved faces) and one keyframe picture
+  per shot per shape, all before any video. Same image model as before.
+- The cost estimate counts these pictures (Skill 74 price, no local rates) and the
+  choice card shows an Images line with the added reference-picture cost.
+- Up to 6 main characters; none or more fails closed. Test:
+  `catalog_calculator/test_image_plan_i3.py`.
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
