@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.6.1
+version: v2.6.7
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -96,6 +96,25 @@ The only exemption is the Velvet Voiceover version (the spoken Google voice
 over the song, id `velvet_voiceover`), which keeps its own flow. Almost
 nobody asks for it. Every other style, including the All Suno voice default,
 uses the recipe.
+
+## Sung hook (I8)
+
+Every sung style carries ONE catchy hook: 4-10 words, only the client's own
+words (protected names exact), singable, the brand-promise payoff line. The
+hook is sung `count = clamp(1 + floor(L / 25), 2, 12)` times, where L is the
+delivered length in seconds (chosen length minus 2).
+
+| Delivered | 28 s | 58 s | 88 s | 118 s | 178 s | 298 s | 598 s |
+|-----------|------|------|------|-------|-------|-------|-------|
+| Hook sung | 2    | 3    | 4    | 5     | 8     | 12    | 12    |
+
+First hook by 15% of runtime, last hook near the end (about 90%) before the
+call to action, the rest evenly spaced. Build the sheet with
+`core/sung_hook.build_lyric_sheet`. After a take is chosen, count the hook
+occurrences that were actually sung (Suno timestamps plus the singing
+detector): count met = accept, one short = accept with a flag, two or more
+short = regenerate. The receipt shows hook text, target, measured count and
+times. The Velvet Voiceover version is exempt.
 
 ## Intake rules (from the build directive, section 24.3)
 

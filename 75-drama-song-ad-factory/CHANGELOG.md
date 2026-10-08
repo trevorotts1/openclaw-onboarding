@@ -6,6 +6,22 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.7] - 2026-10-08 - I8 sung hook and repeat formula
+
+- New `scripts/core/sung_hook/` (module + tests). Every sung style gets ONE
+  hook (4-10 words, client's own words, protected names exact), sung
+  `clamp(1 + floor(L / 25), 2, 12)` times (L = delivered seconds). First hook
+  by 15% of runtime, last at 90%, rest evenly spaced.
+- `suno_recipe.check_lyric_sheet` / `prepare` / `guard_request` take
+  `length_s` and enforce the exact count; `music_director.build_generate_request`
+  passes it through. `suno_recipe.hook_target` returns 0 for the exempt
+  Velvet Voiceover style.
+- `suno_recipe.score_take` measures how many hooks were actually sung (Suno
+  aligned words + detector segments): count met = accept, one short = accept
+  with a flag, two or more short = regenerate. The receipt carries hook text,
+  target, measured count and times.
+- `SKILL.md` gains the "Sung hook" section.
+
 ## [v2.6.1] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
 
 - New `scripts/core/suno_recipe/` (module + tests): one gate every Suno

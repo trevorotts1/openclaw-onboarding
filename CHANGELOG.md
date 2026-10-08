@@ -1,3 +1,5 @@
+## [v26.4.13]  -  2026-10-08  -  I8: one catchy sung hook in every sung ad, repeated by a length formula (skill 75 v2.6.7)
+
 ## [v26.4.7]  -  2026-10-08  -  G12: Suno song recipe is the default for every Suno music style (skill 75 v2.6.1); only Velvet Voiceover is exempt
 
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…

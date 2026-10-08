@@ -107,7 +107,7 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
                            duration=None, callback_url="https://example.invalid/cb",
                            packet_lines=None,
-                           style_id=None, client_text=None):
+                           style_id=None, client_text=None, length_s=None):
     """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
 
     F7 (words match the script exactly): when ``packet_lines`` is given, the
@@ -117,7 +117,7 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     the master request is never built. ``packet_lines=None`` keeps the old
     behavior (packet binding happens upstream in lyric QC).
     """
-    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text)  # G12
+    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # G12 + I8
     if packet_lines is not None:
         errors = words_match.validate_words_match(lyrics_text, packet_lines)
         if errors:
