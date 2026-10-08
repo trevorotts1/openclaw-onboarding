@@ -1,3 +1,5 @@
+## [v26.4.6]  -  2026-10-08  -  fix(kie+models): KEF001 shared KIE key lookup (any store, KIE_AI_KEY alias) wired into skills 59/48/74/75; retire deepseek-v4-pro for deepseek-v4.1-flash
+
 ## [v26.4.5]  -  2026-10-08  -  fix(kie+models): KEF001 shared KIE key lookup (any store, KIE_AI_KEY alias) wired into skills 59/48/74/75; retire deepseek-v4-pro for deepseek-v4.1-flash
 
 ## [Unreleased]  -  fix(updater): NFX001 every roll leaves a clean 999-setup and links its skills
