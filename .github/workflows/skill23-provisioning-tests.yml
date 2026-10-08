@@ -137,6 +137,7 @@ on:
       - "23-ai-workforce-blueprint/**"
       - "shared-utils/create-role-workspaces.py"
       - "32-command-center-setup/scripts/materialize-dept-agents.sh"
+      - "32-command-center-setup/scripts/run-full-install.sh"
       - "32-command-center-setup/scripts/scaffold-agent-files.sh"
       - "tests/unit/test_skill23_build_nondestructive.py"
       - ".github/workflows/skill23-provisioning-tests.yml"
@@ -146,6 +147,7 @@ on:
       - "23-ai-workforce-blueprint/**"
       - "shared-utils/create-role-workspaces.py"
       - "32-command-center-setup/scripts/materialize-dept-agents.sh"
+      - "32-command-center-setup/scripts/run-full-install.sh"
       - "32-command-center-setup/scripts/scaffold-agent-files.sh"
       - "tests/unit/test_skill23_build_nondestructive.py"
       - ".github/workflows/skill23-provisioning-tests.yml"
@@ -185,6 +187,8 @@ jobs:
             test-u109-floor-wipe-regression.sh
             test-u110-optout-caller-wiring.sh
             test-reconcile-orphan-library-files.sh
+            test-standard-placeholder.sh
+            test-standard-placeholder-install-gate.sh
           )
           rc=0
           for s in "${SUITES[@]}"; do

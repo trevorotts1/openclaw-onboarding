@@ -15,10 +15,10 @@ BLOCK="$(sed -n '/>>> STARTER-TASKS-GATE-BEGIN/,/<<< STARTER-TASKS-GATE-END/p' "
 [ -n "$BLOCK" ] || { echo "FAIL: STARTER-TASKS-GATE block not found in run-full-install.sh"; exit 1; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-case_run() {  # $1=UPDATE_ONLY  $2=closeoutStatus (or "")
+case_run() {  # $1=BLOCK_B_UPDATE_ONLY (== UPDATE_ONLY except on a first standard-placeholder build)  $2=closeoutStatus (or "")
   local state="$TMP/state.json"
   if [ -n "$2" ]; then printf '{"closeoutStatus":"%s"}' "$2" > "$state"; else echo '{}' > "$state"; fi
-  UPDATE_ONLY="$1" STATE_FILE="$state" bash -c '
+  BLOCK_B_UPDATE_ONLY="$1" STATE_FILE="$state" bash -c '
     state_get() { jq -r "$1 // empty" "$STATE_FILE" 2>/dev/null; }
     '"$BLOCK"'
     starter_tasks_allowed && echo SEED || echo SKIP'
