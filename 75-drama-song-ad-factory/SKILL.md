@@ -328,6 +328,13 @@ SOP named above.
 - **Per-character voice packs:** the distinct-voice registry still stands --
   no two characters share a voice. Its spoken-only separate-take packs are
   SUPERSEDED by the one-track rule: spoken words inside the song's lyrics.
+- **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
+  includes one lip-sync close-up per speaking/singing character: 9:16, front-facing, head
+  and shoulders filling the frame, mouth clearly visible and unobstructed (no hand, hair,
+  mic or shadow on the lips), even soft light, lips slightly parted, eyes to camera, same
+  style and likeness. Every lip-sync job (Kling avatar, InfiniTalk) uses it as its source
+  image by default (`lip_gate.run_gate(..., source_image=)`). QC: its mouth region must be
+  sharp and unobstructed (`lip_gate.check_reference_set`); a set without it fails.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
   that character's own line cut from the one track's vocal stem; InfiniTalk
