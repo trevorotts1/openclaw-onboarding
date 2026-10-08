@@ -428,6 +428,20 @@ SOP named above.
 - **Per-character voice packs:** the distinct-voice registry still stands --
   no two characters share a voice. Its spoken-only separate-take packs are
   SUPERSEDED by the one-track rule: spoken words inside the song's lyrics.
+- **Picture gate is ENFORCED in the dispatcher (LPG001, 2026-10-08):** `kie_dispatch.dispatch`
+  refuses ANY `kling/ai-avatar-*` / `infinitalk` job unless a receipt
+  (`<image>.picture-gate.json`) exists for that exact image file (sha256) with verdict PASS;
+  no receipt, a FAIL, a changed file, no local image, or mediapipe/model missing = refused,
+  nothing reserved or sent. The receipt is made by `lip_gate/picture_gate.py`
+  (`fix_picture`): a REAL mediapipe FaceLandmarker measurement -- exactly one face; face
+  height >= 35% of frame; head roll within 5 degrees and yaw within 0.10; smile <= 0.60,
+  jawOpen <= 0.15, lip gap <= 1% of face (no teeth); sharpness. Free fix first: a small
+  face gets a local crop (target 37%) and a re-measure; smile/teeth/tilt gets ONE paid
+  gpt-image-2 image-to-image regeneration ("neutral expression, lips closed, facing camera,
+  head level"), which counts against the author's cap, then a re-measure. Needs
+  `pip install mediapipe opencv-python-headless` and the Google `face_landmarker.task`
+  model (`LIPSYNC_FACE_MODEL`). The local crop is the one allowed exception to "never
+  cropped" below.
 - **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
   includes one lip-sync close-up per speaking/singing character. It is MADE from the
   template `lip_gate.closeup_prompt()` and CHECKED by the lip-sync image gate

@@ -119,6 +119,27 @@ def card_gate_refusal(request):
                                "answers before any paid job."}
     return None
 
+#: LPG001 picture gate: lip-sync jobs need a PASS receipt for the exact image.
+_LIPSYNC_CUES = ("ai-avatar", "infinitalk", "lip-sync", "lipsync")
+
+
+def picture_gate_refusal(model, request):
+    """-> None for non-lip-sync jobs or when the source picture has a PASS
+    receipt (sha256 of that exact file); else (code, text). Fail-closed."""
+    if not any(c in (model or "").lower() for c in _LIPSYNC_CUES):
+        return None
+    req = request if isinstance(request, dict) else {}
+    inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+    cand = [req.get("source_image_path"), inp.get("source_image_path"),
+            inp.get("image_url"), inp.get("source_image")]
+    path = next((c for c in cand if isinstance(c, str) and os.path.isfile(c)), None)
+    try:
+        from lip_sync.lip_gate import picture_gate as _PG
+    except Exception as e:  # noqa: BLE001 - never a silent pass
+        return ("LIPSYNC_PICTURE_GATE_UNAVAILABLE", "picture gate not importable: %r" % e)
+    return _PG.receipt_refusal(path)
+
+
 try:  # F4: no automatic Suno sound effects (audio_c3/sfx_off)
     import audio_c3.sfx_off as _sfx_off  # noqa: E402
 except ImportError:  # pragma: no cover - flat script path
@@ -592,6 +613,14 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
     (VIDEO_MODEL_LOCK_MISSING); a different model -> VIDEO_MODEL_MISMATCH.
     Every model, video or not, must be on price-menu.md (MODEL_NOT_ON_MENU).
     """
+    pic = picture_gate_refusal(model, request)
+    if pic is not None:                     # LPG001: no paid lip-sync on an unmeasured picture
+        return envelope("dispatch", "rejected", pic[0],
+                        pic[1] + " Measure it (free) and fix it first: "
+                        "lip_sync.lip_gate.picture_gate.fix_picture.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
+
     # ---- 0. F14 model lock (before any ledger row) ------------------------
     # Scope: VIDEO jobs only. A video model must be on price-menu.md
     # (seedance-1.5-pro included) and must equal the card-locked choice.

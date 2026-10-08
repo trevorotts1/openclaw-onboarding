@@ -171,6 +171,12 @@ to self-approve a run.
 - Lip-sync source pictures: every one passes `lip_gate.image_gate` before any
   paid lip-sync job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a
   measurement that could not be made is a refusal, never a pass.
+- Picture gate enforced in the dispatcher (LPG001): `kie_dispatch.dispatch` refuses any
+  lip-sync job (`kling/ai-avatar-*`, `infinitalk`) with no PASS receipt for the exact image
+  (sha256). The receipt (`picture_gate.fix_picture`) records the measured numbers (face
+  height %, roll, yaw, smile, jawOpen, lip gap, sharpness, face count) and the verdict for
+  every close-up. Missing receipt, FAIL, stale hash or mediapipe missing = `LIPSYNC_PICTURE_*`
+  refusal. QC reads the receipts; a close-up without one is a QC failure.
 
 ## Clean ending (I5)
 

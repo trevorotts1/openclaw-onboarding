@@ -6,6 +6,13 @@ frontmatter `version:` field).
 
 ---
 
+## Unreleased - LPG001 - lip-sync picture gate enforced in the dispatcher
+
+Owner order (Trevor, 2026-10-08). No version bump. Two close-ups (30-Day Reset: face 28%, smile 0.62; Perfect Daughter: face 34%, teeth, roll -7.8) were never measured before paid Kling lip-sync.
+- New `lip_gate/picture_gate.py`: real mediapipe measurement, sha256 receipt, free crop then one paid regeneration, re-measure.
+- `kie_dispatch.dispatch` hard-blocks lip-sync models without a PASS receipt (`LIPSYNC_PICTURE_*`).
+- Tests: `test_picture_gate.py`, `test_picture_gate_dispatch.py`.
+
 ## v2.8.4 - 2026-10-08 - Batch MGB005: song recipe v2, load governor, G5, G9, H10, G2, H3-TEST
 
 One batch release of nine units. #1653 CIO002 run each check once per commit (push main-only, per-PR concurrency, 93 fast guards folded); #1678 G5 honest receipts (measured sung/spoken/rap/no-voice, target, gap, every take); #1681 song recipe v2, song length formula and song dispatcher; #1684 G9 words-fit preflight before spend and Suno duration with 15% headroom; #1685 H10 each line's voice must fit the character on screen; #1687 H3-TEST fps policy (30 fps master, Kling pass-through, per-segment duplicate gate); #1688 KIE rate limit reference; #1689 G2 the builder enforces the lint it ships; #1690 load governor (machine-wide heavy-job gate, bounded ffmpeg, stage cleanup, KIE pacing). Integration: the song dispatcher sends every generation through the load governor (new requests use the 20 per 10 s bucket, a 429 is resubmitted).

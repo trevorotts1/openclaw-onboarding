@@ -7,6 +7,7 @@ from .kie_dispatch import (  # noqa: F401
     dispatch,
     envelope,
     make_runner,
+    picture_gate_refusal,
     resolve_adapter,
     submit_all_ready,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "dispatch",
     "envelope",
     "make_runner",
+    "picture_gate_refusal",
     "resolve_adapter",
     "submit_all_ready",
 ]
