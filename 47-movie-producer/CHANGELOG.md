@@ -1,5 +1,9 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
+## v15.1.4 - 2026-10-08 - INF002
+
+- Re-embedded the Skill 74 client in `kie_image.py` (its header names Skill 74 v1.1.4, which now reads its QC version from `skill-version.txt`). No adapter behavior change.
+
 ## v15.1.2 - 2026-10-06 - delta QC round 2
 
 - A lost createTask answer is an unknown outcome, not a rejection: with no task id, an error code of `network` or `bad_response` (a gateway 502 page, any non-KIE-JSON body) or any 5xx now means no fallback, no resubmit and `data.needs_repoll`. The same rule covers the veo3 / veo3_fast legacy submit. A definite rejection (for example 402) still falls back. Test: createTask HTTP 502 with a non-JSON body gives one createTask, zero veo calls, `createTask_outcome_unknown`.

@@ -1,0 +1,84 @@
+"""singing_detector package: the G3 measured singing detector.
+
+One implementation lives in ``singing_detector/singing_detector.py`` (the
+module file inside this package, mirroring core/spoken_share's layout);
+this __init__ re-exports it so ``import singing_detector`` under core/
+resolves to the detector API. Part G G3, Trevor order 2026-10-08 11:35:
+every sung/spoken share in QC and receipts is MEASURED from the vocal stem
+(pitch stability + voicing continuity + note alignment) -- never computed
+from section labels.
+
+Audio DSP only: ffmpeg decode + numpy, no whisper, no ASR, no model, no
+network, no spend. The Part D load guard is honored via load_guard().
+"""
+from .singing_detector import (  # noqa: F401
+    HOP_S,
+    LoadGuardError,
+    METHOD,
+    MIN_NOTES_PER_SECOND,
+    MIN_NOTES_PER_WINDOW,
+    MIN_VOICED_FRAMES,
+    NOTE_MIN_FRAMES,
+    NOTE_TOL,
+    PCR_MIN,
+    QUANT_MAX,
+    STEADY_MIN,
+    SUSTAIN_FRAMES,
+    SCHEMA_VERSION,
+    SING_THRESH_SEMITONES,
+    SOURCE,
+    SR,
+    STEP_MIN_NOTES,
+    STEP_RANGE_FLOOR,
+    STEP_SEMITONES,
+    TOOL_NAME,
+    TOOL_VERSION,
+    WINDOW_S,
+    calibrate,
+    decode_stem,
+    detect_track,
+    f0_track,
+    load_guard,
+    median_filter,
+    melodic_step,
+    notes,
+    score_stem_window,
+    score_window,
+    share_for_stem,
+)
+
+__all__ = [
+    "HOP_S",
+    "LoadGuardError",
+    "METHOD",
+    "MIN_NOTES_PER_SECOND",
+    "MIN_NOTES_PER_WINDOW",
+    "MIN_VOICED_FRAMES",
+    "NOTE_MIN_FRAMES",
+    "NOTE_TOL",
+    "PCR_MIN",
+    "QUANT_MAX",
+    "STEADY_MIN",
+    "SUSTAIN_FRAMES",
+    "SCHEMA_VERSION",
+    "SING_THRESH_SEMITONES",
+    "SOURCE",
+    "SR",
+    "STEP_MIN_NOTES",
+    "STEP_RANGE_FLOOR",
+    "STEP_SEMITONES",
+    "TOOL_NAME",
+    "TOOL_VERSION",
+    "WINDOW_S",
+    "calibrate",
+    "decode_stem",
+    "detect_track",
+    "f0_track",
+    "load_guard",
+    "median_filter",
+    "melodic_step",
+    "notes",
+    "score_stem_window",
+    "score_window",
+    "share_for_stem",
+]

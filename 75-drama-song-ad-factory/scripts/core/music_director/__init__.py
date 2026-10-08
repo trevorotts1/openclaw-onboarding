@@ -25,8 +25,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import ending_qc
 import music_qc
+import suno_recipe
 import spend_ledger as L
+import protected_names
+import words_match
 
 TOOL_NAME = "music_director"
 TOOL_VERSION = "1.0.0"
@@ -103,8 +107,33 @@ def _checked_version(version, catalog_id=GENERATE_CATALOG_ID):
 
 def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
-                           duration=None, callback_url="https://example.invalid/cb"):
-    """Current-envelope generate payload. Lyrics are verbatim (floor-exempt)."""
+                           duration=None, callback_url="https://example.invalid/cb",
+                           packet_lines=None, protected=(),
+                           style_id=None, client_text=None, length_s=None):
+    """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
+
+    F7 (words match the script exactly): when ``packet_lines`` is given, the
+    lyric text is word-checked against the packet before any payload is
+    built — a rewritten word ("gonna" where the packet says "going to") or
+    an invented line raises ValueError ``(CAPTION_WORD_MISMATCH ...)`` and
+    the master request is never built. ``packet_lines=None`` keeps the old
+    behavior (packet binding happens upstream in lyric QC).
+    """
+    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # G12 + I8
+    if packet_lines is not None and protected:
+        # H7 (supersedes the F7 whole-text match, which forbids any sung
+        # line beyond the packet): every packet line verbatim and every
+        # protected name intact, extra lines allowed. This is what stops
+        # the "Stale" -> "still" request files.
+        errors = protected_names.check_sheet(lyrics_text, packet_lines, protected)
+        if errors:
+            raise ValueError("; ".join(errors))
+    elif packet_lines is not None:
+        errors = words_match.validate_words_match(lyrics_text, packet_lines)
+        if errors:
+            raise ValueError("; ".join(errors))
+    if not instrumental:  # I5: ask for a real ending (outro + resolved chord)
+        lyrics_text, style_text = ending_qc.with_clean_ending(lyrics_text, style_text)
     ver = _checked_version(version)
     req = {"endpoint": CREATE_TASK_ENDPOINT,
            "model": route_model(GENERATE_CATALOG_ID),

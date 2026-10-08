@@ -1196,17 +1196,9 @@ def _fetch_kie_balance(api_key: str, url: str = FBAD_KIE_CREDIT_URL,
     return float(candidates[0])
 
 
-def real_kie_key(raw):
-    """Return the key only when the shared secret canon accepts it as a real KIE key.
-
-    Reuses shared-utils/secret_helper.py (placeholder + shape + entropy gate, the same one
-    key_resolver.py uses); nothing is reimplemented here. A placeholder such as the
-    installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: when the shared
-    helper cannot be imported the key counts as NOT-SET.
-    """
+def _secret_helper():
+    """Import shared-utils/secret_helper.py from the nearest copy, or None."""
     import os
-    if not raw or not str(raw).strip():
-        return None
     # Nearest copy first (a repo checkout or the installed skills dir that holds this
     # file), then the explicit override, then the standard install roots.
     cands = [str(p / "shared-utils") for p in Path(__file__).resolve().parents]
@@ -1218,10 +1210,42 @@ def real_kie_key(raw):
             if c not in sys.path:
                 sys.path.insert(0, c)
             try:
-                from secret_helper import looks_like_real_key
+                import secret_helper
+                return secret_helper
             except Exception:
                 return None
-            return raw if looks_like_real_key(raw, "KIE_API_KEY") else None
+    return None
+
+
+def real_kie_key(raw):
+    """Return the key only when the shared secret canon accepts it as a real KIE key.
+
+    Reuses shared-utils/secret_helper.py (placeholder + shape + entropy gate, the same one
+    key_resolver.py uses); nothing is reimplemented here. A placeholder such as the
+    installer's YOUR_CLIENT_KIE_API_KEY_HERE is NOT-SET. Fail closed: when the shared
+    helper cannot be imported the key counts as NOT-SET.
+    """
+    if not raw or not str(raw).strip():
+        return None
+    sh = _secret_helper()
+    return raw if sh and sh.looks_like_real_key(raw, "KIE_API_KEY") else None
+
+
+def resolve_kie_key(log=None):
+    """KEF001/INF002: the box's KIE key from the process env, then every store the
+    shared resolver knows (secrets/.env, .env, workspace/secrets.env, workspace/.env,
+    workspace/secrets/.env, clawd/secrets/.env, service-env/*.env; Mac, /data and
+    /home/node roots) under any alias (KIE_API_KEY / KIE_AI_KEY / KIEAI_API_KEY ...).
+    A placeholder is skipped in favour of a real key in any other store; none -> None.
+    Logs only the source (file/name) through ``log``, never the value."""
+    sh = _secret_helper()
+    if not sh:
+        return None
+    val, src = sh.resolve_real_secret_with_source("KIE_API_KEY")
+    if val:
+        if log:
+            log("KIE key resolved from " + src)
+        return val
     return None
 
 

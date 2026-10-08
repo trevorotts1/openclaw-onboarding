@@ -35,7 +35,9 @@
 #   --idempotent             same as --apply (the flag update-skills.sh passes)
 #   --check                  exit 0 only if exactly one job exists and matches
 # OPTIONS
-#   --agent ID      agent that runs the job (default: main)
+#   --agent ID      agent that runs the job (default: main when the box has an
+#                   agent named main, else the box's primary agent: the one marked
+#                   default in openclaw.json, else the first agent listed)
 #   --primary ID    explicit primary model id (must be on the box's list)
 #   --fallback ID   explicit fallback model id (must be on the box's list)
 #   --schedule EXPR five-field cron expression (default: 30 5 * * 0)
@@ -61,7 +63,7 @@ JOB_NAME="lean-core-file-system-weekly"
 SCHEDULE="30 5 * * 0"
 THINKING="high"
 TIMEOUT_S="3600"
-AGENT="main"
+AGENT=""   # empty = resolve below: main if the box has it, else its primary agent
 PRIMARY_OVERRIDE="" FALLBACK_OVERRIDE=""
 MODE="dry-run"
 OPENCLAW_BIN="${OPENCLAW_BIN:-openclaw}"
@@ -76,10 +78,12 @@ while [ $# -gt 0 ]; do
     --primary)  [ -n "${2:-}" ] || usage_err "--primary needs a value"; PRIMARY_OVERRIDE="$2"; shift 2 ;;
     --fallback) [ -n "${2:-}" ] || usage_err "--fallback needs a value"; FALLBACK_OVERRIDE="$2"; shift 2 ;;
     --schedule) [ -n "${2:-}" ] || usage_err "--schedule needs a value"; SCHEDULE="$2"; shift 2 ;;
-    -h|--help)  sed -n '2,52p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,54p' "$0"; exit 0 ;;
     *) usage_err "unknown argument: $1" ;;
   esac
 done
+
+[ -n "$AGENT" ] || AGENT="$(pr_primary_agent)"
 
 tool_err() { echo "TOOLING ERROR [$PROG]: $*" >&2; exit 2; }
 command -v "$OPENCLAW_BIN" >/dev/null 2>&1 || tool_err "openclaw command not found on PATH (on a server, run this inside the OpenClaw container)"

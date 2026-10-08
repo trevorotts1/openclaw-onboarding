@@ -66,10 +66,20 @@ def test_done_when_pairs():
     exact = check_lipsync_coverage(90, 3, 15.0)
     check("done-when PASS: 90 s ad, 3 lines totalling exactly 15 s passes",
           exact["pass"] is True, exact)
-    under = check_lipsync_coverage(90, 3, 14.99)
-    check("90 s ad at 14.99 s is one hair under the band floor",
-          under["pass"] is False and COVERAGE_SHORT in under["reason_code"],
-          under)
+    # H8: lip-sync seconds use Trevor's band (percent short of the goal).
+    near = check_lipsync_coverage(90, 3, 14.5)          # 3.3% short
+    check("H8 14.5 s of a 15 s goal is within 5%: accept, no flag",
+          near["pass"] is True and near["flags"] == [], near)
+    flag = check_lipsync_coverage(90, 3, 14.0)          # 6.7% short
+    check("H8 14.0 s of a 15 s goal is 5-10% short: accept WITH A FLAG",
+          flag["pass"] is True and len(flag["flags"]) == 1, flag)
+    redo = check_lipsync_coverage(90, 3, 13.0)          # 13.3% short
+    check("H8 13.0 s of a 15 s goal is past 10% short: redo",
+          redo["pass"] is False and COVERAGE_SHORT in redo["reason_code"],
+          redo)
+    more = check_lipsync_coverage(90, 3, 40.0)
+    check("H8 more lip-sync than the goal is never a miss",
+          more["pass"] is True and more["flags"] == [], more)
 
 
 def test_scaled_rules():
@@ -196,11 +206,13 @@ def test_qc_record_and_gate():
           G.validate_record(rec_ok) is None, G.validate_record(rec_ok))
     # Shared gate: the same final_edit check required with the others.
     makers = {"lipsync-coverage": "final_assembler"}
-    gate = G.evaluate("run-e6", "final", [rec_bad], makers, ["final_edit"])
+    gate = G.evaluate("run-e6", "final", [rec_bad], makers, ["final_edit"],
+                      master={"chosen_length_s": 120, "measured_s": 118})
     check("shared gate FAILs the 2-minute 6-s ad", gate["gate"] == "FAIL",
           gate)
     gate_ok = G.evaluate("run-e6", "final", [rec_ok], makers,
-                         ["final_edit"])
+                         ["final_edit"],
+                         master={"chosen_length_s": 75, "measured_s": 73})
     check("shared gate PASSes the passing ad", gate_ok["gate"] == "PASS",
           gate_ok)
     # 17.6: maker's own review is refused by the same gate.

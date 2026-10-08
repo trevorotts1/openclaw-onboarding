@@ -90,6 +90,38 @@ esac
 - [ ] Spelling on image text is correct
 - [ ] Image file format is correct (PNG or JPG)
 
+## Weekly Drama Song Ad (plan 6.15 — every week the ad is produced)
+
+- [ ] Exactly **one** ad per week, 9:16, cut from that week's Theme of the Week
+- [ ] Style matches the saved
+      `~/.openclaw/workspace/social-media-planner/drama-song-style.json`
+      (defaults Lifelike 3D / Soul Ballad / All Suno / 60 seconds unless the
+      Saturday line changed it; no Saturday reply means keep)
+- [ ] Weekly CTA text and link are the planner's weekly action link unless the
+      client replaced them during setup
+- [ ] Planner cut ends by **59.0 seconds** (60-second option). An approved ad
+      at 62-63 seconds is refused by name — never trimmed silently
+- [ ] 90-second option lands in the **88.0-95.0 second** window
+- [ ] 60 seconds routes to all seven destinations; 90 seconds posts **only** to
+      Facebook Reels, Instagram Reels, TikTok and LinkedIn
+- [ ] **Google Business Profile** never receives the ad (limit unverified — the
+      refusal and its reason appear in every routing plan)
+- [ ] **Stories** receive the **15-second teaser only** (peak moment +
+      "Watch the full video" end card), never the full ad
+- [ ] Skill 74 ran in **active** mode for the generation; a `skipped` result is
+      reported to the client as "not generated", never as success
+- [ ] With KIE off: `drama-song-skipped.json` exists, the reason is plain
+      English, exit code is 0, and there was no network call, no KIE
+      dispatch and no media file
+- [ ] Skill 74 is the only KIE path — no second KIE client, no private-client
+      fallback anywhere in the weekly ad flow
+- [ ] Weekly Overview row carries the drama-song fields from schema **1.3.0**
+      (style chosen, status, KIE cost, video link, channels posted) via
+      `social-planner-row-append`; column names come from
+      `config/sheet-template.schema.json`, never invented here
+- [ ] KIE cost recorded for the ad is within the run's approved ceiling
+      (price + 20% retake allowance); no second ceiling is opened
+
 ## Posting Verification (critical)
 
 - [ ] Regular posts: image URL is in the `mediaUrls` field of the GHL API call (bundled with content)
@@ -317,6 +349,8 @@ These checks guard against stale platform lists that cause agents to give incomp
 - [ ] Instagram is named as a primary platform in SKILL.md, INSTRUCTIONS.md, README.md, and CORE_UPDATES.md.
 - [ ] TikTok is named as a primary platform in SKILL.md, INSTRUCTIONS.md, README.md, and CORE_UPDATES.md.
 - [ ] Carousels (Thursday carousel strategy) are mentioned in SKILL.md as a content type.
+- [ ] **SKILL.md**, **INSTRUCTIONS.md** and **QC.md** all describe the weekly drama song ad the same way: one 9:16 ad per week from the Theme of the Week, Skill 75 through Skill 74 active mode only, 59.0 s planner cap, Stories take the 15-second teaser, Google Business Profile refused.
+- [ ] **INSTRUCTIONS.md** names every `core/smp/` module the weekly step wires (weekly_step, initial_questions, saturday_prompt, length_routing, stories_teaser, sheet_schema_130, sheet_migration) — no file names a module the build tree does not stage.
 
 **How to check programmatically:**
 ```bash

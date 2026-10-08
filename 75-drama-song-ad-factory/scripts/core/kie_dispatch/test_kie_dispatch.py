@@ -21,6 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))          # core/
 
 import kie_dispatch as D            # noqa: E402  (package under test)
+import kie_dispatch.model_lock as ML  # noqa: E402  (F14 video-model lock)
 import spend_ledger as L            # noqa: E402  (sibling, same core/ tree)
 
 MODULE = importlib.import_module("kie_dispatch.kie_dispatch")
@@ -83,14 +84,43 @@ def job_row(db, logical_key, attempt_id):
 
 
 def run_case(script, label, adapter_path=None, prompt=None, cost=100,
-             model="gpt-image-2-5-sunburst-text-to-image", request=None):
+             model="gpt-image-2-5-sunburst-text-to-image", request=None,
+             lock_model="unset", no_card=False):
+    """One dispatch against a fake Skill 74.
+
+    lock_model: F14 pre-lock for video jobs, by default the menu default
+    (MiniMax H3 768P) so F15 card flow is assumed; pass None to leave the
+    run un-locked (lock-missing cases).
+
+    no_card: F15 card-gate refusal case; pass True for a request without
+    the recorded choice-card receipt.
+    """
     tmp = tempfile.mkdtemp(prefix="kie-dispatch-test-")
     db = os.path.join(tmp, "spend.db")
     L.init_run(db, "run-" + label, 10000)
+    state_db = os.path.join(tmp, "state.db")
+    if lock_model == "unset":
+        try:
+            is_vid = (MODULE._is_menu_video(model)
+                      or MODULE._modality(model) == "video")
+        except Exception:
+            is_vid = False
+        lock_model = ML.DEFAULT_VIDEO_MODEL if is_vid else None
+    if lock_model:
+        ML.lock_run_model(state_db, "run-" + label, lock_model)
     save_dir = os.path.join(tmp, "out")
     fake = Fake74(script)
-    req = request if request is not None else {
-        "model": "m", "input": {"prompt": "p" * 200}}
+    # F15 (owner order 2026-10-08): every paid dispatch carries the recorded
+    # choice-card receipt; a request without one refuses CARD_UNANSWERED
+    # before the ledger. The default stub request gains the stamp; a case
+    # that needs the refusal passes no_card=True.
+    if no_card:
+        req = {"model": "m", "input": {"prompt": "p" * 200}}
+    else:
+        req = request if request is not None else {
+            "model": "m", "input": {"prompt": "p" * 200}}
+        if "card_receipt" not in req and "run_state" not in req:
+            req = dict(req, card_receipt=STAMPED_CARD)
     env = D.dispatch(
         model=model,
         request=req,
@@ -99,8 +129,43 @@ def run_case(script, label, adapter_path=None, prompt=None, cost=100,
         estimated_cost=cost,
         prompt=("q" * 200) if prompt is None else prompt,
         adapter_path=adapter_path or os.path.abspath(__file__),
-        runner=fake)
+        runner=fake, state_store=state_db)
     return env, db, fake, tmp
+
+
+#: The recorded card receipt the stub runs carry (the four F15 answers,
+#: stamped). One dict, reused; dispatch only reads it.
+STAMPED_CARD = {"answers": {"video_style": "Lifelike 3D",
+                            "audio_style": "Soul Ballad",
+                            "length": 60,
+                            "video_model": "MiniMax H3 768P"},
+                "who": "W1 dispatch test",
+                "at": "2026-10-08T09:00:00Z"}
+
+
+def test_f15_unanswered_card_refuses_dispatch():
+    """F15 done-when: a run without the four card answers refuses ANY paid
+    job, fail-closed, and reserves nothing."""
+    env, db, fake, tmp = run_case(BASE_SCRIPT, "f15-nocard", no_card=True)
+    check("F15 no card: outcome waiting", env.get("outcome") == "waiting",
+          repr(env.get("outcome")))
+    check("F15 no card: reason CARD_UNANSWERED",
+          env.get("reason_code") == "CARD_UNANSWERED",
+          repr(env.get("reason_code")))
+    check("F15 no card: nothing generated",
+          (env.get("evidence") or {}).get("generated") is False,
+          repr(env.get("evidence")))
+    check("F15 no card: fake 74 never called",
+          fake.calls == [] if hasattr(fake, "calls") else True,
+          repr(getattr(fake, "calls", "n/a")))
+    conn = sqlite3.connect(db)
+    try:
+        n = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE logical_key=?",
+            ("f15-nocard-job",)).fetchone()[0]
+    finally:
+        conn.close()
+    check("F15 no card: ledger reserved nothing", n == 0, str(n))
 
 
 HEALTH_ACTIVE = (0, {"adapter_mode": "active", "state": "success"})
@@ -163,7 +228,8 @@ def test_video_wait_budget():
                      "saved_paths": ["/tmp/x.mp4"], "credits_consumed": 30}),
     })
     env, db, fake, _ = run_case(script, "vidwait",
-                                model="kling-2.6/image-to-video")
+                                model="kling-3.0/video",
+                                lock_model="kling-3.0/video")
     w_argv = fake.argv_of("wait")
     check("video: wait budget 1200",
           w_argv and w_argv[w_argv.index("--timeout") + 1] == "1200",
@@ -203,7 +269,8 @@ def test_wait_timeout_keeps_task_id():
                                "msg": "deadline 300s reached"}}),
     })
     env, db, fake, _ = run_case(script, "waittimeout",
-                                model="kling-2.6/image-to-video")
+                                model="kling-3.0/video",
+                                lock_model="kling-3.0/video")
     check("wait-timeout: waiting", env["outcome"] == "waiting",
           str(env["outcome"]))
     check("wait-timeout: reason unknown-outcome-no-retry",
@@ -526,7 +593,59 @@ def test_no_operator_paths_and_no_private_kie_client():
                                               "parked": 4, "rejected": 5})
 
 
+def test_sfx_default_run_zero_jobs_f4():
+    """F4: a Suno sounds job refuses without an explicit order in request."""
+    env, db, fake, tmp = run_case(
+        BASE_SCRIPT, "f4-sfx", model="ai-music-api/sounds", cost=50,
+        request={"model": "V6", "endpoint": "/api/v1/jobs/createTask",
+                 "input": {"prompt": "thunder roll"}})
+    check("f4: sounds job on default run rejected",
+          env["outcome"] == "rejected"
+          and env["reason_code"] == "SFX_JOB_NOT_ORDERED", str(env))
+    check("f4: refusal left no ledger row",
+          job_row(db, "f4-sfx-job", "att-1") is None
+          or job_row(db, "f4-sfx-job", "att-1")[0] == "rejected", "")
+
+    song_script = dict(BASE_SCRIPT)
+    song_script.update({
+        "submit": (0, {"state": "queued", "task_id": "t-song",
+                       "raw_family": "market"}),
+        "wait": (0, {"state": "success", "task_id": "t-song",
+                     "raw_family": "market", "credits_consumed": 10}),
+        "save": (0, {"state": "success", "task_id": "t-song",
+                     "saved_paths": ["/tmp/f4-song.mp3"], "credits_consumed": 10}),
+    })
+    env2, db2, fake2, tmp2 = run_case(
+        song_script, "f4-song", model="ai-music-api/generate", cost=100,
+        request={"model": "V6", "endpoint": "/api/v1/jobs/createTask",
+                 "input": {"custom_mode": True, "instrumental": False}})
+    check("f4: song generation unaffected",
+          env2["outcome"] == "ok", str(env2["outcome"]))
+    check("f4: song job reconciled in ledger",
+          job_row(db2, "f4-song-job", "att-1") is not None
+          and job_row(db2, "f4-song-job", "att-1")[1] == "succeeded", "")
+
+    ordered_script = dict(BASE_SCRIPT)
+    ordered_script.update({
+        "submit": (0, {"state": "queued", "task_id": "t-sfx",
+                       "raw_family": "market"}),
+        "wait": (0, {"state": "success", "task_id": "t-sfx",
+                     "raw_family": "market", "credits_consumed": 3}),
+        "save": (0, {"state": "success", "task_id": "t-sfx",
+                     "saved_paths": ["/tmp/f4-sfx.mp3"], "credits_consumed": 3}),
+    })
+    env3, _, _, tmp3 = run_case(
+        ordered_script, "f4-sfx-ordered", model="ai-music-api/sounds", cost=50,
+        request={"model": "V6", "endpoint": "/api/v1/jobs/createTask",
+                 "sound_effects": ["thunder roll"],
+                 "input": {"prompt": "thunder roll"}})
+    check("f4: explicit order in request allows the sounds job",
+          env3["outcome"] == "ok",
+          str({k: env3[k] for k in ("outcome", "reason_code")}))
+
+
 TESTS = [
+    test_f15_unanswered_card_refuses_dispatch,
     test_ok,
     test_video_wait_budget,
     test_request_timeout_overrides,
@@ -540,6 +659,7 @@ TESTS = [
     test_submit_crash_is_unknown_no_retry,
     test_submit_skipped_is_not_generated,
     test_adapter_missing_fails_closed,
+    test_sfx_default_run_zero_jobs_f4,
     test_resolver_no_remote_task_undeterminable_without_evidence,
     test_resolver_zero_settles_only_with_submit_error_evidence,
     test_no_operator_paths_and_no_private_kie_client,

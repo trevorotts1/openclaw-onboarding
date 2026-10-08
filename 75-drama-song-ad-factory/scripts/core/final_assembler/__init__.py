@@ -3,6 +3,7 @@ from .assembler import (
     DEFAULT_TRANSITION,
     EXIT,
     HARD_CUT_UNMARKED,
+    LAST_LINE_OVER_ENDCARD,
     NICE_LEVEL,
     SCHEMA_VERSION,
     TIMELINE_SCHEMA,
@@ -11,11 +12,19 @@ from .assembler import (
     TRANSITION_DURATION,
     assemble,
     build_argv,
+    check_last_line_before_endcard,
     load_timeline,
     plan_timeline,
     qc_transitions,
     size_ffmpeg,
     validate_lipsync_atomic,
+)
+from .frame_text import (
+    GARBLED_TEXT_FRAME,
+    TOOL_NAME as FRAME_TEXT_TOOL_NAME,
+    TOOL_VERSION as FRAME_TEXT_TOOL_VERSION,
+    register_extractor,
+    sample_frames_for_text,
 )
 from .lipsync_coverage import (
     CHECK,
@@ -26,10 +35,21 @@ from .lipsync_coverage import (
     to_qc_record,
 )
 
+from .master_provenance import (
+    check_master_provenance,
+    to_qc_record as master_provenance_qc_record,
+)
+
 __all__ = [
+    "check_master_provenance",
+    "master_provenance_qc_record",
     "DEFAULT_TRANSITION",
     "EXIT",
+    "FRAME_TEXT_TOOL_NAME",
+    "FRAME_TEXT_TOOL_VERSION",
+    "GARBLED_TEXT_FRAME",
     "HARD_CUT_UNMARKED",
+    "LAST_LINE_OVER_ENDCARD",
     "NICE_LEVEL",
     "SCHEMA_VERSION",
     "TIMELINE_SCHEMA",
@@ -38,6 +58,7 @@ __all__ = [
     "TRANSITION_DURATION",
     "assemble",
     "build_argv",
+    "check_last_line_before_endcard",
     "check_lipsync_coverage",
     "load_timeline",
     "LIPSYNC_COVERAGE_SHORT",
@@ -45,6 +66,8 @@ __all__ = [
     "LIPSYNC_TOOL_VERSION",
     "plan_timeline",
     "qc_transitions",
+    "register_extractor",
+    "sample_frames_for_text",
     "size_ffmpeg",
     "to_qc_record",
     "validate_lipsync_atomic",

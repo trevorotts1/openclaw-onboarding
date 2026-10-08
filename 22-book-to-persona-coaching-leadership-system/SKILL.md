@@ -5,7 +5,7 @@ description: >
   humans through personal and professional challenges AND governs AI agents executing professional
   work across departments. Runs a 3-phase pipeline with dynamic model selection via
   shared-utils/select_model.py: Phase 1 (extraction) and Phase 2 (analysis) prefer
-  Ollama Cloud DeepSeek V4-pro and Kimi 2.6 (latest versions auto-detected) with
+  Ollama Cloud DeepSeek V4.1 Flash and Kimi 2.6 (latest versions auto-detected) with
   OpenRouter same-model fallback. Phase 3 (synthesis) prefers OAuth GPT. Never
   Anthropic. Output is Gemini Engine-indexed for retrieval. Wiki-enabled for
   unified knowledge access. Uses the Teach Yourself Protocol before every run.
@@ -88,7 +88,7 @@ Drop any supported format into the `books/` folder and the pipeline handles the 
 
 Takes any book (PDF, EPUB, MOBI, or Kindle) and produces a **dual-purpose persona blueprint** through a 3-phase sub-agent pipeline:
 
-- **Phase 1 - Extraction** (Ollama DeepSeek V4-pro preferred, latest version auto-detected): Reads the full book text, extracts 30 structured items across THREE lenses — coaching methodology (1-11), agent governance frameworks (12-20), and the **Playbook Asset Lens (21-30)** that captures the book's actual reusable, swipe-able assets (headline/hook/subject formulas, funnel page recipes, scripts, frameworks, brand-voice patterns, swipe file) at full fidelity. Selector falls back to Ollama Kimi 2.6 → OpenRouter DeepSeek V4-pro → OpenRouter Kimi 2.6 → OAuth GPT when higher tiers are unavailable.
+- **Phase 1 - Extraction** (Ollama DeepSeek V4.1 Flash preferred, latest version auto-detected): Reads the full book text, extracts 30 structured items across THREE lenses — coaching methodology (1-11), agent governance frameworks (12-20), and the **Playbook Asset Lens (21-30)** that captures the book's actual reusable, swipe-able assets (headline/hook/subject formulas, funnel page recipes, scripts, frameworks, brand-voice patterns, swipe file) at full fidelity. Selector falls back to Ollama Kimi 2.6 → OpenRouter DeepSeek V4.1 Flash → OpenRouter Kimi 2.6 → OAuth GPT when higher tiers are unavailable.
 - **Phase 2 - Analysis** (DeepSeek V3.2): Deep analytical work across 13 dimensions including Amateur-to-Expert Gap, failure taxonomy, execution standards, decision logic, and Dimension 13 (Playbook Asset Inventory & Patternization) that organizes the reusable assets into clean PATTERN + worked-example form for the appendix.
 - **Phase 3 - Synthesis** (GPT-5.4 Codex via OAuth): Writes the complete 14-section persona blueprint - fully deployable for both human coaching and AI agent governance.
 - **Phase 3b - Playbook Appendix** (same chain as Phase 3): Writes a mandatory companion `PLAYBOOK-APPENDIX.md` alongside the blueprint. The blueprint DISTILLS the book; the appendix PRESERVES its reusable copy/funnel assets at full fidelity (8 sections A-H) so copy specialists write rich, brand-building copy — never the over-concise output the distilled blueprint alone produced. A quality floor is enforced in the orchestrator (fail-loud on the structure/honesty gate; one stricter retry on richness shortfall; no fabrication for thin books).
@@ -188,9 +188,9 @@ The script will:
 
 | Tier | Model | Notes |
 |------|-------|-------|
-| **Tier 1 (Primary)** | `ollama/deepseek-v4-pro:cloud` (or latest `ollama/deepseek-v*-pro:cloud`) | Ollama Cloud DeepSeek V4-pro — 1M context, subscription-billed, smartest for long-context analysis |
+| **Tier 1 (Primary)** | `ollama/deepseek-v4.1-flash:cloud` (or latest `ollama/deepseek-v*-pro:cloud`) | Ollama Cloud DeepSeek V4.1 Flash — 1M context, subscription-billed, smartest for long-context analysis |
 | **Tier 2 (Primary)** | `ollama/kimi-k2.6:cloud` (or latest `ollama/kimi-k*:cloud`) | Ollama Cloud Kimi 2.6 — 262K context, subscription-billed, smartest for compact extraction |
-| **Tier 3 (Fallback)** | `openrouter/deepseek/deepseek-v4-pro` (or latest `openrouter/deepseek/deepseek-v*-pro`) | Same DeepSeek V4-pro model via OpenRouter when Ollama Cloud is unavailable. Per-token billed. |
+| **Tier 3 (Fallback)** | `openrouter/deepseek/deepseek-v4.1-flash` (or latest `openrouter/deepseek/deepseek-v*-pro`) | Same DeepSeek V4.1 Flash model via OpenRouter when Ollama Cloud is unavailable. Per-token billed. |
 | **Tier 4 (Fallback)** | `openrouter/moonshot/kimi-k2.6` (or latest `openrouter/moonshot/kimi-k*`) | Same Kimi 2.6 model via OpenRouter when Ollama Cloud is unavailable. Per-token billed. |
 | **Tier 5 (Last resort)** | `codex/gpt-*` or `openai-codex/gpt-*` (OAuth GPT) | Subscription-billed (ChatGPT plan), used only when both Ollama Cloud AND OpenRouter Kimi/DeepSeek are missing |
 
@@ -198,13 +198,13 @@ The script will:
 
 | Phase | Tier preference (in order) |
 |-------|----------------------------|
-| Phase 1 - Extraction | Tier 1 (Ollama DeepSeek V4-pro) → Tier 2 (Ollama Kimi 2.6) → Tier 3 (OpenRouter DeepSeek V4-pro) → Tier 4 (OpenRouter Kimi 2.6) → Tier 5 (OAuth GPT) |
-| Phase 2 - Analysis | Tier 1 (Ollama DeepSeek V4-pro) → Tier 2 (Ollama Kimi 2.6) → Tier 3 (OpenRouter DeepSeek V4-pro) → Tier 4 (OpenRouter Kimi 2.6) → Tier 5 (OAuth GPT) |
+| Phase 1 - Extraction | Tier 1 (Ollama DeepSeek V4.1 Flash) → Tier 2 (Ollama Kimi 2.6) → Tier 3 (OpenRouter DeepSeek V4.1 Flash) → Tier 4 (OpenRouter Kimi 2.6) → Tier 5 (OAuth GPT) |
+| Phase 2 - Analysis | Tier 1 (Ollama DeepSeek V4.1 Flash) → Tier 2 (Ollama Kimi 2.6) → Tier 3 (OpenRouter DeepSeek V4.1 Flash) → Tier 4 (OpenRouter Kimi 2.6) → Tier 5 (OAuth GPT) |
 | Phase 3 - Synthesis | Tier 5 (OAuth GPT — no per-call cost) → Tier 2 (Ollama Kimi 2.6) → Tier 4 (OpenRouter Kimi 2.6) |
 
 **ABSOLUTE RULES (enforced by the selector):**
 - Ollama Cloud is ALWAYS preferred over OpenRouter when both are available. Same model, cheaper route. The selector matches on model family (DeepSeek V*-pro, Kimi K*) and prefers the Ollama-routed copy first.
-- If the client has Ollama Cloud DeepSeek V4-pro AND OpenRouter DeepSeek V4-pro, the selector picks Ollama. Same with Kimi 2.6.
+- If the client has Ollama Cloud DeepSeek V4.1 Flash AND OpenRouter DeepSeek V4.1 Flash, the selector picks Ollama. Same with Kimi 2.6.
 - Anthropic models (`anthropic/claude-*`) are FORBIDDEN by policy. Hardcoded filter at every tier.
 - The selector reads the client's actual `openclaw.json` and picks the highest available version at each tier. New Kimi/DeepSeek versions are picked up automatically when the client adds them — no code change needed.
 

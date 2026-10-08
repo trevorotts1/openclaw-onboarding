@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Mocked tests for the D22a no-echo rule on every Suno payload (AF-ECHO-U1).
+"""Mocked tests for the D22a no-echo rule on every Suno payload (AF-ECHO-U1;
+Part F F13 owner order 2026-10-08).
 
-Owner: Decision log 36 (D22a) 2026-10-07; plan 6.12 item 3.
+Owner: Decision log 36 (D22a) 2026-10-07; plan 6.12 item 3; Part F F13
+(02-FIX-AND-IMPROVE-MANUAL.md F13, 03-ECHO-ROOT-CAUSE.md).
 
-Covers: the dry close-microphone vocal rule and the seven negative tags ride
-on every Suno payload — the song payload and every voice-pack payload; the
-three banned style words (spacious, cinematic, choir) are refused by name in
-spoken parts; the choice card and the docs each state the dry vocal rule;
-fail-closed checks (negative controls prove a disabled rule is caught); the
-two real payload builders in this repo are run and stamped; zero paid calls
-(mocked socket, no transport import); no media files and no operator paths in
-the owned dir.
+Covers: the dry close-microphone vocal rule and the short negative tags
+(reverb, echo, choir) ride on every Suno payload — the song payload and every
+voice-pack payload; the three banned style words (spacious, cinematic, choir)
+are refused by name in spoken parts; the SONG style itself is banned-word
+checked (Part F F13): a song style naming strings / gospel / harmonies /
+cinematic / choir (or any SONG_BANNED_STYLE_WORDS word) is refused by name;
+the choice card and the docs each state the dry vocal rule; fail-closed
+checks (negative controls prove a disabled rule is caught); the two real
+payload builders in this repo are run and stamped; zero paid calls (mocked
+socket, no transport import); no media files and no operator paths in the
+owned dir.
 
 Dual-mode -- plain python3 and pytest:
 
@@ -70,23 +75,29 @@ PACK_RAW = {
 
 
 class ConstantsTests(unittest.TestCase):
-    def test_seven_negative_tags_exactly(self):
-        self.assertEqual(len(M.NEGATIVE_TAGS), 7, M.NEGATIVE_TAGS)
-        self.assertEqual(
-            M.NEGATIVE_TAGS,
-            ("reverb", "echo", "delay", "hall", "ethereal", "ambient",
-             "choir pad"))
+    def test_short_negative_tags_exactly(self):
+        self.assertEqual(len(M.NEGATIVE_TAGS), 3, M.NEGATIVE_TAGS)
+        self.assertEqual(M.NEGATIVE_TAGS, ("reverb", "echo", "choir"))
         self.assertEqual(M.negative_tags(), list(M.NEGATIVE_TAGS))
 
     def test_three_banned_spoken_style_words_exactly(self):
         self.assertEqual(M.SPOKEN_BANNED_STYLE_WORDS,
                          ("spacious", "cinematic", "choir"))
 
+    def test_song_banned_style_words_cover_the_root_cause_list(self):
+        # Part F F13: the song-style ban names every word the root-cause
+        # report and the acceptance brief call out, choir included.
+        for word in ("strings", "gospel", "choir", "harmonies", "cinematic",
+                     "spacious", "prayerful", "atmospheric", "ethereal",
+                     "ambient", "airy", "wet", "shimmer", "hall", "room"):
+            self.assertIn(word, M.SONG_BANNED_STYLE_WORDS, word)
+
     def test_dry_rule_is_the_owner_phrase(self):
         self.assertEqual(M.DRY_RULE, "dry close-microphone vocal")
 
-    def test_brief_extended_tags_cover_the_seven(self):
-        # The owner brief's wider set is a superset; it never replaces them.
+    def test_brief_extended_tags_cover_the_short_tags(self):
+        # The owner brief's wider set is a superset; it never replaces the
+        # short stamp.
         self.assertTrue(set(M.NEGATIVE_TAGS) <= set(M.BRIEF_NEGATIVE_TAGS),
                         M.BRIEF_NEGATIVE_TAGS)
 
@@ -98,14 +109,14 @@ class ConstantsTests(unittest.TestCase):
         self.assertEqual(M.PROVIDER, "suno")
         self.assertEqual(M.RULE_ID, "D22a")
 
-    def test_tag_list_text_is_derived_from_the_seven(self):
+    def test_tag_list_text_is_derived_from_the_short_tags(self):
         self.assertEqual(M.TAG_LIST_TEXT, ", ".join(M.NEGATIVE_TAGS))
 
 
 class CardAndDocsTests(unittest.TestCase):
     """The card line and the docs line state the dry vocal rule."""
 
-    def test_card_line_states_dry_vocals_and_the_seven_tags(self):
+    def test_card_line_states_dry_vocals_and_the_short_tags(self):
         line = M.card_line()
         self.assertIn("dry close-mic vocal", line)
         self.assertIn(M.TAG_LIST_TEXT, line)
@@ -115,11 +126,21 @@ class CardAndDocsTests(unittest.TestCase):
         for word in M.SPOKEN_BANNED_STYLE_WORDS:
             self.assertIn(word, M.card_line(), word)
 
-    def test_docs_line_states_dry_vocals_and_the_seven_tags(self):
+    def test_card_line_states_the_song_style_ban(self):
+        # Part F F13 is stated on the card: song styles stay dry.
+        self.assertIn("song styles stay dry", M.card_line())
+
+    def test_docs_line_states_dry_vocals_and_the_short_tags(self):
         line = M.docs_line()
         self.assertIn(M.DRY_RULE, line)
         self.assertIn(M.TAG_LIST_TEXT, line)
-        self.assertIn("seven negative tags", line)
+        self.assertIn("short negative tags", line)
+
+    def test_docs_line_names_the_song_style_ban(self):
+        line = M.docs_line()
+        self.assertIn("song style", line)
+        for word in ("strings", "gospel", "harmonies", "cinematic", "choir"):
+            self.assertIn(word, line, word)
 
     def test_docs_line_names_all_three_banned_words(self):
         for word in M.SPOKEN_BANNED_STYLE_WORDS:
@@ -133,6 +154,7 @@ class CardAndDocsTests(unittest.TestCase):
         self.assertIn(M.DRY_RULE, M.rule_text())
         self.assertIn(M.TAG_LIST_TEXT, M.rule_text())
         self.assertIn("spacious, cinematic or choir", M.rule_text())
+        self.assertIn("song style", M.rule_text())
 
     def test_card_and_docs_lines_travel_on_the_envelope(self):
         out = M.song_request({}, style_text="ballad")
@@ -156,9 +178,11 @@ class SongPayloadTests(unittest.TestCase):
         self.assertIn("warm soul ballad", style)
         self.assertIn(M.DRY_RULE, style)
         self.assertEqual(req["negative_tags"], list(M.NEGATIVE_TAGS))
-        self.assertEqual(len(req["negative_tags"]), 7)
+        self.assertEqual(len(req["negative_tags"]), 3)
         self.assertEqual(req["style_words_banned"],
                          list(M.SPOKEN_BANNED_STYLE_WORDS))
+        self.assertEqual(req["song_style_words_banned"],
+                         list(M.SONG_BANNED_STYLE_WORDS))
         self.assertEqual(req["provider"], "suno")
         self.assertEqual(req["kie_path"], "Skill 74")
         self.assertEqual(M.check(req)["outcome"], "ok")
@@ -258,6 +282,17 @@ class RealSongBuilderTests(unittest.TestCase):
             self.md = importlib.import_module("music_director")
         except Exception as exc:                        # pragma: no cover
             self.skipTest("music_director unavailable: %s" % exc)
+        # The builder reads the W1-06 work-copy catalog. The repackaged
+        # skill layout needs the ancestor-walk workcopy_paths (batch train
+        # w6, 36f2e2491); until that lands, skip cleanly instead of
+        # erroring on a missing models.json.
+        try:
+            models_path = self.md.workcopy_paths()["models"]
+        except Exception as exc:                        # pragma: no cover
+            self.skipTest("work-copy catalog unresolvable: %s" % exc)
+        if not models_path.is_file():                   # pragma: no cover
+            self.skipTest("W1-06 work-copy catalog missing: %s"
+                          % models_path)
 
     def test_real_song_builder_output_carries_the_rule_after_the_stamp(self):
         raw = self.md.build_generate_request("la la la", "warm soul ballad",
@@ -380,18 +415,76 @@ class BannedWordRefusalTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "BANNED_STYLE_WORD")
         self.assertIn("cinematic", str(ctx.exception))
 
-    def test_sung_side_is_not_subject_to_the_spoken_ban(self):
-        # D22a bans the three words in SPOKEN parts only; the sung style
-        # and lyrics of a song payload may still name them.
-        res = M.song_request(dict(SONG_PAYLOAD), style_text="cinematic soul "
-                              "ballad chorus")
+    def test_song_style_with_a_banned_word_is_refused(self):
+        # Part F F13: the song style itself is banned-word checked. The old
+        # sung-side exemption is gone -- a song style naming strings, gospel,
+        # harmonies, cinematic or choir is refused, never shipped.
+        for word in M.SONG_BANNED_STYLE_WORDS:
+            res = M.song_request(dict(SONG_PAYLOAD),
+                                 style_text="warm ballad with %s sheen"
+                                            % word)
+            self.assertEqual(res["outcome"], "rejected",
+                             "%s not refused in a song style" % word)
+            self.assertEqual(res["reason_code"], "banned-song-style-word",
+                             res)
+            self.assertTrue(any(("BANNED_SONG_STYLE_WORD:%s" % word) in e
+                                for e in res["errors"]), res["errors"])
+            self.assertIsNone(res["request"], "a refused payload was built")
+
+    def test_song_style_refusal_is_case_insensitive(self):
+        res = M.song_request(dict(SONG_PAYLOAD), style_text="SWELLING STRINGS")
+        self.assertEqual(res["outcome"], "rejected", res)
+        self.assertIn("strings", res["refused_words"])
+
+    def test_song_style_refusal_is_whole_word(self):
+        # "string pads" would miss; whole-word matching keeps "strings" out
+        # of a style without banning unrelated words that contain it.
+        self.assertEqual(M.refused_song_style_words("stronger staccato"), [])
+        self.assertEqual(M.refused_song_style_words("strings"), ["strings"])
+
+    def test_song_style_scan_hits_every_surface(self):
+        for payload in ({"input": {"style": "choir-tinged ballad"}},
+                        {"prompt": "gospel-flavoured anthem"},
+                        {"style_text": "cinematic ballad"}):
+            res = M.song_request(payload)
+            self.assertEqual(res["outcome"], "rejected", (payload, res))
+            self.assertEqual(res["reason_code"], "banned-song-style-word",
+                             res)
+
+    def test_lyrics_surface_is_not_song_style_scanned(self):
+        # The ban is a style rule, not a lyric rule: a lyric line naming a
+        # banned word is not refused by the song-style scan.
+        payload = {"input": {"style": "soul ballad",
+                             "lyrics": "the choir in my head sings"}}
+        res = M.song_request(payload)
         self.assertEqual(res["outcome"], "ok", res["errors"])
         self.assertEqual(M.check(res["request"])["outcome"], "ok")
 
-    def test_sung_style_with_a_banned_word_is_not_refused(self):
-        res = M.song_request(style_text="spacious cinematic choir anthem")
+    def test_check_catches_a_banned_word_edited_into_the_style(self):
+        res = M.song_request(dict(SONG_PAYLOAD), style_text="soul ballad")
+        req = res["request"]
+        req["input"]["style"] = "warm ballad, swelling analog strings"
+        out = M.check(req)
+        self.assertEqual(out["outcome"], "rejected")
+        self.assertEqual(out["reason_code"], "banned-song-style-word", out)
+        self.assertTrue(any(e.startswith("BANNED_SONG_STYLE_WORD_IN_STYLE:")
+                            for e in out["errors"]), out["errors"])
+
+    def test_check_negcontrol_song_guard_removed_is_caught(self):
+        res = M.song_request(dict(SONG_PAYLOAD), style_text="soul ballad")
+        req = res["request"]
+        req["song_style_words_banned"] = ["strings"]
+        out = M.check(req)
+        self.assertEqual(out["outcome"], "rejected")
+        self.assertIn("MISSING_SONG_BANNED_STYLE_WORD_GUARD:choir",
+                      out["errors"])
+
+    def test_voice_pack_prompt_is_not_song_style_scanned(self):
+        # A voice pack is spoken text; its prompt carries the D22a dry rule
+        # and the spoken ban, not the song-style ban.
+        res = M.voice_pack_request({"prompt": "warm voice, spoken only"})
         self.assertEqual(res["outcome"], "ok", res["errors"])
-        self.assertEqual(res["refused_words"], [])
+        self.assertNotIn("song_style_words_banned", res["request"])
 
 
 class CheckTests(unittest.TestCase):
@@ -423,13 +516,13 @@ class CheckTests(unittest.TestCase):
     def test_negcontrol_one_negative_tag_dropped_is_caught(self):
         req = self._stamped()
         req["negative_tags"] = [t for t in req["negative_tags"]
-                                if t != "hall"]
+                                if t != "echo"]
         out = M.check(req)
         self.assertEqual(out["outcome"], "rejected")
-        self.assertIn("MISSING_NEGATIVE_TAG:hall", out["errors"])
+        self.assertIn("MISSING_NEGATIVE_TAG:echo", out["errors"])
         self.assertEqual(
             [e for e in out["errors"] if e.startswith("MISSING_NEGATIVE_TAG:")],
-            ["MISSING_NEGATIVE_TAG:hall"])
+            ["MISSING_NEGATIVE_TAG:echo"])
 
     def test_negcontrol_all_tags_dropped_is_caught(self):
         req = self._stamped()
@@ -438,7 +531,7 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(out["outcome"], "rejected")
         self.assertEqual(
             len([e for e in out["errors"]
-                 if e.startswith("MISSING_NEGATIVE_TAG:")]), 7)
+                 if e.startswith("MISSING_NEGATIVE_TAG:")]), 3)
 
     def test_negcontrol_banned_guard_removed_is_caught(self):
         req = self._stamped()
@@ -480,9 +573,10 @@ class CheckTests(unittest.TestCase):
                 for e in out["errors"]), out["errors"])
 
     def test_negative_tag_field_is_not_mistaken_for_spoken_text(self):
-        # "choir pad" lives in negative_tags; only spoken text is scanned.
+        # "choir" lives in negative_tags; only spoken text is scanned, so a
+        # compliant payload carrying the tag as a tag still passes.
         req = self._stamped()
-        self.assertIn("choir pad", req["negative_tags"])
+        self.assertIn("choir", req["negative_tags"])
         self.assertEqual(M.check(req)["outcome"], "ok")
 
     def test_wrong_provider_and_wrong_kie_path_refused(self):

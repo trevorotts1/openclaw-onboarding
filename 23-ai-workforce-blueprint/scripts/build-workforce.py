@@ -33,7 +33,7 @@ IMPORTANT:
 - This script is executed BY the AI agent, not run directly by the client
 - The AI reads this file to understand the interview flow and executes it conversationally
 - Questions are generated dynamically based on industry and context, not from a static list
-- The AI MUST be running on a high reasoning model (DeepSeek v4 pro, GLM 5.2, MiMo V2 Pro, Gemini 3.1 Pro, GPT 5.4); Ollama Cloud preferred, OpenRouter backup, thinking=HIGH
+- The AI MUST be running on a high reasoning model (DeepSeek V4.1 Flash, GLM 5.2, MiMo V2 Pro, Gemini 3.1 Pro, GPT 5.4); Ollama Cloud preferred, OpenRouter backup, thinking=HIGH
 - Research best practices uses openrouter/perplexity/sonar-pro-search
 
 FORBIDDEN CLIENT-FACING LANGUAGE:
@@ -3931,6 +3931,15 @@ def apply_standard_edits(config):
             state["departments"] = depts
         state.pop("buildCompletedAt", None)
         state["buildType"] = "standard-first"
+        # STD001: the real interview supersedes an active standard placeholder
+        # (the vertical-derivation guard re-arms by itself; nothing is deleted).
+        _sp_superseded = (state.get("companyMode") == "standard-placeholder")
+        if _sp_superseded:
+            state["companyMode"] = "interview"
+            _sp = state.get("standardPlaceholder")
+            if isinstance(_sp, dict):
+                _sp["status"] = "superseded"
+                _sp["supersededAt"] = datetime.now().isoformat()
         state["applyStandardEdits"] = {
             "appliedAt": datetime.now().isoformat(),
             "keptDepartments": sorted(kept),
@@ -3939,6 +3948,16 @@ def apply_standard_edits(config):
             "source": "build-workforce.py apply_standard_edits",
         }
         _state_commit(path, state)
+        if _sp_superseded and company_name:
+            # Display name only (slug is immutable); best-effort across CC db / env / config.
+            try:
+                import importlib.util as _ilu
+                _spec = _ilu.spec_from_file_location(
+                    "set_company_name", os.path.join(os.path.dirname(os.path.abspath(__file__)), "set-company-name.py"))
+                _scn = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_scn)
+                _scn.set_company_name(company_name, path, True)
+            except Exception as _scn_e:  # noqa: BLE001
+                print(f"[STANDARD-FIRST WARN] placeholder rename skipped: {_scn_e}", file=sys.stderr)
         print(f"[STANDARD-FIRST] State written: confirmationsComplete=true, "
               f"{len(kept)} kept settled to done, "
               f"buildCompletedAt=DEFERRED until all required checks pass.",

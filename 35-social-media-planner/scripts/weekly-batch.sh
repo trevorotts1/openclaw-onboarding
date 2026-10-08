@@ -14,7 +14,7 @@
 # ============================================================
 set -euo pipefail
 
-SCRIPT_VERSION="v10.14.33"
+SCRIPT_VERSION="v10.16.0"
 SCRIPT_NAME="weekly-batch.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -54,6 +54,135 @@ write_idle_heartbeat() {
   printf '{"status":"idle","reason":"%s","timestamp":"%s","batch_version":"%s"}\n' \
     "${1:-no-calendar}" "$now_iso" "$SCRIPT_VERSION" > "$IDLE_HEARTBEAT" 2>/dev/null || true
   log "zero-work heartbeat written to $IDLE_HEARTBEAT (reason: ${1:-no-calendar})"
+}
+
+# ---------- weekly drama-song step (plan 6.15, owner D27/D35) ----------
+# ONE 9:16 ad per week from the Theme of the Week — one per batch, never one
+# per topic. Runs before the calendar gate so an idle week still ships the ad.
+# Fail-soft by contract: Skill 74 not active -> the step writes
+# drama-song-skipped.json and exits 0 (a normal weekly outcome); module not
+# staged yet -> warning and the batch continues. Skill 74 is the only KIE
+# path; there is never a fallback to a private KIE client.
+run_drama_song_step() {
+  # Contract (plan 6.15, owner D27/D35): Skill 74 active mode only. When
+  # the gate is closed the step writes drama-song-skipped.json, prints a
+  # plain-English client reason and exits 0. Skill 74 is the only KIE
+  # path; there is never a fallback to a private KIE client, so this
+  # function never opens a second client and never spends.
+  local step="" theme="" out="" rc marker factory_entry
+  for step in \
+      "$SKILL_DIR/../75-drama-song-ad-factory/scripts/core/smp/weekly_step/weekly_step.py" \
+      "$HOME_DIR/.openclaw/skills/75-drama-song-ad-factory/scripts/core/smp/weekly_step/weekly_step.py"; do
+    [ -f "$step" ] && break
+    step=""
+  done
+  if [ -z "$step" ]; then
+    warn "drama-song step skipped: core/smp/weekly_step/weekly_step.py is not staged on this box yet"
+    return 0
+  fi
+  for factory_entry in \
+      "$SKILL_DIR/../75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py" \
+      "$HOME_DIR/.openclaw/skills/75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py"; do
+    [ -f "$factory_entry" ] && break
+    factory_entry=""
+  done
+
+  theme="${DRAMA_SONG_THEME:-}"
+  marker="$OPENCLAW_DIR/data/skill35/weekly-theme-last-run.json"
+  if [ -z "$theme" ] && [ -f "$marker" ]; then
+    theme="$(python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("theme") or "")
+except Exception:
+    pass' "$marker" 2>/dev/null || true)"
+  fi
+  if [ -z "$theme" ]; then
+    warn "drama-song step skipped: no Theme of the Week (set DRAMA_SONG_THEME, or let the Saturday skill35-weekly-theme cron record one)"
+    return 0
+  fi
+
+  out="$OPENCLAW_DIR/data/skill35/drama-song/$(date +%Y%m%d)"
+  mkdir -p "$out" 2>/dev/null || out="/tmp"
+  log "drama-song step = $step (theme: $theme)"
+  if [ -n "$factory_entry" ]; then
+    if python3 "$step" --theme "$theme" --out-dir "$out" \
+         --factory-entry "$factory_entry" >>"$LOG_FILE" 2>&1; then
+      log "   ok drama-song step finished (generated, or intentionally skipped while KIE is off)"
+    else
+      rc=$?
+      warn "   drama-song step rc=$rc - see $LOG_FILE (weekly batch continues; a KIE-off skip exits 0)"
+    fi
+  else
+    # No factory entry staged: keep the step's own behavior (it asks for the
+    # entry or reports the miss in its result envelope); never invent a path.
+    if python3 "$step" --theme "$theme" --out-dir "$out" >>"$LOG_FILE" 2>&1; then
+      log "   ok drama-song step finished (no factory entry staged; step handled it)"
+    else
+      rc=$?
+      warn "   drama-song step rc=$rc - see $LOG_FILE (weekly batch continues; a KIE-off skip exits 0)"
+    fi
+  fi
+  _drama_song_row_fields "$out"
+  return 0
+}
+
+# ---------- H5 (B5 step 4): map the weekly step's result to the row ----------
+# The Weekly Overview drama-song columns use the INSTALLED schema 1.3.0 keys
+# from config/sheet-template.schema.json (drama_song block): drama_song_style,
+# drama_song_status, kie_cost_cents, drama_song_video_url, drama_song_channels.
+# This reads the step's own drama-song-result.json / drama-song-skipped.json
+# and writes one sidecar the row-append caller (or the publisher agent) picks
+# up for the Weekly Overview row — it never posts by itself and never invents
+# a column name. Key names below are copied from the installed contract, never
+# renamed here.
+_drama_song_row_fields() {
+  local out="$1" result_file status
+  result_file="$out/drama-song-result.json"
+  [ -f "$result_file" ] || result_file="$out/drama-song-skipped.json"
+  [ -f "$result_file" ] || { warn "drama-song: no result/skipped artifact in $out (row fields not written)"; return 0; }
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 - "$result_file" "$out/drama-song-row-fields.json" <<'PYEOF' 2>>"$LOG_FILE" || warn "drama-song: could not derive row fields (batch continues)"
+import json, sys, os
+
+src, dst = sys.argv[1], sys.argv[2]
+try:
+    doc = json.load(open(src, encoding="utf-8"))
+except Exception as exc:
+    sys.stderr.write("drama-song row fields: unreadable %s: %s\n" % (src, exc))
+    sys.exit(0)
+
+style = doc.get("style") or {}
+style_text = ", ".join(str(style.get(k)) for k in
+                       ("look", "music", "voice", "length")
+                       if style.get(k) not in (None, ""))
+status = str(doc.get("status") or "")
+cost = doc.get("cost_cents")
+cost_str = ""
+if isinstance(cost, int) and not isinstance(cost, bool):
+    cost_str = str(cost)
+elif isinstance(cost, float):
+    cost_str = str(int(cost))
+channels = doc.get("channels") or []
+video_path = doc.get("video_path") or doc.get("stories_teaser_path") or ""
+
+fields = {
+    # Installed schema 1.3.0 drama_song keys (config/sheet-template.schema.json).
+    "drama_song_style": style_text,
+    "drama_song_status": status,          # ok | dry-run | skipped | waiting | ...
+    "kie_cost_cents": cost_str,           # whole usd_cents, RAW
+    "drama_song_video_url": os.path.expanduser(str(video_path)) if video_path else "",
+    "drama_song_channels": ", ".join(str(c) for c in channels),
+    "_source_artifact": os.path.basename(src),
+    "_week_dir": os.path.dirname(src),
+}
+tmp = dst + ".tmp"
+with open(tmp, "w", encoding="utf-8") as fh:
+    json.dump(fields, fh, indent=2, sort_keys=True)
+    fh.write("\n")
+os.replace(tmp, dst)
+print("drama-song row fields written: %s" % dst)
+PYEOF
+  return 0
 }
 
 case "${1:-}" in
@@ -103,6 +232,9 @@ if [ ! -f "$CYCLE_SCRIPT" ]; then
   err "run-publishing-cycle.sh not found at $CYCLE_SCRIPT — re-run update-skills.sh."
   exit 4
 fi
+
+# ---------- weekly drama-song ad (before the calendar gate) ----------
+run_drama_song_step
 
 # ---------- ensure calendar exists ----------
 if [ ! -f "$CALENDAR_JSON" ]; then

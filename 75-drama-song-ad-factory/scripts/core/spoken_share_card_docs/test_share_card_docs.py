@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""D15 retarget tests: the choice card and the docs state 45 percent.
+"""D15 retarget tests (SPK001): the choice card and the docs state 22.5 percent.
 
 Proves the AF-SHARE-U2 acceptance points, stdlib only, zero network, zero
 paid calls:
 
-  1. the canonical numbers are 45 target / 55 ceiling / 40 floor, plus the
-     short-opener and first-sung-within-10-seconds rules;
+  1. the canonical numbers are 22.5 spoken target (20-25) and 77.5 sung of
+     voice (75-80), redo edges 32.5 / 12.5, plus the short-opener and
+     first-sung rules;
   2. the choice-card line states all of that;
   3. the docs wording states all of that AND carries the 5-minute reference
-     note -- 57.0% spoken is over the new 55% limit, recipe still stands for
+     note -- 57.0% spoken is over the new 32.5% redo limit, recipe still stands for
      everything else;
   4. the readers are fail-closed: planted retired-band text is named and
      refused, gutted wording is reported missing, clean wording passes (a
@@ -41,6 +42,7 @@ if _OVERRIDE:
 
 import spoken_share_card_docs as S            # noqa: E402  (package under test)
 from spoken_share_card_docs import share_card_docs as M   # noqa: E402
+import spoken_share as _SS                                # noqa: E402
 
 # --- mocked environment: no live sockets, no spend -------------------------
 _REAL_SOCKET = socket.socket
@@ -65,17 +67,27 @@ def check(name, cond, detail=""):
 
 # --- 1. the numbers --------------------------------------------------------
 def test_constants():
-    check("target is 45 percent", M.SPOKEN_TARGET_PCT == 45,
+    check("target is 22.5 percent", M.SPOKEN_TARGET_PCT == 22.5,
           M.SPOKEN_TARGET_PCT)
-    check("ceiling is 55 percent", M.SPOKEN_MAX_PCT == 55, M.SPOKEN_MAX_PCT)
-    check("floor is 40 percent", M.SPOKEN_MIN_PCT == 40, M.SPOKEN_MIN_PCT)
+    check("accept band is 20-25", M.SPOKEN_BAND_PCT == (20, 25))
+    check("sung of voice target is 77.5 (75-80)",
+          (M.SUNG_VOICE_TARGET_PCT, M.SUNG_VOICE_BAND_PCT) == (77.5, (75, 80)))
+    check("redo edges are target -/+ 10", (M.SPOKEN_MIN_PCT, M.SPOKEN_MAX_PCT)
+          == (12.5, 32.5), (M.SPOKEN_MIN_PCT, M.SPOKEN_MAX_PCT))
     check("floor < target < ceiling",
           M.SPOKEN_MIN_PCT < M.SPOKEN_TARGET_PCT < M.SPOKEN_MAX_PCT)
-    check("band is the new 40-55, not the retired one",
-          (M.SPOKEN_MIN_PCT, M.SPOKEN_MAX_PCT) == (40, 55)
-          and (M.SPOKEN_MIN_PCT, M.SPOKEN_MAX_PCT) != M.RETIRED_BAND_PCT)
-    check("first sung line within about 10 seconds",
-          M.FIRST_SUNG_WITHIN_SECONDS == 10, M.FIRST_SUNG_WITHIN_SECONDS)
+    check("numbers equal the spoken_share numbers (no drift)",
+          (M.SPOKEN_TARGET_PCT, M.SUNG_VOICE_TARGET_PCT,
+           M.SPOKEN_MIN_PCT, M.SPOKEN_MAX_PCT)
+          == (_SS.SPOKEN_TARGET_PCT, _SS.SUNG_TARGET_PCT,
+              _SS.SPOKEN_MIN_PCT, _SS.SPOKEN_MAX_PCT))
+    check("band is not the retired one",
+          (M.SPOKEN_MIN_PCT, M.SPOKEN_MAX_PCT) != M.RETIRED_BAND_PCT)
+    check("first real singing targeted at 15 percent",
+          M.FIRST_SUNG_TARGET_PCT == 15, M.FIRST_SUNG_TARGET_PCT)
+    check("card-docs number equals the spoken_share number (no drift)",
+          M.FIRST_SUNG_TARGET_PCT == _SS.FIRST_SUNG_TARGET_PCT,
+          (M.FIRST_SUNG_TARGET_PCT, _SS.FIRST_SUNG_TARGET_PCT))
     check("source cites Decision log 37 / plan 6.7",
           "Decision log 37" in M.SOURCE and "plan 6.7" in M.SOURCE, M.SOURCE)
 
@@ -86,18 +98,19 @@ def test_card_line_states_target():
     check("card line is one line", "\n" not in line and line.strip() != "")
     check("card line is the Spoken: line",
           line.startswith(M.SPOKEN_LINE_PREFIX), line[:40])
-    check("card line states 45 percent", "45%" in line, line)
-    check("card line states the ceiling", "never above 55%" in line, line)
-    check("card line states the floor", "never below 40%" in line, line)
+    check("card line states 22.5 percent", "22.5%" in line, line)
+    check("card line states the 20-25 band", "(20-25%)" in line, line)
+    check("card line states sung 77.5 of voice time",
+          "sung 77.5% of voice time (75-80%)" in line, line)
     check("card line keeps the opener short", "short spoken opener" in line, line)
     check("card line carries the first-sung rule",
-          "first sung line within about 10 seconds" in line, line)
+          "first real singing at about 15% of the ad" in line, line)
     check("card block ships exactly the Spoken line",
           M.card_block() == [M.CARD_LINE], M.card_block())
     check("card line passes its own reader", M.check_card_text(line) == [],
           M.check_card_text(line))
     check("card label aligns to the plan 4.1 column (body starts at col 13)",
-          line.index("%d%%" % M.SPOKEN_TARGET_PCT) == 13, repr(line[:20]))
+          line.index("%g%%" % M.SPOKEN_TARGET_PCT) == 13, repr(line[:20]))
 
 
 # --- 3. the docs wording + the 5-minute reference note ---------------------
@@ -105,13 +118,14 @@ def test_docs_states_target():
     text = M.docs_statement()
     check("docs reader reports nothing missing", M.check_docs_text(text) == [],
           M.check_docs_text(text))
-    check("docs state 45 percent", "target 45%" in text, text[:120])
-    check("docs state never more than 55", "never more than 55%" in text)
-    check("docs state never less than 40", "never less than 40%" in text)
+    check("docs state 22.5 percent", "target 22.5%" in text, text[:120])
+    check("docs state singing against voice time",
+          "voice time" in text and "target 77.5%" in text)
+    check("docs state the band", "past 10 redo" in text)
     check("docs count rap as spoken", "rap counts as spoken" in text)
     check("docs keep the opener short", "opener stays short" in text)
-    check("docs carry the first-sung-within-10s rule",
-          "first sung line starts within about 10 seconds" in text)
+    check("docs carry the first-sung 15 percent rule",
+          "targeted at 15% of the runtime" in text)
     bare = M.check_docs_text(M.docs_statement(with_reference_note=False))
     check("docs without the reference note fail only on that note",
           len(bare) == 4 and all(
@@ -125,7 +139,7 @@ def test_reference_note_present():
           "5-minute" in note and "reference ad" in note, note[:80])
     check("reference note carries 57.0 percent", "57.0%" in note, note)
     check("reference note says it is over the new limit",
-          "over the new 55% limit" in note, note)
+          "over the new 32.5% redo limit" in note, note)
     check("reference note keeps the recipe",
           "recipe still stands" in note, note)
     check("reference note scopes it to everything else",
@@ -139,7 +153,7 @@ def test_reference_note_present():
     check("170.9/300 rounds to the recorded 57.0 percent",
           round(100.0 * M.REFERENCE_SPOKEN_SECONDS
                 / M.REFERENCE_LENGTH_SECONDS, 1) == M.REFERENCE_SPOKEN_PCT)
-    check("57 percent IS over the new 55 percent limit",
+    check("57 percent IS over the new 32.5 percent redo limit",
           M.reference_is_over_limit() is True)
     check("57 percent passed the retired band, which is why it stood",
           M.reference_within_retired_band() is True)
@@ -160,22 +174,27 @@ def test_negative_control_stale_text_is_refused():
     docs_reasons = M.check_docs_text(_OLD_BAND)
     check("planted docs text fails the docs reader",
           any("retired band" in r for r in docs_reasons)
-          and any("45 percent" in r for r in docs_reasons), docs_reasons)
+          and any("22.5 percent" in r for r in docs_reasons), docs_reasons)
 
 
 def test_negative_control_gutted_wording_is_reported():
     gutted = ("Spoken: 44% of the runtime (never above 60%, never below 30%)  "
-              "/  long spoken opener  /  first sung line within about 30 seconds")
+              "/  long spoken opener  /  first real singing at about 40% of the ad")
     reasons = M.check_card_text(gutted)
-    check("wrong target reported", any("45 percent" in r for r in reasons),
+    check("wrong target reported", any("22.5 percent" in r for r in reasons),
           reasons)
-    check("wrong ceiling reported", any("55 percent" in r for r in reasons),
-          reasons)
-    check("wrong floor reported", any("40 percent" in r for r in reasons),
-          reasons)
+    check("wrong band reported", any("20-25" in r for r in reasons), reasons)
+    check("missing sung-of-voice reported",
+          any("77.5 percent" in r for r in reasons), reasons)
+    old_card = ("Spoken:      45% of the runtime (never above 55%, never below "
+                "40%)  /  short spoken opener  /  first real singing at about "
+                "15% of the ad")
+    check("the old 45 percent card line is refused as stale",
+          M.find_stale(old_card) != [] and M.check_card_text(old_card) != [],
+          M.find_stale(old_card))
     check("opener rule reported", any("opener" in r for r in reasons), reasons)
     check("first-sung rule reported",
-          any("first sung" in r for r in reasons), reasons)
+          any("first real singing" in r for r in reasons), reasons)
 
 
 def test_positive_control_clean_text_passes():
@@ -186,10 +205,11 @@ def test_positive_control_clean_text_passes():
           M.check_docs_text(M.docs_statement()))
     check("clean prose is accepted",
           M.check_docs_text(
-              "target 45% of runtime, never more than 55%, never less than "
-              "40%. Rap counts as spoken. Opener stays short; first sung line "
-              "starts within about 10 seconds. The 57.0% reference figure is "
-              "over the new 55% limit; its recipe still stands for "
+              "target 22.5% of runtime; singing is judged against voice "
+              "time, target 77.5%; past 10 redo. Rap counts as spoken. Opener "
+              "stays short; first real singing, measured on the vocal stem, "
+              "is targeted at 15% of the runtime. The 57.0% reference figure "
+              "is over the new 32.5% redo limit; its recipe still stands for "
               "everything else.") == [])
 
 

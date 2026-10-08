@@ -100,10 +100,10 @@ OLLAMA_CLOUD_DEFAULT_URL = "https://ollama.com/v1"
 
 #: DEFAULTS, not hard-codes. A provider renaming or retiring a tag must be a
 #: config change on the box, never a code change and a fleet roll -- the cloud
-#: tag deepseek-v4-pro:cloud was deleted out from under this chain on
+#: tag of the retired DeepSeek V4 Pro model was deleted out from under this chain on
 #: 2026-08-17 and every scoring call failed silently until someone read a
 #: 404. GET https://ollama.com/api/tags on 2026-09-21 lists exactly
-#: deepseek-v4.1-flash, deepseek-v4.1-flash and deepseek-v4-pro:0813;
+#: deepseek-v4.1-flash (plus retired-model tags);
 #: openrouter.ai/api/v1/models lists deepseek/deepseek-v4.1-flash at 1048576
 #: context, $0.15/M prompt and $0.60/M completion. Flash is the scoring
 #: chain's model on both steps: these calls are 200-token judgements, not
@@ -244,7 +244,8 @@ NEUTRAL_FALLBACK_SCORE = 0.6
 #: a hermetic test) resolve its OWN store instead of borrowing another
 #: installation's. A test holds the two lists in lockstep -- see
 #: _secret_store_files().
-_STORE_RELATIVE_PATHS = ("secrets/.env", "secrets/secrets.env", ".env")
+_STORE_RELATIVE_PATHS = ("secrets/.env", "secrets/secrets.env", ".env", "workspace/secrets.env",
+                         "workspace/.env", "workspace/secrets/.env")
 
 #: A legal POSIX environment variable name. Anything else in a store file is
 #: skipped rather than trusted.
@@ -359,11 +360,17 @@ def _secret_store_files(environ=None) -> list:
     pin = str(view.get("OPENCLAW_SECRETS") or "").strip()
     if pin:
         files.append(pin)
-    for root in _openclaw_roots(view):
+    import glob
+    roots = list(_openclaw_roots(view))
+    if not _root_pin(view):
+        roots.append("/home/node/.openclaw")  # container root, as secret_helper (INF002)
+    for root in roots:
         for relative in _STORE_RELATIVE_PATHS:
             files.append(os.path.join(root, relative))
+        files.extend(sorted(glob.glob(os.path.join(root, "service-env", "*.env"))))
     if not _root_pin(view):
         home = str(view.get("HOME") or "").strip() or os.path.expanduser("~")
+        files += ["/data/clawd/secrets/.env", os.path.join(home, "clawd", "secrets", ".env")]
         files.append(os.path.join(home, ".env"))
     # DELIBERATELY NOT unioned with secret_helper.env_file_candidates().
     # That module's list is a module-level constant whose ~ was expanded ONCE,
@@ -705,7 +712,7 @@ def _post_chat(url: str, headers: dict, body: dict, timeout: int = HTTP_TIMEOUT_
 def _extract_message(payload: dict) -> str:
     """Extract text from an OpenAI-compatible chat-completion payload.
 
-    DeepSeek V4 Pro (and other thinking/reasoning models) may return
+    DeepSeek V4.1 Flash (and other thinking/reasoning models) may return
     ``content: null`` and put the actual text in ``reasoning_details`` or
     ``reasoning``.  Crash-guard order:
       1. content  — non-null, non-empty string → use it
@@ -1094,7 +1101,7 @@ def scoring_chain() -> list:
     chain, and silently merging the default back in would make the setting
     unreadable. The override is a comma list of "provider:model" split on the
     FIRST colon, so a tagged Ollama id keeps its own
-    ("ollama-cloud:deepseek-v4-pro:0813").
+    ("ollama-cloud:deepseek-v4.1-flash:cloud").
 
     An entry naming an unknown provider is skipped with ONE warning per
     offending name, to stderr. This module degrades; it does not raise, and it

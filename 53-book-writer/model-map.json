@@ -14,10 +14,10 @@
   "probe": {
     "ollama_models": [
       "ornith-1.5:9b",
-      "deepseek-v4-pro:cloud",
+      "deepseek-v4.1-flash:cloud",
       "glm-5.1:cloud",
       "minimax-m2.7:cloud",
-      "deepseek-v4-pro:0813-cloud",
+      "deepseek-v4.1-flash:cloud",
       "gemma4:12b-mlx",
       "qwen3.8:27b-mlx",
       "muse-glimmer:30b-mlx",

@@ -152,9 +152,9 @@ class TestProviderFirstSelection(unittest.TestCase):
             self.assertEqual(r["required_modality"], "text")
 
     def test_provider_id_separate_from_model_id(self):
-        r = smp.select_provider_then_model("deepseek", "writer", ["deepseek/deepseek-v4-pro"])
+        r = smp.select_provider_then_model("deepseek", "writer", ["deepseek/deepseek-v4.1-flash"])
         self.assertEqual(r["provider"], "deepseek")
-        self.assertEqual(r["model_id"], "deepseek/deepseek-v4-pro")
+        self.assertEqual(r["model_id"], "deepseek/deepseek-v4.1-flash")
 
     def test_unknown_role_rejected(self):
         r = smp.select_provider_then_model("openrouter", "chief-vibe-officer", INVENTORY)
@@ -237,7 +237,7 @@ class TestAdapterRegistry(unittest.TestCase):
         self.assertEqual(ad.provider_id, "deepseek")
         self.assertEqual(ad.secret_env_name, "DEEPSEEK_API_KEY")
         ids = [m["id"] for m in ad.list_models()]
-        self.assertIn("deepseek/deepseek-v4-pro", ids)
+        self.assertIn("deepseek/deepseek-v4.1-flash", ids)
 
     def test_test_only_adapter_labeled_and_never_invokes(self):
         ad = pa.get_adapter("test-provider")
@@ -257,7 +257,7 @@ class TestAdapterRegistry(unittest.TestCase):
         os.environ.pop("DEEPSEEK_API_KEY", None)
         ad = pa.get_adapter("deepseek")
         with self.assertRaises(pa.AdapterError) as ctx:
-            ad.invoke("deepseek/deepseek-v4-pro", [{"role": "user", "content": "hi"}])
+            ad.invoke("deepseek/deepseek-v4.1-flash", [{"role": "user", "content": "hi"}])
         self.assertIn("auth_missing", str(ctx.exception))
         # The error names the env var; it must not embed any secret VALUE.
         # (f-string here renders the empty env var — tighten the message to
@@ -290,12 +290,12 @@ class TestAdapterRegistry(unittest.TestCase):
             pa.urllib.request.urlopen = fake_urlopen
             try:
                 out = pa.get_adapter("deepseek").invoke(
-                    "deepseek/deepseek-v4-pro", [{"role": "user", "content": "hi"}]
+                    "deepseek/deepseek-v4.1-flash", [{"role": "user", "content": "hi"}]
                 )
             finally:
                 pa.urllib.request.urlopen = orig
             self.assertEqual(out["provider_id"], "deepseek")
-            self.assertEqual(out["model_id"], "deepseek/deepseek-v4-pro")
+            self.assertEqual(out["model_id"], "deepseek/deepseek-v4.1-flash")
             self.assertIn("api.deepseek.com", captured["url"],
                           "invocation hits the DeepSeek endpoint directly — no implicit routing")
         finally:

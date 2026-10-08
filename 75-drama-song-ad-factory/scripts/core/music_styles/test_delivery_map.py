@@ -226,17 +226,17 @@ check("3b a mapped style text carrying spoken-word wording passes",
           "o3", O3_STYLE_TEXT + " " + MS.delivery_map(SPOKEN_SUNG_SHEET),
           SPOKEN_SUNG_SHEET) is not None,
       "map present, wording irrelevant")
+_stamped_3c = NE.song_request(
+    {"input": {"style": MS.style_prompt("soul-ballad"),
+               "lyrics": SPOKEN_SUNG_SHEET}},
+    sung=True)["request"]
 check("3c stamped payload gains no 'spoken word, rap' negative tags",
-      NE.song_request(
-          {"input": {"style": MS.style_prompt("soul-ballad"),
-                     "lyrics": SPOKEN_SUNG_SHEET}},
-          sung=True)["request"]["negative_tags"] == list(NE.NEGATIVE_TAGS)
-      and NE.song_request(
-          {"input": {"style": MS.style_prompt("soul-ballad"),
-                     "lyrics": SPOKEN_SUNG_SHEET}},
-          sung=True)["request"]["negative_tags_extended"] == list(
-              NE.BRIEF_NEGATIVE_TAGS),
-      "the 11:35 tags are never injected")
+      _stamped_3c["negative_tags"] == list(NE.NEGATIVE_TAGS)
+      and all(t not in _stamped_3c["negative_tags"]
+              for t in MS.CONTRADICTING_NEGATIVE_TAGS)
+      and all(t not in (_stamped_3c.get("negative_tags_extended") or [])
+              for t in MS.CONTRADICTING_NEGATIVE_TAGS),
+      repr(_stamped_3c.get("negative_tags")))
 check("3d D22a's own seven tags are never reported as a contradiction",
       raises(lambda: MS.assert_no_contradiction(
           list(NE.NEGATIVE_TAGS), SHEET), MS.MusicStyleError) is None,
@@ -263,6 +263,7 @@ def hand_payload(lyrics, neg_tags, style_text=None):
         "negative_tags": list(neg_tags),
         "negative_tags_extended": list(NE.BRIEF_NEGATIVE_TAGS),
         "style_words_banned": list(NE.SPOKEN_BANNED_STYLE_WORDS),
+        "song_style_words_banned": list(NE.SONG_BANNED_STYLE_WORDS),
     }
 
 

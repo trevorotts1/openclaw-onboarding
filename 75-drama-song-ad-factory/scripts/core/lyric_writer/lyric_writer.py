@@ -13,6 +13,10 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import protected_names  # noqa: E402  H7 build gate
+
 SCHEMA_VERSION = "blackceo.lyric-writer/v1"
 TOOL_VERSION = "0.1.0"
 
@@ -142,6 +146,14 @@ def validate_lyrics(lines, brief=None):
                                    "detail": "%s: map key %r not in line text" % (lid, k)})
         ok_lines.append(ln)
 
+    # H7: the sheet may not change a protected name or rewrite a packet line.
+    packet = brief.get("packet_lines")
+    if packet is not None:
+        for msg in protected_names.check_sheet(
+                lines, packet, protected_names.protected_list(brief)):
+            errors.append({"error": msg.split()[0].lower().replace("_", "-"),
+                           "detail": msg})
+
     covered = {w for ln in ok_lines if ln.get("critical") is True
                for w in crit_words & set(words(ln.get("text") or ""))}
     missing = sorted(crit_words - covered)
@@ -153,6 +165,38 @@ def validate_lyrics(lines, brief=None):
     if errors:
         return _res("rejected", errors[0]["error"], errors, lines, coverage)
     return _res("ok", "lyrics-valid", [], lines, coverage)
+
+
+def _spoken_share():
+    try:
+        import spoken_share as ss               # core/ on sys.path
+    except ImportError:
+        from .. import spoken_share as ss       # imported as core.*
+    return ss
+
+
+def spoken_word_budget(sections):
+    """SPK001: judge a lyric sheet's spoken lines against the ~15-18% of the
+    lyric words budget (Suno stretches spoken parts, so few words land the
+    20-25% runtime target). ``sections`` = [{"delivery", "lines"}]. The rule
+    and the numbers are owned by core/spoken_share; nothing re-derived."""
+    return _spoken_share().check_spoken_word_budget(sections)
+
+
+def steer_opening(blocks, length_s=None, basis="planned"):
+    """H6: steer the sheet's opening toward first real singing at 15% of
+    runtime (about 9 s in a 60 s ad). ``blocks`` is the planned timeline
+    [{"delivery": "spoken"|"sung"|"rap", "seconds": n}, ...]; pass the
+    vocal-stem measurement with basis="measured" for a take. Returns the
+    spoken_share verdict plus action (keep / shorten_opener /
+    lengthen_opener / add_sung_hook) and move_by_s: how far to move the
+    sung hook. One rule, owned by core/spoken_share; nothing re-derived.
+    """
+    ss = _spoken_share()
+    res = ss.steer_first_sung(blocks, basis)
+    if length_s is not None:
+        res["plan_target_s"] = ss.seconds_for(length_s)["first_sung_target_s"]
+    return res
 
 
 def validate_campaign(campaign):

@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [7.0.1] - 2026-10-08 - INF002
+
+- Install QC uses the shared credential lookup (every store, every location id name, pit- token to its location through the GHL API); neither found installs with a note (INF002).
+
 ## [7.0.0] - 2026-09-03 — safe contact upsert policy: generic add/save defaults to upsert
 
 ### Changed

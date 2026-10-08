@@ -38,6 +38,8 @@ __all__ = [
     "canonical_for",
     "resolve_secret",
     "resolve_secret_strict",
+    "resolve_secret_with_source",
+    "resolve_real_secret_with_source",
     "looks_like_real_key",
     "assert_real_key",
     "is_placeholder",
@@ -49,7 +51,28 @@ __all__ = [
 # importing presentation_job — shared-utils must stay dependency-free).
 # VPS containers put the root at /data/.openclaw; Mac boxes at ~/.openclaw.
 # ---------------------------------------------------------------------------
-ENV_FILE_CANDIDATES = [
+def _extra_store_candidates() -> List[str]:
+    """Every other place a box keeps a key (INF002): workspace/.env,
+    workspace/secrets/.env, clawd/secrets/.env under each root (Mac ~/.openclaw,
+    VPS /data/.openclaw, container /home/node/.openclaw) plus the gateway
+    service-env files. Lowest priority; the original list below still wins."""
+    import glob
+    roots = ["/home/node/.openclaw", "/data/.openclaw", os.path.expanduser("~/.openclaw")]
+    out = []
+    for r in roots:
+        out += [r + "/workspace/.env", r + "/workspace/secrets/.env"]
+        out += sorted(glob.glob(r + "/service-env/*.env"))
+    out += ["/data/clawd/secrets/.env", os.path.expanduser("~/clawd/secrets/.env")]
+    return out
+
+
+ENV_FILE_CANDIDATES = _extra_store_candidates() + [
+    # Lowest priority (later entries win in _build_env_map): the workspace
+    # secrets.env some boxes (e.g. Corey Sams VPS) keep a key in (KEF001).
+    "/data/.openclaw/workspace/secrets.env",
+    os.path.expanduser("~/.openclaw/workspace/secrets.env"),
+    "/home/node/.openclaw/secrets/.env",
+    "/home/node/.openclaw/.env",
     "/data/.openclaw/secrets/.env",
     "/data/.openclaw/secrets/secrets.env",
     "/data/.openclaw/.env",
@@ -179,6 +202,41 @@ def resolve_secret(canonical: str, override_env: Optional[Dict[str, str]] = None
         if value:
             return value
     return None
+
+
+def resolve_secret_with_source(
+    canonical: str, override_env: Optional[Dict[str, str]] = None
+) -> "tuple[Optional[str], str]":
+    """Like resolve_secret but also says WHERE: (value, "env:NAME" |
+    "file:PATH:NAME" | ""). The source never contains the value. Same
+    precedence as _build_env_map: override > process env > env files."""
+    stores = [("env", dict(override_env or {})), ("env", dict(os.environ))]
+    stores += [("file:" + p, _parse_env_file(p)) for p in reversed(ENV_FILE_CANDIDATES)]
+    names = alias_list(canonical)
+    for label, vals in stores:
+        for name in names:
+            if (vals.get(name) or "").strip():
+                return vals[name].strip(), f"{label}:{name}"
+    return None, ""
+
+
+def resolve_real_secret_with_source(
+    canonical: str, override_env: Optional[Dict[str, str]] = None
+) -> "tuple[Optional[str], str]":
+    """Like resolve_secret_with_source but SKIPS placeholders: the first value in
+    any store/alias that looks_like_real_key wins, so a placeholder in an earlier
+    store (or the process env) can never shadow a real key kept in a later one.
+    Returns (None, "") when no store holds a real key. Never returns a value
+    that failed the placeholder gate; the source never contains the value."""
+    stores = [("env", dict(override_env or {})), ("env", dict(os.environ))]
+    stores += [("file:" + p, _parse_env_file(p)) for p in reversed(ENV_FILE_CANDIDATES)]
+    names = alias_list(canonical)
+    for label, vals in stores:
+        for name in names:
+            v = (vals.get(name) or "").strip()
+            if v and looks_like_real_key(v, canonical):
+                return v, f"{label}:{name}"
+    return None, ""
 
 
 def resolve_secret_strict(

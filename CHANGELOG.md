@@ -1,6 +1,109 @@
-## [Unreleased]  -  fix(updater): NFX001 every roll leaves a clean 999-setup and links its skills
+## [v26.4.9]  -  2026-10-08  -  Merge train: #1639 feat(onboarding): standard company placeholder after 14 days without…; #1666 G3b: sung detector no longer reads gap-free speech as sung, skill 75…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1639 — [v26.4.9]  -  2026-10-08  -  feat(onboarding): standard company placeholder after 14 days without an interview (STD001)
+
+Trevor's order (2026-10-08): a client who has not finished the AI Workforce interview still gets a
+standard company named after them, so the Command Center and everything downstream proceed.
+
+- New 23-ai-workforce-blueprint/scripts/apply-standard-placeholder.py. STANDARD_PLACEHOLDER_AFTER_DAYS = 14,
+  measured from the onboarding start (.onboarding-state.json seededAt / startedAt, or launchBootstrap.createdAt,
+  earliest wins). Runs the existing library-only standard prebuild when it has not run, then records
+  companyMode="standard-placeholder" and standardPlaceholder{status:"active", ...}. Never writes
+  interviewComplete, interview progress, QC, or answers. Skips completed interviews, built companies,
+  and frozen legacy boxes. Idempotent.
+- New set-company-name.py: renames the company everywhere (build-state, company-config.json, Command
+  Center companies row, COMPANY_NAME) without touching the slug.
+- update-skills.sh applies the placeholder automatically on every update (best-effort, one line).
+- run-full-install.sh: an active placeholder builds the real board (BLOCK B), including on an
+  --update-only refresh until the Command Center finishes once (standardPlaceholder.ccProvisionedAt).
+- vertical-derivation-guard.py: departments already on disk when the placeholder was applied are
+  reported as grandfathered residue while the placeholder is active (fixes a client box's
+  VERTICAL_NOT_DECLARED on 'listings'); new adds are still refused; the real interview re-arms it.
+- build-workforce.py apply_standard_edits marks the placeholder superseded when the real interview completes.
+- build-state-schema.json documents companyMode and standardPlaceholder; SKILL.md and INSTRUCTIONS.md
+  document the placeholder and the edit path. Skill 32 v13.1.46.
+- Command Center: v7.6.112 (dashboard admits an active placeholder; banner invites the client to finish
+  the interview). The cc-compat.json pin to v7.6.112 lands AFTER that tag exists (follow-up commit).
+
+- Pin: cc-compat.json commandCenter.pinnedTag is now v7.6.112 (the Command Center release that admits the dashboard for the standard placeholder company, STD001; CC commit ef6b9364e8). decisionEngine SHAs re-derived at onboarding main ba1ed99f1 and CC main ef6b9364e8; release-cohort.json cc_version/cc_sha, CC_PIN in tests/unit/cc-runtime-preflight.test.py, README, DIRECT-TO-AGENT-UPDATE-MESSAGE.md and docs/interview-launch-recovery.md follow.
+
+### #1666 — G3b: sung detector no longer reads gap-free speech as sung, skill 75 v2.8.2
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+## [v26.4.8]  -  2026-10-08  -  batch: mega MGB002 (6 units; skill 75 v2.8.1, skill 35 v3.7.0)
+
+One batch release of six unit pull requests (merged together in one batch pull request; none were merged one at a time): #1654, #1655, #1656, #1657, #1658, #1659. One onboarding bump (v26.4.7 to v26.4.8) and one skill 75 bump (v2.8.0 to v2.8.1). Each unit's own entry follows, unchanged except one heading level deeper.
+
+### SPK001: spoken share cut to 20-25 percent, singing judged against voice time (skill 75 v2.8.1)
+
+Trevor, 2026-10-08: "Okay, let's go to your recommendation that cut it to about 20-25%." Suno turns spoken lyric lines into long talking, and the old targets did not add up (spoken 35-40 percent of runtime plus a music-only intro and end card left at most about 50 percent for singing, never the 55-60 percent goal). Builds on BND001 (#1655).
+
+- Skill 75 v2.8.1: spoken share target 22.5 percent of runtime (20-25); the lyric writer budgets spoken lines at about 15-18 percent of the lyric words; singing is measured against voice time, sung / (sung + spoken), default target 77.5 percent (75-80), and a music-only intro, gaps and the end card never count against it. One constants set (`core/spoken_share`) feeds the lyric writer, the Suno recipe, the share check, the sung vocal guard, the QC gate, the choice card line, SKILL.md and the docs.
+- Same band on both numbers: within 5 accept, 5 to 10 accept with a flag, over 10 redo. Hard reject only: no sung stretch of 6 s.
+- Tests: spoken 22% accept / 31% flag / 37% redo; sung of voice 76% accept / 69% flag / 60% redo; a song with a 10 s intro and a 5 s end card is not penalized.
+
+### BND001: sung share judged only by Trevor's band (skill 75 v2.8.1)
+
+Removes the hard 55 percent sung floor that batch #1652 kept; sung share is judged against the ad's own target with the 5/10 point band, and the first real singing is targeted at 15 percent of runtime (H6, supersedes #1637). See the skill 75 CHANGELOG v2.8.1.
+### INF002: installers install with a note when a key is missing and never fail on a box with a real key (skill 48 KIE, 59/05/29/35/36 Convert and Flow credentials, 70 primary agent), skill 74 QC reads its version, skill 06 QC gets 600 s, parity guard proven both ways (skills 05 v7.0.2, 29 v7.0.1, 32 v13.1.47, 35 v3.7.0 (from #1657), 36 v2.0.4, 47 v15.1.4, 48 v2.0.8, 59 v1.0.11, 70 v1.0.2, 74 v1.1.4)
+
+## [v26.4.7]  -  2026-10-08  -  batch: mega MGB001 (24 units; skill 75 v2.8.0)
+
+One batch release of 24 unit pull requests (merged together in one batch pull request; none were merged one at a time). Version, README and this entry are bumped once for the whole batch.
+
+- #1624: G6: face emotion matches the line
+- #1625: G4: target engine (closest-of-N, never cancel)
+- #1627: H14: song files (MP3 320k + WAV, instrumental) shipped and checked in delivery (skill 75 v2.6.1, v26.4.7)
+- #1628: H11: delivery checklist Q8-Q11 (lip-sync, first-sung, pictures match, Trevor's band); skill 75 v2.6.1
+- #1629: H2: measured lip-sync gate (offset, correlation vs wrong-audio control, frozen face) (skill 75 v2.6.2, v26.4.8)
+- #1630: H13: fades finish before the first word; long gaps held on the speaking face (skill 75 v2.6.1, v26.4.7)
+- #1631: H12: no hand-written pipeline scripts; assembler receipt provenance + QC check (skill 75 v2.6.1)
+- #1632: H1: stem-vs-mix offset measure + LIPSYNC_RETIMED placement gate (v26.4.7, skill 75 v2.6.1)
+- #1633: H5: shots planned from measured song timestamps, slow motion capped at 1.15x, picture/line match table (v26.4.7, skill 75 v2.6.1)
+- #1634: H9: readable six-question intake card (skill 75 v2.6.1, v26.4.7)
+- #1635: H8: one singing rule + Trevor's 5/10 point band for every share, first-sung, length and lip-sync goal (skill 75 v2.6.1, v26.4.7)
+- #1636: H4: every speaking face is a lip-sync clip of its own line + lip-sync coverage target band (skill 75 v2.6.3, v26.4.9)
+- #1638: H7: captions use approved lyric sheet words; protected names enforced at sheet build and on sung takes (skill 75 v2.6.4, v26.4.10)
+- #1640: fix(parity): runtime-parity guard matches alias runtime ids (dept-legal-compliance -> legal) (SHR002, v26.4.7); skill 32 v13.1.46 (bump added in the batch)
+- #1642: G12: Suno song recipe is the default for every Suno music style (skill 75 v2.6.1)
+- #1643: I5: clean song endings (outro + resolved chord tags, last-2s ending QC), skill 75 v2.6.1
+- #1644: I2: scenes must match the song and the faces (skill 75 v2.6.1, v26.4.7)
+- #1645: I6: character library (save approved character, reuse via Use a saved character?) (skill 75 v2.6.2)
+- #1646: I3: character reference set plus one keyframe picture per shot, priced on the choice card (skill 75 v2.6.1, v26.4.7)
+- #1647: I7: intake asks one question at a time with options and a recommendation, then a recap (skill 75 v2.6.6, v26.4.12)
+- #1648: I1: captions spell-checked; exact website asked at intake and kept verbatim (skill 75 v2.6.5, v26.4.11)
+- #1649: batch: dts w8 (F1, F14, F15, E7-AMEND) [replaces #1620]
+- #1650: I8: one sung hook per ad, repeated by a length formula clamp(1+floor(L/25),2,12), measured sung count (skill 75 v2.6.7, v26.4.13)
+- #1651: Unit I4: master length L-2 enforcement
+
+Held out: #1637 (H6) conflicts with #1635 (H8) in spoken_share; #1639 is a draft awaiting the Command Center v7.6.112 pin; #1620 is replaced by #1649.
+
+## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1619 — [v26.4.6]  -  2026-10-08  -  fix(kie+models): KEF001 shared KIE key lookup (any store, KIE_AI_KEY alias) wired into skills 59/48/74/75; retire deepseek-v4-pro for deepseek-v4.1-flash
+
+### #1619 — [v26.4.5]  -  2026-10-08  -  fix(kie+models): KEF001 shared KIE key lookup (any store, KIE_AI_KEY alias) wired into skills 59/48/74/75; retire deepseek-v4-pro for deepseek-v4.1-flash
+
+### [Unreleased]  -  fix(updater): NFX001 every roll leaves a clean 999-setup and links its skills
 
 - frontdoor_update_999 now finds every checkout (incl. ~/Documents/999-setup), fast-forwards clean ones, leaves dirty/diverged ones untouched and uses a clean ~/999-setup (cloned if absent) as the link source, links per skill (hand-managed real dirs skipped alone), and sources the link functions from the scripts dir. Never runs the full installer or touches 9Router config.
+
+## [v26.4.5]  -  2026-10-08  -  Merge train: #1618 fix(cc): raise CC pin to v7.6.111 + release v26.4.5 (CCP002); #1621 batch: dts w7 (F-B units F4-F13, F17 + trunk resolves)
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1618 — [v26.4.5]  -  2026-10-08  -  fix(cc): raise CC pin to v7.6.111 (the Command Center main that includes batch #512), refresh decision-engine SHAs (CCP002)
+
+The pin sat at v7.6.110 (CC commit 37aee296) while CC main moved on, so every box that installs the pinned tag stayed behind what the checks demand. cc-compat.json commandCenter.pinnedTag is now v7.6.111 (annotated tag, CC commit 493dba5c); decisionEngine SHAs re-derived at onboarding main 59019f2c6 and CC main 493dba5c8; release-cohort.json cc_version/cc_sha and the CC_PIN literal in tests/unit/cc-runtime-preflight.test.py follow. minVersion unchanged (v7.6.111 >= v7.4.0, maxVersion null). No other code touched.
+
+### #1621 — batch: dts w7 (F-B units F4-F13, F17 + trunk resolves)
+
+(This pull request carried no CHANGELOG entry of its own.)
 
 ## [v26.4.4]  -  2026-10-08  -  fix(cc): bound the CC contract check (stdin /dev/null + 120s alarm) and raise CC pin to v7.6.110 (skill 32 v13.1.44)
 

@@ -3,6 +3,8 @@
 
 Stage order (never reordered, never partially skipped):
 
+  0. placeholder check   request JSON may carry no unfilled placeholder (F10);
+                         refused before the ledger or Skill 74 is touched
   1. ledger reserve      ``spend_ledger.plan`` + ``reserve`` (directive 18/24.4)
   2. Skill 74 health     read ``adapter_mode``; only ``active`` continues
   3. Skill 74 preflight  balance must cover price x 1.30
@@ -26,6 +28,14 @@ flight, marks the reservation ``unknown`` and STOPS - with the remote task id
 already stored when submit produced one. No retry, no resubmit; reconcile from
 provider records or operator evidence first.
 
+F10 (manual 02): a request whose JSON still carries an unfilled placeholder
+(``{{``, ``}}``, ``<TODO``, ``<PLACEHOLDER`` - any case - or the bare tokens
+``TODO``, ``PLACEHOLDER``, ``KEYFRAME:`` from the Kiesett incident) is refused
+at submission with reason ``REQUEST_PLACEHOLDER`` before anything is reserved
+or sent. Any failed task is reported within one poll: the wait path fails on
+the FIRST poll answer reading ``fail`` (stage evidence row + ``failure_poll``
+in the envelope), never after retries or silent skips.
+
 This module carries no HTTP client of its own: the adapter path comes from
 ``KIE_LIVE_ADAPTER_PATH`` or a search relative to this file, and every call is
 one ``subprocess`` of ``kie_live_adapter.py`` (injectable as ``runner`` so the
@@ -43,11 +53,63 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
+import kie_dispatch.model_lock as ML  # noqa: E402  (F14 video-model lock)
+
+#: F15 card gate (Critical, owner order 2026-10-08): dispatch refuses ANY
+#: paid job for a run whose state lacks all four choice-card answers. The
+#: import is soft -- the module must keep working when style_defaults is not
+#: importable -- and the local fail-closed copy below keeps the gate shut.
+try:
+    from style_defaults import card_gate as _CG  # noqa: E402
+except Exception:  # noqa: BLE001 - gate stays fail-closed without the module
+    _CG = None
+
+#: The exposed gate for W-F-U16: whoever holds the run state calls
+#: ``card_gate_refusal(run_state)`` and refuses any paid job when it returns
+#: non-None. Run state is read from ``request["card_receipt"]`` (the
+#: recorded receipt block from style_defaults.card_gate.answered_stamped)
+#: or from ``request["run_state"]["card_receipt"]``.
+def card_gate_refusal(request):
+    """-> None when the card is answered and stamped, else the refusal dict
+    with reason CARD_UNANSWERED. Fail-closed: no receipt is unanswered."""
+    req = request if isinstance(request, dict) else {}
+    record = req.get("card_receipt")
+    if not isinstance(record, dict):
+        rs = req.get("run_state")
+        record = rs.get("card_receipt") if isinstance(rs, dict) else None
+        if not isinstance(record, dict) and isinstance(rs, dict):
+            inner = rs.get("card") or rs.get("choice_card")
+            record = inner if isinstance(inner, dict) else None
+    if _CG is not None:
+        ok, refusal = _CG.gate_run_state(record)
+        return refusal if not ok else None
+    if not isinstance(record, dict):
+        return {"reason_code": "CARD_UNANSWERED",
+                "missing": ["video_style", "audio_style", "length",
+                            "video_model"],
+                "next_action": "Show the choice card and record all four "
+                               "answers (video style, audio style, length, "
+                               "video model), with who and when, before any "
+                               "paid job."}
+    missing = [f for f in ("video_style", "audio_style", "length", "video_model")
+               if record.get(f) is None
+               or (isinstance(record.get(f), str) and not record.get(f).strip())]
+    if missing:
+        return {"reason_code": "CARD_UNANSWERED", "missing": missing,
+                "next_action": "Show the choice card and record all four "
+                               "answers before any paid job."}
+    return None
+
+try:  # F4: no automatic Suno sound effects (audio_c3/sfx_off)
+    import audio_c3.sfx_off as _sfx_off  # noqa: E402
+except ImportError:  # pragma: no cover - flat script path
+    from audio_c3 import sfx_off as _sfx_off  # type: ignore # noqa: E402
 
 TOOL_NAME = "kie_dispatch"
 TOOL_VERSION = "1.0.0"
@@ -79,6 +141,41 @@ _VIDEO_CUES = ("video", "veo", "kling", "seedance", "hailuo", "pixverse",
                "runway", "wan2", "i2v", "t2v")
 _MUSIC_CUES = ("music", "suno", "audio", "tts", "speech", "elevenlabs",
                "voice")
+
+# F10 placeholder tokens. Case-insensitive: {{ }} and the bracketed TODO /
+# PLACEHOLDER markers a template leaves behind. Case-sensitive: the bare
+# Kiesett-incident tokens, so ordinary prose ("todo list", "Keyframe: 12")
+# never trips them. The bare "<" is deliberately excluded - real prompts
+# contain "<" as prose every day.
+_PLACEHOLDER_CI = ("{{", "}}", "<todo", "<placeholder")
+_PLACEHOLDER_CS = ("TODO", "PLACEHOLDER", "KEYFRAME:")
+
+
+def _walk_str_leaves(obj, path=""):
+    """Every string leaf of request JSON with its JSON path."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from _walk_str_leaves(v, "%s/%s" % (path, k))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from _walk_str_leaves(v, "%s[%d]" % (path, i))
+    elif isinstance(obj, str):
+        yield path, obj
+
+
+def _find_placeholder(request):
+    """First unfilled placeholder in a request payload -> (path, token), or
+    None. Scans the whole request (model/timeout included), not just input -
+    a template can hide in any field."""
+    for path, value in _walk_str_leaves(request):
+        low = value.lower()
+        for tok in _PLACEHOLDER_CI:
+            if tok in low:
+                return path, tok
+        for tok in _PLACEHOLDER_CS:
+            if tok in value:
+                return path, tok
+    return None
 
 
 def _registry_entry(model, adapter=None):
@@ -149,6 +246,163 @@ def _record_stage_evidence(db, run_id, logical_key, attempt_id, stage,
             conn.close()
     except Exception:                                      # noqa: BLE001
         pass
+
+
+def submit_all_ready(jobs, max_concurrency=None, *, ledger=None,
+                     runner=None, timeout=300):
+    """Part F F5: submit EVERY ready job in ONE pass. Returns a receipt dict.
+
+    A job is 'ready' when its model, request, estimated_cost and every input
+    path are present. All ready jobs go out together - the owner rule: 17
+    clips at once; no 'test batch first' unless the owner orders one. The
+    stage order callers follow stays reference images -> keyframes -> clips;
+    this is the single clips pass at the end of that order.
+
+    jobs: each a dict with a unique logical_key, the exact model id (this
+          module never picks one), a request dict, an estimated_cost and
+          input paths under 'inputs' (a path or a list; every one must
+          exist on disk). submit_all_ready never invents a missing field -
+          an incomplete job is excluded and NAMED in the receipt.
+    ledger: optional spend_ledger DB passed through to each dispatch() so
+          every submit lands reserve/reconcile rows; run/logical/attempt
+          ids come from the job itself (job['request_ids'] or defaults).
+    max_concurrency: None means submit all ready jobs at once. A positive
+          int NAMES the provider cap: at most that many run in flight, and
+          the receipt says the cap bound the pass (max_at_once and
+          capped_by). 0, negative or a non-int is refused in the receipt,
+          never treated as unlimited.
+
+    Receipt (always a plain dict, never an exception):
+      {submitted, excluded: [{logical_key, reason}], max_at_once,
+       capped_by, envelopes, errors, submission_errors}
+    All keys always present, on every path, so callers can read one shape.
+    """
+    if max_concurrency is not None and (
+            not isinstance(max_concurrency, int)
+            or isinstance(max_concurrency, bool) or max_concurrency <= 0):
+        return _receipt(outcome="rejected",
+                        reason="max_concurrency must be a positive int or "
+                               "None (got %r)" % (max_concurrency,))
+    ready, excluded = [], []
+    jobs = jobs if isinstance(jobs, list) else ([] if jobs is None
+                                                else list(jobs))
+    for j in jobs:
+        key = (j or {}).get("logical_key") if isinstance(j, dict) else None
+        key = key or "unnamed-job"
+        try:
+            reason = _not_ready_reason(j)
+        except Exception as e:                              # noqa: BLE001
+            reason = "bad-input-spec: %s" % str(e)[:160]
+        if reason:
+            excluded.append({"logical_key": key, "reason": reason})
+        else:
+            ready.append(j)
+
+    cap = None
+    if max_concurrency is not None and len(ready) > max_concurrency:
+        cap = max_concurrency
+
+    envelopes, errors, sub_errs = [], [], []
+    ok_count = 0
+    if ready:
+        pool = ThreadPoolExecutor(max_workers=(cap or len(ready)))
+        try:
+            futs = {pool.submit(_one_submit, j, ledger, timeout): j
+                    for j in ready}
+            for fu in as_completed(futs):
+                env, j = fu.result()
+                envelopes.append(env)
+                if env["outcome"] == "ok":
+                    ok_count += 1
+                else:
+                    sub_errs.append(
+                        {"logical_key": j["logical_key"],
+                         "outcome": env["outcome"],
+                         "reason_code": env["reason_code"]})
+        finally:
+            pool.shutdown(wait=True)
+
+    # The pass takes every ready job in one go; when a cap binds, the receipt
+    # names it and max_at_once records the cap, not the ready count.
+    return _receipt(excluded=excluded, submitted=ok_count,
+                    max_at_once=(cap if cap is not None else len(ready)),
+                    capped_by=cap,
+                    envelopes=envelopes, errors=errors,
+                    submission_errors=sub_errs)
+
+
+def _receipt(excluded=None, submitted=0, max_at_once=0, capped_by=None,
+             envelopes=None, errors=None, submission_errors=None,
+             outcome=None, reason=None):
+    """One receipt shape everywhere; optional rejected marker."""
+    rec = {"submitted": submitted, "excluded": list(excluded or []),
+           "max_at_once": max_at_once, "capped_by": capped_by,
+           "envelopes": list(envelopes or []), "errors": list(errors or []),
+           "submission_errors": list(submission_errors or [])}
+    if outcome:
+        rec["outcome"] = outcome
+        rec["reason"] = reason
+    return rec
+
+
+def _not_ready_reason(job):
+    """'' when ready to submit; the exclusion reason otherwise."""
+    if not isinstance(job, dict):
+        return "not-a-dict"
+    if not job.get("model"):
+        return "no-model"
+    if not job.get("request"):
+        return "no-request"
+    cost = job.get("estimated_cost")
+    if not isinstance(cost, int) or isinstance(cost, bool) or cost < 0:
+        return "no-estimated-cost"
+    spec = job.get("inputs")
+    paths = ([spec] if isinstance(spec, (str, os.PathLike))
+             else list(spec if spec is not None else []))
+    for p in paths:
+        if not isinstance(p, (str, os.PathLike)) or not str(p).strip():
+            return "bad-input-spec"
+        if not os.path.exists(p):
+            return "inputs-missing: %s" % str(p)
+    return ""
+
+
+def _one_submit(job, ledger, timeout):
+    """One ready job through dispatch(); returns (envelope, job).
+
+    Wraps job['request_ids'] (run_id/logical_key/attempt_id - defaults
+    'run-all-ready'/'batch-n'/'att-n') so a caller controls its ledger rows.
+    No exception ever escapes; an exception becomes an 'error' envelope.
+    """
+    rid = (job.get("request_ids") or {}) if isinstance(job, dict) else {}
+    ids = {
+        "run_id": rid.get("run_id") or "run-all-ready",
+        "logical_key": rid.get("logical_key") or job.get("logical_key")
+        or "batch-job",
+        "attempt_id": rid.get("attempt_id") or ""
+    }
+    if not ids["attempt_id"]:
+        # One attempt per job inside the pass; logical key keeps rows apart.
+        ids["attempt_id"] = "att-" + ids["logical_key"]
+    try:
+        env = dispatch(
+            model=job["model"], request=job["request"],
+            save_dir=job.get("save_dir")
+            or job.get("request", {}).get("save_dir") or tempfile.gettempdir(),
+            ledger_db=ledger or ":memory:",
+            run_id=ids["run_id"], logical_key=ids["logical_key"],
+            attempt_id=ids["attempt_id"],
+            estimated_cost=job["estimated_cost"],
+            prompt=job.get("prompt", ""),
+            units=job.get("units", 1), stage=job.get("stage", "kie"),
+            owner=job.get("owner", "kie-dispatch"),
+            adapter_path=job.get("adapter_path"), runner=job.get("runner"),
+            timeout=timeout,
+            state_store=job.get("state_store"))   # F14: run-state lock store
+        return env, job
+    except Exception as e:                                  # noqa: BLE001
+        return envelope("dispatch", "error", "SUBMIT_ALL_READY-EXCEPTION",
+                        str(e)[:300]), job
 
 
 class DispatchError(Exception):
@@ -246,14 +500,128 @@ def _hold_unknown(db, run_id, logical_key, attempt_id, owner, extra):
         evidence=ev, state_version=unk.get("state_version", 0))
 
 
+def _is_menu_video(model, _registry_probe=None):
+    """True when model is a price-menu video family member (F14 lock scope)."""
+    for pat in ML.ALLOWED_VIDEO_MODELS:
+        if ML.matches_family(model, pat):
+            return True
+    return False
+
+# ---- F6: no animation before storyboard approval -------------------------
+try:
+    import storyboard_director as _SD                     # sibling core/ pkg
+except ImportError as _e:
+    if "storyboard_director" not in str(_e):
+        raise
+    _SD = None
+
+
+def check_storyboard_approval(shots, review, request=None):
+    """Part F F6 shot-generation entry check. Returns the refusal dict or
+    None.
+
+    A video job (the animation stage) for a shot plan must come through
+    directive 14.1's gate: every shot storyboard_approved AND the
+    adversarial review passed. Callers pass the run's bound shot list and
+    the recorded review result via request["storyboard"] =
+    {"shots": [...], "review": {...}}; anything missing or malformed
+    refuses (fail-closed: a run with no approval record cannot animate).
+    Non-video jobs (music/image) are untouched.
+    """
+    if _SD is None:
+        return {"reason_code": "storyboard-gate-unavailable",
+                "detail": "storyboard_director not importable; refusing "
+                          "fail-closed"}
+    req = request if isinstance(request, dict) else {}
+    if req.get("request_kind") != "video" and _modality(req.get("model")) != "video":
+        return None
+    sb = (request or {}).get("storyboard")
+    if not isinstance(sb, dict) or not isinstance(sb.get("shots"), list) \
+            or not sb["shots"]:
+        return {"reason_code": "STORYBOARD_NOT_APPROVED",
+                "detail": "no storyboard record in the request; a run cannot "
+                          "animate before storyboard approval is recorded"}
+    gate = _SD.video_spend_allowed(sb["shots"], sb.get("review"))
+    if not gate.get("allowed"):
+        return {"reason_code": "STORYBOARD_NOT_APPROVED",
+                "detail": gate.get("reason_code", "storyboard-gate-closed"),
+                "gate": gate}
+    return None
+
+
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
-             timeout=300):
-    """Run the plan 5.4 pipeline once. Returns one envelope; never raises."""
+             timeout=300, state_store=None, video_job=None):
+    """Run the plan 5.4 pipeline once. Returns one envelope; never raises.
+
+    F14 video-model lock: video jobs (video_job=True, or a video model on
+    price-menu.md) must match the model locked at the choice card
+    (state_store + run_id). No lock recorded -> refused fail-closed
+    (VIDEO_MODEL_LOCK_MISSING); a different model -> VIDEO_MODEL_MISMATCH.
+    Every model, video or not, must be on price-menu.md (MODEL_NOT_ON_MENU).
+    """
+    # ---- 0. F14 model lock (before any ledger row) ------------------------
+    # Scope: VIDEO jobs only. A video model must be on price-menu.md
+    # (seedance-1.5-pro included) and must equal the card-locked choice.
+    is_video = (bool(video_job) or _is_menu_video(model)
+                or _modality(model) == "video")
+    locked = None
+    if is_video:
+        try:
+            ML.assert_allowed(model)
+        except ML.ModelLockError as e:
+            return envelope("dispatch", "rejected", e.reason,
+                            "the allowed video models are exactly the models "
+                            "on price-menu.md (seedance-1.5-pro included). "
+                            "Take the refusal to the owner.",
+                            run_id=run_id, logical_key=logical_key,
+                            attempt_id=attempt_id)
+        locked = ML.read_locked_model(state_store, run_id)
+        if not locked:
+            return envelope(
+                "dispatch", "rejected", "VIDEO_MODEL_LOCK_MISSING",
+                "no video model is locked for this run; show and answer the "
+                "choice card first (default MiniMax H3 768P) - never "
+                "dispatch an un-locked video job",
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id)
+        if not ML.matches_family(model, locked):
+            return envelope(
+                "dispatch", "rejected", "VIDEO_MODEL_MISMATCH",
+                "the card locked %s for this run; %s differs. Ask the owner "
+                "to re-lock at the choice card, never substitute here."
+                % (locked, model),
+                run_id=run_id, logical_key=logical_key,
+                attempt_id=attempt_id,
+                evidence={"locked_model": locked, "requested_model": model})
     if not model:
         return envelope("dispatch", "rejected", "MODEL_REQUIRED",
                         "name the model id; this module never picks one",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id)
+    refusal = card_gate_refusal(request)
+    if refusal is not None:                 # F15: no paid job on an unanswered card
+        return envelope("dispatch", "waiting", refusal["reason_code"],
+                        refusal.get("next_action", ""),
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"missing_card_fields": refusal["missing"],
+                                  "generated": False})
+
+    # F4 gate: a Suno sound-effects job is refused unless the request itself
+    # carries the run's explicit manual order (``sound_effects: [...]``).
+    # The catalog's suno-sounds surface is NEVER auto-queued: default runs
+    # make zero sound-effect jobs (manual Part F F4).
+    request_orders_sfx = _sfx_off.sfx_ordered(request)
+    if _sfx_off._is_sfx_job({"model": model, "route": model,
+                             "endpoint": (request or {}).get("endpoint", "")}) \
+            and not request_orders_sfx:
+        return envelope("dispatch", "rejected", "SFX_JOB_NOT_ORDERED",
+                        "no automatic Suno sound effects: a default run "
+                        "makes zero sound-effect jobs; carry "
+                        "`sound_effects: [...]` in the run config for an "
+                        "explicit manual order (manual Part F F4)",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
     if not isinstance(estimated_cost, int) or estimated_cost < 0:
@@ -261,6 +629,28 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         "record an estimated cost before dispatch",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
+    # F6: a run cannot animate before storyboard approval is recorded.
+    sb_refusal = check_storyboard_approval(None, None, request)
+    if sb_refusal:
+        return envelope("dispatch", "rejected", sb_refusal["reason_code"],
+                        sb_refusal.get("detail", "")
+                        + " (directive 14.1: approve the storyboard and pass "
+                          "adversarial review first)",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"gate": sb_refusal.get("gate"),
+                                  "generated": False})
+    # ---- 0. placeholder check (F10) ---------------------------------------
+    # Before the ledger: a refused request reserves nothing and calls nothing.
+    ph = _find_placeholder(request)
+    if ph:
+        return envelope(
+            "dispatch", "rejected", "REQUEST_PLACEHOLDER",
+            "fill the placeholder at %s (%r) in the request file and dispatch "
+            "again; nothing was reserved and nothing was sent" % (ph[0], ph[1]),
+            run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+            evidence={"placeholder_path": ph[0], "placeholder_token": ph[1],
+                      "generated": False})
     run = runner or make_runner(timeout)
 
     # ---- 1. ledger reserve -------------------------------------------------
@@ -438,6 +828,22 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                 ledger_db, run_id, logical_key, attempt_id, "submit",
                 status="fail", task_id=task_id, error=s_err,
                 adapter_state=s_state)
+            if is_video:
+                # F14: no automatic fallback for video. Settle, then stop and
+                # ask the owner with the next approved option and its price.
+                return stop(
+                    "waiting", "VIDEO_MODEL_DOWN",
+                    "the locked video model did not submit (definite submit "
+                    "error: %s); nothing was generated. No automatic "
+                    "fallback - ask the owner with the next approved option "
+                    "from price-menu.md and its price."
+                    % (s_err.get("code") or "unknown"),
+                    {"stage": "submit", "adapter_state": s_state,
+                     "error": s_err, "task_id": task_id or None,
+                     "actual_cost": cost, "generated": False,
+                     "locked_model": locked,
+                     "next_approved_options": ML.ALLOWED_VIDEO_MODELS},
+                    final="failed", cost=cost)
             return stop(
                 "rejected", "kie-submit-failed",
                 "Skill 74 submit refused the job (%s); nothing was generated"
@@ -489,6 +895,14 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                 credits = wj.get("credits_consumed")
                 cost = (int(credits) if isinstance(credits, (int, float))
                         and not isinstance(credits, bool) else 0)
+                # F10: a failed task is reported within ONE poll - this poll.
+                # The evidence row and the rejected envelope carry the task id,
+                # the outcome and the receipt, and the ledger settles failed
+                # immediately; no further polling, no silent skip.
+                _record_stage_evidence(
+                    ledger_db, run_id, logical_key, attempt_id, "wait",
+                    status="fail", task_id=task_id, error=w_err,
+                    adapter_state=w_state)
                 return stop(
                     "rejected", "kie-run-failed",
                     "Skill 74 reported a failed run (%s); reconcile the "
@@ -496,7 +910,7 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                     % (w_err.get("code") or "unknown"),
                     {"stage": "wait", "adapter_state": w_state, "error": w_err,
                      "task_id": task_id, "actual_cost": cost,
-                     "generated": False},
+                     "failure_poll": 1, "generated": False},
                     final="failed", cost=cost)
             if w_state != RUN_OK:
                 # wait timeout (running + error.code == timeout) and any other

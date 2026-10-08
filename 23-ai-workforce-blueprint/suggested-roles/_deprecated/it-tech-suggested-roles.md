@@ -92,7 +92,7 @@ Reviews completed technical configurations, integration builds, and infrastructu
 - Access permissions must be reviewed and documented before any system goes live
 
 **Recommended model type:** Coding + Reasoning
-**Recommended models (client-available, Ollama Cloud first — never Anthropic):** `ollama/deepseek-v4-pro:cloud` (primary), `openrouter/deepseek/deepseek-v4-pro` (fallback for clients with OpenRouter), `openai-codex/gpt-5.4`
+**Recommended models (client-available, Ollama Cloud first — never Anthropic):** `ollama/deepseek-v4.1-flash:cloud` (primary), `openrouter/deepseek/deepseek-v4.1-flash` (fallback for clients with OpenRouter), `openai-codex/gpt-5.4`
 **Note:** Security review requires a model that understands technical configurations and can identify known vulnerability patterns in config files, infrastructure setups, and access control designs.
 
 **Core SOPs to build:**

@@ -9,7 +9,13 @@ their own output (17.6).
 from __future__ import annotations
 
 import re
+import sys
 import unicodedata
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import protected_names  # noqa: E402  H7 caption gate
 
 CTA_HOLD_MIN_SECONDS = 3.0
 MOBILE_RENDITION_WIDTH_PX = 360
@@ -51,12 +57,22 @@ def check_cta_hold(hold_seconds):
 
 
 def check_captions(caption_lines, approved_lines, pronunciation_map=None,
-                   captions_enabled=True):
-    """Caption correctness vs approved lines. Exact normalized match."""
+                   captions_enabled=True, protected=(),
+                   text_source=protected_names.CAPTION_TEXT_SOURCE):
+    """Caption correctness vs approved lines. Exact normalized match.
+
+    H7: text must come from the approved lyric sheet (``text_source``), never
+    speech-to-text; any word mismatch fails and a changed protected name
+    (character/brand) is named in the detail."""
     if not captions_enabled:
         return (UNAVAILABLE, "captions disabled; nothing to check")
     if approved_lines is None:
         return (UNAVAILABLE, "no approved lines bound; cannot check captions")
+    bad = protected_names.check_captions(
+        caption_lines, approved_lines, protected, text_source)
+    bad += protected_names.check_spelling(caption_lines, protected)  # I1
+    if bad:
+        return (FAIL, "; ".join(bad))
     expected = [_norm_line(_apply_pronunciation(line, pronunciation_map))
                 for line in approved_lines]
     actual = [_norm_line(line) for line in (caption_lines or [])]

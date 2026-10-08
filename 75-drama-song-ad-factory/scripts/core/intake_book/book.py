@@ -28,6 +28,24 @@ if _CORE not in sys.path:
 from intake_preflight import EXIT                        # noqa: E402
 from intake_preflight import intake as _base             # noqa: E402
 
+try:
+    import music_styles as _MS                           # core/ menu modules
+except ImportError:
+    from .. import music_styles as _MS                   # noqa: F401
+try:
+    import choice_card.looks as _LOOKS
+except ImportError:
+    from ..choice_card import looks as _LOOKS            # noqa: F401
+
+_MUSIC_STYLES = _MS.STYLES
+_MSM = _MS.music_styles          # the submodule: length tables + aliases
+_OFFERED_LENGTHS_S = _MSM.OFFERED_LENGTHS_S
+_LENGTH_ALIASES = _MSM.LENGTH_ALIASES
+_SPOKEN_SHARE_MIN = _MS.SPOKEN_SHARE_MIN
+_SPOKEN_SHARE_MAX = _MS.SPOKEN_SHARE_MAX
+_resolve_look = _LOOKS.resolve_look
+_LookError = _LOOKS.LookError
+
 TOOL_NAME = "intake_book"
 TOOL_VERSION = "0.1.0"
 SCHEMA_VERSION = "blackceo.intake-book/v1"
@@ -213,6 +231,9 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
 
     hits = _base.detect_injection(brief)
     fields, prov = normalize(brief, settings)
+    # F6: menus and numbers come from Trevor's words or the skill's tables,
+    # never invented. Checked at compile time, before any question is asked.
+    invented = reject_any_invented(brief)
     mapped = to_intake_brief(fields)
     base = _base.evaluate(mapped, settings, resume_state, run_id, now_unix)
 
@@ -233,8 +254,7 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
     summary["auth_status"] = status
 
     questions = [_reword(q) for q in (base.get("questions") or [])]
-    message = "\n".join("%d. %s" % (i + 1, q["question"])
-                        for i, q in enumerate(questions)) or None
+    message = _base._fmt([q["question"] for q in questions])
     out = {
         "outcome": base.get("outcome"),
         "reason_code": base.get("reason_code"),
@@ -261,7 +281,149 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
             "changes": [],
             "next_action": "Remove instruction language from brief fields and resubmit.",
         })
+    elif invented:  # F6: an invented style/number/gate refuses the brief
+        out.update({
+            "outcome": "rejected",
+            "reason_code": invented["reason_code"],
+            "questions": [],
+            "question_message": None,
+            "invented_fields": invented["invented_fields"],
+            "approval_invalidated": False,
+            "changes": [],
+            "next_action": (
+                "Use a value from the skill's menu (styles: %s; looks: %s; "
+                "lengths: %s s; alias 'upbeat' = Soul Rise) or leave the field "
+                "out so the card shows the default."
+                % (", ".join(_MS.style_ids()),
+                   ", ".join(_LOOKS.LOOK_ORDER),
+                   "/".join(str(n) for n in _OFFERED_LENGTHS_S))),
+        })
     return out
+
+
+# ------------------------------------------------------------- F6 gate ----
+#: Part F F6 (manual 02, F6): briefs never invent. Style/look values must sit
+#: on the skill's menus (music_styles.STYLES + the choice-card looks table),
+#: numbers must sit on the documented length table or the D15 spoken-share
+#: band, and gate names must be one of the approval gates the skill itself
+#: defines. Anything else -- "upbeat tropical EDM", "77 seconds", a private
+#: music-approval gate -- refuses with reason BRIEF_INVENTED_FIELD. A field
+#: not given never invents: intake defaults it and the choice card shows it.
+BRIEF_INVENTED_FIELD = "BRIEF_INVENTED_FIELD"
+
+#: Documented alias (F6 example, manual 02): 'upbeat' maps to the menu's
+#: Soul Rise (the style that lifts into an upbeat groove at the turn).
+STYLE_ALIASES = {"upbeat": "soul-rise"}
+
+#: The skill's own approval gates (F6: "gates = the skill's own list").
+#: Spellings accepted for each; anything not here is an invented gate,
+#: including a new one an orchestrator might invent to skip a real one.
+GATE_ALIASES = {
+    "storyboard approval": (
+        "storyboard approval", "storyboard approvals", "storyboard approved",
+        "storyboard"),                      # directive 14.1 (video_spend_allowed)
+    "adversarial review": (
+        "adversarial review", "adversarial reviews"),   # directive 14.4
+    "authorization approval": (
+        "authorization approval", "authorization", "intake approval"),
+}
+
+#: Brief keys whose value is menu-typed (a style word), a number, or a gate.
+#: Free-text fields (offer, audience, pain, ...) are never judged here.
+STYLE_KEYS = ("style", "music", "music_style", "audio_style")
+LOOK_KEYS = ("look",)
+LENGTH_KEYS = ("length", "length_option", "target_length_s")
+SHARE_KEYS = ("spoken_share", "spoken_share_pct")
+GATE_KEYS = ("gates", "approval_gates")
+
+
+#: Flattened set: every accepted gate spelling.
+def _gate_spellings():
+    return frozenset(s for spellings in GATE_ALIASES.values()
+                     for s in spellings)
+
+
+def _music_style_id(value):
+    """Menu id for a style value, or None when it is invented."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    low = value.strip().lower()
+    if low in STYLE_ALIASES:
+        return STYLE_ALIASES[low]
+    if low in _MUSIC_STYLES:
+        return low
+    for sid, rec in _MUSIC_STYLES.items():
+        if low == rec["label"].lower():
+            return sid
+    return None
+
+
+def _length_seconds(value):
+    """Seconds for a length value on the documented table, or None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        secs = int(round(float(value)))
+        return secs if secs in _OFFERED_LENGTHS_S else None
+    if isinstance(value, str):
+        key = value.strip().lower().replace(" ", "").replace("-", "")
+        return _LENGTH_ALIASES.get(key)
+    return None
+
+
+def _on_share_band(value):
+    """True when the value sits on the D15 band (fraction or percent)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    v = float(value)
+    return _SPOKEN_SHARE_MIN <= v <= _SPOKEN_SHARE_MAX or (
+        100.0 * _SPOKEN_SHARE_MIN <= v <= 100.0 * _SPOKEN_SHARE_MAX)
+
+
+def reject_any_invented(brief):
+    """F6 brief compiler check. None when clean; otherwise the refusal.
+
+    Returns {"reason_code": BRIEF_INVENTED_FIELD, "invented_fields": [...]}
+    listing every menu-typed field whose value is neither the order's words
+    (a menu name or documented alias) nor the skill's own tables.
+    """
+    if not isinstance(brief, dict):
+        return None
+    invented = []
+
+    for key in STYLE_KEYS:
+        if key in brief and _music_style_id(brief.get(key)) is None:
+            invented.append(key)
+    for key in LOOK_KEYS:
+        if key in brief:
+            value = brief.get(key)
+            if isinstance(value, str) and value.strip():
+                try:                            # menu words only
+                    _resolve_look(value)
+                except _LookError:
+                    invented.append(key)
+            else:
+                invented.append(key)
+    for key in LENGTH_KEYS:
+        if key in brief and _length_seconds(brief.get(key)) is None:
+            invented.append(key)
+    for key in SHARE_KEYS:
+        if key in brief and not _on_share_band(brief.get(key)):
+            invented.append(key)
+    for key in GATE_KEYS:
+        if key not in brief:
+            continue
+        value = brief.get(key)
+        parts = value.split(",") if isinstance(value, str) else value
+        if not isinstance(parts, list) or not all(
+                isinstance(p, str) and " ".join(p.strip().lower().split())
+                in _gate_spellings() for p in parts if isinstance(p, str)) \
+                or not [p for p in parts if isinstance(p, str) and p.strip()]:
+            invented.append(key)
+    if not invented:
+        return None
+    return {"reason_code": BRIEF_INVENTED_FIELD,
+            "invented_fields": sorted(set(invented))}
 
 
 def main(argv=None):
@@ -298,6 +460,7 @@ def main(argv=None):
         data = {k: r.get(k) for k in (
             "questions", "question_message", "summary", "digest", "provenance",
             "auth_status", "approval_invalidated", "changes", "untrusted_fields",
+            "invented_fields",
             "product_reference", "next_stage")}
         expected = (resume or {}).get("digest") if resume else None
         state_version = {"expected": expected, "current": r.get("digest")}

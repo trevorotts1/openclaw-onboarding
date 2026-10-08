@@ -145,14 +145,33 @@ if [ -f "$SCRIPTS/caf_credential_gate.py" ]; then
     case "$GATE_RC" in
         0)
             # gate passed
+            rm -f "$SELF_DIR/install-status.txt" 2>/dev/null || true
             ;;
         4)
             echo "HARD-STOP: credential gate flagged an INLINE_EXPOSURE in a file -- review the gate output above, remove the exposed value, then re-run install.sh." >&2
             exit 2
             ;;
         2)
-            echo "NOT READY: credential gate reported missing required labels -- see the gate output above. Resolve missing labels before re-running install.sh." >&2
-            exit 2
+            # INF002: when the ONLY missing labels are the Convert and Flow pair (no location id
+            # under any name in any store, and no pit- token to read it from), the engine is still
+            # installed. One honest note names what is needed; provisioning re-runs this gate and
+            # stops there. Any other missing label (e.g. the gate token secret) stays NOT READY.
+            PAIR_ONLY="$(python3 "$SCRIPTS/caf_credential_gate.py" --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    miss = set(json.load(sys.stdin).get("missing", []))
+except Exception:
+    miss = {"?"}
+print("yes" if miss and miss <= {"convert_and_flow_pit", "convert_and_flow_location"} else "no")
+')"
+            if [ "$PAIR_ONLY" = "yes" ]; then
+                CRED_NOTE="Installed. Convert and Flow location id or private integration token needed before provisioning. Add GOHIGHLEVEL_LOCATION_ID (or the pit- token as GOHIGHLEVEL_API_KEY) to ~/.openclaw/secrets/.env."
+                note "$CRED_NOTE"
+                printf '%s\n' "$CRED_NOTE" > "$SELF_DIR/install-status.txt" 2>/dev/null || true
+            else
+                echo "NOT READY: credential gate reported missing required labels -- see the gate output above. Resolve missing labels before re-running install.sh." >&2
+                exit 2
+            fi
             ;;
         *)
             echo "NOT READY: credential gate exited with unexpected code $GATE_RC -- see the gate output above." >&2

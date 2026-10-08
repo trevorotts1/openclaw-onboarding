@@ -50,7 +50,34 @@ PER_JOB_UNITS = ("per-job", "free-as-per-job")
 EXIT = {"ok": 0, "unavailable": 4, "error": 1}
 
 
+# Storyboard image plan (Part I, unit I3). Per main character: a small
+# reference set (3 angles + 3 expressions + 1 lip-sync close-up); then one keyframe per shot per
+# shape before any video is made. Same image model as the keyframes.
+REFERENCE_ANGLES = ("front", "three-quarter", "side")
+REFERENCE_EXPRESSIONS = ("neutral", "sad-tired", "happy-relieved")
+# Owner order 2026-10-08: one LIP-SYNC CLOSE-UP per speaking/singing character,
+# 9:16 front-facing head-and-shoulders, mouth clear (lip_gate.check_reference_set).
+LIPSYNC_CLOSEUP = "lipsync-closeup"
+MAX_MAIN_CHARACTERS = 6
+
+
 # ---------------------------------------------------------------- helpers
+
+def image_plan(shots, shapes, characters, image_model):
+    """The planner's image list: reference set per character + one keyframe
+    per shot per shape. Counting only; the price comes from Skill 74."""
+    refs = [{"character": c, "kind": "angle", "view": a}
+            for c in characters for a in REFERENCE_ANGLES]
+    refs += [{"character": c, "kind": "expression", "view": e}
+             for c in characters for e in REFERENCE_EXPRESSIONS]
+    refs += [{"character": c, "kind": "lipsync", "view": LIPSYNC_CLOSEUP}
+             for c in characters]
+    keys = [{"shot": n, "shape": sh} for sh in shapes for n in range(1, shots + 1)]
+    return {"image_model": image_model, "characters": list(characters),
+            "reference_set": refs, "keyframes": keys,
+            "reference_images": len(refs), "keyframe_images": len(keys),
+            "total_images": len(refs) + len(keys)}
+
 
 def shot_count(length_seconds, max_shot_seconds):
     """Shots per shape: ceil(length / model max shot). Plan 6.1: shot count
@@ -193,7 +220,13 @@ def _validate_choice(choice):
     model = choice.get("model")
     if model is not None and (not isinstance(model, str) or not model):
         return None, "BAD_MODEL_ID"
-    return {"length_seconds": length, "shapes": shapes, "shape_count": len(shapes),
+    chars = choice.get("main_characters", 1)  # pricing floor: one main character
+    if isinstance(chars, int) and not isinstance(chars, bool):
+        chars = ["Character %d" % (i + 1) for i in range(chars)]
+    if (not isinstance(chars, (list, tuple)) or not 1 <= len(chars) <= MAX_MAIN_CHARACTERS
+            or any(not isinstance(c, str) or not c for c in chars)):
+        return None, "BAD_MAIN_CHARACTERS"
+    return {"main_characters": list(chars), "length_seconds": length, "shapes": shapes, "shape_count": len(shapes),
             "model": model, "music_model": choice["music_model"],
             "image_model": choice["image_model"]}, None
 
@@ -262,16 +295,22 @@ def _price_card_for(norm, entry, music_line, skill74):
     shapes = norm["shapes"]
     shots = shot_count(norm["length_seconds"], entry["max_shot_seconds"])
     jobs = shots * norm["shape_count"]
-    image_units = jobs  # one keyframe per shot per shape
+    plan = image_plan(shots, shapes, norm["main_characters"], norm["image_model"])
+    image_units = plan["total_images"]  # reference sets + one keyframe per shot per shape
     image_line, reason, detail = price_line(skill74, norm["image_model"], image_units, image_units)
     if image_line is None:
         return None, reason, detail
+    share = plan["reference_images"] / float(image_units)
+    plan["reference_set_credits"] = round(image_line["credits"] * share, 4)
+    plan["reference_set_usd"] = credits_to_usd(plan["reference_set_credits"])
     video_seconds = norm["length_seconds"] * norm["shape_count"]  # each shape native, full length
     video_line, reason, detail = price_line(skill74, entry["id"], video_seconds, jobs)
     if video_line is None:
         return None, reason, detail
     lines = {"video": video_line, "music": music_line, "image": image_line}
-    return _build_card(norm, entry, lines, False), None, None
+    card = _build_card(norm, entry, lines, False)
+    card["image_plan"] = plan
+    return card, None, None
 
 
 def price_card(choice, catalog, skill74, approval=None):
