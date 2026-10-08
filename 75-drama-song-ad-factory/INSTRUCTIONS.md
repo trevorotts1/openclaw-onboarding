@@ -299,7 +299,8 @@ card. The answers and the time answered go into the receipt
   lip-sync source picture passes the lip-sync image gate before any paid job
   (straight at the camera, head and shoulders 9:16, face 35-40% of the frame
   height, mouth closed or slightly parted, nothing over mouth or jaw, soft even
-  light, same character as the storyboard, sharp and at least 1080x1920). Model order is
+  light, same character as the storyboard, sharp and at least 1080x1920). The dispatcher also measures the picture
+  (PASS, ACCEPT_WITH_FLAG or FAIL; see SKILL.md, picture gate) and refuses a FAIL. Model order is
   Kling avatar `kling/ai-avatar-standard` first (a front-facing close-up
   image plus that character's own isolated line), InfiniTalk
   `infinitalk/from-audio` as backup, **Volcengine dropped**. Tight

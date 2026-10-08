@@ -124,6 +124,31 @@ try:  # F4: no automatic Suno sound effects (audio_c3/sfx_off)
 except ImportError:  # pragma: no cover - flat script path
     from audio_c3 import sfx_off as _sfx_off  # type: ignore # noqa: E402
 
+
+def lipsync_picture_refusal(model, request):
+    """LPG001/LPG002 hard block: a lip-sync job (kling ai-avatar, infinitalk)
+    needs a PASS or ACCEPT_WITH_FLAG picture-gate receipt for the exact bytes
+    (sha256) of request["lipsync_image_path"], AND request["input"]["image_url"] must be the
+    upload of those exact bytes (picture_gate.upload_measured).
+    -> None (not lip-sync, or all bound) else the refusal text. Fail-closed:
+    a missing path, receipt, binding, or an unimportable gate is a refusal."""
+    if not any(c in str(model or "").lower() for c in ("ai-avatar", "infinitalk")):
+        return None
+    req = request if isinstance(request, dict) else {}
+    try:
+        lg = str(Path(__file__).resolve().parents[1] / "lip_sync" / "lip_gate")
+        if lg not in sys.path:
+            sys.path.insert(0, lg)
+        import picture_gate as _PG
+        _PG.require_receipt(req.get("lipsync_image_path"),
+                            req.get("lipsync_receipt_dir"))
+        inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+        _PG.require_upload_bound(req["lipsync_image_path"], inp.get("image_url"),
+                                 req.get("lipsync_receipt_dir"))
+    except Exception as exc:                                # noqa: BLE001
+        return str(exc) or type(exc).__name__
+    return None
+
 TOOL_NAME = "kie_dispatch"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "blackceo.kie-dispatch/envelope/v1"
@@ -595,8 +620,11 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
     # ---- 0. F14 model lock (before any ledger row) ------------------------
     # Scope: VIDEO jobs only. A video model must be on price-menu.md
     # (seedance-1.5-pro included) and must equal the card-locked choice.
-    is_video = (bool(video_job) or _is_menu_video(model)
-                or _modality(model) == "video")
+    # The locked lip-sync model (kling/ai-avatar-standard) is not a menu video
+    # model: it skips the video lock and is held to the picture gate below.
+    is_video = (not ML.is_locked_lipsync(model)
+                and (bool(video_job) or _is_menu_video(model)
+                     or _modality(model) == "video"))
     locked = None
     if is_video:
         try:
@@ -626,6 +654,12 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                 run_id=run_id, logical_key=logical_key,
                 attempt_id=attempt_id,
                 evidence={"locked_model": locked, "requested_model": model})
+    pic = lipsync_picture_refusal(model, request)
+    if pic is not None:                     # LPG001: no paid lip-sync on an ungated picture
+        return envelope("dispatch", "rejected", "LIPSYNC_PICTURE_NOT_GATED",
+                        pic + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
     if not model:
         return envelope("dispatch", "rejected", "MODEL_REQUIRED",
                         "name the model id; this module never picks one",

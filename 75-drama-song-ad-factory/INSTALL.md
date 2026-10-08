@@ -56,6 +56,19 @@ per-item copy; verify afterwards:
 cat "$SKILLS_DIR/75-drama-song-ad-factory/skill-version.txt"
 ```
 
+## Step 2b: Lip-sync picture gate (face model + mediapipe)
+
+Without these the gate refuses every lip-sync job (nothing else in the skill needs them):
+
+```bash
+python3 -m pip install 'mediapipe>=0.10.14' opencv-python-headless numpy
+python3 "$SKILLS_DIR/75-drama-song-ad-factory/scripts/core/lip_sync/lip_gate/install_face_model.py"
+```
+
+The second command downloads `face_landmarker.task` from Google's official URL, verifies its
+pinned sha256, and places it in `assets/face_landmarker.task` (or `$LIPSYNC_FACE_MODEL`).
+Re-run it after every skill update (an update replaces the skill folder).
+
 ## Step 3: Credentials (canonical paths, canonical names)
 
 Needed for paid KIE paths (required):
