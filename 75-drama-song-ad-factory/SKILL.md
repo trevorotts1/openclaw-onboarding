@@ -247,6 +247,21 @@ judgment rides the video department's SOPs; paid-media ceilings ride the run's
 spend ledger, not any department's informal allowance. Pipeline SOP:
 `23-ai-workforce-blueprint/templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md`.
 
+## Character library (Part I, I6)
+
+When the client approves a character, ask exactly one question, in plain words:
+"Do you want to save <character> to your character library so you can reuse
+them in future ads?" On yes, ask "What name should I save <character> under?",
+then save the approved reference images, the description and the voice notes
+with `python3 scripts/core/intake_preflight/factory.py character --client-dir
+<client data folder> save --name <name> --description <text> --image <file>
+[--image ...] --voice-notes <text>`. The library lives inside that client's own
+data folder (`character-library/<name>/`), never shared between clients. Later
+intake cards list saved characters under "Use a saved character?" (`character
+--client-dir <dir> card`; `factory.py card --client-dir <dir>` where the
+intake card exists). `character --client-dir <dir> use --name <name>` prints
+the brief fields (name, description, reference images, voice notes) to reuse.
+
 ## Version 2 production options (owner BUILD-OUT 2026-10-07)
 
 Everything in this section is shared doctrine: identical in both
