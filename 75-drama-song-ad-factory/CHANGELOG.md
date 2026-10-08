@@ -6,6 +6,18 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.1] - 2026-10-08 - G12 Suno song recipe is the default for every Suno style
+
+- New `scripts/core/suno_recipe/` (module + tests): one gate every Suno
+  style goes through. Style text carries the sung/spoken map, the lyric sheet
+  needs a repeated sung hook built from the client's own words, singing starts
+  early (15% of runtime target, 5/10 band), and a take is judged only from
+  measured segments, never labels.
+- `music_director.build_generate_request` takes `style_id` and `client_text`
+  and refuses a raw Suno style prompt that skipped the recipe.
+- Only the Velvet Voiceover id (`velvet_voiceover`) is exempt.
+- `SKILL.md` and `references/choice-card-spec.md` gain the "Suno song recipe" section.
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).

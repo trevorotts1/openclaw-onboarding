@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.6.0
+version: v2.6.1
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -70,6 +70,32 @@ and re-verified at packaging time by the cross-distribution parity suites
 (build-tree tooling, not shipped in the client tree).
 
 Every envelope carries `schema_version` = `blackceo.intake-preflight/envelope/v1`.
+
+## Suno song recipe (read this first when you build audio)
+
+Every Suno music style (Soul Ballad, R&B Flow, Soul Rise, and any Suno style
+added later) follows this recipe by default. It is what made the Kiesett and
+LeAnne Dolce songs land. The code is `scripts/core/suno_recipe/`; every Suno
+request goes through `suno_recipe.prepare()` and the `music_director` seam
+refuses a raw Suno style that skipped it.
+
+The four rules:
+
+1. Suno is told plainly which lines to sing and which to speak.
+2. A repeated sung hook is built from the client's own words.
+3. Singing starts early.
+4. Each take's singing is measured, not taken from its labels.
+
+In plain terms: tag every lyric section Sung or Spoken, and put the same map
+in the style text ("SUNG: Hook. SPOKEN: Verse 1, Verse 2."). Write one short
+hook out of words the client actually said and repeat it. Get to the first
+sung line early (target: 15% of the runtime). After Suno returns a take, run
+the detector and judge the sung and spoken shares from what it measured.
+
+The only exemption is the Velvet Voiceover version (the spoken Google voice
+over the song, id `velvet_voiceover`), which keeps its own flow. Almost
+nobody asks for it. Every other style, including the All Suno voice default,
+uses the recipe.
 
 ## Intake rules (from the build directive, section 24.3)
 

@@ -1,3 +1,5 @@
+## [v26.4.7]  -  2026-10-08  -  G12: Suno song recipe is the default for every Suno music style (skill 75 v2.6.1); only Velvet Voiceover is exempt
+
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
