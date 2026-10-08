@@ -3,6 +3,8 @@
 
 Stage order (never reordered, never partially skipped):
 
+  0. placeholder check   request JSON may carry no unfilled placeholder (F10);
+                         refused before the ledger or Skill 74 is touched
   1. ledger reserve      ``spend_ledger.plan`` + ``reserve`` (directive 18/24.4)
   2. Skill 74 health     read ``adapter_mode``; only ``active`` continues
   3. Skill 74 preflight  balance must cover price x 1.30
@@ -25,6 +27,14 @@ unparsable submit/wait answer, or an exception raised while either was in
 flight, marks the reservation ``unknown`` and STOPS - with the remote task id
 already stored when submit produced one. No retry, no resubmit; reconcile from
 provider records or operator evidence first.
+
+F10 (manual 02): a request whose JSON still carries an unfilled placeholder
+(``{{``, ``}}``, ``<TODO``, ``<PLACEHOLDER`` - any case - or the bare tokens
+``TODO``, ``PLACEHOLDER``, ``KEYFRAME:`` from the Kiesett incident) is refused
+at submission with reason ``REQUEST_PLACEHOLDER`` before anything is reserved
+or sent. Any failed task is reported within one poll: the wait path fails on
+the FIRST poll answer reading ``fail`` (stage evidence row + ``failure_poll``
+in the envelope), never after retries or silent skips.
 
 This module carries no HTTP client of its own: the adapter path comes from
 ``KIE_LIVE_ADAPTER_PATH`` or a search relative to this file, and every call is
@@ -79,6 +89,41 @@ _VIDEO_CUES = ("video", "veo", "kling", "seedance", "hailuo", "pixverse",
                "runway", "wan2", "i2v", "t2v")
 _MUSIC_CUES = ("music", "suno", "audio", "tts", "speech", "elevenlabs",
                "voice")
+
+# F10 placeholder tokens. Case-insensitive: {{ }} and the bracketed TODO /
+# PLACEHOLDER markers a template leaves behind. Case-sensitive: the bare
+# Kiesett-incident tokens, so ordinary prose ("todo list", "Keyframe: 12")
+# never trips them. The bare "<" is deliberately excluded - real prompts
+# contain "<" as prose every day.
+_PLACEHOLDER_CI = ("{{", "}}", "<todo", "<placeholder")
+_PLACEHOLDER_CS = ("TODO", "PLACEHOLDER", "KEYFRAME:")
+
+
+def _walk_str_leaves(obj, path=""):
+    """Every string leaf of request JSON with its JSON path."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from _walk_str_leaves(v, "%s/%s" % (path, k))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from _walk_str_leaves(v, "%s[%d]" % (path, i))
+    elif isinstance(obj, str):
+        yield path, obj
+
+
+def _find_placeholder(request):
+    """First unfilled placeholder in a request payload -> (path, token), or
+    None. Scans the whole request (model/timeout included), not just input -
+    a template can hide in any field."""
+    for path, value in _walk_str_leaves(request):
+        low = value.lower()
+        for tok in _PLACEHOLDER_CI:
+            if tok in low:
+                return path, tok
+        for tok in _PLACEHOLDER_CS:
+            if tok in value:
+                return path, tok
+    return None
 
 
 def _registry_entry(model, adapter=None):
@@ -261,6 +306,17 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         "record an estimated cost before dispatch",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
+    # ---- 0. placeholder check (F10) ---------------------------------------
+    # Before the ledger: a refused request reserves nothing and calls nothing.
+    ph = _find_placeholder(request)
+    if ph:
+        return envelope(
+            "dispatch", "rejected", "REQUEST_PLACEHOLDER",
+            "fill the placeholder at %s (%r) in the request file and dispatch "
+            "again; nothing was reserved and nothing was sent" % (ph[0], ph[1]),
+            run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+            evidence={"placeholder_path": ph[0], "placeholder_token": ph[1],
+                      "generated": False})
     run = runner or make_runner(timeout)
 
     # ---- 1. ledger reserve -------------------------------------------------
@@ -489,6 +545,14 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                 credits = wj.get("credits_consumed")
                 cost = (int(credits) if isinstance(credits, (int, float))
                         and not isinstance(credits, bool) else 0)
+                # F10: a failed task is reported within ONE poll - this poll.
+                # The evidence row and the rejected envelope carry the task id,
+                # the outcome and the receipt, and the ledger settles failed
+                # immediately; no further polling, no silent skip.
+                _record_stage_evidence(
+                    ledger_db, run_id, logical_key, attempt_id, "wait",
+                    status="fail", task_id=task_id, error=w_err,
+                    adapter_state=w_state)
                 return stop(
                     "rejected", "kie-run-failed",
                     "Skill 74 reported a failed run (%s); reconcile the "
@@ -496,7 +560,7 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                     % (w_err.get("code") or "unknown"),
                     {"stage": "wait", "adapter_state": w_state, "error": w_err,
                      "task_id": task_id, "actual_cost": cost,
-                     "generated": False},
+                     "failure_poll": 1, "generated": False},
                     final="failed", cost=cost)
             if w_state != RUN_OK:
                 # wait timeout (running + error.code == timeout) and any other
