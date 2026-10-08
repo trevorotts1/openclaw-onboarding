@@ -53,8 +53,13 @@ DEFAULTS = {
     "cta_text": "",
     "cta_link": "",
 }
-DEFAULT_STYLE_PATH = (
-    "~/.openclaw/workspace/social-media-planner/drama-song-style.json"
+#: M8: Docker boxes keep OpenClaw at /data/.openclaw (wire.sh's two-line rule),
+#: so the weekly step reads the same style file the setup block and the
+#: Saturday prompt write, on both kinds of box.
+_OC_ROOT = ("/data/.openclaw" if os.path.isdir("/data/.openclaw")
+            else os.path.expanduser("~/.openclaw"))
+DEFAULT_STYLE_PATH = os.path.join(
+    _OC_ROOT, "workspace", "social-media-planner", "drama-song-style.json"
 )
 
 # Connected surface -> route for each weekly option. Source: the shared wave

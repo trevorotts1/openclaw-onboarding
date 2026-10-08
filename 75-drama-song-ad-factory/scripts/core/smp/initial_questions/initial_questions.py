@@ -58,7 +58,13 @@ TOOL_VERSION = "0.1.0"
 #: Where the resolved record is stored on the client box (brief; overridable).
 #: The literal stays ``~``-relative so no host path lands in the source.
 STYLE_PATH_TEMPLATE = "~/.openclaw/workspace/social-media-planner/drama-song-style.json"
-DEFAULT_STYLE_PATH = os.path.expanduser(STYLE_PATH_TEMPLATE)
+#: M8: Docker boxes keep OpenClaw at /data/.openclaw (wire.sh's two-line rule),
+#: so the same file has to be found there too. The sub-path is taken from the
+#: template above, so the two cannot drift apart.
+_OC_ROOT = ("/data/.openclaw" if os.path.isdir("/data/.openclaw")
+            else os.path.expanduser("~/.openclaw"))
+DEFAULT_STYLE_PATH = os.path.join(_OC_ROOT,
+                                  STYLE_PATH_TEMPLATE.split(".openclaw/", 1)[1])
 
 #: The eight fields of the style record, exactly as the brief names them.
 STYLE_FIELDS = ("enabled", "look", "music", "voice", "length",
