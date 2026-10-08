@@ -37,7 +37,7 @@ import tempfile
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 PNG_PAYLOAD = b"0" * 512  # payload bytes only; these fixtures exercise gates, not pixel floors
 
-WPM_STAMP = "deepseek-v4-pro"       # the deck-authoring model stamp
+WPM_STAMP = "deepseek-v4.1-flash"       # the deck-authoring model stamp
 JUDGE_STAMP = "glm-5.3-flash"       # the vision route's model (differs from authoring)
 QC_SPECIALIST_STAMP = "kimi-v4-a"   # the independent QC specialist identity
 VALID_TS = "2026-09-02T09:31:00+01:00"  # tz-aware, not a midnight placeholder

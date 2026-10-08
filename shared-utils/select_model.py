@@ -9,9 +9,9 @@ Three purpose-tier chains (v10.2.0 priority — Ollama Cloud first, then
 OpenRouter version of the same models, then OAuth GPT):
 
   --purpose-tier heavy   (Heavy reasoning / heavy thinking — default)
-    1. ollama/deepseek-v*-pro:cloud   (Ollama Cloud DeepSeek V4-pro, 1M ctx)
+    1. ollama/deepseek-v*-flash:cloud (Ollama Cloud DeepSeek V4.1 Flash, 1M ctx)
     2. ollama/kimi-k*:cloud           (Ollama Cloud Kimi 2.6+, 262K ctx)
-    3. openrouter/deepseek/deepseek-v*-pro  (OpenRouter DeepSeek V4-pro — same model, OR route)
+    3. openrouter/deepseek/deepseek-v*-flash  (OpenRouter DeepSeek V4.1 Flash — same model, OR route)
     4. openrouter/moonshot/kimi-k*    (OpenRouter Kimi — same model, OR route)
     5. codex/gpt-* OR openai-codex/gpt-*    (OAuth GPT — last resort, latest version)
 
@@ -39,8 +39,8 @@ agent can show the owner.
 OLLAMA CLOUD ID SHAPES (ISSUE-08). Every `ollama/...` slot above matches the
 three shapes the fleet actually runs, not just the bare `:cloud` tag:
 
-  ollama/deepseek-v4-pro:cloud          plain cloud tag
-  ollama/deepseek-v4-pro:0813-cloud     DATE-tagged cloud build
+  ollama/deepseek-v4.1-flash:cloud          plain cloud tag
+  ollama/deepseek-v4.1-flash:0813-cloud     DATE-tagged cloud build
   ollama/qwen3-vl:235b-cloud            size-tagged cloud build
   ollama-cloud/kimi-k2.6:cloud          ollama-cloud/ provider prefix
 
@@ -167,7 +167,7 @@ def _strip_provider(model_id: str) -> str:
     """Reduce a fully-qualified model id to its bare family slug for matching.
 
     ollama/qwen3-vl:235b-cloud      -> qwen3-vl
-    openrouter/deepseek/deepseek-v4-pro -> deepseek-v4-pro
+    openrouter/deepseek/deepseek-v4.1-flash -> deepseek-v4.1-flash
     """
     if not model_id:
         return ""
@@ -293,7 +293,7 @@ def tier_of_model(model_id: str) -> int:
         return TIER_FREE
     # Tier 1: Ollama Cloud. The cloud marker is the trailing `cloud` token of
     # the tag (after the last ':'), which may be compound, e.g.
-    # `ollama/qwen3-vl:235b-cloud` or simple `ollama/deepseek-v4-pro:cloud`.
+    # `ollama/qwen3-vl:235b-cloud` or simple `ollama/deepseek-v4.1-flash:cloud`.
     if mid.startswith("ollama/"):
         tag = mid.split(":", 1)[1] if ":" in mid else ""
         if tag == "cloud" or tag.endswith("-cloud"):
@@ -334,13 +334,6 @@ KIMI_OLLAMA      = {"label": "Ollama Cloud Kimi (thinking=high) — smartest, 26
 KIMI_OPENROUTER  = {"label": "OpenRouter Kimi (thinking=high) — 262K ctx",
                     "family": "kimi",
                     "pattern": re.compile(r"^openrouter/moonshot(?:ai)?/kimi-k(\d+(?:\.\d+)*)$")}
-DEEPSEEK_PRO_OLLAMA     = {"label": "Ollama Cloud DeepSeek V*-pro (thinking=high) — 1M ctx",
-                           "family": "deepseek-pro",
-                           "providers": ("ollama/", "ollama-cloud/"),
-                           "pattern": re.compile(_OLLAMA + r"deepseek-v(\d+(?:\.\d+)*)-pro" + _CLOUD_TAG)}
-DEEPSEEK_PRO_OPENROUTER = {"label": "OpenRouter DeepSeek V*-pro (thinking=high) — 1M ctx",
-                           "family": "deepseek-pro",
-                           "pattern": re.compile(r"^(?:openrouter/)?deepseek/deepseek-v(\d+(?:\.\d+)*)-pro$")}
 OAUTH_GPT        = {"label": "OAuth GPT (latest, subscription)",
                     "pattern": re.compile(r"^(?:openai-)?codex/gpt-(\d+(?:\.\d+)*)(?:-[a-z]+)?$")}
 MIMO_OPENROUTER  = {"label": "OpenRouter Mimo Pro (thinking=high)",
@@ -376,6 +369,10 @@ DEEPSEEK_FLASH_OLLAMA     = {"label": "Ollama Cloud DeepSeek V*-flash",
 DEEPSEEK_FLASH_OPENROUTER = {"label": "OpenRouter DeepSeek V*-flash",
                              "family": "deepseek-flash",
                              "pattern": re.compile(r"^(?:openrouter/)?deepseek/deepseek-v(\d+(?:\.\d+)*)-flash$")}
+# KEF001: DeepSeek V4 Pro no longer exists. The "PRO" slots are kept as names so the
+# chains below stay readable, but they resolve to the V4.1 Flash entries.
+DEEPSEEK_PRO_OLLAMA     = DEEPSEEK_FLASH_OLLAMA
+DEEPSEEK_PRO_OPENROUTER = DEEPSEEK_FLASH_OPENROUTER
 GEMINI_FLASH_LITE         = {"label": "OpenRouter Gemini Flash Lite",
                              "family": "gemini-flash-lite",
                              "pattern": re.compile(r"^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-flash-lite(?:-preview)?$")}
@@ -386,19 +383,19 @@ GEMINI_PRO                = {"label": "OpenRouter Gemini Pro",
                              "pattern": re.compile(r"^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-pro(?:-preview)?$")}
 
 # Purpose-tier chains. v10.2.0 priority (per owner directive):
-#   For heavy reasoning + book extraction, prefer Ollama Cloud DeepSeek V4-pro
+#   For heavy reasoning + book extraction, prefer Ollama Cloud DeepSeek V4.1 Flash
 #   or Ollama Cloud Kimi 2.6 (or latest version of each). If the client has
 #   neither on Ollama Cloud, fall back to the SAME model via OpenRouter
-#   (openrouter/deepseek/deepseek-v4-pro or openrouter/moonshot/kimi-k2.6).
+#   (openrouter/deepseek/deepseek-v4.1-flash or openrouter/moonshot/kimi-k2.6).
 #   OAuth GPT only when neither Ollama nor OpenRouter has those models.
 #
 # Each chain has 3 context-need variants:
 #   normal — input fits in Kimi's 262K window
-#   large  — input is 800K-3M chars; DeepSeek V4-pro's 1M ctx required
-#   huge   — input is > 3M chars; DeepSeek V4-pro only
+#   large  — input is 800K-3M chars; DeepSeek V4.1 Flash's 1M ctx required
+#   huge   — input is > 3M chars; DeepSeek V4.1 Flash only
 CHAINS = {
     "heavy": {
-        # Default heavy reasoning — Ollama DeepSeek V4-pro and Kimi 2.6 first,
+        # Default heavy reasoning — Ollama DeepSeek V4.1 Flash and Kimi 2.6 first,
         # then OpenRouter versions of the same models, then OAuth GPT.
         "normal": [
             DEEPSEEK_PRO_OLLAMA, KIMI_OLLAMA,           # Ollama Cloud preferred (same models)
@@ -406,13 +403,13 @@ CHAINS = {
             OAUTH_GPT,                                  # Last resort
             MIMO_OPENROUTER, GLM_OPENROUTER,            # Mid-cost OR alternates only if Kimi/DeepSeek missing
         ],
-        # Large input (800K-3M chars): DeepSeek V4-pro's 1M context required
+        # Large input (800K-3M chars): DeepSeek V4.1 Flash's 1M context required
         "large": [
             DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER,
             OAUTH_GPT,
             KIMI_OLLAMA, KIMI_OPENROUTER,  # last resort; 262K may fail on big input
         ],
-        # Huge input (>3M chars): DeepSeek V4-pro is the only model with enough context
+        # Huge input (>3M chars): DeepSeek V4.1 Flash is the only model with enough context
         "huge": [
             DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER,
             OAUTH_GPT,
@@ -449,13 +446,13 @@ CHAINS = {
         "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
     },
 
-    # §5.2 Installer sub-agent — needs DeepSeek V4 Pro's 1M context for big
+    # §5.2 Installer sub-agent — needs DeepSeek V4.1 Flash's 1M context for big
     #   skill files
-    #   1. ollama/deepseek-v*-pro:cloud  →  2. openrouter/deepseek/...  →  3. Gemini 3.1 Pro
+    #   1. ollama/deepseek-v*-flash:cloud  →  2. openrouter/deepseek/...  →  3. Gemini 3.1 Pro
     "installer-subagent": {
         "normal": [
-            DEEPSEEK_PRO_OLLAMA,        # 1. Ollama Cloud DeepSeek V4 Pro
-            DEEPSEEK_PRO_OPENROUTER,    # 2. OpenRouter DeepSeek V4 Pro
+            DEEPSEEK_PRO_OLLAMA,        # 1. Ollama Cloud DeepSeek V4.1 Flash
+            DEEPSEEK_PRO_OPENROUTER,    # 2. OpenRouter DeepSeek V4.1 Flash
             GEMINI_PRO,                 # 3. Gemini 3.1 Pro — PRD §5.2 explicit fallback
             GEMINI_FLASH_LITE,          # 4. Cheaper last resort
             OAUTH_GPT,
@@ -477,14 +474,14 @@ CHAINS = {
         "huge":  [DEEPSEEK_PRO_OLLAMA, DEEPSEEK_PRO_OPENROUTER],
     },
 
-    # §5.4 Book-to-Persona pipeline — Trevor 2026-06-01: DeepSeek V4 Pro FIRST
+    # §5.4 Book-to-Persona pipeline — Trevor 2026-06-01: DeepSeek V4.1 Flash FIRST
     #   (the latest; Ollama Cloud preferred -> OpenRouter DeepSeek fallback). Kimi
     #   demoted to tertiary; cheapest fallback at the end.
     #   1. DeepSeek cloud -> 2. DeepSeek OR -> 3. Kimi cloud -> 4. Kimi OR -> 5. Gemini Flash Lite
     "book-to-persona": {
         "normal": [
-            DEEPSEEK_PRO_OLLAMA,        # 1. Ollama Cloud DeepSeek V4 Pro (latest, preferred)
-            DEEPSEEK_PRO_OPENROUTER,    # 2. OpenRouter DeepSeek V4 Pro (fallback)
+            DEEPSEEK_PRO_OLLAMA,        # 1. Ollama Cloud DeepSeek V4.1 Flash (latest, preferred)
+            DEEPSEEK_PRO_OPENROUTER,    # 2. OpenRouter DeepSeek V4.1 Flash (fallback)
             KIMI_OLLAMA,                # 3. Ollama Cloud Kimi
             KIMI_OPENROUTER,            # 4. OpenRouter Kimi
             GEMINI_FLASH_LITE,          # 5. Cheapest fallback
@@ -712,7 +709,7 @@ def select_model_for_skill(
         f"Available models in your config: "
         f"{', '.join(available) if available else '(none discoverable)'}\n\n"
         f"Which model should I use for {skill_name or 'this skill'}? "
-        f"Reply with the exact model ID (e.g. ollama/kimi-k2.7:cloud or ollama/deepseek-v4-pro:cloud). "
+        f"Reply with the exact model ID (e.g. ollama/kimi-k2.7:cloud or ollama/deepseek-v4.1-flash:cloud). "
         f"The install will continue without this — I just need the answer before "
         f"wiring {skill_name or 'this skill'} for runtime use."
     )

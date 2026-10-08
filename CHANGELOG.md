@@ -1,3 +1,5 @@
+## [v26.4.5]  -  2026-10-08  -  fix(kie+models): KEF001 shared KIE key lookup (any store, KIE_AI_KEY alias) wired into skills 59/48/74/75; retire deepseek-v4-pro for deepseek-v4.1-flash
+
 ## [Unreleased]  -  fix(updater): NFX001 every roll leaves a clean 999-setup and links its skills
 
 - frontdoor_update_999 now finds every checkout (incl. ~/Documents/999-setup), fast-forwards clean ones, leaves dirty/diverged ones untouched and uses a clean ~/999-setup (cloned if absent) as the link source, links per skill (hand-managed real dirs skipped alone), and sources the link functions from the scripts dir. Never runs the full installer or touches 9Router config.

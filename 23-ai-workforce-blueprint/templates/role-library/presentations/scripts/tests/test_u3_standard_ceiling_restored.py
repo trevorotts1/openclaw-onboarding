@@ -81,7 +81,7 @@ def _profile(ceiling=None):
         ".schema_version": 1,
         "providers": {
             "deepseek-direct": _wired("deepseek-direct",
-                                      ["deepseek-flash", "deepseek-v4-pro"]),
+                                      ["deepseek-flash", "deepseek-v4.1-flash"]),
             "openrouter": _wired("openrouter",
                                  ["z-ai/glm-5.3-flash", "z-ai/glm-5.3"]),
         },

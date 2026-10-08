@@ -258,17 +258,17 @@ else
   }
 
   RT_OPTS=(
-    "deepseek/deepseek-v4-pro:thinking-max — highest-reasoning real-time"
+    "deepseek/deepseek-v4.1-flash:thinking-max — highest-reasoning real-time"
     "google/gemini-3.1-flashlight — fast + near-free (RECOMMENDED for high volume)"
     "kimi/kimi-2.6 — strong long-context reasoning"
     "openai/gpt-5.5 — balanced"
     "openrouter/free — cheapest, slower"
   )
   ASYNC_OPTS=(
-    "deepseek/deepseek-v4-pro:thinking-max — highest-reasoning"
+    "deepseek/deepseek-v4.1-flash:thinking-max — highest-reasoning"
     "google/gemini-3.1-flashlight — balanced"
     "openrouter/free — free + perfect for email"
-    "ollama/deepseek-v4-pro:cloud — premium quality (Ollama Cloud)"
+    "ollama/deepseek-v4.1-flash:cloud — premium quality (Ollama Cloud)"
     "same-as-realtime"
   )
   BATCH_OPTS=(

@@ -66,7 +66,7 @@ MIN_AVAILABLE_CHARS = 20_000  # a pack smaller than this cannot carry any phase
 # row until a live measurement raises them -- an unknown reading is never
 # rounded upward into capability.
 MODEL_INPUT_BUDGET_CHARS: Dict[str, int] = {
-    "deepseek-v4-pro": 500_000,
+    "deepseek-v4.1-flash": 500_000,
     "deepseek-flash": 500_000,
     "deepseek-v4-flash": 500_000,  # legacy id: same budget via the compat fold
     "glm-5.3": 400_000,

@@ -6,8 +6,8 @@ Manages the 3-phase book-to-persona pipeline across all 21 books.
 Pipeline (v10.10.0 — PRD §5.4 'book-to-persona' chain):
   Phase 1 - Extraction (selector-resolved, see PRD §5.4):
               1. Ollama Cloud Kimi  →  2. OpenRouter Kimi  →
-              3. Ollama Cloud DeepSeek V4 Pro  →
-              4. OpenRouter DeepSeek V4 Pro  →
+              3. Ollama Cloud DeepSeek V4.1 Flash  →
+              4. OpenRouter DeepSeek V4.1 Flash  →
               5. OpenRouter Gemini 3.1 Flash Lite (cheapest fallback)
   Phase 2 - Analysis (same chain as Phase 1)
   Phase 3 - Synthesis (same chain — was GPT-5.3 Codex pre-v10.10.0;
@@ -183,7 +183,7 @@ def _resolve_model(skill: str, purpose: str, purpose_tier: str,
                    fallback: str, input_chars: int = None) -> str:
     """Call shared-utils/select_model.py with purpose-tier + optional input_chars.
 
-    Passing input_chars makes the selector auto-pick DeepSeek V4-pro (1M ctx) for
+    Passing input_chars makes the selector auto-pick DeepSeek V4.1 Flash (1M ctx) for
     inputs that won't fit in Kimi's 262K window. Default behavior with no
     input_chars uses Kimi-first (smartest thinker).
     """
@@ -224,11 +224,11 @@ def _route_for(model_id: str) -> str:
 
 # task-64 defect (b): the Ollama→OpenRouter FALLBACK used to build
 #   model.replace("ollama/", "openrouter/").replace(":cloud", "")
-# which produced e.g. 'openrouter/deepseek-v4-pro' and passed it to
+# which produced e.g. 'openrouter/deepseek-v4.1-flash' and passed it to
 # call_openrouter WITHOUT stripping the route prefix -> OpenRouter 400
 # "not a valid model ID" (the DIRECT openrouter route strips the prefix; the
 # fallback did not). It also never inserted the vendor segment OpenRouter
-# requires (deepseek-v4-pro -> deepseek/deepseek-v4-pro). This helper is now
+# requires (deepseek-v4.1-flash -> deepseek/deepseek-v4.1-flash). This helper is now
 # the ONLY sanctioned conversion for every call_openrouter model argument.
 # Vendor pairs mirror shared-utils/select_model.py's chain patterns
 # (DEEPSEEK_PRO_OPENROUTER / DEEPSEEK_FLASH_OPENROUTER / KIMI_OPENROUTER).
@@ -243,10 +243,10 @@ def _openrouter_fallback_model(model_id: str) -> str:
     """
     Convert any chain model id into the OpenRouter API model id.
 
-        openrouter/deepseek/deepseek-v4-pro -> deepseek/deepseek-v4-pro
-        ollama/deepseek-v4-pro:cloud        -> deepseek/deepseek-v4-pro
+        openrouter/deepseek/deepseek-v4.1-flash -> deepseek/deepseek-v4.1-flash
+        ollama/deepseek-v4.1-flash:cloud        -> deepseek/deepseek-v4.1-flash
         ollama/kimi-k2.6:cloud              -> moonshotai/kimi-k2.6
-        deepseek/deepseek-v4-pro            -> deepseek/deepseek-v4-pro (pass-through)
+        deepseek/deepseek-v4.1-flash            -> deepseek/deepseek-v4.1-flash (pass-through)
     """
     m = (model_id or "").strip()
     if m.startswith("openrouter/"):
@@ -267,7 +267,7 @@ def resolve_phase_model(phase: str, input_chars: int = None) -> tuple:
     """
     Resolve (model_id, route) for a given pipeline phase.
     Pass input_chars when the actual input size is known so the selector
-    can context-switch to DeepSeek V4-pro for large/huge books.
+    can context-switch to DeepSeek V4.1 Flash for large/huge books.
 
     v10.10.0 — all three phases use the PRD §5.4 'book-to-persona' chain:
       normal context: Ollama Kimi → OpenRouter Kimi → Ollama DeepSeek Pro →
@@ -289,10 +289,10 @@ def resolve_phase_model(phase: str, input_chars: int = None) -> tuple:
     # itself unreachable) is now Gemini Flash Lite, not GPT/Kimi. This
     # matches PRD §5.4 (the 'book-to-persona' chain ends at Flash Lite) and
     # closes audit Phase 14.4 finding ("Phase 3 = GPT-5.3 Codex").
-    # Trevor 2026-06-01: book-to-persona runs on the fleet-standard DeepSeek V4 Pro
-    # chain (the latest). Primary = Ollama Cloud deepseek-v4-pro:cloud; the selector
-    # falls to OpenRouter deepseek/deepseek-v4-pro if Ollama isn't on the box. No kimi.
-    fallback = "ollama/deepseek-v4-pro:cloud"
+    # Trevor 2026-06-01: book-to-persona runs on the fleet-standard DeepSeek V4.1 Flash
+    # chain (the latest). Primary = Ollama Cloud deepseek-v4.1-flash:cloud; the selector
+    # falls to OpenRouter deepseek/deepseek-v4.1-flash if Ollama isn't on the box. No kimi.
+    fallback = "ollama/deepseek-v4.1-flash:cloud"
     # Tier-5 (no Ollama, no OpenRouter, no models matching) falls to
     # Gemini Flash Lite per PRD §5.4 position 5 — this is the LAST RESORT.
     last_resort = "openrouter/google/gemini-3.1-flash-lite-preview"
@@ -444,12 +444,12 @@ def _assert_provider_route():
 
 # task-64 bug 4 (max_tokens ceiling): Ollama Cloud hard-caps each model's
 # OUTPUT tokens; requesting more is a deterministic 400 ("max_tokens exceeds
-# model's maximum") even when authenticated. deepseek-v4-pro's confirmed
+# model's maximum") even when authenticated. deepseek-v4.1-flash's confirmed
 # ceiling is 65536 — the pipeline asked for 120000 on Phase-3/single-book
 # synthesis. Requests are clamped to the model's known ceiling (default 65536
 # for unknown models, which is above every non-synthesis call here).
 _MODEL_MAX_OUTPUT_TOKENS = {
-    "deepseek-v4-pro": 65536,   # confirmed: Ollama Cloud 400s above this
+    "deepseek-v4.1-flash": 65536,   # confirmed: Ollama Cloud 400s above this
 }
 _DEFAULT_MAX_OUTPUT_TOKENS = 65536
 
@@ -1779,7 +1779,7 @@ async def call_ollama_cloud(session: aiohttp.ClientSession, model: str, system: 
     OLLAMA_BASE_URL points at a non-local base such as https://ollama.com/api.
 
     `model` arg must be an Ollama model id WITHOUT the "ollama/" prefix
-    (e.g. "deepseek-v4-pro:cloud" not "ollama/deepseek-v4-pro:cloud").
+    (e.g. "deepseek-v4.1-flash:cloud" not "ollama/deepseek-v4.1-flash:cloud").
     max_tokens is clamped to the model's real output ceiling (bug 4) — a
     request above it is a deterministic 400 on Ollama Cloud.
     """
@@ -1802,7 +1802,7 @@ async def call_ollama_cloud(session: aiohttp.ClientSession, model: str, system: 
             {"role": "user", "content": user},
         ],
         "stream": False,
-        "think": True,  # Trevor 2026-06-01: thinking ON (high) for DeepSeek V4 Pro reasoning
+        "think": True,  # Trevor 2026-06-01: thinking ON (high) for DeepSeek V4.1 Flash reasoning
         "options": {
             "temperature": 1.0,
             "num_predict": max_tokens,
@@ -1912,7 +1912,7 @@ async def call_openrouter(session: aiohttp.ClientSession, model: str, system: st
         "X-Title": "BlackCEO Coaching Personas Matrix"
     }
     # bug 4: clamp to the model's real output ceiling here too — the primary
-    # OpenRouter fallback (deepseek/deepseek-v4-pro) shares the 65536 cap, and
+    # OpenRouter fallback (deepseek/deepseek-v4.1-flash) shares the 65536 cap, and
     # no model in this pipeline's chain accepts the 120000 the synthesis phases
     # request (so an over-ask is a deterministic 400 on every route).
     max_tokens = _clamp_max_tokens(model, max_tokens)
@@ -2265,7 +2265,7 @@ async def run_extraction(session: aiohttp.ClientSession, book: dict, status: dic
             return False
 
         # v9.5.1: re-resolve model PER BOOK based on its actual char count.
-        # Books > 800K chars switch from Kimi (262K ctx) to DeepSeek V4-pro (1M ctx).
+        # Books > 800K chars switch from Kimi (262K ctx) to DeepSeek V4.1 Flash (1M ctx).
         # Books > 3M chars get DeepSeek-only.
         per_book_model, per_book_route = resolve_phase_model("phase1", input_chars=len(text))
         log(f"  Model for this book (Phase 1, {len(text):,} chars): {per_book_model} via {per_book_route}")
@@ -2286,7 +2286,7 @@ Here is the complete book text. Extract all 20 items as specified in your instru
         # v10.3.0: Route the call based on the resolved model. Priority is
         # Ollama Cloud first (cheap subscription), OpenRouter same-model
         # fallback second, OAuth GPT third. Moonshot direct API is no longer
-        # in the routing chain (Kimi 2.6 + DeepSeek V4-pro both available
+        # in the routing chain (Kimi 2.6 + DeepSeek V4.1 Flash both available
         # via Ollama Cloud and OpenRouter — no need for the direct route).
         _ext_sys = _extraction_system()
         if folder in OPENROUTER_FALLBACK_FOLDERS:

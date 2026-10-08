@@ -161,7 +161,7 @@ The orchestrator above drives tool-calls and sub-agent fan-out. Tier each sub-ag
 
 | Role group | Job type | Model (Ollama Cloud preferred → OpenRouter backup) |
 |---|---|---|
-| Researcher, Strategist | high reasoning / strategy | DeepSeek v4 pro **or** GLM 5.2 |
+| Researcher, Strategist | high reasoning / strategy | DeepSeek V4.1 Flash **or** GLM 5.2 |
 | Writer, Editor, Image Prompt Engineer, Email Designer (article/script/HTML/caption copy) | content & HTML writing | GLM 5.2 |
 | Publisher (GHL tool-calls / scheduling) + all 6 QC agents | browser control / tool-calls / QC | MiniMax 3 |
 | Video Producer (FFmpeg), Audio Generator, media upload | mechanical (no model judgement) | client's configured/default model |
