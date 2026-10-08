@@ -1,3 +1,5 @@
+## [v26.4.7]  -  2026-10-08  -  fix(parity): department runtime-parity guard matches a registered alias id (dept-legal-compliance) to its board slug (legal) (SHR002)
+
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
