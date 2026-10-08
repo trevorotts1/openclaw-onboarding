@@ -6,6 +6,20 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.1] - 2026-10-08 - H8: one singing rule, one tolerance band
+
+- The only hard reject when singing was chosen is "no real singing" (no
+  6-second sung stretch). Constant `NO_REAL_SINGING_STRETCH_S` lives in
+  `scripts/core/spoken_share/spoken_share.py` (the Part G constants module)
+  and is read by the plan check, the sung-vocal guard and the lip-sync check.
+- Every share, first-sung, length and lip-sync-seconds goal uses Trevor's
+  band (`ACCEPT_PTS=5`, `FLAG_PTS=10`): within 5 accept, over 5 up to 10
+  accept WITH A FLAG in the receipt, over 10 REDO (never keep the closest).
+  `check_share`, `check_first_sung`, `check_plan`, `sung_vocal_guard` and
+  `lipsync_coverage` return `flags` for the receipt.
+- Flagged outputs: share verdict `FLAG` (accepted); a flagged lip-sync or
+  sung-coverage result passes and carries the flag text.
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).

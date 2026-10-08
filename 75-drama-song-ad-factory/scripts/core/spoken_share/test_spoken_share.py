@@ -152,20 +152,20 @@ check("is-spoken-style-sung-false", SS.is_spoken_style("sung") is False)
 # ------------------------------------------------------- 4. band boundaries
 check("floor-pass", SS.check_share(0.40)["verdict"] == "PASS",
       SS.check_share(0.40))
-check("cap-pass", SS.check_share(0.55)["verdict"] == "PASS",
+check("cap-is-flag-not-pass", SS.check_share(0.55)["verdict"] == "FLAG",
       SS.check_share(0.55))
 check("target-pass", SS.check_share(0.45)["verdict"] == "PASS")
-check("under-floor-fail", SS.check_share(0.3999)["verdict"] == "FAIL")
-check("over-cap-fail", SS.check_share(0.5501)["verdict"] == "FAIL")
+check("just-under-floor-flag", SS.check_share(0.3999)["verdict"] == "FLAG")
+check("just-over-cap-redo", SS.check_share(0.5501)["verdict"] == "FAIL")
 check("zero-fail", SS.check_share(0.0)["verdict"] == "FAIL")
 check("full-fail", SS.check_share(1.0)["verdict"] == "FAIL")
 check("over-70-fail", SS.check_share(0.70)["verdict"] == "FAIL",
       SS.check_share(0.70)["reasons"])
 r = SS.check_share(0.70)
 check("over-cap-reason-names-55",
-      any("ceiling 55%" in x for x in r["reasons"]), r["reasons"])
+      any("redo" in x for x in r["reasons"]), r["reasons"])
 check("under-floor-reason-names-40",
-      any("floor 40%" in x for x in SS.check_share(0.30)["reasons"]),
+      any("redo" in x for x in SS.check_share(0.30)["reasons"]),
       SS.check_share(0.30)["reasons"])
 check("in-band-flag", SS.check_share(0.45)["in_band"] is True)
 check("delta-from-target", abs(SS.check_share(0.45)["delta_from_target"]) < 1e-9)
@@ -250,7 +250,75 @@ talky = [
 p3 = SS.check_plan(90, talky)
 check("plan-over-cap-fail", p3["share_check"]["verdict"] == "FAIL", p3)
 check("plan-over-cap-reason-names-55",
-      any("ceiling 55%" in x for x in p3["reasons"]), p3["reasons"])
+      any("redo" in x for x in p3["reasons"]), p3["reasons"])
+
+
+# ------------------------------------------------ H8: one rule, one band
+check("h8-band-constants", (SS.ACCEPT_PTS, SS.FLAG_PTS,
+      SS.NO_REAL_SINGING_STRETCH_S) == (5, 10, 6.0))
+check("h8-judge-5-accept", SS.judge_gap(5.0) == "PASS")
+check("h8-judge-5.1-flag", SS.judge_gap(5.1) == "FLAG")
+check("h8-judge-10-flag", SS.judge_gap(10.0) == "FLAG")
+check("h8-judge-10.1-redo", SS.judge_gap(10.1) == "FAIL")
+check("h8-judge-negative-gap", SS.judge_gap(-7) == "FLAG")
+# share: 45 goal -> 50 accept, 52 flag, 56 redo
+check("h8-share-50-accept", SS.check_share(0.50)["verdict"] == "PASS")
+f52 = SS.check_share(0.52)
+check("h8-share-52-flag-carries-flag",
+      f52["verdict"] == "FLAG" and len(f52["flags"]) == 1, f52)
+check("h8-share-56-redo", SS.check_share(0.56)["verdict"] == "FAIL")
+check("h8-flag-never-refuses", SS.refusal(0.52) == "")
+# first-sung: 60 s ad, goal 10 s; 13 s = 5 pts accept, 14 s = 6.7 flag, 17 s redo
+def ad(first):
+    return [{"delivery": "spoken", "start": 0.0, "end": first},
+            {"delivery": "sung", "start": first, "end": 60.0}]
+check("h8-first-sung-13-accept",
+      SS.check_first_sung(ad(13))["verdict"] == "PASS")
+fs = SS.check_first_sung(ad(14))
+check("h8-first-sung-14-flag", fs["verdict"] == "FLAG" and fs["flags"], fs)
+check("h8-first-sung-17-redo",
+      SS.check_first_sung(ad(17))["verdict"] == "FAIL")
+check("h8-first-sung-early-fine",
+      SS.check_first_sung(ad(2))["verdict"] == "PASS")
+# THE singing rule: only a missing 6 s sung stretch is a hard reject.
+short = [{"delivery": "spoken", "start": 0.0, "end": 20.0},
+         {"delivery": "sung", "start": 20.0, "end": 25.0},
+         {"delivery": "spoken", "start": 25.0, "end": 60.0}]
+check("h8-5s-stretch-is-no-real-singing",
+      SS.check_real_singing(short)["real_singing"] is False)
+six = [{"delivery": "spoken", "start": 0.0, "end": 20.0},
+       {"delivery": "sung", "start": 20.0, "end": 26.0},
+       {"delivery": "spoken", "start": 26.0, "end": 60.0}]
+check("h8-6s-stretch-is-real-singing",
+      SS.check_real_singing(six)["real_singing"] is True)
+joined = [{"delivery": "sung", "start": 0.0, "end": 3.0},
+          {"delivery": "sung", "start": 3.1, "end": 7.0}]
+check("h8-adjacent-sung-segments-join",
+      SS.longest_sung_stretch_s(joined) == 6.9, SS.longest_sung_stretch_s(joined))
+check("h8-all-spoken-hard-reject",
+      SS.check_plan(60, [{"delivery": "spoken", "seconds": 60.0}])
+      ["real_singing"]["verdict"] == "FAIL")
+# a share miss with real singing is NOT a no-real-singing reject: only band.
+p = SS.check_plan(60, [{"delivery": "sung", "start": 0.0, "end": 8.0},
+                       {"delivery": "spoken", "start": 8.0, "end": 60.0}])
+check("h8-share-miss-is-band-not-singing-reject",
+      p["real_singing"]["real_singing"] is True and
+      p["share_check"]["verdict"] == "FAIL", p["reasons"])
+# length goal uses the band too: 60 s goal, 63 s accept, 66 s flag, 70 s redo
+def run(total):
+    return [{"delivery": "spoken", "seconds": total * 0.45},
+            {"delivery": "sung", "seconds": total * 0.55}]
+check("h8-length-63-accept",
+      SS.check_plan(60, run(63))["length_check"]["verdict"] == "PASS")
+check("h8-length-66-flag",
+      SS.check_plan(60, run(66))["length_check"]["verdict"] == "FLAG")
+check("h8-length-70-redo",
+      SS.check_plan(60, run(70))["length_check"]["verdict"] == "FAIL")
+check("h8-lipsync-seconds-short-band",
+      SS.judge_seconds(12, 15, 60, only="short")["verdict"] == "PASS"
+      and SS.judge_seconds(10, 15, 60, only="short")["verdict"] == "FLAG"
+      and SS.judge_seconds(5, 15, 60, only="short")["verdict"] == "FAIL"
+      and SS.judge_seconds(30, 15, 60, only="short")["verdict"] == "PASS")
 
 # --------------------------------------------- 6. malformed input = caller bug
 check("empty-segments-raises",
