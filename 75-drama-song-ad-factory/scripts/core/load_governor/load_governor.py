@@ -15,8 +15,15 @@ advice a builder can skip.
 3. StageRegistry       deletes a stage's intermediate files once the next stage has
                        consumed them and its output is verified; never deliverables;
                        every deletion logged, a failed one prints WARNING.
-4. kie_request(fn)     one shared 20-per-rolling-10-s limiter (file-lock token bucket)
-                       for every KIE submit/status request; 429 backs off and retries.
+4. kie_request(fn)     KIE pacing, two separate limiters (references/kie-rate-limit.md):
+                       generation=True  NEW generation requests (submit/create) draw from one
+                         20-per-rolling-10-s file-lock token bucket, shared across processes,
+                         one bucket per KIE key.
+                       generation=False status polls, health, record-info, preflight, save use
+                         a gentler per-process limiter (default 1 request/s,
+                         DSAF_KIE_POLL_INTERVAL_S) and never touch the generation bucket.
+                       A 429 means the job did NOT run and is NOT queued: back off and
+                       resubmit; retries exhausted raises KieRateLimitError naming the job.
 5. Never the OpenAI whisper stack: run_heavy refuses any whisper executable (faster-whisper
    runs only inside lyric_timing).
 
@@ -28,6 +35,7 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -45,7 +53,9 @@ POLL_S = 15.0
 MAX_WAIT_S = 20 * 60
 NICE = 10
 MAX_THREADS = 4
-KIE_MAX, KIE_WINDOW_S = 20, 10.0    # Trevor: KIE allows 20 requests / 10 s
+KIE_MAX, KIE_WINDOW_S = 20, 10.0    # KIE: 20 NEW generation requests / 10 s per account
+POLL_ENV = "DSAF_KIE_POLL_INTERVAL_S"   # gentle limiter for polls/health; default 1 s
+POLL_DEFAULT_S = 1.0
 
 
 class LoadGovernorError(Exception):
@@ -302,10 +312,16 @@ class KieRateLimitError(LoadGovernorError):
     pass
 
 
+def key_tag():
+    """Bucket name per KIE key (hash only; the key itself is never written)."""
+    k = os.environ.get("KIE_API_KEY", "")
+    return hashlib.sha256(k.encode()).hexdigest()[:12] if k else "nokey"
+
+
 def kie_acquire(max_req=KIE_MAX, window_s=KIE_WINDOW_S, sleep=time.sleep, clock=time.time):
-    """Block until this process may send one KIE request (rolling window, all
-    processes share state.json under flock)."""
-    d = shared_dir() / "kie-rate"
+    """Block until this process may send one NEW generation request (rolling
+    window; all processes sharing this KIE key share stamps.json under flock)."""
+    d = shared_dir() / "kie-rate" / key_tag()
     d.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(d / "bucket.lock"), os.O_RDWR | os.O_CREAT, 0o600)
     try:
@@ -331,6 +347,25 @@ def kie_acquire(max_req=KIE_MAX, window_s=KIE_WINDOW_S, sleep=time.sleep, clock=
         os.close(fd)
 
 
+_poll_last = [0.0]
+_poll_lock = threading.Lock()
+
+
+def kie_poll_acquire(interval_s=None, sleep=time.sleep, clock=time.monotonic):
+    """Gentle per-process limiter for status polls, health and record-info reads.
+    Never consumes generation tokens."""
+    if interval_s is None:
+        try:
+            interval_s = float(os.environ.get(POLL_ENV, POLL_DEFAULT_S))
+        except ValueError:
+            interval_s = POLL_DEFAULT_S
+    with _poll_lock:
+        wait = _poll_last[0] + interval_s - clock()
+        if wait > 0:
+            sleep(wait)
+        _poll_last[0] = clock() if wait <= 0 else _poll_last[0] + interval_s
+
+
 _LIMITED = re.compile(r"rate.?limit|too many requests|\bhttp\s*429\b|\b429\b\s*(?:too|error|rate)"
                       r"|[\"']?(?:code|status|http_status|status_code)[\"']?\s*[:=]\s*[\"']?429\b", re.I)
 
@@ -338,15 +373,20 @@ _LIMITED = re.compile(r"rate.?limit|too many requests|\bhttp\s*429\b|\b429\b\s*(
 def is_rate_limited(result):
     if getattr(result, "code", None) == 429:
         return True
+    if isinstance(result, (tuple, list)):       # (rc, stdout): scan each part unescaped
+        return any(is_rate_limited(x) for x in result)
     text = result if isinstance(result, str) else json.dumps(result, default=str)
     return bool(_LIMITED.search(text))
 
 
-def kie_request(fn, label="kie", *, retries=6, backoff_s=2.0, is_limited=is_rate_limited,
-                sleep=time.sleep, acquire=kie_acquire):
-    """Run one KIE request (submit or status poll) under the shared limiter.
-    429 / rate-limit reply: back off 2,4,8.. s and retry; after `retries` raise
-    KieRateLimitError. A job is never dropped silently."""
+def kie_request(fn, label="kie", *, generation=False, retries=6, backoff_s=2.0,
+                is_limited=is_rate_limited, sleep=time.sleep, acquire=None):
+    """Run one KIE request. generation=True (submit/create task) draws from the
+    20-per-10-s bucket; anything else uses the gentle poll limiter.
+    429 / rate-limit reply: the request did NOT run and is not queued. Back off
+    2,4,8.. s and resubmit; after `retries` raise KieRateLimitError naming the
+    job. A 429 is never counted as submitted and a job is never dropped silently."""
+    acquire = acquire or (kie_acquire if generation else kie_poll_acquire)
     for n in range(retries + 1):
         acquire()
         try:
@@ -361,6 +401,7 @@ def kie_request(fn, label="kie", *, retries=6, backoff_s=2.0, is_limited=is_rate
             break
         _say("KIE 429 on %s; backing off %.0f s (retry %d/%d)" % (label, backoff_s * 2 ** n, n + 1, retries))
         sleep(backoff_s * 2 ** n)
-    msg = "KIE kept rate-limiting %s after %d retries; job NOT dropped, rerun it" % (label, retries)
+    msg = ("KIE kept rate-limiting job %s after %d retries (HTTP 429: it did NOT run and is not "
+           "queued); NOT submitted, NOT dropped, resubmit it" % (label, retries))
     _say("FAIL " + msg)
     raise KieRateLimitError("KIE_RATE_LIMITED", msg)

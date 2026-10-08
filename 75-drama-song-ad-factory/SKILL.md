@@ -318,8 +318,14 @@ already route through it, and a test fails if one stops.
 - Intermediate render files are deleted as soon as the next stage has used them and its
   output is verified. Masters, SRT files, the song, stems needed for lip-sync and receipts
   are never deleted. Every deletion is logged in the receipt; a failed one prints a WARNING.
-- Every KIE request (submits and status polls) shares one limiter: at most 20 per rolling
-  10 seconds across all processes. A 429 reply backs off and retries; a job is never dropped.
+- KIE pacing follows `references/kie-rate-limit.md`. Only NEW generation requests (submit
+  and create task: image, video, lip-sync, music, extend) draw from the bucket of at most 20
+  per rolling 10 seconds, shared across all processes, one bucket per KIE key. Status polls,
+  health checks and record-info reads use a separate gentler limiter (1 request per second
+  per process by default, `DSAF_KIE_POLL_INTERVAL_S`) and never consume generation tokens.
+  A 429 on a generation request means the job did NOT run and is not queued: back off and
+  resubmit. It is never counted as submitted and never dropped; if retries run out the run
+  fails loudly naming the job.
 - Never the OpenAI whisper stack. Transcription is faster-whisper through `lyric_timing.py`.
 
 ## Installation
