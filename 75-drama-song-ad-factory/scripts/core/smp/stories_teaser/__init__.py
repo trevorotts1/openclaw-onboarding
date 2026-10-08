@@ -1,0 +1,56 @@
+"""core.smp.stories_teaser — D27/D35 15-second Stories teaser cut (plan 6.15).
+
+Public API:
+    TeaserError, TEASER_SCHEMA, TEASER_MAX_SECONDS, END_CARD_TEXT,
+    END_CARD_HOLD_SECONDS, CUT_WINDOW_SECONDS, INSTAGRAM_SEGMENT_SECONDS,
+    FACEBOOK_STORY_CLIP_SECONDS, TIKTOK_STORY_MAX_SECONDS, STORY_ASPECT,
+    GBP_CODE, GBP_REASON, KIE_PATH, DEFAULT_CHANNELS, CHANNEL_POLICY,
+    story_segments, pick_peak, cut_window, route_channel, plan_teaser
+"""
+from .teaser import (
+    CHANNEL_POLICY,
+    CUT_WINDOW_SECONDS,
+    DEFAULT_CHANNELS,
+    END_CARD_HOLD_SECONDS,
+    END_CARD_TEXT,
+    FACEBOOK_STORY_CLIP_SECONDS,
+    GBP_CODE,
+    GBP_REASON,
+    INSTAGRAM_SEGMENT_SECONDS,
+    KIE_PATH,
+    STORY_ASPECT,
+    TEASER_MAX_SECONDS,
+    TEASER_SCHEMA,
+    TIKTOK_STORY_MAX_SECONDS,
+    UNIT_ID,
+    TeaserError,
+    cut_window,
+    pick_peak,
+    plan_teaser,
+    route_channel,
+    story_segments,
+)
+
+__all__ = [
+    "CHANNEL_POLICY",
+    "CUT_WINDOW_SECONDS",
+    "DEFAULT_CHANNELS",
+    "END_CARD_HOLD_SECONDS",
+    "END_CARD_TEXT",
+    "FACEBOOK_STORY_CLIP_SECONDS",
+    "GBP_CODE",
+    "GBP_REASON",
+    "INSTAGRAM_SEGMENT_SECONDS",
+    "KIE_PATH",
+    "STORY_ASPECT",
+    "TEASER_MAX_SECONDS",
+    "TEASER_SCHEMA",
+    "TIKTOK_STORY_MAX_SECONDS",
+    "UNIT_ID",
+    "TeaserError",
+    "cut_window",
+    "pick_peak",
+    "plan_teaser",
+    "route_channel",
+    "story_segments",
+]
