@@ -51,6 +51,27 @@ Your drama song ad
 `[Approve]` is one click. `[Change options]` reopens the same card with the
 previous selections kept.
 
+## 2.1 Intake question card layout (Part H9, normative)
+
+The six intake questions (length, music style, video style, video model,
+spend limit, storyboard approval) are built by
+`scripts/core/choice_card/intake_card/intake_card.py` and nowhere else. Never
+write them free hand and never carry them as one JSON string.
+
+- Each question is its own block: `Question 1 of 6 - LENGTH`, then the plain
+  question, then one numbered option per line (`1. 60 seconds - one short
+  sentence. (RECOMMENDED)`). A blank line separates questions. The last line
+  is the "how to answer" line.
+- Plain text only: no Markdown, no HTML, no parse mode, so no sender can strip
+  or escape the line breaks.
+- Claude Code chat: run `factory.py card` and show its stdout as is (raw text,
+  not the JSON envelope, whose escaped `\n` is what got flattened).
+- Telegram through OpenClaw: run `factory.py card --format openclaw-json
+  --target <chat id>` and execute each argv list without a shell, one message
+  per list. The card is split between questions under 4000 characters; a
+  `--format telegram-json` body is the exact Bot API `sendMessage` payload.
+- The intake `question_message` uses the same layout (`format_questions`).
+
 ## 3. Field rules
 
 ### 3.1 Length

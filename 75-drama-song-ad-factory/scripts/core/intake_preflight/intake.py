@@ -100,6 +100,15 @@ Q_PLACEMENT = "What placement/format should we produce (aspect ratio + target le
 APPROVAL_AFFECTING = ("offer", "audience", "action", "budget_minor", "budget_currency")
 
 
+def _fmt(texts):
+    """question_message: one block per question, blank line between (H9)."""
+    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    from choice_card.intake_card import format_questions  # noqa: PLC0415
+    return format_questions(texts)
+
+
 def _text(v):
     return v.strip() if isinstance(v, str) and v.strip() else None
 
@@ -317,7 +326,7 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
         if outstanding:
             return {"outcome": "waiting", "reason_code": "resume-outstanding-decisions",
                     "questions": [{"id": f"resume-{i}", "question": q} for i, q in enumerate(outstanding)],
-                    "question_message": "\n".join(f"{i+1}. {q}" for i, q in enumerate(outstanding)),
+                    "question_message": _fmt(outstanding),
                     "summary": summary, "digest": digest, "provenance": prov,
                     "auth_status": status, "approval_invalidated": False, "changes": changes,
                     "next_stage": resume_state.get("next_stage"),
@@ -337,7 +346,7 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
                 "next_action": "Record summary digest + auth scope, then run preflight before paid work."}
     return {"outcome": "waiting", "reason_code": "missing-essentials",
             "questions": qs,
-            "question_message": "\n".join(f"{i+1}. {q['question']}" for i, q in enumerate(qs)),
+            "question_message": _fmt([q["question"] for q in qs]),
             "summary": summary, "digest": digest, "provenance": prov,
             "auth_status": status, "approval_invalidated": False, "changes": [],
             "next_action": "Answer the bundled questions in one reply; nothing else is asked."}

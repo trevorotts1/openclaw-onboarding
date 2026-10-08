@@ -272,7 +272,18 @@ def main(argv=None):
                                     "how many lanes may run (manual 02 B1).")
     n.add_argument("--run-dir", required=True,
                    help="Run dir that holds control/state.sqlite3.")
+    c = sub.add_parser("card", help="Print the six-question intake card as raw "
+                                    "text (not JSON), or as send payloads (H9).")
+    c.add_argument("--format", default="text",
+                   choices=("text", "openclaw-json", "telegram-json"))
+    c.add_argument("--target", default="", help="Telegram chat id")
     a = ap.parse_args(argv)
+    if a.cmd == "card":
+        core = str(Path(__file__).resolve().parent.parent)
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
+        return _card.main(["--format", a.format, "--target", a.target])
     if a.cmd == "intake":
         env = cmd_intake(a)
     elif a.cmd == "preflight":
