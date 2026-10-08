@@ -12,7 +12,9 @@ Claude Code skill (`.claude/skills/drama-song-ad-factory/` in 999-setup)
 share the same creative doctrine, project/run schema, provider abstraction,
 stage names, retry and QC logic, failure semantics, campaign artifact
 contract and licensing decisions. Only install/runtime adapters differ. The
-lockstep is enforced by `tests/test_parity_layout.py`, not by hope.
+lockstep is checked by the two tests this folder ships -
+`tests/test_clean_install_discovery.py` and `tests/test_openclaw_adapter.py`
+- not by hope.
 
 Default production mode name: `drama-song-vsl`. Never make a third-party
 brand name the public product identity.
@@ -107,7 +109,8 @@ uncertain outcome.
 ## Shared canonical core (read, never duplicate)
 
 Core modules live in `scripts/core/` (packaged copies of the canonical
-build — byte-identical, proven by `tests/test_parity_layout.py`):
+build - byte-identical; packaging re-checked on a clean copy by
+`tests/test_clean_install_discovery.py`):
 `state_store.py` (CAS + leases), `artifact_graph.py`, `spend_ledger.py` +
 `job_recovery.py`, `contracts/` (campaign/artifact/qc schema) +
 `acceptance-profile.json`, `intake_preflight/`, `qc_gate.py`, and
@@ -126,8 +129,8 @@ build — byte-identical, proven by `tests/test_parity_layout.py`):
    read Skill 01 (`01-teach-yourself-protocol`) before installing (repo law).
 2. `wire.sh`-style wiring is not required for this skill in OpenClaw beyond
    the standard numbered-folder install (see `INSTALL.md`).
-3. Verify: `python3 tests/test_parity_layout.py` prints `parity proven`,
-   `python3 tests/test_cli_smoke.py` exits 0, and
+3. Verify: `python3 tests/test_clean_install_discovery.py` prints
+   `RESULT: PASS`, `python3 tests/test_openclaw_adapter.py` exits 0, and
    `python3 scripts/core/intake_preflight/factory.py preflight --root
    "$STORAGE"` exits 0 on a writable scratch root.
 
@@ -187,11 +190,19 @@ SOP named above.
   person. Lip-sync applies to the pain peak, the product line, the call to
   action and the chorus hook - three to four lines, about 15 to 20 seconds,
   listed on the approval card; every other shot stays as the video model
-  made it.
+  made it. For an All Suno shot the isolated line is produced by Skill 74's
+  `ai-music-api/separate-vocals`, which splits the mixed vocal stem before
+  the avatar ever sees it. The Kling-avatar-first order itself is a **rule
+  followed by the agent; code check not yet shipped**: `scripts/core/lip_sync/`
+  carries `narrator_rule/` only, no `kling_first/` (see CHANGELOG.md
+  "Not shipped here, on record").
 - **Speaker contract:** the person visible while a line plays is the one
   speaking it, or the voice's source device. QC checks the picture for every
   spoken line, and measures pitch against the character's gender range with
-  an octave-error guard.
+  an octave-error guard - a **rule followed by the agent; code check not yet
+  shipped**: `scripts/core/qc_voice_match/` ships `qc_voice_match.py` and
+  `pitch_ban/`, no `octave_guard/` module (see CHANGELOG.md "Not shipped
+  here, on record").
 - **Suno extend** is used only to hit an exact length or to repair a
   section, never as routine billing.
 - **Unknown KIE job results** are resolved by querying KIE task status;
