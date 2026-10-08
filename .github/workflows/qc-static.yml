@@ -3015,6 +3015,8 @@ jobs:
           # invocation each test docstring documents (self-maintaining: the
           # loop re-discovers test_*.py, so the next wave's tests join
           # without edits).
+          # numpy so the singing-detector suite really runs (it skips itself without it)
+          python3 -m pip install --quiet numpy
           tests_rc=0
           empty_home=""
           while IFS= read -r t; do

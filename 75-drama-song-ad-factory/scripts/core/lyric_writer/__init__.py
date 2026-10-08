@@ -4,6 +4,8 @@ from .lyric_writer import (
     SCHEMA_VERSION,
     TOOL_VERSION,
     brief_words,
+    spoken_word_budget,
+    steer_opening,
     validate_campaign,
     validate_lyrics,
 )
@@ -13,6 +15,8 @@ __all__ = [
     "SCHEMA_VERSION",
     "TOOL_VERSION",
     "brief_words",
+    "spoken_word_budget",
+    "steer_opening",
     "validate_campaign",
     "validate_lyrics",
 ]
