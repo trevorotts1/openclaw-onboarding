@@ -2031,7 +2031,7 @@ def _llm_layer_scores(persona_id: str, task_text: str, owner_profile: str,
                        department_id: str, cc: dict, paths: dict) -> dict:
     """
     LLM-backed scoring for Layers 1-4 (Wave 3). Each layer is one cached LLM
-    call to DeepSeek V4 Pro (Ollama Cloud primary, OpenRouter fallback,
+    call to DeepSeek V4.1 Flash (Ollama Cloud primary, OpenRouter fallback,
     Gemini 3.1 Flash Lite last resort — see llm_score.py).
     """
     persona_summary = summarize_persona_blueprint(persona_id, max_chars=2000)

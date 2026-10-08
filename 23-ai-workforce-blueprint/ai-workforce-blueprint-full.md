@@ -1015,7 +1015,7 @@ Not all AI models are equal. Some are better at writing. Some are better at anal
 | Data processing and CRM updates | MiniMax 3 | Good with tools, cheap |
 | Research and web search | Perplexity Sonar Pro | Built for search |
 | Image creation | MiniMax 3 (calls KIE.ai) | Just calls the tool |
-| Complex analysis or strategy | DeepSeek v4 pro (Ollama Cloud) | Best reasoning |
+| Complex analysis or strategy | DeepSeek V4.1 Flash (Ollama Cloud) | Best reasoning |
 
 ## Cost Awareness
 - Track which models are being used

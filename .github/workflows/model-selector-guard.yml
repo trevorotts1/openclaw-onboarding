@@ -8,29 +8,13 @@ name: model-selector-guard
 #
 # v25.1.55: the inventory fixture below carries deepseek-v4.1-flash, the tag
 # Ollama Cloud actually serves and the one the scoring chain now uses.
-# deepseek-v4-pro:cloud was deleted upstream on 2026-08-17, so a fixture
+# the DeepSeek V4 Pro cloud tag was deleted upstream on 2026-08-17, so a fixture
 # pinned to a retired tag would have this guard re-approving a model no box
 # can reach.
 
 on:
   push:
-    paths:
-      - shared-utils/select_model.py
-      - shared-utils/assert_model_sovereignty.py
-      - shared-utils/model-capabilities.json
-      - shared-utils/dept-model-suitability.json
-      - scripts/repair-model-sovereignty.sh
-      - tests/unit/model-selector.test.py
-      - .github/workflows/model-selector-guard.yml
   pull_request:
-    paths:
-      - shared-utils/select_model.py
-      - shared-utils/assert_model_sovereignty.py
-      - shared-utils/model-capabilities.json
-      - shared-utils/dept-model-suitability.json
-      - scripts/repair-model-sovereignty.sh
-      - tests/unit/model-selector.test.py
-      - .github/workflows/model-selector-guard.yml
 
 jobs:
   model-selector-guard:
@@ -45,6 +29,10 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Reject the retired DeepSeek V4 Pro model id (KEF001)
+        run: |
+          python3 tests/unit/no-retired-deepseek-pro-model.test.py
+
       - name: Run selector + gate unit tests
         run: |
           python3 tests/unit/model-selector.test.py
@@ -58,7 +46,7 @@ jobs:
             "models": { "list": [
               {"id":"ollama/deepseek-v4.1-flash"},
               {"id":"ollama/qwen3-vl:235b-cloud"},
-              {"id":"openrouter/deepseek/deepseek-v4-pro"}
+              {"id":"openrouter/deepseek/deepseek-v4.1-flash"}
             ]},
             "agents": { "list": [
               {"id":"dept-ceo","model":{"primary":"openrouter/free","fallbacks":[]}},

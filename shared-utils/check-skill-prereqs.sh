@@ -253,6 +253,10 @@ def search_env_var(var_name):
         "/data/.openclaw/secrets/.env",
         "/data/.openclaw/secrets/secrets.env",
         "/data/.openclaw/workspace/.env",
+        "/data/.openclaw/.env",
+        os.path.join(home, ".openclaw", ".env"),
+        "/data/.openclaw/workspace/secrets.env",
+        os.path.join(home, ".openclaw", "workspace", "secrets.env"),
     ]
     for p in candidates:
         if os.path.isfile(p):

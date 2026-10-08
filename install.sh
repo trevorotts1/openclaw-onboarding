@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v26.4.5"
+ONBOARDING_VERSION="v26.4.6"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3402,7 +3402,7 @@ sub['thinking'] = 'high'
 #
 # PROVIDER-AWARE, ALLOWLIST-VALIDATED SEED (v21.4.47).
 # The previous seed was hardcoded to
-#   ['ollama/kimi-k2.6:cloud', 'openrouter/xiaomi/mimo-v2.5-pro', 'deepseek/deepseek-v4-pro']
+#   ['ollama/kimi-k2.6:cloud', 'openrouter/xiaomi/mimo-v2.5-pro', 'deepseek/deepseek-v4.1-flash']
 # and silently bricked EVERY sub-agent spawn on any box that did not match it:
 #   * 'ollama/<m>:cloud' only resolves when models.providers.ollama EXISTS.
 #     A box onboarded with --auth-choice ollama-cloud registers 'ollama-cloud'
@@ -3411,7 +3411,7 @@ sub['thinking'] = 'high'
 #     "Unknown model ... Ollama requires authentication" — an AUTH error for
 #     what is really a namespace typo, which sends diagnosis the wrong way.
 #   * 'openrouter/xiaomi/mimo-v2.5-pro' is absent from the model allowlist.
-#   * 'deepseek/deepseek-v4-pro' names a provider that is never configured.
+#   * 'deepseek/deepseek-v4.1-flash' names a provider that is never configured.
 # Nothing validates a model pin until an agent LAUNCHES — not config validate,
 # not doctor — so these sat invisible until a department was finally given real
 # work. Live incident 2026-07-31: a client's Web Development head died 2ms after
@@ -3444,7 +3444,7 @@ if not isinstance(model_block, dict) or 'fallbacks' not in model_block:
         _seed += [
             _pick(f'{_oll}/kimi-k2.7-code{_sfx}', f'{_oll}/kimi-k2.6{_sfx}'),
             _pick(f'{_oll}/minimax-m3{_sfx}'),
-            _pick(f'{_oll}/deepseek-v4.1-flash{_sfx}', f'{_oll}/deepseek-v4-pro{_sfx}'),
+            _pick(f'{_oll}/deepseek-v4.1-flash{_sfx}', f'{_oll}/deepseek-v4.1-flash{_sfx}'),
         ]
     # ALWAYS end on a NON-Ollama provider. An Ollama Cloud weekly cap / 429 is
     # ACCOUNT-level, so an all-Ollama chain fails as a single unit and takes the
@@ -3554,7 +3554,7 @@ fi
 # 0.4 — Model selection (advisory; agent picks at runtime based on what's available)
 note "Master orchestrator model priority (per INSTALL-CONTRACT.md Rule 10):"
 note "  1. Subscription / OAuth (no per-call cost): codex/gpt-5.5, openai-codex/gpt-5.5"
-note "  2. Ollama cloud (very low cost): ollama/kimi-k2.6:cloud (orchestrator), ollama/deepseek-v4-pro:cloud (sub-agents)"
+note "  2. Ollama cloud (very low cost): ollama/kimi-k2.6:cloud (orchestrator), ollama/deepseek-v4.1-flash:cloud (sub-agents)"
 note "     NOTE: the ollama/ prefix above is correct ONLY if this box registers models.providers.ollama."
 note "     A box onboarded with --auth-choice ollama-cloud must use ollama-cloud/<model> (no :cloud suffix)."
 note "     Wrong prefix = agent dies at launch with a misleading auth error. Run scripts/verify-model-pins.py."

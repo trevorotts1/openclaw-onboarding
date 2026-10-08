@@ -32,6 +32,8 @@ except Exception:  # canon module unreadable: fail open to local tables
     _CANON_AVAILABLE = False
 
 ENV_FILE_PATHS = [
+    "/data/.openclaw/workspace/secrets.env",
+    os.path.expanduser("~/.openclaw/workspace/secrets.env"),
     os.path.expanduser("~/clawd/secrets/.env"),
     os.path.expanduser("~/.openclaw/secrets/.env"),
     os.path.expanduser("~/.openclaw/.env"),
