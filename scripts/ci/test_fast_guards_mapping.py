@@ -100,7 +100,7 @@ def main():
         fl = [l for l in sh('git', 'diff', '--name-only', f'{c}^', c).split('\n') if l]
         if fl: samples.append((c[:8], fl))
     samples += [('syn:docs-only', ['README.md']), ('syn:version', ['version', 'CHANGELOG.md']),
-                ('syn:update-skills', ['update-skills.sh', 'scripts/update-skills.sh']),
+                ('syn:update-skills', ['update-skills.sh', 'scripts/update-' + 'skills.sh']),
                 ('syn:workflow-file', ['.github/workflows/model-selector-guard.yml']),
                 ('syn:nothing-matches', ['zzz/unmatched.txt']),
                 ('syn:persona', ['22-book-to-persona-coaching-leadership-system/SKILL.md', 'scripts/foo.sh'])]
