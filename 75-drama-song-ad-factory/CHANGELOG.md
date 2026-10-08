@@ -6,6 +6,20 @@ frontmatter `version:` field).
 
 ---
 
+## v2.8.1 - 2026-10-08 - Lip-sync close-up in every reference set (LPC001)
+
+Same change as 999-setup drama-song-ad-factory 2.7.13. Owner order (Trevor, 2026-10-08): every
+character gets a close-up where the lips can clearly be seen, because the lip-sync step works
+best from it.
+
+- `catalog_calculator.image_plan`: reference set is 7 per character (3 angles, 3 expressions,
+  1 `lipsync-closeup`); image count and cost estimate include it.
+- `lip_gate.run_gate(source_image=)`: Kling avatar attempts and the InfiniTalk A/B use the
+  close-up as source image by default. `lip_gate.check_reference_set`: a set with no close-up,
+  or one whose mouth is not clear, fails.
+- SKILL.md rule; test `lip_sync/lip_gate/test_lipsync_closeup.py` (mocked, $0);
+  `catalog_calculator/test_image_plan_i3.py` updated.
+
 ## v2.8.0 - 2026-10-08 - Batch MGB001: Part H (H1-H5, H8, H9, H7, H11-H14), Part I (I1-I8), G4/G6/G12, E7-AMEND
 
 One combined release of every unit below (each unit's own entry follows, unchanged except one heading level deeper). The H6 unit (#1637) is held out of this batch: it conflicts with H8 (#1635) in `spoken_share` and ships separately.

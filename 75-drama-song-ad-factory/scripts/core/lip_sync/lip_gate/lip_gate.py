@@ -126,16 +126,20 @@ def score(j):
     return s + (10 if j["verdict"] == "PASS" else 0)
 
 
-def run_gate(line_id, generate, measure_clip, ab_state):
+def run_gate(line_id, generate, measure_clip, ab_state, source_image=None):
     """Orchestrate attempts. Injected, so mocked providers work at $0.
 
     generate(provider, input_spec) -> clip ; provider in {"kling","infinitalk"}
     measure_clip(clip) -> measurement dict from measure()
     ab_state: {"infinitalk_used": bool}, shared across the run: the
     InfiniTalk A/B is ONE-TIME on a single line.
+    source_image: the speaker's lip-sync close-up (lipsync_closeup()); every
+    attempt, InfiniTalk included, takes it as its source image by default.
     Returns the receipt row (all attempts' numbers + kept attempt).
     """
-    plan = [("kling", None), ("kling", IMPROVED_INPUT)]
+    src = {"source_image": source_image} if source_image else {}
+    improved = dict(IMPROVED_INPUT, **src)
+    plan = [("kling", src or None), ("kling", improved)]
     attempts = []
     for provider, spec in plan:
         attempts.append(_attempt(provider, spec, generate, measure_clip))
@@ -145,7 +149,7 @@ def run_gate(line_id, generate, measure_clip, ab_state):
     if not ab_state.get("infinitalk_used"):
         ab_state["infinitalk_used"] = True
         ab = True
-        attempts.append(_attempt("infinitalk", IMPROVED_INPUT, generate,
+        attempts.append(_attempt("infinitalk", improved, generate,
                                  measure_clip))
     return _row(line_id, attempts, ab)
 
@@ -164,6 +168,33 @@ def _row(line_id, attempts, ab):
             "kept_clip": kept["clip"], "verdict": "PASS" if ok else
             "FAIL_REPLACE", "numbers": {k: kept["judge"][k] for k in (
                 "offset_s", "corr", "control_corr", "margin", "frozen_s")}}
+
+
+LIPSYNC_VIEW = "lipsync-closeup"
+LIPSYNC_REF_MISSING = "LIPSYNC_CLOSEUP_MISSING"
+LIPSYNC_MOUTH_BAD = "LIPSYNC_CLOSEUP_MOUTH_NOT_CLEAR"
+
+
+def lipsync_closeup(reference_set, character):
+    """The character's lip-sync close-up entry (the default source image), or None."""
+    for r in reference_set:
+        if r.get("character") == character and r.get("view") == LIPSYNC_VIEW:
+            return r
+    return None
+
+
+def check_reference_set(reference_set, characters, mouth_clear):
+    """Owner order 2026-10-08: every speaking/singing character needs a lip-sync
+    close-up whose mouth is sharp and unobstructed. mouth_clear(entry) -> bool is
+    the injected face/mouth detection or vision check. A set without it FAILS."""
+    bad = []
+    for c in characters:
+        e = lipsync_closeup(reference_set, c)
+        if e is None:
+            bad.append({"character": c, "reason_code": LIPSYNC_REF_MISSING})
+        elif not mouth_clear(e):
+            bad.append({"character": c, "reason_code": LIPSYNC_MOUTH_BAD})
+    return {"pass": not bad, "failed": bad}
 
 
 def qc_check(rows):
