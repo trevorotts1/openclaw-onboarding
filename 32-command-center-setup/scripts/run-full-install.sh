@@ -220,6 +220,9 @@ state_set_arg() {
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
+# STD001 (Trevor 2026-10-08): true while the owner-ordered standard company placeholder is active.
+standard_placeholder_active() { [[ "$(state_get '.companyMode')" == "standard-placeholder" && "$(state_get '.standardPlaceholder.status')" == "active" ]]; }
+
 fail_install() {
   local reason="$1"
   log "ERROR" "marking commandCenterStatus failed: $reason"
@@ -2443,6 +2446,9 @@ fi
 # and provisioning must NOT invent one. A future reader: the interview-only CC view
 # in front of an empty board pre-closeout is the intended experience, NOT a bug —
 # do not remove this gate or "unlock" the shell to make the board show early.
+# STD001 EXCEPTION (Trevor 2026-10-08): the owner-ordered standard placeholder
+# (companyMode="standard-placeholder") bypasses this gate; real-interview gating is
+# otherwise unchanged.
 # STANDARD-FIRST NOTE (buildType == "standard-first"): the day-one interview
 # link is delivered THROUGH this lock, never around it — the locked shell is
 # exactly what the link opens, and the read-only company preview is an
@@ -2452,7 +2458,8 @@ fi
 #
 # --update-only is EXEMPT: it only refreshes an ALREADY-built CC (git pull / npm /
 # db:push) and must keep working for provisioned boxes whose flag predates this gate.
-if [[ "$UPDATE_ONLY" != "true" || ( -n "$(state_get '.launchBootstrap')" && "$(state_get '.interviewComplete')" != "true" ) ]]; then
+SP_ACTIVE=false; standard_placeholder_active && SP_ACTIVE=true
+if [[ "$SP_ACTIVE" != "true" && ( "$UPDATE_ONLY" != "true" || ( -n "$(state_get '.launchBootstrap')" && "$(state_get '.interviewComplete')" != "true" ) ) ]]; then
   if [[ ! -f "$STATE_FILE" ]]; then
     log "INFO" "interview-gate: no .workforce-build-state.json — interview not started; REPORTING not-completed and exiting clean (real workforce not seeded)."
     echo "INTERVIEW_NOT_COMPLETE: no workforce-build state on this box — AI Workforce interview not completed yet. The locked CC shell is already deployed (client can use /interview now); real workforce NOT materialized (the CC stays in locked interview-mode by design until closeout)." >&2
@@ -2570,12 +2577,29 @@ fi
 # confirmed declines, materialize custom additions, personalize the kept
 # departments) — again NOT via this block. Do not route any pre-interview
 # materialization through this installer.
+# STD001 EXCEPTION: the owner-ordered standard placeholder (companyMode =
+# "standard-placeholder", status "active") IS built here (see BLOCK_B_UPDATE_ONLY below);
+# real-interview gating is otherwise unchanged.
+
+# STD001 STANDARD PLACEHOLDER (owner-ordered exception, Trevor 2026-10-08): an active
+# companyMode="standard-placeholder" (interview incomplete 14+ days) skips the interview
+# gate above and builds BLOCK B for the standard company named after the client. No
+# interview answers are used, interviewComplete is NOT changed, and /interview stays open.
+# Real-interview gating is otherwise unchanged.
+if [[ "$SP_ACTIVE" == "true" && "$(state_get '.interviewComplete')" != "true" ]]; then
+  log "INFO" "interview-gate: STANDARD PLACEHOLDER active (applied $(state_get '.standardPlaceholder.appliedAt')) - building the standard company named '$(state_get '.companyName')'. No interview answers are used; the owner can finish the interview at /interview at any time."
+  state_set_arg '.commandCenterGateReason = $val' "standard-placeholder: AI Workforce interview incomplete for ${STANDARD_PLACEHOLDER_AFTER_DAYS:-14}+ days; standard company built (companyMode=standard-placeholder). Interview remains open."
+fi
+# BLOCK B treats an --update-only refresh as a FULL install until the Command Center has been
+# provisioned once for the placeholder (standardPlaceholder.ccProvisionedAt).
+BLOCK_B_UPDATE_ONLY="$UPDATE_ONLY"
+if [[ "$SP_ACTIVE" == "true" && -z "$(state_get '.standardPlaceholder.ccProvisionedAt')" ]]; then BLOCK_B_UPDATE_ONLY=false; fi
 
 # ----------------------------------------------------------------------
 # PHASE 3 — Workspace department folders
 # ----------------------------------------------------------------------
 log "INFO" "phase=3 workspace-folders: starting"
-if [[ "$UPDATE_ONLY" == "true" ]]; then
+if [[ "$BLOCK_B_UPDATE_ONLY" == "true" ]]; then
   log "INFO" "phase=3 workspace-folders: --update-only mode — skipping (already done on prior run)"
 elif [[ "$(state_get '.commandCenterPhase3Done')" == "true" ]]; then
   log "INFO" "phase=3 workspace-folders: already done — skipping"
@@ -2676,7 +2700,7 @@ fi
 # PHASE 4 — Materialize dept agents into agents.list[] (v10.14.19)
 # ----------------------------------------------------------------------
 log "INFO" "phase=4 materialize-agents: starting"
-if [[ "$UPDATE_ONLY" == "true" ]]; then
+if [[ "$BLOCK_B_UPDATE_ONLY" == "true" ]]; then
   log "INFO" "phase=4 materialize-agents: --update-only mode — skipping (update-skills.sh already ran WIRING-ASSERT)"
 elif [[ "$(state_get '.commandCenterPhase4Done')" == "true" ]]; then
   log "INFO" "phase=4 materialize-agents: already done — skipping"
@@ -2763,7 +2787,7 @@ if [[ -f "$CC_CONTRACT_CHECK" ]] && command -v node >/dev/null 2>&1; then
     if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterContractCheck = true'; fi
   else
     if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterContractCheck = false'; fi
-    if [[ "${UPDATE_ONLY:-false}" == "true" ]]; then
+    if [[ "${BLOCK_B_UPDATE_ONLY:-false}" == "true" ]]; then
       log "WARN" "contract-check: FAILED on an update roll -- reported, not fatal (see $LOG_FILE)"
       echo "  ⚠ CC contract check reported issues (WARN on an update roll; see $LOG_FILE)." >&2
     else
@@ -2843,7 +2867,7 @@ SEED_DASH_ARGS=()
 # notifier then messages the owner's chat -- before closeout that is an
 # unrequested owner message. Update-only rolls never seed them (a live backlog).
 starter_tasks_allowed() {
-  [[ "$UPDATE_ONLY" == "true" ]] && return 1
+  [[ "$BLOCK_B_UPDATE_ONLY" == "true" ]] && return 1
   [[ "$(state_get '.closeoutStatus' 2>/dev/null)" == "done" ]]
 }
 # <<< STARTER-TASKS-GATE-END
@@ -2930,7 +2954,7 @@ except Exception:
     # not read agents.entries at all. Warn, record, and let the roll finish; a
     # FULL install still refuses, because a fresh box must not ship a board
     # whose departments have no runtime.
-    if [[ "${UPDATE_ONLY:-false}" == "true" ]]; then
+    if [[ "${BLOCK_B_UPDATE_ONLY:-false}" == "true" ]]; then
       log "WARN" "phase=6e2 department-runtime-parity: WARN (rc=$DEPT_PARITY_RC) -- ${DEPT_PARITY_N} department(s) with no matching runtime: $DEPT_PARITY_NAMES. The Command Center itself refreshed successfully; run materialize-dept-agents.sh to reconcile."
       echo "  ⚠ parity guard WARN: ${DEPT_PARITY_N} department(s) have a board row but no matching runtime entry (${DEPT_PARITY_NAMES}). CC refresh itself SUCCEEDED." >&2
     else
@@ -3536,6 +3560,7 @@ if [[ -f "$STATE_FILE" ]]; then
     state_set_arg ".commandCenterStatus = \"done-degraded\" | .commandCenterDegradedPhases = \$val | .commandCenterCompletedAt = \"$(now_iso)\"" "$DEGRADED_PHASES"
   else
     state_set ".commandCenterStatus = \"done\" | .commandCenterDegradedPhases = null | .commandCenterCompletedAt = \"$(now_iso)\""
+    [[ "$SP_ACTIVE" == "true" ]] && state_set ".standardPlaceholder.ccProvisionedAt = \"$(now_iso)\""
   fi
 fi
 log "INFO" "run-full-install complete: update_only=$UPDATE_ONLY commandCenterStatus=$FINAL_STATUS local=$LOCAL_OK remote=$REMOTE_OK"

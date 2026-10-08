@@ -100,6 +100,12 @@ WHY THIS CANNOT BECOME A BLANKET BYPASS
     local-market-intelligence / lead-generation) is untouched.
   - check_add() ignores the table completely: grandfathering never authorizes
     a NEW materialization, it only explains an OLD one.
+  - STD001 standard placeholder: build-state standardPlaceholder.preexistingVerticalDepartments
+    (the snapshot taken when the placeholder was applied) is exempt ONLY while
+    companyMode == "standard-placeholder" and standardPlaceholder.status == "active".
+    It covers only departments already on disk at that moment, is listed loudly on every
+    run, never reaches check_add(), and the real interview supersedes it (the guard
+    switches back on by itself).
   - Grandfathered departments are inventoried in the receipt and printed on
     EVERY run, PASS or FAIL. Downgrading a FATAL to silence would be the same
     disease as a checker that reports success without measuring reality; this
@@ -664,6 +670,19 @@ def evaluate_vertical_derivation(departments_dir=None, build_state=None, core_an
         if set(owning) & set(declared.keys()):
             continue
 
+        # STD001: while a standard placeholder is ACTIVE, departments already on disk when
+        # it was applied are reported as grandfathered residue (never silently passed).
+        ph = (build_state or {}).get("standardPlaceholder") or {}
+        if ((build_state or {}).get("companyMode") == "standard-placeholder" and ph.get("status") == "active"
+                and p["id"] in (ph.get("preexistingVerticalDepartments") or [])):
+            grandfathered.append({"id": p["id"], "pack": p["pack"], "demotedAt": None, "demotedByCommit": None,
+                "witness": {"source": "build-state.standardPlaceholder.preexistingVerticalDepartments",
+                            "value": ph.get("appliedAt"), "strength": "placeholder-snapshot"},
+                "reason": (f"STANDARD_PLACEHOLDER: department '{p['id']}' was already on disk when the standard "
+                           "placeholder was applied; exempt only while the placeholder is active."),
+                "cleanup": "OWNER DECISION - finishing the AI Workforce interview re-arms this guard; never removed automatically."})
+            continue
+
         # Undeclared. Before calling it a violation, ask whether it was FLOOR —
         # not a vertical — on the day it was provisioned. Only departments the
         # dated demotion table covers can even be asked, and each must produce
@@ -717,7 +736,7 @@ def evaluate_vertical_derivation(departments_dir=None, build_state=None, core_an
             "grandfatheredIds": sorted(g["id"] for g in grandfathered),
             "byWitnessStrength": {
                 s: sorted(g["id"] for g in grandfathered if g["witness"]["strength"] == s)
-                for s in ("direct", "filesystem", "build-window")
+                for s in ("direct", "filesystem", "build-window", "placeholder-snapshot")
                 if any(g["witness"]["strength"] == s for g in grandfathered)
             },
             "declarationRecordPresent": declared_from_state is not None,
