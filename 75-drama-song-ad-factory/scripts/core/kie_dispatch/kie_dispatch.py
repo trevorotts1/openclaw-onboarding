@@ -57,6 +57,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import load_governor as _LG  # noqa: E402  (core/ is on sys.path just above)
 
 import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
 import kie_dispatch.model_lock as ML  # noqa: E402  (F14 video-model lock)
@@ -452,10 +453,14 @@ def resolve_adapter(explicit=None):
 def make_runner(timeout=300):
     """Real Skill 74 subprocess. The tests never use this."""
     def _run(argv):
-        r = subprocess.run([sys.executable] + list(argv),
-                           capture_output=True, text=True, timeout=timeout,
-                           env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
-        return r.returncode, r.stdout
+        def once():
+            r = subprocess.run([sys.executable] + list(argv),
+                               capture_output=True, text=True, timeout=timeout,
+                               env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+            return r.returncode, r.stdout
+        # Load governor: every KIE request (submit, status, wait) shares one
+        # 20-per-10-s limiter across all processes; a 429 backs off and retries.
+        return _LG.kie_request(once, label=" ".join(str(a) for a in argv[1:3]))
     return _run
 
 

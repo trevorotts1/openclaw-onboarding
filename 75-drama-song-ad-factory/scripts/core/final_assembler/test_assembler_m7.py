@@ -68,9 +68,9 @@ def test_argv_prefix_nice_and_threads():
     check("argv starts with nice -n %d" % A.NICE_LEVEL,
           argv[:3] == ["nice", "-n", str(A.NICE_LEVEL)],
           "got %r" % (argv[:3],))
-    check("argv carries -threads with the size_ffmpeg value",
+    check("argv carries -threads with min(4, size_ffmpeg value)",
           "-threads" in argv and
-          argv[argv.index("-threads") + 1] == str(threads),
+          argv[argv.index("-threads") + 1] == str(min(4, threads)),
           "expected -threads %s in %r" % (threads, argv))
     check("threads >= 1", threads >= 1, "got %r" % (threads,))
 
@@ -119,8 +119,8 @@ def test_lane_size_wins_when_importable():
               "got %r" % (threads,))
         plan = _plan()
         argv = A.build_argv(plan, "out.mp4")
-        check("argv -threads equals lane_size value (7)",
-              argv[argv.index("-threads") + 1] == "7",
+        check("argv -threads is capped at 4 (lane_size says 7)",
+              argv[argv.index("-threads") + 1] == "4",
               "got %r" % (argv,))
     finally:
         _restore_lane_size(had)

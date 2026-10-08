@@ -54,6 +54,13 @@ Run: python3 core/audio_c3/test_lyric_timing_f17.py
 """
 from __future__ import annotations
 
+# Skill 75 load governor: every heavy local job goes through it (see load_governor/).
+import os as _gos, sys as _gsys
+_gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..'))
+if _gcore not in _gsys.path:
+    _gsys.path.insert(0, _gcore)
+import load_governor as _LG  # noqa: E402
+
 import os
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
@@ -384,14 +391,15 @@ class WhisperSession:
     def transcribe_all(self,
                        tracks: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Every track one after another in this single loaded model."""
-        self._ensure_loaded()
-        out = []
-        for t in tracks or []:
-            segs = self.model(t.get("audio_path", "") or dict(t))
-            tx = {"task_id": (t or {}).get("task_id"),
-                  "audio_id": (t or {}).get("audio_id"), "segments": segs}
-            out.append(tx)
-        return out
+        with _LG.heavy_slot("transcription"):      # machine-wide gate: model load + decode
+            self._ensure_loaded()
+            out = []
+            for t in tracks or []:
+                segs = self.model(t.get("audio_path", "") or dict(t))
+                tx = {"task_id": (t or {}).get("task_id"),
+                      "audio_id": (t or {}).get("audio_id"), "segments": segs}
+                out.append(tx)
+            return out
 
     @staticmethod
     def words_of(tx: Dict[str, Any]) -> List[Dict[str, Any]]:

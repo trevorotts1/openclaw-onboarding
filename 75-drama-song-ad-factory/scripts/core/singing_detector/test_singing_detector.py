@@ -74,7 +74,7 @@ _imports = {n.names[0].name.split(".")[0] for n in ast.walk(_tree)
             if isinstance(n, ast.ImportFrom) and n.module}
 check("imports-numpy-subprocess-only",
       _imports <= {"subprocess", "numpy", "os", "sys", "audio_c3",
-                   "__future__"}, sorted(_imports))
+                   "load_governor", "__future__"}, sorted(_imports))
 check("no-direct-asr-module",
       not (_imports & {"whisper", "openai_whisper", "faster_whisper"}),
       sorted(_imports & {"whisper", "openai_whisper", "faster_whisper"}))

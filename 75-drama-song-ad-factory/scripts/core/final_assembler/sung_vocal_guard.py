@@ -50,6 +50,13 @@ from __future__ import annotations
 
 import os
 import re
+
+# Skill 75 load governor: every heavy local job goes through it (see load_governor/).
+import os as _gos, sys as _gsys
+_gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..'))
+if _gcore not in _gsys.path:
+    _gsys.path.insert(0, _gcore)
+import load_governor as _LG  # noqa: E402
 import sys
 import subprocess
 
@@ -246,8 +253,9 @@ def vocal_argv(master_path, ffmpeg="ffmpeg"):
     (nice -n 10 per manual M7), printing per-frame ebur128 summary lines on
     stderr for ``parse_ebur128``. No network, no provider.
     """
-    return ["nice", "-n", "10", ffmpeg, "-hide_banner", "-nostats", "-y",
-            "-i", str(master_path), "-vn", "-af", "ebur128", "-f", "null", "-"]
+    return _LG.ffmpeg_argv(["-hide_banner", "-nostats", "-y",
+                            "-i", str(master_path), "-vn", "-af", "ebur128",
+                            "-f", "null", "-"], ffmpeg)
 
 
 def run_vocal_scan(master_path, ffmpeg="ffmpeg", timeout=300):
@@ -258,8 +266,8 @@ def run_vocal_scan(master_path, ffmpeg="ffmpeg", timeout=300):
     """
     argv = vocal_argv(master_path, ffmpeg)
     try:
-        proc = subprocess.run(argv, capture_output=True, text=True,
-                              timeout=timeout, check=False)
+        proc = _LG.run_ffmpeg(argv, "ffmpeg-vocal-scan", capture_output=True,
+                              text=True, timeout=timeout, check=False)
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError("SCAN_UNAVAILABLE: %s" % (exc,)) from exc
     return argv, proc.stderr or ""

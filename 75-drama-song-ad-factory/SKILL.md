@@ -300,6 +300,28 @@ This skill never picks, forces or recommends a model, an alias or an agent.
   broke and what was trying to run. Do not retry quietly, skip the step,
   swap to another model, or carry on as if it worked.
 
+## Local load safety (enforced in code, not advice)
+
+Heavy local jobs (any ffmpeg render, encode, concat or decode, audio cutting and stem
+separation, the singing detector, transcription, image and video post-processing) go
+through `scripts/core/load_governor/`. Nothing can skip it: the call sites in this skill
+already route through it, and a test fails if one stops.
+
+- At most 2 heavy jobs run at once across the whole Mac, every window and process
+  together (file locks in `~/.cache/drama-song-ad-factory/heavy-slots/`; the cap can be
+  changed with `DSAF_HEAVY_SLOTS`).
+- A job never starts while system free memory is under 30%. It waits and re-checks every
+  15 seconds, prints one visible line when it waits, starts and ends, and after 20 minutes
+  fails loudly naming the job. It never runs anyway and never skips silently. The wait
+  time goes into the run receipt.
+- Every ffmpeg command carries `nice -n 10` and `-threads 4` (or a lower sized value).
+- Intermediate render files are deleted as soon as the next stage has used them and its
+  output is verified. Masters, SRT files, the song, stems needed for lip-sync and receipts
+  are never deleted. Every deletion is logged in the receipt; a failed one prints a WARNING.
+- Every KIE request (submits and status polls) shares one limiter: at most 20 per rolling
+  10 seconds across all processes. A 429 reply backs off and retries; a job is never dropped.
+- Never the OpenAI whisper stack. Transcription is faster-whisper through `lyric_timing.py`.
+
 ## Installation
 
 1. Follow `74-kie-live-adapter`/`INSTALL.md`'s teach-yourself-protocol rule:

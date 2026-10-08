@@ -42,6 +42,13 @@ import os
 import subprocess
 import sys
 
+# Skill 75 load governor: every heavy local job goes through it (see load_governor/).
+import os as _gos, sys as _gsys
+_gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..'))
+if _gcore not in _gsys.path:
+    _gsys.path.insert(0, _gcore)
+import load_governor as _LG  # noqa: E402
+
 TOOL_NAME = "frame_text"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "1.0.0"
@@ -119,8 +126,11 @@ def _resolve_extractor(extractor):
 
 def _run_ff(cmd, timeout=60):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=timeout, check=False)
+        if os.path.basename(str(cmd[0])).lower() == "ffprobe":   # light: skips the gate
+            return subprocess.run(cmd, capture_output=True, text=True,
+                                  timeout=timeout, check=False)
+        return _LG.run_ffmpeg(cmd, "frame-extract", capture_output=True,
+                              text=True, timeout=timeout, check=False)
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         raise FrameTextError(
             FRAME_EXTRACT_UNAVAILABLE, "ffmpeg/ffprobe unavailable: %s"

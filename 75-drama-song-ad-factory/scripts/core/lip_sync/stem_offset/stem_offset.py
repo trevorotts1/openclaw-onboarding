@@ -18,6 +18,13 @@ import array
 import os
 import subprocess
 import tempfile
+
+# Skill 75 load governor: every heavy local job goes through it (see load_governor/).
+import os as _gos, sys as _gsys
+_gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..', '..'))
+if _gcore not in _gsys.path:
+    _gsys.path.insert(0, _gcore)
+import load_governor as _LG  # noqa: E402
 import wave
 
 ENV_RATE = 1000          # envelope samples per second -> 1 ms resolution
@@ -84,7 +91,7 @@ def decode_mono(path, rate=8000, start=0.0, dur=None, ffmpeg="ffmpeg"):
         cmd = [ffmpeg, "-v", "error", "-y", "-threads", "4", "-ss",
                str(start)] + (["-t", str(dur)] if dur else []) + [
                "-i", path, "-ac", "1", "-ar", str(rate), tmp]
-        subprocess.run(cmd, check=True, timeout=300)
+        _LG.run_ffmpeg(cmd, "stem-offset-decode", check=True, timeout=300)
         with wave.open(tmp, "rb") as w:
             return list(array.array("h", w.readframes(w.getnframes())))
     finally:
