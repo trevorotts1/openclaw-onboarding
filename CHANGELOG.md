@@ -1,6 +1,12 @@
-## [v26.4.8]  -  2026-10-08  -  BND001: sung share judged only by Trevor's band (skill 75 v2.8.1)
+## [v26.4.8]  -  2026-10-08  -  batch: INB002 (3 units; skill 75 v2.8.1, skill 48 v2.0.8)
 
-Removes the hard 55 percent sung floor that batch #1652 kept; sung share is judged against the ad's own target with the 5/10 point band, and the first real singing is targeted at 15 percent of runtime (H6, supersedes #1637). See the skill 75 CHANGELOG v2.8.1.
+One batch release of 3 unit pull requests (merged together in one batch pull request; none were merged one at a time). Version, README and this entry are bumped once for the whole batch.
+
+- #1654: LPC001: lip-sync close-up in every reference set (skill 75 v2.8.1)
+- #1655: BND001: sung share judged only by Trevor's band, no 55% floor; H6 merged with H8 (skill 75 v2.8.1)
+- #1658: INF002: installers install with a note instead of failing; KIE lookup root cause on boxes with real keys (skills 05 v7.0.2, 29 v7.0.1, 32 v13.1.47, 35 v3.6.16, 36 v2.0.4, 47 v15.1.4, 48 v2.0.8, 59 v1.0.11, 70 v1.0.2, 74 v1.1.4; skill 06 QC deadline 600 s)
+
+Held out: #1639 (STD001) does not carry the Command Center v7.6.112 pin and has two failing checks; #1656 (G3) has a real client name in a skill 75 file and two failing checks; #1657 (W3-B-U1) fails the skill-version bump check; #1637 (H6) is superseded by #1655; #1623 (mint v26.4.6) is older than main.
 
 ## [v26.4.7]  -  2026-10-08  -  batch: mega MGB001 (24 units; skill 75 v2.8.0)
 

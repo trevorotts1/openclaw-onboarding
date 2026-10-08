@@ -9794,7 +9794,12 @@ PY
       [ -d "$_gskill" ] || continue
       _gname="$(basename "$_gskill")"
       case "$_gname" in *ARCHIVED*) continue ;; esac
-      if _greason="$(obs_verify_skill "$_gname" "$SKILLS_DIR")"; then
+      # INF002: per-skill QC deadline override. Skill 06 (ghl-install-pages) QC runs live
+      # builder checks and legitimately needs 10 minutes; every other skill keeps the
+      # default (OBS_QC_TIMEOUT_SECONDS, else 180 s) so a hung QC still cannot stall the roll.
+      _g_qc_to="${OBS_QC_TIMEOUT_SECONDS:-}"
+      case "$_gname" in 06-ghl-install-pages) _g_qc_to=600 ;; esac
+      if _greason="$(OBS_QC_TIMEOUT_SECONDS="$_g_qc_to" obs_verify_skill "$_gname" "$SKILLS_DIR")"; then
         echo "    ✓ verified-installed: $_gname"
       else
         echo "    ✗ NOT verified: $_gname -- ${_greason}"
