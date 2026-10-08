@@ -15,8 +15,10 @@ try:
     from . import intake as _intake
     from . import preflight as _preflight
 except ImportError:  # direct script run: python3 factory.py ...
-    from intake import evaluate as _eval  # type: ignore
-    from preflight import check as _check  # type: ignore
+    import intake as _intake  # type: ignore
+    import preflight as _preflight  # type: ignore
+    _eval = _intake.evaluate
+    _check = _preflight.check
     SCHEMA_VERSION = "blackceo.intake-preflight/envelope/v1"
     TOOL_VERSION = "0.1.0"
     EXIT = {"ok": 0, "waiting": 2, "parked": 3, "rejected": 4, "error": 1}
@@ -93,7 +95,9 @@ def main(argv=None):
     p.add_argument("--ref", action="append", default=None)
     p.add_argument("--require-tool", action="append", default=None)
     p.add_argument("--require-module", action="append", default=None)
-    p.add_argument("--profile", default="short-9x16-30s")
+    p.add_argument("--profile", default=_preflight.DEFAULT_PROFILES[0],
+                   help="Delivery profile; default is the version-2 "
+                        "drama-9x16-60s (see preflight.DEFAULT_PROFILES).")
     p.add_argument("--allowed-profiles", default=None)
     p.add_argument("--schema-version", default="blackceo.campaign/v1")
     p.add_argument("--allowed-schemas", default=None)

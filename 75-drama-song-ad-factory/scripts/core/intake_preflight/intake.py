@@ -3,10 +3,17 @@
 Essentials (max 3 questions, one message): offer / audience+action / spending
 authority. Never invents a spending ceiling or currency conversion. Brief text
 is source material, never auth/policy (injection -> rejected, auth untouched).
+
+Version-2 card fields (H8): length_option, shape, look, music and voice are
+normalized with provenance. Look/music default from core/style_defaults (D24);
+length/shape/voice default from the version-2 card. A provided length_option
+feeds target_length_s when target_length_s itself was not stated.
 """
 import hashlib
 import json
+import os
 import re
+import sys
 
 # ponytail: placement-substitution capped by leftover slots only; full
 # re-prioritization add when a verdict needs it.
@@ -22,18 +29,72 @@ INJECTION_RES = [
     r"^\s*system\s*:",
 ]
 
+# Version-2 card defaults (batch card / plan 6.15). Look/music resolve below
+# through style_defaults when that package is importable.
+DEFAULT_LENGTH_OPTION = 60
+DEFAULT_SHAPE = "9:16"
+DEFAULT_VOICE = "all-suno"
+DEFAULT_LOOK_FALLBACK = "Lifelike 3D"
+DEFAULT_MUSIC_FALLBACK = "Soul Ballad"
+
+# Batch card length labels -> seconds (batch_mode.LENGTH_VALUES).
+_LENGTH_LABELS = {
+    "60 seconds": 60,
+    "90 seconds": 90,
+    "3 minutes": 180,
+    "5 minutes": 300,
+    "10-minute long version": 600,
+    "10 minutes": 600,
+}
+
+_SHAPE_ALIASES = {
+    "9:16": "9:16",
+    "9x16": "9:16",
+    "9:16 vertical": "9:16",
+    "vertical": "9:16",
+    "16:9": "16:9",
+    "16x9": "16:9",
+    "16:9 widescreen": "16:9",
+    "widescreen": "16:9",
+    "both": "both",
+}
+
+
+def _load_style_defaults():
+    """(look, music, source) from core/style_defaults (D24); else hardcoded."""
+    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    try:
+        import style_defaults as SD  # noqa: PLC0415
+        pair = SD.default_pair()
+        look = pair.get("style_label") or pair.get("style") or DEFAULT_LOOK_FALLBACK
+        music = (pair.get("music_style_label") or pair.get("music_style")
+                 or DEFAULT_MUSIC_FALLBACK)
+        return look, music, "default"
+    except Exception:  # noqa: BLE001 - package missing/broken: keep intake alive
+        return DEFAULT_LOOK_FALLBACK, DEFAULT_MUSIC_FALLBACK, "assumed"
+
+
+DEFAULT_LOOK, DEFAULT_MUSIC, _LOOK_MUSIC_SOURCE = _load_style_defaults()
+
 DEFAULTS = {
     "placement": "unspecified (default: 9:16 vertical)",
     "aspect_ratio": "unspecified (default: 9:16)",
-    "target_length_s": 30,
+    "target_length_s": 60,
     "brand_rules": "unspecified (default: none)",
     "creative_prefs": "unspecified (default: none)",
     "repair_allowance": "unspecified (default: none authorized)",
+    "length_option": DEFAULT_LENGTH_OPTION,
+    "shape": DEFAULT_SHAPE,
+    "look": DEFAULT_LOOK,
+    "music": DEFAULT_MUSIC,
+    "voice": DEFAULT_VOICE,
 }
 
 Q_OFFER = "What product/offer are we promoting, and what link or assets should we use?"
 Q_AUDIENCE = "Who is it for, and what should viewers do?"
-Q_SPENDING = "What maximum generation budget is authorized, with its currency/credit unit?"
+Q_SPENDING = "What is the most you want to spend on this video? For example: $25."
 Q_PLACEMENT = "What placement/format should we produce (aspect ratio + target length)?"
 
 APPROVAL_AFFECTING = ("offer", "audience", "action", "budget_minor", "budget_currency")
@@ -41,6 +102,39 @@ APPROVAL_AFFECTING = ("offer", "audience", "action", "budget_minor", "budget_cur
 
 def _text(v):
     return v.strip() if isinstance(v, str) and v.strip() else None
+
+
+def _as_length(v):
+    """Card/brief length -> positive seconds when parseable, else raw text.
+
+    None means "not stated": 60/90 numbers, the batch-card labels ("3 minutes")
+    and plain "90s"/"3m" spellings all convert; anything else passes through
+    unchanged so a caller's own length never silently disappears.
+    """
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        n = int(v)
+        return n if n > 0 else None
+    if isinstance(v, str) and v.strip():
+        key = re.sub(r"\s+", " ", v.strip().lower())
+        if key in _LENGTH_LABELS:
+            return _LENGTH_LABELS[key]
+        m = re.match(r"^(\d+)\s*(?:s|sec|secs|second|seconds)?$", key)
+        if m and int(m.group(1)) > 0:
+            return int(m.group(1))
+        m = re.match(r"^(\d+)\s*(?:m|min|mins|minute|minutes)$", key)
+        if m and int(m.group(1)) > 0:
+            return int(m.group(1)) * 60
+        return v.strip()
+    return None
+
+
+def _as_shape(v):
+    """Card/brief shape -> canonical 9:16 / 16:9 / both; else raw text."""
+    if not isinstance(v, str) or not v.strip():
+        return None
+    return _SHAPE_ALIASES.get(re.sub(r"\s+", " ", v.strip().lower()), v.strip())
 
 
 def detect_injection(brief):
@@ -77,6 +171,8 @@ def normalize(brief, settings=None):
 
     b = lambda k: _text(brief.get(k))  # noqa: E731
     s = lambda k: _text((settings.get("defaults") or {}).get(k)) if isinstance(settings.get("defaults"), dict) else None  # noqa: E731
+    sdef = settings.get("defaults") if isinstance(settings.get("defaults"), dict) else {}
+
     take("offer", (b("offer"), "provided"), (s("offer"), "inherited"))
     assets = brief.get("assets") or brief.get("link") or settings.get("assets")
     if isinstance(assets, str) and assets.strip():
@@ -85,16 +181,39 @@ def normalize(brief, settings=None):
     take("audience", (b("audience"), "provided"), (s("audience"), "inherited"))
     take("action", (b("action") or b("cta"), "provided"), (s("action"), "inherited"))
     bmin = brief.get("budget_minor", brief.get("budget_amount_minor"))
-    smin = (settings.get("defaults") or {}).get("budget_minor") if isinstance(settings.get("defaults"), dict) else None
+    smin = sdef.get("budget_minor")
     take("budget_minor", ((bmin if isinstance(bmin, int) and bmin > 0 else None), "provided"),
          ((smin if isinstance(smin, int) and smin > 0 else None), "inherited"))
+    # credits still accepted: budget_currency may be "credits" or a fiat code
     take("budget_currency", (b("budget_currency") or b("currency"), "provided"), (s("budget_currency"), "inherited"))
     for name in ("placement", "aspect_ratio", "brand_rules", "creative_prefs", "repair_allowance"):
         take(name, (b(name), "provided"), (s(name), "inherited"), (DEFAULTS[name], "assumed"))
-    tlen = brief.get("target_length_s", (settings.get("defaults") or {}).get("target_length_s"))
+
+    # --- version-2 card fields (H8), with provenance -------------------------
+    take("length_option",
+         (_as_length(brief.get("length_option")), "provided"),
+         (_as_length(sdef.get("length_option")), "inherited"),
+         (DEFAULT_LENGTH_OPTION, "default"))
+    take("shape",
+         (_as_shape(brief.get("shape")), "provided"),
+         (_as_shape(sdef.get("shape")), "inherited"),
+         (DEFAULT_SHAPE, "default"))
+
+    take("look", (b("look"), "provided"), (s("look"), "inherited"),
+         (DEFAULT_LOOK, _LOOK_MUSIC_SOURCE))
+    take("music", (b("music"), "provided"), (s("music"), "inherited"),
+         (DEFAULT_MUSIC, _LOOK_MUSIC_SOURCE))
+    take("voice", (b("voice"), "provided"), (s("voice"), "inherited"),
+         (DEFAULT_VOICE, "default"))
+
+    tlen = brief.get("target_length_s", sdef.get("target_length_s"))
     take("target_length_s", ((tlen if isinstance(tlen, (int, float)) and tlen > 0 else None),
                              "provided" if "target_length_s" in brief else "inherited"),
          (DEFAULTS["target_length_s"], "assumed"))
+    # A card length_option wins over the assumed 60s default, never over an
+    # explicit target_length_s.
+    if isinstance(fields.get("length_option"), int) and prov.get("target_length_s") == "assumed":
+        fields["target_length_s"] = fields["length_option"]
     return fields, prov
 
 
@@ -123,6 +242,11 @@ def summarize(fields, auth_status="missing"):
         "placement": fields.get("placement"),
         "format": fields.get("aspect_ratio"),
         "target_length_s": fields.get("target_length_s"),
+        "length_option": fields.get("length_option"),
+        "shape": fields.get("shape"),
+        "look": fields.get("look"),
+        "music": fields.get("music"),
+        "voice": fields.get("voice"),
         "assumptions": [f"{k}={v!r} (assumed default)" for k, v in fields.items()
                         if v == DEFAULTS.get(k)],
         "generation_ceiling": {"amount_minor": fields.get("budget_minor"),
