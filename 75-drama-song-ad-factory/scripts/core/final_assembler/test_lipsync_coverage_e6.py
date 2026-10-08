@@ -196,11 +196,13 @@ def test_qc_record_and_gate():
           G.validate_record(rec_ok) is None, G.validate_record(rec_ok))
     # Shared gate: the same final_edit check required with the others.
     makers = {"lipsync-coverage": "final_assembler"}
-    gate = G.evaluate("run-e6", "final", [rec_bad], makers, ["final_edit"])
+    gate = G.evaluate("run-e6", "final", [rec_bad], makers, ["final_edit"],
+                      master={"chosen_length_s": 120, "measured_s": 118})
     check("shared gate FAILs the 2-minute 6-s ad", gate["gate"] == "FAIL",
           gate)
     gate_ok = G.evaluate("run-e6", "final", [rec_ok], makers,
-                         ["final_edit"])
+                         ["final_edit"],
+                         master={"chosen_length_s": 75, "measured_s": 73})
     check("shared gate PASSes the passing ad", gate_ok["gate"] == "PASS",
           gate_ok)
     # 17.6: maker's own review is refused by the same gate.

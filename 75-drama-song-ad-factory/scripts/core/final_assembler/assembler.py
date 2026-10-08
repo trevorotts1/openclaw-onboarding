@@ -69,6 +69,11 @@ try:
 except ImportError:  # direct script run from inside this directory
     from lipsync_coverage import check_lipsync_coverage  # type: ignore
 
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
+import master_length  # noqa: E402  (Part I I4)
+
 TOOL_NAME = "final_assembler"
 TOOL_VERSION = "1.0.1"
 SCHEMA_VERSION = "1.0.0"
@@ -809,7 +814,7 @@ def _run(cmd, timeout=600):
 
 
 def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
-             timeout=None, base_dir=".", dry_run=False):
+             timeout=None, base_dir=".", dry_run=False, chosen_length_s=None):
     """Full render: validate -> preflight -> plan -> ffmpeg -> verify.
 
     Returns receipt dict (also written to <output>.receipt.json unless
@@ -863,6 +868,25 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     except ValueError as exc:
         msg = str(exc)
         return _fail(msg.split(":")[0], next_action=msg, evidence={})
+    # Part I I4: the master (and its end card) ends by chosen length - 2 s.
+    # chosen_length_s comes from the caller or the timeline; absent = not
+    # checked here (qc_gate still demands it at final_edit).
+    chosen = chosen_length_s if chosen_length_s is not None \
+        else tl.get("chosen_length_s")
+    if chosen is not None:
+        try:
+            mp = master_length.plan(chosen)
+        except ValueError as exc:
+            return _fail("MASTER_LENGTH_BAD", next_action=str(exc), evidence={})
+        mc = master_length.check_master(chosen, plan["total_dur"])
+        ec = plan.get("endcard_start_s")
+        if mc["outcome"] != "ok" or (
+                ec is not None and ec >= mp["end_card_end_s"]):
+            return _fail(mc["reason_code"] if mc["outcome"] != "ok"
+                         else "MASTER_TOO_LONG",
+                         next_action=mc["detail"] + "; shorten the timeline "
+                         "so the end card finishes by %gs" % mp["end_card_end_s"],
+                         evidence=mc)
     # F8: the final sung/spoken line must end before the end card starts.
     # No endcard_start_s key on the timeline = not checked (backward
     # compatible); a bad line window already failed in load_timeline.
@@ -973,6 +997,11 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                                   "never the plain fps filter)"
                                   % fps_conform.DUP_FRAMES_CAP),
                      evidence=evid)
+    if chosen is not None:  # I4: the measured file, not only the plan
+        mc = master_length.check_master(chosen, vdur)
+        if mc["outcome"] != "ok":
+            return _fail(mc["reason_code"], next_action=mc["detail"],
+                         evidence=dict(evid, master=mc))
     if abs(vdur - plan["total_dur"]) > frame + 1e-3:
         return _fail("PLAN_DRIFT",
                      next_action="output duration off plan by >1 frame",
@@ -1007,6 +1036,8 @@ def main(argv=None):
     ap.add_argument("timeline", help="timeline.json path")
     ap.add_argument("output", help="output mp4 path")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--chosen-length-s", type=float, default=None,
+                    help="I4: chosen video length; master must be <= this - 2")
     ap.add_argument("--ffmpeg", default="ffmpeg")
     ap.add_argument("--ffprobe", default="ffprobe")
     ap.add_argument("--timeout", type=int, default=None,
@@ -1018,6 +1049,7 @@ def main(argv=None):
                                next_action="install ffmpeg+ffprobe")))
         return 3
     receipt = assemble(args.timeline, args.output, ffmpeg=args.ffmpeg,
+                       chosen_length_s=args.chosen_length_s,
                        ffprobe=args.ffprobe, timeout=args.timeout,
                        dry_run=args.dry_run)
     print(json.dumps(receipt, indent=2))

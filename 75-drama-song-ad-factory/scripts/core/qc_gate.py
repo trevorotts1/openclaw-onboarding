@@ -26,7 +26,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from master_length import check_master  # noqa: E402  (Part I I4)
 
 TOOL_NAME = "qc_gate"
 TOOL_VERSION = "1.0.0"
@@ -104,8 +108,13 @@ def validate_record(rec):
 
 def evaluate(run_id, stage, records, makers, required,
              critical=CRITICAL_CHECKS, profile_version=None,
-             expected_profile_version=None, expected_checker_version=None):
+             expected_profile_version=None, expected_checker_version=None,
+             master=None):
     """Gate decision. Returns dict with gate/reason_code/failures/repair_scope.
+
+    I4: when "final_edit" is required, master={"chosen_length_s", "measured_s"}
+    is mandatory and a master longer than chosen length minus 2 s fails
+    (MASTER_TOO_LONG); a missing/unmeasured master never passes.
 
     makers maps check_id -> maker identity (from artifact provenance).
     gate is PASS (advance), FAIL (targeted repair allowed) or BLOCKED
@@ -126,6 +135,19 @@ def evaluate(run_id, stage, records, makers, required,
         raise GateError("BAD_INPUT", "records must be a list")
     if not required:
         raise GateError("BAD_INPUT", "required checks must be non-empty")
+    if "final_edit" in required:
+        if not isinstance(master, dict):
+            fail("i4-master-length", "MASTER_LENGTH_MISSING",
+                 "final_edit needs chosen_length_s and the measured master")
+        else:
+            try:
+                m = check_master(master.get("chosen_length_s"),
+                                 master.get("measured_s"))
+            except ValueError as e:
+                m = {"outcome": "rejected",
+                     "reason_code": "MASTER_LENGTH_MISSING", "detail": str(e)}
+            if m["outcome"] != "ok":
+                fail("i4-master-length", m["reason_code"], m["detail"], True)
 
     by_check = {}
     seen = set()  # required checks with at least one offered record
@@ -193,7 +215,7 @@ def evaluate(run_id, stage, records, makers, required,
                 "failures": [], "repair_scope": [],
                 "critical_failures": []}
     codes = {f["code"] for f in failures}
-    structural = codes - {"CHECK_FAIL"}
+    structural = codes - {"CHECK_FAIL", "MASTER_TOO_LONG"}
     gate = "BLOCKED" if structural else "FAIL"
     # repair_scope names records to repair (17.7 targeted repair); bare
     # check-name failures (MISSING_QC/UNKNOWN_CHECK) have no record to fix.
@@ -237,7 +259,10 @@ def cmd_evaluate(ns):
         res = evaluate(ns.run, ns.stage, records, makers, required,
                        critical=critical, profile_version=profile_version,
                        expected_profile_version=ns.expect_profile,
-                       expected_checker_version=ns.expect_checker)
+                       expected_checker_version=ns.expect_checker,
+                       master=({"chosen_length_s": ns.chosen_length_s,
+                                "measured_s": ns.master_s}
+                               if ns.chosen_length_s is not None else None))
     except GateError as e:
         return envelope("evaluate", "error", e.code, str(e),
                         run_id=ns.run, stage=ns.stage), EXIT["error"]
@@ -277,6 +302,10 @@ def _cli(argv=None):
                    help="comma-separated critical checks (default: lyrics,text_product)")
     a.add_argument("--profile", default="",
                    help="acceptance-profile.json path (optional)")
+    a.add_argument("--chosen-length-s", type=float, default=None,
+                   help="I4: chosen video length; required with final_edit")
+    a.add_argument("--master-s", type=float, default=None,
+                   help="I4: measured master length in seconds")
     a.add_argument("--expect-profile", default=None)
     a.add_argument("--expect-checker", default=None)
     ns = p.parse_args(argv)
