@@ -9,7 +9,10 @@ Suno never settled into singing. This module is the fix, in three parts:
      line by line: at most 3 blocks for a 60-150 s ad, one each at the
      OPEN (first section), the TURN (middle of the arc) and the CTA (last
      section). Extra spoken blocks are demoted to sung stanzas and re-set
-     like any other sung lines.
+     like any other sung lines. The same demotion enforces the lint rules:
+     a spoken block outside open/turn/CTA, or closer than MIN_SUNG_BETWEEN
+     sung blocks to the previous spoken block, is demoted too, so
+     build_sheet's own output always passes its own lint.
   2. SINGABLE RE-SET. Every sung stanza is re-set as singable lines --
      even line lengths (3..13 syllables, stanza spread <= 7) -- by cutting
      at phrase boundaries and merging adjacent short phrases. Every script
@@ -127,6 +130,10 @@ def parse_sheet(text):
             blocks[-1]["lines"].append(line)
         else:
             blocks.append({"tag": "", "lines": [line]})   # pre-tag opener
+    # a header-only section carries no words: drop it (it is not a block, it
+    # must not separate two spoken moments, and it must never reach the
+    # re-set as an empty stanza)
+    blocks = [b for b in blocks if b["lines"]]
     # merge consecutive spoken blocks into one spoken moment
     out = []
     for blk in blocks:
@@ -152,7 +159,9 @@ def syllables(word):
     """Rough syllable count: vowel groups, silent-e trimmed."""
     w = re.sub(r"[^a-z]", "", (word or "").lower())
     if not w:
-        return 0
+        # a digit/symbol token (a count-in, a year) is still one beat --
+        # returning 0 made a digit-only line fail the SYL_MIN lint band
+        return 1 if word else 0
     groups = re.findall(r"[aeiouy]+", w)
     n = len(groups)
     if n > 1 and w.endswith("e") and groups[-1] == "e":
@@ -177,6 +186,8 @@ def rhyme_key(word):
 
 def rhymes(a, b):
     """Exact rhyme, near-rhyme (shared key tail >= 2), or same word."""
+    if a and b and a == b:
+        return True                     # identical rhyme (the ECHO device)
     ka, kb = rhyme_key(a), rhyme_key(b)
     if not ka or not kb:
         return False
@@ -196,14 +207,24 @@ def _phrases(line):
 
 
 def _split_phrase(phrase):
-    """Split one over-long phrase into two halves at a word boundary."""
-    w = words(phrase)
-    if len(w) < 2:
-        return [phrase]
-    mid = len(w) // 2
-    low = " ".join(w[:mid])
-    high = " ".join(w[mid:])
-    return [low, high]
+    """Split one over-long phrase at word boundaries until every part is short.
+
+    Halving once is not enough: a 40-syllable run-on halves to two 20
+    syllable lines, which the lint (SYL_MAX) rejects -- so keep splitting
+    each part that is still above SPLIT_PHRASE_ABOVE. Words stay in order.
+    """
+    out, todo = [], [phrase]
+    while todo:
+        p = todo.pop(0)
+        w = words(p)
+        if len(w) < 2 or line_syllables(p) <= SPLIT_PHRASE_ABOVE:
+            if w:
+                out.append(p)
+            continue
+        mid = len(w) // 2
+        todo.insert(0, " ".join(w[mid:]))
+        todo.insert(0, " ".join(w[:mid]))
+    return out
 
 
 def _regroup(lines):
@@ -238,8 +259,10 @@ def _rebalance(lines, spread=METER_SPREAD):
     line folds back into the one before it. Never reorders or drops words.
     """
     for _ in range(10):
+        if len(lines) < 2:                    # nothing to spread (also empty)
+            return lines
         syls = [line_syllables(l) for l in lines]
-        if max(syls) - min(syls) <= spread or len(lines) < 2:
+        if max(syls) - min(syls) <= spread:
             return lines
         i = syls.index(min(syls))
         if i + 1 < len(lines):
@@ -332,6 +355,62 @@ def budget_spoken(blocks, seconds):
     return out, plan
 
 
+def enforce_spoken_rules(blocks, plan):
+    """Demote every spoken block the lint would reject. Returns blocks.
+
+    The lint enforces two rules the count-based budget never reaches:
+    placement (open = first block, cta = last, turn = inside TURN_WINDOW)
+    and the MIN_SUNG_BETWEEN floor between consecutive spoken blocks. This
+    applies the same two rules as corrective action. Demotion keeps every
+    line (the block is re-set as a sung stanza afterwards) and never
+    changes the block count, so positions stay fixed: one pass per rule is
+    enough, and each demotion strictly lowers the spoken count, so this
+    terminates. The receipt (kept / demoted / slots) is rebuilt to match
+    the sheet the lint will actually see.
+    """
+    n = len(blocks)
+    lo, hi = TURN_WINDOW
+
+    def demote(i):
+        blocks[i] = {"tag": "sung", "lines": list(blocks[i]["lines"]),
+                     "demoted": True}
+        if i not in plan["demoted"]:
+            plan["demoted"].append(i)
+
+    # placement
+    for i, blk in enumerate(blocks):
+        if blk["tag"] != SPOKEN_TAG or i in (0, n - 1):
+            continue
+        pos = i / float(max(n - 1, 1))
+        if not lo <= pos <= hi:
+            demote(i)
+
+    # alternation: demote the later block of a too-close pair; the gap for
+    # every following pair only grows, so one left-to-right pass settles it
+    prev = None
+    for i, blk in enumerate(blocks):
+        if blk["tag"] != SPOKEN_TAG:
+            continue
+        if prev is not None and i - prev - 1 < MIN_SUNG_BETWEEN:
+            demote(i)
+            continue
+        prev = i
+
+    plan["kept"] = [i for i, b in enumerate(blocks) if b["tag"] == SPOKEN_TAG]
+    slots = {}
+    for i, blk in enumerate(blocks):
+        if blk["tag"] != SPOKEN_TAG:
+            continue
+        if i == 0:
+            slots["open"] = i
+        if i == n - 1:
+            slots["cta"] = i
+        if i not in (0, n - 1) and lo <= i / float(max(n - 1, 1)) <= hi:
+            slots.setdefault("turn", i)
+    plan["slots"] = slots
+    return blocks
+
+
 # ---- singability lint -----------------------------------------------------
 
 def word_chain_intact(original_text, new_text):
@@ -381,8 +460,10 @@ def lint_singability(blocks, seconds, original_text=None, new_text=None):
                        "only %d sung blocks between spoken blocks at %d"
                        % (sung_since, i))
             sung_since = 0
-        else:
-            sung_since = (sung_since or 0) + 1
+        elif sung_since is not None:
+            # sung blocks before the FIRST spoken block are the sheet's
+            # opening, not a gap between two spoken blocks
+            sung_since += 1
 
     for bi, blk in enumerate(blocks):
         if blk["tag"] == SPOKEN_TAG:
@@ -434,7 +515,10 @@ def build_sheet(sheet_text, seconds):
     """
     secs = _number(seconds, "seconds")
     blocks = parse_sheet(sheet_text)
+    if not blocks:
+        raise LyricStructureError("EMPTY_SHEET", "sheet has no lyric lines")
     blocks, plan = budget_spoken(blocks, secs)
+    blocks = enforce_spoken_rules(blocks, plan)
 
     out_blocks, echoes = [], 0
     for blk in blocks:
@@ -567,6 +651,47 @@ def selftest():
             checks[-1] = "reject:%r" % (str(bad)[:20],)
         except Exception as e:                   # noqa: BLE001
             expect("reject:%r" % (str(bad)[:20],), False, repr(e))
+
+    # 7. QC W-G-002 FAIL regressions: no crash, and the builder's own
+    #    output always passes its own lint (convergence on every sheet the
+    #    two FAIL rounds rejected).
+    regressions = [
+        ("empty-section", 90,
+         "[Spoken Word]\nopen line\n\n[Verse]\n\n"),
+        ("within-budget-pair", 90,
+         "[Spoken Word]\nopen line here\n\n[Verse]\n"
+         "sing one line here\nsing two lines now\n\n"
+         "[Spoken Word]\ncta line here\n"),
+        ("four-spoken-300s", 300, "".join(
+            "[Spoken Word]\nSpoken number %d words here.\n\n"
+            "[Verse]\nsing line %d here\nmore singing %d\n\n"
+            % (i + 1, i + 1, i + 1) for i in range(4))),
+        ("cta-then-chorus", 90,
+         "[Spoken Word]\nCome sit with us at the site.\n\n"
+         "[Verse]\nsing one line here\nsing two lines now\n\n"
+         "[Spoken Word]\nMiddle turn block words.\n\n"
+         "[Verse]\nmore sung lines here\nfinal line of song\n\n"
+         "[Spoken Word]\nThe seat is saved, Sis.\n\n"
+         "[Chorus]\noutro chorus line\nlast chorus line\n"),
+        ("digit-ending", 90, "[Verse]\nsing line 1 here\nmore singing 1\n"),
+        ("long-run-on", 90, "[Verse]\n" + "ba " * 40 + "\n"),
+        ("verse-first", 90,
+         "[Verse]\nsoftness on the floor\n\n"
+         "[Spoken Word]\ncome sit with us now\n\n"
+         "[Verse]\nrest does not need earning\n"),
+        ("digit-only-line", 90, "[Verse]\n1 2 3\n\n[Verse]\nrest is the floor\n"),
+    ]
+    for rname, rsecs, rtext in regressions:
+        rr = build_sheet(rtext, rsecs)
+        expect("regress:" + rname,
+               rr["outcome"] == "ok" and rr["lint"]["verdict"] == "PASS",
+               "; ".join(rr["lint"]["reasons"][:2]))
+        expect("regress-chain:" + rname,
+               rr["lint"].get("word_chain_intact") is True)
+        # feeding the built sheet back must stay ok (no reject loop)
+        rr2 = build_sheet(rr["sheet"], rsecs)
+        expect("regress-rerun:" + rname, rr2["outcome"] == "ok",
+               "; ".join(rr2["lint"]["reasons"][:2]))
 
     print("lyric_structure selftest: %s (%d checks, %d failures)"
           % ("PASS" if not fails else "FAIL", len(checks), len(fails)))
