@@ -27,6 +27,7 @@ if _CORE not in sys.path:
 
 import music_styles as _MS      # noqa: E402
 import spoken_share as _SS      # noqa: E402
+import sung_hook as _SH         # noqa: E402
 
 TOOL_NAME = "suno_recipe"
 TOOL_VERSION = "1.0.0"
@@ -94,8 +95,12 @@ def parse_lyrics(text):
     return sheet
 
 
-def check_lyric_sheet(sheet, client_text):
-    """Rules 1-3 on the sheet. Returns a list of errors (empty = pass)."""
+def check_lyric_sheet(sheet, client_text, length_s=None):
+    """Rules 1-3 on the sheet. Returns a list of errors (empty = pass).
+
+    With length_s (delivered seconds) the I8 count is enforced too: the hook
+    is sung exactly sung_hook.hook_count(length_s) times.
+    """
     errs = []
     if not sheet:
         return ["no tagged sections: every section must be Sung or Spoken"]
@@ -119,7 +124,15 @@ def check_lyric_sheet(sheet, client_text):
     client = set(_words(client_text))
     if not any(h and set(h) <= client for h in hooks):
         errs.append("repeated hook is not built from the client's own words")
+    elif length_s is not None:
+        best = max(hooks, key=keys.count)
+        errs += _SH.check_sheet_count(sheet, best, length_s)
     return errs
+
+
+def hook_target(style_id, length_s):
+    """I8 hook repeats for a style and delivered length (0 = exempt voiceover)."""
+    return 0 if is_exempt(style_id) else _SH.hook_count(length_s)
 
 
 def style_text(style_id, sheet):
@@ -143,7 +156,7 @@ def check_style_text(text):
     return []
 
 
-def prepare(style_id, sheet, client_text):
+def prepare(style_id, sheet, client_text, length_s=None):
     """THE gate every Suno style goes through. Returns style + lyrics text.
 
     Exempt (voiceover) -> {"exempt": True}. Unknown id -> fail closed.
@@ -153,14 +166,15 @@ def prepare(style_id, sheet, client_text):
     if style_id not in suno_style_ids():
         raise RecipeError("UNKNOWN_STYLE", "%r is not a Suno style and not "
                           "exempt; add it to music_styles" % (style_id,))
-    errs = check_lyric_sheet(sheet, client_text)
+    errs = check_lyric_sheet(sheet, client_text, length_s)
     if errs:
         raise RecipeError("LYRICS_REJECTED", "; ".join(errs))
     return {"exempt": False, "style": style_text(style_id, sheet),
             "lyrics": render_lyrics(sheet)}
 
 
-def guard_request(style_text_, lyrics_text, style_id=None, client_text=None):
+def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
+                  length_s=None):
     """Seam for music_director.build_generate_request. Raises RecipeError.
 
     With style_id: the full recipe is enforced (exempt id passes untouched).
@@ -178,18 +192,20 @@ def guard_request(style_text_, lyrics_text, style_id=None, client_text=None):
     if style_id not in suno_style_ids():
         raise RecipeError("UNKNOWN_STYLE", repr(style_id))
     errs = check_style_text(style_text_)
-    errs += check_lyric_sheet(parse_lyrics(lyrics_text), client_text or "")
+    errs += check_lyric_sheet(parse_lyrics(lyrics_text), client_text or "", length_s)
     if errs:
         raise RecipeError("RECIPE_BYPASSED", "; ".join(errs))
 
 
-def score_take(take):
+def score_take(take, hook_text=None, words=None, length_s=None):
     """Rule 4: judge a take from MEASURED segments only.
 
     take = {"segments": [{"delivery", "start", "end", "source": "measured"}]}.
     A take with no segments, or any segment not measured (labels), fails.
     Checks the spoken share band (core/spoken_share) and first singing by 15%
-    of runtime on the 5/10 band. Returns {"verdict": PASS|FLAG|FAIL, "reasons"}.
+    of runtime on the 5/10 band. With hook_text, Suno aligned words and
+    length_s, the sung hook count is measured too (I8, Trevor band) and the
+    receipt is returned under "hook". Returns {"verdict": PASS|FLAG|FAIL, "reasons"}.
     """
     segs = (take or {}).get("segments")
     if not segs:
@@ -213,8 +229,18 @@ def score_take(take):
                                                    FIRST_SING_TARGET * 100, gap))
         elif gap > ACCEPT_PTS:
             flags.append("first singing %.1f points past target" % gap)
-    return _res("FAIL" if reasons else ("FLAG" if flags else "PASS"),
-                reasons + flags)
+    receipt = None
+    if hook_text is not None:
+        receipt = _SH.measure(hook_text, words or [], segs, _SH.hook_count(length_s))
+        if receipt["verdict"] == "FAIL":
+            reasons.append("hook sung %d of %d times %s" % (
+                receipt["measured"], receipt["target"], receipt["reason"]))
+        elif receipt["verdict"] == "FLAG":
+            flags.append("hook sung %d of %d times" % (receipt["measured"], receipt["target"]))
+    out = _res("FAIL" if reasons else ("FLAG" if flags else "PASS"), reasons + flags)
+    if receipt:
+        out["hook"] = receipt
+    return out
 
 
 def _res(verdict, reasons):

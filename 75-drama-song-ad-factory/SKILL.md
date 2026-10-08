@@ -97,6 +97,25 @@ over the song, id `velvet_voiceover`), which keeps its own flow. Almost
 nobody asks for it. Every other style, including the All Suno voice default,
 uses the recipe.
 
+## Sung hook (I8)
+
+Every sung style carries ONE catchy hook: 4-10 words, only the client's own
+words (protected names exact), singable, the brand-promise payoff line. The
+hook is sung `count = clamp(1 + floor(L / 25), 2, 12)` times, where L is the
+delivered length in seconds (chosen length minus 2).
+
+| Delivered | 28 s | 58 s | 88 s | 118 s | 178 s | 298 s | 598 s |
+|-----------|------|------|------|-------|-------|-------|-------|
+| Hook sung | 2    | 3    | 4    | 5     | 8     | 12    | 12    |
+
+First hook by 15% of runtime, last hook near the end (about 90%) before the
+call to action, the rest evenly spaced. Build the sheet with
+`core/sung_hook.build_lyric_sheet`. After a take is chosen, count the hook
+occurrences that were actually sung (Suno timestamps plus the singing
+detector): count met = accept, one short = accept with a flag, two or more
+short = regenerate. The receipt shows hook text, target, measured count and
+times. The Velvet Voiceover version is exempt.
+
 ## Intake rules (from the build directive, section 24.3)
 
 1. Examine the supplied brief, approved project records, links/assets and
