@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.8.4
+version: v2.8.5
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -197,6 +197,18 @@ brand names (for example Stale, Stop Stale) are protected words:
 - Build captions with `protected_names.build_captions(sheet, aligned_words)`;
   QC fails any caption mismatch (`delivery_variants.checks.check_captions(...,
   protected=...)`): "the house went still" for "Stale" is a FAIL.
+- **Caption and lyric QC run on measured timing (Part F F18):** word timings
+  come from the ONE transcription step (`audio_c3/lyric_timing.provide_word_timings`,
+  F17 — Suno alignedWords → faster-whisper local → client cloud STT). Pass
+  that receipt as `timing=` and the caption check builds its cue clock from
+  the measured timestamps (text still the sheet's own, `caption_timing.captions`,
+  reported as "cue timing measured from <source>") while the lyric check
+  judges coverage, critical words and ad-libs from the measured words
+  (`caption_timing.lyric_observed`, `lyric_diff.observed_source =
+  "measured-timing:<source>"`). Timing the check cannot use is UNAVAILABLE,
+  never a PASS; without a `timing` argument each check keeps its text
+  comparison, and a run measures first via `caption_timing.captions(sheet)` /
+  `lyric_observed(approved_lines)`.
 
 ## Paid generation (what this skill may do)
 

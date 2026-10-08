@@ -32,6 +32,7 @@ import spend_ledger as L
 import protected_names
 import words_match
 import words_fit
+import target_engine as TE
 
 TOOL_NAME = "music_director"
 TOOL_VERSION = "1.0.0"
@@ -321,16 +322,53 @@ def score_candidate(candidate, approved_lines, target_tempo_bpm,
             "reasons": reasons + why, "lyric_diff": diff}
 
 
-def select_best(scored):
-    """Highest-total PASS candidate; handback when none passes."""
+def target_receipt(sc):
+    """G4 seam: the target engine's band as a receipt block. Bands and
+    numbers come from core/spoken_share through target_engine -- never a
+    second band here. Past FLAG_PTS the take is redone, never cancelled."""
+    flags = []
+    if sc["band"] == TE.BAND_FLAG:
+        flags.append("FLAG: %.4g points off target (band %d accept / %d "
+                     "flag / past %d redo): accepted with a flag"
+                     % (sc["worst_pts"], TE.ACCEPT_PTS, TE.FLAG_PTS,
+                        TE.FLAG_PTS))
+    verdict = {TE.BAND_ACCEPT: TE.VERDICT_ACCEPT,
+               TE.BAND_FLAG: TE.VERDICT_FLAG,
+               TE.BAND_REDO: TE.VERDICT_REDO}[sc["band"]]
+    return {"verdict": verdict, "band": sc["band"],
+            "worst_pts": sc["worst_pts"], "flags": flags}
+
+
+def select_best(scored, target_metrics=None, targets=None):
+    """Highest-total PASS candidate; handback when none passes.
+
+    With ``target_metrics`` (the winning take's measured metrics) the G4
+    target engine bands the pick against ``targets`` (default: the
+    spoken_share target set). The result then carries ``target`` =
+    {verdict: ACCEPT | ACCEPT_WITH_FLAG | REDO, band, worst_pts, flags}:
+    within 5 points accept, past 5 up to 10 accept WITH the flag in the
+    receipt, past 10 REDO (regenerate the take -- never cancel, never
+    keep-the-closest)."""
     passing = [s for s in scored if s["verdict"] == "PASS"]
     if not passing:
         return {"winner": None,
                 "note": "no candidate passed; bounded handback with evidence"}
     best = max(passing, key=lambda s: s["total"])
-    return {"winner": best,
-            "note": "selected %s at total %.4f"
-                    % (best["candidate_id"], best["total"])}
+    out = {"winner": best,
+           "note": "selected %s at total %.4f"
+                   % (best["candidate_id"], best["total"])}
+    if target_metrics is not None:
+        try:
+            sc = TE.score(TE.normalize_metrics(target_metrics),
+                          TE.targets() if targets is None else targets)
+        except TE.TargetEngineError as exc:
+            raise ValueError("target_metrics: %s" % exc)
+        out["target"] = target_receipt(sc)
+        if sc["band"] == TE.BAND_REDO:
+            out["note"] += ("; REDO: %.4g points off target (past %d), "
+                            "regenerate the take"
+                            % (sc["worst_pts"], TE.FLAG_PTS))
+    return out
 
 
 def lock_persona(winner, persona_id=""):
