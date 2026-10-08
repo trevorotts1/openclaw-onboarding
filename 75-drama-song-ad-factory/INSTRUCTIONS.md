@@ -215,6 +215,15 @@ run each argv without a shell). Never type them free hand or send them as one
 line: one block per question, one numbered option per line, a blank line
 between questions. See `references/choice-card-spec.md` section 2.1.
 
+**Ask them one at a time (I7).** Do not send the whole card. Run
+`factory.py card --step` (add one `--reply <what the client said>` per answer so
+far, in order; Telegram: `--format openclaw-json --target <chat id>`), send
+only the one message it prints, wait for the client's answer, run it again
+with that reply added, and repeat until it prints the recap. When the client
+replies yes to the recap, the command prints "Locked in" (JSON `done: true`)
+and you start. Each message holds one question, a one-sentence why, numbered
+options, and the RECOMMENDED option with its reason. See spec section 2.2.
+
 **The card, in order:**
 
 | Row | Values | Default |

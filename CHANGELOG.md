@@ -1,3 +1,5 @@
+## [v26.4.12]  -  2026-10-08  -  feat(drama-song 75): I7 intake asked one question at a time, with why, options and a recommendation, then a recap
+
 ## [v26.4.7]  -  2026-10-08  -  fix(drama-song 75): H9 readable six-question intake card, newlines kept through chat and Telegram sends
 
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…

@@ -6,6 +6,17 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.6] - 2026-10-08 - I7 one question at a time
+
+- `intake_card.conversation(replies)` and `factory.py card --step --reply ...`:
+  the intake is a conversation. Each message holds one question, a
+  one-sentence why, numbered options one per line, the RECOMMENDED option with
+  its reason; then it waits. After the sixth answer, a recap and a request for
+  "yes"; a line number reopens just that question. Same code in claude-nine
+  and OpenClaw (Telegram: `--format openclaw-json`).
+- Test: `choice_card/intake_card/test_intake_step_i7.py`.
+---
+
 ## [v2.6.1] - 2026-10-08 - H9 readable intake card
 
 - New `scripts/core/choice_card/intake_card/`: builds the six intake questions
