@@ -23,6 +23,11 @@ Rules:
 - Video is the master duration; the song is laid under it
   (trimmed/padded to the video duration). Clip audio is ignored:
   silent-video default with the song as soundtrack.
+- E8/bed_mixer: when the timeline carries spoken lines and an
+  instrumental path, assemble first builds the continuous music bed
+  (core.audio_c3.bed_mixer.attach_mix, one function call) and lays THAT
+  under the video instead of the raw song; spoken lines never play over
+  silence or a looped scrap.
 - Every cut point is rounded ONCE to the frame grid; offsets
   accumulate in integer frames so drift cannot compound.
 - xfade overlaps consume frames from the joined segments.
@@ -353,6 +358,46 @@ def _run(cmd, timeout=600):
         raise RuntimeError(f"FFMPEG_UNAVAILABLE: {exc}") from exc
 
 
+def _bed_mix_step(tl, base, ffmpeg="ffmpeg", dry_run=False):
+    """E8: build the continuous music bed when spoken lines exist.
+
+    One seam, one call (core.audio_c3.bed_mixer.attach_mix). The timeline
+    carries the extra keys spoken_lines, instrumental_path and optionally
+    tempo_bpm / beat_interval_s / duck_db / song/instrumental durations.
+    Returns (song_path_to_use, receipt) - song_path_to_use is the rendered
+    bed wav on success, the original song on noop, and None is never
+    returned (errors raise so assemble reports them fail-closed).
+    """
+    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    import bed_mixer  # sibling module: core/audio_c3/bed_mixer.py
+
+    tl_ext = dict(tl)
+    for key in ("spoken_lines", "instrumental_path", "tempo_bpm",
+                "beat_interval_s", "duck_db", "song_duration_s",
+                "instrumental_duration_s", "song_id",
+                "instrumental_song_id", "instrumental_audio_id"):
+        if key in tl and tl[key] is not None:
+            tl_ext[key] = tl[key]
+    try:
+        receipt = bed_mixer.attach_mix(
+            tl_ext, base, song_path=tl.get("song_path"), ffmpeg=ffmpeg,
+            dry_run=dry_run,
+        )
+    except bed_mixer.BedError as exc:
+        # fail closed, reason code first (BED_LOOPED / BED_SILENCE / ...)
+        raise RuntimeError(str(exc)) from exc
+    if receipt.get("outcome") == "error":
+        raise RuntimeError(
+            "%s: %s" % (receipt.get("reason_code", "BED_MIX_ERROR"),
+                        receipt.get("next_action", "")))
+    if receipt.get("outcome") == "ok" and not dry_run \
+            and receipt.get("evidence", {}).get("bed_path"):
+        return receipt["evidence"]["bed_path"], receipt
+    return tl.get("song_path"), receipt
+
+
 def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
              timeout=None, base_dir=".", dry_run=False):
     """Full render: validate -> preflight -> plan -> ffmpeg -> verify.
@@ -393,6 +438,20 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         s["src"] = abspath(s["src"])
     if plan["song_path"]:
         plan["song_path"] = abspath(plan["song_path"])
+    # E8: spoken lines exist -> render the continuous bed and lay that
+    # under the video (one seam call bed_mixer.attach_mix).
+    bed_receipt = None
+    if tl.get("spoken_lines") and tl.get("instrumental_path"):
+        try:
+            bed_song, bed_receipt = _bed_mix_step(tl, base, ffmpeg=ffmpeg,
+                                                  dry_run=False)
+        except (RuntimeError, ValueError) as exc:
+            return _fail("BED_MIX_FAILED", next_action=str(exc)[:500],
+                         evidence={"spoken_lines": True,
+                                   "instrumental_path": str(
+                                       tl.get("instrumental_path"))})
+        if bed_song:
+            plan["song_path"] = abspath(bed_song)
     if timeout is None:
         _threads, _nice, timeout = size_ffmpeg(
             plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
@@ -424,6 +483,13 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     evid = {"planned_dur": plan["total_dur"], "output_dur": vdur,
             "total_frames": plan["total_frames"], "argv": argv,
             "timeout_s": timeout}
+    if bed_receipt:
+        evid["bed_mix"] = {
+            "reason_code": bed_receipt.get("reason_code"),
+            "bed_path": bed_receipt.get("evidence", {}).get("bed_path"),
+            "duck_db": (bed_receipt.get("evidence", {})
+                        .get("plan", {}).get("duck_db")),
+        }
     if abs(vdur - plan["total_dur"]) > frame + 1e-3:
         return _fail("PLAN_DRIFT",
                      next_action="output duration off plan by >1 frame",

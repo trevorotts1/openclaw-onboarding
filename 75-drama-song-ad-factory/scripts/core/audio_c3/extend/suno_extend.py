@@ -111,7 +111,16 @@ _CATS = {}
 def _catalog_path(catalog_path=None):
     if catalog_path is not None:
         return Path(catalog_path)
-    # core/audio_c3/extend/suno_extend.py -> repo root
+    # Repo root: first parent that carries 68-kie-audio/models.json
+    # (E8: the old scripts/onboarding guess never resolved, so a
+    # no-arg call could not find the work copy; walked up now).
+    probe = Path(__file__).resolve().parent
+    for _ in range(8):
+        candidate = probe / "68-kie-audio" / "models.json"
+        if candidate.is_file():
+            return candidate
+        probe = probe.parent
+    # keep the historic shape as the miss message path
     return Path(__file__).resolve().parents[3] / "onboarding" / "68-kie-audio" / "models.json"
 
 
@@ -505,11 +514,144 @@ def top_up(take_s, target_s, extend_fn, audio_id, callback_url,
     })
 
 
+# --- E8: full-length instrumental of the SAME song --------------------------
+GENERATE_CATALOG_ID = "suno-generate"
+
+#: The bed the mixer lays under every spoken line. Reuses the Skill 74
+#: path: submit/wait/save via ``generate_fn`` (injected; tests mock it),
+#: then extend rounds top the take up to the song's full length through
+#: the same ``top_up`` driver above. Same song = same style text, title,
+#: version and vocal gender surface; instrumental=True and no lyrics
+#: (catalog: instrumental_true_prohibits prompt/vocal_gender on extend).
+
+
+def plan_instrumental(song, target_s=None, catalog_path=None,
+                      callback_url="https://example.invalid/cb",
+                      max_rounds=MAX_EXTEND_ROUNDS):
+    """Plan one full-length Suno instrumental of the SAME song.
+
+    ``song`` is the song master record: duration_s required; style_text,
+    title, version (Suno model version), song_id and tempo_bpm read when
+    present. Returns the generate payload (Skill 74's ``submit`` input),
+    the continue_at seed and the planned timing map - the caller runs it
+    through ``generate_instrumental``. No transport here.
+    """
+    if not isinstance(song, dict):
+        raise ExtendError("song: record required")
+    target = _seconds(target_s if target_s is not None
+                      else song.get("duration_s"), "target_s")
+    style = _text(song.get("style_text") or song.get("style"),
+                  "song.style_text")
+    title = _text(song.get("title") or "instrumental bed",
+                  "song.title")
+    version = song.get("version")
+    ver = DEFAULT_EXTEND_VERSION if version is None else version
+    if ver not in version_enum(GENERATE_CATALOG_ID, catalog_path):
+        raise ExtendError(
+            "unknown-version: %r not in %s enum %s"
+            % (ver, GENERATE_CATALOG_ID, list(version_enum(GENERATE_CATALOG_ID, catalog_path))))
+    gen_route = catalog(catalog_path)[GENERATE_CATALOG_ID]["route_models"]["current"].split()[0]
+    gen_endpoint = catalog(catalog_path)[GENERATE_CATALOG_ID]["route_models"].get("current_endpoint")
+    if not isinstance(gen_endpoint, str) or not gen_endpoint.strip():
+        raise ExtendError("catalog-endpoint-missing: %s" % GENERATE_CATALOG_ID)
+    req = {
+        "endpoint": gen_endpoint,
+        "model": gen_route,
+        "callBackUrl": callback_url,
+        "input": {
+            "custom_mode": True,
+            "instrumental": True,
+            "model": ver,
+            "style": style,
+            "title": title,
+        },
+    }
+    bpm = song.get("tempo_bpm")
+    payload_note = None
+    if bpm is not None:
+        bpm = float(bpm)
+        if not math.isfinite(bpm) or bpm <= 0:
+            raise ExtendError("tempo_bpm: must be greater than 0 (%r)" % (bpm,))
+        payload_note = "beat-interval %.6f s" % (60.0 / bpm)
+    plan = {
+        "schema_version": SCHEMA_VERSION,
+        "action": "generate-then-extend",
+        "generate_payload": req,
+        "target_s": target,
+        "version": ver,
+        "song_id": song.get("song_id") or "",
+        "style": style,
+        "title": title,
+        "tempo_bpm": bpm,
+        "beat_interval_s": round(60.0 / bpm, 6) if bpm else None,
+        "payload_note": payload_note,
+        "max_rounds": max_rounds,
+    }
+    return plan
+
+
+def generate_instrumental(song, generate_fn, extend_fn=None, target_s=None,
+                          callback_url="https://example.invalid/cb",
+                          max_rounds=MAX_EXTEND_ROUNDS, catalog_path=None):
+    """Generate the full-length instrumental through Skill 74's path.
+
+    ``generate_fn(payload)`` is Skill 74's submit/wait/save stand-in (the
+    same injected callable every other paid call uses - no second
+    transport); it returns the produced duration in seconds or a dict
+    with ``duration_s``/``duration`` and ``audio_id``. When the take is
+    short of the song's length, ``extend_fn`` (Skill 74's ``extend``
+    stand-in, built on the same transport) tops it up through ``top_up``.
+    Fails closed: short of target with no rounds left -> status
+    ``instrumental-unresolved``; never a short bed.
+    """
+    if not callable(generate_fn):
+        raise ExtendError("generate_fn: callable required")
+    plan = plan_instrumental(song, target_s=target_s, catalog_path=catalog_path,
+                             callback_url=callback_url, max_rounds=max_rounds)
+    target = plan["target_s"]
+    out = _normalize_produced(generate_fn(plan["generate_payload"]), 0)
+    produced, audio_id = out
+    if produced >= target - EXACT_TOL_S:
+        trimmed = round(produced - target, 3) if produced - target > EXACT_TOL_S else 0.0
+        return dict(plan, **{
+            "status": "ok",
+            "generate_rounds": 1,
+            "extend_rounds": 0,
+            "delivered_s": target,
+            "audio_id": audio_id or plan["song_id"] or "instrumental",
+            "trimmed_s": trimmed,
+            "timing_map": timing_map([("instrumental", target)], target),
+        })
+    if not audio_id:
+        return dict(plan, **{
+            "status": "instrumental-no-audio-id",
+            "reason": "generate returned %.3f s of a %.3f s target with no "
+                      "audio id; extend cannot continue" % (produced, target),
+            "generate_rounds": 1,
+        })
+    if not callable(extend_fn):
+        return dict(plan, **{
+            "status": "instrumental-unresolved",
+            "reason": "generate returned %.3f s of a %.3f s target and no "
+                      "extend_fn was provided" % (produced, target),
+            "generate_rounds": 1,
+        })
+    topped = top_up(produced, target, extend_fn, audio_id, callback_url,
+                    max_rounds=max_rounds, instrumental=True,
+                    catalog_path=catalog_path)
+    result = dict(plan, generate_rounds=1)
+    result.update({k: v for k, v in topped.items() if k != "target_s"})
+    if topped.get("status") == "ok":
+        result["status"] = "ok"
+    return result
+
+
 __all__ = [
     "DEFAULT_EXTEND_VERSION",
     "EXIT",
     "EXACT_TOL_S",
     "EXTEND_CATALOG_ID",
+    "GENERATE_CATALOG_ID",
     "ExtendError",
     "MAX_EXTEND_ROUNDS",
     "MIN_PROGRESS_S",
@@ -519,7 +661,9 @@ __all__ = [
     "build_extend_request",
     "catalog",
     "endpoint",
+    "generate_instrumental",
     "plan_extend",
+    "plan_instrumental",
     "route_model",
     "timing_map",
     "top_up",
