@@ -93,6 +93,7 @@ export OC_SECRET_NAMES_JSON="${_canon_candidates}"
 python3 <<'PYEOF'
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -380,21 +381,10 @@ def check_binary(check_def):
     binary = check_def.get("binary", "")
     if not binary:
         return False
+    path = shutil.which(binary)
+    if path is None:
+        return False
     try:
-        result = subprocess.run(
-            ["command", "-v", binary],
-            capture_output=True,
-            shell=False,
-        )
-        if result.returncode != 0:
-            # Try via /bin/sh -c command -v
-            result2 = subprocess.run(
-                f"command -v {binary}",
-                shell=True,
-                capture_output=True,
-            )
-            if result2.returncode != 0:
-                return False
         # Optionally check minVersion
         min_ver = check_def.get("minVersion", "")
         if not min_ver:
