@@ -148,6 +148,38 @@ def targets(spoken_target=None, length_target_s=None, extra=None):
     return tg
 
 
+def _validated_targets(tg):
+    """Validate a caller-supplied target dict -- the raw-dict path of
+    ``score(tg=...)`` and ``steer(targets=...)``. Same rules as
+    ``targets()``: numeric finite values, share targets are fractions
+    0..1, every other target positive (a ratio-metric deviation divides
+    by the target, so 0 is malformed, not zero-error). Raises a
+    TargetEngineError (caller bug); the built ``targets()`` output
+    re-validates idempotently."""
+    if not isinstance(tg, dict) or not tg:
+        raise TargetEngineError("BAD_TARGETS",
+                                "targets must be a non-empty dict")
+    out = {}
+    for name, value in tg.items():
+        if not isinstance(name, str) or not name:
+            raise TargetEngineError("BAD_TARGET", "target key %r" % (name,))
+        if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                or not isfinite(float(value)):
+            raise TargetEngineError(
+                "BAD_TARGET", "target %s must be a finite number, got %r"
+                % (name, value))
+        if name.endswith("_share") and not 0.0 <= float(value) <= 1.0:
+            raise TargetEngineError(
+                "BAD_TARGET", "target %s is a share and must be a fraction "
+                "0..1, got %r" % (name, value))
+        if not name.endswith("_share") and float(value) <= 0:
+            raise TargetEngineError(
+                "BAD_TARGET", "target %s must be positive, got %r"
+                % (name, value))
+        out[name] = float(value)
+    return out
+
+
 # ---------------------------------------------------------- measuring ----
 
 def _finite(value):
@@ -270,9 +302,10 @@ def score(metrics, tg, grace_pct=GRACE_PCT):
     points", one interpretation for seconds). ``worst`` is the largest
     deviation over the grace band (<= 1.0 = within grace). An axis the
     measurement cannot judge scores worst (inf) -- it can never pass on an
-    unmeasured target."""
-    if not isinstance(tg, dict) or not tg:
-        raise TargetEngineError("BAD_TARGETS", "targets must be a non-empty dict")
+    unmeasured target. Malformed targets raise a TargetEngineError
+    (caller bug), never a ZeroDivisionError/TypeError from the arithmetic
+    below."""
+    tg = _validated_targets(tg)
     if not isinstance(grace_pct, (int, float)) or isinstance(grace_pct, bool) \
             or grace_pct <= 0:
         raise TargetEngineError("BAD_GRACE", "grace_pct must be positive")
@@ -348,9 +381,15 @@ def best(candidates, tg, measure=None, grace_pct=GRACE_PCT,
         try:
             record["metrics"] = m = measure_candidate(cand, measure)
             record["score"] = score(m, tg, grace_pct)
-        except TargetEngineError as exc:
+        except Exception as exc:                    # noqa: BLE001
+            # ponytail: every failure mode of one candidate's measurement
+            # chain (TargetEngineError and a raising production wrapper
+            # alike) rejects ONE candidate as unmeasurable; a corrupt clip
+            # loses its take, never the round. Revisit if a caller wants a
+            # wider stop-list.
             record["rejected"] = True
-            record["reasons"].append("unmeasurable: %s" % (exc,))
+            record["reasons"].append("unmeasurable: %s: %s"
+                                     % (type(exc).__name__, exc))
             ranked.append(record)
             rejected_ids.append(cand.get("id") if isinstance(cand, dict) else None)
             continue
@@ -391,9 +430,7 @@ def steer(rounds, targets=None, measure=None, singing_chosen=True,
     """
     if not callable(rounds):
         raise TargetEngineError("BAD_ROUNDS", "rounds must be callable")
-    tg = targets or {"spoken_share": TARGET}
-    if not isinstance(tg, dict) or not tg:
-        raise TargetEngineError("BAD_TARGETS", "targets must be a non-empty dict")
+    tg = _validated_targets(targets) if targets else {"spoken_share": TARGET}
     if not isinstance(max_rounds, int) or isinstance(max_rounds, bool) \
             or max_rounds < 1:
         raise TargetEngineError("BAD_MAX_ROUNDS", "max_rounds must be >= 1")
@@ -453,10 +490,10 @@ def steer(rounds, targets=None, measure=None, singing_chosen=True,
             }
         record["verdict"] = VERDICT_ADJUST
         record["reasons"] = [
-            "%s %.4g vs target %.4g (%.4g points off the %.4g-point grace)"
-            % (name, _axis(win["metrics"], name), value,
-               win["score"]["deviations_pct"].get(name, float("inf")),
-               grace_pct)
+            "%s %s vs target %s (%s points off the %s-point grace)"
+            % (name, _fmt(_axis(win["metrics"], name)), _fmt(value),
+               _fmt(win["score"]["deviations_pct"].get(name, float("inf"))),
+               _fmt(grace_pct))
             for name, value in tg.items()
             if win["score"]["normalized"].get(name, float("inf")) > 1.0]
         record["unmeasured"] = win["score"]["unmeasured"]
@@ -469,10 +506,10 @@ def steer(rounds, targets=None, measure=None, singing_chosen=True,
         for name, value in tg.items():
             if last["score"]["normalized"].get(name, float("inf")) > 1.0:
                 miss_lines.append(
-                    "%s %.4g vs target %.4g (%.4g points off)"
-                    % (name, _axis(last["metrics"], name), value,
-                       last["score"]["deviations_pct"].get(name,
-                                                           float("inf"))))
+                    "%s %s vs target %s (%s points off)"
+                    % (name, _fmt(_axis(last["metrics"], name)), _fmt(value),
+                       _fmt(last["score"]["deviations_pct"].get(
+                           name, float("inf")))))
     else:
         miss_lines.append("no measurable candidate in any round")
     warnings.append(
@@ -504,3 +541,12 @@ def _axis(metrics, name):
         return "n/a"
     value = metrics.get(name)
     return value if isinstance(value, (int, float)) else "n/a"
+
+
+def _fmt(value):
+    """Numeric-or-text formatting for miss lines: %.4g only ever sees a
+    real number; 'n/a' (an unmeasured axis) and the target value pass
+    through as text."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return "%.4g" % (value,)
+    return str(value)
