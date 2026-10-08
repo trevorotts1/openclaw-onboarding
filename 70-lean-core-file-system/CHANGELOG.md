@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [1.0.2] - 2026-10-08 - INF002
+
+- Weekly cron installer uses agent main when the box has one, otherwise the box's primary agent (default flag, else first listed); never fails for a missing main (INF002 B).
+
 ## [1.0.0] - 2026-09-28
 
 ### Added

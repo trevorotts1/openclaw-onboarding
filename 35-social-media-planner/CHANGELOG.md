@@ -1,5 +1,9 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.6.16] - 2026-10-08 - INF002
+
+- Install QC uses the shared credential lookup (every store, every location id name, pit- token to its location through the GHL API); neither found installs with a note (INF002).
+
 ## [3.6.13] - 2026-10-06 - QC reads every credential store
 
 - `qc-skill35.sh` finds KIE_API_KEY in secrets/.env, .env and openclaw.json env.vars.

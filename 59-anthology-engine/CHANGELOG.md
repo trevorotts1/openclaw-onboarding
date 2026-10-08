@@ -1,3 +1,7 @@
+### v1.0.11 -- INF002 credential gate asks the shared lookup (2026-10-08)
+
+- **Change.** Credential gate asks the shared lookup when its own stores lack the Convert and Flow location id or token (every store and name; pit- token to its location through the GHL API). install.sh installs with a note when only the Convert and Flow pair is missing (INF002 C).
+
 ### v1.0.8 -- feat(kie): the cover render runs on the Skill 74 transport (2026-10-06)
 - **Change.** `scripts/cover_render.py` (S7 render leg) no longer carries its own KIE HTTP client. Submit, wait and download are the CLI of Skill 74 (`74-kie-live-adapter/scripts/kie_live_adapter.py submit | wait | save --mode active --json`), found as a sibling skill folder; the key travels in the child environment only. If Skill 74 is not installed the render HOLDS (exit 3, `held_reason` `kie_transport_missing`); there is no fallback client.
 - **Policy kept here.** The GPT-image-2.5 text-to-image model, the 2:3 portrait override and landscape refusal, the four named styles, the result-host allowlist (now passed to Skill 74 as `--allow-host`), the browser User-Agent the result CDN requires (now `--user-agent`, an option added to Skill 74 v1.1.1 for this), the render-state sidecar and resume, the PNG read-back that proves a portrait file, and the exit 0/2/3 contract and held reasons.
