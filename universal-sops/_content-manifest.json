@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-06T22:06:56Z",
-  "file_count": 114,
+  "generated_at": "2026-10-08T09:37:10Z",
+  "file_count": 115,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "510bb4333de3c01bd94fb60a35cd7fcb39106ab467eadf64268ff2c43686947a",
@@ -71,6 +71,10 @@
     "cross-dept-request-template.md": {
       "sha256": "5960f71d0d253e1962baef3201e6b198ed7f3c713700ac57efe0a177fb53da4e",
       "bytes": 4324
+    },
+    "drama-song-ad-pipeline/README.md": {
+      "sha256": "9268366c59d59c6fc01436540b66238b18adfbab7a5483aa0638a3e094bbb1f7",
+      "bytes": 2041
     },
     "email-craft/EMAIL-PIPELINE-MANIFEST.json": {
       "sha256": "fe95c2abed7eba019eb0891fd457cb42a8fc11112b092c216849a47a2c3e52ee",

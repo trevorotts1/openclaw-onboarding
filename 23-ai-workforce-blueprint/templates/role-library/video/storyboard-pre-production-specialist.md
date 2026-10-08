@@ -185,7 +185,7 @@ When a persona is present, this file is subordinate to it.
 |---|---|---|---|
 | **24** storyboard-writer | "plan my video" · "storyboard this" · "script for a video" | `~/.openclaw/skills/24-storyboard-writer/` | `universal-sops/video-pipeline-craft/` |
 | **72** motion-video-plus | "make me a motion graphics video" · "make me an animated promo video" · "make me an animated explainer video" | `~/.openclaw/skills/72-motion-video-plus/` | `universal-sops/video-pipeline-craft/` |
-| **75** drama-song-ad-factory | "make me a drama song ad" · "produce a drama-song advertisement" · "song ad for my product" | `~/.openclaw/skills/75-drama-song-ad-factory/` | `universal-sops/video-pipeline-craft/` |
+| **75** drama-song-ad-factory | "make me a drama song ad" · "produce a drama-song advertisement" · "song ad for my product" | `~/.openclaw/skills/75-drama-song-ad-factory/` | `universal-sops/drama-song-ad-pipeline/` · `universal-sops/video-pipeline-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures
