@@ -115,7 +115,8 @@ BRIEF = {"schema_version": "blackceo.campaign/v1",
          "action": "Buy the book at the link",
          "budget_minor": 2500, "budget_currency": "credits",
          "assets": "https://example.test/cover.jpg",
-         "placement": "9:16, 60 seconds"}
+         "placement": "9:16, 60 seconds",
+         "website": "example.test"}   # I1: a brief that names a link carries the exact address
 
 def test_intake_complete_brief_still_waits_on_card():
     # A brief that answers all three story questions still does not launch:

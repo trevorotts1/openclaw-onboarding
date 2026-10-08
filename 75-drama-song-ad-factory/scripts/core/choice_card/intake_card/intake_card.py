@@ -266,6 +266,20 @@ def openclaw_send_argv(target, text):
             "--target", str(target), "--message", text]
 
 
+def _with_saved_character(client_dir):
+    """QUESTIONS, with the saved-character question first when the client has
+    saved characters (Part I, I6); otherwise the plain six."""
+    if not client_dir:
+        return QUESTIONS
+    from character_library import character_library as CL
+    q = CL.saved_character_question(client_dir)
+    if not q:
+        return QUESTIONS
+    q = dict(q, why="A saved character keeps the same face across your ads.",
+             reason="you can still pick a new character if you prefer.")
+    return [q] + QUESTIONS
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Print the six-question intake card.")
     ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json"),
@@ -278,9 +292,13 @@ def main(argv=None):
                          "given every --reply the client has sent so far (I7)")
     ap.add_argument("--reply", action="append", default=[],
                     help="a client reply, in order (repeat the flag)")
+    ap.add_argument("--client-dir", default="",
+                    help="client data folder; when it holds saved characters the "
+                         "card opens with 'Use a saved character?' (I6)")
     a = ap.parse_args(argv)
+    qs = _with_saved_character(a.client_dir)
     if a.step:
-        st = conversation(a.reply)
+        st = conversation(a.reply, qs)
         if a.format == "text":
             sys.stdout.write(st["message"] + "\n")
         else:
@@ -289,9 +307,9 @@ def main(argv=None):
                 {"done": st["done"], "send": send(a.target, st["message"])}, indent=2) + "\n")
         return 0
     if a.format == "text":
-        sys.stdout.write(render_card() + "\n")      # raw newlines, no JSON escaping
+        sys.stdout.write(render_card(qs) + "\n")      # raw newlines, no JSON escaping
         return 0
-    msgs = render_messages()
+    msgs = render_messages(qs)
     if a.format == "openclaw-json":
         out = [openclaw_send_argv(a.target, m) for m in msgs]
     else:

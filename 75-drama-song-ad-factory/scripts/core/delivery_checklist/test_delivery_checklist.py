@@ -191,7 +191,7 @@ class G7DoneWhen(unittest.TestCase):
         # final_edit record passes, so the FAIL is the checklist alone
         rec = dc.to_qc_record(res, RUN, STAGE, REVIEWER)
         gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
-                                MAKERS, FINAL_GATE_REQUIRED)
+                                MAKERS, FINAL_GATE_REQUIRED, master={"chosen_length_s": 60, "measured_s": 58})
         self.assertEqual(gate["gate"], "FAIL")
         self.assertEqual(gate["repair_scope"], [dc.CHECK_ID])
         self.assertNotEqual(gate["gate"], "BLOCKED")
@@ -355,7 +355,7 @@ class G7DoneWhen(unittest.TestCase):
         err = qc_gate.validate_record(rec)
         self.assertIsNone(err, err)
         gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
-                                MAKERS, FINAL_GATE_REQUIRED)
+                                MAKERS, FINAL_GATE_REQUIRED, master={"chosen_length_s": 60, "measured_s": 58})
         self.assertEqual(gate["gate"], "PASS", gate["failures"])
 
     def test_final_edit_gate_4_requires_the_checklist(self):
@@ -375,7 +375,7 @@ class G7DoneWhen(unittest.TestCase):
         res = dc.evaluate(receipt)
         rec = dc.to_qc_record(res, RUN, STAGE, REVIEWER)
         gate = qc_gate.evaluate(RUN, STAGE, [rec, final_edit_record()],
-                                MAKERS, FINAL_GATE_REQUIRED)
+                                MAKERS, FINAL_GATE_REQUIRED, master={"chosen_length_s": 60, "measured_s": 58})
         self.assertEqual(gate["gate"], "FAIL")
         self.assertIn(dc.CHECK_ID, gate["repair_scope"])
 

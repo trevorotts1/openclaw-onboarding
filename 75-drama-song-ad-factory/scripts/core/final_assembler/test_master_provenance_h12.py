@@ -107,12 +107,12 @@ class T(unittest.TestCase):
         res = self.check(scripts={"edit/final.py": "ffmpeg"})
         rec = M.to_qc_record(res, "run1", "final", REV)
         out = G.evaluate("run1", "final", [rec], {"master-provenance": "builder"},
-                         ["final_edit"])
+                         ["final_edit"], master={"chosen_length_s": 60, "measured_s": 58})
         self.assertEqual(out["gate"], "FAIL")
         ok = M.to_qc_record({"pass": True, "evidence": {"summary": "ok"}},
                             "run1", "final", REV)
         out = G.evaluate("run1", "final", [ok], {"master-provenance": "builder"},
-                         ["final_edit"])
+                         ["final_edit"], master={"chosen_length_s": 60, "measured_s": 58})
         self.assertEqual(out["gate"], "PASS")
 
 

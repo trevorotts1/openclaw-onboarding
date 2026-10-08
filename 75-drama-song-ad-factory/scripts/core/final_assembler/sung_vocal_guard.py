@@ -65,12 +65,16 @@ except ImportError:                      # pragma: no cover
 TOOL_NAME = "final_assembler.sung_vocal_guard"
 TOOL_VERSION = "1.0.0"
 
-#: Manual 02 E7 as amended (Addendum 3 / Decision 39): "at least 55 % sung,
-#: spoken 35-40 %" -- the pre-amendment 70 % goal is superseded. H8: it is a
-#: goal judged by Trevor's band in core/spoken_share (<=5 points short =
-#: accept, 5-10 = accept with a flag, >10 = redo). The only hard reject is
-#: "no real singing" (no spoken_share.NO_REAL_SINGING_STRETCH_S sung stretch).
+#: Manual 02 E7 as amended (Addendum 3 / Decision 39): "at least 55 % sung" is
+#: the hard floor -- below it the master is redone. H8: the sung-coverage GOAL
+#: stays 70 % and is judged by Trevor's band in core/spoken_share (<=5 points
+#: short = accept, 5-10 = accept with a flag). Past 10 points short is a redo
+#: unless the master is still at or above the 55 % floor, where it is accepted
+#: with a flag (the amendment lowered the bar to 55 %). The only other hard
+#: reject is "no real singing" (no spoken_share.NO_REAL_SINGING_STRETCH_S
+#: sung stretch).
 MIN_SUNG_COVERAGE = 0.55
+SUNG_GOAL = 0.70
 
 #: Canonical intake voice ids (plan 4.1 / voice_velvet_echo constants);
 #: copied here so the guard never needs the voice catalog to decide mode.
@@ -240,7 +244,8 @@ def vocal_presence(stderr_text, floor_lufs=None):
 # ----------------------------------------------------------------- check ----
 def check_sung_vocal(timing=None, runtime_s=None, profile=None,
                      master_path=None, scan_stderr=None,
-                     min_coverage=MIN_SUNG_COVERAGE, spoken_section_ids=None):
+                     min_coverage=MIN_SUNG_COVERAGE, spoken_section_ids=None,
+                     goal=SUNG_GOAL):
     """E7 verdict: the master is sung (All Suno) or has its bed (Velvet).
 
     Primary path  -- ``timing``: 12.4 map -> sung coverage ratio.
@@ -297,25 +302,24 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
                 "re-cut with the Suno song master"
                 % (stretch, _SS.NO_REAL_SINGING_STRETCH_S))
             return ver
-        short_pts = max(0.0, (min_coverage - ratio) * 100.0)
+        short_pts = max(0.0, (goal - ratio) * 100.0)
         band = _SS.judge_gap(short_pts)
         ver["gap_pts"] = round(short_pts, 3)
-        if band == _SS.VERDICT_FAIL:
+        if ratio + 1e-9 < min_coverage:
             ver["outcome"] = "FAIL"
             ver["reason_code"] = "SUNG_COVERAGE_LOW"
             ver["next_action"] = (
-                "sung runtime %.2f%% is %.1f points under the %.0f%% goal "
-                "(past %d): redo; add sung sections"
-                % (ratio * 100.0, short_pts, min_coverage * 100.0,
-                   _SS.FLAG_PTS))
+                "sung runtime %.2f%% is under the %.0f%% floor (goal %.0f%%): "
+                "redo; add sung sections"
+                % (ratio * 100.0, min_coverage * 100.0, goal * 100.0))
             return ver
         ver["outcome"] = "PASS"
         ver["reason_code"] = "SUNG_COVERAGE_OK"
-        if band == _SS.VERDICT_FLAG:
+        if band != _SS.VERDICT_PASS:
             ver["flags"] = [
                 "sung runtime %.2f%% is %.1f points under the %.0f%% goal: "
                 "accepted with a flag" % (ratio * 100.0, short_pts,
-                                          min_coverage * 100.0)]
+                                          goal * 100.0)]
         ver["next_action"] = "final QC continues"
         return ver
     # ---- secondary: vocal-presence signal on the assembled master ----

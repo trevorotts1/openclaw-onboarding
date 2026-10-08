@@ -432,7 +432,7 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
         # cap applies to the story questions only).
         return {"outcome": "waiting", "reason_code": "missing-essentials",
                 "questions": qs,
-                "question_message": "\n".join(f"{i+1}. {q['question']}" for i, q in enumerate(qs)),
+                "question_message": _fmt([q["question"] for q in qs]),
                 "summary": summary, "digest": digest, "provenance": prov,
                 "auth_status": status, "approval_invalidated": False,
                 "changes": [],

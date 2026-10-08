@@ -106,7 +106,7 @@ class Recipe(unittest.TestCase):
         out = R.prepare("rnb-flow", sheet(), CLIENT)
         req = MD.build_generate_request(out["lyrics"], out["style"], "T",
                                         style_id="rnb-flow", client_text=CLIENT)
-        self.assertEqual(req["input"]["style"], out["style"])
+        self.assertTrue(req["input"]["style"].startswith(out["style"]))  # I5 appends ending words
 
     def test_take_scored_from_labels_fails(self):
         labels = [seg("spoken", 0, 10, "label"), seg("sung", 10, 100, "label")]
