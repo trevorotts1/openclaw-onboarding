@@ -66,10 +66,20 @@ def test_done_when_pairs():
     exact = check_lipsync_coverage(90, 3, 15.0)
     check("done-when PASS: 90 s ad, 3 lines totalling exactly 15 s passes",
           exact["pass"] is True, exact)
-    under = check_lipsync_coverage(90, 3, 14.99)
-    check("90 s ad at 14.99 s is one hair under the band floor",
-          under["pass"] is False and COVERAGE_SHORT in under["reason_code"],
-          under)
+    # H8: lip-sync seconds use Trevor's band (percent short of the goal).
+    near = check_lipsync_coverage(90, 3, 14.5)          # 3.3% short
+    check("H8 14.5 s of a 15 s goal is within 5%: accept, no flag",
+          near["pass"] is True and near["flags"] == [], near)
+    flag = check_lipsync_coverage(90, 3, 14.0)          # 6.7% short
+    check("H8 14.0 s of a 15 s goal is 5-10% short: accept WITH A FLAG",
+          flag["pass"] is True and len(flag["flags"]) == 1, flag)
+    redo = check_lipsync_coverage(90, 3, 13.0)          # 13.3% short
+    check("H8 13.0 s of a 15 s goal is past 10% short: redo",
+          redo["pass"] is False and COVERAGE_SHORT in redo["reason_code"],
+          redo)
+    more = check_lipsync_coverage(90, 3, 40.0)
+    check("H8 more lip-sync than the goal is never a miss",
+          more["pass"] is True and more["flags"] == [], more)
 
 
 def test_scaled_rules():

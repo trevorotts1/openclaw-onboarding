@@ -247,6 +247,39 @@ class SungVocalE7(unittest.TestCase):
         ratio, _ = SVG.sung_coverage_from_timing(_timing(90.0, 60.0))
         self.assertLessEqual(ratio, 1.0)
 
+    # -------------------------------------- H8: ONE rule, Trevor's band ---
+    def test_h8_within_5_points_accepts_without_flag(self):
+        out = SVG.check_sung_vocal(timing=_timing(39.0, 60.0),   # 65% vs 70
+                                   profile="all_suno")
+        self.assertEqual((out["outcome"], out["flags"]), ("PASS", []))
+
+    def test_h8_5_to_10_points_accepts_with_flag(self):
+        out = SVG.check_sung_vocal(timing=_timing(36.0, 60.0),   # 60% vs 70
+                                   profile="all_suno")
+        self.assertEqual(out["outcome"], "PASS")
+        self.assertEqual(len(out["flags"]), 1)
+        rec = SVG.record_for_gate(out, "r1", "final", "qc", "s1", "auth")
+        self.assertIn("FLAG", rec["evidence"]["summary"])
+
+    def test_h8_past_10_points_is_redo(self):
+        out = SVG.check_sung_vocal(timing=_timing(30.0, 60.0),   # 50% vs 70
+                                   profile="all_suno")
+        self.assertEqual((out["outcome"], out["reason_code"]),
+                         ("FAIL", "SUNG_COVERAGE_LOW"))
+
+    def test_h8_no_6s_stretch_is_the_hard_reject(self):
+        out = SVG.check_sung_vocal(timing=_timing(5.0, 60.0),
+                                   profile="all_suno")
+        self.assertEqual((out["outcome"], out["reason_code"]),
+                         ("FAIL", "VOCAL_MISSING"))
+        self.assertIn("no real singing", out["next_action"])
+
+    def test_h8_guard_uses_the_shared_constants(self):
+        self.assertIs(SVG._SS.NO_REAL_SINGING_STRETCH_S,
+                      SVG._SS.NO_REAL_SINGING_STRETCH_S)
+        self.assertEqual(SVG._SS.ACCEPT_PTS, 5)
+        self.assertEqual(SVG._SS.FLAG_PTS, 10)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
