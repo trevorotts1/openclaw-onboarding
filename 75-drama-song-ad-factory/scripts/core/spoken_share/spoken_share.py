@@ -9,8 +9,10 @@ spoken-style delivery, so a rap-heavy cut cannot measure under the band by
 accident. The earlier per-length targets and the earlier wider ceiling are
 retired: this module holds ONE band and nothing keyed by length.
 
-The spoken opener (D12) stays short, so the first sung line starts within
-about 10 seconds. ``check_first_sung`` is the planner-side rule;
+The spoken opener (D12) stays short. H6 (owner, 2026-10-08): the first REAL
+singing -- a sung stretch of at least 6 s, measured on the vocal stem, never
+read off section labels -- is a TARGET of 15% of runtime (about 9 s in a 60 s
+ad), judged by the band below. ``check_first_sung`` is the planner/QC rule;
 ``check_share``/``check_plan`` are the measuring and QC sides.
 
 This package is the single source of truth for the three numbers. The length
@@ -40,10 +42,6 @@ TARGET = SPOKEN_TARGET_PCT / 100.0
 FLOOR = SPOKEN_MIN_PCT / 100.0
 CAP = SPOKEN_MAX_PCT / 100.0
 
-#: Music arrives sooner: the spoken opener is short and the first sung line
-#: starts within about this many seconds (owner D12 + D15 retarget).
-FIRST_SUNG_WITHIN_SECONDS = 10
-
 #: Delivery labels a timing segment may carry.
 DELIVERIES = ("spoken", "rap", "sung")
 
@@ -51,26 +49,45 @@ DELIVERIES = ("spoken", "rap", "sung")
 #: what stops a rap-heavy cut from measuring under the floor by accident.
 SPOKEN_STYLE_DELIVERIES = frozenset({"spoken", "rap"})
 
-# ---- H8: ONE singing rule + ONE tolerance band (Trevor, 2026-10-08) --------
+# ---- G10: the ONE constants set for targets and the band (Trevor, 2026-10-08)
 # Trevor: "We always want to try to be within 5% of the goal. Once you get
 # past 5%, 5% to 7% gets a flag. Once you get past 10%, it's got to be
-# redone." Every share / first-sung / length / lip-sync-seconds goal in the
-# skill is judged by judge_gap() below; no check keeps its own tolerance.
+# redone." and "It's not an absolute 55% or 20% ... within about 5 percentage
+# points". Every share / first-sung / length / lip-sync-seconds goal in the
+# skill is judged by judge_gap() below; no check keeps its own tolerance, and
+# NO check keeps an absolute floor.
 ACCEPT_PTS = 5      # within this many points of the goal: accept
 FLAG_PTS = 10       # past ACCEPT_PTS up to this: accept WITH A FLAG
-VERDICT_PASS = "PASS"
-VERDICT_FLAG = "FLAG"    # accepted, but the receipt must carry the flag
-VERDICT_FAIL = "FAIL"    # past FLAG_PTS: REDO (never keep the closest)
-
+#: H6: first REAL singing lands at this share of runtime (60 s ad -> 9 s).
+FIRST_SUNG_TARGET_PCT = 15
+#: Default sung share of runtime for an ad whose choice card / plan names no
+#: target of its own. The ad's own target always wins (sung_vocal_guard).
+SUNG_TARGET_PCT = 100 - SPOKEN_TARGET_PCT  # = 55: all that is not spoken-style
 #: The only hard reject when singing was chosen: no real singing, i.e. no
 #: sung stretch this long (seconds). Same number as the singing detector's.
 NO_REAL_SINGING_STRETCH_S = 6.0
 #: Sung segments closer together than this are one stretch.
 SUNG_STRETCH_JOIN_S = 0.25
+# H6 spellings of the same numbers (one definition, two names).
+TARGET_ACCEPT_PCT = ACCEPT_PTS
+TARGET_FLAG_PCT = FLAG_PTS
+REAL_SINGING_STRETCH_S = NO_REAL_SINGING_STRETCH_S
+VERDICT_PASS = "PASS"
+VERDICT_FLAG = "FLAG"    # accepted, but the receipt must carry the flag
+VERDICT_FAIL = "FAIL"    # past FLAG_PTS: REDO (never keep the closest)
+BAND_ACCEPT, BAND_FLAG, BAND_REDO = "ACCEPT", "FLAG", "REDO"
+_BAND_OF = {VERDICT_PASS: BAND_ACCEPT, VERDICT_FLAG: BAND_FLAG,
+            VERDICT_FAIL: BAND_REDO}
 
-
-def judge_gap(gap_points):
-    """Trevor's band on a gap in percentage points (sign ignored)."""
+def judge_gap(gap_points, target_pct=None):
+    """Trevor's band. ``judge_gap(gap)`` judges a gap in percentage points
+    (sign ignored) -> PASS | FLAG | FAIL. ``judge_gap(measured, target)``
+    judges a measured percent against the ad's own target ->
+    {"gap_pts", "band": ACCEPT | FLAG | REDO, "verdict"}."""
+    if target_pct is not None:
+        gap = round(abs(float(gap_points) - float(target_pct)), 6)
+        v = judge_gap(gap)
+        return {"gap_pts": gap, "band": _BAND_OF[v], "verdict": v}
     gap = round(abs(float(gap_points)), 6)
     if gap <= ACCEPT_PTS:
         return VERDICT_PASS
@@ -306,20 +323,42 @@ def refusal(share, segments=None):
         result["share_pct"], "; ".join(result["reasons"]))
 
 
+def _sung_stretches(parsed):
+    """[[start, end, sung_seconds], ...]: sung stretches, joined across
+    gaps of SUNG_STRETCH_JOIN_S or less (only sung time is counted)."""
+    out = []
+    for d, st, en, _s in sorted(parsed, key=lambda t: t[1]):
+        if d != "sung":
+            continue
+        if out and st - out[-1][1] <= SUNG_STRETCH_JOIN_S:
+            out[-1][2] += en - max(st, out[-1][1])
+            out[-1][1] = max(out[-1][1], en)
+        else:
+            out.append([st, en, en - st])
+    return out
+
+
 def longest_sung_stretch_s(segments):
     """Longest unbroken sung stretch in the plan, in seconds."""
-    sung = sorted((st, en) for d, st, en, _s in _segments(segments)
-                  if d == "sung")
-    best = cur = 0.0
-    prev_end = None
-    for st, en in sung:
-        if prev_end is not None and st - prev_end <= SUNG_STRETCH_JOIN_S:
-            cur += en - max(st, prev_end)
-        else:
-            cur = en - st
-        prev_end = max(en, prev_end if prev_end is not None else en)
-        best = max(best, cur)
-    return round(best, 6)
+    return round(max((x[2] for x in _sung_stretches(_segments(segments))),
+                     default=0.0), 6)
+
+
+def segments_from_sung_stretches(stretches, total_s):
+    """Turn the vocal-stem detector's sung stretches [(start, end), ...]
+    into spoken/sung segments covering ``total_s``, so the measured stem
+    feeds check_first_sung. Whatever the detector did not call sung is
+    spoken-style here."""
+    out, cursor = [], 0.0
+    for start, end in sorted((float(a), float(b)) for a, b in stretches):
+        if start > cursor:
+            out.append({"delivery": "spoken", "start": cursor, "end": start})
+        out.append({"delivery": "sung", "start": start, "end": end})
+        cursor = max(cursor, end)
+    if total_s > cursor:
+        out.append({"delivery": "spoken", "start": cursor,
+                    "end": float(total_s)})
+    return out
 
 
 def check_real_singing(segments):
@@ -339,44 +378,79 @@ def check_real_singing(segments):
     }
 
 
-def check_first_sung(segments):
-    """Planner rule: the first sung line starts within about 10 seconds,
-    judged by the band (points of runtime past the limit). A cut with no
-    real singing fails -- an ad with no singing is rebuilt.
+def check_first_sung(segments, basis="planned"):
+    """H6 rule: the first REAL singing (first sung stretch >=
+    NO_REAL_SINGING_STRETCH_S) is a TARGET of FIRST_SUNG_TARGET_PCT of
+    runtime, judged by the band: within 5 points accept (10-20% of runtime),
+    5-10 points accept with a flag, over 10 points redo. A cut with no real
+    singing is redone (H8: the one hard reject).
 
-    Returns {"verdict": PASS|FLAG|FAIL, "first_sung_start_s",
-             "opener_seconds", "limit_s", "reasons": [...], "flags": [...]}.
+    ``basis`` is "measured" when ``segments`` come from the vocal-stem
+    detector (see segments_from_sung_stretches), "planned" when they come
+    from labels; the result names it.
+
+    Returns {"verdict": PASS|FLAG|FAIL, "band": ACCEPT|FLAG|REDO,
+             "first_sung_start_s", "first_sung_pct", "opener_seconds",
+             "target_pct", "accept_pct", "gap_pts", "basis",
+             "reasons": [...], "flags": [...]}.
     """
     parsed = _segments(segments)
-    sung_starts = [start for delivery, start, _e, _s in parsed
-                   if delivery == "sung"]
-    real = check_real_singing(segments)
-    if not sung_starts or not real["real_singing"]:
-        return {
-            "verdict": VERDICT_FAIL,
-            "first_sung_start_s": (round(min(sung_starts), 6)
-                                   if sung_starts else None),
-            "opener_seconds": (round(min(sung_starts), 6)
-                               if sung_starts else None),
-            "limit_s": FIRST_SUNG_WITHIN_SECONDS,
-            "reasons": real["reasons"],
-            "flags": [],
-        }
-    first = min(sung_starts)
     total = sum(p[3] for p in parsed)
-    j = judge_seconds(first, FIRST_SUNG_WITHIN_SECONDS, total, only="late")
-    msg = ("first sung line starts at %.1f s, %.1f points of runtime past "
-           "the %.0f s goal" % (first, j["gap_pts"], FIRST_SUNG_WITHIN_SECONDS))
-    return {
-        "verdict": j["verdict"],
-        "first_sung_start_s": round(first, 6),
-        "opener_seconds": round(first, 6),
-        "limit_s": FIRST_SUNG_WITHIN_SECONDS,
-        "gap_pts": j["gap_pts"],
-        "reasons": [msg + ": redo"] if j["verdict"] == VERDICT_FAIL else [],
-        "flags": ([msg + ": accepted with a flag"]
-                  if j["verdict"] == VERDICT_FLAG else []),
+    if total <= 0:
+        raise SpokenShareError("ZERO_RUNTIME",
+                               "segments total 0 seconds; share undefined")
+    out = {
+        "verdict": VERDICT_FAIL, "band": BAND_REDO,
+        "first_sung_start_s": None, "first_sung_pct": None,
+        "opener_seconds": None, "target_pct": FIRST_SUNG_TARGET_PCT,
+        "accept_pct": [FIRST_SUNG_TARGET_PCT - ACCEPT_PTS,
+                       FIRST_SUNG_TARGET_PCT + ACCEPT_PTS],
+        "gap_pts": None, "basis": basis, "reasons": [], "flags": [],
     }
+    real = [st for st, _en, sung in _sung_stretches(parsed)
+            if sung + 1e-9 >= NO_REAL_SINGING_STRETCH_S]
+    if not real:
+        out["reasons"].append(
+            "no real singing: longest sung stretch %.1f s, needs %.0f s "
+            "(%s); regenerate" % (longest_sung_stretch_s(segments),
+                                  NO_REAL_SINGING_STRETCH_S, basis))
+        return out
+    first = min(real)
+    pct = round(first / total * 100.0, 3)
+    j = judge_gap(pct, FIRST_SUNG_TARGET_PCT)
+    text = ("first real singing at %.1f s = %.1f%% of runtime (%s), target "
+            "%d%%, %.1f points off" % (first, pct, basis,
+                                       FIRST_SUNG_TARGET_PCT, j["gap_pts"]))
+    out.update({
+        "verdict": j["verdict"], "band": j["band"],
+        "first_sung_start_s": round(first, 6), "first_sung_pct": pct,
+        "opener_seconds": round(first, 6), "gap_pts": j["gap_pts"],
+    })
+    if j["verdict"] == VERDICT_FLAG:
+        out["flags"].append(text + ": accepted with a flag")
+    elif j["verdict"] == VERDICT_FAIL:
+        out["reasons"].append(text + ": redo")
+    return out
+
+
+def steer_first_sung(segments, basis="planned"):
+    """What the lyric-sheet builder does with a first-sung result: the check
+    plus which way to move the sung hook and by how many seconds to land on
+    the target. action: keep | shorten_opener | lengthen_opener |
+    add_sung_hook (no real singing at all)."""
+    res = check_first_sung(segments, basis)
+    total = sum(p[3] for p in _segments(segments))
+    target_s = round(total * FIRST_SUNG_TARGET_PCT / 100.0, 3)
+    first = res["first_sung_start_s"]
+    if first is None:
+        action, move = "add_sung_hook", None
+    elif res["verdict"] == VERDICT_PASS:
+        action, move = "keep", 0.0
+    else:
+        move = round(target_s - first, 3)
+        action = "lengthen_opener" if move > 0 else "shorten_opener"
+    return {"check": res, "target_s": target_s, "action": action,
+            "move_by_s": move}
 
 
 def seconds_for(length_s):
@@ -397,19 +471,22 @@ def seconds_for(length_s):
         "target_s": round(length_s * TARGET, 3),
         "floor_s": round(length_s * FLOOR, 3),
         "cap_s": round(length_s * CAP, 3),
-        "first_sung_within_s": FIRST_SUNG_WITHIN_SECONDS,
+        "first_sung_target_s": round(length_s * FIRST_SUNG_TARGET_PCT / 100.0, 3),
+        "first_sung_accept_s": [
+            round(length_s * (FIRST_SUNG_TARGET_PCT - ACCEPT_PTS) / 100.0, 3),
+            round(length_s * (FIRST_SUNG_TARGET_PCT + ACCEPT_PTS) / 100.0, 3)],
         "band": band(),
     }
 
 
-def check_plan(length_s, segments):
+def check_plan(length_s, segments, basis="planned"):
     """QC verdict for one cut: the band, the first-sung rule, the length
     goal, and the one singing rule. All judged by Trevor's band; FAIL means
     redo, FLAG means accepted with the flags in the receipt.
     """
     measured = measure_share(segments)
     share_check = check_share(measured["share"], segments)
-    first_sung = check_first_sung(segments)
+    first_sung = check_first_sung(segments, basis)
     real = check_real_singing(segments)
     length_check = judge_seconds(measured["total_seconds"], length_s, length_s)
     parts = (share_check, first_sung, length_check)
@@ -448,9 +525,9 @@ def check_plan(length_s, segments):
     }
 
 
-def plan_refusal(length_s, segments):
+def plan_refusal(length_s, segments, basis="planned"):
     """Compact refusal text for a FAILED plan; empty string when it passes."""
-    result = check_plan(length_s, segments)
+    result = check_plan(length_s, segments, basis)
     if result["verdict"] != VERDICT_FAIL:
         return ""
     return "REFUSED %ss plan: %s" % (length_s, "; ".join(result["reasons"]))
@@ -458,6 +535,16 @@ def plan_refusal(length_s, segments):
 
 __all__ = [
     "ACCEPT_PTS",
+    "BAND_ACCEPT",
+    "BAND_FLAG",
+    "BAND_REDO",
+    "FIRST_SUNG_TARGET_PCT",
+    "REAL_SINGING_STRETCH_S",
+    "SUNG_TARGET_PCT",
+    "TARGET_ACCEPT_PCT",
+    "TARGET_FLAG_PCT",
+    "segments_from_sung_stretches",
+    "steer_first_sung",
     "CAP",
     "FLAG_PTS",
     "NO_REAL_SINGING_STRETCH_S",
@@ -469,7 +556,6 @@ __all__ = [
     "judge_seconds",
     "longest_sung_stretch_s",
     "DELIVERIES",
-    "FIRST_SUNG_WITHIN_SECONDS",
     "FLOOR",
     "SCHEMA_VERSION",
     "SOURCE",

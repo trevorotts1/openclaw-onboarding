@@ -11,8 +11,11 @@ but the shared final QC gate had no record proving the master is sung.
 What this module owns and nothing else:
 
 1. the **coverage check** -- ``check_sung_vocal()`` decides a master carries
-   the sung vocal across >= ``MIN_SUNG_COVERAGE`` (55 %) of its run for All
-   Suno ads, or a song bed under the voiceover for Velvet Voiceover ads;
+   the sung vocal for All Suno ads, or a song bed under the voiceover for
+   Velvet Voiceover ads. Sung share is judged ONLY by Trevor's band around
+   the ad's own sung target (choice card / plan, default from the G10
+   constants in core/spoken_share): within 5 points accept, 5-10 accept with
+   a flag, past 10 redo. There is NO absolute floor;
 2. two **code-only evidence paths** (no paid call):
    primary  -- the 12.4 song timing map (shot_planner.load_timing_map)
               gives the sung_runtime / runtime coverage ratio;
@@ -33,8 +36,8 @@ What this module owns and nothing else:
 Reason codes (exactly the manual's two):
   VOCAL_MISSING      -- all-spoken master: no sung vocal detected
                         (0 % sung coverage, or no vocal energy on master);
-  SUNG_COVERAGE_LOW  -- sung vocal present but below the 55 % floor
-                        (Decision 39: at least 55 % sung, spoken 35-40 %).
+  SUNG_COVERAGE_LOW  -- sung share is more than 10 points from the ad's own
+                        sung target (Trevor's band: redo).
 
 stdlib only. No network module, no provider call, no spend, no absolute
 operator path.
@@ -65,16 +68,13 @@ except ImportError:                      # pragma: no cover
 TOOL_NAME = "final_assembler.sung_vocal_guard"
 TOOL_VERSION = "1.0.0"
 
-#: Manual 02 E7 as amended (Addendum 3 / Decision 39): "at least 55 % sung" is
-#: the hard floor -- below it the master is redone. H8: the sung-coverage GOAL
-#: stays 70 % and is judged by Trevor's band in core/spoken_share (<=5 points
-#: short = accept, 5-10 = accept with a flag). Past 10 points short is a redo
-#: unless the master is still at or above the 55 % floor, where it is accepted
-#: with a flag (the amendment lowered the bar to 55 %). The only other hard
-#: reject is "no real singing" (no spoken_share.NO_REAL_SINGING_STRETCH_S
-#: sung stretch).
-MIN_SUNG_COVERAGE = 0.55
-SUNG_GOAL = 0.70
+#: Trevor (2026-10-08): "It's not an absolute 55% or 20% ... within about 5
+#: percentage points" and "Once you get past 10%, it's got to be redone."
+#: The old 55 % hard floor (Decision 39 / E7-AMEND) is GONE. The target and
+#: band numbers live in ONE place, the G10 constants in core/spoken_share
+#: (SUNG_TARGET_PCT, ACCEPT_PTS, FLAG_PTS). The only hard reject besides the
+#: band is H8's "no real singing" (no NO_REAL_SINGING_STRETCH_S sung stretch).
+SUNG_TARGET = _SS.SUNG_TARGET_PCT / 100.0
 
 #: Canonical intake voice ids (plan 4.1 / voice_velvet_echo constants);
 #: copied here so the guard never needs the voice catalog to decide mode.
@@ -146,6 +146,36 @@ def resolve_voice_mode(profile):
             MODE_UNKNOWN,
             "unknown voice %r; expected %r or a known spelling" % (raw, ALL_SUNO))
     return mode, False
+
+
+def resolve_sung_target(profile=None, target=None):
+    """The ad's own sung target as a fraction of runtime.
+
+    Order: explicit ``target`` argument, then the choice card / plan record
+    (``sung_target`` or ``sung_target_pct``, top level or under ``style``),
+    then the G10 default. A value above 1 is read as a percent.
+    """
+    raw = target
+    if raw is None and isinstance(profile, dict):
+        for src in (profile, profile.get("style")):
+            if isinstance(src, dict):
+                for key in ("sung_target", "sung_target_pct"):
+                    if src.get(key) is not None:
+                        raw = src[key]
+                        break
+            if raw is not None:
+                break
+    if raw is None:
+        return SUNG_TARGET
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise SungGuardError("BAD_TARGET", "sung target must be a number, "
+                             "got %r" % (raw,))
+    raw = float(raw)
+    raw = raw / 100.0 if raw > 1.0 else raw
+    if not 0.0 < raw <= 1.0:
+        raise SungGuardError("BAD_TARGET",
+                             "sung target must be in (0, 100] %%, got %r" % raw)
+    return raw
 
 
 # ------------------------------------------------------------ evidence ------
@@ -244,14 +274,17 @@ def vocal_presence(stderr_text, floor_lufs=None):
 # ----------------------------------------------------------------- check ----
 def check_sung_vocal(timing=None, runtime_s=None, profile=None,
                      master_path=None, scan_stderr=None,
-                     min_coverage=MIN_SUNG_COVERAGE, spoken_section_ids=None,
-                     goal=SUNG_GOAL):
+                     spoken_section_ids=None, target=None):
     """E7 verdict: the master is sung (All Suno) or has its bed (Velvet).
 
     Primary path  -- ``timing``: 12.4 map -> sung coverage ratio.
-                     >= min  -> PASS SUNG_COVERAGE_OK
-                     0        -> FAIL VOCAL_MISSING (all-spoken master)
-                     (0,min)  -> FAIL SUNG_COVERAGE_LOW
+                     no sung stretch of 6 s  -> FAIL VOCAL_MISSING
+                     within 5 points of the ad's target   -> PASS
+                     5-10 points off                      -> PASS + flag
+                     more than 10 points off              -> FAIL
+                                                SUNG_COVERAGE_LOW (redo)
+                     ``target`` (fraction) or the card's ``sung_target``;
+                     default: the G10 constant. No absolute floor.
     Secondary path-- no map: ``master_path``/``scan_stderr`` gives the
                      vocal-presence signal; detected -> PASS (All Suno) /
                      bed present (Velvet); absent -> FAIL VOCAL_MISSING.
@@ -261,9 +294,10 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
     Returns the verdict dict (record_for_gate builds the qc record from it).
     """
     mode, defaulted = resolve_voice_mode(profile)
+    target = resolve_sung_target(profile, target)
     ver = {"tool": TOOL_NAME, "tool_version": TOOL_VERSION,
            "voice_mode": mode, "voice_mode_defaulted": defaulted,
-           "min_coverage": min_coverage, "evidence_path": None,
+           "target": round(target, 4), "evidence_path": None,
            "sung_coverage": None, "outcome": "FAIL", "reason_code": None,
            "next_action": None, "flags": []}
     # ---- primary: the timing map ----
@@ -302,24 +336,23 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
                 "re-cut with the Suno song master"
                 % (stretch, _SS.NO_REAL_SINGING_STRETCH_S))
             return ver
-        short_pts = max(0.0, (goal - ratio) * 100.0)
-        band = _SS.judge_gap(short_pts)
-        ver["gap_pts"] = round(short_pts, 3)
-        if ratio + 1e-9 < min_coverage:
+        j = _SS.judge_gap(ratio * 100.0, target * 100.0)
+        ver["gap_pts"] = j["gap_pts"]
+        if j["verdict"] == _SS.VERDICT_FAIL:
             ver["outcome"] = "FAIL"
             ver["reason_code"] = "SUNG_COVERAGE_LOW"
             ver["next_action"] = (
-                "sung runtime %.2f%% is under the %.0f%% floor (goal %.0f%%): "
-                "redo; add sung sections"
-                % (ratio * 100.0, min_coverage * 100.0, goal * 100.0))
+                "sung runtime %.2f%% is %.1f points from the %.0f%% target, "
+                "past %d: redo" % (ratio * 100.0, j["gap_pts"],
+                                   target * 100.0, _SS.FLAG_PTS))
             return ver
         ver["outcome"] = "PASS"
         ver["reason_code"] = "SUNG_COVERAGE_OK"
-        if band != _SS.VERDICT_PASS:
+        if j["verdict"] == _SS.VERDICT_FLAG:
             ver["flags"] = [
-                "sung runtime %.2f%% is %.1f points under the %.0f%% goal: "
-                "accepted with a flag" % (ratio * 100.0, short_pts,
-                                          goal * 100.0)]
+                "sung runtime %.2f%% is %.1f points from the %.0f%% target: "
+                "accepted with a flag" % (ratio * 100.0, j["gap_pts"],
+                                          target * 100.0)]
         ver["next_action"] = "final QC continues"
         return ver
     # ---- secondary: vocal-presence signal on the assembled master ----

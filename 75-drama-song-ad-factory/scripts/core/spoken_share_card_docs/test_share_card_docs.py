@@ -41,6 +41,7 @@ if _OVERRIDE:
 
 import spoken_share_card_docs as S            # noqa: E402  (package under test)
 from spoken_share_card_docs import share_card_docs as M   # noqa: E402
+import spoken_share as _SS                                # noqa: E402
 
 # --- mocked environment: no live sockets, no spend -------------------------
 _REAL_SOCKET = socket.socket
@@ -74,8 +75,11 @@ def test_constants():
     check("band is the new 40-55, not the retired one",
           (M.SPOKEN_MIN_PCT, M.SPOKEN_MAX_PCT) == (40, 55)
           and (M.SPOKEN_MIN_PCT, M.SPOKEN_MAX_PCT) != M.RETIRED_BAND_PCT)
-    check("first sung line within about 10 seconds",
-          M.FIRST_SUNG_WITHIN_SECONDS == 10, M.FIRST_SUNG_WITHIN_SECONDS)
+    check("first real singing targeted at 15 percent",
+          M.FIRST_SUNG_TARGET_PCT == 15, M.FIRST_SUNG_TARGET_PCT)
+    check("card-docs number equals the spoken_share number (no drift)",
+          M.FIRST_SUNG_TARGET_PCT == _SS.FIRST_SUNG_TARGET_PCT,
+          (M.FIRST_SUNG_TARGET_PCT, _SS.FIRST_SUNG_TARGET_PCT))
     check("source cites Decision log 37 / plan 6.7",
           "Decision log 37" in M.SOURCE and "plan 6.7" in M.SOURCE, M.SOURCE)
 
@@ -91,7 +95,7 @@ def test_card_line_states_target():
     check("card line states the floor", "never below 40%" in line, line)
     check("card line keeps the opener short", "short spoken opener" in line, line)
     check("card line carries the first-sung rule",
-          "first sung line within about 10 seconds" in line, line)
+          "first real singing at about 15% of the ad" in line, line)
     check("card block ships exactly the Spoken line",
           M.card_block() == [M.CARD_LINE], M.card_block())
     check("card line passes its own reader", M.check_card_text(line) == [],
@@ -110,8 +114,8 @@ def test_docs_states_target():
     check("docs state never less than 40", "never less than 40%" in text)
     check("docs count rap as spoken", "rap counts as spoken" in text)
     check("docs keep the opener short", "opener stays short" in text)
-    check("docs carry the first-sung-within-10s rule",
-          "first sung line starts within about 10 seconds" in text)
+    check("docs carry the first-sung 15 percent rule",
+          "targeted at 15% of the runtime" in text)
     bare = M.check_docs_text(M.docs_statement(with_reference_note=False))
     check("docs without the reference note fail only on that note",
           len(bare) == 4 and all(
@@ -165,7 +169,7 @@ def test_negative_control_stale_text_is_refused():
 
 def test_negative_control_gutted_wording_is_reported():
     gutted = ("Spoken: 44% of the runtime (never above 60%, never below 30%)  "
-              "/  long spoken opener  /  first sung line within about 30 seconds")
+              "/  long spoken opener  /  first real singing at about 40% of the ad")
     reasons = M.check_card_text(gutted)
     check("wrong target reported", any("45 percent" in r for r in reasons),
           reasons)
@@ -175,7 +179,7 @@ def test_negative_control_gutted_wording_is_reported():
           reasons)
     check("opener rule reported", any("opener" in r for r in reasons), reasons)
     check("first-sung rule reported",
-          any("first sung" in r for r in reasons), reasons)
+          any("first real singing" in r for r in reasons), reasons)
 
 
 def test_positive_control_clean_text_passes():
@@ -187,8 +191,8 @@ def test_positive_control_clean_text_passes():
     check("clean prose is accepted",
           M.check_docs_text(
               "target 45% of runtime, never more than 55%, never less than "
-              "40%. Rap counts as spoken. Opener stays short; first sung line "
-              "starts within about 10 seconds. The 57.0% reference figure is "
+              "40%. Rap counts as spoken. Opener stays short; first real singing, "
+              "measured on the vocal stem, is targeted at 15% of the runtime. The 57.0% reference figure is "
               "over the new 55% limit; its recipe still stands for "
               "everything else.") == [])
 
