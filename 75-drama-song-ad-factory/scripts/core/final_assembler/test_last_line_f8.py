@@ -38,15 +38,15 @@ def check(name, cond, detail=""):
 
 def _tl(lines=None, endcard=True):
     # 4 segments (3 marked lip_sync so the E6 coverage gate passes on the
-    # fixture; 12% of 19.5 s = 2.34 s < 7.5 s marked, 3 lines minimum);
+    # fixture; 50% of 19.5 s = 9.75 s, 9.9 s marked, 3 lines minimum);
     # the end card starts at 15 s inside the closing clip.
     tl = {"schema_version": A.TIMELINE_SCHEMA, "fps": 30,
           "width": 640, "height": 360, "song_path": None,
           "transition": "none",
-          "segments": [{"src": "a.mp4", "dur": 12.0},
-                       {"src": "b.mp4", "dur": 2.5, "lip_sync": True},
-                       {"src": "c.mp4", "dur": 2.5, "lip_sync": True},
-                       {"src": "d.mp4", "dur": 2.5, "lip_sync": True}]}
+          "segments": [{"src": "a.mp4", "dur": 9.6},
+                       {"src": "b.mp4", "dur": 3.3, "lip_sync": True},
+                       {"src": "c.mp4", "dur": 3.3, "lip_sync": True},
+                       {"src": "d.mp4", "dur": 3.3, "lip_sync": True}]}
     if endcard:
         tl["endcard_start_s"] = 15.0        # card starts at 15 s
     if lines is not None:

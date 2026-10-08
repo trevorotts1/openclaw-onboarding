@@ -21,6 +21,11 @@ from __future__ import annotations
 import array
 import subprocess
 
+try:                                   # package import
+    from . import image_gate
+except ImportError:                    # script import (tests run from here)
+    import image_gate
+
 TOOL_NAME = "lip_gate"
 SCHEMA_VERSION = "1.0.0"
 
@@ -126,7 +131,8 @@ def score(j):
     return s + (10 if j["verdict"] == "PASS" else 0)
 
 
-def run_gate(line_id, generate, measure_clip, ab_state, source_image=None):
+def run_gate(line_id, generate, measure_clip, ab_state, source_image=None,
+             image_check=None):
     """Orchestrate attempts. Injected, so mocked providers work at $0.
 
     generate(provider, input_spec) -> clip ; provider in {"kling","infinitalk"}
@@ -135,11 +141,28 @@ def run_gate(line_id, generate, measure_clip, ab_state, source_image=None):
     InfiniTalk A/B is ONE-TIME on a single line.
     source_image: the speaker's lip-sync close-up (lipsync_closeup()); every
     attempt, InfiniTalk included, takes it as its source image by default.
+    image_check: the injected picture check, image_gate.check_source_image
+    bound to a detector (`lambda img: check_source_image(img, analyze)`). It
+    runs BEFORE any generate() call (the first paid job). No picture, no
+    checker, or a failing picture raises image_gate.LipsyncImageRefused with
+    every reason; nothing is spent and nothing passes silently.
     Returns the receipt row (all attempts' numbers + kept attempt).
     """
-    src = {"source_image": source_image} if source_image else {}
+    if not source_image:
+        raise image_gate.LipsyncImageRefused(
+            [(image_gate.IMAGE_MISSING, "no lip-sync source picture")], line_id)
+    if image_check is None:
+        raise image_gate.LipsyncImageRefused(
+            [(image_gate.IMAGE_UNCHECKED, "no image check supplied")], line_id)
+    res = image_check(source_image)
+    if not isinstance(res, dict) or res.get("pass") is not True:
+        raise image_gate.LipsyncImageRefused(
+            (res or {}).get("reasons") or [(image_gate.UNMEASURED,
+                                            "image check gave no verdict")],
+            line_id)
+    src = {"source_image": source_image}
     improved = dict(IMPROVED_INPUT, **src)
-    plan = [("kling", src or None), ("kling", improved)]
+    plan = [("kling", src), ("kling", improved)]
     attempts = []
     for provider, spec in plan:
         attempts.append(_attempt(provider, spec, generate, measure_clip))

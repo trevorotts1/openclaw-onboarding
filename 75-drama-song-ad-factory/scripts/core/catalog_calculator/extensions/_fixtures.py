@@ -60,7 +60,7 @@ def choice(length=60, shapes=("9:16",), model=None, music=MUSIC_ID,
     return out
 
 
-def lipsync(model=LIPSYNC_ID, seconds=18, lines=4):
+def lipsync(model=LIPSYNC_ID, seconds=35, lines=7):
     return {"model": model, "seconds": seconds, "lines": lines}
 
 
