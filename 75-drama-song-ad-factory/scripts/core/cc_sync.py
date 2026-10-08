@@ -96,6 +96,18 @@ CREATE TABLE IF NOT EXISTS epic_ids(
 DELIVERABLE_TYPES = ("file", "url", "artifact", "image")
 
 
+def _loud(kind, code, detail):
+    """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
+    import os as _os, sys as _sys
+    d = _os.path.dirname(_os.path.abspath(__file__))
+    while d != _os.path.dirname(d) and not _os.path.exists(_os.path.join(d, "loud_failure.py")):
+        d = _os.path.dirname(d)
+    if d not in _sys.path:
+        _sys.path.insert(0, d)
+    import loud_failure
+    getattr(loud_failure, kind)(code, detail)
+
+
 class BoardSyncError(Exception):
     pass
 
@@ -321,6 +333,12 @@ class Outbox:
                 report["degraded"] = True
                 report["pending"].append(rid)
                 break  # preserve order: nothing behind an outage goes out
+        if report["degraded"] or report["auth_error"]:
+            # Documented fail-soft (board unreachable): never silent.
+            _loud("warn", "COMMAND_CENTER_UNREACHABLE" if not report["auth_error"]
+                  else "COMMAND_CENTER_AUTH_ERROR",
+                  "board sync degraded; %d row(s) stay queued, work continues"
+                  % len(report["pending"]))
         for (sid, sstate) in self.db.execute("SELECT id,state FROM outbox WHERE state IN (?,?)", (PENDING, SENT)):
             if sid not in report["acked"] and sid not in report["rejected"] and sid not in report["pending"]:
                 report["pending" if sstate == PENDING else "pending"].append(sid)

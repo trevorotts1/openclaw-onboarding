@@ -56,6 +56,18 @@ PRICE_MENU_ENV = "PRICE_MENU_MD"
 _MENU_SECTION = "Rates used (silent, no audio)"
 
 
+def _loud(kind, code, detail):
+    """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
+    import os as _os, sys as _sys
+    d = _os.path.dirname(_os.path.abspath(__file__))
+    while d != _os.path.dirname(d) and not _os.path.exists(_os.path.join(d, "loud_failure.py")):
+        d = _os.path.dirname(d)
+    if d not in _sys.path:
+        _sys.path.insert(0, d)
+    import loud_failure
+    getattr(loud_failure, kind)(code, detail)
+
+
 class ModelLockError(Exception):
     """Carries a machine reason code (e.g. MODEL_NOT_ON_MENU)."""
 
@@ -122,8 +134,9 @@ def _allowed():
             parsed = parse_price_menu(menu)
             if parsed:
                 return list(parsed)
-        except (OSError, ValueError):
-            pass
+        except (OSError, ValueError) as exc:
+            _loud("warn", "PRICE_MENU_UNPARSEABLE",
+                  "falling back to the built-in video model list: %r" % (exc,))
     return list(ALLOWED_VIDEO_MODELS)
 
 

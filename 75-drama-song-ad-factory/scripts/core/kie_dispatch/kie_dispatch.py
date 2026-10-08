@@ -75,6 +75,18 @@ except Exception:  # noqa: BLE001 - gate stays fail-closed without the module
 #: non-None. Run state is read from ``request["card_receipt"]`` (the
 #: recorded receipt block from style_defaults.card_gate.answered_stamped)
 #: or from ``request["run_state"]["card_receipt"]``.
+def _loud(kind, code, detail):
+    """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
+    import os as _os, sys as _sys
+    d = _os.path.dirname(_os.path.abspath(__file__))
+    while d != _os.path.dirname(d) and not _os.path.exists(_os.path.join(d, "loud_failure.py")):
+        d = _os.path.dirname(d)
+    if d not in _sys.path:
+        _sys.path.insert(0, d)
+    import loud_failure
+    getattr(loud_failure, kind)(code, detail)
+
+
 def card_gate_refusal(request):
     """-> None when the card is answered and stamped, else the refusal dict
     with reason CARD_UNANSWERED. Fail-closed: no receipt is unanswered."""
@@ -187,7 +199,8 @@ def _registry_entry(model, adapter=None):
            / "kie-model-registry.json")
     try:
         data = json.loads(Path(reg).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        _loud("warn", "KIE_REGISTRY_UNREADABLE", "%s: %r" % (reg, exc))
         return None
     models = data.get("models") if isinstance(data, dict) else None
     if not isinstance(models, list):
@@ -244,8 +257,9 @@ def _record_stage_evidence(db, run_id, logical_key, attempt_id, stage,
             conn.commit()
         finally:
             conn.close()
-    except Exception:                                      # noqa: BLE001
-        pass
+    except Exception as exc:                               # noqa: BLE001
+        _loud("fail", "DISPATCH_EVENT_NOT_RECORDED",
+              "ledger dispatch row for %s not written: %r" % (logical_key, exc))
 
 
 def submit_all_ready(jobs, max_concurrency=None, *, ledger=None,
@@ -974,8 +988,8 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
             for name in os.listdir(tmp):
                 os.unlink(os.path.join(tmp, name))
             os.rmdir(tmp)
-        except OSError:
-            pass
+        except OSError as exc:
+            _loud("warn", "TMP_CLEANUP_FAILED", "%s: %r" % (tmp, exc))
 
 
 def main(argv=None):

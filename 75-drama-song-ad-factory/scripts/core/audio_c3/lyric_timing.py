@@ -102,6 +102,18 @@ OPERATOR_KEY_ENV_NAMES = frozenset({
 EXIT = {"ok": 0, "error": 1, "rejected": 5}
 
 
+def _loud(kind, code, detail):
+    """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
+    import os as _os, sys as _sys
+    d = _os.path.dirname(_os.path.abspath(__file__))
+    while d != _os.path.dirname(d) and not _os.path.exists(_os.path.join(d, "loud_failure.py")):
+        d = _os.path.dirname(d)
+    if d not in _sys.path:
+        _sys.path.insert(0, d)
+    import loud_failure
+    getattr(loud_failure, kind)(code, detail)
+
+
 class LyricTimingError(Exception):
     """Machine-code refusal; never a silent pass."""
 
@@ -225,7 +237,8 @@ def _read_saved_docs(saved_paths: Sequence[str]) -> List[Dict[str, Any]]:
     for p in saved_paths or []:
         try:
             docs.append(_json.loads(_Path(p).read_text(encoding="utf-8")))
-        except (OSError, ValueError):
+        except (OSError, ValueError) as exc:
+            _loud("warn", "SAVED_KIE_FILE_UNREADABLE", "%s: %r" % (p, exc))
             continue
     return docs
 

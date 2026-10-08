@@ -68,10 +68,25 @@ REQUIRED_FILES = ("brief.json", "receipt.json", "cc-register.json",
                   "ledger.db")
 
 
+def _loud(kind, code, detail):
+    """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
+    import os as _os, sys as _sys
+    d = _os.path.dirname(_os.path.abspath(__file__))
+    while d != _os.path.dirname(d) and not _os.path.exists(_os.path.join(d, "loud_failure.py")):
+        d = _os.path.dirname(d)
+    if d not in _sys.path:
+        _sys.path.insert(0, d)
+    import loud_failure
+    getattr(loud_failure, kind)(code, detail)
+
+
 def _read_brief(entry):
     try:
         data = json.loads(Path(entry["brief"]).read_text(encoding="utf-8"))
-    except Exception:                            # noqa: BLE001 - report, not raise
+    except Exception as exc:                     # noqa: BLE001 - report, not raise
+        _loud("fail", "BRIEF_UNREADABLE",
+              "%s: %r (isolation check cannot run for this book)"
+              % (entry.get("brief"), exc))
         return {}
     book = data.get("book") or {}
     return {k: book.get(k) or "" for k in BRIEF_FIELDS}
