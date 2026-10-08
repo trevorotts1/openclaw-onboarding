@@ -43,6 +43,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -154,6 +155,162 @@ def _record_stage_evidence(db, run_id, logical_key, attempt_id, stage,
             conn.close()
     except Exception:                                      # noqa: BLE001
         pass
+
+
+def submit_all_ready(jobs, max_concurrency=None, *, ledger=None,
+                     runner=None, timeout=300):
+    """Part F F5: submit EVERY ready job in ONE pass. Returns a receipt dict.
+
+    A job is 'ready' when its model, request, estimated_cost and every input
+    path are present. All ready jobs go out together - the owner rule: 17
+    clips at once; no 'test batch first' unless the owner orders one. The
+    stage order callers follow stays reference images -> keyframes -> clips;
+    this is the single clips pass at the end of that order.
+
+    jobs: each a dict with a unique logical_key, the exact model id (this
+          module never picks one), a request dict, an estimated_cost and
+          input paths under 'inputs' (a path or a list; every one must
+          exist on disk). submit_all_ready never invents a missing field -
+          an incomplete job is excluded and NAMED in the receipt.
+    ledger: optional spend_ledger DB passed through to each dispatch() so
+          every submit lands reserve/reconcile rows; run/logical/attempt
+          ids come from the job itself (job['request_ids'] or defaults).
+    max_concurrency: None means submit all ready jobs at once. A positive
+          int NAMES the provider cap: at most that many run in flight, and
+          the receipt says the cap bound the pass (max_at_once and
+          capped_by). 0, negative or a non-int is refused in the receipt,
+          never treated as unlimited.
+
+    Receipt (always a plain dict, never an exception):
+      {submitted, excluded: [{logical_key, reason}], max_at_once,
+       capped_by, envelopes, errors, submission_errors}
+    All keys always present, on every path, so callers can read one shape.
+    """
+    if max_concurrency is not None and (
+            not isinstance(max_concurrency, int)
+            or isinstance(max_concurrency, bool) or max_concurrency <= 0):
+        return _receipt(outcome="rejected",
+                        reason="max_concurrency must be a positive int or "
+                               "None (got %r)" % (max_concurrency,))
+    ready, excluded = [], []
+    jobs = jobs if isinstance(jobs, list) else ([] if jobs is None
+                                                else list(jobs))
+    for j in jobs:
+        key = (j or {}).get("logical_key") if isinstance(j, dict) else None
+        key = key or "unnamed-job"
+        try:
+            reason = _not_ready_reason(j)
+        except Exception as e:                              # noqa: BLE001
+            reason = "bad-input-spec: %s" % str(e)[:160]
+        if reason:
+            excluded.append({"logical_key": key, "reason": reason})
+        else:
+            ready.append(j)
+
+    cap = None
+    if max_concurrency is not None and len(ready) > max_concurrency:
+        cap = max_concurrency
+
+    envelopes, errors, sub_errs = [], [], []
+    ok_count = 0
+    if ready:
+        pool = ThreadPoolExecutor(max_workers=(cap or len(ready)))
+        try:
+            futs = {pool.submit(_one_submit, j, ledger, timeout): j
+                    for j in ready}
+            for fu in as_completed(futs):
+                env, j = fu.result()
+                envelopes.append(env)
+                if env["outcome"] == "ok":
+                    ok_count += 1
+                else:
+                    sub_errs.append(
+                        {"logical_key": j["logical_key"],
+                         "outcome": env["outcome"],
+                         "reason_code": env["reason_code"]})
+        finally:
+            pool.shutdown(wait=True)
+
+    # The pass takes every ready job in one go; when a cap binds, the receipt
+    # names it and max_at_once records the cap, not the ready count.
+    return _receipt(excluded=excluded, submitted=ok_count,
+                    max_at_once=(cap if cap is not None else len(ready)),
+                    capped_by=cap,
+                    envelopes=envelopes, errors=errors,
+                    submission_errors=sub_errs)
+
+
+def _receipt(excluded=None, submitted=0, max_at_once=0, capped_by=None,
+             envelopes=None, errors=None, submission_errors=None,
+             outcome=None, reason=None):
+    """One receipt shape everywhere; optional rejected marker."""
+    rec = {"submitted": submitted, "excluded": list(excluded or []),
+           "max_at_once": max_at_once, "capped_by": capped_by,
+           "envelopes": list(envelopes or []), "errors": list(errors or []),
+           "submission_errors": list(submission_errors or [])}
+    if outcome:
+        rec["outcome"] = outcome
+        rec["reason"] = reason
+    return rec
+
+
+def _not_ready_reason(job):
+    """'' when ready to submit; the exclusion reason otherwise."""
+    if not isinstance(job, dict):
+        return "not-a-dict"
+    if not job.get("model"):
+        return "no-model"
+    if not job.get("request"):
+        return "no-request"
+    cost = job.get("estimated_cost")
+    if not isinstance(cost, int) or isinstance(cost, bool) or cost < 0:
+        return "no-estimated-cost"
+    spec = job.get("inputs")
+    paths = ([spec] if isinstance(spec, (str, os.PathLike))
+             else list(spec if spec is not None else []))
+    for p in paths:
+        if not isinstance(p, (str, os.PathLike)) or not str(p).strip():
+            return "bad-input-spec"
+        if not os.path.exists(p):
+            return "inputs-missing: %s" % str(p)
+    return ""
+
+
+def _one_submit(job, ledger, timeout):
+    """One ready job through dispatch(); returns (envelope, job).
+
+    Wraps job['request_ids'] (run_id/logical_key/attempt_id - defaults
+    'run-all-ready'/'batch-n'/'att-n') so a caller controls its ledger rows.
+    No exception ever escapes; an exception becomes an 'error' envelope.
+    """
+    rid = (job.get("request_ids") or {}) if isinstance(job, dict) else {}
+    ids = {
+        "run_id": rid.get("run_id") or "run-all-ready",
+        "logical_key": rid.get("logical_key") or job.get("logical_key")
+        or "batch-job",
+        "attempt_id": rid.get("attempt_id") or ""
+    }
+    if not ids["attempt_id"]:
+        # One attempt per job inside the pass; logical key keeps rows apart.
+        ids["attempt_id"] = "att-" + ids["logical_key"]
+    try:
+        env = dispatch(
+            model=job["model"], request=job["request"],
+            save_dir=job.get("save_dir")
+            or job.get("request", {}).get("save_dir") or tempfile.gettempdir(),
+            ledger_db=ledger or ":memory:",
+            run_id=ids["run_id"], logical_key=ids["logical_key"],
+            attempt_id=ids["attempt_id"],
+            estimated_cost=job["estimated_cost"],
+            prompt=job.get("prompt", ""),
+            units=job.get("units", 1), stage=job.get("stage", "kie"),
+            owner=job.get("owner", "kie-dispatch"),
+            adapter_path=job.get("adapter_path"), runner=job.get("runner"),
+            timeout=timeout)
+        return env, job
+    except Exception as e:                                  # noqa: BLE001
+        return envelope("dispatch", "error", "SUBMIT_ALL_READY-EXCEPTION",
+                        str(e)[:300]), job
 
 
 class DispatchError(Exception):
