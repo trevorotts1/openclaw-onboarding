@@ -14,11 +14,23 @@ from .shot_planner import (
     TREATMENTS,
     SCHEMA_VERSION,
     TOOL_VERSION,
+    MIN_SHOT_S,
+    BEAT_CUT_MIN_SHOT_S,
     PlanError,
     validate_shot,
     validate_contract,
     load_timing_map,
+    plan_shot_floor,
+    validate_timeline_min_shot,
     bind_plan as _bind_plan,
+    TARGET_SHOT_SECONDS,
+    E4_REASONS,
+    E4_GATE_STEPS,
+    validate_no_reuse,
+    plan_generation_count,
+    validate_story_order,
+    e4_final_checks,
+    to_e4_qc_record,
 )
 
 try:
@@ -71,7 +83,12 @@ def bind_plan(shots, timing, contracts=None, prompts=None):
 
 __all__ = [
     "SHOT_FIELDS", "CONTRACT_KEYS", "PRODUCT_VISIBILITY", "STATUSES",
-    "TREATMENTS", "SCHEMA_VERSION", "TOOL_VERSION", "PlanError",
+    "TREATMENTS", "SCHEMA_VERSION", "TOOL_VERSION", "MIN_SHOT_S",
+    "BEAT_CUT_MIN_SHOT_S", "PlanError",
     "validate_shot", "validate_contract", "load_timing_map", "bind_plan",
+    "plan_shot_floor", "validate_timeline_min_shot",
     "intake_image_prompt", "intake_shot_prompts", "require_compiled",
+    "TARGET_SHOT_SECONDS", "E4_REASONS", "E4_GATE_STEPS",
+    "validate_no_reuse", "plan_generation_count", "validate_story_order",
+    "e4_final_checks", "to_e4_qc_record",
 ]

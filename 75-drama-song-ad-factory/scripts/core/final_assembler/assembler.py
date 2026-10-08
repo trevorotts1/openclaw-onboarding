@@ -19,6 +19,14 @@ Timeline schema (blackceo.timeline/v1):
    "segments": [{"src": "clip.mp4", "dur": 2.0 | null,
                  "transition": "fade" | null}]}
 
+E2 (manual Part E): the MISSING transition default is "fade" with
+  TRANSITION_DURATION 0.4 s (manual allows 0.3-0.5) applied at every
+  scene change; "none" is only honored when the segment carries an
+  explicit shot-planner offbeat/on-beat marker (beat_cut: true) — an
+  unmarked hard cut fails QC with HARD_CUT_UNMARKED. Timelines that
+  carry explicit transition values keep them; only the missing default
+  changed (fully backward compatible).
+
 Rules:
 - Video is the master duration; the song is laid under it
   (trimmed/padded to the video duration). Clip audio is ignored:
@@ -29,6 +37,9 @@ Rules:
 - ffmpeg is bounded (manual M7): argv starts with `nice -n 10`, carries
   `-threads N`, and the render cap grows with output length instead of a
   flat 600 s (see size_ffmpeg / lane_size.py Part D).
+- E3 minimum shot length: load_timeline fails closed on any segment
+  under 1.5 s (1.0 s when marked beat_cut) via
+  shot_planner.validate_timeline_min_shot.
 """
 import argparse
 import json
@@ -38,12 +49,39 @@ import shutil
 import subprocess
 import sys
 
+try:                                    # E1 module (this package)
+    from . import fps_conform
+except ImportError:                     # direct-script fallback
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import fps_conform  # noqa: E402
+# E6 sibling checker (same package): the lip-sync coverage rule in code.
+try:
+    from .lipsync_coverage import check_lipsync_coverage
+except ImportError:  # direct script run from inside this directory
+    from lipsync_coverage import check_lipsync_coverage  # type: ignore
+
 TOOL_NAME = "final_assembler"
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "1.0.1"
 SCHEMA_VERSION = "1.0.0"
 TIMELINE_SCHEMA = "blackceo.timeline/v1"
 
+# E3 minimum shot length floors (shot_planner is the source of truth).
+# ponytail: import inside check_timeline_min_shot so an absent/broken
+# shot_planner cannot break every assemble; the check fails closed by
+# raising there instead.
+MIN_SHOT_S = 1.5
+BEAT_CUT_MIN_SHOT_S = 1.0
+
 EXIT = {"ok": 0, "error": 1, "unavailable": 3}
+
+# --- E2: transitions (manual Part E E2) --------------------------------------
+# Default: fade 0.4 s (manual allows 0.3-0.5) at every scene change;
+# `none` only when the segment carries the planner's on-beat marker
+# (beat_cut: true — the cut lands ON a song beat, a hard cut is musical
+# there). An unmarked `none` never assembles (QC: HARD_CUT_UNMARKED).
+DEFAULT_TRANSITION = "fade"
+TRANSITION_DURATION = 0.4
+HARD_CUT_UNMARKED = "HARD_CUT_UNMARKED"
 
 # --- M7 bounding: processor share + wall-clock cap (manual 02 M7, Part D) ----
 #
@@ -180,8 +218,48 @@ def _fail(reason, **kw):
     return out
 
 
+def check_timeline_min_shot(tl, floor=None):
+    """E3 QC wiring: run shot_planner.validate_timeline_min_shot on the
+    loaded timeline. Returns [reason strings]; a non-empty list is a FAIL
+    for the final gate (same check path W-E's dup-frames check uses).
+    Refuses silently-losing the check when shot_planner is absent.
+    """
+    if floor is None:
+        floor = MIN_SHOT_S
+    core_dir = os.path.dirname(os.path.abspath(__file__))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    import shot_planner as sp
+    return sp.validate_timeline_min_shot(tl, floor=floor)
+def lipsync_gate(plan):
+    """E6 final edit QC: lip-sync coverage on the planned timeline.
+
+    plan segments carry "lip_sync" markers from plan_timeline; the gate
+    counts distinct marked LINES as segments (each whole line one segment,
+    per E5's atomicity) and totals their snapped footage. Returns the
+    _fail receipt on a short ad, or None when coverage holds (or the plan
+    declares no lip-sync markers at all, which the QC review layer reads
+    as a FAIL via the emitted coverage report — never silently as none).
+    """
+    marked = [s for s in plan["segments"]
+              if s.get("lip_sync") or s.get("lip_sync_line_ids")]
+    lines = len(marked)
+    total = sum(s["snapped_dur"] for s in marked)
+    res = check_lipsync_coverage(plan["total_dur"], lines, total)
+    if res["pass"]:
+        return None
+    return _fail(res["reason_code"], next_action=res["detail"],
+                 evidence=res["evidence"])
+
+
 def load_timeline(path):
-    """Load + validate timeline.json. Returns dict or raises ValueError."""
+    """Load + validate timeline.json. Returns dict or raises ValueError.
+
+    E3: after the structural pass, the minimum-shot-length QC check runs
+    fail-closed — a timeline with any segment under its applicable floor
+    (1.5 s, or 1.0 s when that segment is marked beat_cut) is rejected;
+    run shot planner floor remediation before assembling.
+    """
     try:
         with open(path, encoding="utf-8") as fh:
             tl = json.load(fh)
@@ -204,6 +282,17 @@ def load_timeline(path):
         if s.get("dur") is not None and s["dur"] <= 0:
             raise ValueError(
                 f"TIMELINE_BAD_SEGMENT: segments[{i}].dur must be positive")
+        # E6: an optional per-segment lip-sync marker must be a boolean, so
+        # the coverage gate below counts exactly what the planner intended.
+        if not isinstance(s.get("lip_sync", False), bool):
+            raise ValueError(
+                f"TIMELINE_BAD_SEGMENT: segments[{i}].lip_sync must be "
+                "boolean")
+    min_shot_errs = check_timeline_min_shot(tl)
+    if min_shot_errs:
+        raise ValueError(
+            "SEGMENT_TOO_SHORT: minimum shot length failed: "
+            + "; ".join(min_shot_errs[:4]))
     return tl
 
 
@@ -228,10 +317,64 @@ def probe_duration(path, ffprobe="ffprobe", timeout=30):
     return dur
 
 
+def _beat_cut(seg):
+    """E2: shot planner's on-beat marker (beat_cut: true). Truthy only."""
+    return seg.get("beat_cut") is True
+
+
+def resolve_segments(tl):
+    """E2 + QC: resolve per-segment transitions against the E2 rules.
+
+    Returns (segments, errors). errors is a list of HARD_CUT_UNMARKED
+    records for any non-first segment whose transition is 'none' without
+    the planner's beat_cut=true marker. Explicitly-authored values keep
+    working (fade stays fade; a legacy 'none' authored WITH beat_cut=true
+    stays none); only the missing default changed from none to fade.
+    """
+    errors = []
+    segs = []
+    for i, s in enumerate(tl["segments"]):
+        missing = i > 0 and "transition" not in s
+        if missing:
+            t, marker = DEFAULT_TRANSITION, False   # scene change default
+        else:
+            t = s.get("transition", tl.get("transition", "none"))
+            marker = _beat_cut(s)
+        if t not in ("none", "fade"):
+            raise ValueError(f"TIMELINE_BAD_TRANSITION: {t!r}")
+        if i > 0 and t == "none" and not marker:
+            errors.append({"index": i, "src": s.get("src"),
+                           "reason_code": HARD_CUT_UNMARKED})
+        segs.append(dict(s, transition=t, beat_cut=marker))
+    return segs, errors
+
+
+def qc_transitions(tl):
+    """E2 QC: every scene-boundary hard cut must carry beat_cut=true.
+
+    Returns ok record or _fail(HARD_CUT_UNMARKED).
+    """
+    _segs, errors = resolve_segments(tl)
+    if errors:
+        return _fail(HARD_CUT_UNMARKED,
+                     next_action="mark the cut on-beat in the shot plan "
+                                 "(beat_cut: true) or let the default fade "
+                                 "apply",
+                     evidence={"unmarked_hard_cuts": errors})
+    return {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
+            "tool_version": TOOL_VERSION, "command": "qc_transitions",
+            "outcome": "ok", "reason_code": "transitions-ok",
+            "evidence": {"checked": len(tl["segments"])},
+            "state_version": 0}
+
+
 def _seg_transition(tl, seg):
     t = seg.get("transition", tl.get("transition", "none"))
     if t not in ("none", "fade"):
         raise ValueError(f"TIMELINE_BAD_TRANSITION: {t!r}")
+    if t == "none" and not _beat_cut(seg):
+        raise ValueError(f"{HARD_CUT_UNMARKED}: segment {seg.get('src')!r} "
+                         "transition none without beat_cut=true")
     return t
 
 
@@ -245,7 +388,10 @@ def plan_timeline(tl, base_dir=".", probe=None):
     fps = float(tl.get("fps", 30))
     width = int(tl.get("width", 1920))
     height = int(tl.get("height", 1080))
-    default_xd = float(tl.get("transition_duration", 0.5) or 0)
+    # E2: the resolved default is fade TRANSITION_DURATION; explicit
+    # transition_duration values keep working (manual allows 0.3-0.5).
+    default_xd = float(tl.get("transition_duration",
+                              TRANSITION_DURATION) or 0)
     items = []
     for i, s in enumerate(tl["segments"]):
         dur = s.get("dur")
@@ -255,12 +401,31 @@ def plan_timeline(tl, base_dir=".", probe=None):
                     f"TIMELINE_NEEDS_PROBE: segments[{i}] has no dur "
                     "and no probe supplied")
             dur = probe(s["src"])
-        frames = max(1, round(dur * fps))
-        trans = _seg_transition(tl, s) if i > 0 else "none"
+        lids = s.get("lip_sync_line_ids")
+        # Part E E5: a lip-sync clip is atomic. Snap UP to the frame grid
+        # (ceil, never the plain round) so conforming a lip-sync segment
+        # can never trim it below its aligned line duration; the remaining
+        # trim side stays policed by validate_lipsync_atomic.
+        if isinstance(lids, list) and lids:
+            frames = max(1, math.ceil(dur * fps))
+        else:
+            frames = max(1, round(dur * fps))
+        trans = _seg_transition(
+            tl, s) if i > 0 and "transition" in s else (
+            DEFAULT_TRANSITION if i > 0 else "none")
         xd = round(default_xd * fps) / fps if trans != "none" else 0.0
-        items.append({"src": s["src"], "frames": frames,
-                      "snapped_dur": frames / fps, "transition": trans,
-                      "xfade_dur": xd})
+        # Part E E1(3): carry source/output fps per segment. The timeline's
+        # per-segment "fps" key (absent on legacy timelines) is the clip's
+        # requested source rate; fall back to the timeline fps so the
+        # manifest records an equal-fps pass-through for legacy inputs.
+        rec = fps_conform.conform_record(
+            s.get("fps", fps) if s.get("fps") is not None else fps, fps)
+        item = {"src": s["src"], "frames": frames,
+                "snapped_dur": frames / fps, "transition": trans,
+                "xfade_dur": xd, "lip_sync": bool(s.get("lip_sync")), **rec}
+        if isinstance(lids, list) and lids:
+            item["lip_sync_line_ids"] = list(lids)
+        items.append(item)
     for i in range(1, len(items)):
         ov = round(items[i]["xfade_dur"] * fps)
         lo = min(items[i - 1]["frames"], items[i]["frames"])
@@ -282,6 +447,113 @@ def plan_timeline(tl, base_dir=".", probe=None):
             "total_dur": total_frames / fps}
 
 
+# --- Part E E5: lip-sync clips stay whole (atomic) --------------------------
+#
+# A lip-sync clip carries one sung line's mouth motion, aligned to that
+# line's window in the timing map (directive 12.4 shape, the map the
+# planner binds via load_timing_map/bind_plan). The old assembler was free
+# to split one lip-sync clip across two timeline segments (the failed 2026
+# ad split one in two) or trim it below its line. Both are now gate
+# failures at planning AND assembly validation:
+#
+#   LIPSYNC_SPLIT     - one lip-sync source clip used in two segments
+#                       (planning side also raises PlanError LIPSYNC_SPLIT
+#                       via shot_planner.bind_plan for shot lists)
+#   LIPSYNC_TRIMMED   - a segment carrying a lip-sync clip is shorter than
+#                       that clip's aligned line duration
+#
+# Timing data: segments carry "lip_sync_line_ids" (directive 12.3/12.4
+# names, the same ids the planner's bind_plan resolves) and the timeline
+# carries a directive-12.4 timing map under a "timing" key ({"sections":
+# [{"section_id", "lyrics": [{"line_id", "start", "end", ...}]}]}) — the
+# same shape load_timing_map() accepts. A declared lip-sync segment whose
+# ids cannot resolve in the map fails closed (LIPSYNC_WINDOW_UNKNOWN).
+
+
+def _timing_lines(tl):
+    """Directive-12.4 timing map (timeline 'timing' key) -> {line_id: seconds}.
+
+    Same shape shot_planner.load_timing_map accepts. Bad shape raises
+    ValueError LIPSYNC_TIMING_BAD; absent/no map raises None and the caller
+    fails closed for any declared lip-sync segment.
+    """
+    t = tl.get("timing")
+    if t is None:
+        return None
+    if not isinstance(t, dict) or not isinstance(t.get("sections"), list):
+        raise ValueError(
+            "LIPSYNC_TIMING_BAD: timeline 'timing' must be a directive-"
+            "12.4 map ({'sections': [{'lyrics': ...}, ...]})")
+    lines = {}
+    for sec in t["sections"]:
+        if not isinstance(sec, dict) or not isinstance(sec.get("lyrics"),
+                                                       list):
+            raise ValueError(
+                "LIPSYNC_TIMING_BAD: each section needs a lyrics list")
+        for ln in sec["lyrics"]:
+            if not isinstance(ln, dict) or not isinstance(ln.get("line_id"),
+                                                          str) or not ln["line_id"].strip():
+                raise ValueError(
+                    "LIPSYNC_TIMING_BAD: lyric line needs line_id")
+            st, en = ln.get("start"), ln.get("end")
+            if (not isinstance(st, (int, float)) or isinstance(st, bool)
+                    or not isinstance(en, (int, float))
+                    or isinstance(en, bool) or not st < en):
+                raise ValueError(
+                    "LIPSYNC_TIMING_BAD: line %r window unordered"
+                    % ln["line_id"])
+            lines[ln["line_id"]] = float(en) - float(st)
+    return lines
+
+
+def validate_lipsync_atomic(plan, tl=None):
+    """Part E E5 gate: lip-sync clips may not be split or trimmed.
+
+    plan: plan_timeline() output; tl: the loaded timeline dict (for the
+    timing map). Raises ValueError with reason LIPSYNC_SPLIT (one lip-sync
+    source in two segments), LIPSYNC_TRIMMED (segment shorter than its
+    clip's aligned line duration; both declared ids checked) or
+    LIPSYNC_WINDOW_UNKNOWN (declared ids unresolvable — fail closed).
+    Returns the checked count of lip-sync segments.
+    """
+    segs = plan["segments"]
+    seen = {}
+    for i, s in enumerate(segs):
+        lids = s.get("lip_sync_line_ids")
+        if not lids:
+            continue
+        if s["src"] in seen:
+            raise ValueError(
+                "LIPSYNC_SPLIT: lip-sync source %r appears in segments "
+                "%d and %d; a lip-sync clip is atomic (manual Part E E5)"
+                % (s["src"], seen[s["src"]], i))
+        seen[s["src"]] = i
+    if tl is not None:
+        lines = _timing_lines(tl)
+        for s in segs:
+            lids = s.get("lip_sync_line_ids")
+            if not lids:
+                continue
+            if not lines:
+                raise ValueError(
+                    "LIPSYNC_WINDOW_UNKNOWN: segment carries "
+                    "lip_sync_line_ids %s but the timeline carries no "
+                    "timing map to align against" % (lids,))
+            for lid in lids:
+                if lid not in lines:
+                    raise ValueError(
+                        "LIPSYNC_WINDOW_UNKNOWN: lip-sync line %r missing "
+                        "from the timing map" % (lid,))
+            if s["snapped_dur"] < min(lines[lid] for lid in lids) - 1e-9:
+                raise ValueError(
+                    "LIPSYNC_TRIMMED: segment %r %.3fs is below its "
+                    "lip-sync line duration(s) %s; a lip-sync clip may "
+                    "not be trimmed below its aligned line (manual Part "
+                    "E E5)" % (s["src"], s["snapped_dur"], sorted(lids)))
+    checked = sum(1 for s in segs if s.get("lip_sync_line_ids"))
+    return checked
+
+
 def build_argv(plan, output, ffmpeg="ffmpeg"):
     """ffmpeg argv array rendering plan -> output. No gaps by construction
     (concat/xfade chain covers every output frame exactly once).
@@ -289,6 +561,10 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
     M7: the command is prefixed with `nice -n 10` and carries `-threads N`
     (from lane_size.py when shipped, else the Part D fallback) so a render
     never pegs every core of the box.
+
+    Part E E5: lip-sync segments conform at their snapped (ceil-rounded,
+    never-below-line) duration, so the trim in the filter chain cannot cut
+    into a lip-sync clip; everything else is unchanged.
     """
     fps, w, h = plan["fps"], plan["width"], plan["height"]
     threads, nice, _timeout = size_ffmpeg(
@@ -303,8 +579,16 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
         cmd += ["-i", song]
     fc = []
     for i, s in enumerate(segs):
+        # Part E E1: motion-compensated conform, never the plain `fps`
+        # filter (it duplicates frames -> visible stutter). The segment's
+        # recorded source_fps decides pass-through vs minterpolate.
+        conform = fps_conform.build_conform_argv(
+            s.get("source_fps", fps), fps, w, h)
+        step = f"setpts=PTS-STARTPTS,"
+        if conform:
+            step += f"{conform},"
         fc.append(f"[{i}:v]trim=duration={s['snapped_dur']:.6f},"
-                  f"setpts=PTS-STARTPTS,fps={fps:g},"
+                  f"{step}"
                   f"scale={w}:{h},setsar=1[v{i}]")
     if len(segs) == 1:
         vlast = "[v0]"
@@ -370,6 +654,14 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     except ValueError as exc:
         return _fail(str(exc).split(":")[0], next_action=str(exc),
                      evidence={"timeline": str(timeline_path)})
+    # E2 QC: unmarked hard cuts never assemble.
+    try:
+        qc = qc_transitions(tl)
+    except ValueError as exc:
+        return _fail(str(exc).split(":")[0], next_action=str(exc),
+                     evidence={"timeline": str(timeline_path)})
+    if qc["outcome"] != "ok":
+        return qc
     base = os.path.dirname(os.path.abspath(str(timeline_path))) or base_dir
 
     def abspath(p):
@@ -393,18 +685,36 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         s["src"] = abspath(s["src"])
     if plan["song_path"]:
         plan["song_path"] = abspath(plan["song_path"])
+    # Part E E5: lip-sync clips stay whole — same gate the shot-planner QC
+    # path runs, at assembly validation. Render only a plan that passes.
+    try:
+        validate_lipsync_atomic(plan, tl)
+    except ValueError as exc:
+        msg = str(exc)
+        return _fail(msg.split(":")[0], next_action=msg, evidence={})
     if timeout is None:
         _threads, _nice, timeout = size_ffmpeg(
             plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
             plan.get("height", DEFAULT_HEIGHT))
     argv = build_argv(plan, output, ffmpeg)
+    # E6 lip-sync coverage result rides in every receipt; only a FAIL
+    # blocks the render. The dry-run receipt exists for exactly this.
+    cov = lipsync_gate(plan)
     if dry_run:
-        return {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
-                "tool_version": TOOL_VERSION, "command": "assemble",
-                "outcome": "ok", "reason_code": "DRY_RUN",
-                "next_action": "rerun without dry_run to render",
-                "evidence": {"argv": argv, "plan": plan,
-                             "timeout_s": timeout}, "state_version": 0}
+        out = {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
+               "tool_version": TOOL_VERSION, "command": "assemble",
+               "outcome": "ok", "reason_code": "DRY_RUN",
+               "next_action": "rerun without dry_run to render",
+               "evidence": {"argv": argv, "plan": plan,
+                            "timeout_s": timeout, "lipsync": cov},
+               "state_version": 0}
+        if cov is not None:  # blocked before spend, but evidence stays
+            out["outcome"] = "error"
+            out["reason_code"] = cov["reason_code"]
+            out["next_action"] = cov["next_action"]
+        return out
+    if cov is not None:   # gate FAIL: no render spend (17.5 fail-closed)
+        return cov
     try:
         proc = _run(argv, timeout)
     except RuntimeError as exc:
@@ -424,6 +734,24 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     evid = {"planned_dur": plan["total_dur"], "output_dur": vdur,
             "total_frames": plan["total_frames"], "argv": argv,
             "timeout_s": timeout}
+    # Part E E1(5) final QC gate: a master above 2% duplicated frames
+    # (mpdecimate marker ratio) fails with TIMELINE_DUP_FRAMES. The only
+    # accepted dup source is source fps == timeline fps; with the E1
+    # conform a failure here means a bad conform (or a passthrough used
+    # where interpolation was owed) and the render is refused.
+    dup_pct = fps_conform.mpdecimate_dup_ratio(proc.stderr or "")
+    evid["dup_frame_pct"] = dup_pct
+    try:
+        fps_conform.assert_no_dupe_frames(dup_pct)
+        evid["dup_frame_gate"] = "PASS"
+    except ValueError as exc:
+        return _fail(str(exc),
+                     next_action=("master exceeds %s%% duplicated frames; "
+                                  "reconform the offending clip with "
+                                  "fps_conform.build_conform_argv (mci, "
+                                  "never the plain fps filter)"
+                                  % fps_conform.DUP_FRAMES_CAP),
+                     evidence=evid)
     if abs(vdur - plan["total_dur"]) > frame + 1e-3:
         return _fail("PLAN_DRIFT",
                      next_action="output duration off plan by >1 frame",
