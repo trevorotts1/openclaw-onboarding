@@ -6,6 +6,10 @@ frontmatter `version:` field).
 
 ---
 
+## [Unreleased] - 2026-10-08 - H10 voice matches the character
+
+- `qc_voice_match/line_voice_fit.py`: per-line pitch measured in the stem against the on-screen character's declared band, Trevor's 5/10 target rule, `VOICE_FACE_MISMATCH` -> regenerate that take, numbers in the receipt (Kiesett: sung verses at 70-86 Hz over the woman's face). Skill 75 v2.6.2.
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).

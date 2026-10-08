@@ -1,3 +1,5 @@
+## [v26.4.8]  -  2026-10-08  -  fix(drama-song H10): each line's voice must fit the character on screen (measured pitch vs declared band, regenerate mismatched take, numbers in receipt) - skill 75 v2.6.2
+
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

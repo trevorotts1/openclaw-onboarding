@@ -21,6 +21,8 @@ from .qc_voice_match import (  # noqa: F401
     to_qc_record,
 )
 
+from . import line_voice_fit  # noqa: F401  (H10)
+
 __all__ = [
     "CHECK",
     "CHECK_ID",
