@@ -15,7 +15,7 @@ One batch release of 24 unit pull requests (merged together in one batch pull re
 - #1635: H8: one singing rule + Trevor's 5/10 point band for every share, first-sung, length and lip-sync goal (skill 75 v2.6.1, v26.4.7)
 - #1636: H4: every speaking face is a lip-sync clip of its own line + lip-sync coverage target band (skill 75 v2.6.3, v26.4.9)
 - #1638: H7: captions use approved lyric sheet words; protected names enforced at sheet build and on sung takes (skill 75 v2.6.4, v26.4.10)
-- #1640: fix(parity): runtime-parity guard matches alias runtime ids (dept-legal-compliance -> legal) (SHR002, v26.4.7)
+- #1640: fix(parity): runtime-parity guard matches alias runtime ids (dept-legal-compliance -> legal) (SHR002, v26.4.7); skill 32 v13.1.46 (bump added in the batch)
 - #1642: G12: Suno song recipe is the default for every Suno music style (skill 75 v2.6.1)
 - #1643: I5: clean song endings (outro + resolved chord tags, last-2s ending QC), skill 75 v2.6.1
 - #1644: I2: scenes must match the song and the faces (skill 75 v2.6.1, v26.4.7)
