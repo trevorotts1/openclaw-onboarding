@@ -254,8 +254,7 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
     summary["auth_status"] = status
 
     questions = [_reword(q) for q in (base.get("questions") or [])]
-    message = "\n".join("%d. %s" % (i + 1, q["question"])
-                        for i, q in enumerate(questions)) or None
+    message = _base._fmt([q["question"] for q in questions])
     out = {
         "outcome": base.get("outcome"),
         "reason_code": base.get("reason_code"),

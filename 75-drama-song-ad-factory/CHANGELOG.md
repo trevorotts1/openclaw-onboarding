@@ -6,6 +6,20 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.1] - 2026-10-08 - H9 readable intake card
+
+- New `scripts/core/choice_card/intake_card/`: builds the six intake questions
+  (length, music style, video style, video model, spend limit, storyboard
+  approval) as one block per question, one numbered option per line,
+  RECOMMENDED marked, blank line between questions, a closing "how to answer"
+  line. Plain text so no sender strips line breaks; split between questions
+  under Telegram's limit; exact `openclaw message send` argv and Bot API body.
+- `factory.py card` prints the raw card (Claude Code chat) or send payloads.
+- Intake and book `question_message` now use the same layout (they were a
+  single `"\n".join`, no blank lines).
+- Test: `choice_card/intake_card/test_intake_card_h9.py`.
+---
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).

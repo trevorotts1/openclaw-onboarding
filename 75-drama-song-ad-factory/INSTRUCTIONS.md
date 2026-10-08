@@ -208,6 +208,13 @@ message, and the options are presented as ONE choice card with every default
 pre-selected, so a client can approve with a single click. On resume the
 card shows only what changed.
 
+**Asking the six intake questions (H9).** Build them with
+`python3 scripts/core/intake_preflight/factory.py card` (Claude Code chat:
+show stdout as is; Telegram: `--format openclaw-json --target <chat id>`,
+run each argv without a shell). Never type them free hand or send them as one
+line: one block per question, one numbered option per line, a blank line
+between questions. See `references/choice-card-spec.md` section 2.1.
+
 **The card, in order:**
 
 | Row | Values | Default |
