@@ -314,15 +314,91 @@ def _book_price(price_fn, book, card):
 def _cents(value):
     return round(value + 1e-9, 2)
 
+def default_price_fn():
+    """The shipped Skill 74 ``price`` adapter, or None on a machine without one.
+
+    B4: batch.py's price seam had no provider. The default wiring wraps the
+    catalog calculator's adapter discovery (74-kie-live-adapter next to the
+    skill root, or ``DSAF_SKILL74_ADAPTER``). It returns ``None`` when no
+    adapter exists — callers keep their unpriced fail-closed path, and no
+    number is ever invented here.
+    """
+    _card, adapter = _card_renderer()
+    if adapter is None:
+        return None
+    return _skill74_book_price(adapter)
+
+def _card_renderer():
+    """-> (card_render module|None, its price_fn_default() result|None)."""
+    try:
+        from ..catalog_calculator import card_render
+    except ImportError as _e:
+        if "card_render" not in str(_e) and "beyond top-level" not in str(_e):
+            raise
+        try:  # script import from core/ on sys.path
+            from catalog_calculator import card_render
+        except ImportError as _e2:
+            if "card_render" not in str(_e2):
+                raise
+            return None, None
+    return card_render, card_render.price_fn_default()
+
+def _skill74_book_price(adapter):
+    """Adapt ``price_fn(model, units) -> JSON`` to the batch seam
+    ``(book, card_fields) -> USD number``: price the ad's default choice
+    through the catalog calculator (Skill 74 rates only; fail closed)."""
+    import math as _math
+
+    def price(book, fields):
+        choice = _card_renderer()[0].default_choice(fields)
+        catalog = _shipped_catalog()
+        if catalog is None:
+            raise BatchError("PRICE_UNAVAILABLE",
+                             "no shipped model catalog to price against")
+        env = adapter_for_env(choice, catalog, adapter)
+        card = env.get("card") if env.get("state") == "ok" else None
+        if not card or not _math.isfinite(card.get("price_usd", 0)):
+            raise BatchError("PRICE_UNAVAILABLE",
+                             "price unavailable for %s" % book.get("title"))
+        return float(card["price_usd"])
+    return price
+
+def _shipped_catalog():
+    """The fixtures catalog that ships with the calculator, or None."""
+    import json as _json
+    import os as _os
+    path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..",
+                         "catalog_calculator", "extensions", "fixtures",
+                         "catalog.json")
+    try:
+        with open(_os.path.abspath(path), encoding="utf-8") as f:
+            return _json.load(f)
+    except (OSError, ValueError):
+        return None
+
+def adapter_for_env(choice, catalog, adapter):
+    """Price one choice into the card envelope, Skill 74 rates only."""
+    card_render = _card_renderer()[0]
+    if card_render is None:
+        return {"state": "unavailable", "reasons": ["PRICE_CALCULATOR_MISSING"],
+                "card": None, "warnings": []}
+    return card_render.price_card_ext(choice, catalog, adapter)
+
 
 def price_batch(card, price_fn=None):
     """Price the batch: one Skill 74 price per book, plus the 20% retake.
 
     ``price_fn(book, card_fields) -> USD number`` is the Skill 74 ``price``
-    adapter; it is never supplied from a table in this repository. Any book
-    that cannot be priced makes the WHOLE card unpriced -- the card then says
-    so and ``start_allowed`` stays False.
+    adapter; it is never supplied from a table in this repository. When no
+    adapter is passed, the default wiring tries the catalog calculator's
+    shipped Skill 74 adapter (:data:`default_price_fn`); a machine with no
+    Skill 74 install gets ``None`` back and the card stays unpriced -- the
+    card then says so and ``start_allowed`` stays False. Any book that
+    cannot be priced makes the WHOLE card unpriced -- the card then says so
+    and ``start_allowed`` stays False.
     """
+    if price_fn is None:
+        price_fn = default_price_fn()
     if not isinstance(card, dict) or card.get("card_type") != "batch":
         raise BatchError("CARD_INVALID", "not a batch card")
     out = dict(card)
@@ -465,6 +541,8 @@ def materialize(card, root, price_fn=None, outbox=None,
     parent create for the batch and one create per book are enqueued, each
     with its own job id. Nothing here opens a socket itself.
     """
+    if price_fn is None:
+        price_fn = default_price_fn()
     if not isinstance(card, dict) or card.get("card_type") != "batch":
         raise BatchError("CARD_INVALID", "not a batch card")
     if card.get("price_status") != "ok" or not card.get("start_allowed"):

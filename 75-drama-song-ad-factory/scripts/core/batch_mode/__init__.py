@@ -8,6 +8,9 @@ Owner decision D26, plan 6.14 (choice-card-spec 3.10):
   batch total (Skill 74 ``price`` per book + the 20% retake allowance) and one
   click approves the whole batch. An unreadable price means the card says
   unavailable and nothing starts.
+* ``default_price_fn`` -- the shipped Skill 74 adapter wiring (B4): the
+  price seam's default provider, resolved through the catalog calculator;
+  ``None`` on a machine with no Skill 74 install (still fail closed).
 * ``materialize`` -- one campaign folder, one receipt, one spend-ledger run and
   one Command Center register per book, plus the batch manifest that carries
   the single card.
@@ -44,6 +47,7 @@ from .batch import (
     card_digest,
     card_fields,
     card_lines,
+    default_price_fn,
     make_card,
     materialize,
     normalize_brief,
@@ -85,6 +89,7 @@ __all__ = [
     "card_digest",
     "card_fields",
     "card_lines",
+    "default_price_fn",
     "check_briefs",
     "find_violations",
     "make_card",
