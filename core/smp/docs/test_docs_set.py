@@ -43,12 +43,19 @@ REQUIRED = [
     "QC.md",
     "qc-skill35.sh",
     "qc-social-media-planner.sh",
-    "SOP--drama-song-ad-pipeline.md",
     "scripts/weekly-batch.sh",
     "scripts/run-publishing-cycle.sh",
     "scripts/kie_media_plan.py",
     "test_docs_set.py",
 ]
+# The pipeline SOP is NOT staged under this directory: manual H1 git-moved it
+# into the video department's role library, which is where 75-drama-song-ad-
+# factory/SKILL.md:142 and INSTRUCTIONS.md:126 already point (and where this
+# file's own README table has always named it as the destination). Keep the
+# copy here gone — one canonical SOP, verified at its real home below.
+SOP_NAME = "SOP--drama-song-ad-pipeline.md"
+SOP_REL = ("../../../23-ai-workforce-blueprint/templates/role-library/"
+           "video/sops/" + SOP_NAME)
 EXECUTABLE = [
     "qc-skill35.sh",
     "qc-social-media-planner.sh",
@@ -100,6 +107,10 @@ def check(name):
 def read(root, rel):
     return (root / rel).read_text(encoding="utf-8")
 
+def read_sop(root):
+    """Read the pipeline SOP at its canonical video-department home."""
+    return read(root, SOP_REL)
+
 
 def lines_of(text):
     return [ln.strip() for ln in text.splitlines()]
@@ -108,7 +119,7 @@ def lines_of(text):
 # ---------------------------------------------------------------- structure ---
 
 
-@check("required files present (12)")
+@check("required files present (11)")
 def c_required(root):
     missing = [r for r in REQUIRED if not (root / r).is_file()]
     assert not missing, "missing: %s" % ", ".join(missing)
@@ -391,7 +402,7 @@ def c_kie_plan(root):
 
 @check("SOP carries the Weekly planner integration section")
 def c_sop(root):
-    text = read(root, "SOP--drama-song-ad-pipeline.md")
+    text = read_sop(root)
     assert "## Weekly planner integration" in text
     for needle in ("core/smp/weekly_step/", "59.0", "88.0-95.0",
                    "15-second teaser", "Google Business Profile",
@@ -403,7 +414,7 @@ def c_sop(root):
 
 @check("SOP keeps its original doctrine sections")
 def c_sop_no_regression(root):
-    text = read(root, "SOP--drama-song-ad-pipeline.md")
+    text = read_sop(root)
     for needle in ("## DMAIC Coverage Map", "## Define", "### DS-1",
                    "## Measure", "## Analyze", "## Improve", "## Control",
                    "### DS-11", "## Hand-offs", "## Batch mode"):
@@ -415,7 +426,7 @@ def c_sop_no_regression(root):
 
 @check("no operator paths, no box slug anywhere in the set")
 def c_no_operator_paths(root):
-    for rel in REQUIRED:
+    for rel in list(REQUIRED) + [SOP_REL]:
         text = read(root, rel)
         for banned in BANNED_PATHS:
             assert banned not in text, "%s carries %r" % (rel, banned)
@@ -423,7 +434,7 @@ def c_no_operator_paths(root):
 
 @check("no second KIE client and Skill 74 is named as the only KIE path")
 def c_skill74_only(root):
-    for rel in REQUIRED:
+    for rel in list(REQUIRED) + [SOP_REL]:
         text = read(root, rel)
         for banned in SECOND_KIE_CLIENT:
             assert banned not in text, "%s names a second KIE client (%s)" % (
@@ -431,7 +442,7 @@ def c_skill74_only(root):
     # Every file that talks about the weekly ad's KIE route names Skill 74.
     for rel in ("SKILL.md", "INSTRUCTIONS.md", "QC.md",
                 "scripts/run-publishing-cycle.sh", "scripts/kie_media_plan.py",
-                "SOP--drama-song-ad-pipeline.md"):
+                SOP_REL):
         text = read(root, rel)
         assert ("74-kie-live-adapter" in text or "skill-74" in text
                 or "Skill 74" in text), "%s never names Skill 74" % rel
