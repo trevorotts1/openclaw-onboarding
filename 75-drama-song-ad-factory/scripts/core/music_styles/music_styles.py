@@ -17,8 +17,24 @@ the redo edges (12.5%..32.5%) for every style and every length. The three number
 from core/spoken_share (the single source for the retarget), never kept as
 a second copy here. Voice gender is NOT ours -- that is V2B-AUDIO-U1
 (core/audio_c3), so prompts say "lead vocal" only.
+
+G1 (owner order 2026-10-08 11:50, part G amended by the Opus audio review,
+review item G6): every style prompt ends with a DELIVERY MAP -- one
+sentence that names, from the sheet, which lines Suno SINGS and which
+it SPEAKS ("SPEAKS the lines tagged Spoken ... SINGS the lines tagged
+Sung"). Evidence: both takes that actually sang carried that map. The
+earlier version of G1 (banning spoken-word wording and putting "spoken
+word, rap" in the negative tags) is REVERSED: banning spoken/rap while
+the sheet has spoken blocks contradicts the sheet and confuses Suno.
+Instead the gate now REFUSES a payload whose negative tags contain
+"spoken word" or "rap" while its lyric sheet has spoken or rap blocks.
+Enforced at this single rendering point (style_prompt + delivery_map +
+assert_delivery_map) and stamped on every Suno song payload whose sheet
+names a delivery by core/audio_c3 no_echo.
 """
 from __future__ import annotations
+
+import re
 
 from math import isfinite
 
@@ -62,6 +78,37 @@ DELIVERIES = ("spoken", "rap", "sung")
 #: what stops a rap-heavy cut from measuring under the cap by accident.
 SPOKEN_STYLE_DELIVERIES = frozenset({"spoken", "rap"})
 
+#: G1 amended (review G6): negative tags that contradict a lyric sheet.
+#: A payload whose negative tags contain "spoken word" or "rap" while its
+#: sheet carries spoken or rap blocks is refused -- telling Suno "no
+#: spoken word" while tagging blocks [Spoken ...] removes the one
+#: ingredient both working takes shared.
+CONTRADICTING_NEGATIVE_TAGS = ("spoken word", "rap")
+
+#: G1 amended: the delivery-map clauses, ONE copy. style_prompt(),
+#: delivery_map() and every assertion render from these, so the sentence a
+#: payload carries can never drift from the sentence the gate checks.
+DELIVERY_MAP_CLAUSES = (
+    ("spoken", "SPEAKS the lines tagged Spoken in a plain natural voice "
+               "over the music"),
+    ("rap", "RAPS the lines tagged Rap with confident metered flow"),
+    ("sung", "SINGS the lines tagged Sung with long held notes"),
+)
+#: delivery name -> the verb that must appear in a mapped style text.
+DELIVERY_MAP_VERBS = {name: clause.split(" ", 1)[0]
+                      for name, clause in DELIVERY_MAP_CLAUSES}
+#: The spoken + sung sentence in the exact form the working takes used.
+DELIVERY_MAP_TEMPLATE = "The lead %s, and %s." % (
+    DELIVERY_MAP_CLAUSES[0][1], DELIVERY_MAP_CLAUSES[2][1])
+
+#: Sheet tag words: a block counts as rap when its tag names rap, as
+#: spoken when it names spoken, as sung when it names sung/sing/hook/
+#: chorus/verse. Matched at a word boundary on a normalized tag, so
+#: "trap beat" is never read as rap and "spoken-word" still counts.
+SHEET_SPOKEN_TAGS = ("spoken",)
+SHEET_SUNG_TAGS = ("sung", "sing", "hook", "chorus", "verse")
+SHEET_RAP_TAGS = ("rap",)
+
 SOURCE_D18 = "Owner D18 2026-10-07, plan 6.7"
 SOURCE_D15 = "Owner D15 retarget 2026-10-07, Decision log 37; plan 6.7"
 
@@ -87,6 +134,7 @@ STYLES = {
         "label": "Soul Ballad",
         "sound": "Slow, emotional, soulful singing",
         "share_rule": _SHARE_RULE,
+        "deliveries": ("spoken", "sung"),
         "notes": ("The original drama-song style."),
         "suno_style_prompt": (
             "soul ballad, slow emotional 62-68 bpm, warm felt piano, "
@@ -101,6 +149,7 @@ STYLES = {
         "label": "R&B Flow",
         "sound": "Rap verses with a smooth sung R&B hook",
         "share_rule": _SHARE_RULE,
+        "deliveries": ("spoken", "rap", "sung"),
         "notes": ("Like the One Check Chanel reference. Approved example: "
                   "Version F (final-9x16-h3-F-3d-rnb-rap.mp4, lifelike 3D), "
                   "Trevor 2026-10-07: a keeper."),
@@ -119,6 +168,7 @@ STYLES = {
         "sound": ("Starts slow and soulful through the pain, lifts into an "
                   "upbeat groove at the turning point (mentor / product)"),
         "share_rule": _SHARE_RULE,
+        "deliveries": ("spoken", "sung"),
         "notes": ("The tempo lift lands on the story's turn."),
         "suno_style_prompt": (
             "soul with a two-part arc, brooding 62-68 bpm opening lifting to "
@@ -130,6 +180,146 @@ STYLES = {
         ),
     },
 }
+
+#: G1 amended: the two contradicting tag words, whole-word matched in a
+#: joined tag list by assert_no_contradiction().
+_CONTRADICTING_PATTERNS = tuple(
+    (word, re.compile(r"\b%s\b" % re.escape(word), re.IGNORECASE))
+    for word in CONTRADICTING_NEGATIVE_TAGS
+)
+
+
+def sheet_deliveries(sheet_text):
+    """Which deliveries a lyric sheet carries: {"spoken", "rap", "sung"}.
+
+    A block counts as rap when its tag names rap, as spoken when its tag
+    names spoken ("[Spoken ...]", "[Spoken Word]"), and as sung when its
+    tag names sung/sing/hook/chorus/verse. Case-insensitive, matched at a
+    word boundary on a punctuation-normalized tag, so "trap beat" is never
+    read as rap while "spoken-word" still counts. The sheet is a string of
+    [Tag] blocks; a tag naming no delivery counts as nothing.
+    """
+    found = set()
+    if not isinstance(sheet_text, str) or not sheet_text.strip():
+        return found
+    for m in re.finditer(r"\[([^\]]*)\]", sheet_text):
+        norm = re.sub(r"[^a-z0-9]+", " ", m.group(1).lower()).strip()
+        if not norm:
+            continue
+        if any(re.search(r"\b%s\b" % t, norm) for t in SHEET_RAP_TAGS):
+            found.add("rap")
+        elif any(re.search(r"\b%s" % t, norm) for t in SHEET_SPOKEN_TAGS):
+            found.add("spoken")
+        elif any(re.search(r"\b%s" % t, norm) for t in SHEET_SUNG_TAGS):
+            found.add("sung")
+    return found
+
+
+def _map_sentence(deliveries):
+    """The delivery-map sentence for one set of deliveries."""
+    parts = [clause for name, clause in DELIVERY_MAP_CLAUSES
+             if name in _deliveries_of(deliveries)]
+    if not parts:
+        raise MusicStyleError(
+            "EMPTY_SHEET_DELIVERIES",
+            "no named delivery to map ([Spoken ...], [Sung ...], "
+            "[Rap ...]); every tag must name its delivery (G1)")
+    return "The lead %s." % ", ".join(parts)
+
+
+def delivery_map(sheet_text):
+    """The G1 amended delivery-map sentence for one lyric sheet.
+
+    Built from the sheet's own tags, in the plain-word form both working
+    takes carried ("SPEAKS the lines tagged Spoken ... SINGS the lines
+    tagged Sung"); RAPS joins them when the sheet has rap blocks. Raises
+    MusicStyleError(EMPTY_SHEET_DELIVERIES) on a sheet that names no
+    delivery at all -- a sheet whose tags never name a delivery is the O3
+    fault this unit exists to prevent.
+    """
+    return _map_sentence(sheet_deliveries(sheet_text))
+
+
+def default_delivery_map(style_id):
+    """The delivery-map sentence for a style when no sheet is at hand."""
+    return _map_sentence(set(STYLES[_style_key(style_id)]["deliveries"]))
+
+
+def _deliveries_of(deliveries):
+    """A sheet string -> the deliveries its tags name; a collection of
+    delivery names -> that collection. One choke point, so no caller can
+    pass the wrong one and get characters instead of deliveries.
+    """
+    if isinstance(deliveries, str):
+        return sheet_deliveries(deliveries)
+    return set(deliveries or ())
+
+
+def missing_delivery_verbs(text, deliveries):
+    """Verbs a style text still owes a set of deliveries (empty = mapped)."""
+    deliveries = _deliveries_of(deliveries)
+    if not isinstance(text, str) or not text.strip():
+        return [DELIVERY_MAP_VERBS[d] for d in sorted(deliveries)]
+    upper = text.upper()
+    return [DELIVERY_MAP_VERBS[d] for d in sorted(deliveries)
+            if DELIVERY_MAP_VERBS[d] not in upper]
+
+
+def has_delivery_map(text, deliveries):
+    """True when the style text already carries every verb of a sheet."""
+    return not missing_delivery_verbs(text, deliveries)
+
+
+def assert_delivery_map(style_id, text, deliveries):
+    """Raise MusicStyleError(NO_DELIVERY_MAP) when a style text for a set
+    of named deliveries carries no delivery map ("SINGS ... the lines
+    tagged"). Pass the sheet text or the delivery names -- both are
+    accepted. A sheet that names no delivery owes no map and passes --
+    the G2 tag grammar owns that refusal. This is the amended G1 gate:
+    the map, not a ban.
+    """
+    named = _deliveries_of(deliveries)
+    missing = missing_delivery_verbs(text, named)
+    if missing:
+        names = "/".join(sorted(named))
+        raise MusicStyleError(
+            "NO_DELIVERY_MAP",
+            "%r: style text for a %s sheet carries no delivery map (%s "
+            "missing): G1 amended" % (style_id, names, " and ".join(missing)))
+    return text
+
+
+def pattern_contradicts(word, tags, deliveries):
+    """True when one contradicting tag word is present and the sheet uses
+    that delivery."""
+    delivery = "spoken" if word == "spoken word" else word
+    return bool(re.search(r"\b%s\b" % re.escape(word), tags)
+                and delivery in _deliveries_of(deliveries))
+
+
+def assert_no_contradiction(negative_tags, sheet_text):
+    """Raise MusicStyleError(NEGATIVE_TAG_CONTRADICTION) when negative tags
+    ban a delivery the lyric sheet itself uses ("spoken word" or "rap"
+    tags beside [Spoken ...] / [Rap ...] blocks). The reversed-G1 gate
+    (review G6: never ban spoken/rap while the sheet has spoken blocks).
+    A sheet that names no delivery contradicts nothing and passes.
+    """
+    if not isinstance(negative_tags, (list, tuple)):
+        negative_tags = ()
+    tags = " | ".join(str(t) for t in negative_tags).lower()
+    deliveries = sheet_deliveries(sheet_text)
+    conflicts = [word for word, _pattern in _CONTRADICTING_PATTERNS
+                 if pattern_contradicts(word, tags, deliveries)]
+    if conflicts:
+        raise MusicStyleError(
+            "NEGATIVE_TAG_CONTRADICTION",
+            "negative tags ban %r while the lyric sheet carries %s blocks: "
+            "the tags contradict the sheet (G1 amended)"
+            % (", ".join(conflicts),
+               "/".join(sorted("spoken" if c == "spoken word" else c
+                               for c in conflicts))))
+    return list(negative_tags)
+
 
 #: Recommended Suno section tags for the arc, keyed by style. Advisory only:
 #: the lyric writer owns line text, this owns the style field.
@@ -195,13 +385,30 @@ def style(style_id):
     return dict(STYLES[_style_key(style_id)])
 
 
-def style_prompt(style_id):
+def style_prompt(style_id, sung=None, sheet_text=None):
     """Suno style-field text for one style (id or label accepted).
 
     Contract consumed by core/style_defaults (V2B-AUDIO-U5): returns a
     non-empty str, raises only on an unknown style id.
+
+    G1 amended (owner order 2026-10-08 11:50, part G, review G6): every
+    rendered prompt carries the DELIVERY MAP -- one sentence naming, from
+    the sheet, which lines Suno SINGS and which it SPEAKS ("The lead
+    SPEAKS the lines tagged Spoken ... SINGS the lines tagged Sung"; RAPS
+    joins them for a sheet with rap blocks). sheet_text builds the map
+    from the sheet's own tags; without a sheet the style's own deliveries
+    are used, so a default prompt never ships unmapped. ``sung`` is
+    accepted and ignored: the earlier 11:35 ban on spoken-word wording in
+    the style text is REVERSED by this order.
     """
-    return STYLES[_style_key(style_id)]["suno_style_prompt"]
+    sid = _style_key(style_id)
+    text = STYLES[sid]["suno_style_prompt"]
+    deliveries = sheet_deliveries(sheet_text) if sheet_text else set()
+    if not deliveries:
+        deliveries = set(STYLES[sid]["deliveries"])
+    if not has_delivery_map(text, deliveries):
+        text = "%s %s" % (text.rstrip(".,"), _map_sentence(deliveries))
+    return assert_delivery_map(sid, text, deliveries)
 
 
 def section_hint(style_id):
