@@ -74,7 +74,9 @@ class SungVocalE7(unittest.TestCase):
     def test_g5_measured_detector_drives_verdict_and_receipt(self):
         """G5: with a G3 detector record, the sung % is source=measured."""
         det = {"tool": "singing_detector.v1", "tool_version": "1.0.0",
-               "sung_share": 0.02, "confidence": 0.95, "measured": True}
+               "sung_share": 0.02, "spoken_share": 0.98, "rap_share": 0.0,
+               "no_voice_share": 0.0, "runtime_s": 60.0,
+               "confidence": 0.95, "measured": True}
         out = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
                                    profile="all_suno",
                                    detector_result=det)
@@ -84,6 +86,11 @@ class SungVocalE7(unittest.TestCase):
         self.assertEqual(out["sung_pct"]["source"], "measured")
         self.assertEqual(out["sung_pct"]["detector"], "singing_detector.v1")
         self.assertEqual(out["sung_pct"]["confidence"], 0.95)
+        # G5 amend (order 1150): all four measured deliveries, with seconds
+        self.assertEqual(out["sung_pct"]["rap_pct"], 0.0)
+        self.assertEqual(out["sung_pct"]["no_voice_pct"], 0.0)
+        self.assertEqual(out["sung_pct"]["sung_seconds"], 1.2)
+        self.assertEqual(out["sung_pct"]["spoken_seconds"], 58.8)
         rec = SVG.record_for_gate(out, RUN_ID, STAGE, REVIEWER,
                                   "sess-e7", "qc-checker")
         self.assertIn("MEASURED", rec["evidence"]["summary"])
@@ -93,7 +100,9 @@ class SungVocalE7(unittest.TestCase):
         """The failed-ad shape, measured honestly: labels say 75% sung,
         detector says 0% -> VOCAL_MISSING, never the label number."""
         det = {"tool": "singing_detector.v1", "tool_version": "1.0.0",
-               "sung_share": 0.0, "confidence": 0.95, "measured": True}
+               "sung_share": 0.0, "spoken_share": 1.0, "rap_share": 0.0,
+               "no_voice_share": 0.0, "runtime_s": 60.0,
+               "confidence": 0.95, "measured": True}
         out = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
                                    profile="all_suno",
                                    detector_result=det)
