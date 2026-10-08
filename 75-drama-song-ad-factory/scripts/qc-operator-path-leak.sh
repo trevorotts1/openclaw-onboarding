@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# bash >= 4 required (mapfile); macOS ships 3.2 at /bin/bash.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] && [ -z "${_OC_BASH_REEXEC:-}" ]; then
+  for _oc_b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    [ -x "$_oc_b" ] && _OC_BASH_REEXEC=1 exec "$_oc_b" "$0" "$@"
+  done
+  echo "FATAL: bash >= 4 required (macOS ships 3.2): brew install bash" >&2; exit 3
+fi
 # Manual 02 B6 static check — no operator/build-workspace paths in core code.
 #
 # Fails when any non-test file under 75-drama-song-ad-factory/scripts/core/
