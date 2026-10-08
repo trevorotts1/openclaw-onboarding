@@ -1,52 +1,37 @@
-"""spoken_share package: the spoken-share limit of the SMP weekly ad
-(Owner D15 retarget on Skill 35, Decision log 36-37, plan 6.15, 2026-10-07).
+"""spoken_share package: D15 re-export of core spoken_share for scripts/core/smp/.
 
-One authority inside ``core/smp/``: target 45 percent of the runtime, hard
-band 40 to 55 percent for every length and every music style, rap counts as
-spoken, spoken opener short and the first sung line within about 10 seconds.
-``weekly_ad_limits()`` is the dict the planner reads and ``scan_smp_modules``
-names any other limit still sitting in an SMP module, so the retarget
-replaces rather than races what was there. Prompt/plan building only -- no
-network, no spend; Skill 74 stays the sole KIE path. stdlib only.
+One implementation lives in ``core/spoken_share/spoken_share.py`` (manual L1);
+this package re-exports it so ``import spoken_share`` under ``core/smp/`` keeps
+resolving to the same rule (45% target, 40-55 band, every length and style,
+rap counts as spoken, first sung line within about 10 seconds). Skill 74 stays
+the sole KIE path. Plan measuring and verification only — no network, no
+spend. stdlib only.
 """
 from .spoken_share import (  # noqa: F401
     CAP,
     DELIVERIES,
     FIRST_SUNG_WITHIN_SECONDS,
     FLOOR,
-    KIE_PATH,
-    RETIRED_BAND_PCT,
-    RETIRED_TABLE_NAMES,
-    RULE_ID,
     SCHEMA_VERSION,
     SOURCE,
-    SPOKEN_BAND_PCT,
-    SPOKEN_DELIVERIES,
     SPOKEN_MAX_PCT,
     SPOKEN_MIN_PCT,
+    SPOKEN_STYLE_DELIVERIES,
     SPOKEN_TARGET_PCT,
-    STEP,
-    STALE_PHRASES,
-    SUNG_DELIVERIES,
-    SpokenShareError,
     TARGET,
     TOOL_NAME,
     TOOL_VERSION,
-    build_root,
+    SpokenShareError,
+    band,
     check_first_sung,
-    check_planner_text,
-    counts_as_spoken,
-    evaluate,
-    find_competing_limits,
-    find_stale_limits,
-    first_sung_start,
-    normalize_delivery,
-    planner_line,
-    scan_smp_modules,
-    spoken_budget,
-    spoken_seconds,
-    spoken_share_pct,
-    weekly_ad_limits,
+    check_plan,
+    check_share,
+    is_spoken_style,
+    measure_share,
+    plan_refusal,
+    refusal,
+    seconds_for,
+    share_pct,
 )
 
 __all__ = [
@@ -54,37 +39,24 @@ __all__ = [
     "DELIVERIES",
     "FIRST_SUNG_WITHIN_SECONDS",
     "FLOOR",
-    "KIE_PATH",
-    "RETIRED_BAND_PCT",
-    "RETIRED_TABLE_NAMES",
-    "RULE_ID",
     "SCHEMA_VERSION",
     "SOURCE",
-    "SPOKEN_BAND_PCT",
-    "SPOKEN_DELIVERIES",
     "SPOKEN_MAX_PCT",
     "SPOKEN_MIN_PCT",
+    "SPOKEN_STYLE_DELIVERIES",
     "SPOKEN_TARGET_PCT",
-    "STEP",
-    "STALE_PHRASES",
-    "SUNG_DELIVERIES",
-    "SpokenShareError",
     "TARGET",
     "TOOL_NAME",
     "TOOL_VERSION",
-    "build_root",
+    "SpokenShareError",
+    "band",
     "check_first_sung",
-    "check_planner_text",
-    "counts_as_spoken",
-    "evaluate",
-    "find_competing_limits",
-    "find_stale_limits",
-    "first_sung_start",
-    "normalize_delivery",
-    "planner_line",
-    "scan_smp_modules",
-    "spoken_budget",
-    "spoken_seconds",
-    "spoken_share_pct",
-    "weekly_ad_limits",
+    "check_plan",
+    "check_share",
+    "is_spoken_style",
+    "measure_share",
+    "plan_refusal",
+    "refusal",
+    "seconds_for",
+    "share_pct",
 ]
