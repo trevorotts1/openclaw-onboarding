@@ -25,6 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import ending_qc
 import music_qc
 import spend_ledger as L
 import words_match
@@ -119,6 +120,8 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
         errors = words_match.validate_words_match(lyrics_text, packet_lines)
         if errors:
             raise ValueError("; ".join(errors))
+    if not instrumental:  # I5: ask for a real ending (outro + resolved chord)
+        lyrics_text, style_text = ending_qc.with_clean_ending(lyrics_text, style_text)
     ver = _checked_version(version)
     req = {"endpoint": CREATE_TASK_ENDPOINT,
            "model": route_model(GENERATE_CATALOG_ID),

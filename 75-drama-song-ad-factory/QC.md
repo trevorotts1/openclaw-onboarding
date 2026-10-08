@@ -142,3 +142,9 @@ failed checks. After the 5th failed round, stop and escalate to the owner.
 A maker never signs its own gate: the final verdict for any production
 stage comes from an independent reviewer, and this document is never used
 to self-approve a run.
+
+## Clean ending (I5)
+
+The last 2 s of the master must not stop abruptly: audio level decays, the last sung word
+is not cut, the picture fades to the end card, and the end card (4-5 s) ends by target
+length minus 2 s. Check: `scripts/core/ending_qc/` (`check_ending`).

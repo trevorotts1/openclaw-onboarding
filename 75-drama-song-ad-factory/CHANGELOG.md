@@ -6,6 +6,16 @@ frontmatter `version:` field).
 
 ---
 
+## [2.6.1] - 2026-10-08 - Part I I5: clean endings, never "drops off a cliff"
+
+- New `scripts/core/ending_qc/`: `with_clean_ending` adds an `[Outro]` section, a final
+  `[Resolve on final chord]` tag and "natural resolved ending" style words to every sung
+  song request (`music_director.build_generate_request`); `check_ending` measures the last
+  2 s of the master (audio level must decay, last word not cut, picture fades to the end
+  card, end card 4-5 s and finished by target length minus 2 s).
+- Done-when test: `python3 scripts/core/ending_qc/test_ending_qc.py` (abrupt cut fails,
+  resolved ending passes).
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
