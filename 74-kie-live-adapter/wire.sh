@@ -127,7 +127,9 @@ write_block "$WS/AGENTS.md" agents "$AGENTS_BODY"
 write_block "$WS/TOOLS.md"  tools  "$TOOLS_BODY"
 
 SENTINEL="<!-- skill:${SKILL_SLUG}:core-update-applied -->"
-if ! grep -qF "$SENTINEL" "$WS/AGENTS.md" 2>/dev/null; then
+# Guard the sentinel write: on a machine with no OpenClaw the workspace never got an
+# AGENTS.md, and under `set -e` a bare >> into a missing path is a fatal exit 1 (H7).
+if [ -f "$WS/AGENTS.md" ] && ! grep -qF "$SENTINEL" "$WS/AGENTS.md" 2>/dev/null; then
   printf '\n%s\n' "$SENTINEL" >> "$WS/AGENTS.md"
   echo "[skill 74] stamped $SENTINEL"
 fi

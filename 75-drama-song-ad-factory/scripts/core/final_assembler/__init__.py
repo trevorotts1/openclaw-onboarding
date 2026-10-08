@@ -1,6 +1,7 @@
 """final_assembler package: timeline.json -> frame-exact ffmpeg render."""
 from .assembler import (
     EXIT,
+    NICE_LEVEL,
     SCHEMA_VERSION,
     TIMELINE_SCHEMA,
     TOOL_NAME,
@@ -9,10 +10,12 @@ from .assembler import (
     build_argv,
     load_timeline,
     plan_timeline,
+    size_ffmpeg,
 )
 
 __all__ = [
     "EXIT",
+    "NICE_LEVEL",
     "SCHEMA_VERSION",
     "TIMELINE_SCHEMA",
     "TOOL_NAME",
@@ -21,4 +24,5 @@ __all__ = [
     "build_argv",
     "load_timeline",
     "plan_timeline",
+    "size_ffmpeg",
 ]

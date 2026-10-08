@@ -25,7 +25,7 @@ source-of-truth copies; the batch train — never this unit — moves them into
 | `scripts/weekly-batch.sh` | `35-social-media-planner/scripts/weekly-batch.sh` | version 10.16.0; `run_drama_song_step()` — one ad per batch, before the calendar gate, fail-soft |
 | `scripts/run-publishing-cycle.sh` | `35-social-media-planner/scripts/run-publishing-cycle.sh` | version 10.16.0; `drama_song` block in `cycle-manifest.json`; schema 1.3.0 row-append note |
 | `scripts/kie_media_plan.py` | `35-social-media-planner/scripts/kie_media_plan.py` | `drama_song` block in the printed media plan; docstring |
-| `SOP--drama-song-ad-pipeline.md` | `23-ai-workforce-blueprint/.../sops/SOP--drama-song-ad-pipeline.md` | new **Weekly planner integration** section (Skill 75 side of the contract) |
+| `SOP--drama-song-ad-pipeline.md` | `23-ai-workforce-blueprint/templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md` | **MOVED HERE → THERE (manual H1, unit W1-C-U2):** the SOP the skill already pointed at now ships where the skill pointed; `test_docs_set.py` asserts it at that canonical home, not as a staged copy in this directory |
 | `test_docs_set.py` | — | mocked structural tests for this set (offline, zero paid calls) |
 
 ## The integration in one paragraph

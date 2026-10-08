@@ -26,9 +26,13 @@ Rules:
 - Every cut point is rounded ONCE to the frame grid; offsets
   accumulate in integer frames so drift cannot compound.
 - xfade overlaps consume frames from the joined segments.
+- ffmpeg is bounded (manual M7): argv starts with `nice -n 10`, carries
+  `-threads N`, and the render cap grows with output length instead of a
+  flat 600 s (see size_ffmpeg / lane_size.py Part D).
 """
 import argparse
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -40,6 +44,129 @@ SCHEMA_VERSION = "1.0.0"
 TIMELINE_SCHEMA = "blackceo.timeline/v1"
 
 EXIT = {"ok": 0, "error": 1, "unavailable": 3}
+
+# --- M7 bounding: processor share + wall-clock cap (manual 02 M7, Part D) ----
+#
+# ffmpeg used to be started bare, so it took every core of the box and was
+# killed by a flat 600 s cap that a long 1080p re-encode on a 2-core VPS
+# outruns. Two knobs bound it:
+#
+#   -threads N  and  nice -n 10   -> no core theft (Linux and macOS both
+#                                    accept `nice -n 10`, no `--` prefix)
+#   timeout S                    -> grows with the output length
+#
+# Both knobs are READ FROM scripts/core/lane_size.py when W2-A has landed it
+# (it owns that module, not this unit), and fall back to Part D's formulas
+# while it is absent, so this unit works standalone either way.
+#
+# ponytail: the 1080p/4k height factor below is this unit's own convention;
+# move it into lane_size.py's `ffmpeg_timeout_s` output when H4 lands and
+# this fallback becomes a dead path.
+NICE_LEVEL = 10                  # manual M7: nice -n 10 on Linux and macOS
+MIN_TIMEOUT_S = 600              # Part D floor for ffmpeg_timeout_s
+DEFAULT_WIDTH, DEFAULT_HEIGHT = 1920, 1080
+
+
+def _effective_cores():
+    """Container quota beats host total, else physical/dedicated cores (Part D D1)."""
+    for path in ("/sys/fs/cgroup/cpu.max",):          # cgroup v2
+        try:
+            with open(path, encoding="utf-8") as fh:
+                quota, period = fh.read().split()[:2]
+            if quota != "max":
+                return max(1, int(math.floor(int(quota) / int(period))))
+        except (OSError, ValueError, ZeroDivisionError):
+            pass
+    for q, p in (("/sys/fs/cgroup/cpu/cpu.cfs_quota_us",
+                  "/sys/fs/cgroup/cpu/cpu.cfs_period_us"),):   # cgroup v1
+        try:
+            with open(q, encoding="utf-8") as fh:
+                quota = int(fh.read().strip())
+            if quota > 0:
+                with open(p, encoding="utf-8") as fh:
+                    period = int(fh.read().strip())
+                return max(1, int(math.floor(quota / period)))
+        except (OSError, ValueError, ZeroDivisionError):
+            pass
+    try:
+        return max(1, len(os.sched_getaffinity(0)))   # Linux
+    except (AttributeError, OSError):
+        pass
+    try:
+        return max(1, int(subprocess.run(
+            ["sysctl", "-n", "hw.physicalcpu"], capture_output=True,
+            text=True, timeout=10, check=False).stdout.strip()))   # macOS
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    return max(1, (os.cpu_count() or 1))
+
+
+def _part_d_threads(cores_eff=None):
+    """Part D fallback: jobs = floor(cores/4), threads = floor((cores-1)/jobs)."""
+    cores = cores_eff if cores_eff else _effective_cores()
+    jobs = max(1, int(math.floor(cores / 4.0)))
+    return max(1, int(math.floor((cores - 1) / float(jobs)))), jobs
+
+
+def _lane_size_threads():
+    """Prefer W2-A's scripts/core/lane_size.py; None when it is not shipped yet."""
+    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    try:
+        import lane_size                    # noqa: F401  (guarded: W2-A unit)
+    except Exception:                       # noqa: BLE001  absent/broken/odd name
+        return None
+    for name in ("ffmpeg_threads", "threads"):   # tolerant of H4's final spelling
+        val = getattr(lane_size, name, None)
+        if callable(val):
+            try:
+                val = val()
+            except TypeError:
+                try:
+                    val = val(output_seconds=0, height=DEFAULT_HEIGHT)
+                except Exception:           # noqa: BLE001
+                    continue
+            except Exception:               # noqa: BLE001
+                continue
+        if isinstance(val, bool):
+            continue
+        if isinstance(val, (int, float)) and val >= 1:
+            return int(val)
+    for name in ("compute", "sizes", "measure", "size"):
+        fn = getattr(lane_size, name, None)
+        if not callable(fn):
+            continue
+        try:
+            out = fn()
+        except Exception:                   # noqa: BLE001
+            continue
+        if isinstance(out, dict):
+            for key in ("ffmpeg_threads", "threads"):
+                val = out.get(key)
+                if isinstance(val, (int, float)) and not isinstance(val, bool) \
+                        and val >= 1:
+                    return int(val)
+    return None
+
+
+def size_ffmpeg(output_seconds, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT):
+    """(threads, nice, timeout_s) for one render.
+
+    threads  from lane_size.py when shipped, else Part D fallback
+    nice     NICE_LEVEL (fixed: manual M7 says -n 10 on Linux and macOS)
+    timeout  lane_size's ffmpeg_timeout_s when shipped, else
+             max(600, 2 x output seconds x 1080p height factor)
+    """
+    threads = _lane_size_threads() or _part_d_threads()[0]
+    # 1080p factor scales by pixel area: 1080p = 1, 4K = 4.
+    factor = max(1.0, (float(width or DEFAULT_WIDTH) *
+                       float(height or DEFAULT_HEIGHT)) /
+                 float(DEFAULT_WIDTH * DEFAULT_HEIGHT))
+    timeout = int(max(MIN_TIMEOUT_S,
+                      math.ceil(2.0 * max(0.0, float(output_seconds)) * factor)))
+    return threads, NICE_LEVEL, timeout
+
 
 # ponytail: transitions limited to none/fade; add xfade variants
 # (dissolve variants, wipes) when a campaign needs them.
@@ -157,10 +284,17 @@ def plan_timeline(tl, base_dir=".", probe=None):
 
 def build_argv(plan, output, ffmpeg="ffmpeg"):
     """ffmpeg argv array rendering plan -> output. No gaps by construction
-    (concat/xfade chain covers every output frame exactly once)."""
+    (concat/xfade chain covers every output frame exactly once).
+
+    M7: the command is prefixed with `nice -n 10` and carries `-threads N`
+    (from lane_size.py when shipped, else the Part D fallback) so a render
+    never pegs every core of the box.
+    """
     fps, w, h = plan["fps"], plan["width"], plan["height"]
+    threads, nice, _timeout = size_ffmpeg(
+        plan.get("total_dur", 0), w, h)
     segs = plan["segments"]
-    cmd = [ffmpeg, "-y"]
+    cmd = ["nice", "-n", str(nice), ffmpeg, "-y", "-threads", str(threads)]
     for s in segs:
         cmd += ["-i", s["src"]]
     song = plan.get("song_path")
@@ -220,12 +354,16 @@ def _run(cmd, timeout=600):
 
 
 def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
-             timeout=600, base_dir=".", dry_run=False):
+             timeout=None, base_dir=".", dry_run=False):
     """Full render: validate -> preflight -> plan -> ffmpeg -> verify.
 
     Returns receipt dict (also written to <output>.receipt.json unless
     dry_run). Post-render ffprobe check: |A-V| and |out - planned|
     each within 1 frame; else outcome error with AV_DRIFT/PLAN_DRIFT.
+
+    M7: timeout=None means "let lane_size.py (or the Part D fallback)
+    bound the render from the plan's own duration" instead of the old
+    flat 600 s cap. Callers that pass a number keep exact control.
     """
     try:
         tl = load_timeline(timeline_path)
@@ -255,13 +393,18 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         s["src"] = abspath(s["src"])
     if plan["song_path"]:
         plan["song_path"] = abspath(plan["song_path"])
+    if timeout is None:
+        _threads, _nice, timeout = size_ffmpeg(
+            plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
+            plan.get("height", DEFAULT_HEIGHT))
     argv = build_argv(plan, output, ffmpeg)
     if dry_run:
         return {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
                 "tool_version": TOOL_VERSION, "command": "assemble",
                 "outcome": "ok", "reason_code": "DRY_RUN",
                 "next_action": "rerun without dry_run to render",
-                "evidence": {"argv": argv, "plan": plan}, "state_version": 0}
+                "evidence": {"argv": argv, "plan": plan,
+                             "timeout_s": timeout}, "state_version": 0}
     try:
         proc = _run(argv, timeout)
     except RuntimeError as exc:
@@ -279,7 +422,8 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                      evidence={"output": str(output)})
     frame = 1.0 / plan["fps"]
     evid = {"planned_dur": plan["total_dur"], "output_dur": vdur,
-            "total_frames": plan["total_frames"], "argv": argv}
+            "total_frames": plan["total_frames"], "argv": argv,
+            "timeout_s": timeout}
     if abs(vdur - plan["total_dur"]) > frame + 1e-3:
         return _fail("PLAN_DRIFT",
                      next_action="output duration off plan by >1 frame",
@@ -316,7 +460,9 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--ffmpeg", default="ffmpeg")
     ap.add_argument("--ffprobe", default="ffprobe")
-    ap.add_argument("--timeout", type=int, default=600)
+    ap.add_argument("--timeout", type=int, default=None,
+                    help="render cap in seconds; default: lane_size.py "
+                         "or Part D max(600, 2 x output s x 1080p factor)")
     args = ap.parse_args(argv)
     if not shutil.which(args.ffmpeg) or not shutil.which(args.ffprobe):
         print(json.dumps(_fail("PREREQ_MISSING",
