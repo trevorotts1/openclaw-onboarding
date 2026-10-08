@@ -82,8 +82,17 @@ class Fake74:
         raise AssertionError("unexpected Skill 74 call: %r" % sub)
 
 
+def _approved_storyboard():
+    """Directive 14.1 record a clip job must carry: every shot
+    storyboard_approved AND the adversarial review passed (F6 gate)."""
+    return {"storyboard": {
+        "shots": [{"shot_id": "s1", "status": "storyboard_approved"}],
+        "review": {"outcome": "pass", "reason_code": "storyboard-accepted"},
+    }}
+
 def make_jobs(n, inputs=None, model="minimax/hailuo-02-768p"):
-    req = {"model": model, "input": {"prompt": "p" * 200}}
+    req = {"model": model, "input": {"prompt": "p" * 200},
+           **_approved_storyboard()}
     jobs = []
     for i in range(n):
         jobs.append({
