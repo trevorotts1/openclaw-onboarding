@@ -295,6 +295,12 @@ def compile_visual_prompt(style, characters, product, shot):
     lines.append("[TEXT_ALLOWLIST] %s [/TEXT_ALLOWLIST]" %
                  ("; ".join(allow) if allow else "(none)"))
     lines.append("[SHOT:%s] %s [/SHOT]" % (shot_id, base.strip()))
+    # Part F F12: every compiled clip prompt asks for motion — the failed
+    # 2026-10-08 runs produced near-still clips because the prompt never
+    # said the subject moves. Exact one-line wording, builder style.
+    lines.append("[MOTION] The subject moves naturally through the frame; "
+                 "limbs, head and camera stay in gentle continuous motion. "
+                 "[/MOTION]")
     prompt = "\n".join(lines)
     if len(prompt) > cap:
         raise CompilerError("OVER_CAP", "%d > %d for %s"

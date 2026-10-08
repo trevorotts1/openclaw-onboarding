@@ -247,6 +247,23 @@ def check_timeline_min_shot(tl, floor=None):
         sys.path.insert(0, core_dir)
     import shot_planner as sp
     return sp.validate_timeline_min_shot(tl, floor=floor)
+
+def motion_f12_gate(plan):
+    """F12 QC wiring: run shot_planner.motion_score.gate_clips on the plan.
+
+    Segments scored by the scoring step carry "motion_score" (the
+    motion_score() dict). Every planned segment must be scored: an
+    unscored clip raises ValueError CLIP_UNSCORED (fail closed — the
+    near-still check may not silently pass); a flagged clip is returned as
+    a non-ok result the caller turns into a CLIP_LOW_MOTION failure BEFORE
+    any render spend.
+    """
+    core_dir = os.path.dirname(os.path.abspath(__file__))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    import shot_planner.motion_score as ms
+    return ms.gate_clips(plan["segments"])
+
 def lipsync_gate(plan):
     """E6 final edit QC: lip-sync coverage on the planned timeline.
 
@@ -502,6 +519,11 @@ def plan_timeline(tl, base_dir=".", probe=None):
         item = {"src": s["src"], "frames": frames,
                 "snapped_dur": frames / fps, "transition": trans,
                 "xfade_dur": xd, "lip_sync": bool(s.get("lip_sync")), **rec}
+        # Part F F12: the timeline's per-segment motion_score (the
+        # motion_score() dict written by the scoring step) rides the plan
+        # so the pre-assembly gate and the receipt read the same row.
+        if isinstance(s.get("motion_score"), dict):
+            item["motion_score"] = s["motion_score"]
         if isinstance(lids, list) and lids:
             item["lip_sync_line_ids"] = list(lids)
         items.append(item)
@@ -855,6 +877,22 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                                   "before the end card starts (manual "
                                   "Part F F8)"),
                      evidence={"over": _last_line_over_detail(plan)})
+    # Part F F12: clips must move. Every planned clip carries its motion
+    # score in the receipt; a near-still clip fails before any render spend
+    # (CLIP_LOW_MOTION). Scored rows come from the timeline segments
+    # (motion_score key, written by the scoring step); anything unscored
+    # fails closed — the check may not silently pass.
+    try:
+        motion = motion_f12_gate(plan)
+    except ValueError as exc:
+        msg = str(exc)
+        return _fail(msg.split(":")[0], next_action=msg, evidence={})
+    if motion["outcome"] != "ok":
+        return _fail(
+            motion["reason_code"],
+            next_action="regenerate the flagged clips (prompt carries the "
+                        "F12 motion line) before assembling",
+            evidence=motion)
     if timeout is None:
         _threads, _nice, timeout = size_ffmpeg(
             plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
@@ -880,7 +918,8 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                "next_action": "rerun without dry_run to render",
                "evidence": {"argv": argv, "plan": plan,
                             "timeout_s": timeout, "lipsync": cov,
-                            "frame_text": frows},
+                            "frame_text": frows,
+                            "motion": motion},
                "state_version": 0}
         blocked = cov if cov is not None else ffail
         if blocked is not None:  # blocked before spend, but evidence stays
@@ -911,7 +950,10 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     frame = 1.0 / plan["fps"]
     evid = {"planned_dur": plan["total_dur"], "output_dur": vdur,
             "total_frames": plan["total_frames"], "argv": argv,
-            "timeout_s": timeout}
+            "timeout_s": timeout,
+            # F12: every clip's motion score rides in the receipt
+            # (scored before the render; flagged clips never reached here).
+            "motion": motion}
     # Part E E1(5) final QC gate: a master above 2% duplicated frames
     # (mpdecimate marker ratio) fails with TIMELINE_DUP_FRAMES. The only
     # accepted dup source is source fps == timeline fps; with the E1

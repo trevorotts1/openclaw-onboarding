@@ -91,4 +91,19 @@ __all__ = [
     "TARGET_SHOT_SECONDS", "E4_REASONS", "E4_GATE_STEPS",
     "validate_no_reuse", "plan_generation_count", "validate_story_order",
     "e4_final_checks", "to_e4_qc_record",
+    "MOTION_SCORE_LOW", "CLIP_LOW_MOTION", "MotionScoreError",
+    "gate_clip_motion",
 ]
+
+# Part F F12: clips must move. motion_score is its own module
+# (shot_planner/motion_score.py); reach it directly:
+#   from shot_planner.motion_score import motion_score, gate_clips, ...
+# No re-export here on purpose: the module and the function share the
+# name, and a package-level re-export of the function would shadow
+# `import shot_planner.motion_score as ms` with the function object.
+from .motion_score import (  # noqa: E402,F401
+    MOTION_SCORE_LOW,
+    CLIP_LOW_MOTION,
+    MotionScoreError,
+    gate_clips as gate_clip_motion,
+)
