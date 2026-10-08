@@ -59,7 +59,7 @@ CLI)** supplies the API-created `zhc_` dependencies.
 | Layer | Runs on | Owns | Decisions |
 |---|---|---|---|
 | **SMART / THINK** | a client reasoning model (Ollama-Cloud -> OpenRouter -> Gemini) | P0-INTAKE, P1-FIELDS, P2-DEPENDENCIES, and *emitting* the P3 click list | ALL of them — resolves every field property, pre-plans every `zhc_` dep, writes the fully-explicit click list |
-| **DUMB / DO** | agent-browser (MiniMax M3, probe-gated -> DeepSeek v4 pro) | *executing* the P3 click list verbatim | **ZERO** — every target string, label, width, and toggle is pre-specified |
+| **DUMB / DO** | agent-browser (MiniMax M3, probe-gated -> DeepSeek V4.1 Flash) | *executing* the P3 click list verbatim | **ZERO** — every target string, label, width, and toggle is pre-specified |
 
 The browser operator is capability-suspect on this fleet: handed a fuzzy goal it guesses field names,
 invents keys, mis-drags, and skips the embed. So it is given zero judgment — a11y ref first, exact
@@ -121,7 +121,7 @@ render-200 + marker-in-DOM gates are hard, named `AF-FORM-*` auto-fails — they
 The shipped engine on a client box NEVER uses Anthropic / `claude-*` models or operator keys.
 Generation + adversarial verify run on the CLIENT's own configured provider chain; the deterministic
 gates (`_run_preflight`, `qc-built-form.sh`, `render_check`) are provider-neutral stdlib Python and run
-identically everywhere. Browser control + vision QC use **MiniMax M3 (probe-gated) -> DeepSeek v4 pro**;
+identically everywhere. Browser control + vision QC use **MiniMax M3 (probe-gated) -> DeepSeek V4.1 Flash**;
 reasoning uses **Ollama-Cloud -> OpenRouter -> Gemini** (last-resort, credited); **MiniMax M2 is
 BANNED**. Publishing is human-approved (a preview URL + a labeled downloads bundle). Reporting is
 operator-verbose, never client-facing noise.

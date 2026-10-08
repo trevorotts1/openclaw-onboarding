@@ -97,7 +97,7 @@ the JUDGE tier cannot resolve to the same provider+model as HEAVY-WRITER. A sing
 client must configure at least one additional model for independent QC.
 
 **Ollama Cloud id shapes.** The chain matchers accept every shape the fleet actually
-runs, not just a bare `:cloud` tag: a date-tagged build (`ollama/deepseek-v4-pro:0813-cloud`),
+runs, not just a bare `:cloud` tag: a date-tagged build (`ollama/deepseek-v4.1-flash:cloud`),
 a size-tagged build (`ollama/qwen3-vl:235b-cloud`), and the `ollama-cloud/` provider
 prefix. A family SUFFIX is a different model and never fills its base slot, so
 `ollama/kimi-k2.7-code:cloud` is not the Kimi chat model.

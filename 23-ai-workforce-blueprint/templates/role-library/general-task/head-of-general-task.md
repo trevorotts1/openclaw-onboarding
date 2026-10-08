@@ -228,7 +228,7 @@ This role contributes to {{COMPANY_NAME}}'s revenue cascade by ensuring zero tas
 2. **Measure** — Score the deliverable across 5 dimensions (1–10 each, weighted equally): (D1) Completeness — does it address every stated requirement? (D2) Accuracy — are all factual claims correct and verifiable? (D3) Clarity — is it unambiguous and actionable? (D4) Efficiency — is it minimal/focused, no padding? (D5) Hand-off readiness — can the recipient act on it immediately without follow-up?
 3. **Analyze** — Compute weighted average. Gate: average ≥ 8.5 = PASS; < 8.5 = FAIL on specific dimension(s).
 4. **Improve** — On FAIL: apply a surgical fix to the lowest-scoring dimension only. Re-score. Maximum 3 loops.
-5. **Control** — Never ship below 8.5. After 3 failed loops: escalate to Head of General Task with score history. On PASS: deliver + log QC score in MEMORY.md. QC MUST run on a different model than the writer (Rule 6 — writer model: ollama/deepseek-v4-pro:cloud; QC model: ollama/kimi-k2.6:cloud or openrouter/deepseek/deepseek-v3.2).
+5. **Control** — Never ship below 8.5. After 3 failed loops: escalate to Head of General Task with score history. On PASS: deliver + log QC score in MEMORY.md. QC MUST run on a different model than the writer (Rule 6 — writer model: ollama/deepseek-v4.1-flash:cloud; QC model: ollama/kimi-k2.6:cloud or openrouter/deepseek/deepseek-v3.2).
 **Outputs:** Scored deliverable (≥8.5) + QC log entry.
 **Hands to:** Owner / requesting party.
 **Failure mode:** If QC cannot reach 8.5 after 3 loops, DO NOT deliver. Escalate with score history.

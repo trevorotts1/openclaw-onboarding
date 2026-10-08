@@ -7,7 +7,7 @@
     {"id": "fish_audio/tts-v2", "tier": "metered", "note": "old metered slug"},
     {"id": "kie/image-model", "tier": "metered", "note": "old metered slug"},
     {"id": "deepseek/deepseek-flash", "tier": "metered", "note": "DeepSeek direct"},
-    {"id": "ds/deepseek-v4-pro", "tier": "metered", "note": "DeepSeek built-in 9Router alias"},
+    {"id": "ds/deepseek-v4.1-flash", "tier": "metered", "note": "DeepSeek built-in 9Router alias"},
     {"id": "alibaba/qwen3.8-max-preview", "tier": "metered", "note": "Alibaba"},
     {"id": "dashscope/qwen3.8-max-preview", "tier": "metered", "note": "Alibaba DashScope"},
     {"id": "qwen/qwen3.6-plus", "tier": "metered", "note": "Alibaba direct model family"},

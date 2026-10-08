@@ -83,7 +83,7 @@ MODEL DOCTRINE — client-owned providers, NEVER Anthropic
 --------------------------------------------------------
 Ollama Cloud → OpenRouter equivalent → Gemini last-resort, thinking=high on every
 rung. MiniMax M2 is BANNED. Browser-control (execution) uses MiniMax M3 only →
-DeepSeek v4 pro. Vision QC uses MiniMax M3 only. No Anthropic slug ever.
+DeepSeek V4.1 Flash. Vision QC uses MiniMax M3 only. No Anthropic slug ever.
 
 NO LOGIN CODE — auth is handled upstream by the dispatcher / seeded browser
 session (token-only doctrine). The CI guard forbids login patterns outside
@@ -211,13 +211,13 @@ DEFAULT_FORM_FIELDS = ["First Name", "Last Name", "Phone", "Email", "Terms & Con
 
 # ── Model ladders (Ollama-Cloud first → OpenRouter → Gemini last resort) ──────
 # thinking=high on every rung. MiniMax M2 BANNED. No Anthropic slug. Browser
-# execution = MiniMax M3 → DeepSeek v4 pro. Vision QC = MiniMax M3 only.
+# execution = MiniMax M3 → DeepSeek V4.1 Flash. Vision QC = MiniMax M3 only.
 THINK_LADDER: List[dict] = [
     {"rung": 1, "provider": "ollama-cloud", "model": "glm-5.2:cloud", "role": "reasoning", "thinking": "high"},
     {"rung": 2, "provider": "ollama-cloud", "model": "kimi-k2.6:cloud", "role": "reasoning", "thinking": "high"},
-    {"rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4-pro:cloud", "role": "reasoning", "thinking": "high"},
+    {"rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4.1-flash:cloud", "role": "reasoning", "thinking": "high"},
     {"rung": 4, "provider": "openrouter", "model": "z-ai/glm-5.2", "role": "reasoning", "thinking": "high"},
-    {"rung": 5, "provider": "openrouter", "model": "deepseek/deepseek-v4-pro", "role": "reasoning", "thinking": "high"},
+    {"rung": 5, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash", "role": "reasoning", "thinking": "high"},
     {"rung": 6, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
      "role": "last-resort", "thinking": "high", "gate": "only_if_live_and_credited"},
 ]
@@ -226,9 +226,9 @@ EXECUTE_LADDER: List[dict] = [
      "role": "browser-control", "thinking": "high", "probe_gated": True},
     {"rung": 2, "provider": "openrouter", "model": "minimax/minimax-m3",
      "role": "browser-control", "thinking": "high", "probe_gated": True},
-    {"rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4-pro:cloud",
+    {"rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4.1-flash:cloud",
      "role": "browser-control", "thinking": "high"},
-    {"rung": 4, "provider": "openrouter", "model": "deepseek/deepseek-v4-pro",
+    {"rung": 4, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash",
      "role": "browser-control", "thinking": "high"},
     {"rung": 5, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
      "role": "last-resort", "thinking": "high", "gate": "only_if_live_and_credited"},

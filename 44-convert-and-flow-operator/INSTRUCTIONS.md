@@ -56,7 +56,7 @@ or any model NOT identified as a high-reasoning model) **OR thinking is not set 
 Surface this recommendation to the owner BEFORE proceeding:
 
 > ⚠️ **GHL workflow builds are complex and error-prone on lighter models.**
-> It is HIGHLY RECOMMENDED to switch to a high-reasoning model (e.g. DeepSeek v4 pro
+> It is HIGHLY RECOMMENDED to switch to a high-reasoning model (e.g. DeepSeek V4.1 Flash
 > or GLM 5.2 — Ollama Cloud preferred, OpenRouter backup) with thinking set to HIGH before proceeding — for the best
 > possible output and to avoid hard-to-catch hallucinations in workflow logic.
 > *(A lighter model previously turned a 2-minute fix into a 12-hour loop by
@@ -669,7 +669,7 @@ WF-20 ("NO HALLUCINATED ARTIFACTS") is the dedicated detector.
 
 2. **REQUIRE a high-reasoning model at thinking HIGH for the redo.** This is the v12.3.5
    Step 0 recommendation FLIPPED FROM RECOMMENDATION TO REQUIREMENT for this case. The redo
-   MUST run on a high-reasoning model (e.g. DeepSeek v4 pro / GLM 5.2, Ollama Cloud preferred, OpenRouter backup) with thinking=HIGH;
+   MUST run on a high-reasoning model (e.g. DeepSeek V4.1 Flash / GLM 5.2, Ollama Cloud preferred, OpenRouter backup) with thinking=HIGH;
    if the current build session is on a lighter model, the build does NOT proceed until
    switched (cross-references and strengthens INSTRUCTIONS.md Step 0).
 

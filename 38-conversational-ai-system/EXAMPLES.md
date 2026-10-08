@@ -60,7 +60,7 @@ Operator replies YES. Agent uses Conversation Workflow Builder (skill 29's 3-lay
 
 **Cron fires:** `model-version-freshness-protocol.md`.
 
-DeepSeek V4 Pro thinking:max — current installed. Check finds DeepSeek V4.1 Pro available.
+DeepSeek V4.1 Flash thinking:max — current installed. Check finds DeepSeek V4.1 Pro available.
 
 Categorization: MINOR (incremental improvement). Suggestion sent to operator via the weekly tune-up report.
 
