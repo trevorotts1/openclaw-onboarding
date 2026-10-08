@@ -82,6 +82,16 @@ class Fake74:
         raise AssertionError("unexpected Skill 74 call: %r" % sub)
 
 
+def _lock_state():
+    import kie_dispatch.model_lock as ML
+    db = os.path.join(tempfile.mkdtemp(prefix="f5-state-"), "state.db")
+    ML.lock_run_model(db, "run-all-ready", "kling-3.0/video")
+    return db
+
+
+_STATE = _lock_state()
+
+
 def _approved_storyboard():
     """Directive 14.1 record a clip job must carry: every shot
     storyboard_approved AND the adversarial review passed (F6 gate)."""
@@ -90,8 +100,15 @@ def _approved_storyboard():
         "review": {"outcome": "pass", "reason_code": "storyboard-accepted"},
     }}
 
-def make_jobs(n, inputs=None, model="minimax/hailuo-02-768p"):
+def make_jobs(n, inputs=None, model="kling-3.0/video"):
+    # F15: every paid dispatch carries the recorded choice-card receipt.
     req = {"model": model, "input": {"prompt": "p" * 200},
+           "card_receipt": {"answers": {"video_style": "Lifelike 3D",
+                                        "audio_style": "Soul Ballad",
+                                        "length": 60,
+                                        "video_model": "MiniMax H3 768P"},
+                            "who": "w8 merge test",
+                            "at": "2026-10-08T09:00:00Z"},
            **_approved_storyboard()}
     jobs = []
     for i in range(n):
@@ -103,6 +120,7 @@ def make_jobs(n, inputs=None, model="minimax/hailuo-02-768p"):
             "inputs": inputs[i] if isinstance(inputs, list) else inputs,
             "prompt": "q" * 200,
             "runner": Fake74(),
+            "state_store": _STATE,   # F14: card-locked model for the run
         })
     return jobs
 
