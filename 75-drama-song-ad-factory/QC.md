@@ -142,3 +142,14 @@ failed checks. After the 5th failed round, stop and escalate to the owner.
 A maker never signs its own gate: the final verdict for any production
 stage comes from an independent reviewer, and this document is never used
 to self-approve a run.
+
+## Part H H4: speaking faces and lip-sync coverage
+
+- Run `shot_planner.face_speaks.check_face_speaks(shots, lines)`: it lists every
+  shot where a face is visibly speaking (shot / time / line / lip-sync). Any
+  speaking face that is not a lip-sync clip of that character's own line fails
+  `FACE_SPEAKS_NO_LIPSYNC`; a lip-sync clip whose speaker is not on screen fails
+  `LIPSYNC_WRONG_FACE`.
+- Run `face_speaks.check_coverage_band(ad_length_s, lipsync_s, lines)`: 15-20 s
+  in a 60-90 s ad with a 5-point grace; below the band fails
+  `LIPSYNC_COVERAGE_BELOW_BAND`. The planner (`plan_lipsync_lines`) picks the lines.

@@ -1,3 +1,5 @@
+## [v26.4.9]  -  2026-10-08  -  Skill 75 Part H H4: every speaking face is a lip-sync clip of that character's own line; lip-sync coverage target band (skill v2.6.3)
+
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

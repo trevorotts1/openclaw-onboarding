@@ -6,6 +6,24 @@ frontmatter `version:` field).
 
 ---
 
+## [v2.6.3] - 2026-10-08 - Part H H4 every speaking face is a lip-sync clip + coverage target
+
+- New `scripts/core/shot_planner/face_speaks.py`: `check_face_speaks` lists
+  every shot where a face is visibly speaking (shot / time / line / lip-sync)
+  and fails `FACE_SPEAKS_NO_LIPSYNC` for any that is not a lip-sync clip of
+  that character's own line (`LIPSYNC_WRONG_FACE` for a lip-sync clip whose
+  speaker is not on screen). Back of head, hands, another character or an
+  off-screen narrator are the allowed alternatives.
+- `plan_lipsync_lines` picks enough own-face lines to reach the lip-sync
+  target (15-20 s in a 60-90 s ad, scaled by runtime, with the 5-point
+  grace); `check_coverage_band` is the QC measurement
+  (`LIPSYNC_COVERAGE_BELOW_BAND`). Part E E6 floors are unchanged.
+- Assembler: `face_speaks_gate` runs when timeline `lines` carry `speaker`;
+  segments then declare `faces_on_screen` (and `speaking_faces`), a missing
+  declaration fails closed `FACE_DATA_MISSING`.
+- Test: `shot_planner/test_face_speaks_h4.py` (Kiesett S01/S02/S08 flagged,
+  planner reaches the target, band measured, assembler gate).
+
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
