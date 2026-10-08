@@ -6,6 +6,22 @@ frontmatter `version:` field).
 
 ---
 
+## v2.8.4 - 2026-10-08 - F18: caption and lyric checks consume measured timing
+
+Part F F18 wires F17's `audio_c3/lyric_timing.py` into both QC gates. New
+`core/caption_timing.py` normalizes any `provide_word_timings` receipt,
+builds caption cues from the MEASURED word timestamps (text still the
+sheet's own) and distributes measured words onto approved lines for the
+lyric diff. `delivery_variants.checks.check_captions(..., timing=)` reports
+`cue timing measured from <source>` and turns unusable timing into
+UNAVAILABLE (never a PASS), failing a backwards/corrupt cue clock.
+`music_qc.check_song_qc(..., timing=)` judges coverage, critical words,
+ad-libs and protected names from the measured words with
+`lyric_diff.observed_source = "measured-timing:<source>"`; unusable timing
+is an UNAVAILABLE `timing` finding. Without `timing` both checks keep their
+existing text comparison (run measures first via `caption_timing.captions`)
+. Tests: `core/test_caption_lyric_timing_f18.py` (19, stdlib, mocked tiers).
+
 ## v2.8.2 - 2026-10-08 - G3b: sung detector v2
 
 The sung detector no longer reads gap-free speech as sung (unit #1666). Skill bump v2.8.1 to v2.8.2.

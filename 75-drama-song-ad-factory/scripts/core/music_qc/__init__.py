@@ -22,6 +22,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import protected_names  # noqa: E402  H7 words check
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import caption_timing  # noqa: E402  F18 lyric check on measured word timings
+
 TOOL_NAME = "music_qc"
 TOOL_VERSION = "1.0.0"
 
@@ -122,12 +125,36 @@ def diff_lyrics(approved_lines, observed_lines, pronunciation_map=None):
 
 
 def check_song_qc(approved_lines, observed_lines, checks,
-                  pronunciation_map=None, protected=()):
+                  pronunciation_map=None, protected=(), timing=None):
     """17.2 song QC verdict. checks: continuity flags the provider cannot
     self-report (persona/genre/tempo continuity, clipping, transitions,
-    duration); FAIL/UNAVAILABLE reasons outrank any average."""
-    diff = diff_lyrics(approved_lines, observed_lines, pronunciation_map)
+    duration); FAIL/UNAVAILABLE reasons outrank any average.
+
+    F18: pass ``timing`` (the F17 ``provide_word_timings`` receipt, a failure
+    envelope, or a bare word list) and the lyric check runs on the MEASURED
+    words: coverage, critical words and ad-libs are judged from what the
+    timing step actually heard (``caption_timing.lyric_observed``), and the
+    receipt's ``source`` lands in ``lyric_diff.observed_source``. Timing that
+    cannot be used is an UNAVAILABLE ``timing`` finding — never a pass. With
+    ``timing`` omitted this is the observed-lines text comparison it always
+    was."""
     findings = []
+    measured_source = ""
+    effective_observed = observed_lines
+    if timing is not None:
+        measured, mrec = caption_timing.lyric_observed(approved_lines, timing)
+        if not mrec.get("ok"):
+            findings.append(
+                ("UNAVAILABLE", "timing",
+                 "measured lyric timing unavailable (%s): %s"
+                 % (mrec.get("reason_code"), mrec.get("detail", ""))))
+        else:
+            effective_observed = measured
+            measured_source = "measured-timing:%s" % (
+                mrec.get("source") or "unknown-source")
+    diff = diff_lyrics(approved_lines, effective_observed, pronunciation_map)
+    if timing is not None:
+        diff["observed_source"] = measured_source or "text-observed-lines"
     if diff["critical_missing"]:
         findings.append(("FAIL", "critical",
                          "omitted critical sales lines: %s"
@@ -141,10 +168,12 @@ def check_song_qc(approved_lines, observed_lines, checks,
                          "unapproved words damage meaning: %s"
                          % ",".join(diff["adlib_words"][:8])))
     # H7: a take where a protected name (character/brand) was sung wrong fails
-    # outright, whatever the overall coverage average says.
+    # outright, whatever the overall coverage average says. F18: with timing
+    # bound the sung stream IS the measured words (effective_observed), so the
+    # name check judges what the timing step heard, not the caller's text.
     for msg in protected_names.check_sung_names(
             [ln.get("text", "") for ln in approved_lines or []],
-            " ".join(ln.get("text", "") for ln in observed_lines or []),
+            " ".join(ln.get("text", "") for ln in effective_observed or []),
             protected):
         findings.append(("FAIL", "protected_name", msg))
     for key in ("persona_continuity", "genre_continuity",
