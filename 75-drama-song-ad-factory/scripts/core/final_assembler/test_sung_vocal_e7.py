@@ -4,8 +4,9 @@
 stdlib only, zero paid calls, no ffmpeg binary required (the scan path is
 exercised through the pure parsers over canned stderr text).
 
-Acceptance proven:
+Acceptance proven (floor amended to 55 % per Addendum 3 / Decision 39):
   timing map with 75% sung coverage              -> PASS
+  timing map with 55% sung coverage (the floor)  -> PASS
   voiceover-only master (0% sung)                -> FAIL VOCAL_MISSING
   50% sung coverage                              -> FAIL SUNG_COVERAGE_LOW
   Velvet profile with a song bed present         -> PASS
@@ -56,6 +57,15 @@ class SungVocalE7(unittest.TestCase):
         self.assertEqual(out["reason_code"], "SUNG_COVERAGE_OK")
         self.assertAlmostEqual(out["sung_coverage"], 0.75, places=3)
 
+    def test_timing_map_55pct_floor_passes(self):
+        """E7 amended (Decision 39): floor 55% -- a 55% master now passes."""
+        self.assertEqual(SVG.MIN_SUNG_COVERAGE, 0.55)
+        out = SVG.check_sung_vocal(timing=_timing(33.0, 60.0),
+                                   profile="all_suno")
+        self.assertEqual(out["outcome"], "PASS")
+        self.assertEqual(out["reason_code"], "SUNG_COVERAGE_OK")
+        self.assertAlmostEqual(out["sung_coverage"], 0.55, places=3)
+
     def test_voiceover_only_master_fails_vocal_missing(self):
         out = SVG.check_sung_vocal(timing=_timing(0.0, 60.0),
                                    profile="all_suno")
@@ -63,6 +73,7 @@ class SungVocalE7(unittest.TestCase):
         self.assertEqual(out["reason_code"], "VOCAL_MISSING")
 
     def test_50pct_fails_sung_coverage_low(self):
+        """E7 amended (Decision 39): 50% stays below the 55% floor."""
         out = SVG.check_sung_vocal(timing=_timing(30.0, 60.0),
                                    profile="all_suno")
         self.assertEqual(out["outcome"], "FAIL")
@@ -224,7 +235,8 @@ class SungVocalE7(unittest.TestCase):
             RUN_ID, "final", records,
             {"final:audio:sung_vocal": MAKER, "x:export": MAKER,
              "x:timeline": MAKER, "x:final_edit": MAKER},
-            ["final_edit", "export", "timeline", "audio"])
+            ["final_edit", "export", "timeline", "audio"],
+            master={"chosen_length_s": 60, "measured_s": 58})
         self.assertEqual(res["gate"], "FAIL")
         self.assertEqual(res["repair_scope"], ["final:audio:sung_vocal"])
 
@@ -246,6 +258,39 @@ class SungVocalE7(unittest.TestCase):
     def test_covered_ratio_capped_at_one(self):
         ratio, _ = SVG.sung_coverage_from_timing(_timing(90.0, 60.0))
         self.assertLessEqual(ratio, 1.0)
+
+    # -------------------------------------- H8: ONE rule, Trevor's band ---
+    def test_h8_within_5_points_accepts_without_flag(self):
+        out = SVG.check_sung_vocal(timing=_timing(39.0, 60.0),   # 65% vs 70
+                                   profile="all_suno")
+        self.assertEqual((out["outcome"], out["flags"]), ("PASS", []))
+
+    def test_h8_5_to_10_points_accepts_with_flag(self):
+        out = SVG.check_sung_vocal(timing=_timing(36.0, 60.0),   # 60% vs 70
+                                   profile="all_suno")
+        self.assertEqual(out["outcome"], "PASS")
+        self.assertEqual(len(out["flags"]), 1)
+        rec = SVG.record_for_gate(out, "r1", "final", "qc", "s1", "auth")
+        self.assertIn("FLAG", rec["evidence"]["summary"])
+
+    def test_h8_past_10_points_is_redo(self):
+        out = SVG.check_sung_vocal(timing=_timing(30.0, 60.0),   # 50% vs 70
+                                   profile="all_suno")
+        self.assertEqual((out["outcome"], out["reason_code"]),
+                         ("FAIL", "SUNG_COVERAGE_LOW"))
+
+    def test_h8_no_6s_stretch_is_the_hard_reject(self):
+        out = SVG.check_sung_vocal(timing=_timing(5.0, 60.0),
+                                   profile="all_suno")
+        self.assertEqual((out["outcome"], out["reason_code"]),
+                         ("FAIL", "VOCAL_MISSING"))
+        self.assertIn("no real singing", out["next_action"])
+
+    def test_h8_guard_uses_the_shared_constants(self):
+        self.assertIs(SVG._SS.NO_REAL_SINGING_STRETCH_S,
+                      SVG._SS.NO_REAL_SINGING_STRETCH_S)
+        self.assertEqual(SVG._SS.ACCEPT_PTS, 5)
+        self.assertEqual(SVG._SS.FLAG_PTS, 10)
 
 
 if __name__ == "__main__":

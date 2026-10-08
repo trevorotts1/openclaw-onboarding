@@ -11,7 +11,7 @@ but the shared final QC gate had no record proving the master is sung.
 What this module owns and nothing else:
 
 1. the **coverage check** -- ``check_sung_vocal()`` decides a master carries
-   the sung vocal across >= ``MIN_SUNG_COVERAGE`` (70 %) of its run for All
+   the sung vocal across >= ``MIN_SUNG_COVERAGE`` (55 %) of its run for All
    Suno ads, or a song bed under the voiceover for Velvet Voiceover ads;
 2. two **code-only evidence paths** (no paid call):
    primary  -- the 12.4 song timing map (shot_planner.load_timing_map)
@@ -33,7 +33,8 @@ What this module owns and nothing else:
 Reason codes (exactly the manual's two):
   VOCAL_MISSING      -- all-spoken master: no sung vocal detected
                         (0 % sung coverage, or no vocal energy on master);
-  SUNG_COVERAGE_LOW  -- sung vocal present but below the 70 % floor.
+  SUNG_COVERAGE_LOW  -- sung vocal present but below the 55 % floor
+                        (Decision 39: at least 55 % sung, spoken 35-40 %).
 
 stdlib only. No network module, no provider call, no spend, no absolute
 operator path.
@@ -56,12 +57,24 @@ try:
 except ImportError:                      # core/ imported as a top-level package
     from shot_planner.shot_planner import PlanError, load_timing_map  # type: ignore # noqa: F401,E501
 
+try:
+    import spoken_share as _SS            # core/ on sys.path (see above)
+except ImportError:                      # pragma: no cover
+    from .. import spoken_share as _SS
+
 TOOL_NAME = "final_assembler.sung_vocal_guard"
 TOOL_VERSION = "1.0.0"
 
-#: Manual 02 E7: "carry the Suno sung vocal across most of its runtime
-#: (e.g. >= 70 % for All Suno ...)". One floor, one module.
-MIN_SUNG_COVERAGE = 0.70
+#: Manual 02 E7 as amended (Addendum 3 / Decision 39): "at least 55 % sung" is
+#: the hard floor -- below it the master is redone. H8: the sung-coverage GOAL
+#: stays 70 % and is judged by Trevor's band in core/spoken_share (<=5 points
+#: short = accept, 5-10 = accept with a flag). Past 10 points short is a redo
+#: unless the master is still at or above the 55 % floor, where it is accepted
+#: with a flag (the amendment lowered the bar to 55 %). The only other hard
+#: reject is "no real singing" (no spoken_share.NO_REAL_SINGING_STRETCH_S
+#: sung stretch).
+MIN_SUNG_COVERAGE = 0.55
+SUNG_GOAL = 0.70
 
 #: Canonical intake voice ids (plan 4.1 / voice_velvet_echo constants);
 #: copied here so the guard never needs the voice catalog to decide mode.
@@ -150,13 +163,30 @@ def sung_coverage_from_timing(timing, runtime_s=None, spoken_section_ids=None):
         else float(t["duration_seconds"])
     if dur <= 0:
         raise ValueError("BAD_RUNTIME: runtime must be positive")
+    windows = _sung_windows(t, spoken_section_ids)
+    sung_s = sum(en - st for st, en in windows)
+    return min(1.0, sung_s / dur), dur
+
+
+def _sung_windows(t, spoken_section_ids=None):
+    """(start, end) of every sung line window in a normalized timing map."""
     spoken = {_norm(s) for s in (spoken_section_ids or []) if isinstance(s, str)}
-    sung_s = 0.0
+    out = []
     for ln in t["lines"].values():
         if spoken and ln["section_id"] and _norm(ln["section_id"]) in spoken:
             continue
-        sung_s += max(0.0, float(ln["end"]) - float(ln["start"]))
-    return min(1.0, sung_s / dur), dur
+        st, en = float(ln["start"]), float(ln["end"])
+        if en > st:
+            out.append((st, en))
+    return out
+
+
+def longest_sung_stretch_from_timing(timing, spoken_section_ids=None):
+    """Longest sung stretch (s) in a 12.4 map, via the one shared rule."""
+    segs = [{"delivery": "sung", "start": a, "end": b}
+            for a, b in _sung_windows(load_timing_map(timing),
+                                      spoken_section_ids)]
+    return _SS.longest_sung_stretch_s(segs) if segs else 0.0
 
 
 def vocal_argv(master_path, ffmpeg="ffmpeg"):
@@ -214,7 +244,8 @@ def vocal_presence(stderr_text, floor_lufs=None):
 # ----------------------------------------------------------------- check ----
 def check_sung_vocal(timing=None, runtime_s=None, profile=None,
                      master_path=None, scan_stderr=None,
-                     min_coverage=MIN_SUNG_COVERAGE, spoken_section_ids=None):
+                     min_coverage=MIN_SUNG_COVERAGE, spoken_section_ids=None,
+                     goal=SUNG_GOAL):
     """E7 verdict: the master is sung (All Suno) or has its bed (Velvet).
 
     Primary path  -- ``timing``: 12.4 map -> sung coverage ratio.
@@ -234,7 +265,7 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
            "voice_mode": mode, "voice_mode_defaulted": defaulted,
            "min_coverage": min_coverage, "evidence_path": None,
            "sung_coverage": None, "outcome": "FAIL", "reason_code": None,
-           "next_action": None}
+           "next_action": None, "flags": []}
     # ---- primary: the timing map ----
     if timing is not None:
         try:
@@ -261,22 +292,34 @@ def check_sung_vocal(timing=None, runtime_s=None, profile=None,
             ver["reason_code"] = "VELVET_BED_PRESENT"
             ver["next_action"] = "song bed present under voiceover per timing map"
             return ver
-        if ratio <= 0.0:
+        stretch = longest_sung_stretch_from_timing(timing, spoken_section_ids)
+        ver["longest_sung_stretch_s"] = stretch
+        if stretch + 1e-9 < _SS.NO_REAL_SINGING_STRETCH_S:
             ver["outcome"] = "FAIL"
             ver["reason_code"] = "VOCAL_MISSING"
             ver["next_action"] = (
-                "all-spoken master: timing map carries 0 s of sung lines; "
-                "re-cut with the Suno song master")
+                "no real singing: longest sung stretch %.1f s, needs %.0f s; "
+                "re-cut with the Suno song master"
+                % (stretch, _SS.NO_REAL_SINGING_STRETCH_S))
             return ver
-        if ratio < min_coverage:
+        short_pts = max(0.0, (goal - ratio) * 100.0)
+        band = _SS.judge_gap(short_pts)
+        ver["gap_pts"] = round(short_pts, 3)
+        if ratio + 1e-9 < min_coverage:
             ver["outcome"] = "FAIL"
             ver["reason_code"] = "SUNG_COVERAGE_LOW"
             ver["next_action"] = (
-                "sung runtime %.2f%% < floor %.0f%%; add sung sections"
-                % (ratio * 100.0, min_coverage * 100.0))
+                "sung runtime %.2f%% is under the %.0f%% floor (goal %.0f%%): "
+                "redo; add sung sections"
+                % (ratio * 100.0, min_coverage * 100.0, goal * 100.0))
             return ver
         ver["outcome"] = "PASS"
         ver["reason_code"] = "SUNG_COVERAGE_OK"
+        if band != _SS.VERDICT_PASS:
+            ver["flags"] = [
+                "sung runtime %.2f%% is %.1f points under the %.0f%% goal: "
+                "accepted with a flag" % (ratio * 100.0, short_pts,
+                                          goal * 100.0)]
         ver["next_action"] = "final QC continues"
         return ver
     # ---- secondary: vocal-presence signal on the assembled master ----
@@ -326,9 +369,10 @@ def record_for_gate(verdict, run_id, stage, reviewer_identity,
             "reviewer_authority (a blank record can never advance a stage)")
     reason = verdict.get("reason_code") or "SUNG_GUARD"
     if verdict["outcome"] == "PASS":
-        summary = ("sung_vocal_guard %s: %s (mode=%s, sung_coverage=%s)"
+        summary = ("sung_vocal_guard %s: %s (mode=%s, sung_coverage=%s)%s"
                    % (TOOL_VERSION, reason, verdict.get("voice_mode"),
-                      verdict.get("sung_coverage")))
+                      verdict.get("sung_coverage"),
+                      "".join(" FLAG: " + f for f in verdict.get("flags", []))))
     else:
         summary = ("%s: %s" % (reason, verdict.get("next_action")))
     rec = {"schema_version": "1.0.0", "check_id": "final:audio:sung_vocal",

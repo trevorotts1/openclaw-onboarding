@@ -182,8 +182,16 @@ def write_auth(tmp: Path) -> Path:
 
 def run_preflight(factory: Path, root: Path, storage: Path, auth: Path,
                   refs):
+    # F15: paid preflight also needs the recorded choice-card receipt.
+    receipt = storage / "card-receipt.json"
+    receipt.write_text(json.dumps({
+        "answers": {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
+                    "length": 60, "video_model": "MiniMax H3 768P"},
+        "who": "w8 merge test", "at": "2026-10-08T09:00:00Z"}),
+        encoding="utf-8")
     args = ["preflight", "--root", str(root), "--storage-dir", str(storage),
-            "--auth-file", str(auth), "--run-id", "w302u7"]
+            "--auth-file", str(auth), "--run-id", "w302u7",
+            "--card-receipt-file", str(receipt)]
     for r in refs:
         args += ["--ref", str(r)]
     return factory_cli(factory, args)

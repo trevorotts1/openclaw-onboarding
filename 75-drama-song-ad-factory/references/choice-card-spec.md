@@ -32,7 +32,8 @@ Both modes end at the same approval card.
 
 ```text
 Your drama song ad
-  Length:       60 seconds   (90 seconds, 3 minutes, 5 minutes, 10-minute long version)
+  Length:       60 seconds   (90 seconds, 2 minutes, 3 minutes, 5 minutes,
+                10-minute long version)
   Shape:        9:16 vertical (16:9 widescreen, or both)
   Style:        Lifelike 3D (default) / 2D Hand-Painted / Sketch to Life
                 / Canvas to Life / Canvas to 3D
@@ -48,16 +49,63 @@ Your drama song ad
   [Approve]   [Change options]
 ```
 
+Directive 24.3 note (owner order 2026-10-08): the card is one step with
+four picks, so the three-question cap applies to the story questions only.
+
 `[Approve]` is one click. `[Change options]` reopens the same card with the
 previous selections kept.
+
+## 2.2 One question at a time (Part I7, normative)
+
+The intake is a conversation, not a form. One message per turn:
+
+1. `Question 3 of 6 - VIDEO STYLE`, then a one-sentence reason the question
+   matters, then the question.
+2. Options as a numbered list, one per line, each with a short plain
+   description; the RECOMMENDED option is marked and followed by "I recommend
+   option N (name) because ...".
+3. Wait for the answer. A number, "recommended", or (spend only) a dollar
+   amount is accepted; anything else gets "Sorry, I did not catch that." and
+   the same question again.
+4. After the last answer, a recap ("Here is what you picked:") and a request
+   for "yes". A line number reopens only that question, then returns to the
+   recap.
+
+Built by `intake_card.conversation(replies)` (stateless: replay the replies so
+far), exposed as `factory.py card --step --reply ...`. Same code in claude-nine
+and OpenClaw. Test: `choice_card/intake_card/test_intake_step_i7.py`.
+
+## 2.1 Intake question card layout (Part H9, normative)
+
+The six intake questions (length, music style, video style, video model,
+spend limit, storyboard approval) are built by
+`scripts/core/choice_card/intake_card/intake_card.py` and nowhere else. Never
+write them free hand and never carry them as one JSON string.
+
+- Each question is its own block: `Question 1 of 6 - LENGTH`, then the plain
+  question, then one numbered option per line (`1. 60 seconds - one short
+  sentence. (RECOMMENDED)`). A blank line separates questions. The last line
+  is the "how to answer" line.
+- Plain text only: no Markdown, no HTML, no parse mode, so no sender can strip
+  or escape the line breaks.
+- Claude Code chat: run `factory.py card` and show its stdout as is (raw text,
+  not the JSON envelope, whose escaped `\n` is what got flattened).
+- Telegram through OpenClaw: run `factory.py card --format openclaw-json
+  --target <chat id>` and execute each argv list without a shell, one message
+  per list. The card is split between questions under 4000 characters; a
+  `--format telegram-json` body is the exact Bot API `sendMessage` payload.
+- The intake `question_message` uses the same layout (`format_questions`).
 
 ## 3. Field rules
 
 ### 3.1 Length
 
-Offered values, in order: **60 seconds, 90 seconds, 3 minutes, 5 minutes,
-10-minute long version** (decision 32). Default comes from the brief; if the
-brief gives none, 60 seconds.
+Offered values, in order: **60 seconds, 90 seconds, 2 minutes (new, added
+by F15, owner order 2026-10-08), 3 minutes, 5 minutes, 10-minute long
+version** (decision 32). Default comes from the brief; if the brief gives
+none, 60 seconds. A brief pre-fills the RECOMMENDED picks but never skips
+the card (F15): the card still shows and the answers still record before
+ANY paid job.
 
 Each length is its own song and timing map, never a cut-down of a longer one.
 Shot count is computed from the chosen model's maximum shot length; it is
@@ -120,7 +168,7 @@ Decision 27 and decision 31, plan 6.12 and 6.12.1:
 
 | Value on the card | What it means |
 |---|---|
-| **All Suno** (default) | Every line - sung and spoken - is made by Suno. Spoken lines play over the music bed only. No singing-underneath layer. |
+| **All Suno** (default) | Every line - sung and spoken - is made by Suno. Spoken words are performed inside the one Suno track. No separate spoken takes. |
 | **Velvet Voiceover** | The Suno song is made as usual; spoken lines are voiced with Google text-to-speech, one distinct voice per character matching their gender; the song's sung version of that line keeps playing softly underneath with the music bed dipped so the words stay clear. **No echo effect, no reverb** - a plain voiceover over the song. |
 
 - The option was renamed from its earlier echo-flavoured name to **Velvet
@@ -257,3 +305,30 @@ On the parent campaign: every selection above, the approved price, the
 recorded ceiling, and the listed lip-sync lines. The Command Center keeps one
 deliverable per ad and one Kanban card per ad and per batch; the department
 map's lead role for this skill is `vsl-video-sales-letter-specialist`.
+
+## Suno song recipe (applies to every Suno music style above)
+
+Every Suno music style (Soul Ballad, R&B Flow, Soul Rise, and any Suno style
+added later) follows this recipe by default. It is what made the Kiesett and
+LeAnne Dolce songs land. The code is `scripts/core/suno_recipe/`; every Suno
+request goes through `suno_recipe.prepare()` and the `music_director` seam
+refuses a raw Suno style that skipped it.
+
+The four rules:
+
+1. Suno is told plainly which lines to sing and which to speak.
+2. A repeated sung hook is built from the client's own words.
+3. Singing starts early.
+4. Each take's singing is measured, not taken from its labels.
+
+In plain terms: tag every lyric section Sung or Spoken, and put the same map
+in the style text ("SUNG: Hook. SPOKEN: Verse 1, Verse 2."). Write one short
+hook out of words the client actually said and repeat it. Get to the first
+sung line early (target: 15% of the runtime). After Suno returns a take, run
+the detector and judge the sung and spoken shares from what it measured.
+
+The only exemption is the Velvet Voiceover version (the spoken Google voice
+over the song, id `velvet_voiceover`), which keeps its own flow. Almost
+nobody asks for it. Every other style, including the All Suno voice default,
+uses the recipe.
+

@@ -16,6 +16,7 @@
     {"id": "runway-g4/video", "task": "video", "family": "runway", "resolution": "720p", "status": "APPROVED", "max_shot_seconds": 10, "shapes": ["9:16", "16:9"], "image_to_video": true, "silent": false},
     {"id": "ai-music-api/generate", "task": "music", "family": "suno", "status": "APPROVED"},
     {"id": "google/imagen4-fast", "task": "image", "family": "imagen", "status": "APPROVED"},
-    {"id": "gpt-image-2-flare", "task": "image", "family": "gpt-image", "status": "APPROVED"}
+    {"id": "gpt-image-2-flare", "task": "image", "family": "gpt-image", "status": "APPROVED"},
+    {"id": "gpt-image-2-5-sunburst", "task": "image", "family": "gpt-image", "status": "APPROVED"}
   ]
 }

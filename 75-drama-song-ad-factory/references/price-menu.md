@@ -73,6 +73,36 @@ in each table.
 | Kling 3.0 | 1080p (pro) | 6 | $8.28 | $16.50 | +$1.64 |
 | Seedance 2.0 Mini | 720p (no 1080p) | 6 | $3.87 | $7.68 | +$0.76 |
 
+### 2 minutes
+
+New (F15, owner order 2026-10-08): computed with the same published rates
+and the same formula as every table above - per-second models at 120 s x
+their "Rates used" rate, Veo at ceil(120/8) = 15 clips, Gemini Omni Flash at
+ceil(120/10) = 12 clips, one Imagen 4 Fast keyframe ($0.02) per shot, one
+Suno V6 generation ($0.06) shared - so the same rate that prices the 90 s
+rows prices these; the live card still reads Skill 74.
+
+| Model | Resolution | Shots per shape | One shape | Both shapes | +20% retakes (one shape) |
+|---|---|---|---|---|---|
+| Veo 3.1 Fast | 720p | 15 | $4.86 | $9.66 | +$0.96 |
+| Veo 3.1 Fast | 1080p | 15 | $5.23 | $10.41 | +$1.03 |
+| Veo 3.1 Quality | 720p | 15 | $19.11 | $38.16 | +$3.81 |
+| Veo 3.1 Quality | 1080p | 15 | $19.48 | $38.91 | +$3.89 |
+| HappyHorse 1.1 | 720p | 8 | $13.72 | $27.38 | +$2.73 |
+| HappyHorse 1.1 | 1080p | 8 | $17.62 | $35.18 | +$3.51 |
+| MiniMax H3 **(CHEAPEST)** | 768P (no 720p) | 8 | $5.02 | $9.98 | +$0.99 |
+| MiniMax H3 | 2K (no 1080p) | 8 | $8.02 | $15.98 | +$1.59 |
+| Kling 3.0 Omni | 720p | 8 | $8.62 | $17.18 | +$1.71 |
+| Kling 3.0 Omni | 1080p | 8 | $11.02 | $21.98 | +$2.19 |
+| Gemini Omni Flash 1.1 | 720p and 1080p (same price) | 12 | $7.86 | $15.66 | +$1.56 |
+| Seedance 2.5 | 720p | 8 | $38.02 | $75.98 | +$7.59 |
+| Seedance 2.5 **(PREMIUM)** | 1080p | 8 | $95.02 | $189.98 | +$18.99 |
+| Wan 3.0 | 720p | 8 | $9.82 | $19.58 | +$1.95 |
+| Wan 3.0 | 1080p | 8 | $19.42 | $38.78 | +$3.87 |
+| Kling 3.0 | 720p (std) | 8 | $8.62 | $17.18 | +$1.71 |
+| Kling 3.0 | 1080p (pro) | 8 | $11.02 | $21.98 | +$2.19 |
+| Seedance 2.0 Mini | 720p (no 1080p) | 8 | $5.14 | $10.22 | +$1.02 |
+
 ### 3 minutes
 
 | Model | Resolution | Shots per shape | One shape | Both shapes | +20% retakes (one shape) |

@@ -105,7 +105,9 @@ def cmd_preflight(a):
                "schema_version": a.schema_version,
                "allowed_schemas": json.loads(a.allowed_schemas or "[]") or None,
                "credentials": a.credential or [], "auth": _load(a.auth_file) if a.auth_file else None,
-               "summary_digest": a.summary_digest}
+               "summary_digest": a.summary_digest,
+               "run_state": _load(a.run_state_file) if a.run_state_file else None,
+               "card_receipt": _load(a.card_receipt_file) if a.card_receipt_file else None}
     try:
         r = _check(payload)
     except Exception as e:
@@ -268,11 +270,47 @@ def main(argv=None):
     p.add_argument("--auth-file", default=None)
     p.add_argument("--summary-digest", default=None)
     p.add_argument("--min-free-bytes", type=int, default=0)
+    p.add_argument("--run-state-file", default=None,
+                   help="Run-state JSON; must carry the recorded F15 choice-"
+                        "card receipt before any paid job.")
+    p.add_argument("--card-receipt-file", default=None,
+                   help="The recorded choice-card receipt (answers, who, at); "
+                        "overrides the run-state record.")
     n = sub.add_parser("next", help="Which stage is next, its exact command, and "
                                     "how many lanes may run (manual 02 B1).")
     n.add_argument("--run-dir", required=True,
                    help="Run dir that holds control/state.sqlite3.")
-    a = ap.parse_args(argv)
+    c = sub.add_parser("card", help="Print the six-question intake card as raw "
+                                    "text (not JSON), or as send payloads (H9).")
+    c.add_argument("--format", default="text",
+                   choices=("text", "openclaw-json", "telegram-json"))
+    c.add_argument("--target", default="", help="Telegram chat id")
+    c.add_argument("--step", action="store_true",
+                   help="one question per message (I7): print only the next message")
+    c.add_argument("--reply", action="append", default=[],
+                   help="a client reply so far, in order (repeat the flag)")
+    ch = sub.add_parser("character", help="Per-client character library: ask / save / "
+                                          "list / use / card (Part I, I6). Extra args pass through.")
+    args = sys.argv[1:] if argv is None else list(argv)
+    if args[:1] == ["character"]:      # own parser; passes --client-dir etc. through
+        a = argparse.Namespace(cmd="character", rest=args[1:])
+    else:
+        a = ap.parse_args(argv)
+    if a.cmd == "card":
+        core = str(Path(__file__).resolve().parent.parent)
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
+        return _card.main(["--format", a.format, "--target", a.target]
+                          + (["--step"] if a.step else [])
+                          + [x for r in a.reply for x in ("--reply", r)])
+    if a.cmd == "character":
+        import os
+        core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        from character_library import character_library as _cl  # noqa: PLC0415
+        return _cl.main(a.rest)
     if a.cmd == "intake":
         env = cmd_intake(a)
     elif a.cmd == "preflight":
