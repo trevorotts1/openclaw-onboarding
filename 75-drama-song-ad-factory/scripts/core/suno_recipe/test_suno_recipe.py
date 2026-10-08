@@ -17,16 +17,21 @@ if CORE not in sys.path:
 import music_styles as MS          # noqa: E402
 import suno_recipe as R            # noqa: E402
 
-CLIENT = "We keep the lights on for every family. Come home to Dolce, come home tonight."
-HOOK = ["Come home to Dolce", "come home tonight"]
+CLIENT = "I am not small. I never was. One seed of truth made me strong. She Found Power in the Climb."
+HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
 
 
-def sheet(hook=HOOK, repeats=2, first="spoken"):
-    s = [{"tag": "Verse 1", "delivery": first, "lines": ["We keep the lights on"]}]
+def sheet(hook=HOOK, repeats=3, vocalise=True):
+    s = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]}]
+    if vocalise:
+        s.append({"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,", "A-a-a-a-a-ah,"]})
     for i in range(repeats):
-        s.append({"tag": "Hook", "delivery": "sung", "lines": list(hook)})
-        if i < repeats - 1:
-            s.append({"tag": "Verse 2", "delivery": "spoken", "lines": ["for every family"]})
+        s.append({"tag": "Hook %d" % (i + 1), "delivery": "sung", "lines": list(hook)})
+        if i == 0:
+            s.append({"tag": "Verse", "delivery": "sung",
+                      "lines": ["One seed of truth made me stro-o-ong,", "One seed is a-all I ne-e-eed,"]})
+    s.append({"tag": "Outro", "delivery": "spoken",
+              "lines": ["She Found Power in the Climb. Get the book. Link below."]})
     return s
 
 
@@ -49,8 +54,9 @@ class Recipe(unittest.TestCase):
             self.assertFalse(out["exempt"])
             self.assertEqual(R.check_style_text(out["style"]), [])
             self.assertTrue(out["style"].startswith(MS.style_prompt(sid)))
-            self.assertIn("SUNG: Hook", out["style"])
-            self.assertIn("SPOKEN: Verse 1, Verse 2", out["style"])
+            self.assertLessEqual(len(out["style"]), 1000)
+            self.assertEqual(R.check_negatives(out["negative_tags"], sid), [])
+            self.assertNotIn("spoken word", out["negative_tags"])
 
     def test_unknown_style_fails_closed(self):
         with self.assertRaises(R.RecipeError) as c:
@@ -69,22 +75,45 @@ class Recipe(unittest.TestCase):
         self.assertEqual(R.EXEMPT_STYLE_IDS, frozenset({V.VELVET_ID}))
         self.assertNotIn(V.ALL_SUNO_ID, R.EXEMPT_STYLE_IDS)
 
-    def test_sheet_without_repeated_client_hook_fails(self):
-        for bad, why in ((sheet(repeats=1), "repeated"),
-                         (sheet(hook=["Buy now and save big"]), "client's own"),
-                         (sheet(first="spoken")[:1] + [
-                             {"tag": "A", "delivery": "spoken", "lines": ["x"]},
-                             {"tag": "B", "delivery": "sung", "lines": ["y"]},
-                             {"tag": "C", "delivery": "sung", "lines": ["y"]}], "late")):
-            errs = R.check_lyric_sheet(bad, CLIENT)
+    def test_sheet_rules(self):
+        late = sheet()
+        late[0]["tag"] = "Verse"                      # spoken outside Intro/Outro
+        bad = ((sheet(repeats=1), "repeated"), (sheet(hook=["Buy now and save big"]), "client's own"),
+               (sheet(vocalise=False), "vocalise"), (late, "only allowed"),
+               ([{"tag": "Hook", "delivery": "sung", "lines": HOOK}] + sheet()[1:], "may not open"))
+        for b_, why in bad:
+            errs = R.check_lyric_sheet(b_, CLIENT)
             self.assertTrue(any(why in e for e in errs), (why, errs))
             with self.assertRaises(R.RecipeError):
-                R.prepare("soul-ballad", bad, CLIENT)
+                R.prepare("soul-ballad", b_, CLIENT)
+        self.assertEqual(R.check_lyric_sheet(sheet(), CLIENT, 58), [])   # the BSW shape passes at 58 s
+        long_ = sheet()
+        long_[1]["lines"] = ["la la la la la la la la"] * 30
+        self.assertTrue(any("budget" in e for e in R.check_lyric_sheet(long_, CLIENT, 58)))
 
-    def test_style_text_without_map_fails(self):
+    def test_style_text_rules(self):
         raw = MS.style_prompt("soul-ballad")
-        self.assertTrue(R.check_style_text(raw))
-        self.assertTrue(R.check_style_text(raw + ". SUNG: none. SPOKEN: Verse."))
+        self.assertTrue(R.check_style_text(raw))                       # no band wording
+        good = R.style_text("soul-ballad")
+        self.assertEqual(R.check_style_text(good), [])
+        self.assertTrue(R.check_style_text(good + " Spoken lines are spoken."))
+        self.assertTrue(R.check_style_text("x" * 1001 + " the full band keeps playing"))
+
+    def test_negatives_and_request(self):
+        self.assertEqual(R.check_negatives(R.negative_tags("soul-ballad")), [])
+        self.assertTrue(R.check_negatives("rap, choir, reverb, echo, spoken word"))
+        self.assertTrue(R.check_negatives("rap"))                      # dry rule missing
+        self.assertNotIn("rap", R.negative_tags("rnb-flow"))           # the rap style keeps its rap
+        req = R.build_request("soul-ballad", sheet(), CLIENT, "T", 58)
+        self.assertEqual((req["model"], req["custom_mode"], req["style_weight"], req["variety"],
+                          req["weirdness_constraint"], req["vocal_gender"], req["duration"]),
+                         ("V6", True, 0.75, 0, 0.3, "f", 58))
+        self.assertIn("band dropout", req["negative_tags"])
+        self.assertEqual(R.parse_lyrics(req["lyrics"]), sheet())
+
+    def test_syllables(self):
+        self.assertEqual(R.syllables("I am not sma-a-all"), 4)
+        self.assertEqual(R.syllables("One seed of truth made me stro-o-ong"), 7)
 
     def test_sheet_roundtrip(self):
         s = sheet()
@@ -95,7 +124,7 @@ class Recipe(unittest.TestCase):
         raw = MS.style_prompt("rnb-flow")
         with self.assertRaises(R.RecipeError):          # raw style, no recipe
             MD.build_generate_request("la la", raw, "T")
-        with self.assertRaises(R.RecipeError):          # recipe id, no map
+        with self.assertRaises(R.RecipeError):          # recipe id, no band wording
             MD.build_generate_request("la la", raw, "T", style_id="rnb-flow",
                                       client_text=CLIENT)
         R.guard_request(raw, "la la", "velvet_voiceover")     # exempt id passes
@@ -105,6 +134,7 @@ class Recipe(unittest.TestCase):
         if not MD.workcopy_paths()["models"].is_file():
             self.skipTest("68-kie-audio catalog not in this checkout")
         out = R.prepare("rnb-flow", sheet(), CLIENT)
+        out["style"] = out["style"]
         req = MD.build_generate_request(out["lyrics"], out["style"], "T",
                                         style_id="rnb-flow", client_text=CLIENT)
         self.assertTrue(req["input"]["style"].startswith(out["style"]))  # I5 appends ending words

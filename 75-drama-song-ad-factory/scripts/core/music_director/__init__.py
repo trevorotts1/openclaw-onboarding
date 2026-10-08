@@ -119,7 +119,7 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     the master request is never built. ``packet_lines=None`` keeps the old
     behavior (packet binding happens upstream in lyric QC).
     """
-    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # G12 + I8
+    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # recipe v2 + I8
     if packet_lines is not None and protected:
         # H7 (supersedes the F7 whole-text match, which forbids any sung
         # line beyond the packet): every packet line verbatim and every

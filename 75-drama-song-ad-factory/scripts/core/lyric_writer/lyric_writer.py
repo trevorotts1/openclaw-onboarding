@@ -176,9 +176,9 @@ def _spoken_share():
 
 
 def spoken_word_budget(sections):
-    """SPK001: judge a lyric sheet's spoken lines against the ~15-18% of the
-    lyric words budget (Suno stretches spoken parts, so few words land the
-    20-25% runtime target). ``sections`` = [{"delivery", "lines"}]. The rule
+    """SPK001: judge a lyric sheet's spoken lines against the word budget
+    derived from the ad's spoken target (spoken_share.spoken_word_budget_pct,
+    default 20-25% of runtime). ``sections`` = [{"delivery", "lines"}]. The rule
     and the numbers are owned by core/spoken_share; nothing re-derived."""
     return _spoken_share().check_spoken_word_budget(sections)
 

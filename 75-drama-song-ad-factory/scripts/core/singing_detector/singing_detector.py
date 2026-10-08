@@ -84,6 +84,10 @@ MIN_NOTES_PER_SECOND = 1.0
 NOTE_TOL = 0.5          # semitones inside one note
 NOTE_MIN_FRAMES = 12    # 120 ms at a 10 ms hop
 WINDOW_S = 8.0
+#: Short lines (under WINDOW_S) are judged by a second, shorter window pass.
+SHORT_WINDOW_S = 4.0
+#: pcr needed when the quantisation test cannot be measured (fewer than 3 big intervals).
+SHORT_PCR_MIN = 0.85
 HOP_S = 1.0
 #: Voiced-frame floor for one window to score at all (20/100 ms).
 MIN_VOICED_FRAMES = 20
@@ -272,14 +276,19 @@ def score_window(st, a, b, fps=100.0):
     pcr = float(abs(np.sum(d * np.exp(2j * np.pi * p)) / d.sum()))
     iv = np.abs(np.diff(p))
     big = iv[iv >= 0.8]
-    quant = float(np.mean(np.abs(big - np.round(big)))) if len(big) > 2 else 0.25
+    # Fewer than 3 big intervals (a short line) cannot measure quantisation:
+    # do not fail it on a made-up 0.25 against the 0.22 limit; demand a
+    # stricter pitch-class concentration instead.
+    quant = float(np.mean(np.abs(big - np.round(big)))) if len(big) > 2 else None
     steady = float(d.sum() / nv)
     sust = float(d[d >= SUSTAIN_FRAMES].sum() / nv)
     guarded = (len(nt) >= MIN_NOTES_PER_WINDOW
                and nps >= MIN_NOTES_PER_SECOND)
-    sung = bool(guarded and pcr >= PCR_MIN and quant <= QUANT_MAX
+    quant_ok = (pcr >= SHORT_PCR_MIN) if quant is None else quant <= QUANT_MAX
+    sung = bool(guarded and pcr >= PCR_MIN and quant_ok
                 and steady >= STEADY_MIN)
-    z.update(score=round(rng, 2), pcr=round(pcr, 3), quant=round(quant, 3),
+    z.update(score=round(rng, 2), pcr=round(pcr, 3),
+             quant=round(0.25 if quant is None else quant, 3), quant_measured=quant is not None,
              steady=round(steady, 3), sust=round(sust, 3),
              step=round(melodic_step(nt), 2), sung=sung)
     return z
@@ -332,6 +341,17 @@ def detect_track(stem_path, win=WINDOW_S, hop=HOP_S, ffmpeg="ffmpeg"):
     # half or more of the windows over a second must vote sung (an 'any'
     # vote let a sung neighbour paint the next spoken line sung)
     sung = (votes * 2 >= cover) & (cover > 0) & (votes > 0) & voiced
+    # short-line pass: a sung line under WINDOW_S is diluted in an 8 s window
+    # of speech/silence; a 4 s window sung by EVERY short window over a
+    # second also counts (strict: all agree, not half).
+    if win > SHORT_WINDOW_S:
+        v4, c4 = np.zeros(n), np.zeros(n)
+        for a in np.arange(0, max(dur - SHORT_WINDOW_S, 0) + 1e-9, hop):
+            r = score_window(st, a, min(a + SHORT_WINDOW_S, dur))
+            lo, hi = int(a), min(int(a + SHORT_WINDOW_S), n)
+            c4[lo:hi] += 1
+            v4[lo:hi] += r["sung"]
+        sung = sung | ((v4 == c4) & (c4 > 0) & voiced)
     sung_s = int(sung.sum())
     voiced_s = int(voiced.sum())
     return {
