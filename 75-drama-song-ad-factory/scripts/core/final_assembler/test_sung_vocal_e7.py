@@ -4,11 +4,14 @@
 stdlib only, zero paid calls, no ffmpeg binary required (the scan path is
 exercised through the pure parsers over canned stderr text).
 
-Acceptance proven (floor amended to 55 % per Addendum 3 / Decision 39):
-  timing map with 75% sung coverage              -> PASS
-  timing map with 55% sung coverage (the floor)  -> PASS
+Acceptance proven (Trevor, 2026-10-08: no absolute floor; the ad's own sung
+target judged by the 5/10 band; the only hard reject is no 6 s sung stretch):
+  75% sung vs a 75% target                       -> PASS
+  50 vs target 60 (10 points)                    -> PASS with a flag
+  48 vs target 60 (12 points)                    -> FAIL SUNG_COVERAGE_LOW
+  57 vs target 60                                -> PASS, no flag
+  no 55% floor anywhere (50% vs a 50% target)    -> PASS
   voiceover-only master (0% sung)                -> FAIL VOCAL_MISSING
-  50% sung coverage                              -> FAIL SUNG_COVERAGE_LOW
   Velvet profile with a song bed present         -> PASS
 plus the gate wiring: the record rides qc_gate.validate_record/evaluate.
 
@@ -52,32 +55,35 @@ class SungVocalE7(unittest.TestCase):
     # ------------------------------------------------------- acceptance ---
     def test_timing_map_75pct_passes(self):
         out = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
-                                   profile="all_suno")
+                                   profile="all_suno", target=0.75)
         self.assertEqual(out["outcome"], "PASS")
         self.assertEqual(out["reason_code"], "SUNG_COVERAGE_OK")
         self.assertAlmostEqual(out["sung_coverage"], 0.75, places=3)
 
-    def test_timing_map_55pct_floor_passes(self):
-        """E7 amended (Decision 39): floor 55% -- a 55% master now passes."""
-        self.assertEqual(SVG.MIN_SUNG_COVERAGE, 0.55)
+    def test_no_absolute_floor_exists(self):
+        """Trevor: not an absolute 55%. 50% against a 50% target passes."""
+        self.assertFalse(hasattr(SVG, "MIN_SUNG_COVERAGE"))
+        out = SVG.check_sung_vocal(timing=_timing(30.0, 60.0),
+                                   profile="all_suno", target=0.50)
+        self.assertEqual((out["outcome"], out["flags"]), ("PASS", []))
+
+    def test_default_target_comes_from_the_g10_constants(self):
+        self.assertEqual(SVG.SUNG_TARGET, SVG._SS.SUNG_TARGET_PCT / 100.0)
         out = SVG.check_sung_vocal(timing=_timing(33.0, 60.0),
-                                   profile="all_suno")
-        self.assertEqual(out["outcome"], "PASS")
-        self.assertEqual(out["reason_code"], "SUNG_COVERAGE_OK")
-        self.assertAlmostEqual(out["sung_coverage"], 0.55, places=3)
+                                   profile="all_suno")      # 55% vs 55%
+        self.assertEqual((out["outcome"], out["target"]), ("PASS", 0.55))
+
+    def test_card_target_is_read_from_the_profile(self):
+        card = {"voice": "all_suno", "sung_target_pct": 60}
+        out = SVG.check_sung_vocal(timing=_timing(30.0, 60.0), profile=card)
+        self.assertEqual((out["outcome"], out["target"], len(out["flags"])),
+                         ("PASS", 0.6, 1))                  # 50 vs 60
 
     def test_voiceover_only_master_fails_vocal_missing(self):
         out = SVG.check_sung_vocal(timing=_timing(0.0, 60.0),
                                    profile="all_suno")
         self.assertEqual(out["outcome"], "FAIL")
         self.assertEqual(out["reason_code"], "VOCAL_MISSING")
-
-    def test_50pct_fails_sung_coverage_low(self):
-        """E7 amended (Decision 39): 50% stays below the 55% floor."""
-        out = SVG.check_sung_vocal(timing=_timing(30.0, 60.0),
-                                   profile="all_suno")
-        self.assertEqual(out["outcome"], "FAIL")
-        self.assertEqual(out["reason_code"], "SUNG_COVERAGE_LOW")
 
     def test_velvet_profile_with_song_bed_passes(self):
         out = SVG.check_sung_vocal(timing=_timing(20.0, 60.0),
@@ -181,7 +187,7 @@ class SungVocalE7(unittest.TestCase):
     # ------------------------------------------------- gate wiring (QC) ---
     def test_pass_record_validates_and_gate_passes(self):
         ver = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
-                                   profile="all_suno")
+                                   profile="all_suno", target=0.75)
         rec = SVG.record_for_gate(ver, RUN_ID, STAGE, REVIEWER,
                                   "sess-e7", "qc-checker")
         self.assertIsNone(qc_gate.validate_record(rec))
@@ -207,7 +213,7 @@ class SungVocalE7(unittest.TestCase):
     def test_fail_record_fails_when_audio_required_for_final_edit(self):
         """Wiring: audio rides the 17.5 Final edit required set."""
         ver = SVG.check_sung_vocal(timing=_timing(30.0, 60.0),
-                                   profile="all_suno")
+                                   profile="all_suno", target=0.75)
         rec = SVG.record_for_gate(ver, RUN_ID, "final", REVIEWER,
                                   "sess-e7", "qc-checker")
         self.assertIsNone(qc_gate.validate_record(rec))
@@ -217,7 +223,7 @@ class SungVocalE7(unittest.TestCase):
         # (structural) would mean the record never joined the gate's audio
         # bucket -- the exact wiring defect this test exists to catch.
         ver_ok = SVG.check_sung_vocal(timing=_timing(45.0, 60.0),
-                                      profile="all_suno")
+                                      profile="all_suno", target=0.75)
         ok = SVG.record_for_gate(ver_ok, RUN_ID, "final", REVIEWER,
                                  "sess-e7", "qc-checker")
 
@@ -259,25 +265,37 @@ class SungVocalE7(unittest.TestCase):
         ratio, _ = SVG.sung_coverage_from_timing(_timing(90.0, 60.0))
         self.assertLessEqual(ratio, 1.0)
 
-    # -------------------------------------- H8: ONE rule, Trevor's band ---
-    def test_h8_within_5_points_accepts_without_flag(self):
-        out = SVG.check_sung_vocal(timing=_timing(39.0, 60.0),   # 65% vs 70
-                                   profile="all_suno")
-        self.assertEqual((out["outcome"], out["flags"]), ("PASS", []))
+    # ---------------------- Trevor's band around the ad's own target ---
+    def _vs60(self, sung_pct):
+        return SVG.check_sung_vocal(timing=_timing(sung_pct * 0.6, 60.0),
+                                    profile="all_suno", target=0.60)
 
-    def test_h8_5_to_10_points_accepts_with_flag(self):
-        out = SVG.check_sung_vocal(timing=_timing(36.0, 60.0),   # 60% vs 70
-                                   profile="all_suno")
+    def test_57_vs_60_accepts_without_flag(self):
+        out = self._vs60(57)
+        self.assertEqual((out["outcome"], out["reason_code"], out["flags"]),
+                         ("PASS", "SUNG_COVERAGE_OK", []))
+
+    def test_50_vs_60_is_10_points_accepted_with_a_flag(self):
+        out = self._vs60(50)
         self.assertEqual(out["outcome"], "PASS")
         self.assertEqual(len(out["flags"]), 1)
         rec = SVG.record_for_gate(out, "r1", "final", "qc", "s1", "auth")
+        self.assertEqual(rec["verdict"], "PASS")
         self.assertIn("FLAG", rec["evidence"]["summary"])
 
-    def test_h8_past_10_points_is_redo(self):
-        out = SVG.check_sung_vocal(timing=_timing(30.0, 60.0),   # 50% vs 70
-                                   profile="all_suno")
+    def test_48_vs_60_is_12_points_redo(self):
+        out = self._vs60(48)
         self.assertEqual((out["outcome"], out["reason_code"]),
                          ("FAIL", "SUNG_COVERAGE_LOW"))
+
+    def test_too_much_singing_is_judged_the_same_way(self):
+        out = self._vs60(75)                                # 15 points over
+        self.assertEqual(out["reason_code"], "SUNG_COVERAGE_LOW")
+
+    def test_bad_target_is_refused(self):
+        with self.assertRaises(SVG.SungGuardError):
+            SVG.check_sung_vocal(timing=_timing(30.0), profile="all_suno",
+                                 target="high")
 
     def test_h8_no_6s_stretch_is_the_hard_reject(self):
         out = SVG.check_sung_vocal(timing=_timing(5.0, 60.0),

@@ -1,3 +1,7 @@
+## [v26.4.8]  -  2026-10-08  -  BND001: sung share judged only by Trevor's band (skill 75 v2.8.1)
+
+Removes the hard 55 percent sung floor that batch #1652 kept; sung share is judged against the ad's own target with the 5/10 point band, and the first real singing is targeted at 15 percent of runtime (H6, supersedes #1637). See the skill 75 CHANGELOG v2.8.1.
+
 ## [v26.4.7]  -  2026-10-08  -  batch: mega MGB001 (24 units; skill 75 v2.8.0)
 
 One batch release of 24 unit pull requests (merged together in one batch pull request; none were merged one at a time). Version, README and this entry are bumped once for the whole batch.

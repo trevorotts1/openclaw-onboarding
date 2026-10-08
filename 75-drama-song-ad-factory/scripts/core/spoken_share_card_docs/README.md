@@ -9,7 +9,7 @@ operator paths; Skill 74 only KIE path; ships only via the batch train.*
 
 > "It should be 45% and never more than 55%." Same for every length and
 > style, the 40% floor stays, the spoken opener stays short, and the first
-> sung line starts within about 10 seconds. It replaces the earlier
+> real singing (measured on the vocal stem) is targeted at 15% of the runtime. It replaces the earlier
 > 40-to-70 percent band and the per-length targets.
 
 ## Canonical strings (`share_card_docs.py`)
@@ -19,9 +19,9 @@ operator paths; Skill 74 only KIE path; ships only via the batch train.*
 | `SPOKEN_TARGET_PCT` | `45` |
 | `SPOKEN_MAX_PCT` | `55` |
 | `SPOKEN_MIN_PCT` | `40` |
-| `FIRST_SUNG_WITHIN_SECONDS` | `10` |
-| `CARD_LINE` | `Spoken:      45% of the runtime (never above 55%, never below 40%)  /  short spoken opener  /  first sung line within about 10 seconds` |
-| `DOCS_STATEMENT` | the D15 paragraph: target 45%, never more than 55%, never less than 40%, every length and style, rap counts as spoken, opener short, first sung line within about 10 seconds, replaces the earlier band and the per-length targets |
+| `FIRST_SUNG_TARGET_PCT` | `15` |
+| `CARD_LINE` | `Spoken:      45% of the runtime (never above 55%, never below 40%)  /  short spoken opener  /  first real singing at about 15% of the ad` |
+| `DOCS_STATEMENT` | the D15 paragraph: target 45%, never more than 55%, never less than 40%, every length and style, rap counts as spoken, opener short, first real singing at about 15% of the ad, replaces the earlier band and the per-length targets |
 | `REFERENCE_NOTE` | the 5-minute reference note (below) |
 
 `CARD_LINE` follows the plan 4.1 card column: the label plus padding puts the
