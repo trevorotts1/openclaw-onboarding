@@ -8,6 +8,7 @@ from .kie_dispatch import (  # noqa: F401
     envelope,
     make_runner,
     resolve_adapter,
+    submit_all_ready,
 )
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "envelope",
     "make_runner",
     "resolve_adapter",
+    "submit_all_ready",
 ]

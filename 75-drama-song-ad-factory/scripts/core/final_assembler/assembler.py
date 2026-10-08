@@ -40,6 +40,15 @@ Rules:
 - E3 minimum shot length: load_timeline fails closed on any segment
   under 1.5 s (1.0 s when marked beat_cut) via
   shot_planner.validate_timeline_min_shot.
+- F8 (manual Part F): the final sung/spoken line must end before the
+  end card starts. The end card is marked by an optional top-level
+  "endcard_start_s" (validated in load_timeline when present; no key =
+  not checked — old timelines assemble unchanged). Sung/spoken line
+  windows come from the optional "lines" list ({line_id, start_s,
+  end_s}, the same absolute-window shape other checks read). When the
+  end card key is present, check_last_line_before_endcard(plan) runs
+  at assembly and a line ending after the card fails with
+  LAST_LINE_OVER_ENDCARD.
 """
 import argparse
 import json
@@ -73,6 +82,13 @@ MIN_SHOT_S = 1.5
 BEAT_CUT_MIN_SHOT_S = 1.0
 
 EXIT = {"ok": 0, "error": 1, "unavailable": 3}
+
+# --- F8: last line before the end card (manual Part F F8) --------------------
+# The ad's final sung/spoken line must end before the end card begins.
+# The card is marked with the optional timeline key "endcard_start_s"
+# (validated in load_timeline when present; no key = not checked).
+# Sung/spoken line windows come from the optional "lines" list.
+LAST_LINE_OVER_ENDCARD = "LAST_LINE_OVER_ENDCARD"
 
 # --- E2: transitions (manual Part E E2) --------------------------------------
 # Default: fade 0.4 s (manual allows 0.3-0.5) at every scene change;
@@ -231,6 +247,23 @@ def check_timeline_min_shot(tl, floor=None):
         sys.path.insert(0, core_dir)
     import shot_planner as sp
     return sp.validate_timeline_min_shot(tl, floor=floor)
+
+def motion_f12_gate(plan):
+    """F12 QC wiring: run shot_planner.motion_score.gate_clips on the plan.
+
+    Segments scored by the scoring step carry "motion_score" (the
+    motion_score() dict). Every planned segment must be scored: an
+    unscored clip raises ValueError CLIP_UNSCORED (fail closed — the
+    near-still check may not silently pass); a flagged clip is returned as
+    a non-ok result the caller turns into a CLIP_LOW_MOTION failure BEFORE
+    any render spend.
+    """
+    core_dir = os.path.dirname(os.path.abspath(__file__))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    import shot_planner.motion_score as ms
+    return ms.gate_clips(plan["segments"])
+
 def lipsync_gate(plan):
     """E6 final edit QC: lip-sync coverage on the planned timeline.
 
@@ -250,6 +283,40 @@ def lipsync_gate(plan):
         return None
     return _fail(res["reason_code"], next_action=res["detail"],
                  evidence=res["evidence"])
+
+# F9 frame-text check: sampled frames per lip-sync clip, extractor stub
+# default (OCR optional; register_extractor installs it). No ffmpeg needed
+# on the stub path, so dry runs and tests run it too -- the done-when is
+# "a frame check runs on every lip-sync clip and the receipt shows it".
+try:                                    # F9 sibling module (this package)
+    from .frame_text import GARBLED_TEXT_FRAME, clip_rows as _frame_rows
+except ImportError:                     # direct script run from this dir
+    from frame_text import (            # type: ignore
+        GARBLED_TEXT_FRAME, clip_rows as _frame_rows)
+
+def frame_text_gate(plan, ffmpeg=None, dry_run=False, frame_count=3,
+                    extractor=None):
+    """F9: one frame-text row per lip-sync clip, plus the gate result.
+
+    Returns (rows, fail): rows always carry every lip-sync clip (stub mode
+    names the extractor, so a dry-run receipt still shows the check ran);
+    fail is the _fail receipt when a sampled readable-text frame flags
+    GARBLED_TEXT_FRAME (no render spend), else None.
+    """
+    marked = [s for s in plan["segments"]
+              if s.get("lip_sync") or s.get("lip_sync_line_ids")]
+    rows = _frame_rows(
+        marked, ffmpeg=("ffmpeg" if (ffmpeg and not dry_run) else None),
+        frame_count=frame_count, extractor=extractor)
+    for r in rows:
+        if r["text_frames"]:
+            return rows, _fail(GARBLED_TEXT_FRAME, next_action=(
+                "lip-sync clip %s shows readable invented text in sampled "
+                "frame(s) %s; regenerate that clip (no OCR text is allowed "
+                "in lip-sync close-ups)"
+                % (r["clip"], r["text_frames"])),
+                evidence={"frame_text": rows})
+    return rows, None
 
 
 def load_timeline(path):
@@ -288,6 +355,35 @@ def load_timeline(path):
             raise ValueError(
                 f"TIMELINE_BAD_SEGMENT: segments[{i}].lip_sync must be "
                 "boolean")
+    # F8: optional end card marker (and sung/spoken line windows) are
+    # validated here, at load, when present — fail closed on bad shape.
+    if tl.get("endcard_start_s") is not None:
+        ec = tl["endcard_start_s"]
+        if (isinstance(ec, bool) or not isinstance(ec, (int, float))
+                or ec != ec or ec <= 0):
+            raise ValueError(
+                "TIMELINE_BAD_ENDCARD: endcard_start_s must be a positive "
+                "number of seconds")
+    if tl.get("lines") is not None:
+        ls = tl["lines"]
+        if not isinstance(ls, list):
+            raise ValueError("TIMELINE_BAD_LINES: lines must be a list")
+        for i, ln in enumerate(ls):
+            if not isinstance(ln, dict) \
+                    or not str(ln.get("line_id") or "").strip():
+                raise ValueError(
+                    f"TIMELINE_BAD_LINES: lines[{i}] needs line_id")
+            st, en = ln.get("start_s"), ln.get("end_s")
+            for name, v in (("start_s", st), ("end_s", en)):
+                if (isinstance(v, bool) or not isinstance(v, (int, float))
+                        or v != v):
+                    raise ValueError(
+                        f"TIMELINE_BAD_LINES: lines[{i}].{name} must be a "
+                        "number")
+            if en <= st:
+                raise ValueError(
+                    f"TIMELINE_BAD_LINES: lines[{i}] end must be after "
+                    "start")
     min_shot_errs = check_timeline_min_shot(tl)
     if min_shot_errs:
         raise ValueError(
@@ -423,6 +519,11 @@ def plan_timeline(tl, base_dir=".", probe=None):
         item = {"src": s["src"], "frames": frames,
                 "snapped_dur": frames / fps, "transition": trans,
                 "xfade_dur": xd, "lip_sync": bool(s.get("lip_sync")), **rec}
+        # Part F F12: the timeline's per-segment motion_score (the
+        # motion_score() dict written by the scoring step) rides the plan
+        # so the pre-assembly gate and the receipt read the same row.
+        if isinstance(s.get("motion_score"), dict):
+            item["motion_score"] = s["motion_score"]
         if isinstance(lids, list) and lids:
             item["lip_sync_line_ids"] = list(lids)
         items.append(item)
@@ -444,7 +545,77 @@ def plan_timeline(tl, base_dir=".", probe=None):
     return {"fps": fps, "width": width, "height": height,
             "song_path": tl.get("song_path"),
             "segments": items, "total_frames": total_frames,
-            "total_dur": total_frames / fps}
+            "total_dur": total_frames / fps,
+            # F8: card marker + line windows ride the plan so
+            # check_last_line_before_endcard(plan) runs off the plan.
+            "endcard_start_s": tl.get("endcard_start_s"),
+            "lines": tl.get("lines")}
+
+
+# --- F8: last line before the end card (manual Part F F8) --------------------
+#
+# The failed 2026-10-08 ad let its last sung line run INTO the end card:
+# the words were still playing when the CTA card appeared and the whole
+# close was cut off. The check is timeline-based, needs no media:
+#   * line windows come from the optional timeline key "lines"
+#     ([{line_id, start_s, end_s}], absolute seconds, the same shape
+#     other timing checks read);
+#   * the card's start is the optional timeline key "endcard_start_s"
+#     (validated in load_timeline when present; no key = not checked);
+#   * plan_timeline copies both onto the plan so the gate runs off the
+#     plan, like every other assembler gate.
+# Reason code: LAST_LINE_OVER_ENDCARD — a line whose END lands after the
+# card's start on the timeline. Any gate error raises ValueError with a
+# reason code (fail closed), never silently passes.
+
+
+def check_last_line_before_endcard(plan):
+    """F8 gate: final sung/spoken line ends before the end card starts.
+
+    plan: plan_timeline() output (must carry "endcard_start_s" and
+    "lines" copied from the timeline, or neither — the check is a no-op
+    without the card marker).
+
+    Returns [] on pass or when not checked; else a list of reason
+    strings — ["LAST_LINE_OVER_ENDCARD"] when any final sung/spoken
+    line's end time lands after the end card's start time on the
+    timeline. Malformed plan shapes raise ValueError (fail closed,
+    never a silent pass).
+    """
+    ec = plan.get("endcard_start_s")
+    if ec is None:
+        return []                              # no card key = not checked
+    ls = plan.get("lines")
+    if ls is None:
+        raise ValueError(
+            "LAST_LINE_WINDOW_UNKNOWN: endcard_start_s present but the "
+            "timeline carries no lines to check against")
+    if not isinstance(ec, (int, float)) or isinstance(ec, bool) \
+            or not isinstance(ls, list):
+        raise ValueError(
+            "LAST_LINE_INPUT_BAD: endcard_start_s must be a number and "
+            "lines a list")
+    for i, ln in enumerate(ls):
+        if not isinstance(ln, dict):
+            raise ValueError(
+                "LAST_LINE_INPUT_BAD: lines[%d] must be an object" % i)
+        end = ln.get("end_s")
+        if isinstance(end, bool) or not isinstance(end, (int, float)):
+            raise ValueError(
+                "LAST_LINE_INPUT_BAD: lines[%d].end_s must be a number"
+                % i)
+    if all(float(ln["end_s"]) <= float(ec) for ln in ls):
+        return []
+    return [LAST_LINE_OVER_ENDCARD]
+
+
+def _last_line_over_detail(plan):
+    """Evidence for a LAST_LINE_OVER_ENDCARD failure: the offending lines."""
+    ec = float(plan["endcard_start_s"])
+    return [{"line_id": str(ln.get("line_id") or i),
+             "end_s": float(ln["end_s"]), "endcard_start_s": ec}
+            for i, ln in enumerate(plan["lines"])
+            if float(ln["end_s"]) > ec]
 
 
 # --- Part E E5: lip-sync clips stay whole (atomic) --------------------------
@@ -692,6 +863,36 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     except ValueError as exc:
         msg = str(exc)
         return _fail(msg.split(":")[0], next_action=msg, evidence={})
+    # F8: the final sung/spoken line must end before the end card starts.
+    # No endcard_start_s key on the timeline = not checked (backward
+    # compatible); a bad line window already failed in load_timeline.
+    try:
+        over = check_last_line_before_endcard(plan)
+    except ValueError as exc:
+        msg = str(exc)
+        return _fail(msg.split(":")[0], next_action=msg, evidence={})
+    if over:
+        return _fail(over[0],
+                     next_action=("move the final sung/spoken line's end "
+                                  "before the end card starts (manual "
+                                  "Part F F8)"),
+                     evidence={"over": _last_line_over_detail(plan)})
+    # Part F F12: clips must move. Every planned clip carries its motion
+    # score in the receipt; a near-still clip fails before any render spend
+    # (CLIP_LOW_MOTION). Scored rows come from the timeline segments
+    # (motion_score key, written by the scoring step); anything unscored
+    # fails closed — the check may not silently pass.
+    try:
+        motion = motion_f12_gate(plan)
+    except ValueError as exc:
+        msg = str(exc)
+        return _fail(msg.split(":")[0], next_action=msg, evidence={})
+    if motion["outcome"] != "ok":
+        return _fail(
+            motion["reason_code"],
+            next_action="regenerate the flagged clips (prompt carries the "
+                        "F12 motion line) before assembling",
+            evidence=motion)
     if timeout is None:
         _threads, _nice, timeout = size_ffmpeg(
             plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
@@ -700,21 +901,37 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     # E6 lip-sync coverage result rides in every receipt; only a FAIL
     # blocks the render. The dry-run receipt exists for exactly this.
     cov = lipsync_gate(plan)
+    # F9 frame-text check runs on EVERY lip-sync clip (stub mode when
+    # there is no real ffmpeg or on dry runs; extract mode on real
+    # renders). Rows ride the receipt either way; only a flagged row
+    # blocks, with no render spend.
+    try:
+        frows, ffail = frame_text_gate(plan, ffmpeg=ffmpeg, dry_run=dry_run)
+    except Exception as exc:            # fail closed on extractor/setup
+        msg = str(exc)
+        return _fail(getattr(exc, "code", "FRAME_EXTRACT_UNAVAILABLE"),
+                     next_action=msg, evidence={})
     if dry_run:
         out = {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
                "tool_version": TOOL_VERSION, "command": "assemble",
                "outcome": "ok", "reason_code": "DRY_RUN",
                "next_action": "rerun without dry_run to render",
                "evidence": {"argv": argv, "plan": plan,
-                            "timeout_s": timeout, "lipsync": cov},
+                            "timeout_s": timeout, "lipsync": cov,
+                            "frame_text": frows,
+                            "motion": motion},
                "state_version": 0}
-        if cov is not None:  # blocked before spend, but evidence stays
+        blocked = cov if cov is not None else ffail
+        if blocked is not None:  # blocked before spend, but evidence stays
             out["outcome"] = "error"
-            out["reason_code"] = cov["reason_code"]
-            out["next_action"] = cov["next_action"]
+            out["reason_code"] = blocked["reason_code"]
+            out["next_action"] = blocked["next_action"]
+            out.setdefault("evidence", {}).setdefault("gate_evidence", {})
+            out["evidence"]["gate_evidence"] = blocked["evidence"]
         return out
-    if cov is not None:   # gate FAIL: no render spend (17.5 fail-closed)
-        return cov
+    for blocked in (cov, ffail):   # gate FAILs: no render spend (17.5)
+        if blocked is not None:
+            return blocked
     try:
         proc = _run(argv, timeout)
     except RuntimeError as exc:
@@ -733,7 +950,10 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     frame = 1.0 / plan["fps"]
     evid = {"planned_dur": plan["total_dur"], "output_dur": vdur,
             "total_frames": plan["total_frames"], "argv": argv,
-            "timeout_s": timeout}
+            "timeout_s": timeout,
+            # F12: every clip's motion score rides in the receipt
+            # (scored before the render; flagged clips never reached here).
+            "motion": motion}
     # Part E E1(5) final QC gate: a master above 2% duplicated frames
     # (mpdecimate marker ratio) fails with TIMELINE_DUP_FRAMES. The only
     # accepted dup source is source fps == timeline fps; with the E1
@@ -741,6 +961,7 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     # where interpolation was owed) and the render is refused.
     dup_pct = fps_conform.mpdecimate_dup_ratio(proc.stderr or "")
     evid["dup_frame_pct"] = dup_pct
+    evid["frame_text"] = frows   # F9: one row per lip-sync clip, in receipt
     try:
         fps_conform.assert_no_dupe_frames(dup_pct)
         evid["dup_frame_gate"] = "PASS"

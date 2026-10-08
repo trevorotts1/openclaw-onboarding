@@ -862,6 +862,9 @@ def compile_prompt(shot, mode, identity, aspect_ratio="9:16",
                      "hold each style at least %.1fs; no flicker [/DISSOLVE]"
                      % (float(d), HOLD_MIN_SECONDS))
     parts.append("[SHOT:%s] %s [/SHOT]" % (shot["shot_id"], base))
+    # Part F F12: the clip prompt asks for motion (clips must move).
+    parts.append("[MOTION] The subject moves naturally through the frame "
+                 "[/MOTION]")
     return {
         "prompt": "\n".join(parts),
         "mode": mode,

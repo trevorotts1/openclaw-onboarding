@@ -11,11 +11,18 @@ carries:
   * the dry close-microphone vocal rule (``dry_close_mic`` plus the phrase
     ``dry close-microphone vocal`` in every style/prompt text surface the
     payload actually has: ``input.style``, ``input.prompt``, ``prompt``, ...);
-  * the seven negative tags — reverb, echo, delay, hall, ethereal, ambient,
-    choir pad — set on the payload, not merely implied by the prose;
+  * the short negative tags — reverb, echo, choir — set on the payload, not
+    merely implied by the prose (Part F F13, owner order 2026-10-08: the
+    research summary found the short list works where the long lists did
+    not);
   * the three style words a spoken part never uses: spacious, cinematic,
     choir. A spoken part naming one is refused by name
-    (``BANNED_STYLE_WORD:<word>``) instead of being shipped.
+    (``BANNED_STYLE_WORD:<word>``) instead of being shipped;
+  * (Part F F13) the song style never uses the banned style words
+    (``SONG_BANNED_STYLE_WORDS``: strings, gospel, harmonies, cinematic,
+    choir and the wider dry-style list from 03-ECHO-ROOT-CAUSE.md section 7).
+    A song style naming one is refused by name
+    (``BANNED_SONG_STYLE_WORD:<word>``) instead of being shipped.
 
 Two surfaces ship the rule as text: ``card_line()`` (the choice card) and
 ``docs_line()`` (the skill docs). Both state the dry vocal rule.
@@ -26,8 +33,12 @@ network client or spends money. stdlib only.
 
 Deliberate scope (ponytail): spoken-part style text is read from
 ``spoken_style`` (one string) and ``spoken_parts`` (list of strings or of
-dicts carrying ``style``/``prompt``/``style_text``). The sung side of a song
-payload is free of the three-word ban — D22a bans them in spoken parts.
+dicts carrying ``style``/``prompt``/``style_text``). Part F F13 (owner order
+2026-10-08, root cause 03-ECHO-ROOT-CAUSE.md): the song style itself is
+banned-word checked too — the echo batch was caused by builder-invented song
+styles naming strings / choir / cinematic — so the style surfaces of a SONG
+payload are scanned against ``SONG_BANNED_STYLE_WORDS`` and refused. The
+lyrics surface is not scanned: the ban is a style rule, not a lyric rule.
 
 Run: python3 core/audio_c3/no_echo/test_no_echo.py
 """
@@ -54,21 +65,21 @@ REQUEST_KINDS = (KIND_SONG, KIND_VOICE_PACK)
 #: D22a: what every payload asks for, in the owner's words.
 DRY_RULE = "dry close-microphone vocal"
 
-#: D22a: exactly seven negative tags, set on every payload.
+#: D22a as narrowed by Part F F13 (owner order 2026-10-08): the short
+#: negative tags, set on every payload. The 2026-10-07 rebuilds went from 14
+#: tags to 7 to 3; the research summary behind F13 says only the short list
+#: is reliable, so the long lists are retired from the stamp.
 NEGATIVE_TAGS = (
     "reverb",
     "echo",
-    "delay",
-    "hall",
-    "ethereal",
-    "ambient",
-    "choir pad",
+    "choir",
 )
 
 #: The owner brief's wider negative set (AUDIO-FIX-BRIEF item 1, 2026-10-07).
-#: A superset of the seven above; stamped alongside them as
+#: A superset of the short tags; stamped alongside them as
 #: ``negative_tags_extended`` for the regenerate path. ``check`` only demands
-#: it when it is present, so a payload carrying just the seven still passes.
+#: it when it is present, so a payload carrying just the short tags still
+#: passes.
 BRIEF_NEGATIVE_TAGS = (
     "reverb",
     "echo",
@@ -89,23 +100,58 @@ BRIEF_NEGATIVE_TAGS = (
 #: D22a: three style words a spoken part never uses.
 SPOKEN_BANNED_STYLE_WORDS = ("spacious", "cinematic", "choir")
 
+#: Part F F13 (owner order 2026-10-08; 03-ECHO-ROOT-CAUSE.md sections 5 and
+#: 7): style words a SONG style never uses. The echo batch was caused by
+#: builder-invented song styles asking for strings, gospel harmonies and a
+#: cinematic mix; Suno returned sparse-ballad takes with long vocal tails.
+#: "strings" covers swelling analog strings; "gospel" covers gospel organ
+#: and gospel-tinged harmonies; "harmonies"/"backing"/"atmospheric"/
+#: "ethereal"/"ambient"/"airy"/"spacious"/"cinematic"/"prayerful"/"wet"/
+#: "shimmer"/"hall"/"room" are the wider dry-style list from the root-cause
+#: report; "choir" was already banned in spoken parts and is banned in song
+#: styles too. Matched whole-word, case-insensitive, so "strings" never
+#: trips on a compound the root cause did not name unless it repeats the
+#: word itself.
+SONG_BANNED_STYLE_WORDS = (
+    "strings",
+    "gospel",
+    "choir",
+    "harmonies",
+    "cinematic",
+    "spacious",
+    "prayerful",
+    "atmospheric",
+    "ethereal",
+    "ambient",
+    "airy",
+    "wet",
+    "shimmer",
+    "hall",
+    "room",
+)
+
 #: Rendered once, derived, so no surface can drift from NEGATIVE_TAGS.
 TAG_LIST_TEXT = ", ".join(NEGATIVE_TAGS)
 
 RULE_TEXT = (
     "Rule %s: every Suno payload (song and voice pack) asks for %s and sets "
     "the negative tags %s; a spoken part never uses spacious, cinematic or "
-    "choir (D22a)." % (RULE_ID, DRY_RULE, TAG_LIST_TEXT)
+    "choir, and a song style never uses the banned song-style words "
+    "(D22a, Part F F13)." % (RULE_ID, DRY_RULE, TAG_LIST_TEXT)
 )
 #: Choice-card line; label plus padding matches the existing Audio lines.
 CARD_LINE = (
-    "  Audio:       dry close-mic vocals + 7 negative tags (%s); spoken "
-    "parts never use spacious / cinematic / choir (D22a)" % TAG_LIST_TEXT
+    "  Audio:       dry close-mic vocals + negative tags (%s); spoken parts "
+    "never use spacious / cinematic / choir; song styles stay dry (no "
+    "strings / gospel / cinematic / choir) (D22a, F13)" % TAG_LIST_TEXT
 )
 DOCS_LINE = (
-    "No-echo rule (D22a): every Suno payload (the song payload and every "
-    "voice-pack payload) asks for %ss and sets the seven negative tags %s; a "
-    "spoken part never uses spacious, cinematic or choir."
+    "No-echo rule (D22a, Part F F13): every Suno payload (the song payload "
+    "and every voice-pack payload) asks for %ss and sets the short negative "
+    "tags %s; a spoken part never uses spacious, cinematic or choir, and a "
+    "song style never uses the banned song-style words (strings, gospel, "
+    "harmonies, cinematic, spacious, prayerful, atmospheric, ethereal, "
+    "ambient, airy, wet, shimmer, hall, room, choir)."
     % (DRY_RULE, TAG_LIST_TEXT)
 )
 
@@ -121,6 +167,10 @@ STYLE_TEXT_PATHS = (
 _BANNED_PATTERNS = tuple(
     (word, re.compile(r"\b%s\b" % re.escape(word), re.IGNORECASE))
     for word in SPOKEN_BANNED_STYLE_WORDS
+)
+_SONG_BANNED_PATTERNS = tuple(
+    (word, re.compile(r"\b%s\b" % re.escape(word), re.IGNORECASE))
+    for word in SONG_BANNED_STYLE_WORDS
 )
 _DRY_PHRASE = re.compile(
     r"\bdry\b[\s-]*(?:close[\s-]*mic(?:rophone)?)",
@@ -173,7 +223,7 @@ def docs_line() -> str:
 
 
 def negative_tags() -> List[str]:
-    """The seven negative tags, as a list a payload can carry."""
+    """The short negative tags, as a list a payload can carry."""
     return list(NEGATIVE_TAGS)
 
 
@@ -186,6 +236,20 @@ def refused_style_words(text: Any) -> List[str]:
     if not isinstance(text, str) or not text.strip():
         return []
     return [word for word, pattern in _BANNED_PATTERNS if pattern.search(text)]
+
+
+def refused_song_style_words(text: Any) -> List[str]:
+    """Which banned song-style words this song style text names (Part F F13).
+
+    Case-insensitive, whole word, same matcher as the spoken ban: a song
+    style asking for "swelling analog strings", "gospel-tinged backing
+    harmonies" or a "cinematic mix" is refused under ``strings`` /
+    ``gospel`` / ``harmonies`` / ``cinematic``.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return []
+    return [word for word, pattern in _SONG_BANNED_PATTERNS
+            if pattern.search(text)]
 
 
 def _spoken_texts(spoken_style: Any, spoken_parts: Any) -> List[str]:
@@ -339,11 +403,18 @@ def stamp(request: Any = None, *, kind: Optional[str] = None,
     for path, text in surfaces:
         if not _has_dry(text):
             _set_surface(out, path, _with_dry(text))
+        if (kind is None or kind == KIND_SONG):
+            for word in refused_song_style_words(text):
+                raise NoEchoError(
+                    "BANNED_SONG_STYLE_WORD",
+                    "%s: a song style never uses %r (D22a, Part F F13)"
+                    % (word, word))
 
     out["dry_close_mic"] = True
     out["negative_tags"] = list(NEGATIVE_TAGS)
-    out["negative_tags_extended"] = list(BRIEF_NEGATIVE_TAGS)
     out["style_words_banned"] = list(SPOKEN_BANNED_STYLE_WORDS)
+    if kind is None or kind == KIND_SONG:
+        out["song_style_words_banned"] = list(SONG_BANNED_STYLE_WORDS)
     out["rule"] = RULE_TEXT
     out["card_line"] = CARD_LINE
     out["docs_line"] = DOCS_LINE
@@ -384,6 +455,36 @@ def _build(kind: str, request: Any, style_text: Optional[str],
              % (word, word) for word in banned],
             request_kind=kind, request=None, request_id=request_id,
             refused_words=banned)
+    # Part F F13: the song style itself is banned-word checked. A song
+    # payload whose style names a banned song-style word is refused, never
+    # shipped. A payload with no kind is treated as a song.
+    if kind is None or kind == KIND_SONG:
+        song_banned: List[str] = []
+        try:
+            probe = copy.deepcopy(request) if isinstance(request, dict) else {}
+            probe_surfaces = _style_surfaces(probe)
+            if style_text is not None:
+                if probe_surfaces:
+                    _set_surface(probe, probe_surfaces[0][0], style_text)
+                else:
+                    probe["prompt"] = style_text
+                probe_surfaces = _style_surfaces(probe)
+            for _path, text in probe_surfaces:
+                for word in refused_song_style_words(text):
+                    if word not in song_banned:
+                        song_banned.append(word)
+        except NoEchoError as exc:
+            return _envelope("rejected", exc.code.lower(), [str(exc)],
+                             request_kind=kind, request=None,
+                             request_id=request_id)
+        if song_banned:
+            return _envelope(
+                "rejected", "banned-song-style-word",
+                ["BANNED_SONG_STYLE_WORD:%s (a song style never uses %r: "
+                 "D22a, Part F F13)" % (word, word)
+                 for word in song_banned],
+                request_kind=kind, request=None, request_id=request_id,
+                refused_words=song_banned)
     try:
         stamped = stamp(request, kind=kind, style_text=style_text,
                         spoken_style=spoken_style, spoken_parts=spoken_parts)
@@ -405,7 +506,8 @@ def song_request(request: Any = None, *, style_text: Optional[str] = None,
 
     Hand it the payload the song builder produced (for example the
     current-envelope generate payload) and it comes back carrying the dry
-    rule, the seven negative tags and the spoken-part ban.
+    rule, the short negative tags, the spoken-part ban and the song-style
+    ban (Part F F13).
     """
     return _build(KIND_SONG, request, style_text, spoken_style,
                   spoken_parts, request_id)
@@ -463,7 +565,9 @@ def check(request: Any) -> Dict[str, Any]:
     if extended is not None:
         ext = [t for t in extended if isinstance(t, str)] if isinstance(
             extended, (list, tuple)) else []
-        for tag in NEGATIVE_TAGS:
+        # An extended list is a caller's choice; completeness is measured
+        # against the full brief set, not the short stamp.
+        for tag in BRIEF_NEGATIVE_TAGS:
             if tag not in ext:
                 errors.append("INCOMPLETE_EXTENDED_NEGATIVE_TAGS:%s" % tag)
 
@@ -473,6 +577,28 @@ def check(request: Any) -> Dict[str, Any]:
     for word in SPOKEN_BANNED_STYLE_WORDS:
         if word not in guards:
             errors.append("MISSING_BANNED_STYLE_WORD_GUARD:%s" % word)
+
+    # Part F F13: the song style itself is banned-word checked. Only the
+    # style/prompt surfaces are scanned (the lyrics surface is a lyric, not
+    # a style), and only on song payloads -- a voice-pack prompt is spoken
+    # text and is covered by the spoken ban below.
+    if request.get("request_kind") == KIND_SONG:
+        song_guards = request.get("song_style_words_banned")
+        song_guards = [str(g).lower() for g in song_guards] if isinstance(
+            song_guards, (list, tuple)) else []
+        for word in SONG_BANNED_STYLE_WORDS:
+            if word not in song_guards:
+                errors.append("MISSING_SONG_BANNED_STYLE_WORD_GUARD:%s"
+                              % word)
+        song_banned: List[str] = []
+        for path, text in surfaces:
+            for word in refused_song_style_words(text):
+                if word not in song_banned:
+                    song_banned.append(word)
+        for word in song_banned:
+            errors.append(
+                "BANNED_SONG_STYLE_WORD_IN_STYLE:%s (a song style never uses "
+                "%r)" % (word, word))
 
     banned: List[str] = []
     try:
@@ -501,8 +627,13 @@ def check(request: Any) -> Dict[str, Any]:
                       % (kie_path, KIE_PATH))
 
     if errors:
-        reason = ("banned-spoken-style-word" if banned
-                  else "no-echo-rule-incomplete")
+        if banned:
+            reason = "banned-spoken-style-word"
+        elif any(e.startswith("BANNED_SONG_STYLE_WORD_IN_STYLE:")
+                 for e in errors):
+            reason = "banned-song-style-word"
+        else:
+            reason = "no-echo-rule-incomplete"
         return _envelope("rejected", reason, errors, request=request)
     return _envelope("ok", "", [], request=request)
 
