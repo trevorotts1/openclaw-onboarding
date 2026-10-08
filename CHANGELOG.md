@@ -23,6 +23,8 @@ standard company named after them, so the Command Center and everything downstre
 - Command Center: v7.6.112 (dashboard admits an active placeholder; banner invites the client to finish
   the interview). The cc-compat.json pin to v7.6.112 lands AFTER that tag exists (follow-up commit).
 
+- Pin: cc-compat.json commandCenter.pinnedTag is now v7.6.112 (the Command Center release that admits the dashboard for the standard placeholder company, STD001; CC commit ef6b9364e8). decisionEngine SHAs re-derived at onboarding main ba1ed99f1 and CC main ef6b9364e8; release-cohort.json cc_version/cc_sha, CC_PIN in tests/unit/cc-runtime-preflight.test.py, README, DIRECT-TO-AGENT-UPDATE-MESSAGE.md and docs/interview-launch-recovery.md follow.
+
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

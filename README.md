@@ -1,6 +1,6 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v26.4.7 — Standard company placeholder.** A client whose AI Workforce interview is still unfinished after 14 days now gets the standard company named after them, so the Command Center and everything after it can proceed; the interview stays open and finishing it makes the company theirs. Paired Command Center: **v7.6.111**.
+> **v26.4.7 — Standard company placeholder.** A client whose AI Workforce interview is still unfinished after 14 days now gets the standard company named after them, so the Command Center and everything after it can proceed; the interview stays open and finishing it makes the company theirs. Paired Command Center: **v7.6.112**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
 > **Version:** see `/version` - this repo at v26.4.7.
