@@ -71,6 +71,24 @@ Best for: First-time setup. ~30 questions, ~35 minutes. AI generates 130-200 rol
 
 Best for: Owners who want it done fast. AI reads existing workspace files + pre-interview research + industry best practices, proposes everything, owner approves. Owner must be present and actively choosing this path.
 
+### Standard Company Placeholder (STD001)
+
+**Authorized by Trevor, 2026-10-08.** If a client's AI Workforce interview is still incomplete **14 or more days** after onboarding started (`STANDARD_PLACEHOLDER_AFTER_DAYS = 14` in `scripts/apply-standard-placeholder.py`; the clock is the earliest of `.onboarding-state.json` `seededAt` / `startedAt` and `launchBootstrap.createdAt`), the next update runs `apply-standard-placeholder.py --auto --apply`. It builds the **standard company** (every standard department, role, SOP and persona from `templates/role-library/`) named after the client, records `companyMode = "standard-placeholder"` with `standardPlaceholder.status = "active"`, and lets the Command Center install and unlock. An existing company name already bound to the Command Center is kept; the slug never changes.
+
+**Why this is not Option B and not fabrication:** it is the existing library-only standard prebuild promoted to a usable company. It writes no interview answers, never writes `interviewComplete`, `interviewProgress`, `interviewQc` or `buildCompletedAt`, uses no model to write content, removes nothing, and never reads another client's tree. The interview stays open at `/interview`. Skipped for: completed interviews, built companies, and frozen `buildType: legacy` boxes. Operator, one box now: `python3 apply-standard-placeholder.py --force --owner-name "<Name>" --apply`.
+
+**Edit without a re-interview:**
+
+| Edit | Command (on the box) |
+|---|---|
+| Rename company | `python3 scripts/set-company-name.py --name "New Name" --apply` |
+| Add a department | `bash 32-command-center-setup/scripts/add-department.sh --slug X --name "Y"` |
+| Remove a department | `record-dept-decision.sh --dept <id> --decision no --confirm-loss --source owner-interview ...`, then `retire-confirmed-decline.sh --dept <id>` (archives, never deletes) |
+| Add a role | `bash scripts/add-role.sh --dept <slug> --role "<Role>"` |
+| Re-run the interview | `/interview` in the Command Center, or `send-interview-link.sh --resume` |
+
+**When the real interview completes:** `apply_standard_edits` switches `companyMode` to `interview`, marks the placeholder `superseded`, archives declined departments (never deletes), keeps work done in the meantime, and the vertical-derivation guard re-arms on the owner's own declarations.
+
 ### Option C - Audit / Resume Mode
 Best for: Returning users, adding personas later, resuming an interrupted interview. Picks up from `interview-handoff.md`. Never overwrites custom edits.
 

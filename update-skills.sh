@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v26.4.7"
+ONBOARDING_VERSION="v26.4.8"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2024,7 +2024,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v26.4.7 - safe_json_edit
+# v26.4.8 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -11063,6 +11063,14 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
   fi
   _CC_RUN_INSTALL="$SKILLS_DIR/32-command-center-setup/scripts/run-full-install.sh"
   # <<< TRAP3-CC-GUARD-HELPERS-END
+  # STD001 (Trevor 2026-10-08): interview incomplete 14+ days -> standard company named after the
+  # client. Best-effort, never fatal; never writes interview answers or interviewComplete.
+  _SP_ENGINE="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/apply-standard-placeholder.py"
+  if [ -f "$_SP_ENGINE" ] && [ -f "$OC_WORKSPACE_DEFAULT/.workforce-build-state.json" ]; then
+    _SP_LINE="$(python3 "$_SP_ENGINE" --auto --apply --oc-root "$(dirname "$OC_WORKSPACE_DEFAULT")" \
+      --build-state-file "$OC_WORKSPACE_DEFAULT/.workforce-build-state.json" 2>&1 | tail -n 1)" || true
+    echo "  STANDARD_PLACEHOLDER: ${_SP_LINE:-no output}"
+  fi
   # Resolve client identity from build-state once (used by BOTH the refresh and
   # the F10 bootstrap branch). An interview-completed box has these populated.
   _STATE_FILE="$OC_WORKSPACE_DEFAULT/.workforce-build-state.json"
@@ -11295,7 +11303,9 @@ except Exception:
     # (see build-state-schema.json) — so a box with no CC and no completed
     # interview deferred here FOREVER on "interview not completed," blocked on
     # the very artifact only the interview produces. Per OQ-1 the LOCKED
-    # No owner-name-as-business fallback. A first onboarding must have the
+    # No owner-name-as-business fallback, except the STD001 standard placeholder, which applies
+    # only after 14 days with an incomplete interview and records companyMode=standard-placeholder.
+    # A first onboarding must have the
     # two explicit answers; updater recovery reuses the saved intake silently.
     if [ -z "$_CC_SLUG" ]; then
       _CC_IDENTITY_HELPER="$SKILLS_DIR/../scripts/onboarding-identity.py"
