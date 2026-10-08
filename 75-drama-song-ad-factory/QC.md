@@ -172,13 +172,15 @@ to self-approve a run.
   paid lip-sync job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a
   measurement that could not be made is a refusal, never a pass.
 
-- Lip-sync sync check (looser, sung-aware, LSL001): `lip_gate.measure_file` / `judge`
-  score ONLY the frames where the voice is changing (onsets, syllable changes), so a
-  held sung note cannot sink a good clip. Three verdicts: PASS, ACCEPT_WITH_FLAG (used,
-  flags in the receipt row), FAIL (clearly wrong only). UNMEASURED fails
-  `lip_gate.qc_check`. The old four-test rule (corr, lag, margin and z all at once) is
-  retired. 2-try cap: `run_gate` never makes a third paid job. Controls:
-  `lip_sync/lip_gate/calibrate_controls.py`.
+- Lip-sync sync check (looser, sung-aware, LSL002): `lip_gate.measure_file` / `judge`
+  run the validated `sync_check` measurement (mouth vs voice, lag +-10 frames, clip cut
+  to the audio length, chance test by rolls, repeated-hook lines dropped, corr floor
+  0.40, margin floor 0). SYNCED = PASS; WEAK = ACCEPT_WITH_FLAG (used, flag in the
+  receipt row); NOT_SYNCED = FAIL on a spoken line; on a SUNG line WEAK and NOT_SYNCED
+  are UNDETERMINED: held for a person to look at a mouth strip, no automatic paid
+  redo. UNMEASURABLE and UNDETERMINED fail `lip_gate.qc_check` until a person writes
+  `person_verdict: PASS` on the row. 2-try cap: `run_gate` never makes a third paid
+  job. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
 
 ## Clean ending (I5)
 

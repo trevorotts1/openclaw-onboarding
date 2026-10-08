@@ -10,7 +10,7 @@ Heavy work (frame decode + landmarks) runs inside load_governor.heavy_slot.
 mediapipe / opencv / numpy / the model file are imported or looked up lazily:
 if any is missing, mouth_series() raises Unmeasured (reason code LIP_UNMEASURED).
 That is "unmeasured, report", NEVER a silent pass; lip_gate turns it into an
-UNMEASURED verdict that qc_check refuses.
+UNMEASURABLE verdict that qc_check refuses.
 
 Model file (Google face_landmarker, float16, ~4 MB): env LIPSYNC_FACE_MODEL,
 else <this folder>/face_landmarker.task. Not committed; see DEPENDENCY-MANIFEST.md.
@@ -103,7 +103,7 @@ def mouth_series(clip):
 
 def usable(series):
     """-> (opening list with gaps filled, None) or (None, reason) when the face
-    is missing / not human-proportioned. Reasons feed the FAIL verdict."""
+    is missing / not human-proportioned (UNMEASURABLE, never a pass). Reasons feed the UNMEASURABLE verdict."""
     op = series["opening"]
     if len(op) < 12 or series["face_found"] < MIN_FACE:
         return None, "face not found in %.0f%% of frames (< %.0f%%)" % (

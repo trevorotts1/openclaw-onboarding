@@ -457,12 +457,12 @@ SOP named above.
   (`lip_gate.check_reference_set`); a set without it fails.
 - **Lip-sync sync check (owner order 2026-10-08, looser):** `lip_sync/lip_gate`
   measures mouth opening (mediapipe face landmarks, through the load governor) against
-  the voice, scoring only frames where the voice is changing, so held sung notes do
-  not fail a good clip. Verdicts: PASS, ACCEPT_WITH_FLAG (accepted and used, flags in
-  the receipt), FAIL (only when clearly wrong: off by about 8 frames or more, wrong
-  audio matches better, no relationship, face still or not found). No mediapipe or
-  face model means UNMEASURED: reported, never a pass. At most 2 paid lip-sync jobs
-  per segment, then the best-measured take is kept. The old all-four-tests rule is retired.
+  the voice with the validated `sync_check` algorithm. Verdicts: PASS (SYNCED);
+  ACCEPT_WITH_FLAG (WEAK: accepted and used, note in the receipt); FAIL (NOT_SYNCED on
+  a SPOKEN line); UNDETERMINED (a SUNG line that is WEAK or NOT_SYNCED: held for a
+  person to look at a mouth strip, NO automatic paid redo). UNMEASURABLE (no mediapipe,
+  no face model, cartoon face, silent audio, too short) is reported, never a pass. At
+  most 2 paid lip-sync jobs per segment, then the best-measured take is kept.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
   that character's own line cut from the one track's vocal stem; InfiniTalk

@@ -24,7 +24,7 @@ seen = []
 def gen(provider, spec):
     seen.append((provider, spec["source_image"]))
     return provider
-bad = {"offset_s": 0.3, "lag_frames": 9, "corr": 0.1, "onsets": 20, "control_corr": 0.1, "margin": 0.0, "frozen_s": 0.0}
+bad = {"offset_s": 0.3, "lag_frames": 9, "corr": 0.1, "pct": 0.9, "control_corr": 0.5, "margin": -0.4, "unmeasurable": None}
 L.run_gate("l1", gen, lambda clip: bad, {}, source_image=pic,
            image_check=lambda img: {"pass": True})
 assert seen == [("kling", pic), ("kling", pic)], seen
