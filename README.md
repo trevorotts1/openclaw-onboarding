@@ -1,17 +1,17 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
-> **v26.4.7 — Standard company placeholder.** A client whose AI Workforce interview is still unfinished after 14 days now gets the standard company named after them, so the Command Center and everything after it can proceed; the interview stays open and finishing it makes the company theirs. Paired Command Center: **v7.6.112**.
+> **v26.4.8 — Standard company placeholder.** A client whose AI Workforce interview is still unfinished after 14 days now gets the standard company named after them, so the Command Center and everything after it can proceed; the interview stays open and finishing it makes the company theirs. Paired Command Center: **v7.6.112**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v26.4.7.
+> **Version:** see `/version` - this repo at v26.4.8.
 
 
 
 Private interview invitations last up to **24 hours**; the paired Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v26.4.7
+## Current release: v26.4.8
 
-### Standard company placeholder (v26.4.7)
+### Standard company placeholder (v26.4.8)
 If a client's AI Workforce interview is still incomplete 14 days after onboarding started
 (`STANDARD_PLACEHOLDER_AFTER_DAYS` in `23-ai-workforce-blueprint/scripts/apply-standard-placeholder.py`),
 the next update builds the standard company - every standard department, role, SOP and persona from
@@ -181,7 +181,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v26.4.7** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v26.4.8** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.

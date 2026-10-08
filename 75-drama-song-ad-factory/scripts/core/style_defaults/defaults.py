@@ -44,6 +44,21 @@ SOURCE_OF_DEFAULT = "Owner D24 2026-10-07"
 STYLE_FIELD = "style"
 MUSIC_FIELD = "music"
 
+#: Length menu (F15, owner order 2026-10-08): 2 minutes (120 s) added
+#: between 90 s and 3 minutes. 60 s stays the RECOMMENDED default (decision
+#: 32 card default). Labels are the card's own spellings.
+LENGTH_OPTIONS_S = (60, 90, 120, 180, 300, 600)
+LENGTH_LABELS_S = {
+    60: "60 seconds",
+    90: "90 seconds",
+    120: "2 minutes",
+    180: "3 minutes",
+    300: "5 minutes",
+    600: "10-minute long version",
+}
+RECOMMENDED_LENGTH_S = 60
+SOURCE_OF_LENGTH_MENU = "F15 owner order 2026-10-08 (2 minutes new); card default decision 32"
+
 #: What the client typed that still means "no choice": the card's own
 #: "(default)" marker, and the plain refusal spellings.
 _TRAILING_DEFAULT_RE = re.compile(r"\s*\(\s*(?:the\s+)?default\s*\)", re.I)

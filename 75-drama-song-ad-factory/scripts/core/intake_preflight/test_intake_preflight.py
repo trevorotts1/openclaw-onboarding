@@ -128,16 +128,34 @@ def test_default_profile_known():
 
 
 def test_cli_done_when():
-    """The manual's Done-when, run verbatim through the real CLI."""
+    """The manual's Done-when, run verbatim through the real CLI.
+
+    F15 (owner order 2026-10-08) added the choice-card gate: paid preflight
+    also needs the recorded card receipt, so this test records one."""
     with tempfile.TemporaryDirectory() as tmp:
         auth = os.path.join(tmp, "auth.json")
         with open(auth, "w", encoding="utf-8") as fh:
             json.dump({"scope": "campaign"}, fh)
+        answers = {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
+                   "length": 300, "video_model": "MiniMax H3 768P"}
+        receipt_path = os.path.join(tmp, "card.json")
+        try:
+            core = os.path.join(HERE, "..", "style_defaults")
+            sys.path.insert(0, core)
+            from style_defaults import card_gate as CG
+            receipt = CG.answered_stamped(answers, "W1-A-U3 test",
+                                          "2026-10-08T09:00:00Z")
+        except Exception:
+            receipt = {"answers": answers, "who": "W1-A-U3 test",
+                       "at": "2026-10-08T09:00:00Z"}
+        with open(receipt_path, "w", encoding="utf-8") as fh:
+            json.dump(receipt, fh)
         run = subprocess.run(
             [sys.executable, FACTORY, "preflight",
              "--root", tmp, "--storage-dir", tmp,
              "--profile", "drama-16x9-300s",
-             "--auth-file", auth, "--summary-digest", "t"],
+             "--auth-file", auth, "--summary-digest", "t",
+             "--card-receipt-file", receipt_path],
             capture_output=True, text=True)
         env = json.loads(run.stdout)
         check("CLI: not delivery-profile-unknown",
@@ -147,6 +165,17 @@ def test_cli_done_when():
         check("CLI: preflight passes end to end",
               env.get("outcome") == "ok" and env.get("reason_code") == "preflight-pass",
               "%s/%s" % (env.get("outcome"), env.get("reason_code")))
+        # and the F15 refusal still fires when the receipt is absent
+        run2 = subprocess.run(
+            [sys.executable, FACTORY, "preflight",
+             "--root", tmp, "--storage-dir", tmp,
+             "--profile", "drama-16x9-300s",
+             "--auth-file", auth, "--summary-digest", "t"],
+            capture_output=True, text=True)
+        env2 = json.loads(run2.stdout)
+        check("CLI: paid preflight without card -> CARD_UNANSWERED",
+              env2.get("reason_code") == "CARD_UNANSWERED",
+              "%s/%s" % (env2.get("outcome"), env2.get("reason_code")))
 
 
 def test_thin_brief_shows_new_sentence():

@@ -36,6 +36,10 @@ from pathlib import Path
 _TOOL_HERE = Path(__file__).resolve().parent
 _CORE = _TOOL_HERE.parents[1]                          # .../core
 
+if str(_CORE) not in sys.path:
+    sys.path.insert(0, str(_CORE))
+import spoken_share as _SS                 # the one band (H8)
+
 TOOL_NAME = "lipsync_coverage"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "1.0.0"                               # final_assembler receipt
@@ -146,10 +150,18 @@ def check_lipsync_coverage(ad_length_s, lipsync_lines_count, lipsync_total_s,
     codes = []
     if lipsync_lines_count < n["min_lines"]:
         codes.append(LINES_TOO_FEW)
-    if lipsync_total_s + 1e-9 < floor_s:
+    # H8: the seconds goal is judged by Trevor's band, as percent of the lip-sync
+    # goal short of the goal: <=5% accept, 5-10% accept WITH A FLAG, >10% redo.
+    band = _SS.judge_seconds(lipsync_total_s, floor_s, floor_s, only="short")
+    flags = []
+    if band["verdict"] == _SS.VERDICT_FAIL:
         codes.append(COVERAGE_SHORT)
+    elif band["verdict"] == _SS.VERDICT_FLAG:
+        flags.append("lip-sync %.2f s is %.1f%% short of the "
+                     "%.2f s goal: accepted with a flag"
+                     % (lipsync_total_s, band["gap_pts"], floor_s))
     if not codes:
-        return {"pass": True,
+        return {"pass": True, "flags": flags,
                 "evidence": {"ad_length_s": ad_length_s,
                              "lipsync_lines_count": lipsync_lines_count,
                              "lipsync_total_s": lipsync_total_s,

@@ -31,6 +31,7 @@ COMPLETE_BRIEF = {
     "offer": "Drama-song factory adapter test offer",
     "audience": "busy parents",
     "action": "visit the link",
+    "website": "example.com",  # I1: intake asks for the exact address otherwise
     "budget_minor": 100,
     "budget_currency": "USD",
     "placement": "vertical-feed",  # stated, else intake asks the placement question (exit 2)
@@ -63,13 +64,26 @@ class OpenclawAdapterTests(unittest.TestCase):
         p.write_text(json.dumps(brief), encoding="utf-8")
         return p
 
+    def _resume_file(self):
+        # F15: a complete brief is not a launch until the recorded choice-card
+        # receipt is in the run state; the resume file carries it.
+        p = self.work / "resume.json"
+        p.write_text(json.dumps({"card_receipt": {
+            "answers": {"video_style": "Lifelike 3D",
+                        "audio_style": "Soul Ballad", "length": 60,
+                        "video_model": "MiniMax H3 768P"},
+            "who": "w8 merge test", "at": "2026-10-08T09:00:00Z"}}),
+            encoding="utf-8")
+        return p
+
     def envelope(self, proc):
         self.assertTrue(proc.stdout.strip(), msg=proc.stderr)
         return json.loads(proc.stdout)
 
     def test_ok_envelope_relayed_byte_for_byte(self):
         args = ["intake", "--run-id", RUN_ID,
-                "--brief-file", str(self._brief_file(COMPLETE_BRIEF))]
+                "--brief-file", str(self._brief_file(COMPLETE_BRIEF)),
+                "--resume-file", str(self._resume_file())]
         a, d = adapter(args), direct(args)
         self.assertEqual(a.returncode, 0)
         self.assertEqual(a.returncode, d.returncode)
@@ -110,7 +124,8 @@ class OpenclawAdapterTests(unittest.TestCase):
         hostile = "x; touch %s $(touch %s) `touch %s`" % (
             marker, marker, marker)
         brief = dict(COMPLETE_BRIEF, offer=hostile)
-        args = ["intake", "--run-id", RUN_ID, "--brief", json.dumps(brief)]
+        args = ["intake", "--run-id", RUN_ID, "--brief", json.dumps(brief),
+                "--resume-file", str(self._resume_file())]
         a, d = adapter(args, cwd=str(self.work)), direct(args, cwd=str(self.work))
         self.assertFalse(marker.exists(),
                          msg="adapter executed an argument through a shell")

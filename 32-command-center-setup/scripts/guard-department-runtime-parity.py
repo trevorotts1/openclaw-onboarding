@@ -401,8 +401,21 @@ def load_departments(db_path):
     return True, departments, None, excluded
 
 
+def canonical_agent_ids(agent_ids):
+    """Canonical dept slug of every registered runtime id (SHR002).
+
+    Variants 1-6 only try ids derived FROM the board slug. A registered agent
+    named by an ALIAS of that slug (dept-legal-compliance for the board's
+    `legal` row) never matched. Folding the registered ids through the same
+    canonical_dept_slug()/ALIAS_MAP the board slug goes through closes every
+    present and future alias pair, with no per-department list here.
+    """
+    return {c for c in (canonical_dept_slug(i) for i in agent_ids) if c}
+
+
 def check_parity(departments, agent_ids):
     """Returns (checked_count, mismatches: list[dict])."""
+    canon_ids = canonical_agent_ids(agent_ids)
     checked = 0
     mismatches = []
     for d in departments:
@@ -416,6 +429,8 @@ def check_parity(departments, agent_ids):
             if any(v in agent_ids for v in variants):
                 matched = True
                 break
+        if not matched and canonical_dept_slug(d["slug"]) in canon_ids:
+            matched = True  # SHR002: registered id is an alias of the board slug
         if not matched:
             mismatches.append({
                 "id": d["id"],

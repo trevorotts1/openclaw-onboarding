@@ -1,4 +1,4 @@
-## [v26.4.7]  -  2026-10-08  -  feat(onboarding): standard company placeholder after 14 days without an interview (STD001)
+## [v26.4.8]  -  2026-10-08  -  feat(onboarding): standard company placeholder after 14 days without an interview (STD001)
 
 Trevor's order (2026-10-08): a client who has not finished the AI Workforce interview still gets a
 standard company named after them, so the Command Center and everything downstream proceed.
@@ -24,6 +24,36 @@ standard company named after them, so the Command Center and everything downstre
   the interview). The cc-compat.json pin to v7.6.112 lands AFTER that tag exists (follow-up commit).
 
 - Pin: cc-compat.json commandCenter.pinnedTag is now v7.6.112 (the Command Center release that admits the dashboard for the standard placeholder company, STD001; CC commit ef6b9364e8). decisionEngine SHAs re-derived at onboarding main ba1ed99f1 and CC main ef6b9364e8; release-cohort.json cc_version/cc_sha, CC_PIN in tests/unit/cc-runtime-preflight.test.py, README, DIRECT-TO-AGENT-UPDATE-MESSAGE.md and docs/interview-launch-recovery.md follow.
+## [v26.4.7]  -  2026-10-08  -  batch: mega MGB001 (24 units; skill 75 v2.8.0)
+
+One batch release of 24 unit pull requests (merged together in one batch pull request; none were merged one at a time). Version, README and this entry are bumped once for the whole batch.
+
+- #1624: G6: face emotion matches the line
+- #1625: G4: target engine (closest-of-N, never cancel)
+- #1627: H14: song files (MP3 320k + WAV, instrumental) shipped and checked in delivery (skill 75 v2.6.1, v26.4.7)
+- #1628: H11: delivery checklist Q8-Q11 (lip-sync, first-sung, pictures match, Trevor's band); skill 75 v2.6.1
+- #1629: H2: measured lip-sync gate (offset, correlation vs wrong-audio control, frozen face) (skill 75 v2.6.2, v26.4.8)
+- #1630: H13: fades finish before the first word; long gaps held on the speaking face (skill 75 v2.6.1, v26.4.7)
+- #1631: H12: no hand-written pipeline scripts; assembler receipt provenance + QC check (skill 75 v2.6.1)
+- #1632: H1: stem-vs-mix offset measure + LIPSYNC_RETIMED placement gate (v26.4.7, skill 75 v2.6.1)
+- #1633: H5: shots planned from measured song timestamps, slow motion capped at 1.15x, picture/line match table (v26.4.7, skill 75 v2.6.1)
+- #1634: H9: readable six-question intake card (skill 75 v2.6.1, v26.4.7)
+- #1635: H8: one singing rule + Trevor's 5/10 point band for every share, first-sung, length and lip-sync goal (skill 75 v2.6.1, v26.4.7)
+- #1636: H4: every speaking face is a lip-sync clip of its own line + lip-sync coverage target band (skill 75 v2.6.3, v26.4.9)
+- #1638: H7: captions use approved lyric sheet words; protected names enforced at sheet build and on sung takes (skill 75 v2.6.4, v26.4.10)
+- #1640: fix(parity): runtime-parity guard matches alias runtime ids (dept-legal-compliance -> legal) (SHR002, v26.4.7); skill 32 v13.1.46 (bump added in the batch)
+- #1642: G12: Suno song recipe is the default for every Suno music style (skill 75 v2.6.1)
+- #1643: I5: clean song endings (outro + resolved chord tags, last-2s ending QC), skill 75 v2.6.1
+- #1644: I2: scenes must match the song and the faces (skill 75 v2.6.1, v26.4.7)
+- #1645: I6: character library (save approved character, reuse via Use a saved character?) (skill 75 v2.6.2)
+- #1646: I3: character reference set plus one keyframe picture per shot, priced on the choice card (skill 75 v2.6.1, v26.4.7)
+- #1647: I7: intake asks one question at a time with options and a recommendation, then a recap (skill 75 v2.6.6, v26.4.12)
+- #1648: I1: captions spell-checked; exact website asked at intake and kept verbatim (skill 75 v2.6.5, v26.4.11)
+- #1649: batch: dts w8 (F1, F14, F15, E7-AMEND) [replaces #1620]
+- #1650: I8: one sung hook per ad, repeated by a length formula clamp(1+floor(L/25),2,12), measured sung count (skill 75 v2.6.7, v26.4.13)
+- #1651: Unit I4: master length L-2 enforcement
+
+Held out: #1637 (H6) conflicts with #1635 (H8) in spoken_share; #1639 is a draft awaiting the Command Center v7.6.112 pin; #1620 is replaced by #1649.
 
 ## [v26.4.6]  -  2026-10-08  -  Merge train: #1619 fix(kie,models): KEF001 KIE key lookup across stores + retire…
 

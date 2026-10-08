@@ -188,7 +188,7 @@ def load_timing_map(obj):
             "duration_seconds": dur, "lines": lines}
 
 
-def bind_plan(shots, timing, contracts=None):
+def bind_plan(shots, timing, contracts=None, chosen_length_s=None):
     """Validate shots against timing; every lyric_line_id must resolve and
     each shot window must cover its lines. Returns ok record, raises PlanError.
 
@@ -209,6 +209,26 @@ def bind_plan(shots, timing, contracts=None):
             raise PlanError("SHOT_INVALID", "%s: %s" % (sid, ";".join(errs)))
     t = timing if isinstance(timing, dict) and "lines" in timing else load_timing_map(timing)
     lines = t["lines"]
+    if chosen_length_s is not None:
+        # Part I I4: song and shots end at chosen length minus 2 s, hard.
+        import os, sys
+        _c = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _c not in sys.path:
+            sys.path.insert(0, _c)
+        from master_length import plan as _ml_plan, MasterLengthError
+        try:
+            end = _ml_plan(chosen_length_s)
+        except MasterLengthError as e:
+            raise PlanError("MASTER_LENGTH_BAD", str(e))
+        if t["duration_seconds"] > end["song_target_s"] + 1e-6:
+            raise PlanError("SONG_PAST_MASTER_END",
+                            "song is %.2fs, limit for a %gs video is %gs"
+                            % (t["duration_seconds"], chosen_length_s, end["song_target_s"]))
+        for sh in shots:
+            if sh["song_end"] > end["shot_plan_end_s"] + 1e-6:
+                raise PlanError("SHOT_PAST_MASTER_END",
+                                "%s ends at %gs, limit is %gs"
+                                % (sh["shot_id"], sh["song_end"], end["shot_plan_end_s"]))
     # Part E E5: one lip-synced line, one shot. Declared via the shot's
     # lip_sync_line_ids (speaker_check, Decision 26) or, when absent,
     # an unsplit shot for each line is not required — plain lyric lines may

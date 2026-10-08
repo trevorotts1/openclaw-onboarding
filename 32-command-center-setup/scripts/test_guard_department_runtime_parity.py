@@ -217,6 +217,20 @@ def test_match_via_canonical_alias_variant_passes():
         assert res.returncode == EX_OK, f"exit {res.returncode}\n{res.stdout}\n{res.stderr}"
 
 
+def test_registered_alias_id_matches_board_slug_shr002():
+    """SHR002: board row `legal`, runtime registered as `dept-legal-compliance`
+    (an ALIAS of legal in canonical_slug.ALIAS_MAP) must pass, in either
+    direction, and an unrelated runtime must still fail."""
+    depts = [{"slug": "legal", "name": "Legal Compliance"}]
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = _make_db(tmp, depts)
+        for ids in (["dept-legal-compliance"], ["legal-compliance"], ["dept-compliance"]):
+            res = _run(db_path, _make_config(tmp, ids))
+            assert res.returncode == EX_OK, f"{ids}: exit {res.returncode}\n{res.stdout}\n{res.stderr}"
+        res = _run(db_path, _make_config(tmp, ["dept-sales"]))
+        assert res.returncode == EX_MISMATCH, f"false pass\n{res.stdout}"
+
+
 def test_match_via_role_slug_variant_passes():
     """A department only resolvable via the dashboard agent's `role` field
     (Attempt 2) must still be recognized."""

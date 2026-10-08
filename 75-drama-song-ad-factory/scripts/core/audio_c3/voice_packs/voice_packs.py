@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """Per-character Suno voice packs: distinct-voice registry + spoken-only packs.
 
+SUPERSEDED (owner order 2026-10-08, manual Part F F1): the spoken-only
+separate-take pack route is superseded by the one-track soundtrack rule --
+every spoken line is performed inside the ONE Suno track's lyrics
+(``core/audio_c3/soundtrack.py``, ``SPOKEN_SOURCE = "in-song-lyrics"``).
+Nothing routes spoken lines to separate packs any more; the distinct-voice
+REGISTRY below still governs (no two characters share a voice) and this code
+path is kept record-only.
+
 Owner BUILD-OUT 6 (2026-10-07), reference recipe ``hybrid-occ-5min-rnb-flow``,
 plan 6.12 / 6.6, owner Decision 20. stdlib only.
 

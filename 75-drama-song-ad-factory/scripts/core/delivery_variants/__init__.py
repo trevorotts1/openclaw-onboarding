@@ -20,6 +20,11 @@ from .manifests import (
     write_cost_report,
     write_provenance,
 )
+from .song_files import (
+    build_song_files,
+    check_song_files,
+    write_song_docs,
+)
 from .variants import (
     ASPECTS,
     VariantError,
@@ -45,6 +50,9 @@ __all__ = [
     "write_campaign_manifest",
     "write_cost_report",
     "write_provenance",
+    "build_song_files",
+    "check_song_files",
+    "write_song_docs",
     "ASPECTS",
     "VariantError",
     "build_variant_plan",
