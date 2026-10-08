@@ -153,6 +153,15 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 else
   # Linux / VPS (containers expose /proc; respect a cgroup CPU quota if present)
   CORES=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null)
+  # Docker --cpus cap (cgroup cpu.max, "Q P" with Q not "max" — B9): nproc in a
+  # container reports the HOST's cores, not the tenant's share. Clamp to ceil(Q/P).
+  if [[ -r /sys/fs/cgroup/cpu.max ]]; then
+    read -r CGQ CGP < /sys/fs/cgroup/cpu.max 2>/dev/null
+    if [[ "$CGQ" =~ ^[0-9]+$ && "$CGP" =~ ^[0-9]+$ && "$CGP" -gt 0 && "$CGQ" -gt 0 && "$CGQ" != "max" ]]; then
+      CG_CORES=$(( (CGQ + CGP - 1) / CGP ))
+      [[ "$CG_CORES" -lt "$CORES" ]] && CORES=$CG_CORES
+    fi
+  fi
   MEMKB=$(awk '/MemTotal/{print $2}' /proc/meminfo 2>/dev/null)
   [[ -n "$MEMKB" ]] && RAM_GB=$(python3 -c "print(round(${MEMKB}/1024/1024, 2))" 2>/dev/null)
   # cgroup v2 / v1 RAM limit (Docker often caps below host RAM) — take the lower.
