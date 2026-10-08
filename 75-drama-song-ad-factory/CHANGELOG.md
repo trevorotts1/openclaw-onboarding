@@ -39,6 +39,19 @@ exit map and the 14 production modules unchanged.
 
 `version:` stays `v2.3.0`: the release bump belongs to the V2-W4 ship lane.
 
+
+## [v2.4.3] - 2026-10-07 - audio-fix wave D36-D38: no-echo rule, spoken-share band, reverb-tail QC, pitch ban, Sketch-to-Life voice guard
+
+### Added
+- `scripts/core/audio_c3/no_echo/` - every Suno request (song and voice-pack) stamps dry close-microphone vocals plus the seven negative tags and refuses spacious / cinematic / choir in spoken parts (D22a).
+- `scripts/core/smp/no_echo/` - the same no-echo rule on the Skill 35 weekly drama-song request.
+- `scripts/core/qc_reverb_tail/` - QC measures the reverb tail after each spoken line; a ringing line fails QC (D22a).
+- `scripts/core/qc_voice_match/pitch_ban/` - pitch ban guard for voice-match QC.
+- `scripts/core/spoken_share/` - spoken share retarget: target 45 percent, band 40-55, rap counts as spoken, first sung line within about 10 seconds (D15).
+- `scripts/core/spoken_share_card_docs/` - card and docs lines carrying that spoken-share rule.
+- `scripts/core/smp/spoken_share/` - the same spoken-share rule on the Skill 35 planner wave (D15).
+- `scripts/core/choice_card/stl_voice_guard/` - Sketch to Life is always All Suno; Velvet Voiceover is refused for that look (D25).
+
 ## [v2.4.2] - 2026-10-07 - fix: style bible compiler routes its prompt cap through the one KIE enforcer
 
 ### Fixed
