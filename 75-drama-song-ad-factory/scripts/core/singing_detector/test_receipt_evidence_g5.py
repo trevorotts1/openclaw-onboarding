@@ -315,5 +315,34 @@ check("verdict-receipt-passes", RE.check_receipt(blk)["verdict"] == "PASS",
 r = RE.check_receipt({"receipt_id": "audio-only", "frames": 900})
 check("no-sung-fields-passes", r["verdict"] == "PASS", r)
 
+# ---- 14. G3's own spelling of the record (share_for_stem on main) ----------
+g3 = {"detector": "singing_detector.v1", "detector_version": "2.0.0",
+      "sung_share": 0.24, "spoken_share": 0.49, "rap_share": 0.12,
+      "no_voice_share": 0.15, "confidence": 0.9,
+      "share_source": "measured", "runtime_s": 300.0}
+blk = RE.measured_share(g3)
+check("g3-spelling-accepted",
+      blk["detector"] == "singing_detector.v1"
+      and blk["detector_version"] == "2.0.0"
+      and blk["source"] == "measured", blk)
+check("g3-spelling-shares",
+      (blk["sung_pct"], blk["spoken_pct"], blk["rap_pct"],
+       blk["no_voice_pct"]) == (24.0, 49.0, 12.0, 15.0), blk)
+# ... but a detector that only measured SUNG is still refused, BY NAME:
+# the amended receipt cannot print rap / spoken / no-voice it never got.
+g3_sung_only = {"detector": "singing_detector.v1",
+                "detector_version": "2.0.0", "sung_share": 0.24,
+                "confidence": 0.9, "share_source": "measured",
+                "runtime_s": 300.0}
+try:
+    RE.measured_share(g3_sung_only)
+    check("g3-sung-only-refused", False, "no raise")
+except RE.ReceiptEvidenceError as exc:
+    check("g3-sung-only-refused",
+          exc.code == "DETECTOR_RECORD_INCOMPLETE", exc.code)
+    check("g3-sung-only-names-the-missing-shares",
+          all(k in str(exc) for k in
+              ("spoken_share", "rap_share", "no_voice_share")), str(exc))
+
 print("PASS %d / FAIL %d" % (_passed[0], _failed[0]))
 sys.exit(1 if _failed[0] else 0)

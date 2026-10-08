@@ -58,10 +58,13 @@ API contract with G3 (parallel build; the train resolve wires it):
        "runtime_s": <seconds>}`` -- the four shares over the runtime
        (Appendix A step 8); ``runtime_s`` (or ``total_seconds`` /
        ``duration_s``) is what turns them into the seconds the receipt
-       must also carry. G5 reads only those keys (see DETECTOR_KEYS) and
-       accepts either the record itself or ``{"detector_result": record}``.
-       Until G3 lands on main, callers pass the record; this module never
-       imports G3.
+       must also carry. G3's own ``share_for_stem`` spells the first two
+       ``detector`` / ``detector_version`` and stamps ``share_source:
+       "measured"``; FIELD_ALIASES accepts those spellings so the units
+       never fail on a name -- only on a missing share. G5 reads those
+       keys and accepts either the record itself or
+       ``{"detector_result": record}``. Until G3 lands on main, callers
+       pass the record; this module never imports G3.
 
 stdlib only: no network, no provider, no spend, no media file, no absolute
 operator path (nothing in this package opens a file at all).
@@ -90,6 +93,16 @@ PLANNED = "planned"
 #: must also name its runtime so the receipt can carry seconds.
 DETECTOR_KEYS = ("tool", "tool_version", "sung_share", "spoken_share",
                  "rap_share", "no_voice_share", "confidence", "measured")
+
+#: G3's own record spells these two differently (singing_detector.py
+#: ``share_for_stem``: ``detector`` / ``detector_version`` /
+#: ``share_source: "measured"``). Both spellings are accepted so the two
+#: units do not fail on cosmetics at the train resolve -- the SHARES and
+#: the runtime are what must be there, not the label on the name.
+FIELD_ALIASES = {
+    "tool": ("tool", "detector"),
+    "tool_version": ("tool_version", "detector_version"),
+}
 
 #: Accepted spellings for the record's runtime, in priority order.
 RUNTIME_KEYS = ("runtime_s", "total_seconds", "duration_s",
@@ -133,6 +146,21 @@ def _fraction(value, what, code):
     return value
 
 
+def _field(rec, key):
+    """One contract key, under its own name or G3's spelling of it."""
+    for name in FIELD_ALIASES.get(key, (key,)):
+        if rec.get(name) is not None:
+            return rec.get(name)
+    return None
+
+
+def _declared_measured(rec):
+    """measured=True, or G3's ``share_source: "measured"``."""
+    if rec.get("measured") is True:
+        return True
+    return str(rec.get("share_source", "")).strip().lower() == MEASURED
+
+
 def _runtime_of(rec):
     """The record's runtime in seconds, or None when it carries none."""
     for key in RUNTIME_KEYS:
@@ -171,12 +199,14 @@ def measured_share(detector_result):
         raise ReceiptEvidenceError(
             "BAD_DETECTOR_RESULT",
             "detector_result must carry the detector record")
-    if rec.get("measured") is not True:
+    if not _declared_measured(rec):
         raise ReceiptEvidenceError(
             "NOT_MEASURED",
-            "detector record must carry measured=True; a receipt sung % "
-            "without a measured detector run is the failed-ad shape")
-    missing = [k for k in DETECTOR_KEYS if rec.get(k) is None]
+            "detector record must carry measured=True (or G3's "
+            "share_source='measured'); a receipt sung % without a measured "
+            "detector run is the failed-ad shape")
+    missing = [k for k in DETECTOR_KEYS if k != "measured"
+               and _field(rec, k) is None]
     if missing:
         raise ReceiptEvidenceError(
             "DETECTOR_RECORD_INCOMPLETE",
@@ -190,8 +220,8 @@ def measured_share(detector_result):
             "detector record carries no runtime (%s); the amended receipt "
             "must print measured seconds as well as percent"
             % ("/".join(RUNTIME_KEYS),))
-    shares = {name: _fraction(rec["%s_share" % name], "%s_share" % name,
-                              "BAD_SHARE")
+    shares = {name: _fraction(_field(rec, "%s_share" % name),
+                              "%s_share" % name, "BAD_SHARE")
               for name in DELIVERIES}
     total = sum(shares.values())
     if abs(total - 1.0) > SHARE_SUM_TOLERANCE:
@@ -204,8 +234,8 @@ def measured_share(detector_result):
     block = {
         "source": MEASURED,
         "source_detail": "measured singing detector (G3), never labels",
-        "detector": str(rec["tool"]),
-        "detector_version": str(rec["tool_version"]),
+        "detector": str(_field(rec, "tool")),
+        "detector_version": str(_field(rec, "tool_version")),
         "confidence": round(confidence, 4),
         "runtime_s": round(runtime, 6),
         "checker_version": TOOL_VERSION,
@@ -567,7 +597,8 @@ def require_measured(detector_result):
 
 
 __all__ = [
-    "DETECTOR_KEYS", "DELIVERIES", "LABELLED", "LABEL_HEADINGS", "MEASURED",
+    "DETECTOR_KEYS", "DELIVERIES", "FIELD_ALIASES", "LABELLED",
+    "LABEL_HEADINGS", "MEASURED",
     "PLANNED", "RECEIPT_SOURCE_LABEL", "ReceiptEvidenceError",
     "RUNTIME_KEYS", "SCHEMA_VERSION", "SHARE_SUM_TOLERANCE", "SOURCE",
     "SUNG_PCT_FIELDS", "TOOL_NAME", "TOOL_VERSION", "check_receipt",
