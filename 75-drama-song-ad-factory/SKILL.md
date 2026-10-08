@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.8.0
+version: v2.8.1
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -328,6 +328,13 @@ SOP named above.
 - **Per-character voice packs:** the distinct-voice registry still stands --
   no two characters share a voice. Its spoken-only separate-take packs are
   SUPERSEDED by the one-track rule: spoken words inside the song's lyrics.
+- **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
+  includes one lip-sync close-up per speaking/singing character: 9:16, front-facing, head
+  and shoulders filling the frame, mouth clearly visible and unobstructed (no hand, hair,
+  mic or shadow on the lips), even soft light, lips slightly parted, eyes to camera, same
+  style and likeness. Every lip-sync job (Kling avatar, InfiniTalk) uses it as its source
+  image by default (`lip_gate.run_gate(..., source_image=)`). QC: its mouth region must be
+  sharp and unobstructed (`lip_gate.check_reference_set`); a set without it fails.
 - **Lip-sync model order (decision 33):** Kling avatar
   (`kling/ai-avatar-standard`) first - a front-facing close-up image plus
   that character's own line cut from the one track's vocal stem; InfiniTalk
