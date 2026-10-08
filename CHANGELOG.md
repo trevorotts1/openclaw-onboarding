@@ -1,3 +1,5 @@
+## [v26.4.8]  -  2026-10-08  -  INF002: installers install with a note when a key is missing and never fail on a box with a real key (skill 48 KIE, 59/05/29/35/36 Convert and Flow credentials, 70 primary agent), skill 74 QC reads its version, skill 06 QC gets 600 s, parity guard proven both ways (skills 05 v7.0.2, 29 v7.0.1, 32 v13.1.47, 35 v3.6.16, 36 v2.0.4, 47 v15.1.4, 48 v2.0.8, 59 v1.0.11, 70 v1.0.2, 74 v1.1.4)
+
 ## [v26.4.7]  -  2026-10-08  -  batch: mega MGB001 (24 units; skill 75 v2.8.0)
 
 One batch release of 24 unit pull requests (merged together in one batch pull request; none were merged one at a time). Version, README and this entry are bumped once for the whole batch.
