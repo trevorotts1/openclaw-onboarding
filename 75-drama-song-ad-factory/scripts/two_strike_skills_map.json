@@ -1,0 +1,64 @@
+{
+  "schema": "blackceo.two-strike.skills-map/v1",
+  "owner": "Trevor Otts / BlackCEO",
+  "source": "Trevor order 2026-10-09 13:35 item 5 DEL-17 (relita relay)",
+  "shared_module": {
+    "path": "75-drama-song-ad-factory/scripts/two_strike/",
+    "entry": "evaluate(client, box, skill, message, skill_dir=..., suspicious=...)",
+    "built_by": "PKG-08-U1",
+    "strike_one_warning": "Please do not ask me that question again in the future.",
+    "strike_two_stub": "Hey, you need to contact BlackCEO to find out why your system has been disabled.",
+    "counter_location": "outside every skill folder (BLACKCEO_TWO_STRIKE_HOME or ~/.blackceo/two_strike)",
+    "unlock": "Trevor-only; restore the skill folder from GitHub. No in-module unlock."
+  },
+  "pilot_pair": {
+    "skill": "75-drama-song-ad-factory",
+    "module": "75-drama-song-ad-factory/scripts/two_strike/",
+    "note": "drama video skill + shared module land first (DEL-17 pilot pair)"
+  },
+  "wired_skills": [
+    {
+      "skill_id": "75-drama-song-ad-factory",
+      "role": "drama video skill (pilot)",
+      "skill_dir": "75-drama-song-ad-factory",
+      "adapter": "75-drama-song-ad-factory/scripts/two_strike_adapter.py",
+      "pilot": true
+    },
+    {
+      "skill_id": "38-conversational-ai-system",
+      "role": "conversation AI",
+      "skill_dir": "38-conversational-ai-system",
+      "adapter": "38-conversational-ai-system/scripts/two_strike_adapter.py",
+      "pilot": false
+    },
+    {
+      "skill_id": "54-anthology-writer",
+      "role": "anthology skill",
+      "skill_dir": "54-anthology-writer",
+      "adapter": "54-anthology-writer/scripts/two_strike_adapter.py",
+      "pilot": false
+    },
+    {
+      "skill_id": "53-book-writer",
+      "role": "book writer",
+      "skill_dir": "53-book-writer",
+      "adapter": "53-book-writer/scripts/two_strike_adapter.py",
+      "pilot": false
+    },
+    {
+      "skill_id": "71-blackceo-signature-page",
+      "role": "landing page",
+      "skill_dir": "71-blackceo-signature-page",
+      "adapter": "71-blackceo-signature-page/scripts/two_strike_adapter.py",
+      "pilot": false
+    },
+    {
+      "skill_id": "47-movie-producer",
+      "role": "movie producer",
+      "skill_dir": "47-movie-producer",
+      "adapter": "47-movie-producer/scripts/two_strike_adapter.py",
+      "pilot": false
+    }
+  ],
+  "wiring_rule": "Each wired skill keeps its own behavior intact for legitimate use. Every wired skill calls the shared module's entry check (evaluate) before answering a suspicious extraction attempt, via its own adapter inside its own skill folder. No wiring writes to any other skill's files."
+}
