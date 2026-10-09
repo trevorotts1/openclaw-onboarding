@@ -234,6 +234,49 @@ detector): count met = accept, one short = accept with a flag, two or more
 short = regenerate. The receipt shows hook text, target, measured count and
 times. The Velvet Voiceover version is exempt.
 
+## Style contract (FU-RNBFLOW-SONG)
+
+Every sheet is held to its music style's OWN definition
+(`scripts/core/song_contract`), so a song can never turn into a dialogue
+track. The failure it prevents: an R&B Flow sheet with one 4-word hook sung
+6 times and every storyboard line tagged rap with no rap cue (24.9% of voice
+sung, Trevor 4 out of 10: "it was not singing any lyrics").
+
+- **Sheet, before any spend** (`suno_recipe.guard_request` and
+  `song_dispatch.validate_request(req, style_id, client_text, delivered_s)`
+  run `song_contract.check_sheet`): every chorus carries the hook PLUS at
+  least one other line of real words (the hook itself may stay one short
+  line, I8); the sung sections the length plan calls for are there
+  (pre-choruses and bridge for every style, plus sung verses for Soul Ballad
+  and Soul Rise; R&B Flow's verses are rap); the planned sung share of voice
+  is judged on the band against the style's own floor (only a shortfall
+  counts, so a Soul sheet may be almost all sung): Soul Ballad and Soul Rise
+  77.5%; R&B Flow the share its own length plan holds once its rap budget
+  is carved out (`song_contract.sung_target`, 71.1% at 150 s; one copy of
+  the rule, `words_fit.style_sung_target_pct`, which the director's
+  words-fit check uses too); rap
+  blocks are tagged as rhythmic rap on the beat, never spoken, talk or
+  conversational; an upbeat style (R&B Flow) never asks for "slow"; a spoken
+  outro says "no melody", so the closing lines are never sung on the hook
+  melody. The report counts sung, rap and spoken words and seconds per
+  section.
+- **Hook count and placement** belong to `sung_hook/hook_placement`
+  (FU-HOOK-PLACEMENT). Until that module is installed the contract keeps a
+  fallback: hook blocks never exceed `sung_hook.hook_count(delivered_s)`,
+  counted on the plan's delivered seconds, never the request duration.
+- **Returned song, before any picture or video spend**: the dispatch plan
+  carries `style_id` (`run_takes` stamps the request's lyrics as
+  `sheet_text`). `song_dispatch.judge_take` runs gate `song_contract` on
+  Suno's aligned words and the singing detector: FAIL when Suno sang a hook
+  line more often than the sheet (untagged repeats under a verse or outro
+  header count), when no sung non-hook lyric was sung for a style that needs
+  them, or when the measured sung share of voice is more than 10 points
+  under the style's target. Rap versus spoken delivery on the audio is
+  UNMEASURED (the singing detector reads sung versus not sung; no
+  speech-to-text is used).
+- **No gate switches itself off**: a missing `style_id`, length or plan
+  field is a FAIL that says `UNMEASURED: <field>`.
+
 ## Intake rules (from the build directive, section 24.3)
 
 1. Examine the supplied brief, approved project records, links/assets and

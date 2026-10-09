@@ -25,7 +25,7 @@ assert SD.validate_request(req, "soul-ballad", CLIENT) == [], SD.validate_reques
 # refusals: spoken word in negatives, missing dry negatives, wrong model, style naming spoken twice
 for k, v in (("negative_tags", req["negative_tags"] + ", spoken word"), ("negative_tags", "rap"),
              ("model", "V5"), ("style", req["style"] + " Spoken spoken."), ("style_weight", 0.5)):
-    assert SD.validate_request(dict(req, **{k: v}), "soul-ballad", CLIENT), k
+    assert SD.validate_request(dict(req, **{k: v}), "soul-ballad", CLIENT, 58), k
 # the researched negatives and band wording are NOT refused
 assert "band dropout" in req["negative_tags"] and "keeps playing" in req["style"]
 OAI = "openai-" + "wh" + "isper"
@@ -50,14 +50,14 @@ GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 2, "source": "mea
         "tail_rms_dbfs": -30.0, "first_sung_s": 2.5}
 script = "One closed door. She Found Power in the Climb. Get the book. Link below."
 hook = " ".join(HOOK)
-j = SD.judge_take(GOOD, plan, script, hook, (15, 20))
+j = SD.judge_take(GOOD, dict(plan, sheet_text=req["lyrics"]), script, hook, (15, 20))
 assert j["verdict"] in ("PASS", "FLAG"), j
 # each gate bites
 for k, v, gate in (("tail_rms_dbfs", -70.0, "clean_ending"), ("music_under_speech_ratio", 0.05, "music_under_speech"),
                    ("duration_s", 60.0, "length"), ("first_sung_s", 30.0, "first_sung"),
                    ("detector", "singcheck v1", "detector"),
                    ("aligned_words", words[:5], "script_words")):
-    r = SD.judge_take(dict(GOOD, **{k: v}), plan, script, hook, (15, 20))
+    r = SD.judge_take(dict(GOOD, **{k: v}), dict(plan, sheet_text=req["lyrics"]), script, hook, (15, 20))
     assert r["verdict"] == "FAIL" and gate in r["failed"], (gate, r)
 
 # loop: stops at the first pass, saves stem for every take, whole tracks only, cap respected

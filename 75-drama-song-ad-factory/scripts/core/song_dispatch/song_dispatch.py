@@ -30,6 +30,7 @@ if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
 import load_governor as _LG   # noqa: E402
+import song_contract as _SC  # noqa: E402
 import spoken_share as _SS   # noqa: E402
 import suno_recipe as _R     # noqa: E402
 import sung_hook as _SH      # noqa: E402
@@ -43,6 +44,7 @@ MUSIC_UNDER_SPEECH_MIN = 0.3     # music level under speech / music level under 
 NEAR_SILENT_DBFS = -50.0         # RMS of the final 2 s below this = near silent
 SPEND_CAP_CENTS = 1000           # per author (Trevor 2026-10-08)
 GEN_COST_CENTS = 6
+GATES += ("song_contract",)      # FU-RNBFLOW-SONG: the style's own contract on every take
 
 
 class DispatchError(ValueError):
@@ -76,7 +78,11 @@ def validate_request(req, style_id=None, client_text=""):
     errs += _R.check_style_text(req.get("style", ""))
     errs += _R.check_negatives(req.get("negative_tags", ""), style_id)
     sheet = _R.parse_lyrics(req.get("lyrics", ""))
-    errs += _R.check_lyric_sheet(sheet, client_text, d if isinstance(d, (int, float)) else None)
+    d = d if isinstance(d, (int, float)) and not isinstance(d, bool) else None
+    # FU-RNBFLOW-SONG: the style reaches the sheet check (rap is judged as rap,
+    # never refused as "no style"), and the style's own contract runs.
+    errs += _R.check_lyric_sheet(sheet, client_text, d, style_id=style_id)
+    errs += _SC.check_sheet(req.get("lyrics", ""), style_id, delivered_s, req.get("style"))["reasons"]
     return errs
 
 
@@ -113,6 +119,17 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None):
     rec = _SH.measure(hook_text, take.get("aligned_words") or [], segs, _SH.hook_count(D))
     put("hook", "PASS" if rec["measured"] >= 2 and rec["verdict"] != "FAIL" else
         ("FLAG" if rec["measured"] >= 2 else "FAIL"), "%d of %d" % (rec["measured"], rec["target"]))
+    # FU-RNBFLOW-SONG: the returned song against the style's contract, before any
+    # picture or video spend. The plan carries style_id and sheet_text (run_takes
+    # stamps the request's lyrics); a missing one is a FAIL, never a skipped gate.
+    sc_sid = style_id or plan.get("style_id")
+    if not sc_sid:
+        put("song_contract", "FAIL", "UNMEASURED: style_id (the plan carries no style_id)")
+    else:
+        sc = _SC.check_returned_song(sheet_text or plan.get("sheet_text"),
+                                     take.get("aligned_words") or [], segs, sc_sid, D)
+        put("song_contract", "FAIL" if sc["reasons"] else "PASS",
+            "; ".join(sc["reasons"]) or ", ".join("%s %s" % kv for kv in sorted(sc["numbers"].items())))
     have = set(_w(" ".join(w.get("word", "") for w in take.get("aligned_words") or [])))
     missing = sorted(set(_w(script_words)) - have)
     put("script_words", "FAIL" if missing else "PASS", ("missing %s" % missing[:8]) if missing else "")
@@ -167,6 +184,7 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
                             "Suno headroom; never a patch)"
                             % (request.get("duration"), plan["delivered_s"], allowed))
     refuse_asr("faster-" + "wh" + "isper")
+    plan = dict(plan, sheet_text=plan.get("sheet_text") or request.get("lyrics"))
     spent, receipts, best = 0, [], None
     while spent + cost_cents <= cap_cents:
         spent += cost_cents
