@@ -9,7 +9,7 @@ Rules implemented:
    for its gender (85-155 Hz male, 165-255 Hz female) is refused at cast time,
    so no cast can be built that QC could never pass.
 2. Every lyric line is bound to its character and emitted with a Suno lyric
-   tag, e.g. ``[Female voice - coworker, hushed]``. ``render_lyrics`` never
+   tag, e.g. ``[Male voice - coworker, hushed]``. ``render_lyrics`` never
    emits an untagged line: unknown speaker or bad cast => outcome rejected.
 3. Two same-gender characters must be measurably different voices: pitch gap
    >= DISTINCT_HZ, or a different age, or a different tone (plan 6.6).
@@ -155,7 +155,7 @@ def build_cast(profiles):
 
 
 def voice_tag(profile):
-    """Suno lyric tag: [Female voice - coworker, hushed].
+    """Suno lyric tag: [Male voice - coworker, hushed].
 
     pitch_center is deliberately absent - Suno takes gender/role/tone words;
     the Hz value is the measurable QC anchor, not prompt text.
