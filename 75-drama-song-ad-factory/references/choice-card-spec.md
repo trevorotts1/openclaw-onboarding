@@ -129,7 +129,7 @@ the next call prints question 1. A run state that already shows `intro_shown`
 never prints it again. Without `--run-state-file` the card is unchanged.
 Test: `choice_card/intake_card/test_intro_message.py`.
 
-## 2.1a SCRIPT APPROVAL (the last card question)
+## 2.1b SCRIPT APPROVAL (the last card question)
 
 Appended after STORYBOARD APPROVAL (the card's last question; the total
 count is computed, never typed):
@@ -173,7 +173,7 @@ write them free hand and never carry them as one JSON string.
   `--format telegram-json` body is the exact Bot API `sendMessage` payload.
 - The intake `question_message` uses the same layout (`format_questions`).
 
-## 2.3 Fit stop card (FU-U4, normative)
+## 2.5 Fit stop card (FU-U4, normative)
 
 When the client brings their own lines (concept mode, `brief.mode == "concept"`),
 their lines are a contract: `brief.packet_lines` is required (missing is refused
@@ -203,12 +203,12 @@ length that is not offered, and any fps other than the 30 fps master.
 ### 2.1a Saved character question (FU-SAVED-CHARACTER-QUESTION, normative)
 
 Shown only when the client's data folder holds saved characters; it is then
-question 1 and the card has one more question. Built by
+question 2 (AI MODELS stays question 1) and the card has one more question. Built by
 `character_library.saved_character_question`, never free hand. N is how many
 characters the client has saved ("1 character", "2 characters"):
 
 ```
-Question 1 of 7 - CHARACTER
+Question 2 of 10 - CHARACTER
 Do you want to create a new character for this ad, or use one you've used before?
 You have 2 characters saved with us.
 1. Create a new character (recommended)
@@ -239,19 +239,19 @@ still and re-sends only that shot. Built by
 `scripts/core/storyboard_director/approval_package.py`; a shot with an
 incomplete card or no still file blocks the approval message. The live run sends it with `factory.py storyboard` (see stage-runbook.md, Wiring).
 
-## 2.4 Song approval (FU-SONG-APPROVAL, normative)
+## 2.6 Song approval (FU-SONG-APPROVAL, normative)
 
-Question 7 of 7, label `SONG APPROVAL`, built by `intake_card.py` like the
-storyboard question (the saved-character question, when shown, makes it 8 of 8):
+Question 8 of 9, label `SONG APPROVAL`, built by `intake_card.py` like the
+storyboard question (the saved-character question, when shown, makes it 9 of 10):
 
 ```text
-Question 7 of 7 - SONG APPROVAL
+Question 8 of 9 - SONG APPROVAL
 Do you want to hear and pick the song before any video is made?
 1. Yes, send me 3 versions to choose from - ... (RECOMMENDED)
 2. No, just make it - I make one song and keep going.
 ```
 
-- It appears in the recap ("7. Song Approval: ...") and the recap's "number of
+- It appears in the recap ("8. Song Approval: ...") and the recap's "number of
   a line to change it" reopens it.
 - **Yes:** the song stage generates three versions of the same lyric sheet IN
   PARALLEL inside the chosen music style, three arrangement variants from the
@@ -629,7 +629,7 @@ Sketch to Life / Velvet pair is refused there too), `core/smp/saturday_prompt`.
    does not start paid work.
 5. On resume the card shows only what changed, plus the next stage.
 6. With SONG APPROVAL = Yes the total includes the two extra song generations
-   (section 2.4).
+   (section 2.6).
 
 ## 5. Skill 74 mode gate
 

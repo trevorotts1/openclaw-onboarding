@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FU-U4 (plan unit U4): the fit STOP card contract from choice-card-spec 2.3.
+"""FU-U4 (plan unit U4): the fit STOP card contract from choice-card-spec 2.5.
 
 The client's own lines are a contract. This file pins the parts of that
 contract test_fit_card_u4.py does not cover:
