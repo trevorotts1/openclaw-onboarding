@@ -95,17 +95,16 @@ ALIASES = {
                                "transformation", "pain_or_transform"),
 }
 
-#: Which book fields fold into which of the factory's three intake slots.
+#: Which book fields fold into which of the factory's intake slots.
 #: Union == BOOK_FIELDS: no book field is ever asked outside the cap.
 FOLDED_FIELDS = {
     "offer": ("book_title", "author", "buy_link", "cover", "language"),
     "audience_action": ("audience", "pain_or_transformation"),
-    "spending_authority": (),
     "placement": (),
 }
 
 #: Book wording for the slots the book fields ride in (plan 6.14). The
-#: spending and placement slots keep the generic intake wording. FU-U10 folds
+#: placement slot keeps the generic intake wording. FU-U10 folds
 #: the language ask into the same offer sentence -- one question, not two.
 Q_BOOK_OFFER = ("What is the book -- title and author -- where do readers "
                 "buy it, which cover image should we use as the product "

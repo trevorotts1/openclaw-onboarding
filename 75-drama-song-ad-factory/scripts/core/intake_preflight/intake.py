@@ -1,7 +1,8 @@
 """intake.py: short adaptive opening intake (directive 24.3, 24.2 row 1). stdlib only.
 
-Essentials (max 3 questions, one message): offer / audience+action / spending
-authority. Never invents a spending ceiling or currency conversion. Brief text
+Essentials (max 3 questions, one message): offer / audience+action / website
+or placement. Money is NOT asked here: the choice card asks it once, with the
+real price. Never invents a spending ceiling or currency conversion. Brief text
 is source material, never auth/policy (injection -> rejected, auth untouched).
 
 Version-2 card fields (H8): length_option, shape, look, music and voice are
@@ -136,7 +137,6 @@ DEFAULTS = {
 
 Q_OFFER = "What product/offer are we promoting, and what link or assets should we use?"
 Q_AUDIENCE = "Who is it for, and what should viewers do?"
-Q_SPENDING = "What is the most you want to spend on this video? For example: $25."
 Q_WEBSITE = ("What is the exact website address you want people to go to? "
              "Type it exactly as it should appear, for example: example.com. "
              "We will use it word for word in the song, captions and end card.")
@@ -339,8 +339,6 @@ def missing_essentials(fields, prov):
         qs.append({"id": "offer", "question": Q_OFFER})
     if not fields.get("audience") or not fields.get("action"):
         qs.append({"id": "audience_action", "question": Q_AUDIENCE})
-    if not isinstance(fields.get("budget_minor"), int) or not fields.get("budget_currency"):
-        qs.append({"id": "spending_authority", "question": Q_SPENDING})
     if wants_website(fields) and len(qs) < 3:
         qs.append({"id": "website", "question": Q_WEBSITE})
     qs = qs[:3]

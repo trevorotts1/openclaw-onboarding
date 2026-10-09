@@ -215,8 +215,8 @@ Human price snapshot: `references/price-menu.md`. Stage order, QC, delivery
 and PARKED handling: `SOP--drama-song-ad-pipeline.md`.
 
 **Intake.** Quick mode is the default; Concept mode is for a client with
-their own story. Directive 24.3 still caps intake at three questions in one
-message, and the options are presented as ONE choice card with every default
+their own story. Directive 24.3 still caps intake at three story questions in one
+message (none about money; the card asks it once), and the options are presented as ONE choice card with every default
 pre-selected, so a client can approve with a single click. On resume the
 card shows only what changed.
 

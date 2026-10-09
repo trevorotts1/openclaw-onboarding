@@ -58,21 +58,22 @@ Read `command` in the JSON envelope before applying a code. Every command
 prints exactly one JSON object on stdout.
 
 ══════════════════════════════════════════════════════════════════
-EXAMPLE 1: INTAKE - THIN BRIEF ASKS AT MOST THREE QUESTIONS
+EXAMPLE 1: INTAKE - THIN BRIEF ASKS STORY QUESTIONS ONLY (NEVER MONEY)
 ══════════════════════════════════════════════════════════════════
 
   python3 scripts/core/intake_preflight/factory.py intake \
     --brief '{"offer": "demo offer"}'
 
 Observed: exit 2, outcome=waiting, reason_code=missing-essentials,
-digest 5f4e234c1193d9b6, exactly three questions bundled in ONE message:
+digest f533196064a9d066, two questions bundled in ONE message (at most three):
 
   1. Who is it for, and what should viewers do?
-  2. What is the most you want to spend on this video? For example: $25.
-  3. What placement/format should we produce (aspect ratio + target length)?
+  2. What placement/format should we produce (aspect ratio + target length)?
 
-Placement substitutes into a leftover question slot; the three essentials are
-offer / audience+action / spending authority. Spending is NEVER defaulted.
+Placement substitutes into a leftover question slot; the story essentials are
+offer / audience+action (plus the exact website when the ad sends people to
+one). Money is NOT a story question: the choice card asks it once, with the
+real price, and spending is NEVER defaulted (no reply = no spend).
 
 ──────────────────────────────────────────────────────────────────
 EXAMPLE 2: INTAKE - COMPLETE BRIEF, ZERO QUESTIONS

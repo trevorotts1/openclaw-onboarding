@@ -9,7 +9,8 @@ Proves, behaviourally:
   * the default allowed_profiles are the ten drama-<shape>-<length>s profiles
     and `preflight --profile drama-16x9-300s` never says
     delivery-profile-unknown (the manual's Done-when);
-  * L4: Q_SPENDING carries the client sentence, and budget_currency still
+  * FU-ONE-SPEND-QUESTION: the story questions never ask about money (the
+    choice card does, once); budget_currency still
     accepts credits (parser unchanged).
 
 Run: python3 scripts/core/intake_preflight/test_intake_preflight.py
@@ -33,6 +34,10 @@ FACTORY = os.path.join(HERE, "factory.py")
 FAILS = []
 
 
+import re
+_MONEY = re.compile(r"spend|budget|cost|price|\$|dollar", re.I)
+
+
 def check(name, cond, detail=""):
     print("%s: %s%s" % ("ok" if cond else "FAIL", name,
                         (" (%s)" % detail) if detail and not cond else ""))
@@ -46,9 +51,11 @@ def test_default_length_is_60():
           repr(I.DEFAULTS.get("target_length_s")))
 
 
-def test_q_spending_client_sentence():
-    want = "What is the most you want to spend on this video? For example: $25."
-    check("Q_SPENDING is the L4 client sentence", I.Q_SPENDING == want, I.Q_SPENDING)
+def test_no_money_question_in_story_questions():
+    check("Q_SPENDING is gone", not hasattr(I, "Q_SPENDING"))
+    for name in ("Q_OFFER", "Q_AUDIENCE", "Q_WEBSITE", "Q_PLACEMENT"):
+        check(name + " has no money words",
+              not _MONEY.search(getattr(I, name)), getattr(I, name))
 
 
 def test_weekly_brief_fields_pass_through():
@@ -179,16 +186,22 @@ def test_cli_done_when():
               "%s/%s" % (env2.get("outcome"), env2.get("reason_code")))
 
 
-def test_thin_brief_shows_new_sentence():
-    """L4 done-when: the thin-brief intake shows the new spending sentence."""
+def test_thin_brief_asks_no_money_question():
+    """A thin brief asks story questions only; money is asked once, on the card."""
     r = I.evaluate({}, {})
-    check("thin brief asks the spending question",
-          r.get("outcome") == "waiting", repr(r.get("outcome")))
     ids = [q["id"] for q in r.get("questions") or []]
-    check("spending_authority asked", "spending_authority" in ids, repr(ids))
-    check("question_message carries the new sentence",
-          (r.get("question_message") or "").find(I.Q_SPENDING) >= 0,
-          repr(r.get("question_message")))
+    check("thin brief still waits on story questions", r.get("outcome") == "waiting", repr(ids))
+    check("spending_authority not asked", "spending_authority" not in ids, repr(ids))
+    check("no question mentions money",
+          not _MONEY.search(r.get("question_message") or ""), repr(r.get("question_message")))
+
+
+def test_freed_slot_goes_to_next_question():
+    """The slot the money question used to take is given to the next needed one."""
+    r = I.evaluate({"offer": "my book at example.com"}, {})
+    ids = [q["id"] for q in r.get("questions") or []]
+    check("audience, website and placement fill the three slots",
+          ids == ["audience_action", "website", "placement"], repr(ids))
 
 
 def test_credits_still_accepted():
@@ -205,14 +218,15 @@ def test_credits_still_accepted():
 
 TESTS = [
     test_default_length_is_60,
-    test_q_spending_client_sentence,
+    test_no_money_question_in_story_questions,
     test_weekly_brief_fields_pass_through,
     test_explicit_target_length_wins,
     test_card_defaults_from_style_defaults,
     test_ten_delivery_profiles,
     test_default_profile_known,
     test_cli_done_when,
-    test_thin_brief_shows_new_sentence,
+    test_thin_brief_asks_no_money_question,
+    test_freed_slot_goes_to_next_question,
     test_credits_still_accepted,
 ]
 

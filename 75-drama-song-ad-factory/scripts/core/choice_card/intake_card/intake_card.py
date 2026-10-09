@@ -75,6 +75,30 @@ def _musics():
                  _MUSIC_SENTENCE)
 
 
+def _usd(x):
+    return "$%.2f" % float(str(x).lstrip("$"))
+
+
+def spend_question(price=None, limit=None):
+    """The ONE money question, asked here and nowhere else (FU-ONE-SPEND-QUESTION).
+    price: the card's total in dollars (20% redo allowance included). limit: a
+    ceiling the brief already gave. Neither is ever defaulted: the client must reply."""
+    opts, vals = [], {}
+    if limit is not None:
+        opts.append(("Your limit: " + _usd(limit), "from your brief"))
+        vals[len(opts)] = str(limit).lstrip("$")
+    if price is not None:
+        opts.append((_usd(price), "the price shown above (includes a 20% allowance for redoing shots)"))
+        vals[len(opts)] = str(price).lstrip("$")
+    opts.append(("A different limit", "reply with a dollar amount, like $25"))
+    return {"id": "spend", "why": "This keeps you in control of the cost.",
+            "reason": ("it is the limit you already gave in your brief." if limit is not None else
+                       "it covers the whole price, with room to redo shots." if price is not None else
+                       "you choose the number."),
+            "label": "SPEND LIMIT", "ask": "How much are you OK spending on this ad?",
+            "options": opts, "values": vals, "recommended": 0}
+
+
 def _questions():
     return [
         {"id": "length", "why": "Length decides the story size and the price.", "reason": "the standard length for ads, and it fits stories, reels and ads.", "label": "LENGTH", "ask": "How long should the ad be?",
@@ -92,11 +116,7 @@ def _questions():
          "options": [("MiniMax H3, 768P", "Best balance of quality and price."),
                      ("Show me every model and its price", "I will list them, then you pick.")],
          "recommended": 0},
-        {"id": "spend", "why": "This keeps you in control of the cost.", "reason": "it already covers a 20% allowance for redoing shots.", "label": "SPEND LIMIT",
-         "ask": "What is the most you want to spend on this ad?",
-         "options": [("The price on the card", "Includes a 20% allowance for redoing shots."),
-                     ("My own limit", "Reply with a dollar amount, for example $25.")],
-         "recommended": 0},
+        spend_question(),
         {"id": "storyboard", "why": "The storyboard is cheap to fix now and costly to fix after video is made.", "reason": "you see every scene before any money is spent on video.", "label": "STORYBOARD APPROVAL",
          "ask": "Do you want to approve the storyboard before any video is made?",
          "options": [("Yes, show me first", "Nothing is generated until you say go."),
@@ -157,10 +177,13 @@ def _parse(reply, q):
     elif t.isdigit() and 1 <= int(t) <= len(opts):
         n = int(t)
     elif q["id"] == "spend" and t.lstrip("$").replace(".", "", 1).isdigit():
-        return {"n": 2, "text": "up to $" + t.lstrip("$"), "value": t.lstrip("$")}
+        return {"n": len(opts), "text": "up to $" + t.lstrip("$"), "value": t.lstrip("$")}
     else:
         return None
-    return {"n": n, "text": opts[n - 1][0], "value": None}
+    value = q.get("values", {}).get(n)
+    if q["id"] == "spend" and value is None:      # "A different limit" with no amount, or a
+        return None                               # bare "yes": no amount = no spend
+    return {"n": n, "text": opts[n - 1][0], "value": value}
 
 
 def conversation(replies, questions=None):
@@ -292,11 +315,18 @@ def main(argv=None):
                          "given every --reply the client has sent so far (I7)")
     ap.add_argument("--reply", action="append", default=[],
                     help="a client reply, in order (repeat the flag)")
+    ap.add_argument("--price", default=None,
+                    help="the card total in dollars (20%% redo allowance included); "
+                         "shown as spend option 1 or 2")
+    ap.add_argument("--limit", default=None,
+                    help="a spend limit the brief already gave, in dollars; "
+                         "shown as spend option 1")
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
                          "card opens with 'Use a saved character?' (I6)")
     a = ap.parse_args(argv)
-    qs = _with_saved_character(a.client_dir)
+    qs = [spend_question(a.price, a.limit) if q["id"] == "spend" else q
+          for q in _with_saved_character(a.client_dir)]
     if a.step:
         st = conversation(a.reply, qs)
         if a.format == "text":
