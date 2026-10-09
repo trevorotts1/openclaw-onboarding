@@ -137,9 +137,14 @@ with tempfile.TemporaryDirectory() as td:
         cfile=os.path.join(td, "sfx_off.pyc"), doraise=True)
 print("PASS  py_compile sfx_off.py clean")
 
-print("")
-if FAILS:
-    print("FAILED: %d check(s): %s" % (len(FAILS), ", ".join(FAILS)))
-    sys.exit(1)
-print("ALL PASS")
-sys.exit(0)
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
+
+
+if __name__ == "__main__":
+    print("")
+    if FAILS:
+        print("FAILED: %d check(s): %s" % (len(FAILS), ", ".join(FAILS)))
+        sys.exit(1)
+    print("ALL PASS")
+    sys.exit(0)

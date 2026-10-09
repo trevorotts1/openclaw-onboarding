@@ -276,5 +276,10 @@ for rel, needle in SITES.items():
     src = open(os.path.join(CORE, rel), encoding="utf-8").read()
     check("wired: %s uses %s" % (rel, needle), needle in src)
 
-print("FAILED: %s" % FAILS if FAILS else "all load_governor checks passed")
-sys.exit(1 if FAILS else 0)
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
+
+
+if __name__ == "__main__":
+    print("FAILED: %s" % FAILS if FAILS else "all load_governor checks passed")
+    sys.exit(1 if FAILS else 0)

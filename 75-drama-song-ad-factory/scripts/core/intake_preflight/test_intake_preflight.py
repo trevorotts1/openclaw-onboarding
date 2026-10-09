@@ -22,6 +22,7 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)                            # intake.py / preflight.py
 sys.path.insert(0, os.path.dirname(HERE))           # core/
 
 import intake as I            # noqa: E402  (package under test)

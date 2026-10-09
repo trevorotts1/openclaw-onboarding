@@ -8,6 +8,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import line_voice_fit as v  # noqa: E402
+try:  # pytest binds the package; line_voice_fit needs the module file itself
+    import qc_voice_match.qc_voice_match as _base  # noqa: E402
+except ImportError:  # script run already bound the module as its base
+    import qc_voice_match as _base  # noqa: E402
+v.base = _base
 
 R = 8000
 

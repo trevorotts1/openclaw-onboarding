@@ -39,7 +39,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))                      # core/smp/weekly_step/
 
-import weekly_step as V                             # noqa: E402
+try:                                   # pytest imports the weekly_step PACKAGE
+    from weekly_step import weekly_step as V       # noqa: E402
+except ImportError:                    # script run gets the module file
+    import weekly_step as V                        # noqa: E402
 
 FAILS = []
 
@@ -637,9 +640,14 @@ check("module ships only the weekly_step sources",
 
 # --- result ----------------------------------------------------------------
 
-print()
-if FAILS:
-    print("FAILURES (%d): %s" % (len(FAILS), "; ".join(FAILS)))
-    sys.exit(1)
-print("all checks passed")
-sys.exit(0)
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
+
+
+if __name__ == "__main__":
+    print()
+    if FAILS:
+        print("FAILURES (%d): %s" % (len(FAILS), "; ".join(FAILS)))
+        sys.exit(1)
+    print("all checks passed")
+    sys.exit(0)

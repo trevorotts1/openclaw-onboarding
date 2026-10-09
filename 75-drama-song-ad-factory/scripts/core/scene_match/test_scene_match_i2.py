@@ -71,7 +71,12 @@ r = SM.qc_scene_match(SHOTS, CONTRACTS, {"K11": ON_K11[:1], "K12": ON_K12, "K18"
 check("unsampled shot fails", r["regenerate_shot_ids"] == ["K11"]
       and r["findings"][0]["code"] == "SCENE_FRAMES_MISSING", r)
 
-print("scene_match I2 test: %s (%d failures)" % ("PASS" if not FAILS else "FAIL", len(FAILS)))
-for f in FAILS:
-    print(" -", f)
-sys.exit(1 if FAILS else 0)
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
+
+
+if __name__ == "__main__":
+    print("scene_match I2 test: %s (%d failures)" % ("PASS" if not FAILS else "FAIL", len(FAILS)))
+    for f in FAILS:
+        print(" -", f)
+    sys.exit(1 if FAILS else 0)

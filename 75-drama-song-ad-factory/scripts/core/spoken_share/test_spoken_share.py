@@ -582,8 +582,13 @@ except Exception as _e:  # noqa: BLE001
     check("g8-guard-gate", False, "%s: %s" % (type(_e).__name__, _e))
 
 
-if FAILS:
-    print("FAILED %d checks: %s" % (len(FAILS), ", ".join(FAILS)))
-    sys.exit(1)
-print("ALL CHECKS PASS")
-sys.exit(0)
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
+
+
+if __name__ == "__main__":
+    if FAILS:
+        print("FAILED %d checks: %s" % (len(FAILS), ", ".join(FAILS)))
+        sys.exit(1)
+    print("ALL CHECKS PASS")
+    sys.exit(0)

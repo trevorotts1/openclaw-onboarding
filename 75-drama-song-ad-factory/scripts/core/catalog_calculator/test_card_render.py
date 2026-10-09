@@ -172,9 +172,14 @@ check("home-cleared-still-renders",
 check("home-cleared-unpriced-blocks", priced3 is False and
       "Price unavailable" in text3, text3)
 
-print()
-if FAILS:
-    print("FAILED %d checks: %s" % (len(FAILS), ", ".join(FAILS)))
-    sys.exit(1)
-print("ALL CHECKS PASS")
-sys.exit(0)
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
+
+
+if __name__ == "__main__":
+    print()
+    if FAILS:
+        print("FAILED %d checks: %s" % (len(FAILS), ", ".join(FAILS)))
+        sys.exit(1)
+    print("ALL CHECKS PASS")
+    sys.exit(0)

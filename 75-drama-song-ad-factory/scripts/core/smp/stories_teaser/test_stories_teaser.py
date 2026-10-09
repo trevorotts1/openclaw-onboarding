@@ -29,7 +29,7 @@ def _build_root():
             return node
         parent = os.path.dirname(node)
         if parent == node:
-            raise SystemExit("build root not found above %s" % HERE)
+            raise RuntimeError("build root not found above %s" % HERE)
         node = parent
 
 
