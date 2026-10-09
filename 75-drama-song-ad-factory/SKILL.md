@@ -996,6 +996,21 @@ SOP named above.
   parent card per batch; department lead role
   `vsl-video-sales-letter-specialist`.
 
+## Long-term direction: a series bible and episode continuity (DEL-18, docs only)
+
+A series bible and episode continuity is a **follow-on direction**, recorded
+here so the direction is not lost: one set of characters, look, voice and
+story threads kept consistent across a run of ads that belong to the same
+series, with each ad continuing the one before it instead of starting over.
+
+This is a note in the documentation and nothing more. **No series or episode
+code is built** - there is no series planner, no episode record, no
+continuity store and no price line for episodes anywhere in this skill. Every
+ad is still planned, priced, approved and delivered on its own, exactly as
+the choice card, the price menu and the stage runbook describe today. When
+this direction is picked up it becomes its own unit with its own intake,
+contract and tests; it is never bolted onto an existing stage.
+
 ## Sections marked TODO (refresh when the named unit lands)
 
 - "Per-style bands (FU-U3...)" bullet in the Suno recipe, the matching

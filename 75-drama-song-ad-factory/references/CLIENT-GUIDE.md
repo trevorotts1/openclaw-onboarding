@@ -203,7 +203,7 @@ If your setup already has a build-and-check pair and you say "use my defaults," 
 
 **What happens.** Now we pick the running time. We ask: *How long should the video be?* The options are 60 seconds (recommended), 90 seconds, 3 minutes plus 60- and 90-second clips, 5 minutes plus clips, and 10 minutes plus clips.
 
-**Why it matters.** Length decides the size of the story, the length of the song and the cost. A 60-second video is a single, punchy idea. A 10-minute video is a full mini-movie with room to breathe. Longer videos cost more because there are more shots to film. The 3-, 5- and 10-minute options also come with 60- and 90-second clips for social media, so one big production gives you a stack of shareable pieces.
+**Why it matters.** Length decides the size of the story, the length of the song and the cost. A 60-second video is a single, punchy idea. A 10-minute video is a full mini-movie with room to breathe. Longer videos cost more because there are more shots to film. Length also sets how many storyboard pictures you approve: 8 for a 60-second ad, 24 for a 2-minute ad, then about one more for every five seconds of runtime, capped at 120 pictures for any ad. The 3-, 5- and 10-minute options also come with 60- and 90-second clips for social media, so one big production gives you a stack of shareable pieces.
 
 **How to do it.** Think about where the video will play. Instagram and Reels love 60 seconds. A sales page or webinar warm-up can use 3 to 5 minutes. If you accept 60 seconds, we move straight on.
 
@@ -411,7 +411,7 @@ If you accept Lifelike 3D, we move on.
 
 ## STEP 15: Approval 3, The Storyboard (Approve Every Shot)
 
-**What happens.** Now the Storyboard Artists draw every shot, with a written card and a picture for each one. We ask you to approve, or tell us what to change. This is the very last stop before any video is filmed.
+**What happens.** Now the Storyboard Artists draw every shot, with a written card and a picture for each one. How many pictures that is depends on the length you picked: a 60-second ad gets 8 storyboard pictures, a 2-minute ad gets 24, and after that the count grows by about one picture for every five seconds of runtime, up to a maximum of 120 pictures for any ad. We ask you to approve, or tell us what to change. This is the very last stop before any video is filmed.
 
 **Why it matters.** The storyboard is your last chance to change what a shot looks like cheaply. It shows who is in each shot, what they are doing, where, and what is on screen. Once filming starts, shots are expensive to redo. This is the safest moment to say, "Show the storefront here."
 
