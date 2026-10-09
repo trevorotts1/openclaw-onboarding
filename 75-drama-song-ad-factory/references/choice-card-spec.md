@@ -308,6 +308,9 @@ Decision 32, plan 6.13.
 - Every clip starts on a strong line, is cut on whole lines with a short
   music fade, gets its own re-timed captions, and ends with an end card
   pointing at the full story.
+  TODO(FU-U9): refresh this sentence when caption read-back off the rendered
+  frames lands (no onboarding branch; 999 `unit/FU-U9` carries only the
+  excerpt burn).
 - Long-version shape choice is shown on the card: generate both shapes
   (roughly double the video cost, clips cut from the 9:16 version) or
   centre-crop to 9:16 (free, may cut off faces, the client must accept it).
@@ -475,6 +478,11 @@ end card never count against it. Both numbers use Trevor's band: within 5
 points accept, over 5 up to 10 accept with a flag, over 10 redo. The only
 hard reject is no sung stretch of at least 6 seconds. One constants set holds
 the numbers: `scripts/core/spoken_share/spoken_share.py`.
+**TODO(FU-U3):** per-style bands change how these two numbers are read -
+`STYLE_TARGETS` judges each music style by its own delivery (R&B Flow's rap
+share comes from the approved plan, never the spoken runtime target). Landed
+in 999 (2.7.31, PR #120); open PR #1752 on onboarding - refresh this
+paragraph when it lands there.
 
 The only exemption is the Velvet Voiceover version (the spoken Google voice
 over the song, id `velvet_voiceover`), which keeps its own flow. Almost
