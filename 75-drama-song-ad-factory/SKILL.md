@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.13
+version: v2.9.14
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -767,8 +767,10 @@ SOP named above.
   **10-minute long version**. Each length is its own song and timing map.
   The 3, 5 and 10 minute ads each come with an automatic 60-second clip and
   a 90-second clip (`scripts/core/clip_cutdown`; free, included in the
-  price). The intake card asks it as one full question with numbered options
-  that name the clips.
+  price); both clips land in the delivery folder with clear numbered names
+  (`scripts/core/delivery_clips`, item 6 of the delivery package, every file
+  through `delivery_audio.check_delivery_audio()`). The intake card asks it
+  as one full question with numbered options that name the clips.
 - **Ends 2 seconds early (Part I, I4):** the master for a chosen length L is
   at most L-2 seconds (60 becomes 58, 30 becomes 28, 90 becomes 88, 120
   becomes 118), because a 60-second video that runs to 1:02 cannot be used in

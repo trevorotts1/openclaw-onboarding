@@ -6,6 +6,13 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.14 - 2026-10-09 - FU-DEL-06: the 60/90 second clips land in the delivery folder
+
+- New `scripts/core/delivery_clips/`: the 3, 5 and 10 minute ads ship their TWO clip files inside the client's delivery folder with clear numbered names (`6 - 60-second clip.mp4`, `6 - 90-second clip.mp4`, item 6 of the delivery package; both files share the slot, DEL-13 owns the full list).
+- Reuse only: windows come from `clip_cutdown.plan_clips`, cuts from `run_clips`, and `delivery_audio.check_delivery_audio()` gates every delivered clip AFTER the rename — a refused clip raises `CLIPS_AUDIO_REFUSED`, is deleted, and is never listed. Receipt and README are merged the way `delivery_variants.song_files` does (never a clobber).
+- `check_clips` is the fail-closed QC answer (PASS/FAIL/UNAVAILABLE): a promised clip missing, unlisted in `delivery-receipt.json` or `README.md`, or failing the audio gate is a FAIL naming the file; 60 s and 90 s ads owe none. CLI `--check` exits 5 on anything but PASS.
+- New test `scripts/core/delivery_clips/test_delivery_clips_del06.py` (20 tests): file names, cut points on whole lines with the sung hook kept, the gate on every file, receipt/README merge, fail-closed paths. `references/stage-runbook.md` and `references/choice-card-spec.md` gain the FU-DEL-06 paragraph/bullet (byte-identical with the 999 copy).
+
 ## v2.9.13 - 2026-10-09 - Batch MGB023 follow-up 2 (no more silent ads)
 
 - Delivery audio gate on EVERY path that hands the client a video: the final assembler (already), the 60 and 90 second clip cutdowns (`clip_cutdown.run_clips`, a refused clip is deleted), the batch zip (captioned ad and clean master) and the delivery checklist. Each one calls `delivery_audio.check_delivery_audio()` and fails closed.
