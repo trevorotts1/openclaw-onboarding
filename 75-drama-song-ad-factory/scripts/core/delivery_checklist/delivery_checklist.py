@@ -74,7 +74,7 @@ if str(_CORE) not in sys.path:
 import kie_dispatch.model_lock as model_lock  # noqa: E402  (F16)
 
 TOOL_NAME = "delivery_checklist"
-TOOL_VERSION = "1.2.0"
+TOOL_VERSION = "1.3.0"
 SCHEMA_VERSION = "1.0.0"          # final_assembler receipt schema
 QC_SCHEMA_VERSION = "1.0.0"       # core/qc_gate.py
 CHECK = "delivery_checklist"      # new required check ON gate 4 (17.5 Final)
@@ -108,6 +108,23 @@ LIPSYNC_MAX_JOBS = 2
 FIRST_SUNG_TARGET_PCT = 15.0
 #: Q10: no slow-motion above this speed-down factor (H5).
 MAX_SLOWDOWN = 1.15
+
+#: G5 amend (order 1150 part G): the amended receipt carries the block
+#: core/singing_detector/receipt_evidence.measured_share() builds. The
+#: checklist reads it: a stamp that is not "measured" (labels / planned) is
+#: the failed-ad shape, and a block missing any field it promises is a
+#: claim without its measurement (G7 law 2).
+G5_MEASURED = "measured"
+G5_BLOCK_KEYS = ("measured_share", "receipt_evidence")
+G5_SHARES = ("sung", "spoken", "rap", "no_voice")
+#: receipt_evidence SHARE_SUM_TOLERANCE (0.02 of the runtime), in points.
+G5_SHARE_SUM_PTS = 2.0
+
+#: Q8 amend: the operator's kept-take vocabulary (KEPT-TAKES.md rows). A
+#: clip tagged KEPT_BEST or FLAGGED is kept though not fully clean: it must
+#: still carry its measurement AND its reason, and the flag is shown.
+LIPSYNC_TAGS = ("KEPT", "KEPT_BEST", "FLAGGED")
+LIPSYNC_FLAG_TAGS = ("KEPT_BEST", "FLAGGED")
 
 #: Question 1: a sung ad must show a measured sung share above zero.
 SUNG_MIN_PCT = 1.0
@@ -258,35 +275,189 @@ def _is_singing_detector(name):
                                         if ch.isalnum())
 
 
+# ------------------------------------------- G5 amended receipt evidence ---
+# Order 1150 part G: the receipt carries the block
+# core/singing_detector/receipt_evidence builds (measured four-way shares +
+# detector + confidence + target + gap + every take tried). The checklist
+# consumes that block as the authority for Q1; label-shaped shares are
+# never the result.
+_G5_RE = None
+
+
+def _receipt_evidence():
+    """core/singing_detector/receipt_evidence.py, loaded by path (G5 reader).
+
+    By path on purpose: receipt_evidence is stdlib-only, while its package
+    __init__ pulls in the numpy detector. The delivery checklist must not
+    grow a numpy/ffmpeg dependency to read a receipt. None when absent
+    (the G7 measured path then decides alone; never a silent pass).
+    """
+    global _G5_RE
+    if _G5_RE is None:
+        import importlib.util
+        path = _CORE / "singing_detector" / "receipt_evidence.py"
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "_g5_receipt_evidence", str(path))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            _G5_RE = mod
+        except (OSError, ImportError, AttributeError, SyntaxError,
+                ValueError):
+            _G5_RE = False                      # absent: report, never pass
+    return _G5_RE or None
+
+
+def _g5_evidence(ans, receipt):
+    """The amended G5 block, wherever the receipt carries it.
+
+    ``measured_share()`` / ``receipt_block()`` output rides the SUNG answer
+    or the receipt itself, under "receipt_evidence" or "measured_share".
+    Returns the block dict, or None when the receipt carries none (the G7
+    measured path alone then decides).
+    """
+    for source in (ans, receipt):
+        if not isinstance(source, dict):
+            continue
+        for key in G5_BLOCK_KEYS:
+            value = source.get(key)
+            if isinstance(value, dict) and value:
+                inner = value.get("measured_share")
+                return inner if isinstance(inner, dict) else value
+    return None
+
+
+def _g5_problem(block):
+    """Every field the amended G5 receipt promises, or the reason it fails.
+
+    Empty string = the block is complete and measured. The reader is
+    receipt_evidence.check_receipt whenever the block carries a take ledger
+    (the full amended receipt), so label-shaped shares inside takes and a
+    missing take ledger fail exactly as G5 runs them; the bare
+    measured_share() block is read field by field here.
+    """
+    RE = _receipt_evidence()
+    if RE is None:
+        return ("G5 reader missing: core/singing_detector/receipt_evidence.py "
+                "not found")
+    if "takes" in block:
+        verdict = RE.check_receipt(block)
+        if verdict["verdict"] == "FAIL":
+            return "; ".join(verdict["reasons"][:3])
+    source = block.get("source", block.get("share_source"))
+    if not isinstance(source, str) or source.strip().lower() != G5_MEASURED:
+        return ("receipt evidence source=%r is not measured: label-shaped "
+                "shares are never the result" % (source,))
+    if not _is_singing_detector(block.get("detector")):
+        return ("receipt evidence detector %r is not the singing detector"
+                % (block.get("detector"),))
+    conf = _num(block.get("confidence"))
+    if conf is None or not 0.0 <= conf <= 1.0:
+        return "receipt evidence carries no confidence (0..1)"
+    runtime = _num(block.get("runtime_s"))
+    if runtime is None or runtime <= 0:
+        return "receipt evidence carries no runtime_s"
+    missing, total = [], 0.0
+    for name in G5_SHARES:
+        pct = _num(block.get("%s_pct" % name))
+        secs = _num(block.get("%s_seconds" % name))
+        if pct is None:
+            missing.append("%s_pct" % name)
+        else:
+            total += pct
+        if secs is None:
+            missing.append("%s_seconds" % name)
+    if missing:
+        return "receipt evidence missing %s" % ", ".join(missing)
+    if abs(total - 100.0) > G5_SHARE_SUM_PTS:
+        return ("sung + spoken + rap + no_voice = %.1f%% of the runtime "
+                "(need 100)" % total)
+    return ""
+
+
+#: Source strings that name label/plan time: never a measured sung share.
+LABEL_SHAPED = ("label", "planned", "plan", "timing_map", "timing map",
+                "section", "verse", "chorus")
+
+
+def _label_shaped(source):
+    """True when a source string names label/plan time, not a measurement."""
+    if not isinstance(source, str):
+        return False
+    flat = source.strip().lower()
+    return any(word in flat for word in LABEL_SHAPED)
+
+
+#: The G3-WIRE provenance suffix the qc_gate requires on a PASS sung claim
+#: (sung_vocal_guard.record_for_gate prints the same shape).
+def provenance_suffix(detector, version, sung_pct):
+    return ("detector=%s v%s share_source=measured sung_share=%.1f%%"
+            % (detector, version or "?", sung_pct))
+
+
 # ------------------------------------------------------------------ Q1 SUNG
 def _q1_sung(receipt, ans, codes, details):
-    """Measured sung/spoken percents from the vocal-stem detector."""
+    """Measured sung/spoken percents from the vocal-stem detector.
+
+    Order 1150 part G: when the receipt carries the amended G5 block
+    (core/singing_detector/receipt_evidence.measured_share /
+    receipt_block), that block IS the authority -- it must be complete and
+    measured, its four-way shares are the numbers this question answers
+    with, and its detector provenance is stamped on the answer. A block
+    missing any field, carrying a label-shaped source, or failing
+    receipt_evidence.check_receipt FAILS here (G7 law 2: a claimed share
+    without its measurement is a "no").
+    """
     style = ans.get("style") or ans.get("delivery_style") or receipt.get("style")
-    sung = ans.get("sung_pct", ans.get("sung_share_pct"))
-    spoken = ans.get("spoken_pct", ans.get("spoken_share_pct"))
-    sung = _clamp_pct(_num(sung))
-    spoken = _clamp_pct(_num(spoken))
-    if sung is None or spoken is None:
-        codes.append("%s:SUNG missing measured sung_pct/spoken_pct"
-                     % CHECKLIST_NO_MEASUREMENT)
-        return False
-    detector = ans.get("detector") or receipt.get("detector") or ""
-    if not isinstance(detector, str) or not detector.strip():
-        codes.append("%s:SUNG detector (vocal-stem) not named"
-                     % CHECKLIST_NO_MEASUREMENT)
-        return False
-    if not _is_singing_detector(detector):
-        # G3: a named-but-wrong instrument (labels, ears, "manual") is the
-        # fake-number path; only core/singing_detector measures sung share.
-        codes.append("%s:SUNG detector %r is not the singing detector"
-                     % (CHECKLIST_NO_MEASUREMENT, detector.strip()))
-        return False
-    share_source = ans.get("share_source") or receipt.get("share_source")
-    if isinstance(share_source, str) and share_source.strip() \
-            and share_source.strip().lower() != "measured":
-        codes.append("%s:SUNG share_source=%s (need measured)"
-                     % (CHECKLIST_NO_MEASUREMENT, share_source.strip()))
-        return False
+    block = _g5_evidence(ans, receipt)
+    if block is not None:
+        problem = _g5_problem(block)
+        if problem:
+            codes.append("%s:SUNG amended receipt evidence: %s"
+                         % (CHECKLIST_NO_MEASUREMENT, problem))
+            return False
+        sung = _clamp_pct(_num(block.get("sung_pct")))
+        spoken = _clamp_pct(_num(block.get("spoken_pct")))
+        detector = block.get("detector")
+        details["receipt_evidence"] = "measured four-way shares (%s)" \
+            % detector.strip()
+        details["provenance"] = provenance_suffix(
+            detector.strip(), block.get("detector_version"), sung or 0.0)
+    else:
+        sung = ans.get("sung_pct", ans.get("sung_share_pct"))
+        spoken = ans.get("spoken_pct", ans.get("spoken_share_pct"))
+        sung = _clamp_pct(_num(sung))
+        spoken = _clamp_pct(_num(spoken))
+        if sung is None or spoken is None:
+            codes.append("%s:SUNG missing measured sung_pct/spoken_pct"
+                         % CHECKLIST_NO_MEASUREMENT)
+            return False
+        detector = ans.get("detector") or receipt.get("detector") or ""
+        if not isinstance(detector, str) or not detector.strip():
+            codes.append("%s:SUNG detector (vocal-stem) not named"
+                         % CHECKLIST_NO_MEASUREMENT)
+            return False
+        if not _is_singing_detector(detector):
+            # G3: a named-but-wrong instrument (labels, ears, "manual") is
+            # the fake-number path; only core/singing_detector measures.
+            codes.append("%s:SUNG detector %r is not the singing detector"
+                         % (CHECKLIST_NO_MEASUREMENT, detector.strip()))
+            return False
+        share_source = ans.get("share_source") or receipt.get("share_source")
+        if isinstance(share_source, str) and share_source.strip() \
+                and share_source.strip().lower() != "measured":
+            codes.append("%s:SUNG share_source=%s (need measured)"
+                         % (CHECKLIST_NO_MEASUREMENT, share_source.strip()))
+            return False
+        label_src = ans.get("source") or receipt.get("source")
+        if _label_shaped(label_src):
+            # G5 amend: a sung % whose source names labels/plan time is the
+            # failed-ad shape, whatever the detector field claims.
+            codes.append("%s:SUNG source=%r is label-shaped; a sung %% must "
+                         "be measured" % (CHECKLIST_NO_MEASUREMENT,
+                                          label_src.strip()))
+            return False
+        detector = detector.strip()
     is_sung_style = isinstance(style, str) and \
         style.strip().lower() in ("sung", "all_suno", "all-suno", "suno")
     if is_sung_style and sung < SUNG_MIN_PCT:
@@ -300,7 +471,9 @@ def _q1_sung(receipt, ans, codes, details):
         return False
     details["sung_pct"] = sung
     details["spoken_pct"] = spoken
-    details["detector"] = detector.strip()
+    details["detector"] = detector
+    if "provenance" not in details:
+        details["provenance"] = provenance_suffix(detector, None, sung)
     return True
 
 
@@ -659,13 +832,41 @@ def _q7_honest(receipt, ans, codes, details):
 
 
 # --------------------------------------------------------- Q8 LIP-SYNC
+def _clip_tag(c):
+    """The kept-take tag on a clip row (operator KEPT-TAKES vocabulary),
+    upper-cased, or None when the row carries no tag."""
+    tag = c.get("tag", c.get("kept")) if isinstance(c, dict) else None
+    if not isinstance(tag, str) or not tag.strip():
+        return None
+    return tag.strip().split()[0].upper()
+
+
+def _clip_reason(c):
+    """The flag/reason text a kept-but-not-clean row must carry."""
+    for key in ("flag", "reason", "note", "flags", "defect"):
+        v = c.get(key) if isinstance(c, dict) else None
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+        if isinstance(v, list) and any(isinstance(x, str) and x.strip()
+                                       for x in v):
+            return "; ".join(x for x in v if isinstance(x, str))
+    return None
+
+
 def _q8_lip_sync(receipt, ans, codes, details):
     """Every lip-sync clip carries its lip_gate verdict and numbers. PASS and
     ACCEPT_WITH_FLAG clips pass. UNDETERMINED / UNMEASURABLE (a sung line) pass
     only after a person looked at the mouth strip (person_verdict PASS). A FAIL
     take passes only as a flagged KEPT_BEST_OF_2 row (2 tries used at most, best
     take kept, mouth-strip path shown). No clip is ever rejected for a
-    correlation number alone."""
+    correlation number alone.
+
+    Amendment (order 1150 part G): rows may carry the operator's kept-take
+    tag (KEPT-TAKES.md: KEPT / KEPT_BEST / FLAGGED). A tagged row must be
+    one of those three and still carry its measurement. KEPT_BEST and
+    FLAGGED rows are kept though not fully clean: they must carry their
+    flag/reason (missing -> FAIL) and the flag is shown in the receipt.
+    Untagged rows keep the hard gate."""
     clips = ans.get("clips")
     src = _source_named(ans, codes, "LIP_SYNC")
     if not isinstance(clips, list) or not clips:
@@ -674,10 +875,26 @@ def _q8_lip_sync(receipt, ans, codes, details):
         return False
     ok = src is not None
     flagged = []
+    flags, tagged, tag_names = [], 0, set()
     for i, c in enumerate(clips):
         cid = c.get("clip", "clip-%d" % (i + 1)) if isinstance(c, dict) \
             else "clip-%d" % (i + 1)
         c = c if isinstance(c, dict) else {}
+        tag = _clip_tag(c)
+        if tag is not None:
+            if tag not in LIPSYNC_TAGS:
+                codes.append("%s:LIP_SYNC %s tag %r is not a kept-take tag "
+                             "(%s)" % (CHECKLIST_NO_MEASUREMENT, cid, tag,
+                                       "/".join(LIPSYNC_TAGS)))
+                ok = False
+                continue
+            tagged += 1
+            tag_names.add(tag)
+            if tag in LIPSYNC_FLAG_TAGS and _clip_reason(c) is None:
+                codes.append("%s:LIP_SYNC %s is tagged %s with no flag/reason "
+                             "shown" % (CHECKLIST_NO_MEASUREMENT, cid, tag))
+                ok = False
+                continue
         verdict = c.get("lip_verdict")
         if verdict not in LIPSYNC_ALL_VERDICTS or _num(c.get("corr")) is None:
             codes.append("%s:LIP_SYNC %s missing lip_verdict/corr"
@@ -696,11 +913,21 @@ def _q8_lip_sync(receipt, ans, codes, details):
         if (c.get("jobs_total") or c.get("jobs_used") or 0) > LIPSYNC_MAX_JOBS:
             bad.append("more than %d paid jobs on one segment" % LIPSYNC_MAX_JOBS)
         if bad:
-            codes.append("%s:LIP_SYNC %s %s" % (CHECKLIST_LIPSYNC_FAILED, cid,
-                                                  ", ".join(bad)))
-            ok = False
+            if tag in LIPSYNC_FLAG_TAGS:
+                # kept though not clean (the operator's KEPT-TAKES decision):
+                # shown as a flag on the receipt, not hidden.
+                flags.append("%s %s: %s (%s)" % (cid, tag, ", ".join(bad),
+                                                 _clip_reason(c)))
+            else:
+                codes.append("%s:LIP_SYNC %s %s" % (CHECKLIST_LIPSYNC_FAILED,
+                                                      cid, ", ".join(bad)))
+                ok = False
     details["lipsync_clips"] = len(clips)
     details["lipsync_flagged"] = flagged
+    details["lipsync_tagged"] = tagged
+    details["lipsync_tag_names"] = sorted(tag_names)
+    if flags:
+        details["lipsync_flags"] = flags
     return ok
 
 
@@ -912,7 +1139,12 @@ def _measurement_line(q, ans, qdetails):
     """One plain-English measured line per question, for the receipt."""
     d = qdetails
     if q == "SUNG":
-        return "sung %.1f%% / spoken %.1f%% (%s)" % (
+        # G3-WIRE: the provenance suffix rides the answer so a PASS record
+        # satisfies core/qc_gate's SUNG_CLAIM_UNMEASURED rule unchanged.
+        # It leads the line because to_qc_record truncates each measurement
+        # to 80 chars in the record summary -- the suffix must survive that.
+        return "%s | sung %.1f%% / spoken %.1f%% (%s)" % (
+            d.get("provenance", "share_source=UNMEASURED"),
             d.get("sung_pct", 0.0), d.get("spoken_pct", 0.0),
             d.get("detector", "detector"))
     if q == "ON_TARGET":
@@ -945,8 +1177,12 @@ def _measurement_line(q, ans, qdetails):
                 vm.get("mismatches", 0)))
         return ", ".join(parts)
     if q == "LIP_SYNC":
-        return "%d clip(s), %d flagged (ACCEPT_WITH_FLAG / held / kept best of 2)" % (
-            d.get("lipsync_clips", 0), len(d.get("lipsync_flagged", [])))
+        return "%d clip(s), %d flagged (ACCEPT_WITH_FLAG / held / kept best of 2), %d tagged kept-take%s%s" % (
+            d.get("lipsync_clips", 0), len(d.get("lipsync_flagged", [])),
+            d.get("lipsync_tagged", 0),
+            (" (" + "/".join(d["lipsync_tag_names"]) + ")")
+            if d.get("lipsync_tag_names") else "",
+            ("; " + " | ".join(d["lipsync_flags"])) if d.get("lipsync_flags") else "")
     if q == "FIRST_SUNG":
         return "first real singing at %.1f%% of runtime (%s)%s" % (
             d.get("first_sung_pct", 0.0), d.get("first_sung_band", ""),

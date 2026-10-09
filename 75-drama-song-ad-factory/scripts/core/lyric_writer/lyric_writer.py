@@ -4,6 +4,16 @@ Rules: short first-person lines, one idea per line, critical=true on every
 line carrying offer/claim/product/CTA wording (100% coverage per acceptance
 profile), pronunciation_map on every line naming the product. CTA lines
 (line_id containing "cta") are exempt from first-person (imperative voice).
+
+W-G-002 amend (Trevor order 2026-10-08 11:50 EDT, part G; review item G5):
+lines marked ``delivery: "sung"`` must be SINGABLE -- short metered lines
+inside the 4..12 syllable band, each connected to another sung line by
+rhyme or repetition, with at least one hook (a line or three-word phrase)
+repeated twice in the song. A sung line that connects to nothing is script
+prose cut at line breaks -- the O3 fault -- and is refused as
+"prose-line-in-sung-block"; prose belongs in spoken blocks. Lines that do
+not carry a ``delivery`` field are judged exactly as before (no behaviour
+change for existing callers).
 """
 from __future__ import annotations
 
@@ -18,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import protected_names  # noqa: E402  H7 build gate
 
 SCHEMA_VERSION = "blackceo.lyric-writer/v1"
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.2.0"
 
 # ponytail: fixed ceilings, no per-campaign override; add when directive names numbers.
 MAX_WORDS = 18
@@ -31,6 +41,21 @@ FIRST_PERSON = frozenset({
 })
 EXIT = {"ok": 0, "rejected": 4, "error": 1}
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
+
+#: G5 singability (review G5): sung lines are short metered lines. The
+#: band and the rhyme/repeat rule reuse core/lyric_structure (W-G-002's
+#: G2 module) so the sheet builder and the writer judge one rule, twice.
+SUNG_SYL_MIN = 4
+SUNG_SYL_MAX = 12
+HOOK_REPEAT = 2      # a hook line/phrase repeats at least this many times
+PHRASE_WORDS = 3     # a run this long shared by two lines is a hook phrase
+
+def _structure():
+    try:
+        import lyric_structure  as ls       # same dir on sys.path
+    except ImportError:
+        from . import lyric_structure as ls  # imported as core.*
+    return ls
 
 
 def words(text):
@@ -53,6 +78,102 @@ def brief_words(brief):
     for c in claims if isinstance(claims, list) else []:
         out |= significant(c)
     return out
+
+
+#: Words that never make two sung lines "repeat" each other (G5): shared
+#: "the" is not a hook.
+_FILLER = frozenset({
+    "the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "by",
+    "it", "is", "was", "be", "for", "with", "as", "if", "when", "that",
+    "this", "you", "your", "i", "my", "me", "we", "our", "he", "she",
+    "they", "them", "his", "her", "their", "so", "but", "not",
+})
+
+
+def is_sung_line(ln):
+    """True when a line is marked for sung delivery (G5)."""
+    return (isinstance(ln, dict)
+            and str(ln.get("delivery") or "").strip().lower() == "sung")
+
+
+def _phrases3(text):
+    """Every 3-word run in a line, filler stripped, lowercased."""
+    toks = [w for w in words(text) if w not in _FILLER]
+    return {" ".join(toks[i:i + PHRASE_WORDS])
+            for i in range(len(toks) - PHRASE_WORDS + 1)}
+
+
+def check_sung_lines(lines):
+    """G5: judge the singable-ness of the lines marked sung.
+
+    Review item G5 / order 1150 amend: sung lines are short metered lines
+    (4..12 syllables) grouped in pairs or fours that rhyme or repeat, with
+    a hook (a repeated line or 3-word phrase) appearing at least twice.
+    A sung line that connects to no other sung line is script prose cut at
+    a line break -- the O3 fault -- and returns "prose-line-in-sung-block".
+    Prose belongs in spoken blocks (``delivery: "spoken"``), which this
+    never judges. Returns a list of error dicts ([] = singable).
+    """
+    ls = _structure()
+    sung = [(ln.get("line_id") or "line %d" % i, ln.get("text") or "")
+            for i, ln in enumerate(lines) if is_sung_line(ln)]
+    if not sung:
+        return []
+    errors = []
+
+    # 1. meter: a sung line is a short metered line
+    for lid, text in sung:
+        syl = ls.line_syllables(text)
+        if not (SUNG_SYL_MIN <= syl <= SUNG_SYL_MAX):
+            errors.append({
+                "error": "sung-line-not-metered",
+                "detail": "%s: %d syllables, sung lines are %d..%d"
+                          % (lid, syl, SUNG_SYL_MIN, SUNG_SYL_MAX)})
+
+    # 2. connection: each sung line rhymes with, repeats, or shares a
+    #    3-word phrase with another sung line (pairs or fours)
+    ends = [ls.words(t)[-1:] for _, t in sung]
+    texts = [re.sub(r"\s+", " ", t.strip().lower()) for _, t in sung]
+    phrs = [_phrases3(t) for _, t in sung]
+    for k, (lid, text) in enumerate(sung):
+        connected = False
+        for j in range(len(sung)):
+            if j == k:
+                continue
+            if texts[k] and texts[k] == texts[j]:
+                connected = True
+                break
+            if ends[k] and ends[j] and ls.rhymes(ends[k][0], ends[j][0]):
+                connected = True
+                break
+            if phrs[k] & phrs[j]:
+                connected = True
+                break
+        if not connected:
+            errors.append({
+                "error": "prose-line-in-sung-block",
+                "detail": "%s: %r connects to no other sung line by rhyme "
+                          "or repetition -- prose belongs in a spoken block"
+                          % (lid, text[:60])})
+
+    # 3. hook: one line or 3-word phrase repeats at least twice
+    counts = {}
+    for t in texts:
+        if t:
+            counts[t] = counts.get(t, 0) + 1
+    hook = max(counts.values(), default=0)
+    if hook < HOOK_REPEAT:
+        pc = {}
+        for s in phrs:
+            for p in s:
+                pc[p] = pc.get(p, 0) + 1
+        hook = max(pc.values(), default=0)
+    if hook < HOOK_REPEAT:
+        errors.append({
+            "error": "no-repeated-hook",
+            "detail": "no sung line and no 3-word phrase repeats: sing a "
+                      "hook at least %d times (G5)" % HOOK_REPEAT})
+    return errors
 
 
 def product_tokens(brief):
@@ -145,6 +266,9 @@ def validate_lyrics(lines, brief=None):
                     errors.append({"error": "pronunciation-key-absent",
                                    "detail": "%s: map key %r not in line text" % (lid, k)})
         ok_lines.append(ln)
+
+    # W-G-002 amend (review G5): lines marked sung must be singable.
+    errors.extend(check_sung_lines(lines))
 
     # H7: the sheet may not change a protected name or rewrite a packet line.
     packet = brief.get("packet_lines")
