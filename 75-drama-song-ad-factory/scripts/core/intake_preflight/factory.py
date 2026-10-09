@@ -103,7 +103,7 @@ def cmd_intake(a):
                     data={k: r.get(k) for k in ("questions", "question_message", "summary",
                                                 "digest", "provenance", "auth_status",
                                                 "approval_invalidated", "changes",
-                                                "untrusted_fields", "next_stage")},
+                                                "untrusted_fields", "next_stage", "mode", "notices")},
                     state_version={"expected": (resume or {}).get("digest") if resume else None,
                                    "current": r.get("digest")})
 
@@ -299,11 +299,19 @@ def main(argv=None):
                    choices=("text", "openclaw-json", "telegram-json"))
     c.add_argument("--target", default="", help="Telegram chat id")
     c.add_argument("--client-dir", default="",
-                   help="Client data folder; adds 'Use a saved character?' when it has saved characters (I6).")
+                   help="Client data folder; adds the saved-character question when it has saved characters (I6).")
+    c.add_argument("--run-state-file", default="",
+                   help="with --step and no replies: first call sends the one-time intro, next call question 1")
     c.add_argument("--step", action="store_true",
                    help="one question per message (I7): print only the next message")
     c.add_argument("--reply", action="append", default=[],
                    help="a client reply so far, in order (repeat the flag)")
+    c.add_argument("--fit", action="store_true",
+                   help="FU-U4: the fit STOP card for the client's own lines "
+                        "(--brief-file, --packet-file); exit 2 when they do not fit")
+    c.add_argument("--brief-file", default=None)
+    c.add_argument("--packet-file", default=None,
+                   help="JSON list of client lines {id, speaker, text, scene}")
     ch = sub.add_parser("character", help="Per-client character library: ask / save / "
                                           "list / use / card (Part I, I6). Extra args pass through.")
     args = sys.argv[1:] if argv is None else list(argv)
@@ -324,9 +332,16 @@ def main(argv=None):
         if core not in sys.path:
             sys.path.insert(0, core)
         from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
+        if a.fit:
+            brief = _load(a.brief_file) if a.brief_file else {}
+            packet = _load(a.packet_file) if a.packet_file else brief.get("packet_lines")
+            card = _card.fit_card(brief, packet)
+            sys.stdout.write(card["text"] + "\n")
+            return EXIT[card["outcome"]]
         return _card.main(["--format", a.format, "--target", a.target]
                           + (["--client-dir", a.client_dir] if a.client_dir else [])
                           + (["--step"] if a.step else [])
+                          + (["--run-state-file", a.run_state_file] if a.run_state_file else [])
                           + [x for r in a.reply for x in ("--reply", r)])
     if a.cmd == "intake":
         env = cmd_intake(a)

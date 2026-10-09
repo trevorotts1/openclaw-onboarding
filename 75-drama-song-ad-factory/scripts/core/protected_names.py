@@ -47,6 +47,9 @@ CODE_LYRIC = "LYRIC_MISSPELLED"
 #: U8: a real word in the wrong place (your/you're). A FLAG, never a fix.
 CODE_CONFUSABLE = "GRAMMAR_FLAG"
 
+#: FU-U4: a concept-mode brief must carry the client's own lines.
+CODE_PACKET_REQUIRED = "PACKET_REQUIRED_IN_CONCEPT_MODE"
+
 #: The only text source a caption may come from.
 CAPTION_TEXT_SOURCE = "approved-lyric-sheet"
 
@@ -103,6 +106,21 @@ def cast_genders(brief):
             out[name.strip()] = gender
     return out
 
+def _line_ids(value):
+    """Client line ids (``id`` or ``line_id``) parallel to ``_lines``; None when absent."""
+    if isinstance(value, str):
+        return [None] * len(value.splitlines())
+    return [(x.get("id") or x.get("line_id")) if isinstance(x, dict) else None
+            for x in (value or [])]
+
+
+def packet_required(brief, packet_lines):
+    """FU-U4: [] unless brief.mode is "concept" and no packet lines came with it."""
+    if (brief or {}).get("mode") == "concept" and not packet_lines:
+        return ["%s brief.mode is concept but packet_lines is missing; the "
+                "client's own lines are required" % CODE_PACKET_REQUIRED]
+    return []
+
 
 def protected_list(brief):
     """Protected names of a brief: protected_names + characters + brands
@@ -149,6 +167,7 @@ def check_sheet(sheet, packet_lines, protected=()):
     sheet_lines = _lines(sheet)
     stream = _tokens("\n".join(sheet_lines))
     errors, pos = [], 0
+    ids = _line_ids(packet_lines)
     for n, line in enumerate(_lines(packet_lines)):
         want = _tokens(line)
         if not want:
@@ -158,8 +177,9 @@ def check_sheet(sheet, packet_lines, protected=()):
             near = difflib.get_close_matches(
                 " ".join(want), [" ".join(_tokens(s)) for s in sheet_lines],
                 n=1, cutoff=0.5)
-            errors.append("%s packet line %d %r not in sheet verbatim%s"
-                          % (CODE_PACKET, n, line.strip(),
+            errors.append("%s packet line %d%s %r not in sheet verbatim%s"
+                          % (CODE_PACKET, n, " (%s)" % ids[n] if ids[n] else "",
+                             line.strip(),
                              "; sheet has %r" % near[0] if near else ""))
         else:
             pos = hit + len(want)

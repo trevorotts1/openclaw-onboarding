@@ -839,31 +839,90 @@ def check_payload(payload, client_text=None, vocal_gender=None):
     return errs
 
 
-def score_take(take, hook_text=None, words=None, length_s=None):
-    """Rule 4: judge a take from MEASURED segments only.
+def _planned_pct(plan, style_id, key):
+    """Percent of delivered runtime one delivery holds in the APPROVED plan
+    (U3): words[key] / words_fit's measured rate for the style, over the
+    plan's delivered seconds. Missing counts -> None (fall back)."""
+    words = (plan or {}).get("words") or {}
+    if key not in words:
+        return None
+    delivered = (plan or {}).get("delivered_s")
+    if not isinstance(delivered, (int, float)) or delivered <= 0:
+        return None
+    import words_fit as _WF
+    rate = _WF.rates_for(style_id).get(key)
+    if not rate:
+        return None
+    return round(float(words[key]) / float(rate) / float(delivered) * 100.0, 3)
 
-    take = {"segments": [{"delivery", "start", "end", "source": "measured"}]}.
-    A take with no segments, or any segment not measured (labels), fails.
-    Checks the spoken share of runtime (target 22.5), the sung share of voice
-    time (target 77.5) and first singing by 15% of runtime, all on the 5/10 band. With hook_text, Suno aligned words and
-    length_s, the sung hook count is measured too (I8, Trevor band) and the
-    receipt is returned under "hook". Returns {"verdict": PASS|FLAG|FAIL, "reasons"}.
+def score_take(take, hook_text=None, words=None, length_s=None,
+               style_id=None, plan=None):
+    """Rule 4: judge a take from MEASURED or ALIGNED segments only.
+
+    take = {"segments": [{"delivery", "start", "end", "source": "measured"
+    or "aligned"}]}. A take with no segments, or any segment built from
+    labels alone, fails. "aligned" is the rap-versus-speech split (measured
+    word timestamps x the sheet's delivery labels) and is NEVER recorded as
+    "measured".
+
+    FU-U3: ``style_id`` carries the music style and ``plan`` the approved
+    plan (U2) through the judge. Bands per style, always the 5/10 band:
+    Soul Ballad and Soul Rise keep spoken 22.5 / sung-of-voice 77.5 exactly;
+    for a rap style (R&B Flow) the plain-spoken and rap shares are judged
+    against the share each delivery has in the APPROVED plan -- the
+    documented default from plan 18 section 9 item 1 (a TREVOR-DECISION
+    ITEM; no new number invented), plain spoken with no rap keeps 22.5, and
+    sung-of-voice on a rap sheet is recorded, not gated. The 6 s sung
+    stretch and the hook count stay hard.
+
+    Checks first singing by 15% of runtime on the same band. With hook_text,
+    Suno aligned words and length_s, the sung hook count is measured too (I8,
+    Trevor band) and the receipt is returned under "hook". Returns
+    {"verdict": PASS|FLAG|FAIL, "reasons"}.
     """
     segs = (take or {}).get("segments")
     if not segs:
         return _res("FAIL", ["take has no measured segments (labels are not a measurement)"])
-    if any(s.get("source") != "measured" for s in segs):
-        return _res("FAIL", ["take scored from labels: every segment must come from the detector (source=measured)"])
+    srcs = {s.get("source") for s in segs}
+    if not srcs <= {"measured", "aligned"} or "measured" not in srcs:
+        return _res("FAIL", ["take scored from labels: segments must come from the detector (source=measured) or the aligned word split (source=aligned)"])
+    basis = _SS.segment_basis(segs)
+    t = _SS.style_targets(style_id)
     reasons, flags = [], []
-    shares = _SS.measure_share(segs)
-    band = _SS.check_share(shares["share"], segs)
+    shares = _SS.measure_share(segs, basis, style_id=style_id)
+    if t["rap_delivery"] and t["target_from_plan"]:
+        planned = _planned_pct(plan, style_id, "spoken")
+        tgt = _SS.SPOKEN_TARGET_PCT if planned is None else planned
+    else:
+        tgt = _SS.SPOKEN_TARGET_PCT
+    band = _SS.check_share(shares["share"], segs, basis, target_pct=tgt,
+                           style_id=style_id)
     if band["verdict"] == "FAIL":
         reasons += band["reasons"]
     flags += band.get("flags", [])
-    # SPK001: singing is judged against VOICE time (sung / (sung + spoken)),
-    # target 77.5; intro, gaps and end card never count against it.
-    if shares["sung_seconds"] + shares["spoken_style_seconds"] > 0:
-        voice = _SS.check_sung_of_voice(segs)
+    # rap as its own delivery: judged against the plan's own rap share for a
+    # rap style, against zero for a style that allows none.
+    if t["rap_delivery"]:
+        planned_rap = _planned_pct(plan, style_id, "rap")
+        if shares["rap_seconds"] > 0 or planned_rap:
+            j = _SS.judge_gap(shares["rap_share_pct"],
+                              planned_rap if planned_rap is not None
+                              else _SS.SPOKEN_TARGET_PCT)
+            if j["verdict"] == "FAIL":
+                reasons.append("rap share %.1f%% vs plan %s: %.1f points off, redo"
+                               % (shares["rap_share_pct"],
+                                  "none" if planned_rap is None else "%.1f%%" % planned_rap,
+                                  j["gap_pts"]))
+    elif shares["rap_seconds"] > 0:
+        j = _SS.judge_gap(shares["rap_share_pct"], 0.0)
+        if j["verdict"] != "PASS":
+            reasons.append("%.1f%% rap measured in a style that allows none"
+                           % shares["rap_share_pct"])
+    # SPK001: singing is judged against VOICE time (sung / voice); intro,
+    # gaps and end card never count against it. For a rap style the
+    # percentage is recorded, not gated (hook content, not a planned share).
+    if shares["voice_seconds"] - shares["sung_seconds"] > 0:
+        voice = _SS.check_sung_of_voice(segs, basis=basis, style_id=style_id)
         reasons += voice["reasons"]
         flags += voice["flags"]
     sung = [s["start"] for s in segs if s["delivery"] == "sung"]
@@ -880,17 +939,19 @@ def score_take(take, hook_text=None, words=None, length_s=None):
             flags.append("first singing %.1f points past target" % gap)
     receipt = None
     if hook_text is not None:
-        receipt = _SH.measure(hook_text, words or [], segs, _SH.hook_count(length_s))
+        hook_segs = [s for s in segs if s.get("source") == "measured"]
+        receipt = _SH.measure(hook_text, words or [], hook_segs, _SH.hook_count(length_s))
         if receipt["verdict"] == "FAIL":
             reasons.append("hook sung %d of %d times %s" % (
                 receipt["measured"], receipt["target"], receipt["reason"]))
         elif receipt["verdict"] == "FLAG":
             flags.append("hook sung %d of %d times" % (receipt["measured"], receipt["target"]))
     out = _res("FAIL" if reasons else ("FLAG" if flags else "PASS"), reasons + flags)
+    out["basis"] = basis
+    out["style_id"] = style_id
     if receipt:
         out["hook"] = receipt
     return out
-
 
 def _res(verdict, reasons):
     return {"verdict": verdict, "reasons": reasons}

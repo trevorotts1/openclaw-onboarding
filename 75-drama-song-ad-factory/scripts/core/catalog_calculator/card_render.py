@@ -31,12 +31,14 @@ except ImportError:  # script import from inside this directory
 try:
     from choice_card.looks import looks as LOOKS
     from music_styles import music_styles as MS
+    from clip_cutdown import clips_for
 except ImportError:
     _CORE_HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if _CORE_HERE not in sys.path:
         sys.path.insert(0, _CORE_HERE)
     from choice_card.looks import looks as LOOKS          # type: ignore
     from music_styles import music_styles as MS           # type: ignore
+    from clip_cutdown import clips_for                    # type: ignore
 
 UNIT_NAME = "catalog-calculator.card-render"
 
@@ -58,14 +60,14 @@ LENGTH_SECONDS = {
     "10-minute long version": 600,
 }
 
-#: Length row -> offered clip line (INSTRUCTIONS.md row 6).
-CLIPS_OFFER = {
-    "60 seconds": "not offered (60/90-second lengths only)",
-    "90 seconds": "not offered (60/90-second lengths only)",
-    "3 minutes": "not offered (clips are a 5/10-minute option)",
-    "5 minutes": "automatic 60-second and 90-second clips",
-    "10-minute long version": "automatic 60-second and 90-second clips",
-}
+#: Length row -> offered clip line (INSTRUCTIONS.md row 6). Which lengths get
+#: clips comes from core/clip_cutdown (the code that cuts them), so the card
+#: can never promise a clip the pipeline does not make. Cutting is free, so the
+#: price of the ad already includes the clips.
+_NO_CLIPS = "not offered (60/90-second lengths only)"
+_WITH_CLIPS = "automatic 60-second and 90-second clips (included in the price)"
+CLIPS_OFFER = {k: (_WITH_CLIPS if clips_for(v) else _NO_CLIPS)
+               for k, v in LENGTH_SECONDS.items()}
 
 RETAKE_RATE = 0.20  # plan 4.1; the extension applies the same rate
 

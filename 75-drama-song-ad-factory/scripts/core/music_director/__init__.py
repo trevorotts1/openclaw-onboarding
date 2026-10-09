@@ -112,7 +112,8 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
                            duration=None, callback_url="https://example.invalid/cb",
                            packet_lines=None, protected=(),
-                           style_id=None, client_text=None, length_s=None):
+                           style_id=None, client_text=None, length_s=None,
+                           mode=None):
     """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
 
     F7 (words match the script exactly): when ``packet_lines`` is given, the
@@ -130,6 +131,10 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     fewer words. A feasible plan stamps ``input.duration`` with planned
     time + 15% headroom unless the caller already set ``duration``.
     """
+    # FU-U4: concept mode means the client's own lines; no packet, no request.
+    errors = protected_names.packet_required({"mode": mode}, packet_lines)
+    if errors:
+        raise ValueError("; ".join(errors))
     fit = None
     if length_s is not None:
         # FU-U2: the style travels with the sheet, so R&B Flow is judged at
@@ -149,7 +154,8 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     if misspelled:
         raise ValueError("; ".join(misspelled))
     suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # recipe v2 + I8
-    if packet_lines is not None and protected:
+    if packet_lines is not None and (protected or any(
+            isinstance(x, dict) for x in packet_lines)):
         # H7 (supersedes the F7 whole-text match, which forbids any sung
         # line beyond the packet): every packet line verbatim and every
         # protected name intact, extra lines allowed. This is what stops

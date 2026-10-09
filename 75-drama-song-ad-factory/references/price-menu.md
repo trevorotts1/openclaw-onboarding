@@ -235,12 +235,12 @@ that explains it. Lip-sync runs on both shapes when both shapes are ordered.
 
 ## 5. Clips
 
-Automatic 60-second and 90-second clips are offered for the **5-minute and
-10-minute** lengths only.
+Automatic 60-second and 90-second clips come with the **3-minute, 5-minute
+and 10-minute** lengths (`core/clip_cutdown`).
 
 - Cutting a clip is **free**: an FFmpeg edit of the finished video, no new
-  AI media. The AI that picks the moments runs on the client's own AI plan.
-- The card shows $0 for clips and says so.
+  AI media, so the price of the ad already includes the clips.
+- The card shows $0 for clips and says "included in the price".
 - Long-version shape choice is separate: both shapes roughly double the
   video cost; a centre-crop to 9:16 is free but may cut off faces.
 

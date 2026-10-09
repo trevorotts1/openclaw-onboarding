@@ -6,6 +6,45 @@ frontmatter `version:` field).
 
 ---
 
+## Unreleased
+
+- **U12: docs in lockstep with the code.** SKILL.md gains the tag-grammar /
+  style-plan / voice-tag / per-style-band bullets in the Suno recipe, the
+  "Request and prompt limits" section, the early-captions paragraph (with
+  FU-U9 named as NOT built) and the book-orientation bullets (FU-U11, open
+  branch); QC.md gains one section; the onboarding SOP DS-2/4/5/6/7/9 is
+  brought to the same facts (DS-4 step 5 now says 6 to 8 clips of 4 to 6
+  seconds); `references/choice-card-spec.md` gains 2.3 (options come from the
+  registry; the fit card FU-U4 is not built) and the machine-checked
+  "Offered lengths (seconds): 60, 90, 120, 180, 300, 600." line. SKILL.md
+  closes with a "Sections marked TODO" block naming FU-U3, FU-U4, FU-U9 and
+  FU-U11 as the sections to refresh when those land. New test
+  `scripts/core/prompt_templates/test_docs_u12.py`.
+
+## Unreleased - FU-U4: client lines are a contract; the STOP card lists only real options
+
+- Client lines are a contract: concept mode requires `packet_lines` (`PACKET_REQUIRED_IN_CONCEPT_MODE`) in `lyric_writer` and `music_director`, and a missing client line is refused NAMING its id instead of being invented. New `choice_card/intake_card` fit card plus `factory` card `--fit` (exit 2, one row per style), registry-only options (no option invented at the card), an intake mode flag, and intake notices for sfx, echo voice, length-not-offered and fps. The STOP card lists only options the registry actually offers. Spec `references/choice-card-spec.md` section 2.3. New test `scripts/core/choice_card/intake_card/test_fit_card_u4.py`.
+
+## Unreleased - FU-U3: bands per music style; rap is its own delivery; silence is not speech
+
+- Per-style bands under the SAME locked 5/10 band: `spoken_share.STYLE_TARGETS` holds Soul Ballad and Soul Rise at exactly 22.5 runtime spoken / 77.5 sung-of-voice; R&B Flow's target is the documented default flagged as a TREVOR-DECISION ITEM in plan 18 section 9 item 1 -- the share planned from the approved sheet (the U2 plan's word counts at the style's measured rates), not a new number invented here -- and sung-of-voice on a rap sheet is recorded, not gated (hook content, not a planned share); the 6 s sung stretch and the hook count stay hard. `measure_share(segments, style_id=...)` reports rap separately for a rap style and counts plain spoken against its target; `segments_from_sung_stretches(voiced=)` turns music-only time into a fourth delivery `none` that counts in runtime and never in voice time (a music-only gap no longer counts as spoken); the rap-versus-speech split is measured word timestamps x the sheet's delivery labels, recorded as basis `aligned`, never `measured`. `song_dispatch.judge_take` / `run_takes` and `suno_recipe.score_take` carry `style_id` (+ `plan`) through validate and judge. New test `scripts/core/spoken_share/test_style_bands_u3.py` with the g1b segment fixture from SONG-RECEIPT (fails on the base tree: `voiced=` did not exist).
+
+## v2.9.9 - 2026-10-09 - FU-SAVED-CHARACTER-QUESTION
+
+- The saved-character intake question now reads "Do you want to create a new character for this ad, or use one you've used before?" with "You have N character(s) saved with us." and numbered options: "Create a new character (recommended)" first, then "Use <Name> - <description>" for each saved character. With no saved characters nothing is asked; one line says a new character will be created and saved for next time. Same recap ("Character: new" / "Character: <Name> (saved)") and same effect of each answer. Test: `character_library/test_saved_character_question.py`.
+
+## v2.9.9 - 2026-10-09 - FU-LENGTH-CLIPS: clearer length question; 3 minutes now comes with 60s and 90s clips
+
+- New `core/clip_cutdown`: the 3, 5 and 10 minute ads cut an automatic 60-second and 90-second clip (whole lines, at most L-2 s, hook placement kept, never into the end card; FFmpeg only, free). Before this the card promised clips for 5 and 10 minutes but no code cut them.
+- The LENGTH question is now a full question ("How long do you want your ad to be? ...") with numbered options that say what the client gets; 3 minutes now comes with the clips; the recap reads "Length: 3 minutes + 60s and 90s clips". The Clips card row lists clips for 3 minutes and says they are included in the price.
+- Docs (SKILL.md, INSTRUCTIONS.md, choice-card-spec.md, price-menu.md, stage-runbook.md) now agree with the code.
+
+## v2.9.9 - 2026-10-09 - FU-INTRO-MESSAGE
+
+- Every new interactive run opens with a short one-time intro of what the factory makes, sent as its own message before question 1 (`factory.py card --step --run-state-file`); never on resume, recap, batch or CLI-only paths.
+
+---
+
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 
 - FU-PARITY: shared files aligned with 999 (v2.7.28 test fixes, delivery_checklist blank lines).

@@ -16,3 +16,5 @@ Simple on purpose. One independent checker (never the builder) answers these 11 
 11. EVERY NUMBER JUDGED BY TREVOR'S BAND? Every numeric goal (sung %, spoken %, length, first-sung %, lip-sync coverage, any other) is measured against its target: within 5 points = accept; over 5 up to 10 = accept WITH A FLAG written in the receipt; over 10 = REDO (never keep the closest). Measured, target and flag shown for each. CARVE-OUT: lip-sync clips follow Trevor's 2-try keep-best rule (2026-10-08): at most 2 paid jobs per segment, then the best-measured take is kept and flagged; "never keep the closest" does not apply to them, and `KEPT_BEST` and flagged lip-sync rows that carry a mouth-strip path are accepted.
 
 Report to Trevor only after all 11 are answered. A "yes" without a measurement counts as "no".
+
+TODO (U3): when FU-U3 lands, Q1 and Q11 must name the per-style target (R&B Flow judged against its planned share, rap its own delivery) instead of one 22.5 / 77.5 pair for every style; the 5/10 band, the 6 s sung stretch and the lip-sync carve-out do not change.

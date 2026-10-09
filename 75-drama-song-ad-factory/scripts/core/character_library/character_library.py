@@ -3,7 +3,7 @@
 
 After the client approves a character, ask ONE question (``save_question``);
 on "yes", ask for a name and call ``save_character``. Later intake cards list
-the saved characters under "Use a saved character?" (``saved_character_question``)
+the saved characters under the numbered saved-character question (``saved_character_question``)
 and ``brief_fields`` turns the pick into brief fields (same face, same voice).
 
 Layout, inside the client's own data folder (never shared between clients):
@@ -120,16 +120,23 @@ def list_characters(client_dir):
 
 
 def saved_character_question(client_dir):
-    """The "Use a saved character?" intake question, or None when the library
-    is empty. Same shape as the intake_card questions."""
+    """The saved-character intake question (new character is option 1), or None
+    when the library is empty. Same shape as the intake_card questions; ``body``
+    is the exact text shown under the "Question i of M - CHARACTER" header."""
     chars = list_characters(client_dir)
     if not chars:
         return None
-    opts = [("Yes, use %s" % c["name"], c["description"][:90]) for c in chars]
-    opts.append(("No, make a new character", "I create a fresh character for this ad."))
-    return {"id": "saved_character", "label": "SAVED CHARACTER",
-            "ask": "Use a saved character?", "options": opts,
-            "recommended": len(opts) - 1}
+    n = len(chars)
+    ask = "Do you want to create a new character for this ad, or use one you've used before?"
+    opts = [("Create a new character", "")]
+    opts += [("Use %s" % c["name"], c["description"][:90]) for c in chars]
+    body = [ask, "You have %d character%s saved with us." % (n, "" if n == 1 else "s"),
+            "1. Create a new character (recommended)"]
+    body += ["%d. %s%s" % (i, o, " - " + d if d else "") for i, (o, d) in enumerate(opts[1:], 2)]
+    body.append("Reply with a number, or 'recommended'.")
+    return {"id": "saved_character", "label": "CHARACTER", "ask": ask,
+            "options": opts, "recommended": 0, "body": body,
+            "recap": ["Character: new"] + ["Character: %s (saved)" % c["name"] for c in chars]}
 
 
 def brief_fields(record):
@@ -156,7 +163,7 @@ def main(argv=None):
     sub.add_parser("list")
     u = sub.add_parser("use", help="Print the brief fields for a saved character.")
     u.add_argument("--name", required=True)
-    sub.add_parser("card", help="Print the 'Use a saved character?' question.")
+    sub.add_parser("card", help="Print the saved-character question.")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "ask":
