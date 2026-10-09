@@ -1,3 +1,11 @@
+## [v27.0.0]  -  2026-10-09  -  Major release: skill 75 (drama song ad factory) complete
+
+v27.0.0: major release marking skill 75 (drama song ad factory) complete: all 22 units, intake card, approvals, client guide v2, AAC delivery audio.
+
+## [v26.4.24]  -  2026-10-09  -  Batch MGB022 follow-up: AAC final mux and intake card wording (skill 75 v2.9.12)
+
+Released as one batch. Units: FU-AAC-FINAL-MUX AAC audio on the final delivered video; intake card question count wording (nine/ten) built from the real list. Paired Command Center: v7.6.112.
+
 ## [v26.4.23]  -  2026-10-09  -  Batch MGB021: fourteen Skill 75 units, song and script approval, one spend question (skill 75 v2.9.11)
 
 Released as one batch. Units: #1752 FU-U3 bands per music style, rap is its own delivery, silence is not speech; #1758 FU-RNBFLOW-SONG hold every sheet and returned song to its music style; #1759 FU-HOOK-PLACEMENT the hook is the payoff, never the opener; #1767 FU-U11 book pages, plan hash, card block and the excerpt seam; #1768 U15g book and printed-page prompt fragments are one home; #1771 FU-ONE-SPEND-QUESTION money is asked once, on the card, with the real price; #1772 FU-STYLE-QUESTIONS music and video style questions explain each choice; #1776 FU-VIDEO-MODEL-CHOICES four video models, each with a price for the chosen length; #1777 FU-STORYBOARD-SHOWS-BOTH storyboard approval shows each shot's card and still; #1778 FU-SONG-APPROVAL clients hear and pick from 3 labelled songs; #1780 FU-SCRIPT-APPROVAL clients read and approve the script before the song; #1781 FU-CLIENT-GUIDE client guide; #1782 FU-AI-MODELS-QUESTION ask which AI builds and which checks; #1783 FU-TEST-TMP-ISOLATION skill 75 tests use their own temp dirs.
