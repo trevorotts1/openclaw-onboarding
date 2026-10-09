@@ -57,6 +57,8 @@ DEFAULT_MUSIC_MODEL = "ai-music-api/generate"       # one Suno generation
 LENGTH_SECONDS = {
     "60 seconds": 60,
     "90 seconds": 90,
+    "2 minutes": 120,        # F15 menu; also keeps the unpriced storyboard
+                             # line honest: 2 minutes -> 24 pictures
     "3 minutes": 180,
     "5 minutes": 300,
     "10-minute long version": 600,
