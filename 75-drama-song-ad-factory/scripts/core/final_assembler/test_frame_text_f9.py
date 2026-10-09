@@ -141,7 +141,11 @@ def test_stub_flag_blocks_before_spend(tmp):
 
 def test_block_rides_assemble(tmp):
     """assemble() blocks with GARBLED_TEXT_FRAME before any render spend."""
-    import final_assembler.frame_text as ft_mod
+    # The SAME module copy this file bound at the top: a body-time re-import
+    # can hit a second copy (the suite's conftest drops skill modules as
+    # pytest collects later files), and register_extractor() above writes to
+    # the top-level copy -- clip_rows must read from that same one.
+    ft_mod = FT
     clip = os.path.join(tmp, "lip.mp4")
     open(clip, "wb").close()
     open(os.path.join(tmp, "b.mp4"), "wb").close()
@@ -242,6 +246,10 @@ def main():
     print("%s" % ("%d check(s) failed" % len(FAILS) if FAILS
                   else "all F9 checks passed"))
     return 1 if FAILS else 0
+
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
+
 
 if __name__ == "__main__":
     sys.exit(main())

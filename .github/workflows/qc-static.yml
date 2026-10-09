@@ -3020,9 +3020,11 @@ jobs:
           # loop re-discovers test_*.py, so the next wave's tests join
           # without edits).
           # numpy so the singing-detector suite really runs (it skips itself without it)
-          python3 -m pip install --quiet numpy
+          python3 -m pip install --quiet numpy opencv-python-headless
           # ffmpeg so the singing-detector suites can decode their mp3 fixtures
           command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; }
+          # tesseract so the book-orientation suite (FU-U10) can read the cover title
+          command -v tesseract >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr; }
           tests_rc=0
           empty_home=""
           while IFS= read -r t; do
@@ -3037,3 +3039,19 @@ jobs:
           done < <(find 75-drama-song-ad-factory/scripts/core -type f -name 'test_*.py' -not -path '*/__pycache__/*' | sort)
           [ "$tests_rc" -eq 0 ] || exit 1
           echo "✓ Skill 75 scripts/core test suites pass with a fresh empty HOME"
+
+      # Unit TESTHYG-75: the per-file loop above cannot see a suite that dies
+      # at import (sys.exit at module level made the whole-tree pytest run
+      # INTERNALERROR, hiding every later failure). This step makes pytest
+      # collection itself a red build: every test_*.py under scripts/ must be
+      # pytest-collectable, and the tree must run green in ONE process.
+      - name: Skill 75 pytest collection + run (no hidden failures)
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -m pip install --quiet pytest
+          HOME="$(mktemp -d)" python3 -m pytest -q \
+            75-drama-song-ad-factory/scripts --collect-only
+          HOME="$(mktemp -d)" python3 -m pytest -q \
+            75-drama-song-ad-factory/scripts
+          echo "✓ Skill 75 scripts/ pytest-collectable and green"

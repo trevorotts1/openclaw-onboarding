@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.3
+version: v2.9.4
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -18,6 +18,37 @@ lockstep is checked by the two tests this folder ships -
 
 Default production mode name: `drama-song-vsl`. Never make a third-party
 brand name the public product identity.
+
+## Creative doctrine: villain, pain, rise (Trevor order 2026-10-08)
+
+> "People don't care about the hero until they meet the villain." - Trevor Otts
+
+These are **not music videos**. They are compelling true stories told through
+the animation, the music and the lyrics - songs strong enough to sell as a
+soundtrack on their own (the Grey's Anatomy standard: you watch the show and
+you buy the music). Every ad has a compelling plot and a villain that evokes
+a visceral response, and every ad carries the **pain AND the rise**, so the
+audience feels the pain and the problem in the depth of their soul.
+
+- **The villain contract.** Every ad names its VILLAIN in the story plan. A
+  villain is a person OR not a person: cancer, debt, a layoff, a lie,
+  burnout, fear, the inner critic, a system. The villain must be (a) named
+  in the story plan, (b) shown on screen in concrete, visceral visual form
+  with its OWN shots - never implied, (c) felt in the lyrics with real
+  stakes and consequences, and (d) escalating, then confronted, then
+  defeated or transformed at the rise.
+- **The arc.** hook -> the world -> the villain arrives -> the pain deepens
+  (visceral, specific, from the source material) -> the lowest point -> the
+  turn (the product or book as the key) -> the rise -> the call to action.
+- **The numbers.** `length_formula.plan_villain_doctrine` fails CLOSED when
+  no villain is named or when the villain has no shot - the only two hard
+  cases. The pain share of runtime is a target band of 20-35 percent;
+  outside it is a FLAG carrying the measured seconds, never a block. Pain
+  gets real screen time; the rise is earned, never rushed.
+- **The checker.** `delivery_checklist.measure_villain_doctrine` reports a
+  `VILLAIN_DOCTRINE` row: villain shots, villain screen seconds, pain
+  seconds and rise seconds. The approval card carries
+  `Villain: <name>, shown in N shots`.
 
 ## Route boundaries
 
@@ -637,6 +668,17 @@ SOP named above.
   image; one choice card covers the whole batch; one ad per book with its own
   campaign folder, receipt, spend-ledger run and Command Center deliverable;
   books and authors are never mixed; the card shows the batch total.
+- **The song mp3 is part of the deliverable (FU-U14):** every delivered ad
+  folder holds, beside the captioned and clean-master mp4s, the FINAL SONG as
+  an mp3 (320 kbps, the exact song used in the ad, full length) plus the wav
+  when one exists, named `<Author> - <Title> - Song.mp3` — clients release the
+  songs as an album. `delivery_checklist.check_song_mp3()` gates it (present,
+  duration matches the ad audio within 0.1 s, cross-correlation >= 0.95 with
+  the ad's audio; missing or mismatched = FAIL, fail closed). When a
+  book/batch campaign finishes, one zip per client ships every ad's three
+  files in one folder per author plus a README listing every file, duration,
+  resolution and banner link: `scripts/core/batch_zip/batch_zip.py
+  build_batch_zip(client, ads, out_path)`.
 - **Pricing:** every figure on the card - video, both shapes, lip-sync
   close-ups, voice packs, clips and the batch total - comes from Skill 74
   `price`. This skill never computes or hard-codes a rate.

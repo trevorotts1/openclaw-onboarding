@@ -1,0 +1,51 @@
+{
+  "shot_id": "S04",
+  "shot_type": "style-switch",
+  "look": "sketch-to-life",
+  "mode": "sketch-ink",
+  "model": "minimax-h3/image-to-video",
+  "duration_s": 5,
+  "aspect": "9:16",
+  "resolution": "768P",
+  "beat": "doubt",
+  "character": "renee",
+  "wardrobe": "office",
+  "next_mode": "realism",
+  "intent": "Outgoing sketch clip at the switch into realism: Renee's comic deadpan in the elevator turns into the real weight of the day; the next clip opens in realism on the same pose.",
+  "subject": "Renee drawn as a black-and-white ink sketch, standing alone inside an office elevator, medium shot from the knees up, facing the camera, the tote strap held in both hands at chest height.",
+  "composition": "She stands slightly to screen-right of centre. Behind her at screen-left are the drawn elevator doors, closed, with a vertical seam line; at screen-right a drawn button panel with blank round buttons. Hatched grey shadows sit in the elevator's upper corners. The floor is a simple ink line with a little cross-hatching. A drawn floor indicator above the doors shows only an arrow, no numbers.",
+  "action": {
+    "start": "The clip opens on the first frame: Renee standing upright, chin level, a polite fixed smile on her face.",
+    "end": "Her smile drops, she sags back until her shoulders touch the elevator wall behind her, and she ends in the exact match pose described below, holding it still.",
+    "direction": "She moves backward, away from the camera, about one small step; her head tips down and slightly toward screen-left."
+  },
+  "match_pose": "Match pose for the dissolve: back against the elevator wall, body square to the camera, head tipped down about fifteen degrees and turned slightly toward screen-left, eyes lowered, both hands holding the tote strap at chest height, framed knees-up with the top of her hair one fifth of the frame below the top edge and her body centred slightly to screen-right.",
+  "camera": {
+    "command": "[Static shot]",
+    "plain": "The camera is locked off at her chest height for the whole clip, so the final second is a perfectly still frame for the dissolve into the realism clip."
+  },
+  "lens_light": "Flat comic framing with no photographic depth. Light is drawn: a white paper base with bold black ink shadow shapes under her chin and down the screen-left side of her coat, and mid-grey hatching only where the elevator corners fall into shadow. Her glasses are two simple drawn circles with a single white highlight stroke each; the elevator ceiling light is a drawn rectangle with short radiating ink ticks.",
+  "visible_emotion": "polite mask dropping into tired doubt",
+  "motion_physics": "Drawn limited animation: the smile collapses in two drawn steps, her shoulders drop in a clear arc and her back meets the wall with a small comic bump and a two-frame squash. The tote strap swings once and stops. The ink lines boil very slightly on held poses, as in a drawn animatic. Her glasses hold their drawn shape as her head tips down.",
+  "beats": [
+    [
+      "0.0-1.5 s",
+      "She holds the polite fixed smile, perfectly still, eyes to camera."
+    ],
+    [
+      "1.5-3.0 s",
+      "The smile drops in two drawn steps and her eyes lower toward the floor."
+    ],
+    [
+      "3.0-4.0 s",
+      "She sags back against the wall with a small comic bump and squash."
+    ],
+    [
+      "4.0-5.0 s",
+      "She holds the match pose completely still, ready for the dissolve into realism."
+    ]
+  ],
+  "negatives_extra": [
+    "no speech bubble drawn inside the clip"
+  ]
+}

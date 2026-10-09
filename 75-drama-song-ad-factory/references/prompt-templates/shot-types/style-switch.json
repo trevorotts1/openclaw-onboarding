@@ -1,0 +1,26 @@
+{
+  "shot_type": "style-switch",
+  "purpose": "The clip on either side of a hybrid look switch (Sketch to Life, Canvas to Life, Canvas to 3D). The dissolve itself happens in the edit (0.3-0.4 s); the two clips must meet on one matched pose or framing.",
+  "camera_default": "[Static shot] for the last second of the outgoing clip and the first second of the incoming clip",
+  "camera_allowed": [
+    "[Static shot]",
+    "[Push in]"
+  ],
+  "required_spec": [
+    "subject",
+    "composition",
+    "action.start",
+    "action.end",
+    "match_pose",
+    "beats"
+  ],
+  "match_rule": "The outgoing clip's END pose and framing are written in full (body, head angle in screen terms, hands, eye line, frame position), and the incoming clip's first frame is a keyframe rendered in the next mode from that same written pose. hybrid/canvas planners refuse a switch without a match key (SWITCH_POSE_MISMATCH).",
+  "hold_rule": "Each style is held at least 3 s (7.2 s for Version E); no flicker.",
+  "lipsync_rule": "No lip-sync on sketch or painted shots in hybrid looks; Canvas to 3D lip-syncs only on lifelike 3D close-ups.",
+  "negatives": [
+    "no style blending inside the clip",
+    "no pose drift in the last second",
+    "no colour in sketch mode"
+  ],
+  "beats_pattern": "action -> slow into the match pose -> hold the match pose at least 1 s"
+}

@@ -48,7 +48,7 @@ def test():
     # silence fails closed
     try:
         measure_offset([0] * 10 * RATE, mix, RATE)
-        raise SystemExit("silence must fail")
+        raise AssertionError("silence must fail")
     except ValueError as e:
         assert "STEM_OFFSET_SILENT" in str(e)
     print("ok: stem_offset H1 (measured %.3f s, corr %.2f)"

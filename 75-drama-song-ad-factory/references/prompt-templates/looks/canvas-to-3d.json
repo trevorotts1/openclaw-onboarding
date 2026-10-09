@@ -1,0 +1,52 @@
+{
+  "look_id": "canvas-to-3d",
+  "label": "Canvas to 3D",
+  "modes": [
+    "painted-2d",
+    "lifelike-3d"
+  ],
+  "beat_mode": {
+    "comedy": "painted-2d",
+    "setup": "painted-2d",
+    "everyday": "painted-2d",
+    "doubt": "painted-2d",
+    "transition": "painted-2d",
+    "pain": "lifelike-3d",
+    "shock": "lifelike-3d",
+    "humiliation": "lifelike-3d",
+    "numbness": "lifelike-3d",
+    "anger": "lifelike-3d",
+    "exhaustion": "lifelike-3d",
+    "fear": "lifelike-3d",
+    "turn": "lifelike-3d",
+    "revelation": "lifelike-3d",
+    "transformation": "lifelike-3d",
+    "payoff": "lifelike-3d"
+  },
+  "palette_override": {
+    "lifelike-3d": "Palette: warm amber, deep teal, soft cream and a coral accent, matched to the painted half so the switch reads as one world."
+  },
+  "switch": {
+    "match_on": [
+      "pose",
+      "framing"
+    ],
+    "dissolve_s": [
+      0.3,
+      0.4
+    ],
+    "hold_min_s": 3.0,
+    "no_flicker": true,
+    "identity_lock": "fingerprint on every prompt",
+    "version_e": "0.4 s crossfade, 7.2 s hold when built to the Version E receipt"
+  },
+  "lipsync_modes": [
+    "lifelike-3d"
+  ],
+  "finale": "lifelike-3d (FINALE_NOT_3D otherwise)",
+  "banned_phrases": [
+    "photoreal cinematic live-action look",
+    "golden realism finale"
+  ],
+  "source": "style_bibles/canvas_to_3d/canvas_3d_bible.py"
+}

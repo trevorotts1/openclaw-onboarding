@@ -1,0 +1,53 @@
+{
+  "length_s": 90,
+  "delivered_s": 88,
+  "music_style": "rnb-flow",
+  "title": "Rest And Still Rise (R&B Flow)",
+  "style": "contemporary r&b with hip-hop flow, 84-94 bpm, crisp programmed drums with tight hats, deep sub bass, Rhodes chord stabs, bright synth plucks, smooth sung r&b hook, call-and-response ad-libs, confident swagger, dry upfront vocal, radio-ready mix. Warm female lead sings the hook with sustained notes; the verses are rhythmic rap with clear diction over the beat. The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music, RAPS the lines tagged Rap with confident metered flow, and SINGS the lines tagged Sung with long held notes. The intro and the outro are spoken; the full band keeps playing continuously under them, natural resolved ending, final chord rings out and fades.",
+  "negative_tags": "choir, reverb, echo, band dropout, acapella sections, talk-singing, monotone delivery",
+  "vocal_gender": "f",
+  "kie_params": {
+    "model": "V6",
+    "custom_mode": true,
+    "instrumental": false,
+    "style_weight": 0.75,
+    "weirdness_constraint": 0.3,
+    "variety": 0,
+    "vocal_gender": "per brief (m|f)",
+    "duration": "delivered seconds (L-2); G9 headroom question is open decision 3 in file 18"
+  },
+  "segments": [
+    {
+      "kind": "base",
+      "lyrics": "[Intro (spoken): close dry voice, plain speech, no melody]\nRunning on empty.\n\n[Vocalise (sung): wordless, full melodic voice, two very long held notes]\nOoh-oo-ooh, ooh-oo-ooh\n\n[Hook (sung): smooth r&b melody, sustained notes, clear diction]\nYou can rest and still ri-i-ise\n\n[Verse 1 (rap): tight rhythmic rap, conversational flow, clear diction]\nAlarm at five and I'm already behind on the day,\nPacked every lunch, signed every form, still had to pay,\n\n[Hook (sung): smooth r&b melody, sustained notes, clear diction]\nYou can rest and still ri-i-ise\n\n[Verse 2 (rap): tight rhythmic rap, conversational flow, clear diction]\nTwo in the morning and the numbers just will not add,\nGiving my all and still feeling like I'm doing bad,\n\n[Instrumental Break: band only, no vocals]\n\n[Product (sung): smooth r&b melody, clear diction on the name]\nShe handed me a bo-ook,\nThe Unhurried Year, just look,\n\n[Hook (sung): smooth r&b melody, sustained notes, clear diction]\nYou can rest and still ri-i-ise\n\n[Pre-Hook (sung): smooth r&b melody, rhymed]\nI slowed my mornings dow-own,\nI laid the heavy crow-own,\n\n[Hook (sung): smooth r&b melody, sustained notes, clear diction]\nYou can rest and still ri-i-ise\n\n[Outro (spoken): calm close voice, plain speech, no melody]\nMy friend gave me The Unhurried Year by Dana Wells. Rest is not quitting. Tap the link and get the book today.\n\n[End]"
+    }
+  ],
+  "vocalists": null,
+  "measured": {
+    "lyrics_chars": [
+      1369
+    ],
+    "style_chars": 699,
+    "title_chars": 30,
+    "negative_tags_chars": 85,
+    "words": {
+      "sung": 44,
+      "spoken": 25,
+      "rap": 41
+    },
+    "words_total": 110,
+    "words_budget": {
+      "total": 95,
+      "spoken": 28,
+      "sung": 67,
+      "opener_max": 3,
+      "closing": 25
+    },
+    "hooks": 4,
+    "hooks_target": 4,
+    "est_seconds": 87.4,
+    "product_est_s": 9.3,
+    "product_share_pct": 10.6,
+    "errors": []
+  }
+}

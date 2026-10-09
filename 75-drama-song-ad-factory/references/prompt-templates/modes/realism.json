@@ -1,0 +1,11 @@
+{
+  "mode_id": "realism",
+  "label": "Realism (photoreal cinematic)",
+  "source": "references/style-bibles/realism-cinematic.md, keyframe + video blocks condensed; the Chanel identity, wardrobe and the 'Restated for emphasis' duplicates removed; camera is per shot",
+  "h3_block": "A photoreal cinematic live-action look, as if shot on a full-frame camera with a 35 mm or 50 mm lens at a wide aperture. Natural skin texture with pores and tiny natural highlights, realistic fabric weave and realistic reflections. Shallow depth of field, natural film grain, subtle halation, gentle contrast and true-to-life colour in a 35mm film grade. Motivated natural light that fits the setting, with soft shadows and believable practical lights; no harsh studio flash, no HDR halos and no neon unless the scene names it. {palette} Skin stays natural in every frame, never grey, orange or plastic. Grounded, truthful acting with small believable micro-expressions, never theatrical or stiff. Crisp focus on the eyes, creamy background blur, accurate perspective, no lens distortion, no oversharpening, and no cartoon, painting, illustration or 3D render look.",
+  "palette_default": "Grade: cool blue and steel tones for stress, warm amber tones for home and comfort.",
+  "kling_block": "Photoreal cinematic live-action: natural skin texture, shallow depth of field, soft motivated light, 35 mm film grade, grounded micro-expressions, no illustration or 3D render look.",
+  "kling_who": "photoreal",
+  "keyframe_clause": "same person as a photoreal cinematic still, natural skin texture, 35 mm film grade",
+  "lipsync_allowed": true
+}

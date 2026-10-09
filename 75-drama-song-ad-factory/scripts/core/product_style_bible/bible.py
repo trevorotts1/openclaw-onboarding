@@ -31,6 +31,31 @@ LEGACY_MODEL = "gpt-image-2-legacy"  # per-mode suffix chosen by image layer
 PROMPT_CAP_SUNBURST = 20000
 PROMPT_CAP_LEGACY = 25000  # OWNER_CONFIRMED cap
 
+# ---------------------------------------------------------------------------
+# FU-U16 villain doctrine in the prompts (Trevor order 2026-10-08).
+# "People don't care about the hero until they meet the villain." - Trevor Otts
+# These constants are the documented guidance the prompt builders read. The
+# full template system is U15's (not built yet): these strings carry into
+# U15 unchanged -- U15 templates must consume them, never fork them.
+VILLAIN_SHOT_TYPE = "villain"
+VILLAIN_SHOT_GUIDANCE = (
+    "VILLAIN SHOT: the villain gets its own shot, never an implied one. "
+    "Describe it viscerally: TEXTURE (what it is made of -- paper bills, "
+    "cold steel, smoke, a screen's glow), SCALE (how it dwarfs or crowds "
+    "the hero), THREAT (what it is about to do), and its PHYSICAL EFFECT "
+    "on the hero (breath, posture, hands, light on the face). A villain "
+    "may be a person or NOT a person: cancer, debt, a layoff, a lie, "
+    "burnout, fear, the inner critic, a system. Show the pain in real "
+    "screen time; the rise is earned, never rushed."
+)
+VILLAIN_LYRIC_GUIDANCE = (
+    "VILLAIN IN THE LYRICS (Suno): name the villain in the verses, carry a "
+    "pain line with real stakes and consequences, then turn to the rise in "
+    "the hook. First person, present tense, concrete nouns -- the listener "
+    "must feel the pain and the problem in the depth of their soul before "
+    "the rise lands."
+)
+
 
 def _load_enforcer():
     """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree)."""
@@ -224,6 +249,11 @@ def route_model(aspect_ratio):
     return SUNBURST_MODEL
 
 
+#: FU-U10: shot kinds whose motion is OWNED by the shot, not by the generic
+#: F12 people line. A moving camera plus object rotation is the named cause
+#: of flipped and invented covers, so these kinds must carry their own block.
+KIND_OWN_MOTION = frozenset({"book", "product", "insert"})
+
 def assert_compiled(prompt):
     """Downstream guard: prompt came from the compiler, not manual copy."""
     return isinstance(prompt, str) and "[compiled:style=" in prompt \
@@ -298,9 +328,26 @@ def compile_visual_prompt(style, characters, product, shot):
     # Part F F12: every compiled clip prompt asks for motion — the failed
     # 2026-10-08 runs produced near-still clips because the prompt never
     # said the subject moves. Exact one-line wording, builder style.
-    lines.append("[MOTION] The subject moves naturally through the frame; "
-                 "limbs, head and camera stay in gentle continuous motion. "
-                 "[/MOTION]")
+    #
+    # FU-U10: the generic line is a PEOPLE instruction ("limbs, head and
+    # camera ..."). On a book / product / insert shot a moving camera plus
+    # object rotation is the named cause of flipped and invented covers, so
+    # those kinds carry the shot's OWN motion block and never the generic
+    # line. A kind outside the people set with no motion refuses rather than
+    # silently shipping the wrong instruction.
+    kind = shot.get("kind", "people")
+    if isinstance(kind, str) and kind.strip().lower() in KIND_OWN_MOTION:
+        motion = shot.get("motion")
+        if not isinstance(motion, str) or not motion.strip():
+            raise CompilerError(
+                "MOTION_MISSING_FOR_SHOT",
+                "shot kind %r owns its motion block; set shot['motion'] "
+                "(people shots keep the generic F12 line)" % kind)
+        lines.append("[MOTION] %s [/MOTION]" % motion.strip())
+    else:
+        lines.append("[MOTION] The subject moves naturally through the frame; "
+                     "limbs, head and camera stay in gentle continuous motion. "
+                     "[/MOTION]")
     prompt = "\n".join(lines)
     if len(prompt) > cap:
         raise CompilerError("OVER_CAP", "%d > %d for %s"

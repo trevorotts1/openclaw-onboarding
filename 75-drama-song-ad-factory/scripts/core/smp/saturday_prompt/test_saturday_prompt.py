@@ -136,13 +136,22 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(data["look"], "Lifelike 3D")
 
     def test_state_path_is_imported_from_the_setup_block(self):
+        # The skill-tree conftest drops skill modules between pytest
+        # collections, so a bare `import initial_questions` here would mint a
+        # SECOND copy while `sp` above still holds the first -- the `is` below
+        # would then compare two module instances, not prove "imported, never
+        # copied". Re-import BOTH modules in one wave so the setup block and
+        # the prompt line resolve to one shared object again.
+        for _name in ("saturday_prompt", "initial_questions"):
+            sys.modules.pop(_name, None)
         sys.path.insert(0, os.path.dirname(HERE))          # core/smp
         try:
+            import saturday_prompt as sp_now               # noqa: E402
             import initial_questions as Q                  # noqa: E402
         finally:
             sys.path.pop(0)
         # `is`, not `==`: a copied literal is the drift H6 exists to end.
-        self.assertIs(sp.DEFAULT_STATE_PATH, Q.DEFAULT_STYLE_PATH)
+        self.assertIs(sp_now.DEFAULT_STATE_PATH, Q.DEFAULT_STYLE_PATH)
 
     def test_record_is_flat_so_the_weekly_step_can_read_it(self):
         # H6: the weekly step and the setup block read the top level, not a

@@ -57,7 +57,8 @@
     "06-ghl-install-pages/tools/ghl_media.py",
     "universal-sops/video-production/scripts/probe_prompt_band.py",
     "23-ai-workforce-blueprint/templates/presentation-render/render_deck.py",
-    "75-drama-song-ad-factory/scripts/core/product_style_bible/bible.py"
+    "75-drama-song-ad-factory/scripts/core/product_style_bible/bible.py",
+    "75-drama-song-ad-factory/scripts/core/prompt_limits.py"
   ],
   "delegating_gate_modules": [
     {

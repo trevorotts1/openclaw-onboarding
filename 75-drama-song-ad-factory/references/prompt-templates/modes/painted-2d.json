@@ -1,0 +1,12 @@
+{
+  "mode_id": "painted-2d",
+  "label": "2D Hand-Painted",
+  "source": "style_bible_integration.DEFAULT_STYLE + canvas bibles PAINTED_STYLE, merged",
+  "h3_block": "A hand-painted 2D cartoon staged like live-action drama. Clean, confident contour lines around every character; soft cel shading with two or three painted tones per surface; visible brush texture on skin, clothing and sets. Backgrounds are painterly and in the same brush family as the characters, with soft atmospheric depth built from layered painted planes rather than a photographic lens. Light is painted, never rendered: a warm golden key with a soft teal fill and readable painted shadow shapes. Lifted shadows, warm rolled highlights and stable midtones. {palette} Fine canvas grain, crisp line edges, no photographic grain, no lens blur, no 3D render shading and no photoreal skin. Character proportions follow the model sheet in every frame, and line weight never drifts. Animation is smooth and full, with clear arcs, overlapping action on hair and clothing, and readable silhouettes at phone width.",
+  "palette_default": "Palette: warm amber, deep teal, soft cream and a coral accent.",
+  "kling_block": "Hand-painted 2D cartoon: confident contour lines, soft cel shading, visible brush texture, painterly backgrounds, warm golden key with teal fill, fine canvas grain, no 3D shading, no photoreal skin.",
+  "kling_who": "hand-painted 2D animated",
+  "keyframe_clause": "same character drawn in the hand-painted 2D style, clean contour lines and soft cel shading",
+  "lipsync_allowed": true,
+  "lipsync_note": "Allowed by the card for the 2D Hand-Painted look, but the mediapipe picture gate and sync check may read a painted face as UNMEASURABLE; that routes to the person's mouth strip, never a silent pass. Hybrid looks never lip-sync painted shots."
+}

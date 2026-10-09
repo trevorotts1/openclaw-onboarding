@@ -13,6 +13,39 @@
 
 ---
 
+## Creative doctrine: villain, pain, rise (Trevor order 2026-10-08)
+
+> "People don't care about the hero until they meet the villain." - Trevor Otts
+
+These are **not music videos**. They are compelling true stories told through
+the animation, the music and the lyrics - songs strong enough to sell as a
+soundtrack on their own (the Grey's Anatomy standard: you watch the show and
+you buy the music). Every ad has a compelling plot, a villain that evokes a
+visceral response - a person OR not a person (cancer, debt, a layoff, a lie,
+burnout, fear, the inner critic, a system) - and every ad carries the **pain
+AND the rise**, so the audience feels the pain and the problem in the depth of
+their soul.
+
+- **Villain contract (DS-4, DS-5):** every ad names its villain in the story
+  plan; a villain is never implied. It is shown on screen in concrete,
+  visceral form with its OWN shots, felt in the lyrics with real stakes and
+  consequences, escalating, then confronted, then defeated or transformed at
+  the rise.
+- **The arc:** hook -> the world -> the villain arrives -> the pain deepens ->
+  the lowest point -> the turn (the product or book as the key) -> the rise ->
+  the call to action. Pain gets real screen time; the rise is earned, never
+  rushed.
+- **The numbers:** `length_formula.plan_villain_doctrine` fails CLOSED when no
+  villain is named or the villain has no shot - the only two hard cases. Pain
+  share of runtime: target band 20-35%; outside is a FLAG with the measured
+  seconds, never a block.
+- **The checker:** `delivery_checklist.measure_villain_doctrine` reports the
+  `VILLAIN_DOCTRINE` row (villain shots, villain screen seconds, pain seconds,
+  rise seconds); evidence only, never repair_scope. Approval card line:
+  `Villain: <name>, shown in N shots`.
+
+---
+
 ## DMAIC Coverage Map
 
 - **Define** — lock intake mode, the choice card and the approved price (DS-1, DS-2).
@@ -347,7 +380,15 @@ Repair rules:
 
 1. Register only real files as deliverables: `delivery/final.mp4`,
    `campaign-manifest.json`, `cost-report.json`, `provenance.json`, the
-   captioned and clean variants, each clip and its SRT.
+   captioned and clean variants, each clip and its SRT, **and the song mp3**:
+   every ad folder carries `<Author> - <Title> - Song.mp3` (320 kbps, the
+   exact song used in the ad, full length; plus the wav when one exists)
+   beside the captioned and clean-master mp4s, so clients can release the
+   songs as an album. Gate it before delivery with
+   `delivery_checklist.check_song_mp3(<ad_dir>, <ad_audio>, <Title>, <Author>)`:
+   rows `SONG_MP3_FILE` / `SONG_MP3_DURATION` / `SONG_MP3_CORRELATION`
+   (duration within 0.1 s of the ad's audio, cross-correlation >= 0.95 with
+   it). A missing or mismatched mp3 is a FAIL, fail closed.
 2. **Mac and Claude-Nine clients:** copy finished deliverables to
    `~/Downloads/Drama Song Ads/<campaign-id>/`; working files stay in the run
    folder so resume and repair still work. **VPS clients:** deliver through
@@ -361,8 +402,15 @@ Repair rules:
    duplicate. One Kanban card per ad and one parent card per batch.
 4. Store the card's selections and approved price on the parent campaign.
    Log activities at milestones only; `blocked` stays reserved for a human.
+5. Batch zip (FU-U14): when a book/batch campaign finishes, build one zip per
+   client with `batch_zip.build_batch_zip(client, ads, out_path)` — one folder
+   per author holding that ad's captioned mp4, clean master mp4 and song mp3
+   (exactly three files per ad), plus a README listing every file, its
+   duration, resolution and the banner link. A missing file is a
+   `BatchZipError`; the zip never ships half a batch.
 
-**Outputs:** Deliverable files registered, board cards created and
+**Outputs:** Deliverable files registered (captioned mp4 + clean master +
+song mp3 per ad), the client batch zip, board cards created and
 acknowledged.
 **Hand to:** close, or DS-11 if anything parked.
 

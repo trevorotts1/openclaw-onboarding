@@ -1,10 +1,16 @@
 """book.py: book campaign intake (owner decision D26, plan 6.14). stdlib only.
 
-Captures the six book brief fields -- title, author, cover, buy link,
+Captures the book brief fields -- title, author, cover, buy link, language,
 audience, pain/transformation -- FOLDED into the factory's existing three
 intake questions (directive 24.3). This module never invents a question id
 and never emits more questions than intake_preflight would: every book ask
 rides inside one of the three known slots (fold-in, not extra questions).
+
+FU-U10: ``language`` (default "en") selects the reading direction of the book
+orientation contract -- English reads left to right, the rtl languages read
+right to left -- and the cover's aspect is MEASURED from the cover file (a
+stdlib header read; no PIL, no cv2, no network). Neither adds a question: the
+language ask rides in the existing offer sentence.
 
 The cover becomes the product image path and is stored as a product
 reference with provenance (origin, field provenance, sha256 when the file is
@@ -36,6 +42,15 @@ try:
     import choice_card.looks as _LOOKS
 except ImportError:
     from ..choice_card import looks as _LOOKS            # noqa: F401
+# FU-U10: the reading direction is owned by the book orientation contract; the
+# soft import keeps intake working (and defaulting to English) if it is absent.
+try:
+    import book_shot as _book_shot
+except ImportError:  # pragma: no cover - book_shot always ships with core/
+    try:
+        from .. import book_shot as _book_shot           # type: ignore
+    except ImportError:
+        _book_shot = None
 
 _MUSIC_STYLES = _MS.STYLES
 _MSM = _MS.music_styles          # the submodule: length tables + aliases
@@ -50,15 +65,23 @@ TOOL_NAME = "intake_book"
 TOOL_VERSION = "0.1.0"
 SCHEMA_VERSION = "blackceo.intake-book/v1"
 
-#: The six book brief fields (D26, plan 6.14). Nothing else is asked.
+#: The book brief fields (D26, plan 6.14). FU-U10 adds exactly one shared
+#: field, ``language`` -- it selects the reading direction of the book
+#: orientation contract (left-to-right or right-to-left) and rides inside the
+#: EXISTING offer question, so the three-question cap still holds. The cover's
+#: measured aspect is derived from the cover file, never asked.
 BOOK_FIELDS = (
     "book_title",
     "author",
     "buy_link",
     "cover",
+    "language",
     "audience",
     "pain_or_transformation",
 )
+
+#: Default when the brief says nothing: English, which is left-to-right.
+DEFAULT_LANGUAGE = "en"
 
 #: Client spellings folded into the canonical field names.
 ALIASES = {
@@ -66,6 +89,7 @@ ALIASES = {
     "author": ("author", "book_author", "author_name"),
     "buy_link": ("buy_link", "link", "purchase_url", "buy_url"),
     "cover": ("cover", "cover_image", "product_image", "cover_path"),
+    "language": ("language", "book_language", "reading_language", "lang"),
     "audience": ("audience", "who_for"),
     "pain_or_transformation": ("pain_or_transformation", "pain",
                                "transformation", "pain_or_transform"),
@@ -74,17 +98,19 @@ ALIASES = {
 #: Which book fields fold into which of the factory's three intake slots.
 #: Union == BOOK_FIELDS: no book field is ever asked outside the cap.
 FOLDED_FIELDS = {
-    "offer": ("book_title", "author", "buy_link", "cover"),
+    "offer": ("book_title", "author", "buy_link", "cover", "language"),
     "audience_action": ("audience", "pain_or_transformation"),
     "spending_authority": (),
     "placement": (),
 }
 
 #: Book wording for the slots the book fields ride in (plan 6.14). The
-#: spending and placement slots keep the generic intake wording.
+#: spending and placement slots keep the generic intake wording. FU-U10 folds
+#: the language ask into the same offer sentence -- one question, not two.
 Q_BOOK_OFFER = ("What is the book -- title and author -- where do readers "
-                "buy it, and which cover image should we use as the product "
-                "image?")
+                "buy it, which cover image should we use as the product "
+                "image, and what language is it written in (English reads "
+                "left to right)?")
 Q_BOOK_AUDIENCE = ("Who is the book for, what pain or transformation does it "
                    "deliver, and what should viewers do after watching?")
 
@@ -95,6 +121,21 @@ COVER_NOTE = ("No cover supplied -- the product image will be designed from "
               "the brief (choice-card spec 3.9).")
 LINK_NOTE = "No buy link supplied -- the call to action has no destination."
 
+
+_RTL_FALLBACK = ("ar", "he", "fa", "ur", "yi", "dv", "ps", "sd")
+
+def reading_direction(language):
+    """'rtl' / 'ltr' for a brief language. One owner: book_shot's table.
+
+    The local fallback covers the (unreachable in a full install) case where
+    book_shot is absent: the direction is still chosen from the brief, never
+    guessed from what a model produced.
+    """
+    if _book_shot is not None:
+        return _book_shot.reading_direction(language)
+    lang = (language or DEFAULT_LANGUAGE).strip().lower().split("-")[0]
+    lang = lang.split("_")[0]
+    return "rtl" if lang in _RTL_FALLBACK else "ltr"
 
 def _text(v):
     return v.strip() if isinstance(v, str) and v.strip() else None
@@ -139,6 +180,11 @@ def normalize(brief, settings=None):
 
     for name in BOOK_FIELDS:
         fields[name], prov[name] = pick(name)
+    # FU-U10: English is the default only when nothing was supplied -- the
+    # value is recorded as "defaulted", never as if the client had said it.
+    if not fields.get("language"):
+        fields["language"] = DEFAULT_LANGUAGE
+        prov["language"] = "defaulted"
     return fields, prov
 
 
@@ -178,6 +224,64 @@ def card_notes(fields):
         notes.append(LINK_NOTE)
     return notes
 
+
+#: PNG / JPEG / GIF / BMP magic numbers -> (format, size reader). Stdlib only:
+#: the cover's aspect is a header read, never an image decode.
+def _image_size(path):
+    """(width, height) from the file header, or None when unreadable.
+
+    PNG and JPEG cover the real cases (a client cover file); the header read
+    keeps this module stdlib-only as the intake layer requires.
+    """
+    try:
+        with open(path, "rb") as f:
+            head = f.read(32)
+            if head[:8] == b"\x89PNG\r\n\x1a\n":
+                w = int.from_bytes(head[16:20], "big")
+                h = int.from_bytes(head[20:24], "big")
+                return (w, h) if w and h else None
+            if head[:2] == b"\xff\xd8":                      # JPEG: scan SOFn
+                f.seek(2)
+                while True:
+                    b = f.read(1)
+                    while b and b != b"\xff":
+                        b = f.read(1)
+                    if not b:
+                        return None
+                    while b == b"\xff":
+                        b = f.read(1)
+                    if not b:
+                        return None
+                    marker = b[0]
+                    if marker in (0xD8, 0xD9) or 0xD0 <= marker <= 0xD7:
+                        continue
+                    ln = int.from_bytes(f.read(2), "big")
+                    if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                        d = f.read(5)
+                        if len(d) < 5:
+                            return None
+                        h = int.from_bytes(d[1:3], "big")
+                        w = int.from_bytes(d[3:5], "big")
+                        return (w, h) if w and h else None
+                    f.seek(ln - 2, 1)
+    except OSError:
+        return None
+    return None
+
+def cover_aspect(fields):
+    """{'width','height','aspect','measured'} for the cover file.
+
+    ``measured`` is False whenever the bytes could not be read: the aspect is
+    then never invented, and the orientation contract simply says so.
+    """
+    cover = fields.get("cover")
+    size = _image_size(cover) if cover else None
+    if not size:
+        return {"width": None, "height": None, "aspect": None,
+                "measured": False}
+    w, h = size
+    return {"width": w, "height": h,
+            "aspect": "%.6f" % (float(w) / float(h)), "measured": True}
 
 def product_reference(fields, prov):
     """The cover stored as a product reference with provenance (plan 6.14)."""
@@ -246,6 +350,10 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
     summary["product_image_path"] = fields.get("cover")
     summary["story_role"] = STORY_ROLE
     summary["card_notes"] = card_notes(fields)
+    # FU-U10: reading direction comes from brief.language, never from a model,
+    # and the cover's aspect is MEASURED (measured=False when unreadable).
+    summary["reading_direction"] = reading_direction(fields.get("language"))
+    summary["cover_aspect"] = cover_aspect(fields)
     digest = hashlib.sha256(
         json.dumps(summary, sort_keys=True, default=str).encode()).hexdigest()[:16]
     # Authorization is bound to THIS record's digest (scope may be "campaign"

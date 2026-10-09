@@ -33,7 +33,7 @@ CORE = os.path.dirname(HERE)
 if CORE not in sys.path:
     sys.path.insert(0, CORE)
 
-import receipt_evidence as RE  # noqa: E402
+from singing_detector import receipt_evidence as RE  # noqa: E402
 
 _passed = [0]
 _failed = [0]
@@ -353,5 +353,10 @@ except RE.ReceiptEvidenceError as exc:
           all(k in str(exc) for k in
               ("spoken_share", "rap_share", "no_voice_share")), str(exc))
 
-print("PASS %d / FAIL %d" % (_passed[0], _failed[0]))
-sys.exit(1 if _failed[0] else 0)
+def test_suite_checks_pass():
+    assert _failed[0] == 0, "%d check(s) failed" % _failed[0]
+
+
+if __name__ == "__main__":
+    print("PASS %d / FAIL %d" % (_passed[0], _failed[0]))
+    sys.exit(1 if _failed[0] else 0)

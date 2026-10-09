@@ -137,12 +137,14 @@ with tempfile.TemporaryDirectory() as td:
         cfile=os.path.join(td, "sfx_off.pyc"), doraise=True)
 print("PASS  py_compile sfx_off.py clean")
 
-print("")
-if FAILS:
-    print("FAILED: %d check(s): %s" % (len(FAILS), ", ".join(FAILS)))
-else:
-    print("ALL PASS")
-# Bare-directory pytest collection imports this module; only a direct run
-# may sys.exit (a module-level exit is a pytest INTERNALERROR).
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
+
+
 if __name__ == "__main__":
-    sys.exit(1 if FAILS else 0)
+    print("")
+    if FAILS:
+        print("FAILED: %d check(s): %s" % (len(FAILS), ", ".join(FAILS)))
+        sys.exit(1)
+    print("ALL PASS")
+    sys.exit(0)

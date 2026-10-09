@@ -17,7 +17,7 @@ One test per acceptance clause:
 
 Run: python3 core/qc_reverb_tail/test_qc_reverb_tail.py
 Env: QCRT_FIXTURE_DIR keeps the generated WAVs somewhere durable
-     (default: /tmp/lane-AF-ECHO-U2-fixtures).
+     (default: a fresh per-process temp dir, deleted at exit).
 """
 import atexit
 import importlib
@@ -105,8 +105,18 @@ def fixture(tau_s=None, seconds=BODY_S, tail_s=TAIL_S):
         sig = render_ir(body, tau_s, tail_s=tail_s)
     return normalize(sig)
 
+_FIXTURE_DIR = []
+
 def fixture_dir():
-    d = os.environ.get("QCRT_FIXTURE_DIR") or "/tmp/lane-AF-ECHO-U2-fixtures"
+    """A fresh per-process dir: a fixed /tmp path collides with any other
+    concurrent run of this suite (its atexit cleanup would delete the WAVs
+    this process is still reading). QCRT_FIXTURE_DIR overrides for reruns."""
+    d = os.environ.get("QCRT_FIXTURE_DIR")
+    if not d:
+        if not _FIXTURE_DIR:
+            import tempfile
+            _FIXTURE_DIR.append(tempfile.mkdtemp(prefix="lane-AF-ECHO-U2-fixtures-"))
+        d = _FIXTURE_DIR[0]
     os.makedirs(d, exist_ok=True)
     return d
 

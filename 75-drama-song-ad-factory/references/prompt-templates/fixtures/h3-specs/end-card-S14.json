@@ -1,0 +1,46 @@
+{
+  "shot_id": "S14",
+  "shot_type": "end-card",
+  "look": "canvas-to-3d",
+  "mode": "lifelike-3d",
+  "model": "minimax-h3/image-to-video",
+  "duration_s": 6,
+  "aspect": "9:16",
+  "resolution": "768P",
+  "beat": "return_cta",
+  "character": "renee",
+  "wardrobe": "finale",
+  "intent": "Return and call to action in the lifelike 3D finale: Renee, rested and steady, with the book; the upper third stays clean for the exact title, offer and link added in post.",
+  "subject": "The client's hardcover book standing upright on a sunlit wooden side table in the lower third of the frame, front cover facing the camera, spine on the left. Renee stands behind and slightly to screen-right of the book, softly out of focus, chest-up, holding a mug in both hands. The mug is plain matte terracotta with no print.",
+  "composition": "Lower third: the book, sharp, centred. Middle third: Renee, soft focus, at screen-right, looking at the book. Upper third: a clean, evenly lit wall of warm cream plaster with no objects, reserved for overlay text. Screen-left: a window frame edge with sheer curtains glowing in late sun.",
+  "negative_space": "The upper third of the frame stays empty, smooth and evenly lit for the overlay text.",
+  "action": {
+    "start": "The clip opens on the first frame: the book upright, Renee behind it looking down at it with a calm face.",
+    "end": "Renee lifts her eyes from the book to the lens, her chin rising slightly, and a small, real smile forms at the corners of her mouth and in her eyes; her hands stay around the mug and the book stays perfectly still and sharp.",
+    "direction": "Only Renee moves: her head rises about ten degrees toward the lens and does not turn. The book does not move, tilt or rotate at any point."
+  },
+  "camera": {
+    "command": "[Push in]",
+    "plain": "The camera pushes in very slowly toward the book, about ten percent closer by the end, keeping the book centred and the upper third clear."
+  },
+  "lens_light": "Virtual cinema lens equivalent to 50 mm, focus held on the book cover with Renee in soft focus behind it. Golden late-afternoon sun from the screen-left window is the key, laying a warm amber stripe across the table and the book's front cover and a soft golden rim on Renee's hair and shoulders. Gentle bounce from the cream wall fills the shadows. The cover stays evenly lit so no part of it falls into shadow.",
+  "book": "closed",
+  "pages": null,
+  "visible_emotion": "rested joy and quiet pride (payoff line; a smile is allowed)",
+  "motion_physics": "Steam rises slowly from the mug and curls toward screen-right in the warm air. The sheer curtain at screen-left drifts once in a light breeze. Renee breathes calmly; the cardigan rises and falls softly. Dust motes float in the sunbeam above the table, few and slow. Her glasses catch one soft glint of sun as her head rises.",
+  "beats": [
+    [
+      "0.0-2.0 s",
+      "Still frame on the book; Renee looks down at it while steam curls slowly up from the mug."
+    ],
+    [
+      "2.0-4.0 s",
+      "Renee lifts her eyes toward the lens, her chin rising slightly."
+    ],
+    [
+      "4.0-6.0 s",
+      "A small, real smile reaches her eyes; the sheer curtain drifts once; the whole composition holds still for the overlay text."
+    ]
+  ],
+  "negatives_extra": []
+}

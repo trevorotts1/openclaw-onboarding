@@ -1,5 +1,26 @@
 # QC Checklist: Drama Song Ad Factory (Skill 75)
 
+## FU-U16 story doctrine: villain, pain, rise
+
+> "People don't care about the hero until they meet the villain." - Trevor Otts
+
+These are not music videos: compelling true stories; the pain AND the rise.
+Check on every run:
+
+- The story plan names its VILLAIN (person or not a person: cancer, debt, a
+  layoff, a lie, burnout, fear, the inner critic, a system).
+- The villain has its OWN shots tagged `villain` (or `villain_visibility`
+  outside `none`) - `length_formula.plan_villain_doctrine` fails CLOSED (never
+  a pass) when no villain is named or the villain has no shot. Those two are
+  the only hard cases.
+- Pain share of runtime inside the 20-35% target band; outside is a FLAG in
+  the receipt with the measured seconds, never a block.
+- The `VILLAIN_DOCTRINE` row (`delivery_checklist.measure_villain_doctrine`)
+  reports villain shots, villain screen seconds, pain seconds, rise seconds.
+  Evidence only: it never joins repair_scope.
+- The rise is earned: pain gets real screen time, the turn names the product
+  as the key, the rise is never rushed.
+
 ## 1. Purpose
 Enables the agent to produce a complete drama-song ad (twelve-stage sung
 direct-response story -> storyboard -> clip generation -> assembly ->
@@ -70,6 +91,16 @@ it advances. Standard library only; no credential value is ever printed.
 - [ ] Song files (H14): a delivery folder holds `<ad>.mp3` (320 kbps) and `<ad>.wav` (plus
       `<ad>-instrumental.*` if one exists), all listed in `delivery-receipt.json` and `README.md`;
       `python3 scripts/core/delivery_variants/song_files.py check <dir> <ad>` exits 0, and exits 5 when any song file is missing.
+- [ ] Song mp3 in the deliverable (FU-U14, REQUIRED): the ad folder holds `<Author> - <Title> - Song.mp3`
+      (320 kbps, the exact song used, full length; the wav too when one exists) beside the captioned and
+      clean-master mp4s. `delivery_checklist.check_song_mp3(<ad_dir>, <ad_audio>, <Title>, <Author>)` returns
+      PASS rows `SONG_MP3_FILE` / `SONG_MP3_DURATION` / `SONG_MP3_CORRELATION` — duration within 0.1 s of the
+      ad's audio and cross-correlation >= 0.95 with it. A missing or mismatched mp3 is a FAIL (fail closed).
+      Run: `python3 scripts/core/delivery_checklist/test_song_mp3_u14.py`.
+- [ ] Batch zip (FU-U14): a finished book/batch campaign ships one zip per client,
+      `batch_zip.build_batch_zip(client, ads, out)` — one folder per author with the captioned ad, the clean
+      master and the song mp3 (exactly three files per ad) plus a README listing every file, duration,
+      resolution and banner link. A missing file is a `BatchZipError`.
 - [ ] Spend ledger: `init_run --ceiling` recorded; `reserve` before
       dispatch; duplicate `reserve` exits 5 `BAD_TRANSITION`;
       `can_spend` past ceiling exits 5 `BUDGET_EXCEEDED`; `park_run` exits 4
