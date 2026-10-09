@@ -6,6 +6,20 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.2 - 2026-10-09 - FU-U10: the book orientation contract
+
+No book shape or motion rule existed anywhere; nothing measured the cover and
+nothing measured page-turn direction. Every compiled clip prompt carried the
+generic F12 people line ("limbs, head and camera stay in gentle continuous
+motion"), which is the wrong instruction for a book.
+- New `core/book_shot/` (`book_shot.py`, `calibrate_book.py`, seeded fixture generator, `test_book_shot_c1.py`): the seven-rule BOOK ORIENTATION CONTRACT, the exact fixed prompt blocks (ORIENTATION / ACTION:open / ACTION:flip / CAMERA / CONSTRAINTS, H3 also gets `[Static shot]` plus the plain-words camera line), and measured checks -- cover match vs the HORIZONTAL MIRROR of the client's cover file (ORB + RANSAC inliers; mirror score higher = BOOK_MIRRORED), back/invented cover (BOOK_COVER_NOT_FRONT), spine-side sign (BOOK_SPINE_WRONG_SIDE), title OCR in reading order (tesseract; missing engine = UNAVAILABLE, never a pass), Farneback flow direction and right-half-to-left-half crossing (BOOK_WRONG_DIRECTION / BOOK_NO_MOTION). Every verdict PASS / FAIL / UNAVAILABLE; frames run through load_governor.
+- `calibrate_book.py` is the required control: a known-good clip must PASS and its ffmpeg hflip must FAIL, or every book verdict is UNAVAILABLE. `qc_record()` refuses to mint a PASS record without a calibrated checker.
+- `intake_book`: `BOOK_FIELDS` gains `language` (default "en" = left-to-right; the ask rides inside the existing offer sentence, so the three-question cap holds) and the cover's aspect is MEASURED from the file header (stdlib, measured=False when unreadable -- never invented).
+- `product_style_bible`: `compile_visual_prompt()` takes `[MOTION]` from `shot["motion"]` for `book` / `product` / `insert`; the generic F12 line stays for people shots. A kind that owns its motion with none set refuses (MOTION_MISSING_FOR_SHOT) rather than shipping the wrong instruction.
+- `kie_dispatch`: a video job whose shot kind is `book` is refused (BOOK_SHOT_NOT_CONTRACTED) without a start frame made from the cover file; the approved-plan-hash side stays dormant until the `book_plan_sha256` field exists (U11), then activates. Outside the LIPSYNC_* seams.
+- `qc_gate`: the shots stage requires a `book_orientation` record for book campaigns (`required_checks`; UNAVAILABLE never advances).
+- Tests: `test_book_shot_c1.py` (a) hflip cover FAILs BOOK_MIRRORED (b) back cover FAILs BOOK_COVER_NOT_FRONT (c) left-to-right leaf FAILs / right-to-left PASSes, still clip FAILs BOOK_NO_MOTION (d) the calibration pair sorts or the check is UNAVAILABLE (e) a book prompt carries no "gentle continuous motion" line. All five FAIL on the base tree.
+
 ## v2.9.1 - 2026-10-09 - Batch MGB008: W-G-007-amend, W-G-002-amend
 
 - Delivery checklist consumes the amended receipt fields (W-G-007-amend); kept-take tags merged with the calibrated verdict gate.

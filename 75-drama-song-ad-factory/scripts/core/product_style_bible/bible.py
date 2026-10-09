@@ -224,6 +224,11 @@ def route_model(aspect_ratio):
     return SUNBURST_MODEL
 
 
+#: FU-U10: shot kinds whose motion is OWNED by the shot, not by the generic
+#: F12 people line. A moving camera plus object rotation is the named cause
+#: of flipped and invented covers, so these kinds must carry their own block.
+KIND_OWN_MOTION = frozenset({"book", "product", "insert"})
+
 def assert_compiled(prompt):
     """Downstream guard: prompt came from the compiler, not manual copy."""
     return isinstance(prompt, str) and "[compiled:style=" in prompt \
@@ -298,9 +303,26 @@ def compile_visual_prompt(style, characters, product, shot):
     # Part F F12: every compiled clip prompt asks for motion — the failed
     # 2026-10-08 runs produced near-still clips because the prompt never
     # said the subject moves. Exact one-line wording, builder style.
-    lines.append("[MOTION] The subject moves naturally through the frame; "
-                 "limbs, head and camera stay in gentle continuous motion. "
-                 "[/MOTION]")
+    #
+    # FU-U10: the generic line is a PEOPLE instruction ("limbs, head and
+    # camera ..."). On a book / product / insert shot a moving camera plus
+    # object rotation is the named cause of flipped and invented covers, so
+    # those kinds carry the shot's OWN motion block and never the generic
+    # line. A kind outside the people set with no motion refuses rather than
+    # silently shipping the wrong instruction.
+    kind = shot.get("kind", "people")
+    if isinstance(kind, str) and kind.strip().lower() in KIND_OWN_MOTION:
+        motion = shot.get("motion")
+        if not isinstance(motion, str) or not motion.strip():
+            raise CompilerError(
+                "MOTION_MISSING_FOR_SHOT",
+                "shot kind %r owns its motion block; set shot['motion'] "
+                "(people shots keep the generic F12 line)" % kind)
+        lines.append("[MOTION] %s [/MOTION]" % motion.strip())
+    else:
+        lines.append("[MOTION] The subject moves naturally through the frame; "
+                     "limbs, head and camera stay in gentle continuous motion. "
+                     "[/MOTION]")
     prompt = "\n".join(lines)
     if len(prompt) > cap:
         raise CompilerError("OVER_CAP", "%d > %d for %s"

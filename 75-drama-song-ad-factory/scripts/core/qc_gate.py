@@ -49,6 +49,10 @@ CHECKS = frozenset({
     # the Final edit QC gate as one more independent record (check_id
     # "delivery-checklist", checker scripts/core/delivery_checklist/).
     "delivery_checklist",
+    # FU-U10: the book orientation contract. A book campaign's shots stage
+    # requires one PASS record per book clip from the CALIBRATED book_shot
+    # checker (scripts/core/book_shot/).
+    "book_orientation",
 })
 # 17.8 critical categories (identity, lyrics, offer, claim, product_label,
 # CTA) ride on these checks: lyrics carries the critical-word coverage,
@@ -146,10 +150,26 @@ def validate_record(rec):
     return None
 
 
+BOOK_CAMPAIGN_TYPES = frozenset({"book"})
+
+def required_checks(stage, required, campaign_type=None):
+    """FU-U10: a book campaign's shots stage also requires book_orientation.
+
+    Acceptance is 'no book clip is accepted without a PASS book_orientation
+    record from a calibrated checker'; requiring the check for EVERY book
+    campaign (not just ones that remembered to ask) is what makes that true.
+    """
+    req = list(required or [])
+    ct = campaign_type if isinstance(campaign_type, str) else ""
+    if stage == "shots" and ct.strip().lower() in BOOK_CAMPAIGN_TYPES \
+            and "book_orientation" not in req:
+        req.append("book_orientation")
+    return req
+
 def evaluate(run_id, stage, records, makers, required,
              critical=CRITICAL_CHECKS, profile_version=None,
              expected_profile_version=None, expected_checker_version=None,
-             master=None):
+             master=None, campaign_type=None):
     """Gate decision. Returns dict with gate/reason_code/failures/repair_scope.
 
     I4: when "final_edit" is required, master={"chosen_length_s", "measured_s"}
@@ -161,6 +181,7 @@ def evaluate(run_id, stage, records, makers, required,
     (structural problem: no repair of the same records can pass).
     """
     failures = []
+    required = required_checks(stage, required, campaign_type)
 
     def fail(check_id, code, detail, is_critical=False):
         failures.append({"check_id": check_id, "code": code,
@@ -311,7 +332,8 @@ def cmd_evaluate(ns):
                        expected_checker_version=ns.expect_checker,
                        master=({"chosen_length_s": ns.chosen_length_s,
                                 "measured_s": ns.master_s}
-                               if ns.chosen_length_s is not None else None))
+                               if ns.chosen_length_s is not None else None),
+                       campaign_type=ns.campaign_type or None)
     except GateError as e:
         return envelope("evaluate", "error", e.code, str(e),
                         run_id=ns.run, stage=ns.stage), EXIT["error"]
@@ -355,6 +377,8 @@ def _cli(argv=None):
                    help="I4: chosen video length; required with final_edit")
     a.add_argument("--master-s", type=float, default=None,
                    help="I4: measured master length in seconds")
+    a.add_argument("--campaign-type", default="",
+                   help="campaign type; 'book' requires book_orientation at shots")
     a.add_argument("--expect-profile", default=None)
     a.add_argument("--expect-checker", default=None)
     ns = p.parse_args(argv)
