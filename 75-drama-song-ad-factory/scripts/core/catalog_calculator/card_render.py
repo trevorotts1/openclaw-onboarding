@@ -38,21 +38,6 @@ except ImportError:
     from choice_card.looks import looks as LOOKS          # type: ignore
     from music_styles import music_styles as MS           # type: ignore
 
-#: FU-U11: the Book shots block is APPROVALS AND NOTICES, never a new choice
-#: (Trevor's locked rule). The ROW TEXT is owned by book_shot.plan_card_rows,
-#: one copy; this module only lays it out in the card's own row style. A book
-#: shot is not a priced row, so it never touches the total.
-try:
-    from book_shot import book_shot as _BS
-except ImportError:
-    _CORE_HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if _CORE_HERE not in sys.path:
-        sys.path.insert(0, _CORE_HERE)
-    try:
-        from book_shot import book_shot as _BS            # type: ignore
-    except ImportError:
-        _BS = None
-
 UNIT_NAME = "catalog-calculator.card-render"
 
 #: The card rows, in INSTRUCTIONS.md 213-221 order.
@@ -149,6 +134,9 @@ def render(card, price_fn):
     or the intake card). ``price_fn`` is the Skill 74 ``price`` adapter
     ``(model, units) -> JSON``; None means render unpriced.
 
+    FU-U11: when the card carries a book plan (``book_plan``), the Book shots
+    APPROVAL BLOCK is appended -- approvals and notices, never a new choice.
+
     Returns (text, priced_ok). The card always renders every row; a card
     whose price cannot be read says "Price unavailable" on the total and is
     safe to show, and approval must stay blocked (fail closed, 4.4).
@@ -191,7 +179,6 @@ def render(card, price_fn):
                      "(added $%.2f for the reference pictures, included in the total)"
                      % ("Images:", plan["reference_images"], plan["keyframe_images"],
                         plan["reference_set_usd"]))
-    lines.extend(book_rows(card))
     if priced_ok and total is not None:
         retake = RETAKE_RATE * total
         lines.append("")
@@ -204,28 +191,26 @@ def render(card, price_fn):
         reasons = [str(r) for r in ((envelope or {}).get("reasons") or [])]
         if reasons:
             lines.append("  (%s)" % "; ".join(reasons[:4]))
+    lines += _book_block(card)
     return "\n".join(lines), priced_ok
 
 
-def book_rows(card):
-    """The Book shots block, or [] when the card is not a book campaign.
+def _book_block(card):
+    """FU-U11: the Book shots approval block lines, or [] for a non-book card.
 
-    Rows come from book_shot.plan_card_rows (one owner of that wording) and
-    are re-laid in the card's own row style. APPROVALS AND NOTICES only: the
-    block never adds a choice, never changes the total, and never blocks the
-    card -- a book job's own gate (BOOK_PLAN_NOT_APPROVED, BOOK_BLANK_PAGES)
-    is enforced at dispatch and at QC, not here.
+    Imported lazily so a card render never depends on the book module being
+    present (and a non-book card never pays for it).
     """
-    card = card if isinstance(card, dict) else {}
-    if str(card.get("campaign_type") or "").strip().lower() != "book" or _BS is None:
+    plan = (card or {}).get("book_plan")
+    if not plan:
         return []
-    plan = card.get("book_plan") if isinstance(card.get("book_plan"), dict) \
-        else {"pages": card.get("pages"), "approved_book_plan_sha256":
-              card.get("approved_book_plan_sha256"),
-              "approved_at": card.get("approved_at")}
-    excerpt = card.get("excerpt") if isinstance(card.get("excerpt"), dict) \
-        else {"lines": card.get("excerpt_lines")}
-    return ["  %-12s %s" % r for r in _BS.plan_card_rows(plan, excerpt)]
+    try:
+        from book_shot import book_shot as BS
+    except ImportError:
+        return ["", "Book shots: the book plan is present but the book module "
+                    "could not be loaded, so its rows cannot be shown."]
+    notes = list((card or {}).get("card_notes") or [])
+    return [""] + BS.plan_card_block(plan, notes)
 
 
 def _load_shipped_catalog():

@@ -29,7 +29,6 @@ RULE from brief.language, never by what a model happened to produce.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -41,6 +40,7 @@ _gcore = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _gcore not in sys.path:
     sys.path.insert(0, _gcore)
 import load_governor as _LG  # noqa: E402
+
 TOOL_NAME = "book_shot"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "blackceo.book-shot/v1"
@@ -117,12 +117,20 @@ BOOK_WRONG_DIRECTION = "BOOK_WRONG_DIRECTION"
 BOOK_NO_MOTION = "BOOK_NO_MOTION"
 BOOK_TITLE_WRONG = "BOOK_TITLE_WRONG"
 BOOK_OCR_UNAVAILABLE = "BOOK_OCR_UNAVAILABLE"
-BOOK_BLANK_PAGES = "BOOK_BLANK_PAGES"
-BOOK_PAGES_UNAVAILABLE = "BOOK_PAGES_UNAVAILABLE"
-BOOK_EXCERPT_OVERLAY_DEFERRED = "BOOK_EXCERPT_OVERLAY_DEFERRED"
 BOOK_CALIBRATION_FAILED = "BOOK_CALIBRATION_FAILED"
 BOOK_INPUT_INVALID = "BOOK_INPUT_INVALID"
 BOOK_FRAMES_UNAVAILABLE = "BOOK_FRAMES_UNAVAILABLE"
+#: FU-U11: a book page that carries no printed text.
+BOOK_BLANK_PAGES = "BOOK_BLANK_PAGES"
+#: FU-U11: the book plan hash is missing or does not match the approved one.
+BOOK_PLAN_NOT_APPROVED = "BOOK_PLAN_NOT_APPROVED"
+#: FU-U11: the client excerpt was not supplied, or was supplied wrongly.
+BOOK_EXCERPT_INVALID = "BOOK_EXCERPT_INVALID"
+#: FU-U11: U9's caption-burn module is absent, so the overlay cannot burn.
+BOOK_OVERLAY_UNAVAILABLE = "BOOK_OVERLAY_UNAVAILABLE"
+#: FU-U11: the PRINTED_PAGES fragment in the H3 template is unreadable, so
+#: pages_block cannot quote it (kept from the onboarding half; never invented).
+BOOK_PAGES_UNAVAILABLE = "BOOK_PAGES_UNAVAILABLE"
 
 #: ORB + RANSAC inlier floor. Measured on the shipped fixtures: an upright
 #: cover against itself scores 1000+ inliers; a perspective-warped cover 700+;
@@ -140,6 +148,36 @@ FB_PARAMS = dict(pyr_scale=0.5, levels=3, winsize=15, iterations=3,
 MOTION_EPS = 0.05
 #: Fraction of the frame's height/width that must actually move to count.
 MOTION_PIXEL_FRAC = 0.0005
+
+# ------------------------------------------------------------ printed pages --
+#: FU-U11, the BOOK_BLANK_PAGES calibration. Measured on the shipped fixtures
+#: (600x420 cover, 640x480 frames), ink = fraction of pixels meaningfully
+#: darker than the paper:
+#:   printed page fixture   ink 0.1640   empty grid cells  0/48
+#:   white page fixture     ink 0.0031   empty grid cells 40/48
+#:   a sparse caption page  ink 0.0043   empty grid cells 45/48
+#:   the cover frame        ink 0.1845   empty grid cells 11/48
+#: The grid is the calibrated test: a page with real body text has NO empty
+#: cell, so the floor sits far below the printed case and far above both the
+#: white page and a page carrying only a caption line.
+PAGE_GRID_ROWS = 8
+PAGE_GRID_COLS = 6
+#: A grid cell with less ink than this counts as EMPTY (no printed text).
+PAGE_CELL_INK_MIN = 0.01
+#: MORE THAN this many empty cells in one page = a blank page.
+PAGE_MAX_EMPTY_CELLS = 12
+#: Among the sampled open frames, more than this many blank = FAIL.
+PAGE_MAX_BLANK_FRAMES = 1
+#: Grey value below which a pixel counts as printed ink (paper is ~245).
+PAGE_INK_GREY = 200
+
+#: FU-U11: the ONE named hook U9 owns. This module never burns a caption and
+#: never reads frame text; it names the artifact and hands over data.
+EXCERPT_OVERLAY_HOOK = "final_assembler.captions_burn.overlay_excerpt"
+#: The only provenance an excerpt may carry: the CLIENT supplied it.
+EXCERPT_PROVENANCE = "provided"
+#: Hard cap on excerpt lines (plan: never more than three).
+EXCERPT_MAX_LINES = 3
 
 class BookShotError(Exception):
     def __init__(self, code, message):
@@ -495,6 +533,306 @@ def check_clip(clip, spec, frames=None, calibrated=None):
                                flow["crossed"], expect), calibrated)
     return _verdict("PASS", "BOOK_ORIENTATION_OK", checks, "", calibrated)
 
+# ---------------------------------------------------------- printed pages ---
+#: FU-U11. The data layer already owns the wording (references/
+#: prompt-templates/models/minimax-h3.json, fragments PRINTED_PAGES,
+#: BOOK_CLOSED, BOOK_OPEN_MOTION); this module only MEASURES the result.
+
+def _page_ink(cv2, np, frame_bgr):
+    """(ink_fraction, empty_cells, cells) over the page grid."""
+    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    ink = float((gray < PAGE_INK_GREY).sum()) / float(gray.size)
+    cells, empty = [], 0
+    for iy in range(PAGE_GRID_ROWS):
+        for ix in range(PAGE_GRID_COLS):
+            cell = gray[iy * h // PAGE_GRID_ROWS:(iy + 1) * h // PAGE_GRID_ROWS,
+                        ix * w // PAGE_GRID_COLS:(ix + 1) * w // PAGE_GRID_COLS]
+            f = float((cell < PAGE_INK_GREY).mean())
+            cells.append(round(f, 4))
+            if f < PAGE_CELL_INK_MIN:
+                empty += 1
+    return round(ink, 6), empty, cells
+
+def check_pages(frame_bgr):
+    """FU-U11: is this an OPEN BOOK PAGE with printed text on it?
+
+    ``frame_bgr`` is one frame (a numpy array) of an open-book shot. The
+    calibrated test is the page grid, NOT the raw ink: a page of real body
+    text has no empty cell, while a white page and a page carrying only a
+    caption line both do (fixture measurements sit in the constants block).
+
+    Returns the same verdict shape as check_clip: PASS / FAIL, with the
+    measurement in ``checks["pages"]``. Never UNAVAILABLE for a frame it was
+    handed: a frame it cannot read is BOOK_INPUT_INVALID at the caller.
+    """
+    cv2 = _cv2()
+    np = _np()                                              # noqa: F841
+    if frame_bgr is None or not hasattr(frame_bgr, "shape"):
+        raise BookShotError(BOOK_INPUT_INVALID, "check_pages wants a frame")
+    ink, empty, cells = _page_ink(cv2, np, frame_bgr)
+    printed = empty <= PAGE_MAX_EMPTY_CELLS
+    checks = {"pages": {"ink_fraction": ink, "empty_cells": empty,
+                        "cells": len(cells), "max_empty_cells":
+                        PAGE_MAX_EMPTY_CELLS, "cell_ink": cells}}
+    if not printed:
+        return _verdict("FAIL", BOOK_BLANK_PAGES, checks,
+                        "blank page: %d of %d grid cells carry no printed "
+                        "text (ink %.4f)" % (empty, len(cells), ink))
+    return _verdict("PASS", "BOOK_PAGES_PRINTED", checks, "")
+
+def check_pages_sequence(frames):
+    """FU-U11: the OPEN FRAMES of one clip.
+
+    More than PAGE_MAX_BLANK_FRAMES blank pages among the sampled open
+    frames = FAIL. The first frame is the CLOSED cover (U10's own check), so
+    it is skipped here: this check only judges pages, never the cover.
+    """
+    if not isinstance(frames, (list, tuple)) or not frames:
+        raise BookShotError(BOOK_INPUT_INVALID, "check_pages_sequence wants frames")
+    pages = list(frames[1:]) or list(frames)
+    rows, blanks = [], []
+    for i, f in enumerate(pages):
+        v = check_pages(f)
+        m = v["checks"]["pages"]
+        rows.append({"frame": i + 1, "verdict": v["verdict"],
+                     "reason_code": v["reason_code"], "ink_fraction":
+                     m["ink_fraction"], "empty_cells": m["empty_cells"]})
+        if v["verdict"] == "FAIL":
+            blanks.append(i + 1)
+    checks = {"pages": {"sampled": len(pages), "blank_frames": blanks,
+                        "max_blank_frames": PAGE_MAX_BLANK_FRAMES,
+                        "rows": rows}}
+    if len(blanks) > PAGE_MAX_BLANK_FRAMES:
+        return _verdict("FAIL", BOOK_BLANK_PAGES, checks,
+                        "%d of %d sampled open frames are blank (allowed 1): "
+                        "frames %s" % (len(blanks), len(pages), blanks))
+    return _verdict("PASS", "BOOK_PAGES_PRINTED", checks, "")
+
+def pages_block(spec):
+    """The PRINTED_PAGES fragment, CONSUMED verbatim from the H3 template.
+
+    U11 authors no prompt wording: the text is the ``PRINTED_PAGES`` fragment
+    of references/prompt-templates/models/minimax-h3.json (the same fragment
+    prompt_templates injects; this reader exists so a caller can quote it
+    directly). Returns the text when the shot's pages mode is "texture",
+    else None. A missing template file is a loud BookShotError naming the
+    path, never invented text.
+    """
+    if str((spec or {}).get("pages") or "").strip() != "texture":
+        return None
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    path = os.path.join(root, "references", "prompt-templates", "models",
+                        "minimax-h3.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            frag = (json.load(fh).get("fragments") or {})["PRINTED_PAGES"]
+    except (OSError, ValueError, KeyError) as exc:
+        raise BookShotError(BOOK_PAGES_UNAVAILABLE,
+                            "PRINTED_PAGES fragment unreadable at %s (%s)"
+                            % (path, exc)) from exc
+    return frag
+
+# --------------------------------------------------------------- plan hash --
+#: FU-U11. The producer side: the plan the client approved is hashed, the
+#: hash is carried on every book video job, and kie_dispatch refuses the job
+#: unless it matches. One canonical serialisation, so the same plan always
+#: hashes the same and a CHANGED plan always hashes differently.
+
+def plan_spec(fields):
+    """The plan that is APPROVED and hashed, from the book brief fields.
+
+    Only the facts a client approves: the title, the author, whether the open
+    pages are printed texture, the reading direction, and any supplied
+    excerpt. Nothing is generated here and nothing is invented -- a field the
+    brief did not carry is absent, so it cannot change the hash silently.
+    """
+    f = fields if isinstance(fields, dict) else {}
+    spec = {}
+    for key in ("book_title", "author", "language", "pages", "subject"):
+        v = f.get(key)
+        if isinstance(v, str) and v.strip():
+            spec[key] = v.strip()
+    if not spec.get("language"):
+        spec["language"] = "en"
+    spec["reading_direction"] = reading_direction(spec["language"])
+    ex = f.get("excerpt")
+    if ex is not None:
+        spec["excerpt"] = normalize_excerpt(ex)["overlay"]["lines"]
+    return spec
+
+#: Plan keys that are the APPROVAL, not the plan: the hash is of the plan
+#: content, so the approval fields are excluded or the hash would chase
+#: itself every time a client approves (kept from the onboarding half).
+PLAN_HASH_EXCLUDED = ("approved_book_plan_sha256", "approved_at")
+
+def plan_sha256(spec):
+    """sha256 of the canonical plan serialisation (UTF-8, sorted keys).
+
+    The plan hash is over the APPROVED PLAN, not over the rendered prompt:
+    the same plan hashes the same everywhere, and a change to any approved
+    field (or to the excerpt) changes it. The approval fields themselves are
+    excluded (PLAN_HASH_EXCLUDED): a plan that already carries its approval
+    re-hashes to the same value, so approval never chases its own hash.
+    """
+    if not isinstance(spec, dict) or not spec:
+        raise BookShotError(BOOK_INPUT_INVALID, "plan_sha256 wants a plan dict")
+    doc = {k: v for k, v in spec.items() if k not in PLAN_HASH_EXCLUDED}
+    blob = json.dumps(doc, sort_keys=True, ensure_ascii=True,
+                      separators=(",", ":")).encode("utf-8")
+    import hashlib
+    return hashlib.sha256(blob).hexdigest()
+
+def plan_card_rows(spec):
+    """FU-U11: the plan's rows as the CARD shows them (approval, not choice).
+
+    These are the facts the client is approving, in reading order, with the
+    plan hash LAST so a change above it is visible as a changed hash. The
+    rows are notices on the approval card: they never add a question, and
+    they never offer a choice (Trevor's locked rule for the card).
+    """
+    s = spec if isinstance(spec, dict) else {}
+    rows = []
+    rows.append(("Title", s.get("book_title") or "not supplied"))
+    rows.append(("Author", s.get("author") or "not supplied"))
+    rows.append(("Reading direction",
+                 "right to left" if s.get("reading_direction") == "rtl"
+                 else "left to right"))
+    rows.append(("Open pages",
+                 "printed text" if s.get("pages") == "texture"
+                 else "plain pages with no printed text"))
+    ex = s.get("excerpt") or []
+    rows.append(("Excerpt overlay",
+                 "%d client-supplied line%s" % (len(ex), "" if len(ex) == 1
+                                                else "s") if ex
+                 else "none supplied"))
+    rows.append(("Plan hash", plan_sha256(s) if s else "not computed"))
+    return rows
+
+# ------------------------------------------------------------ card block ----
+#: FU-U11. The approval block on the choice card. Trevor's locked rule: the
+#: block shows APPROVALS AND NOTICES, never new choices. It adds no question
+#: and no option -- nothing in it can be "picked"; the only answer the card
+#: takes from it is the existing yes/no on the card as a whole.
+
+def plan_card_block(spec, notes=()):
+    """The 'Book shots' block for the card: rows, notices, hash.
+
+    Returns a list of plain-text lines (no Markdown). ``spec`` is the plan;
+    ``spec=None`` returns [] so a non-book card is untouched.
+    """
+    if not spec:
+        return []
+    lines = ["Book shots (this is what you are approving):"]
+    for label, value in plan_card_rows(spec):
+        lines.append("  %-18s %s" % (label + ":", value))
+    lines.append("  %-18s %s" % ("Pages:", "every visible page is printed "
+                                 "with real text; a blank page is a defect "
+                                 "and the shot is redone."))
+    ex = spec.get("excerpt") or []
+    if ex:
+        lines.append("  %-18s %s" % (
+            "Excerpt:", "%d client-supplied line%s, shown on the page as an "
+            "overlay. It is never sent to the video model."
+            % (len(ex), "" if len(ex) == 1 else "s")))
+    for n in notes or ():
+        if n:
+            lines.append("  Note:              %s" % n)
+    lines.append("  Approving the card approves the book shots above. "
+                 "Change any row and the plan hash changes, so it comes back "
+                 "to you before any video is made.")
+    return lines
+
+def plan_card_text(spec, notes=()):
+    """The block as one string, for a caller that joins its own lines."""
+    return "\n".join(plan_card_block(spec, notes))
+
+# --------------------------------------------------------------- excerpt ----
+
+def normalize_excerpt(lines):
+    """FU-U11: the CLIENT's excerpt lines, and nothing else.
+
+    OPTIONAL. Never invented, never generated, never lengthened. Max
+    EXCERPT_MAX_LINES lines, each a non-empty string, each spelling-checked
+    against the same dictionary the caption gate uses. Provenance is always
+    "provided" -- there is no other value this function can return.
+
+    Returns {"overlay": {"lines": [...], "provenance": "provided"},
+             "to_video_model": False, "hook": EXCERPT_OVERLAY_HOOK}.
+    Raises BookShotError(BOOK_EXCERPT_INVALID) on anything else (fail closed).
+    """
+    if lines is None:
+        return {"overlay": {"lines": [], "provenance": EXCERPT_PROVENANCE},
+                "to_video_model": False, "hook": EXCERPT_OVERLAY_HOOK}
+    if isinstance(lines, str):
+        lines = [lines]
+    if not isinstance(lines, (list, tuple)):
+        raise BookShotError(BOOK_EXCERPT_INVALID,
+                            "excerpt must be a list of lines, got %s"
+                            % type(lines).__name__)
+    out = []
+    for ln in lines:
+        if not isinstance(ln, str) or not ln.strip():
+            raise BookShotError(BOOK_EXCERPT_INVALID,
+                                "excerpt lines must be non-empty strings")
+        out.append(ln.strip())
+    if len(out) > EXCERPT_MAX_LINES:
+        raise BookShotError(BOOK_EXCERPT_INVALID,
+                            "excerpt has %d lines; the cap is %d"
+                            % (len(out), EXCERPT_MAX_LINES))
+    _check_excerpt_spelling(out)
+    return {"overlay": {"lines": out, "provenance": EXCERPT_PROVENANCE},
+            "to_video_model": False, "hook": EXCERPT_OVERLAY_HOOK}
+
+def _check_excerpt_spelling(lines):
+    """Spelling check against the caption gate's dictionary (one owner)."""
+    try:
+        import protected_names as _PN                            # noqa: PLC0415
+        # check_spelling walks the LINES of its argument; a dict is walked
+        # over its KEYS, so the lines are passed as a list (never a dict).
+        errors = list(_PN.check_spelling(list(lines)))
+    except ImportError:            # dictionary check unavailable -> fail closed
+        errors = ["SPELLCHECK_UNAVAILABLE: protected_names cannot be imported"]
+    if errors:
+        raise BookShotError(BOOK_EXCERPT_INVALID,
+                            "excerpt is not spelling-clean: %s"
+                            % "; ".join(errors[:4]))
+
+def excerpt_overlay(lines, provenance=None):
+    """FU-U11 + U9 SEAM. The excerpt as DATA for the overlay, never as prompt.
+
+    This function builds the payload ONLY. Burning it into frames is U9's
+    artifact (``final_assembler/captions_burn.py``, hook
+    ``overlay_excerpt``), which has NOT landed. Nothing here reads frame
+    text, binds an OCR engine, or writes a second burn module: there is
+    exactly one burn site in this codebase and it is U9's.
+
+    ``provenance`` is accepted for callers that already normalize, and is
+    never trusted: only EXCERPT_PROVENANCE produces a payload.
+    """
+    if provenance is not None and provenance != EXCERPT_PROVENANCE:
+        raise BookShotError(BOOK_EXCERPT_INVALID,
+                            "excerpt provenance must be %r, got %r"
+                            % (EXCERPT_PROVENANCE, provenance))
+    payload = normalize_excerpt(lines)
+    hook = _overlay_hook()
+    payload["overlay"]["hook_available"] = hook["available"]
+    payload["overlay"]["hook_path"] = hook["path"]
+    return payload
+
+def _overlay_hook():
+    """Where U9's burn module sits, and whether it has landed yet.
+
+    Read-only probe: no import of the module, so an absent U9 can never make
+    this module fail to import. A False ``available`` is the documented
+    pending state, never an error.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    core = os.path.dirname(here)
+    path = os.path.join(core, "final_assembler", "captions_burn.py")
+    return {"available": os.path.isfile(path), "path": path,
+            "name": EXCERPT_OVERLAY_HOOK}
+
 # --------------------------------------------------------------- receipt ----
 
 def qc_record(verdict, shot_id, reviewer, calibrated=False, refs=None,
@@ -528,215 +866,3 @@ def qc_record(verdict, shot_id, reviewer, calibrated=False, refs=None,
 
 def dumps(d):
     return json.dumps(d, sort_keys=True, ensure_ascii=True)
-
-# ============================================================================
-# FU-U11: printed pages, the book plan hash, the plan card rows and the
-# excerpt overlay (DATA ONLY).
-# ============================================================================
-
-#: The excerpt cap (U11): the client supplies at most three lines, verbatim.
-EXCERPT_MAX_LINES = 3
-
-#: FU-U11: the ONE named hook U9 owns. This module never burns a caption and
-#: never reads frame text; it names the artifact and hands over data.
-EXCERPT_OVERLAY_HOOK = "final_assembler.captions_burn.overlay_excerpt"
-
-#: Grayscale below this counts as ink when measuring a page region.
-PAGE_INK_DARK = 128
-#: Calibration margin: the printed control must beat the white control by
-#: this ink fraction, or the calibration itself is broken.
-PAGE_INK_MARGIN = 0.002
-#: The left and right page regions of an open book, as frame fractions
-#: (x0, y0, x1, y1). The gutter (0.5 w) sits between them on purpose: the
-#: gutter line is never counted as printed text on a blank-page control.
-PAGE_REGIONS = ((0.10, 0.25, 0.47, 0.75), (0.53, 0.25, 0.90, 0.75))
-
-def pages_block(spec):
-    """The PRINTED_PAGES fragment, CONSUMED verbatim from the H3 template.
-
-    U11 authors no prompt wording: the text is the ``PRINTED_PAGES`` fragment
-    of references/prompt-templates/models/minimax-h3.json. Returns the text
-    when the shot's pages mode is "texture", else None. A missing template
-    file is a loud BookShotError naming the path, never invented text.
-    """
-    if str((spec or {}).get("pages") or "").strip() != "texture":
-        return None
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    path = os.path.join(root, "references", "prompt-templates", "models",
-                        "minimax-h3.json")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            frag = (json.load(fh).get("fragments") or {})["PRINTED_PAGES"]
-    except (OSError, ValueError, KeyError) as exc:
-        raise BookShotError(BOOK_PAGES_UNAVAILABLE,
-                            "PRINTED_PAGES fragment unreadable at %s (%s)"
-                            % (path, exc)) from exc
-    return frag
-
-def _page_ink(frame, regions=None):
-    """Ink fraction for each page region of one frame (0.0..1.0 each)."""
-    cv2 = _cv2()
-    np = _np()
-    gray = frame if getattr(frame, "ndim", 3) == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape[:2]
-    out = []
-    for x0, y0, x1, y1 in (regions or PAGE_REGIONS):
-        p = gray[int(y0 * h):int(y1 * h), int(x0 * w):int(x1 * w)]
-        out.append(float(np.count_nonzero(p < PAGE_INK_DARK)) / float(p.size)
-                   if p.size else 0.0)
-    return out
-
-def _median(values):
-    v = sorted(values)
-    if not v:
-        return 0.0
-    mid = len(v) // 2
-    return v[mid] if len(v) % 2 else (v[mid - 1] + v[mid]) / 2.0
-
-def calibrate_pages():
-    """The printed-vs-white control the page check must pass first.
-
-    Builds the two shipped page fixtures locally (no network, no spend),
-    measures their ink fractions and returns the receipt the check requires.
-    Refuses BOOK_CALIBRATION_FAILED when the pair does not sort: a check that
-    cannot tell printed pages from blank ones proves nothing.
-    """
-    cv2, np = _cv2(), _np()
-    try:
-        from .fixtures import build_fixtures as _FIX
-    except ImportError:                              # script import
-        from fixtures import build_fixtures as _FIX   # type: ignore
-    printed = [ink for f in _FIX.open_book_frames(cv2, np, printed=True)
-               for ink in _page_ink(f)]
-    white = [ink for f in _FIX.open_book_frames(cv2, np, printed=False)
-             for ink in _page_ink(f)]
-    p_ink, w_ink = _median(printed), _median(white)
-    if not (p_ink > w_ink + PAGE_INK_MARGIN):
-        raise BookShotError(
-            BOOK_CALIBRATION_FAILED,
-            "printed control %.5f does not beat white control %.5f (margin "
-            "%.3f): the page check cannot discriminate and every verdict it "
-            "would return is UNAVAILABLE" % (p_ink, w_ink, PAGE_INK_MARGIN))
-    return {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
-            "tool_version": TOOL_VERSION, "control": "printed-vs-white",
-            "printed_ink": round(p_ink, 6), "white_ink": round(w_ink, 6),
-            "threshold": round((p_ink + w_ink) / 2.0, 6),
-            "margin": PAGE_INK_MARGIN, "sorted": True}
-
-def check_pages(clip=None, spec=None, frames=None, calibrated=None):
-    """Measured printed-vs-blank verdict for the open-book frames of a clip.
-
-    A page whose ink fraction sits under the CALIBRATED threshold is blank.
-    MORE THAN ONE blank page among the sampled open frames is FAIL
-    BOOK_BLANK_PAGES (a book's pages are printed pages). One blank page can
-    be a chapter break or a right-hand page not yet turned. UNAVAILABLE never
-    passes: no calibration receipt, an unsorted receipt, or no frames.
-    """
-    spec = spec or {}
-    checks = {}
-    if not isinstance(calibrated, dict) or not calibrated.get("sorted"):
-        return _verdict("UNAVAILABLE", BOOK_PAGES_UNAVAILABLE, checks,
-                        "no printed-vs-white calibration receipt; run "
-                        "calibrate_pages() first")
-    try:
-        with _LG.heavy_slot("book-shot-pages"):
-            if frames is None:
-                frames = _read_clip_frames(clip, max_frames=24)
-    except _LG.HeavyJobTimeout as exc:
-        return _verdict("UNAVAILABLE", BOOK_FRAMES_UNAVAILABLE, checks,
-                        str(exc), calibrated)
-    if not frames:
-        return _verdict("UNAVAILABLE", BOOK_FRAMES_UNAVAILABLE, checks,
-                        "no frames decoded from %s" % (clip,), calibrated)
-    window = spec.get("window")
-    win = frames[window[0]:window[1]] if isinstance(window, (list, tuple)) \
-        and len(window) == 2 else frames
-    regions = spec.get("page_regions")
-    threshold = float(calibrated.get("threshold") or 0.0)
-    inks, blanks = [], []
-    for i, f in enumerate(win):
-        for j, ink in enumerate(_page_ink(f, regions)):
-            inks.append(round(ink, 6))
-            if ink < threshold:
-                blanks.append({"frame": i, "page": "left" if j == 0 else "right",
-                               "ink": round(ink, 6)})
-    checks["pages"] = {"sampled_frames": len(win), "pages": len(inks),
-                       "threshold": threshold, "inks": inks, "blanks": blanks}
-    if len(blanks) > 1:
-        return _verdict("FAIL", BOOK_BLANK_PAGES, checks,
-                        "%d blank pages among %d sampled (ink under the "
-                        "calibrated threshold %.5f): a book's visible pages "
-                        "are printed pages" % (len(blanks), len(inks),
-                                               threshold), calibrated)
-    return _verdict("PASS", "BOOK_PAGES_OK", checks, "", calibrated)
-
-#: Plan keys that are the APPROVAL, not the plan: the hash is of the plan
-#: content, so the approval fields are excluded or the hash would chase
-#: itself every time a client approves.
-PLAN_HASH_EXCLUDED = ("approved_book_plan_sha256", "approved_at")
-
-def plan_sha256(plan):
-    """The canonical sha256 of a book plan's content (the producer's hash).
-
-    Stable across key order; the approval fields are excluded (see
-    PLAN_HASH_EXCLUDED). Jobs carry this value as ``book_plan_sha256`` and
-    kie_dispatch refuses a book video job whose hash is absent or differs
-    from ``approved_book_plan_sha256`` (BOOK_PLAN_NOT_APPROVED).
-    """
-    doc = {k: v for k, v in (plan or {}).items() if k not in PLAN_HASH_EXCLUDED}
-    blob = json.dumps(doc, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
-
-def plan_card_rows(plan, excerpt=None):
-    """The Book shots block for the card: APPROVALS AND NOTICES only.
-
-    Trevor's locked rule: the card never offers a new choice here. Rows are
-    (label, text) pairs, in card row style. The approval row compares the
-    plan's own hash with the approved hash, so a plan edited after approval
-    shows NOT APPROVED, not a stale tick.
-    """
-    plan = plan if isinstance(plan, dict) else {}
-    rows = []
-    current, approved = plan_sha256(plan), plan.get("approved_book_plan_sha256")
-    if approved and str(approved) == current:
-        when = (" on %s" % plan["approved_at"]) if plan.get("approved_at") else ""
-        rows.append(("Book shots:",
-                     "APPROVED, plan %s%s. Book video jobs carry this hash."
-                     % (current[:12], when)))
-    else:
-        rows.append(("Book shots:",
-                     "NOT APPROVED -- no approved plan hash matches this "
-                     "plan. Book video jobs refuse (BOOK_PLAN_NOT_APPROVED) "
-                     "until the client approves the plan."))
-    if str(plan.get("pages") or "") == "texture":
-        rows.append(("Book pages:",
-                     "printed page texture -- every visible page carries "
-                     "printed text; a blank page fails review."))
-    ex = excerpt if isinstance(excerpt, dict) else {}
-    if ex.get("lines"):
-        rows.append(("Excerpt:",
-                     "%d client-supplied line(s) overlay the page; the "
-                     "client's own words, spelling checked, and the excerpt "
-                     "never reaches a video model." % len(ex["lines"])))
-    else:
-        rows.append(("Excerpt:",
-                     ex.get("note") or "no excerpt supplied -- the pages carry "
-                     "no overlay text."))
-    return rows
-
-def excerpt_overlay(lines, page=1):
-    """The client's excerpt as DATA ONLY, for U9's burn artifact.
-
-    Never a prompt: this dict is not part of any video-model request, and
-    nothing here reads text out of a frame. Lines stay the client's words,
-    verbatim and in order. ``hook`` names U9's entry point -- the ONE named
-    hook in this codebase; the call itself lives in
-    ``final_assembler.assembler.excerpt_overlay_stage``.
-    """
-    clean = [str(l).strip() for l in (lines or ())
-             if isinstance(l, str) and str(l).strip()]
-    return {"kind": "book-excerpt-overlay", "schema_version": SCHEMA_VERSION,
-            "lines": clean[:EXCERPT_MAX_LINES], "page": int(page or 1),
-            "hook": EXCERPT_OVERLAY_HOOK, "to_video_model": False,
-            "note": "data only: never part of any video-model prompt; burning "
-                    "it into frames belongs to U9's captions_burn.overlay_excerpt."}

@@ -12,6 +12,13 @@ right to left -- and the cover's aspect is MEASURED from the cover file (a
 stdlib header read; no PIL, no cv2, no network). Neither adds a question: the
 language ask rides in the existing offer sentence.
 
+FU-U11: ``excerpt_lines`` -- an OPTIONAL overlay excerpt. CLIENT-SUPPLIED
+only, never invented and never generated, at most three lines, each
+spelling-checked with the caption gate's own dictionary. It rides inside the
+EXISTING offer question (no new ask) and its provenance is always
+"provided". The excerpt is DATA for the overlay; it never reaches a video
+model prompt.
+
 The cover becomes the product image path and is stored as a product
 reference with provenance (origin, field provenance, sha256 when the file is
 readable). The story's mentor/turning point is the book; the call to action
@@ -42,12 +49,6 @@ try:
     import choice_card.looks as _LOOKS
 except ImportError:
     from ..choice_card import looks as _LOOKS            # noqa: F401
-# FU-U11: the excerpt is CLIENT-SUPPLIED text, so it is spelling checked by
-# the same I1 gate the captions use (one dictionary reader, not a second).
-try:
-    import protected_names as _PN
-except ImportError:  # pragma: no cover - protected_names always ships
-    from .. import protected_names as _PN                # type: ignore
 # FU-U10: the reading direction is owned by the book orientation contract; the
 # soft import keeps intake working (and defaulting to English) if it is absent.
 try:
@@ -86,6 +87,18 @@ BOOK_FIELDS = (
     "pain_or_transformation",
 )
 
+#: FU-U11: the OPTIONAL overlay excerpt. Never in BOOK_FIELDS -- it is not a
+#: brief field the intake asks for and never adds a question; it rides inside
+#: the existing offer slot when the client supplies it.
+EXCERPT_FIELD = "excerpt_lines"
+EXCERPT_MAX_LINES = 3
+EXCERPT_PROVENANCE = "provided"
+#: The notice the card shows when the client supplied no excerpt (the
+#: onboarding half's wording, kept for the package export surface).
+EXCERPT_NOTE_EMPTY = ("No excerpt supplied -- the pages carry no overlay "
+                      "text. The excerpt is optional and is never invented "
+                      "for the client.")
+
 #: Default when the brief says nothing: English, which is left-to-right.
 DEFAULT_LANGUAGE = "en"
 
@@ -100,6 +113,9 @@ ALIASES = {
     "pain_or_transformation": ("pain_or_transformation", "pain",
                                "transformation", "pain_or_transform"),
 }
+
+#: FU-U11: spellings the client's brief may use for the optional excerpt.
+EXCERPT_ALIASES = ("excerpt_lines", "excerpt", "overlay_lines", "page_lines")
 
 #: Which book fields fold into which of the factory's three intake slots.
 #: Union == BOOK_FIELDS: no book field is ever asked outside the cap.
@@ -126,51 +142,6 @@ COVER_SOURCE = "client-supplied book cover (D26, plan 6.14)"
 COVER_NOTE = ("No cover supplied -- the product image will be designed from "
               "the brief (choice-card spec 3.9).")
 LINK_NOTE = "No buy link supplied -- the call to action has no destination."
-
-# ------------------------------------------------------- FU-U11: excerpt ----
-#: The excerpt is OPTIONAL and CLIENT-SUPPLIED ONLY: at most three lines, the
-#: client's own words, never composed, expanded or paraphrased here. It is
-#: overlay DATA (a page text overlay), never a prompt for a video model.
-EXCERPT_MAX_LINES = 3
-EXCERPT_PROVENANCE = "provided"
-EXCERPT_KEYS = ("excerpt_lines", "excerpt", "book_excerpt", "page_text")
-EXCERPT_INVALID = "EXCERPT_INVALID"
-EXCERPT_NOTE_EMPTY = ("No excerpt supplied -- the pages carry no overlay "
-                      "text. The excerpt is optional and is never invented "
-                      "for the client.")
-
-def excerpt_lines(brief):
-    """The client's optional excerpt: (lines, provenance, errors).
-
-    CLIENT-SUPPLIED ONLY. Lines are taken verbatim, in order, from the brief;
-    nothing here composes, extends or rewrites them. More than
-    EXCERPT_MAX_LINES is an error (the client picks), and every line is
-    spelling checked against the shared dictionary so a typo is caught before
-    it would be burned into a page. Provenance is "provided" when lines were
-    supplied and "missing" when the field is absent -- never "inherited" and
-    never invented from the title, the cover or the audience line.
-    """
-    raw = None
-    for key in EXCERPT_KEYS:
-        if key in brief:
-            raw = brief.get(key)
-            break
-    if raw is None or (isinstance(raw, str) and not raw.strip()):
-        return [], "missing", []
-    if isinstance(raw, str):
-        raw = raw.split("\n")
-    if not isinstance(raw, (list, tuple)):
-        return [], "missing", ["excerpt must be a list of lines or a string"]
-    lines = [l.strip() for l in raw
-             if isinstance(l, str) and l.strip()]
-    errors = []
-    if len(lines) > EXCERPT_MAX_LINES:
-        errors.append("excerpt has %d lines; at most %d are used -- the "
-                      "client picks which" % (len(lines), EXCERPT_MAX_LINES))
-    lines = lines[:EXCERPT_MAX_LINES]
-    checked = [l for l in lines if not l.isupper()]
-    errors.extend(_PN.check_spelling(checked) if checked else [])
-    return lines, (EXCERPT_PROVENANCE if lines else "missing"), errors
 
 
 _RTL_FALLBACK = ("ar", "he", "fa", "ur", "yi", "dv", "ps", "sd")
@@ -236,7 +207,94 @@ def normalize(brief, settings=None):
     if not fields.get("language"):
         fields["language"] = DEFAULT_LANGUAGE
         prov["language"] = "defaulted"
+    # FU-U11: the excerpt is OPTIONAL and CLIENT-SUPPLIED only. It is never
+    # defaulted, never generated, never lengthened.
+    ex, ex_prov = _pick_excerpt(brief)
+    if ex is not None:
+        fields[EXCERPT_FIELD] = ex
+        prov[EXCERPT_FIELD] = ex_prov
     return fields, prov
+
+
+def _pick_excerpt(brief):
+    """(lines, provenance) for a supplied excerpt, or (None, "missing").
+
+    ``provided`` is the ONLY value this can return for lines: there is no
+    path here that invents, generates or inherits an excerpt. A value that
+    is not a list of non-empty strings, or is longer than the cap, is a
+    brief error and refuses (BOOK_EXCERPT_INVALID) rather than being
+    silently dropped or truncated.
+    """
+    raw = None
+    for key in EXCERPT_ALIASES:
+        if key in brief:
+            raw = brief.get(key)
+            break
+    if raw is None or raw == "" or raw == []:
+        return None, "missing"
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        raise BookBriefError(EXCERPT_INVALID,
+                             "excerpt_lines must be a list of lines")
+    lines = []
+    for ln in raw:
+        if not isinstance(ln, str) or not ln.strip():
+            raise BookBriefError(EXCERPT_INVALID,
+                                 "excerpt_lines entries must be non-empty "
+                                 "strings")
+        lines.append(ln.strip())
+    if len(lines) > EXCERPT_MAX_LINES:
+        raise BookBriefError(EXCERPT_INVALID,
+                             "excerpt_lines has %d lines; the cap is %d"
+                             % (len(lines), EXCERPT_MAX_LINES))
+    errs = _spellcheck_excerpt(lines)
+    if errs:
+        raise BookBriefError(EXCERPT_INVALID,
+                             "excerpt is not spelling-clean: %s"
+                             % "; ".join(errs[:3]))
+    return lines, EXCERPT_PROVENANCE
+
+
+class BookBriefError(Exception):
+    """A brief the client must fix. Carries the reason code the card shows."""
+
+    def __init__(self, code, message):
+        super().__init__("%s: %s" % (code, message))
+        self.code = code
+
+
+EXCERPT_INVALID = "BOOK_EXCERPT_INVALID"
+
+
+def _spellcheck_excerpt(lines):
+    """Spelling errors, from the caption gate's own dictionary (one owner)."""
+    try:
+        import protected_names as _PN
+    except ImportError:
+        return ["SPELLCHECK_UNAVAILABLE: protected_names cannot be imported"]
+    # check_spelling walks the LINES of its argument; a dict is walked over
+    # its KEYS, so the lines are passed as a list (never a dict).
+    return list(_PN.check_spelling(list(lines)))
+
+
+def excerpt_lines(brief):
+    """The client's optional excerpt as (lines, provenance, errors).
+
+    The onboarding half's package surface, kept: evaluate() is the fail-closed
+    path (a bad excerpt refuses the brief), while this read-only view reports
+    the errors instead of raising, for a caller that wants to show them.
+    CLIENT-SUPPLIED ONLY -- lines come verbatim from the brief, never composed
+    here; provenance is "provided" when lines were supplied, "missing" when
+    the field is absent, never invented.
+    """
+    try:
+        lines, prov = _pick_excerpt(brief)
+    except BookBriefError as exc:
+        return [], "missing", [str(exc)]
+    if lines is None:
+        return [], "missing", []
+    return list(lines), prov, []
 
 
 def to_intake_brief(fields):
@@ -365,6 +423,23 @@ def _reword(question):
     return q
 
 
+def _excerpt_rejected(brief, detail, code, settings):
+    """The rejected shape for a bad excerpt. Same keys as every other
+    rejection this module returns, so a caller reads one shape."""
+    return {
+        "outcome": "rejected", "reason_code": code.lower(),
+        "questions": [], "question_message": None,
+        "summary": {"campaign_type": "book"}, "digest": None,
+        "provenance": {"book": {}, "intake": {}}, "untrusted_fields": [],
+        "auth_status": "missing", "approval_invalidated": False,
+        "changes": [], "product_reference": None,
+        "excerpt_error": detail,
+        "next_action": ("Fix the excerpt and resubmit: at most %d lines, each "
+                        "a real word. An excerpt is optional -- omit it to "
+                        "continue without an overlay." % EXCERPT_MAX_LINES),
+    }
+
+
 def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None):
     """Run book intake. Shape mirrors intake_preflight.evaluate.
 
@@ -378,16 +453,17 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
             "outcome": "rejected", "reason_code": "bad-brief-not-a-dict",
             "questions": [], "question_message": None,
             "summary": {"campaign_type": "book"}, "digest": None,
-            "provenance": {"book": {}, "excerpt": "missing", "intake": {}},
-            "untrusted_fields": [],
+            "provenance": {"book": {}, "intake": {}}, "untrusted_fields": [],
             "auth_status": "missing", "approval_invalidated": False,
             "changes": [], "product_reference": None,
             "next_action": "Resubmit the brief as a JSON object.",
         }
 
     hits = _base.detect_injection(brief)
-    fields, prov = normalize(brief, settings)
-    ex_lines, ex_prov, ex_errors = excerpt_lines(brief)
+    try:
+        fields, prov = normalize(brief, settings)
+    except BookBriefError as exc:
+        return _excerpt_rejected(brief, str(exc), exc.code, settings)
     # F6: menus and numbers come from Trevor's words or the skill's tables,
     # never invented. Checked at compile time, before any question is asked.
     invented = reject_any_invented(brief)
@@ -403,14 +479,16 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
     summary["product_image_path"] = fields.get("cover")
     summary["story_role"] = STORY_ROLE
     summary["card_notes"] = card_notes(fields)
-    # FU-U11: the OPTIONAL excerpt -- client-supplied only, never invented.
-    summary["excerpt_note"] = EXCERPT_NOTE_EMPTY if not ex_lines else None
-    summary["excerpt_lines"] = list(ex_lines)
-    summary["excerpt_errors"] = list(ex_errors)
     # FU-U10: reading direction comes from brief.language, never from a model,
     # and the cover's aspect is MEASURED (measured=False when unreadable).
     summary["reading_direction"] = reading_direction(fields.get("language"))
     summary["cover_aspect"] = cover_aspect(fields)
+    # FU-U11: the excerpt, when the client supplied one. Provenance is
+    # "provided" by construction; a brief with no excerpt carries no key, so
+    # it can never look like an invented one.
+    if fields.get(EXCERPT_FIELD):
+        summary["excerpt_lines"] = list(fields[EXCERPT_FIELD])
+        summary["excerpt_provenance"] = EXCERPT_PROVENANCE
     digest = hashlib.sha256(
         json.dumps(summary, sort_keys=True, default=str).encode()).hexdigest()[:16]
     # Authorization is bound to THIS record's digest (scope may be "campaign"
@@ -427,8 +505,7 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
         "question_message": message,
         "summary": summary,
         "digest": digest,
-        "provenance": {"book": prov, "excerpt": ex_prov,
-                       "intake": base.get("provenance")},
+        "provenance": {"book": prov, "intake": base.get("provenance")},
         "auth_status": status,
         "approval_invalidated": base.get("approval_invalidated", False),
         "changes": base.get("changes", []),
@@ -463,19 +540,6 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
                 % (", ".join(_MS.style_ids()),
                    ", ".join(_LOOKS.LOOK_ORDER),
                    "/".join(str(n) for n in _OFFERED_LENGTHS_S))),
-        })
-    elif ex_errors:  # U11: a client excerpt typo is caught before it burns
-        out.update({
-            "outcome": "rejected",
-            "reason_code": EXCERPT_INVALID,
-            "questions": [],
-            "question_message": None,
-            "excerpt_errors": list(ex_errors),
-            "approval_invalidated": False,
-            "changes": [],
-            "next_action": "Fix or remove the excerpt lines and resubmit: the "
-                           "excerpt is the client's own words and is never "
-                           "rewritten for them.",
         })
     return out
 

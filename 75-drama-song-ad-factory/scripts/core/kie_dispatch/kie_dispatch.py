@@ -262,27 +262,24 @@ def lipsync_picture_refusal(model, request):
     return None
 
 def book_shot_refusal(model, request):
-    """FU-U10 + FU-U11: a BOOK video job needs the contract, or it does not
-    dispatch.
+    """FU-U10: a BOOK video job needs the contract, or it does not dispatch.
 
     A request whose shot kind is "book" on a video model must carry
-    (a) the approved book PLAN hash -- FU-U11 ACTIVATES this now that a
-    producer writes the field (book_shot.plan_sha256): the request must carry
-    ``book_plan_sha256`` AND ``approved_book_plan_sha256``, and they must
-    match, or the refusal is BOOK_PLAN_NOT_APPROVED (the U10 form of this
-    check ran only when the field was present, because no producer wrote it
-    yet); and
+    (a) the approved book PLAN hash -- a book job that carries NO
+    ``book_plan_sha256`` is REFUSED with BOOK_PLAN_NOT_APPROVED (U11's
+    producer writes the field, so the requirement is ACTIVE: the dormant
+    period U10 shipped for ended when the producer landed); and
     (b) a start frame MADE FROM the cover file -- request["book_start_frame"]
     (or request["start_frame"]) naming a path whose sha256 equals the cover
     sha256 carried by the same request (request["book_cover_sha256"]) or
     computed from request["book_cover_path"].
 
     -> None when not a book job or the contract holds, else the refusal dict
-    (reason BOOK_PLAN_NOT_APPROVED for the plan side, BOOK_SHOT_NOT_CONTRACTED
-    for the frame side). Fail-closed: an unreadable start frame, a missing
-    cover reference, or a start frame made from other bytes refuses. Never
-    touches the LIPSYNC_* seams: a lip-sync model is not a book shot entry
-    point.
+    with reason BOOK_PLAN_NOT_APPROVED (plan side) or
+    BOOK_SHOT_NOT_CONTRACTED (start frame side). Fail-closed: an unreadable
+    start frame, a missing cover reference, a missing or mismatched plan
+    hash, or a start frame made from other bytes refuses. Never touches the
+    LIPSYNC_* seams: a lip-sync model is not a book shot entry point.
     """
     req = request if isinstance(request, dict) else {}
     kind = req.get("shot_kind") or req.get("kind")
@@ -291,25 +288,27 @@ def book_shot_refusal(model, request):
     if not (req.get("request_kind") == "video" or _is_menu_video(model)
             or _modality(model) == "video"):
         return None
-    # (a) plan hash: U11 ACTIVATES the requirement. A book job without a
-    # producer-written plan hash, or with a hash no approval covers, refuses.
-    # Collected into `missing` alongside the frame rule below so a job that
-    # breaks both rules is told both things, and the frame rule (U10) keeps
-    # its own refusal text.
+    # (a) plan hash: U11's producer writes book_plan_sha256, so the
+    # requirement is ACTIVE. Missing, empty, or mismatched -> refused.
     approved = req.get("approved_book_plan_sha256")
     carried = req.get("book_plan_sha256")
+    if not carried:
+        return {"reason_code": "BOOK_PLAN_NOT_APPROVED",
+                "detail": "no book_plan_sha256: the book plan has not been "
+                          "approved for this job",
+                "next_action": "Hash the approved book plan "
+                               "(book_shot.plan_sha256) and carry it as "
+                               "book_plan_sha256 alongside "
+                               "approved_book_plan_sha256, then resubmit."}
+    if not approved or str(carried) != str(approved):
+        return {"reason_code": "BOOK_PLAN_NOT_APPROVED",
+                "detail": "book_plan_sha256 does not match the approved "
+                          "plan (carried %s, approved %s)"
+                          % (_short(carried), _short(approved)),
+                "next_action": "The plan changed after approval. Re-approve "
+                               "the current plan and carry its hash, then "
+                               "resubmit."}
     missing = []
-    plan_bad = None
-    if carried is None or not str(carried):
-        plan_bad = ("no book_plan_sha256 on the request: the book plan hash "
-                    "(book_shot.plan_sha256) must be computed and carried, "
-                    "and covered by an approved_book_plan_sha256")
-    elif not approved:
-        plan_bad = ("no approved_book_plan_sha256: the client has not "
-                    "approved this book plan")
-    elif str(carried) != str(approved):
-        plan_bad = ("book_plan_sha256 does not match the approved plan: the "
-                    "plan changed after approval")
     # (b) the start frame must be made from the cover file, byte for byte.
     frame = req.get("book_start_frame") or req.get("start_frame")
     cover_sha = req.get("book_cover_sha256")
@@ -338,15 +337,12 @@ def book_shot_refusal(model, request):
                                "start frame made from the client's cover file "
                                "(book_shot.prompt_blocks + image_model_blocks), "
                                "then resubmit."}
-    if plan_bad:
-        return {"reason_code": "BOOK_PLAN_NOT_APPROVED",
-                "detail": plan_bad,
-                "next_action": "Produce the plan hash with "
-                               "book_shot.plan_sha256(plan), have the client "
-                               "approve it at the card (the Book shots row), "
-                               "then resubmit with book_plan_sha256 and "
-                               "approved_book_plan_sha256 matching."}
     return None
+
+def _short(value, n=12):
+    """A hash prefix for a refusal message. Never the secret, never a file."""
+    s = str(value or "")
+    return (s[:n] + "...") if len(s) > n else (s or "none")
 
 def _sha256_path(path):
     if not path or not os.path.isfile(str(path)):
@@ -382,6 +378,7 @@ TOOL_NAME = "kie_dispatch"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "blackceo.kie-dispatch/envelope/v1"
 EXIT = {"ok": 0, "error": 1, "waiting": 3, "parked": 4, "rejected": 5}
+
 
 #: U15b: the models whose prompts come from the template assembler
 #: (prompt_templates.assemble_h3). An H3 video job must carry the prompt
@@ -436,8 +433,8 @@ def prompt_templated_refusal(model, request, prompt):
         return {"reason_code": "PROMPT_NOT_TEMPLATED",
                 "detail": "the matching receipt's verdict is %s: %s"
                           % (verdict.upper(),
-                             "; ".join((match.get("check") or {}).get("reasons",
-                                                                     []) or []))}
+                             "; ".join((match.get("check") or {}).get(
+                                 "reasons", []) or []))}
     return None
 
 
@@ -493,7 +490,6 @@ def _templates_catalog(kind):
         return _PT.catalog_path(kind)
     except Exception:                                   # noqa: BLE001
         return None
-
 
 ADAPTER_SKILL = "74-kie-live-adapter"
 ADAPTER_SCRIPT = "kie_live_adapter.py"
@@ -1074,16 +1070,16 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         pic + " Nothing was reserved and nothing was sent.",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id, evidence={"generated": False})
-    book = book_shot_refusal(model, request)      # FU-U10: book job contract
-    if book is not None:
-        return envelope("dispatch", "rejected", book["reason_code"],
-                        book["detail"] + " " + book["next_action"],
-                        run_id=run_id, logical_key=logical_key,
-                        attempt_id=attempt_id, evidence={"generated": False})
     onscreen = onscreen_text_refusal(model, request)
     if onscreen is not None:                # U8: no paid job prints an unchecked string
         return envelope("dispatch", "rejected", "ONSCREEN_TEXT_NOT_CHECKED",
                         onscreen + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
+    book = book_shot_refusal(model, request)      # FU-U10: book job contract
+    if book is not None:
+        return envelope("dispatch", "rejected", book["reason_code"],
+                        book["detail"] + " " + book["next_action"],
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id, evidence={"generated": False})
     if not model:
@@ -1164,7 +1160,8 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         + " Nothing was reserved and nothing was sent.",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id,
-                        evidence={"generated": False, "gate": "final-payload-cap"})
+                        evidence={"generated": False,
+                                  "gate": "final-payload-cap"})
     # ---- 0. placeholder check (F10) ---------------------------------------
     # Before the ledger: a refused request reserves nothing and calls nothing.
     ph = _find_placeholder(request)

@@ -9,6 +9,10 @@ discovery. Every caller builds them into a temp dir instead.
   cover_flip   the HORIZONTAL MIRROR of the cover (the defect the checker hunts)
   back_cover   unrelated art (a back cover / invented cover)
   leaf frames  a synthetic leaf moving left (right-to-left) and right
+  pages frames a PRINTED page (dense serif lines, paragraph blocks, page
+               numbers) and a WHITE page (the defect U11's BOOK_BLANK_PAGES
+               hunts). Both are the same size and paper colour, so the only
+               difference the checker can see is the printed ink.
 
 All shapes are seeded, so two runs on the same machine produce byte-equal
 frames.
@@ -74,43 +78,12 @@ def leaf_frames(cv2, np, direction="left", count=8, w=FRAME_W, h=FRAME_H):
         frames.append(f)
     return frames
 
-def open_book_frames(cv2, np, printed=True, count=6, w=FRAME_W, h=FRAME_H):
-    """FU-U11 page fixtures: an OPEN book, printed pages or blank pages.
-
-    printed=True   two page regions filled with dense printed text lines
-    printed=False  the same two regions blank white (the FAIL control)
-
-    Same geometry in both (gutter, page edges, shading), so the ONLY thing
-    that differs between the pair is ink: a page check that cannot sort these
-    two is broken, and calibrate_pages() refuses on that evidence.
-    """
-    frames = []
-    for i in range(count):
-        f = np.full((h, w, 3), 235, np.uint8)
-        cv2.rectangle(f, (30, 40), (w - 30, h - 40), (250, 250, 250), -1)
-        f[:, int(w * 0.5) - 1:int(w * 0.5) + 1] = (150, 150, 150)   # gutter
-        for x0, y0, x1, y1 in ((0.10, 0.25, 0.47, 0.75), (0.53, 0.25, 0.90, 0.75)):
-            px0, py0 = int(x0 * w), int(y0 * h)
-            px1, py1 = int(x1 * w), int(y1 * h)
-            if printed:
-                rows = 9
-                for r in range(rows):
-                    y = py0 + int((py1 - py0) * (r + 0.5) / rows)
-                    span = (px1 - px0) - (2 * (12 if r == rows - 1 else 0))
-                    cv2.rectangle(f, (px0, y), (px0 + span, y + 3),
-                                  (25, 25, 25), -1)
-        frames.append(f)
-    return frames
-
 def pages_frame(cv2, np, kind="printed", w=FRAME_W, h=FRAME_H):
     """An OPEN book's double page: "printed" (dense type) or "white" (blank).
 
-    The SECOND fixture family (the 999 half's generator, ported for parity):
-    a different drawing style from open_book_frames -- column layout, page
-    numbers, paragraph gaps -- so the calibrated page check is proven on a
-    generator it was NOT calibrated against. Both kinds share the same paper
-    colour and the same gutter, so the only signal the checker may use is
-    the printed ink itself.
+    U11's BOOK_BLANK_PAGES hunts the empty page. Both kinds share the same
+    paper colour and the same gutter, so the only signal the checker may use
+    is the printed ink itself.
     """
     f = np.full((h, w, 3), 245, np.uint8)
     f[:, int(w * 0.5):int(w * 0.5) + 2] = (120, 120, 120)        # gutter
@@ -124,7 +97,7 @@ def pages_frame(cv2, np, kind="printed", w=FRAME_W, h=FRAME_H):
         while y < int(h * 0.92):
             n_lines = int(rng.integers(3, 7))                    # a paragraph
             for _ in range(n_lines):
-                if y > int(h * 0.90):
+                if y >= int(h * 0.90):
                     break
                 cv2.line(f, (col_x, y), (col_x + col_w, y), (25, 25, 25), 2)
                 y += 9
@@ -135,6 +108,40 @@ def pages_frame(cv2, np, kind="printed", w=FRAME_W, h=FRAME_H):
     cv2.putText(f, "143", (int(w * 0.78), int(h * 0.95)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (30, 30, 30), 1, cv2.LINE_AA)
     return f
+
+def open_book_frames(cv2, np, printed=True, count=6, w=FRAME_W, h=FRAME_H):
+    """FU-U11 page fixtures (onboarding half): an OPEN book, printed or blank.
+
+    printed=True   two page regions filled with dense printed text lines
+    printed=False  the same two regions blank white (the FAIL control)
+
+    Same geometry in both (gutter, page edges, shading), so the ONLY thing
+    that differs between the pair is ink: a page check that cannot sort these
+    two is broken. Kept as a second, independent fixture family, so the grid
+    check is proven on generator styles it was not calibrated against.
+    """
+    # The page fills the frame: check_pages measures a 8x6 grid over the WHOLE
+    # frame, so a printed fixture with paper margins outside the type block
+    # reads as blank grid cells (a real printed page fills its frame). Both
+    # kinds share this geometry -- only the ink differs.
+    frames = []
+    for i in range(count):
+        f = np.full((h, w, 3), 235, np.uint8)
+        cv2.rectangle(f, (2, 2), (w - 3, h - 3), (250, 250, 250), -1)
+        f[:, int(w * 0.5) - 1:int(w * 0.5) + 1] = (150, 150, 150)   # gutter
+        for x0, y0, x1, y1 in ((0.04, 0.05, 0.48, 0.95),
+                               (0.52, 0.05, 0.96, 0.95)):
+            px0, py0 = int(x0 * w), int(y0 * h)
+            px1, py1 = int(x1 * w), int(y1 * h)
+            if printed:
+                rows = 24
+                for r in range(rows):
+                    y = py0 + int((py1 - py0) * (r + 0.5) / rows)
+                    span = (px1 - px0) - (2 * (12 if r == rows - 1 else 0))
+                    cv2.rectangle(f, (px0, y), (px0 + span, y + 3),
+                                  (25, 25, 25), -1)
+        frames.append(f)
+    return frames
 
 def write_pngs(tmpdir, cv2, images):
     out = {}
@@ -156,9 +163,13 @@ def build(tmpdir):
         "front_frame": paste_into_frame(cv2, np, cover),
         "flip_frame": cv2.flip(paste_into_frame(cv2, np, cover), 1),
         "back_frame": paste_into_frame(cv2, np, make_back_cover(cv2, np)),
+        "pages_printed": pages_frame(cv2, np, "printed"),
+        "pages_white": pages_frame(cv2, np, "white"),
     }
     paths = write_pngs(tmpdir, cv2, imgs)
     return {"paths": paths, "images": imgs,
             "leaf_left": leaf_frames(cv2, np, "left"),
             "leaf_right": leaf_frames(cv2, np, "right"),
+            "printed_page": imgs["pages_printed"],
+            "white_page": imgs["pages_white"],
             "title": TITLE, "author": AUTHOR}

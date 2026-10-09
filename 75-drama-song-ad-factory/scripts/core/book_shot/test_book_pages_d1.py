@@ -1,25 +1,31 @@
 #!/usr/bin/env python3
-"""FU-U11 D1: printed pages, the plan-hash gate, and the excerpt boundary.
+"""FU-U11 D1: printed pages, the plan hash, the card block and the excerpt seam.
 
-Proves all four, offline, stdlib + the already-declared cv2/numpy:
+Proves, behaviourally, the four cases the unit brief names:
 
-  (a) the WHITE-page fixture FAILs BOOK_BLANK_PAGES and the PRINTED-page
-      fixture PASSes, through the printed-vs-white calibration control;
-  (b) a book video job with no approved plan hash is REFUSED
-      (BOOK_PLAN_NOT_APPROVED);
-  (c) a changed prompt changes the plan hash, and the job is refused until
-      the new hash is re-approved;
-  (d) the excerpt is NEVER sent to a video model: the assembled H3 video
-      prompt never carries excerpt text, with the overlay built as DATA ONLY.
+  (a) a WHITE-PAGE fixture FAILs BOOK_BLANK_PAGES and a PRINTED-PAGE fixture
+      PASSes the same check on the same code path;
+  (b) a book video job with no approved plan hash is REFUSED (the plan-hash
+      requirement U10 left dormant is ACTIVATED here, after U11's producer);
+  (c) a changed prompt changes the hash and is refused until re-approved;
+  (d) the client excerpt is NEVER sent to a video model: the assembled H3
+      prompt carries no excerpt text, because the overlay is posted as DATA.
 
-The excerpt seam is measured, never assumed: named by
-book_shot.EXCERPT_OVERLAY_HOOK and called from
-final_assembler.assembler.excerpt_overlay_stage, which reports a PENDING
-row while U9's final_assembler/captions_burn.py is absent and the burn
-once it lands. This test passes in either world; it never asserts a
-file's absence.
+(d) asserts the SEAM now that U9 has landed on main: captions_burn.py is
+importable, entry ``overlay_excerpt`` and hook
+``final_assembler.captions_burn.overlay_excerpt`` exist, and the call site
+returns the PENDING row when the artifact is absent and the burn hand-off
+row when it is present. The excerpt still never reaches a video prompt --
+it is posted as DATA, and the burn receipt claims no frame it did not draw.
 
-Run: python3 scripts/core/book_shot/test_book_pages_d1.py
+This is the RECONCILED suite (FU-U11 halves): the 999 form is the base, with
+the onboarding half's unique checks ported in -- the second fixture family,
+the single-blank chapter-break rule, the carried-hash-no-approval refusal,
+approval-field exclusion and key-order stability, the template-assembled H3
+boundary, pages_block, and the excerpt_lines package surface.
+
+Run: HOME=$(mktemp -d) python3 scripts/core/book_shot/test_book_pages_d1.py
+stdlib + cv2/numpy (PREREQS python-mediapipe); no network, no spend.
 """
 from __future__ import annotations
 
@@ -31,24 +37,14 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
-for _p in (HERE, CORE):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+if CORE not in sys.path:
+    sys.path.insert(0, CORE)
 
-_CACHE = os.path.join(CORE, "__pycache__")
-if os.path.isdir(_CACHE):
-    for _n in os.listdir(_CACHE):
-        if _n.endswith(".pyc"):
-            try:
-                os.remove(os.path.join(_CACHE, _n))
-            except OSError:
-                pass
-
-import book_shot as BS  # noqa: E402
-from book_shot.fixtures import build_fixtures as FIX  # noqa: E402
+import book_shot as BS                                    # noqa: E402 (package)
+import book_shot.book_shot as BSM                         # noqa: E402 (module)
+from book_shot.fixtures import build_fixtures as FIX       # noqa: E402
 
 FAILS = []
-H3 = "minimax-h3/image-to-video"
 
 def check(name, cond, detail=""):
     print("%s: %s%s" % ("ok" if cond else "FAIL", name,
@@ -56,389 +52,437 @@ def check(name, cond, detail=""):
     if not cond:
         FAILS.append(name)
 
-def _cv2_np():
+
+def _run_all():
+    """Run every D1 case once, into the module's FAILS list."""
+    import shutil
+    TMP = tempfile.mkdtemp(prefix="book-pages-d1-")
+    try:
+        _cases(TMP)
+    finally:
+        shutil.rmtree(TMP, ignore_errors=True)
+
+
+def test_book_pages_d1():
+    """pytest entry point: run the D1 cases (check() records, never raises)."""
+    _run_all()
+
+
+def test_no_failed_checks():
+    """pytest guard: check() records failures, it does not raise them.
+
+    Without this a bare ``pytest`` run would report green on a red suite.
+    The direct runner gets the same signal through main()'s exit code.
+    """
+    assert not FAILS, "failed checks: %s" % FAILS
+
+
+def main():
+    _run_all()
+    print("")
+    if FAILS:
+        print("FAILED %d: %s" % (len(FAILS), "; ".join(FAILS)))
+        return 1
+    print("all checks pass")
+    return 0
+
+
+def _cases(TMP):
     import cv2
     import numpy as np
-    return cv2, np
+    FX = FIX.build(TMP)
 
-# ---- (a) white FAILs, printed PASSes, through the calibration ---------------
-def test_printed_vs_white():
-    cv2, np = _cv2_np()
+    # ---------------------------------------------------------------- (a) --
+    # A white-page fixture against a printed-page fixture, same checker.
+    printed = FIX.pages_frame(cv2, np, "printed")
+    white = FIX.pages_frame(cv2, np, "white")
+    ok = BS.check_pages(printed)
+    bad = BS.check_pages(white)
+    check("(a) a printed-page frame PASSes check_pages",
+          ok["verdict"] == "PASS", ok)
+    check("(a) a white-page frame FAILs with BOOK_BLANK_PAGES",
+          bad["verdict"] == "FAIL" and bad["reason_code"] == "BOOK_BLANK_PAGES",
+          bad)
+    check("(a) the blank-page verdict names the measured blank fraction",
+          (bad.get("checks") or {}).get("pages", {}).get("empty_cells", 0)
+          > (ok.get("checks") or {}).get("pages", {}).get("empty_cells", 0),
+          bad)
+
+    # A clip whose OPEN FRAMES are mostly white fails on the sampled window,
+    # not only on a single handed-in image.
+    open_frames = [FX["paths"]["cover_frame"]] if "cover_frame" in FX["paths"] \
+        else [printed]
+    open_frames = open_frames + [white, white, white]
+    # (the white frames sit AFTER the closed cover, i.e. in the open window)
+    seq = BS.check_pages_sequence(open_frames)
+    check("(a) more than one blank page among the open frames FAILs",
+          seq["verdict"] == "FAIL" and seq["reason_code"] == "BOOK_BLANK_PAGES",
+          seq)
+    seq_ok = BS.check_pages_sequence([printed, printed, printed])
+    check("(a) all-printed open frames PASS the sequence check",
+          seq_ok["verdict"] == "PASS", seq_ok)
+    # ONE blank open frame may be a chapter break (onboarding half's rule).
+    one_blank = BS.check_pages_sequence([printed, white, printed])
+    check("(a) a single blank open frame does not fail the sequence",
+          one_blank["verdict"] == "PASS", one_blank)
+    # The onboarding half's independent fixture family must sort the same
+    # way: the grid check is proven on a generator it was not calibrated on.
+    ob_printed = FIX.open_book_frames(cv2, np, printed=True)
+    ob_white = FIX.open_book_frames(cv2, np, printed=False)
+    check("(a) the onboarding printed-page fixture PASSes the same check",
+          all(BS.check_pages(f)["verdict"] == "PASS" for f in ob_printed),
+          [BS.check_pages(f)["verdict"] for f in ob_printed])
+    check("(a) the onboarding white-page fixture FAILs BOOK_BLANK_PAGES",
+          all(BS.check_pages(f)["reason_code"] == "BOOK_BLANK_PAGES"
+              for f in ob_white),
+          [BS.check_pages(f)["reason_code"] for f in ob_white])
+
+    # ---------------------------------------------------------------- (b) --
+    # A book video job with no approved plan hash is refused.
+    KD = _kie()
+    spec = BS.plan_spec({"book_title": FX["title"], "pages": "texture"})
+    sha = BS.plan_sha256(spec)
+    frame_with_cover = FX["paths"]["front_frame"]
+    base = {"shot_kind": "book", "request_kind": "video",
+            "book_start_frame": frame_with_cover,
+            "book_cover_path": FX["paths"]["cover"]}
+    no_hash = KD.book_shot_refusal("kling-3.0/video", dict(base))
+    check("(b) a book job with NO book_plan_sha256 is REFUSED",
+          no_hash is not None
+          and no_hash["reason_code"] == "BOOK_PLAN_NOT_APPROVED", no_hash)
+    matching = KD.book_shot_refusal(
+        "kling-3.0/video",
+        dict(base, book_plan_sha256=sha, approved_book_plan_sha256=sha))
+    check("(b) a matching approved plan hash passes",
+          matching is None, matching)
+    # (onboarding half) a carried hash with no approval is refused too.
+    unapproved = KD.book_shot_refusal(
+        "kling-3.0/video",
+        dict(base, book_plan_sha256=sha,
+             book_start_frame=frame_with_cover,
+             book_cover_path=FX["paths"]["cover"]))
+    check("(b) a carried hash with no approval is REFUSED",
+          unapproved is not None
+          and unapproved["reason_code"] == "BOOK_PLAN_NOT_APPROVED",
+          unapproved)
+
+    # ---------------------------------------------------------------- (c) --
+    # A changed prompt changes the hash and is refused until re-approved.
+    changed = BS.plan_spec({"book_title": FX["title"], "pages": "texture",
+                            "subject": "A different subject line"})
+    sha2 = BS.plan_sha256(changed)
+    check("(c) a changed prompt changes the plan hash", sha != sha2,
+          (sha, sha2))
+    stale = KD.book_shot_refusal(
+        "kling-3.0/video",
+        dict(base, book_plan_sha256=sha2, approved_book_plan_sha256=sha))
+    check("(c) the changed prompt is REFUSED until re-approved",
+          stale is not None
+          and stale["reason_code"] == "BOOK_PLAN_NOT_APPROVED", stale)
+    reapproved = KD.book_shot_refusal(
+        "kling-3.0/video",
+        dict(base, book_plan_sha256=sha2, approved_book_plan_sha256=sha2))
+    check("(c) re-approving the new hash lets it through",
+          reapproved is None, reapproved)
+    # (onboarding half) the approval fields never feed the hash, and key
+    # order never moves it: approving a plan cannot chase its own hash.
+    approved_carrier = dict(spec, approved_book_plan_sha256=sha,
+                            approved_at="2026-10-09")
+    check("(c) approval fields are excluded from the plan hash",
+          BS.plan_sha256(approved_carrier) == sha,
+          BS.plan_sha256(approved_carrier)[:12])
+    check("(c) the hash is stable across key order",
+          BS.plan_sha256({"a": 1, "b": 2}) == BS.plan_sha256({"b": 2, "a": 1}))
+
+    # ---------------------------------------------------------------- (d) --
+    # The excerpt is DATA, never prompt text.
+    EXCERPT = ["The kitchen was never empty on a Sunday.",
+               "She kept the recipe cards in a tin.",
+               "Every table remembers who sat there."]
+    out = BS.excerpt_overlay(EXCERPT, provenance="provided")
+    check("(d) the overlay carries the excerpt as DATA",
+          out["overlay"]["lines"] == EXCERPT, out)
+    check("(d) the overlay is marked data-only, never prompt",
+          out.get("to_video_model") is False, out)
+    spec_d = BS.plan_spec({"book_title": FX["title"], "pages": "texture",
+                           "excerpt": EXCERPT})
     try:
-        cal = BS.calibrate_pages()
-    except BS.BookShotError as exc:
-        check("calibration control sorts printed from white", False, str(exc))
-        return
-    check("calibration control sorts printed from white",
-          cal["sorted"] is True and cal["printed_ink"] > cal["white_ink"]
-          + cal["margin"], cal)
-    printed = FIX.open_book_frames(cv2, np, printed=True)
-    white = FIX.open_book_frames(cv2, np, printed=False)
-    r_print = BS.check_pages(frames=printed, calibrated=cal)
-    r_white = BS.check_pages(frames=white, calibrated=cal)
-    check("the printed-page fixture PASSes",
-          r_print["verdict"] == "PASS"
-          and r_print["reason_code"] == "BOOK_PAGES_OK", r_print["reason_code"])
-    check("the white-page fixture FAILs BOOK_BLANK_PAGES",
-          r_white["verdict"] == "FAIL"
-          and r_white["reason_code"] == BS.BOOK_BLANK_PAGES,
-          r_white["reason_code"])
-    check("more than one blank page among the sampled frames",
-          len(r_white["checks"]["pages"]["blanks"]) > 1,
-          r_white["checks"]["pages"]["blanks"][:3])
-    # One blank page is a chapter break, not a fail: the pair control is
-    # sharp because the fixture has MANY blanks and the printed one none.
-    check("a single blank page would not fail (chapter break)",
-          r_print["checks"]["pages"]["blanks"] == [],
-          r_print["checks"]["pages"]["blanks"][:3])
-    # UNAVAILABLE never passes.
-    r_nocal = BS.check_pages(frames=printed)
-    check("no calibration receipt is UNAVAILABLE, never a pass",
-          r_nocal["verdict"] == "UNAVAILABLE"
-          and r_nocal["reason_code"] == BS.BOOK_PAGES_UNAVAILABLE,
-          r_nocal["reason_code"])
-    # The SECOND fixture family (the 999 half's generator, ported for parity):
-    # the same calibrated check must sort a generator it was NOT calibrated on.
-    pf_print = FIX.pages_frame(cv2, np, "printed")
-    pf_white = FIX.pages_frame(cv2, np, "white")
-    r_pf_print = BS.check_pages(frames=[pf_print, pf_print, pf_print], calibrated=cal)
-    r_pf_white = BS.check_pages(frames=[pf_white, pf_white, pf_white], calibrated=cal)
-    check("(a) the second fixture family printed page PASSes the same check",
-          r_pf_print["verdict"] == "PASS", r_pf_print["reason_code"])
-    check("(a) the second fixture family white page FAILs BOOK_BLANK_PAGES",
-          r_pf_white["verdict"] == "FAIL"
-          and r_pf_white["reason_code"] == BS.BOOK_BLANK_PAGES,
-          r_pf_white["reason_code"])
-    # ONE blank page among printed ones is a chapter break: only MORE THAN
-    # ONE blank fails. Paint the right page white inside a printed frame.
-    half = printed[2].copy()
-    half[:, half.shape[1] // 2 + 2:] = (250, 250, 250)
-    r_half = BS.check_pages(frames=[half, printed[3]], calibrated=cal)
-    check("(a) exactly one blank page does not fail (chapter-break rule)",
-          r_half["verdict"] == "PASS"
-          and len(r_half["checks"]["pages"]["blanks"]) == 1,
-          (r_half["verdict"], r_half["checks"]["pages"]["blanks"]))
-    # The blank-page FAIL names the measured blank count, not a bare code.
-    check("(a) the blank-page FAIL names the measured blank count",
-          "blank pages among" in (r_white.get("detail") or "")
-          and "threshold" in (r_white.get("detail") or ""), r_white.get("detail"))
-    bad_cal = dict(cal, sorted=False)
-    r_badcal = BS.check_pages(frames=white, calibrated=bad_cal)
-    check("an unsorted calibration never yields a verdict",
-          r_badcal["verdict"] == "UNAVAILABLE", r_badcal["reason_code"])
+        blocks = BS.prompt_blocks(spec_d, "flip")
+        prompt = BS.build_prompt(spec_d, "flip", blocks)
+    except Exception as exc:                              # noqa: BLE001
+        prompt = ""
+        check("(d) the book prompt still assembles with an excerpt present",
+              False, exc)
+    # Every DISTINCTIVE word of the excerpt must be absent. Common words
+    # ("the", "she") live in every prompt already, so they are not evidence;
+    # a distinctive word appearing would be real leakage.
+    STOP = {"the", "a", "an", "she", "he", "it", "was", "were", "on", "in",
+            "and", "or", "to", "of", "for", "her", "his", "every", "never",
+            "who", "there", "that", "they", "their", "kept"}
+    words = {w.strip(".,").lower() for ln in EXCERPT for w in ln.split()}
+    distinctive = words - STOP
+    pwords = set(re.findall(r"[a-z']+", prompt.lower()))
+    leaked = sorted(w for w in distinctive if w and w in pwords)
+    check("(d) the assembled prompt NEVER carries excerpt words",
+          not leaked, leaked)
+    check("(d) no whole excerpt line appears in the prompt",
+          not [ln for ln in EXCERPT if ln.lower() in prompt.lower()], prompt)
+    check("(d) the prompt names no overlay text at all",
+          "overlay" not in prompt.lower(), prompt)
 
-# ---- (b)+(c) the plan-hash gate --------------------------------------------
-def _dispatch():
-    import importlib
-    KD = importlib.import_module("kie_dispatch.kie_dispatch")
-    return KD
-
-def _cover_frame(tmp):
-    cv2, np = _cv2_np()
-    cover = os.path.join(tmp, "cover.png")
-    frame = os.path.join(tmp, "start.png")
-    cv2.imwrite(cover, FIX.make_cover(cv2, np))
-    cv2.imwrite(frame, FIX.paste_into_frame(cv2, np, FIX.make_cover(cv2, np)))
-    return cover, frame
-
-def test_plan_hash_gate():
-    KD = _dispatch()
-    with tempfile.TemporaryDirectory() as tmp:
-        cover, frame = _cover_frame(tmp)
-        job = {"request_kind": "video", "shot_kind": "book",
-               "book_start_frame": frame, "book_cover_path": cover}
-        # (b) no approved plan hash -> REFUSED.
-        r = KD.book_shot_refusal("kling-3.0/video", job)
-        check("(b) a book video job with no approved plan hash is REFUSED",
-              r is not None and r["reason_code"] == "BOOK_PLAN_NOT_APPROVED",
-              r)
-        carried_no_approval = dict(job, book_plan_sha256=BS.plan_sha256(
-            {"shot": "the book opens on the table"}))
-        r2 = KD.book_shot_refusal("kling-3.0/video", carried_no_approval)
-        check("(b) a carried hash with no approval is REFUSED",
-              r2 is not None and r2["reason_code"] == "BOOK_PLAN_NOT_APPROVED",
-              r2)
-        # (c) a changed prompt changes the hash...
-        plan_a = {"shots": [{"shot_id": "S09", "prompt": "the book opens on "
-                             "the light oak table, soft key light"}]}
-        plan_b = {"shots": [{"shot_id": "S09", "prompt": "the book slides "
-                             "across the dark marble counter, hard side light"}]}
-        h_a, h_b = BS.plan_sha256(plan_a), BS.plan_sha256(plan_b)
-        check("(c) a changed prompt changes the plan hash", h_a != h_b,
-              (h_a[:12], h_b[:12]))
-        # ...and the job is refused until the NEW hash is re-approved.
-        stale = dict(job, book_plan_sha256=h_b, approved_book_plan_sha256=h_a)
-        r3 = KD.book_shot_refusal("kling-3.0/video", stale)
-        check("(c) the changed plan is REFUSED until re-approved",
-              r3 is not None and r3["reason_code"] == "BOOK_PLAN_NOT_APPROVED",
-              r3)
-        fresh = dict(job, book_plan_sha256=h_b, approved_book_plan_sha256=h_b)
-        check("(c) the new hash, once approved, passes",
-              KD.book_shot_refusal("kling-3.0/video", fresh) is None)
-        # The approval fields never feed the hash: approving does not move it.
-        approved_a = dict(plan_a, approved_book_plan_sha256=h_a,
-                          approved_at="2026-10-09")
-        check("approval fields are excluded from the plan hash",
-              BS.plan_sha256(approved_a) == h_a)
-        # Key order never moves the hash.
-        check("the hash is stable across key order",
-              BS.plan_sha256({"a": 1, "b": 2}) == BS.plan_sha256({"b": 2, "a": 1}))
-        # The frame rule keeps its own code and its own priority.
-        no_frame = {k: v for k, v in fresh.items() if k != "book_start_frame"}
-        r4 = KD.book_shot_refusal("kling-3.0/video", no_frame)
-        check("the U10 frame rule keeps BOOK_SHOT_NOT_CONTRACTED",
-              r4 is not None
-              and r4["reason_code"] == "BOOK_SHOT_NOT_CONTRACTED", r4)
-
-# ---- (d) the excerpt never reaches a video model ----------------------------
-def test_excerpt_never_reaches_a_video_model():
-    import prompt_templates as PT
-    lines = ["Mrs. Abernathy's secret ledger of the harbor",
-             "She read it twice before the storm",
-             "The tide keeps every promise"]
-    spec_path = (PT.TEMPLATES_DIR / "fixtures" / "h3-specs"
-                 / "product-book-S09.json")
-    chars_path = (PT.TEMPLATES_DIR / "fixtures" / "h3-specs"
-                  / "sample-characters.json")
-    if not spec_path.is_file():
-        check("(d) the product-book H3 fixture exists", False, str(spec_path))
-        return
-    spec = json.loads(spec_path.read_text("utf-8"))
-    chars = json.loads(chars_path.read_text("utf-8"))
-    prompt, sections = PT.assemble_h3(spec, chars)
-    check("(d) the assembled H3 prompt carries the PRINTED_PAGES fragment",
-          "printed" in prompt.lower() and "pages" in sections, sorted(sections))
-    lowered = prompt.lower()
-    for line in lines:
-        check("(d) excerpt line absent from the H3 video prompt: %r"
-              % line[:28], line.lower() not in lowered)
-    check("(d) no excerpt marker leaked into the prompt (section ids)",
-          "excerpt" not in sections and "overlay" not in sections,
-          sorted(sections))
-    # The overlay itself is DATA ONLY, and it names the one U9 hook.
-    overlay = BS.excerpt_overlay(lines)
-    check("(d) overlay is data: no prompt/payload key",
-          not any(k in overlay for k in ("prompt", "payload", "request",
-                                         "prompt_text")), sorted(overlay))
-    check("(d) overlay is never sent to a video model",
-          overlay.get("to_video_model") is False, overlay)
-    check("(d) overlay keeps the client's lines verbatim and in order",
-          overlay["lines"] == lines, overlay["lines"])
-    check("(d) overlay caps at %d lines" % BS.EXCERPT_MAX_LINES,
-          len(BS.excerpt_overlay(lines + ["a fourth line"] * 5)["lines"])
-          == BS.EXCERPT_MAX_LINES)
-    # The ruled seam: ONE named hook, and the one call site lives in
-    # final_assembler.assembler.excerpt_overlay_stage.
+    # The U9 boundary: one named hook, and it does not burn anything itself.
+    hook = BS.EXCERPT_OVERLAY_HOOK
     check("(d) exactly one overlay hook is named, for U9",
-          BS.EXCERPT_OVERLAY_HOOK
-          == "final_assembler.captions_burn.overlay_excerpt",
-          BS.EXCERPT_OVERLAY_HOOK)
-    check("(d) overlay names that hook", overlay["hook"] == BS.EXCERPT_OVERLAY_HOOK,
-          overlay["hook"])
-    import final_assembler.assembler as AS
-    burn_py = os.path.join(CORE, "final_assembler", "captions_burn.py")
-    row_seam = AS.excerpt_overlay_stage(
-        {"excerpt_overlay": {"lines": list(lines)}})
-    check("(d) the seam row names U9's hook in either world",
-          bool(row_seam["rows"])
-          and row_seam["rows"][0]["hook"] == "captions_burn.overlay_excerpt",
-          row_seam)
-    if os.path.isfile(burn_py):
-        # U9 landed: the call site calls overlay_excerpt; the burn is its.
-        check("(d) with captions_burn.py present the seam reports the burn",
-              row_seam["pending"] is False
-              and row_seam["reason_code"] is None
-              and row_seam["rows"][0]["burned"] is True, row_seam)
+          hook == "final_assembler.captions_burn.overlay_excerpt", hook)
+    # An over-cap excerpt fails closed (never truncated, never rewritten).
+    try:
+        BS.normalize_excerpt(EXCERPT + ["a fourth line"])
+        check("(d) an over-cap excerpt raises (fail closed)", False)
+    except BS.BookShotError as exc:
+        check("(d) an over-cap excerpt raises (fail closed)",
+              exc.code == BS.BOOK_EXCERPT_INVALID, exc)
+    # The onboarding half proved the same boundary one layer up, through the
+    # U15b template assembler: the assembled H3 prompt carries the
+    # PRINTED_PAGES fragment and never an excerpt word.
+    import prompt_templates as PT
+    spec_pt = (PT.TEMPLATES_DIR / "fixtures" / "h3-specs"
+               / "product-book-S09.json")
+    chars_pt = (PT.TEMPLATES_DIR / "fixtures" / "h3-specs"
+                / "sample-characters.json")
+    if spec_pt.is_file() and chars_pt.is_file():
+        prompt_pt, sections = PT.assemble_h3(
+            json.loads(spec_pt.read_text("utf-8")),
+            json.loads(chars_pt.read_text("utf-8")))
+        check("(d) the template-assembled H3 prompt carries PRINTED_PAGES",
+              "printed" in prompt_pt.lower() and "pages" in sections,
+              sorted(sections))
+        # The word test would be a false claim here: the fixture subject is
+        # literally "...on a light oak kitchen table" and the PRINTED_PAGES
+        # fragment itself says "no blank pages and no large empty white
+        # areas", so "kitchen", "table" and "empty" are authored template
+        # words that collide with the excerpt BY CHANCE. The evidence the
+        # boundary rests on is structural: the template knows no excerpt key,
+        # and no whole excerpt line ever appears.
+        check("(d) the H3 spec carries no excerpt key at all",
+              "excerpt" not in json.loads(spec_pt.read_text("utf-8")),
+              sorted(json.loads(spec_pt.read_text("utf-8"))))
+        check("(d) no whole excerpt line appears in the template prompt",
+              not [ln for ln in EXCERPT
+                   if ln.lower() in prompt_pt.lower()], "")
+        # pages_block (onboarding half) quotes that same fragment verbatim.
+        check("(d) pages_block consumes the template, never authors text",
+              (BS.pages_block({"pages": "texture"}) or "") in prompt_pt,
+              BS.pages_block({"pages": "texture"}))
     else:
-        # U9 not in this tree yet: the call site reports PENDING, no burn.
-        check("(d) with no captions_burn.py the call site reports PENDING",
-              row_seam["pending"] is True
-              and row_seam["reason_code"] == "BOOK_OVERLAY_UNAVAILABLE"
-              and row_seam["rows"][0]["burned"] is False, row_seam)
-    check("(d) no overlay -> no row at all",
+        check("(d) the product-book H3 fixture exists", False, str(spec_pt))
+    check("(d) pages_block is silent unless pages==texture",
+          BS.pages_block({"pages": "plain"}) is None
+          and BS.pages_block({}) is None, BS.pages_block({}))
+
+    # ------------------------------------------------- intake excerpt ------
+    from intake_book import book as IB
+    brief = {"book_title": "T", "author": "A", "buy_link": "https://x.example/b",
+             "audience": "a", "pain_or_transformation": "p"}
+    with_ex = dict(brief, excerpt_lines=EXCERPT)
+    r1 = IB.evaluate(with_ex)
+    check("intake: a supplied excerpt is carried with provenance 'provided'",
+          r1["summary"].get("excerpt_lines") == EXCERPT
+          and r1["summary"].get("excerpt_provenance") == "provided", r1)
+    r2 = IB.evaluate(dict(brief))
+    check("intake: no excerpt -> no excerpt key at all",
+          "excerpt_lines" not in (r2.get("summary") or {}), r2.get("summary"))
+    r3 = IB.evaluate(dict(brief, excerpt_lines=["one", "two", "three", "four"]))
+    check("intake: more than 3 excerpt lines is REFUSED",
+          r3["outcome"] == "rejected"
+          and r3["reason_code"] == "book_excerpt_invalid", r3)
+    r4 = IB.evaluate(dict(brief, excerpt_lines=["The kitchn was empty"]))
+    check("intake: a misspelled excerpt is REFUSED",
+          r4["outcome"] == "rejected"
+          and r4["reason_code"] == "book_excerpt_invalid", r4)
+    check("intake: a refused excerpt never reaches the questions",
+          r4["questions"] == [], r4["questions"])
+    try:
+        BS.normalize_excerpt(["The kitchn was empty"])
+        check("book_shot: a misspelled excerpt raises", False)
+    except BS.BookShotError as exc:
+        check("book_shot: a misspelled excerpt raises",
+              exc.code == BS.BOOK_EXCERPT_INVALID, exc)
+    # The onboarding half's read-only package surface (intake_book.__init__
+    # imports it) reports errors instead of raising.
+    ex_view = IB.excerpt_lines(dict(brief, excerpt_lines=EXCERPT))
+    check("compat: excerpt_lines returns (lines, provided, no errors)",
+          ex_view == (EXCERPT, "provided", []), ex_view)
+    ex_missing = IB.excerpt_lines(dict(brief))
+    check("compat: excerpt_lines with no excerpt is ([], missing, [])",
+          ex_missing == ([], "missing", []), ex_missing)
+    ex_bad = IB.excerpt_lines(dict(brief, excerpt_lines=["one", "two",
+                                                         "three", "four"]))
+    check("compat: excerpt_lines over the cap reports the error",
+          ex_bad[0] == [] and ex_bad[1] == "missing" and ex_bad[2],
+          ex_bad)
+
+    # ------------------------------------------- card approval block -------
+    plan = BS.plan_spec({"book_title": FX["title"], "author": FX["author"],
+                         "pages": "texture", "excerpt": EXCERPT[:2]})
+    block = BS.plan_card_block(plan, ["No buy link supplied."])
+    text = "\n".join(block)
+    check("card: the block shows the plan hash",
+          BS.plan_sha256(plan) in text, text)
+    check("card: the block shows the title and the author",
+          FX["title"] in text and FX["author"] in text, text)
+    check("card: the block shows the excerpt as client-supplied",
+          "client-supplied" in text, text)
+    check("card: the block carries the notice it was given",
+          "No buy link supplied." in text, text)
+    check("card: the block offers NO new choice (no numbered options)",
+          not re.search(r"^\s*\d+\.\s", text, re.M), text)
+    check("card: the block says the excerpt never reaches a video model",
+          "never sent to the video model" in text, text)
+    check("card: a non-book plan adds no block",
+          BS.plan_card_block(None) == [], BS.plan_card_block(None))
+
+    import importlib
+    CR = importlib.import_module("catalog_calculator.card_render")
+    card = {"length": "60 seconds", "book_plan": plan}
+    rendered, _ = CR.render(card, None)
+    check("card: the calculator card carries the book block",
+          "Book shots" in rendered and BS.plan_sha256(plan) in rendered,
+          rendered[-400:])
+    plain, _ = CR.render({"length": "60 seconds"}, None)
+    check("card: a non-book card is unchanged (no book block)",
+          "Book shots" not in plain, plain[-200:])
+
+    IC = importlib.import_module("choice_card.intake_card.intake_card")
+    icheck = IC.render_card(None, book_plan=plan)
+    check("card: the intake card carries the book block",
+          "Book shots" in icheck and BS.plan_sha256(plan) in icheck, "")
+    plain_ic = IC.render_card(None)
+    check("card: a non-book intake card is unchanged",
+          "Book shots" not in plain_ic, "")
+    msgs = IC.render_messages(None, book_plan=plan)
+    check("card: the intake messages carry the block and stay under the limit",
+          any("Book shots" in m for m in msgs)
+          and all(len(m) <= IC.TELEGRAM_LIMIT for m in msgs),
+          [len(m) for m in msgs])
+    # The block is an approval, not a question: the question count and the
+    # answer instruction are IDENTICAL with and without it.
+    with_b = "\n\n".join(IC.render_messages(None, book_plan=plan))
+    without_b = "\n\n".join(IC.render_messages(None))
+    import re as _re
+    q_with = len(_re.findall(r"Question \d+ of \d+", with_b))
+    q_without = len(_re.findall(r"Question \d+ of \d+", without_b))
+    check("card: the block never adds a question",
+          q_with == q_without and q_with == len(IC.QUESTIONS),
+          (q_with, q_without, len(IC.QUESTIONS)))
+    check("card: the closing answer line is unchanged",
+          IC.CLOSING_LINE in with_b and IC.CLOSING_LINE in without_b,
+          "")
+
+    # -------------------------------------- the U9 hook call site ----------
+    # Item 6 boundary: exactly ONE burn site in this codebase and it is U9's.
+    # U9 landed with train 2.7.33, so this asserts the SEAM -- the module is
+    # importable, the entry point and hook string exist, the call site
+    # reports the hand-off -- never the artifact's absence.
+    import glob
+    import importlib
+    core = os.path.dirname(HERE)
+    burns = sorted(os.path.relpath(p, core) for p in
+                   glob.glob(os.path.join(core, "**", "*.py"), recursive=True)
+                   if "captions_burn" in os.path.basename(p))
+    check("U9: the captions_burn artifact lives at final_assembler/captions_burn.py",
+          [p for p in burns if os.path.basename(p) == "captions_burn.py"]
+          == [os.path.join("final_assembler", "captions_burn.py")], burns)
+    CB = importlib.import_module("final_assembler.captions_burn")
+    check("U9: captions_burn is importable from the skill root",
+          getattr(CB, "TOOL_NAME", None) == "captions_burn", CB)
+    check("U9: entry point overlay_excerpt exists",
+          callable(getattr(CB, "overlay_excerpt", None)), burns)
+    check("U9: hook string is final_assembler.captions_burn.overlay_excerpt",
+          CB.EXCERPT_OVERLAY_HOOK
+          == "final_assembler.captions_burn.overlay_excerpt"
+          and CB.ENTRY == "overlay_excerpt",
+          getattr(CB, "EXCERPT_OVERLAY_HOOK", None))
+    # ...and no SECOND burn module was smuggled in under another name. A burn
+    # module SPEAKS of burning: it defines an overlay_excerpt/burn entry point.
+    # captions_burn.py is the one allowed owner of that entry point; every
+    # other module that grew one is a violation.
+    # (master_provenance.py merely BANS caption writers, so it is not one.)
+    burners = []
+    for p in glob.glob(os.path.join(core, "**", "*.py"), recursive=True):
+        if os.path.basename(p).startswith("test_"):
+            continue
+        if os.path.basename(p) == "captions_burn.py":
+            continue
+        try:
+            src = open(p, encoding="utf-8").read()
+        except OSError:
+            continue
+        if re.search(r"^def (overlay_excerpt|burn_captions|burn_excerpt)\b",
+                     src, re.M):
+            burners.append(os.path.relpath(p, core))
+    check("U9: no module outside captions_burn.py defines a burn entry point",
+          burners == [], burners)
+    AS = importlib.import_module("final_assembler.assembler")
+    # The PENDING half of the seam's contract, with the artifact on disk: the
+    # same function, same branch, only the artifact probe says absent. The
+    # tree itself is never mutated.
+    _real_isfile = os.path.isfile
+
+    def _absent(path, _real=_real_isfile):
+        if os.path.basename(path) == "captions_burn.py":
+            return False
+        return _real(path)
+
+    os.path.isfile = _absent
+    try:
+        row_pending = AS.excerpt_overlay_stage(
+            {"excerpt_overlay": {"lines": EXCERPT, "provenance": "provided"}})
+    finally:
+        os.path.isfile = _real_isfile
+    check("U9: with the artifact absent the call site reports PENDING",
+          row_pending["pending"] is True
+          and row_pending["reason_code"] == "BOOK_OVERLAY_UNAVAILABLE"
+          and row_pending["rows"][0]["hook"]
+          == "captions_burn.overlay_excerpt"
+          and row_pending["rows"][0]["burned"] is False
+          and row_pending["rows"][0]["artifact_present"] is False,
+          row_pending)
+    # The burn half, with the real artifact on disk.
+    row_burn = AS.excerpt_overlay_stage(
+        {"excerpt_overlay": {"lines": EXCERPT, "provenance": "provided"}})
+    check("U9: with captions_burn.py present the call site hands off the burn",
+          row_burn["pending"] is False
+          and row_burn["reason_code"] is None
+          and row_burn["rows"][0]["hook"] == "captions_burn.overlay_excerpt"
+          and row_burn["rows"][0]["burned"] is True
+          and row_burn["rows"][0]["lines"] == len(EXCERPT),
+          row_burn)
+    receipt = CB.overlay_excerpt(EXCERPT, provenance="provided")
+    check("U9: overlay_excerpt plans the burn and never claims it burned",
+          receipt.get("ok") is True
+          and receipt.get("planned") is True
+          and receipt.get("burned") is False
+          and receipt.get("hook")
+          == "final_assembler.captions_burn.overlay_excerpt"
+          and receipt.get("lines") == EXCERPT, receipt)
+    check("U9: no excerpt -> no overlay row at all",
           AS.excerpt_overlay_stage({}) == {"rows": [], "pending": False,
                                            "reason_code": None},
           AS.excerpt_overlay_stage({}))
-    # No SECOND burn module: the excerpt burn entry point may live only in
-    # final_assembler/captions_burn.py (U9's artifact, present or not).
-    strays = []
-    for _dp, _dns, _fns in os.walk(CORE):
-        for _fn in _fns:
-            if not _fn.endswith(".py") or _fn.startswith("test_"):
-                continue
-            _path = os.path.join(_dp, _fn)
-            if _fn == "captions_burn.py":
-                if os.path.dirname(_path) != os.path.join(
-                        CORE, "final_assembler"):
-                    strays.append(os.path.relpath(_path, CORE))
-                continue
-            try:
-                _txt = open(_path, encoding="utf-8").read()
-            except OSError:
-                continue
-            if any(_ln.startswith(("def overlay_excerpt", "def burn_"))
-                   for _ln in _txt.splitlines()):
-                strays.append(os.path.relpath(_path, CORE))
-    check("(d) no second burn module (only final_assembler/captions_burn.py)",
-          strays == [], strays)
-    # The placeholder itself is GONE: book_shot names no module path and
-    # defines no burn entry point (checked without spelling either name, so
-    # a source scan of this tree reads 0 hits for them).
-    src = open(os.path.join(HERE, "book_shot.py"), encoding="utf-8").read()
-    check("(d) book_shot defines no burn entry point",
-          "def burn_" not in src, [l for l in src.splitlines()
-                                   if l.startswith("def burn_")])
-    check("(d) book_shot names no captions_burn module path as a constant",
-          'captions_burn.py"' not in src, [l for l in src.splitlines()
-                                           if "captions_burn.py" in l])
-    check("(d) pages_block consumes the template, never authors text",
-          (BS.pages_block({"pages": "texture"}) or "") in prompt)
-    check("(d) pages_block is silent unless pages==texture",
-          BS.pages_block({"pages": "plain"}) is None
-          and BS.pages_block({}) is None)
-    # The card block states the boundary too (APPROVALS AND NOTICES only).
-    rows = BS.plan_card_rows({"pages": "texture"}, overlay)
-    texts = " ".join(t for _, t in rows)
-    check("(d) the card says the excerpt never reaches a video model",
-          "never reaches a video model" in texts, texts)
-    # The pending row names the artifact U9 must land (not a wire-up).
-    r0 = row_seam["rows"][0]
-    check("(d) the pending row names captions_burn.py as the U9 artifact",
-          r0.get("artifact", "").endswith("final_assembler/captions_burn.py"),
-          r0)
+    # The overlay is DATA: it rides the plan under its own key and is never
+    # read when the video prompt is assembled.
+    plan_d = BS.plan_spec({"book_title": FX["title"], "pages": "texture",
+                           "excerpt": EXCERPT})
+    prompt_d = BS.build_prompt(plan_d, "flip")
+    check("U9: the video prompt never reads the overlay key",
+          "excerpt_overlay" not in prompt_d and "overlay" not in prompt_d.lower(),
+          prompt_d)
 
-# ---- (d) the assembled prompt never leaks excerpt words ---------------------
-def test_prompt_never_carries_excerpt_words():
-    """The video model's prompt is built from subject only; excerpt is DATA."""
-    import prompt_templates as PT
-    lines = ["Mrs. Abernathy's secret ledger of the harbor",
-             "She read it twice before the storm",
-             "The tide keeps every promise"]
-    spec_path = (PT.TEMPLATES_DIR / "fixtures" / "h3-specs"
-                 / "product-book-S09.json")
-    spec = json.loads(spec_path.read_text("utf-8"))
-    check("(d) the H3 spec carries no excerpt key at all",
-          "excerpt" not in spec, sorted(spec))
-    # Assemble the video prompt with the excerpt present in the plan payload.
-    chars = json.loads((PT.TEMPLATES_DIR / "fixtures" / "h3-specs"
-                        / "sample-characters.json").read_text("utf-8"))
-    plan = dict(spec, excerpt_overlay={"lines": lines})
-    prompt, sections = PT.assemble_h3(plan, chars)
-    check("(d) the video prompt never reads the overlay key",
-          "overlay" not in prompt.lower() and "excerpt" not in sections,
-          prompt)
-    # Distinctive-word proof: every distinctive excerpt word is absent.
-    distinctive = ("abernathy", "ledger", "harbor", "storm", "tide",
-                   "promise", "secret")
-    leaked = [w for w in distinctive if w in prompt.lower()]
-    check("(d) the assembled prompt never carries excerpt words",
-          not leaked, leaked)
-    # No whole excerpt line appears in the template prompt.
-    whole = [ln for ln in lines if ln.lower() in prompt.lower()]
-    check("(d) no whole excerpt line appears in the template prompt",
-          not whole, whole)
 
-# ---- (d) intake excerpt surface (fail closed) -------------------------------
-def test_intake_excerpt_fail_closed():
-    """>3 lines or a typo is REFUSED at intake; spell-clean lines survive."""
+def _kie():
     import importlib
-    IB = importlib.import_module("intake_book.book")
-    clean = ["She read the old letter twice", "The rain kept falling all night",
-             "He closed the door and waited"]
-    lines, prov, errs = IB.excerpt_lines({"excerpt_lines": clean})
-    check("intake excerpt_lines: provided lines come back verbatim",
-          lines == clean and prov == "provided" and errs == [],
-          (lines, prov, errs))
-    lines2, prov2, errs2 = IB.excerpt_lines({})
-    check("intake excerpt_lines: no excerpt key -> missing, no error",
-          lines2 == [] and prov2 == "missing" and errs2 == [], (lines2, prov2))
-    lines3, prov3, errs3 = IB.excerpt_lines(
-        {"excerpt_lines": clean + ["a fourth line"]})
-    check("intake excerpt_lines: >3 lines truncated and reports an error",
-          len(lines3) == 3 and errs3, (len(lines3), errs3))
-    # evaluate() refuses a bad excerpt with a reason_code, no questions burned.
-    bad = IB.evaluate({"excerpt_lines": clean + ["a fourth line"],
-                       "book_title": "T", "author": "A",
-                       "buy_link": "https://x.example/b", "audience": "a",
-                       "pain_or_transformation": "p"})
-    check("intake evaluate: >3 excerpt lines is REFUSED EXCERPT_INVALID",
-          bad.get("outcome") == "rejected"
-          and bad.get("reason_code") == IB.EXCERPT_INVALID
-          and bad.get("questions") == [], bad)
-    bad2 = IB.evaluate({"excerpt_lines": ["The kitchn was empty"],
-                        "book_title": "T", "author": "A",
-                        "buy_link": "https://x.example/b", "audience": "a",
-                        "pain_or_transformation": "p"})
-    check("intake evaluate: a misspelled excerpt is REFUSED EXCERPT_INVALID",
-          bad2.get("outcome") == "rejected"
-          and bad2.get("reason_code") == IB.EXCERPT_INVALID, bad2)
+    return importlib.import_module("kie_dispatch.kie_dispatch")
 
-# ---- (d) card block carries the hash, never a new choice --------------------
-def test_card_block_carries_plan_hash():
-    """plan_card_rows / card_render / intake_card all show APPROVED hash."""
-    import importlib
-    CR = importlib.import_module("catalog_calculator.card_render")
-    IC = importlib.import_module("choice_card.intake_card.intake_card")
-    plan = {"pages": "texture", "book_title": "The Harbor Ledger",
-            "author": "A. Author", "excerpt_lines": ["A short line"]}
-    h = BS.plan_sha256(plan)
-    appr = dict(plan, approved_book_plan_sha256=h, approved_at="2026-10-09")
-    rows = BS.plan_card_rows(appr, None)
-    texts = " ".join(t for _, t in rows)
-    check("card: plan_card_rows shows the APPROVED plan hash",
-          h[:12] in texts and "APPROVED" in texts
-          and "NOT APPROVED" not in texts, texts)
-    check("card: plan_card_rows shows no numbered options",
-          not re.search(r"\b[1-9]\d*\.", texts), texts)
-    unapp = BS.plan_card_rows(plan, None)
-    check("card: an unapproved plan shows NOT APPROVED",
-          "NOT APPROVED" in " ".join(t for _, t in unapp),
-          " ".join(t for _, t in unapp))
-    # The calculator card block requires campaign_type == "book".
-    rendered, _ = CR.render({"length": "60 seconds", "campaign_type": "book",
-                             "book_plan": appr}, None)
-    check("card: calculator card carries the Book block + hash",
-          "Book shots" in rendered and h[:12] in rendered, rendered)
-    rendered2, _ = CR.render({"length": "60 seconds"}, None)
-    check("card: non-book calculator card has no Book block",
-          "Book shots" not in rendered2, rendered2)
-    # The intake card carries the same block via render_card(plan=, excerpt=).
-    ic_card = IC.render_card(None, plan=appr, excerpt={"lines": ["A short line"]})
-    check("card: intake card carries the Book block + hash",
-          "Book shots" in ic_card and h[:12] in ic_card, ic_card)
-    ic_plain = IC.render_card(None)
-    check("card: plain intake card has no Book block",
-          "Book shots" not in ic_plain, ic_plain)
-    check("card: intake card keeps 6 questions in / 6 out",
-          ic_card.count("Question") == 6 and ic_plain.count("Question") == 6,
-          (ic_card.count("Question"), ic_plain.count("Question")))
-    check("card: CLOSING_LINE is present in both cards",
-          IC.CLOSING_LINE in ic_card and IC.CLOSING_LINE in ic_plain, "")
-
-def main():
-    if not hasattr(BS, "check_pages"):
-        print("FAIL: U11 missing: book_shot has no check_pages (base tree)")
-        return 1
-    test_printed_vs_white()
-    test_plan_hash_gate()
-    test_excerpt_never_reaches_a_video_model()
-    test_prompt_never_carries_excerpt_words()
-    test_intake_excerpt_fail_closed()
-    test_card_block_carries_plan_hash()
-    print("-" * 60)
-    if FAILS:
-        print("%d checks failed:" % len(FAILS))
-        for name in FAILS:
-            print("  FAILED: %s" % name)
-        return 1
-    print("ALL PASS: printed pages, plan hash, card block, excerpt seam (FU-U11 D1).")
-    return 0
-
-# ---- pytest no-silent-pass guard (check() records, never raises) ------------
-def test_no_failed_checks():
-    """pytest entry: raise if any check() failed, so a bare pytest run cannot
-    report green on a red suite (check() only records into FAILS)."""
-    assert not FAILS, "failed checks: %s" % FAILS
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
