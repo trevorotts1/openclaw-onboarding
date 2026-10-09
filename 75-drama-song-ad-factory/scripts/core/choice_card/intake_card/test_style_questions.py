@@ -65,6 +65,16 @@ def test_links_show_under_their_option_and_missing_link_shows_nothing():
     assert "Watch: None" not in text and "Watch: null" not in text
 
 
+def test_exact_sample_links():
+    B = "https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/"
+    t = _samples()
+    assert t["sketch-to-life"] == B + "923bbada-b8c2-4901-a736-8835a85605b3.mp4"
+    assert t["canvas-to-3d"] == B + "9eb9ea93-2cf8-4246-935f-739d2eb576cf.mp4"
+    assert t["lifelike-3d"] == B + "ceccdb53-1db7-4513-b7d5-f8da7a9cdd65.mp4"
+    assert t["2d-hand-painted"] == B + "79707c0f-e255-4f3f-955a-9fed2e8e9915.mp4"
+    assert t["canvas-to-life"] is None
+
+
 def test_recap_reads_plainly():
     n = len(IC.QUESTIONS)
     st = IC.conversation(["1"] * n)
