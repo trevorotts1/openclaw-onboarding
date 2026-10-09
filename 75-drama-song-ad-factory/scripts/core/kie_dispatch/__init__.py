@@ -6,7 +6,9 @@ from .kie_dispatch import (  # noqa: F401
     TOOL_VERSION,
     dispatch,
     envelope,
+    final_payload_cap_refusal,
     make_runner,
+    prompt_templated_refusal,
     resolve_adapter,
     submit_all_ready,
 )
@@ -18,7 +20,9 @@ __all__ = [
     "TOOL_VERSION",
     "dispatch",
     "envelope",
+    "final_payload_cap_refusal",
     "make_runner",
+    "prompt_templated_refusal",
     "resolve_adapter",
     "submit_all_ready",
 ]

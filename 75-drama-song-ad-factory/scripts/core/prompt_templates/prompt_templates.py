@@ -281,9 +281,262 @@ def check_kling_avatar(prompt, line="", emotion="", root=None):
             "limits": {"target_max": t["char_target_max"], "hard_max": t["hard_max"]},
             "cap_status": t.get("hard_max_status", "")}
 
+# U15b: the H3 assembler, band guard, expand/trim and receipt.
+
+import hashlib
+import re
+
+#: The U16 carry-in: a villain shot type and its guidance live in the bible
+#: (product_style_bible.bible VILLAIN_*), never forked here (U16 owns them).
+VILLAIN_SHOT_TYPE_NAME = "villain"
+
+def band(model, root=None):
+    """The owner band for one video model, from the manifest ``bands`` map.
+
+    minimax-h3/* carries floor 5000 / target 5000-6800 / hard max 7000
+    (Trevor 2026-10-08). Raises PromptTemplateError when no band matches,
+    so an unbanded paid model can never be assembled silently.
+    """
+    doc = load("manifest", root=root)
+    bands = doc.get("bands") or {}
+    if model in bands:
+        return dict(bands[model])
+    family = model.split("/")[0] + "/*"
+    if family in bands:
+        return dict(bands[family])
+    raise PromptTemplateError("PROMPT_TEMPLATE_NO_BAND",
+                              "no band for model %r in the manifest" % (model,))
+
+def _h3_model(root=None):
+    return load("model", "minimax-h3", root=root)
+
+def _look_block(spec, root=None):
+    """`<Look label> look, <mode> mode.` + the mode's h3_block."""
+    look = load("look", spec["look"], root=root)
+    if spec["mode"] not in (look.get("modes") or []):
+        raise PromptTemplateError("MODE_NOT_IN_LOOK",
+                                  "%s is not a mode of %s"
+                                  % (spec["mode"], spec["look"]))
+    mode = load("mode", spec["mode"], root=root)
+    if mode.get("extends"):
+        base = load("mode", mode["extends"], root=root)
+        text = base["h3_block"].replace(
+            "{palette}", base.get("palette_default", ""))
+        text = text + " " + mode["h3_block_suffix"]
+    else:
+        palette = ((look.get("palette_override") or {}).get(spec["mode"])
+                   or mode.get("palette_default", ""))
+        text = mode["h3_block"].replace("{palette}", palette)
+    return "%s look, %s mode. %s" % (look["label"], spec["mode"],
+                                     re.sub(r"\s+", " ", text).strip())
+
+def _villain_extra(spec):
+    """The U16 guidance block when the shot type is the villain."""
+    if spec.get("shot_type") != VILLAIN_SHOT_TYPE_NAME:
+        return None
+    try:
+        if CORE_DIR not in sys.path:
+            sys.path.insert(0, CORE_DIR)
+        from product_style_bible import bible as BB
+        return BB.VILLAIN_SHOT_GUIDANCE
+    except (ImportError, AttributeError) as exc:
+        raise PromptTemplateError("VILLAIN_GUIDANCE_UNAVAILABLE",
+                                  "U16 carry-in missing: %s" % exc)
+
+def assemble_h3(spec, characters, root=None):
+    """Assemble one H3 prompt from a shot spec (the planner's facts).
+
+    Returns ``(prompt, sections)``; ``sections`` is the char count per section
+    id. Facts only: every byte comes from the spec, the character record, the
+    template layers or the fixed fragments in minimax-h3.json. No padding.
+    """
+    h3 = _h3_model(root=root)
+    st = load("shot_type", spec["shot_type"], root=root)
+    ch = characters[spec["character"]]
+    a, cam = spec["action"], spec["camera"]
+    brackets = h3["camera_vocabulary"]["bracket_commands"]
+    if cam["command"] not in brackets and \
+            not re.fullmatch(r"\[[A-Za-z ,]+\]", cam["command"]):
+        raise PromptTemplateError("CAMERA_NOT_IN_VOCABULARY", cam["command"])
+    main = cam["command"].strip("[]").split(",")[0].strip()
+    if main not in [c.strip("[]") for c in st["camera_allowed"]]:
+        raise PromptTemplateError("CAMERA_NOT_ALLOWED_FOR_SHOT_TYPE",
+                                  "%s for %s" % (cam["command"],
+                                                 spec["shot_type"]))
+    frag = h3["fragments"]
+    sec = {}
+    sec["header"] = ("%s, %s, %d seconds, %s vertical, story beat %s. %s"
+                     % (spec["shot_id"], spec["shot_type"].replace("-", " "),
+                        spec["duration_s"], spec["aspect"],
+                        spec["beat"].replace("_", " "), spec["intent"]))
+    sec["subject"] = "%s %s" % (spec["subject"], spec["composition"])
+    act = "Start: %s End: %s Direction: %s" % (a["start"], a["end"],
+                                               a["direction"])
+    if st.get("mouth_rule"):
+        act += " " + st["mouth_rule"]
+    if spec.get("match_pose"):
+        act += " " + spec["match_pose"]
+    villain = _villain_extra(spec)
+    if villain:
+        act += " " + villain
+    sec["action"] = act
+    sec["reference"] = frag["REFERENCE_FRAME"]
+    sec["camera"] = "%s %s" % (cam["command"], cam["plain"])
+    sec["lens_light"] = spec["lens_light"]
+    sec["continuity"] = (
+        "%s In this scene she wears %s. %s The first frame of the clip is the "
+        "approved keyframe and the clip continues from it without any change "
+        "of face, hair, glasses or wardrobe. Visible emotion: %s."
+        % (ch["identity"], ch["wardrobe"][spec["wardrobe"]],
+           ch["do_not_change"], spec["visible_emotion"]))
+    sec["look"] = _look_block(spec, root=root)
+    if spec.get("book"):
+        sec["book"] = frag["BOOK_CLOSED"] + (
+            " " + frag["BOOK_OPEN_MOTION"] if spec["book"] == "open" else "")
+    if spec.get("pages") == "texture":
+        sec["pages"] = frag["PRINTED_PAGES"]
+    sec["physics"] = spec["motion_physics"]
+    sec["beats"] = " ".join("%s: %s" % (t, d) for t, d in spec["beats"])
+    sec["policy"] = frag["SOUND_AND_TEXT"]
+    neg = (list(frag["BASE_NEGATIVES"]) + st.get("negatives", [])
+           + spec.get("negatives_extra", []))
+    sec["negatives"] = "; ".join(neg[:16]) + "."
+    order = [s["id"] for s in h3["sections"]]
+    leads = {s["id"]: s["lead"] for s in h3["sections"]}
+    parts = ["%s: %s" % (leads[k], sec[k]) for k in order if k in sec]
+    return "\n".join(parts), {k: len(v) for k, v in sec.items()}
+
+def check(prompt, sections, model="minimax-h3/image-to-video", root=None):
+    """The band guard and the quality rules.
+
+    -> {"verdict": REFUSE|FLAG|TRIM|PASS, "chars", "reasons"}. REFUSE wins over
+    everything: a prompt never leaves this function over the hard max, over one
+    bracket group, or carrying a banned phrase or a duplicate sentence.
+    """
+    b = band(model, root=root)
+    qr = load("manifest", root=root)["quality_rules"]
+    n = len(prompt)
+    reasons = []
+    if n > b["hard_max"]:
+        return {"verdict": "REFUSE", "chars": n,
+                "reasons": ["H3_OVER_HARD_MAX %d > %d" % (n, b["hard_max"])]}
+    # Section min/max (design rule 3). A violated section is a FLAG: the
+    # spec is missing a fact, which expand() turns into H3_THIN_SPEC -- it is
+    # never something padding may fix.
+    section_reasons = []
+    if sections:
+        for s in _h3_model(root=root)["sections"]:
+            if s.get("conditional"):
+                continue
+            got = sections.get(s["id"], 0)
+            if got < s["min"]:
+                section_reasons.append("SECTION_THIN %s %d < %d"
+                                       % (s["id"], got, s["min"]))
+            if got > s["max"]:
+                section_reasons.append("SECTION_LONG %s %d > %s"
+                                       % (s["id"], got, s["max"]))
+    groups = re.findall(r"\[[^\]]*\]", prompt)
+    if len(groups) != 1:
+        reasons.append("CAMERA_BRACKETS %d (need exactly 1)" % len(groups))
+    elif len([x for x in groups[0].strip("[]").split(",") if x.strip()]) > 3:
+        reasons.append("CAMERA_MOVES_OVER_3")
+    for ph in qr["banned_phrases_any_model"]:
+        if ph in prompt:
+            reasons.append("BANNED_PHRASE %r" % ph)
+    cut = qr["max_duplicate_sentence_chars"]
+    sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", prompt)
+             if len(s.strip()) >= cut]
+    dup = {s for s in sents if sents.count(s) > 1}
+    if dup:
+        reasons.append("DUPLICATE_SENTENCE x%d" % len(dup))
+    words = re.findall(r"[a-z0-9']+", prompt.lower())
+    grams = [" ".join(words[i:i + 8]) for i in range(len(words) - 7)]
+    rep = (len(grams) - len(set(grams))) / max(len(grams), 1)
+    if rep > qr["max_repeated_8gram_ratio"]:
+        reasons.append("REPEATED_8GRAMS %.3f" % rep)
+    if re.search(r"\b(left|right)\b", prompt, re.I) and \
+            "camera's point of view" not in prompt:
+        reasons.append("DIRECTION_WITHOUT_REFERENCE_FRAME")
+    if reasons:
+        return {"verdict": "REFUSE", "chars": n, "reasons": reasons,
+                "repeat_8gram": round(rep, 4)}
+    if section_reasons:
+        return {"verdict": "FLAG", "chars": n, "reasons": section_reasons,
+                "repeat_8gram": round(rep, 4)}
+    if b.get("floor") is not None and n < b["floor"]:
+        return {"verdict": "FLAG", "chars": n,
+                "reasons": ["H3_BELOW_FLOOR %d < %d: expand from the spec "
+                            "(expand_priority) or refuse H3_THIN_SPEC"
+                            % (n, b["floor"])],
+                "repeat_8gram": round(rep, 4)}
+    if n > b["target_max"]:
+        return {"verdict": "TRIM", "chars": n,
+                "reasons": ["H3_OVER_TARGET %d > %d: trim (trim_priority)"
+                            % (n, b["target_max"])],
+                "repeat_8gram": round(rep, 4)}
+    return {"verdict": "PASS", "chars": n, "reasons": [],
+            "repeat_8gram": round(rep, 4)}
+
+def expand(spec, characters, prompt, verdict, root=None):
+    """Under the floor or section-thin: refuse H3_THIN_SPEC, never pad.
+
+    The assembler already consumes every fact the spec carries, so the only
+    honest expansion is naming the slots the planner left empty and sending
+    the spec back to it (expand_priority). Raises H3_THIN_SPEC with the empty
+    slots; it never repeats a sentence and never adds filler. A verdict that
+    is PASS or TRIM comes back unchanged.
+    """
+    v = verdict.get("verdict")
+    reasons = verdict.get("reasons") or []
+    thin = v == "FLAG" or (
+        v == "REFUSE" and reasons
+        and all(r.startswith("SECTION_THIN") for r in reasons))
+    if not thin:
+        return prompt, verdict
+    st = load("shot_type", spec["shot_type"], root=root)
+    empty = []
+    for slot in st.get("required_spec") or []:
+        head, _, tail = slot.partition(".")
+        val = spec.get(head)
+        if tail:
+            val = val.get(tail) if isinstance(val, dict) else None
+        if val in (None, "", [], {}):
+            empty.append(slot)
+    raise PromptTemplateError(
+        "H3_THIN_SPEC",
+        "shot %s is %s and the spec has no unused facts left; empty slots: "
+        "%s. The planner must supply them. (%s)"
+        % (spec.get("shot_id"),
+           "under the floor (%s < %s)" % (verdict.get("chars"),
+                                          band(spec["model"], root=root)["floor"])
+           if v == "FLAG" else "section-thin",
+           ", ".join(empty) if empty else "(none named by the shot type)",
+           "; ".join(reasons) or "H3_BELOW_FLOOR"))
+
+def receipt(spec, prompt, sections, verdict, root=None):
+    """The prompt receipt: sha256 + template version + section char map."""
+    man = templates_dir(root) / "manifest.json"
+    return {"shot_id": spec["shot_id"], "model": spec["model"],
+            "look": spec["look"], "mode": spec["mode"],
+            "shot_type": spec["shot_type"],
+            "template_version": load("manifest", root=root)["template_version"],
+            "manifest_sha256": hashlib.sha256(man.read_bytes()).hexdigest(),
+            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+            "chars": len(prompt), "band": band(spec["model"], root=root),
+            "sections": sections, "check": verdict}
+
+def has_receipt(prompt_sha256, receipts):
+    """True when one receipt in ``receipts`` matches this prompt's sha256."""
+    for r in receipts or []:
+        if isinstance(r, dict) and r.get("prompt_sha256") == prompt_sha256:
+            return True
+    return False
+
 __all__ = ["TOOL_NAME", "TOOL_VERSION", "MODES", "LOOKS", "SHOT_TYPES",
            "CORE_DIR", "SKILL_ROOT", "TEMPLATES_DIR", "PromptTemplateError",
            "templates_dir", "catalog_path", "load", "caps",
            "KLING_AVATAR_MODEL", "KLING_VERBS", "KLING_FRAMING_DEFAULT",
            "KLING_FRAMING_ALT", "KLING_HEAD_EXTRAS", "kling_avatar_model",
-           "assemble_kling_avatar", "check_kling_avatar"]
+           "assemble_kling_avatar", "check_kling_avatar",
+           "VILLAIN_SHOT_TYPE_NAME", "band", "assemble_h3", "check", "expand",
+           "receipt", "has_receipt"]

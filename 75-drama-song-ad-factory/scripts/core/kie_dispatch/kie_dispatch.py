@@ -294,6 +294,118 @@ TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "blackceo.kie-dispatch/envelope/v1"
 EXIT = {"ok": 0, "error": 1, "waiting": 3, "parked": 4, "rejected": 5}
 
+#: U15b: the models whose prompts come from the template assembler
+#: (prompt_templates.assemble_h3). An H3 video job must carry the prompt
+#: receipt for the exact prompt bytes; the keyframe image path is unchanged.
+TEMPLATED_VIDEO_PREFIXES = ("minimax-h3/",)
+
+
+def prompt_templated_refusal(model, request, prompt):
+    """U15b: -> None when the H3 prompt carries a matching PASS receipt.
+
+    Refuses ``PROMPT_NOT_TEMPLATED`` when the prompt's sha256 has no receipt
+    (a hand-written or stale prompt may never be paid for) or when the
+    matching receipt's check says REFUSE or TRIM (the assembler's own band
+    verdict: REFUSE is over the hard max, TRIM is over the target max).
+    The receipt is the dict ``prompt_templates.receipt()`` wrote, carried as
+    ``request["prompt_receipt"]`` (or ``prompt_receipts`` list, or inside
+    ``request["run_state"]``). Non-H3 models return None: kling/ai-avatar
+    jobs are unchanged by this unit.
+    """
+    if not str(model or "").startswith(TEMPLATED_VIDEO_PREFIXES):
+        return None
+    req = request if isinstance(request, dict) else {}
+    rec = req.get("prompt_receipt")
+    if rec is None:
+        rec = req.get("prompt_receipts")
+    if rec is None:
+        rs = req.get("run_state")
+        if isinstance(rs, dict):
+            rec = rs.get("prompt_receipt") or rs.get("prompt_receipts")
+    if rec is None:
+        return {"reason_code": "PROMPT_NOT_TEMPLATED",
+                "detail": "the %s prompt carries no prompt receipt; assemble "
+                          "it through prompt_templates.assemble_h3 and pass "
+                          "receipt() as request['prompt_receipt']" % model}
+    recs = rec if isinstance(rec, list) else [rec]
+    text = prompt if isinstance(prompt, str) else ""
+    import hashlib as _hashlib
+    sha = _hashlib.sha256(text.encode("utf-8")).hexdigest()
+    match = None
+    for r in recs:
+        if isinstance(r, dict) and r.get("prompt_sha256") == sha:
+            match = r
+            break
+    if match is None:
+        return {"reason_code": "PROMPT_NOT_TEMPLATED",
+                "detail": "no receipt matches the sha256 of the prompt being "
+                          "paid for (%s...); the prompt changed after it was "
+                          "assembled - re-assemble and re-receipt" % sha[:12]}
+    verdict = (match.get("check") or {}).get("verdict") \
+        if isinstance(match.get("check"), dict) else match.get("verdict")
+    if isinstance(verdict, str) and verdict.upper() in ("REFUSE", "TRIM"):
+        return {"reason_code": "PROMPT_NOT_TEMPLATED",
+                "detail": "the matching receipt's verdict is %s: %s"
+                          % (verdict.upper(),
+                             "; ".join((match.get("check") or {}).get("reasons",
+                                                                     []) or []))}
+    return None
+
+
+def final_payload_cap_refusal(model, request, is_video):
+    """U15b/U6: measure the FINAL payload just before spend. -> None or dict.
+
+    Runs U6's ``prompt_limits.check_request`` (the 67 catalog caps for video,
+    the 68 catalog for Suno) over the payload as it stands at submit time,
+    after every mutation. An over-cap field refuses with the field, chars,
+    cap, source and status; nothing is ever truncated.
+    """
+    if not is_video:
+        return None
+    try:
+        import prompt_limits as _PL
+    except ImportError as exc:                          # pragma: no cover
+        return {"reason_code": "PROMPT_LIMIT_UNAVAILABLE",
+                "detail": "prompt_limits.py is not importable (%s); a paid "
+                          "job never runs without the final-payload cap "
+                          "check" % exc}
+    # U15a's catalog resolver knows the 999 tree keeps the 67/68 catalogs
+    # under installer-registration/helpers/ (U6's own ancestor walk cannot
+    # see them from there). Hand prompt_limits the path; the reading itself
+    # still happens in prompt_limits.
+    catalog = None
+    try:
+        if str(model).startswith(("suno", "ai-music-api")):
+            catalog = _templates_catalog("audio")
+        else:
+            catalog = _templates_catalog("video")
+    except Exception:                                   # noqa: BLE001
+        catalog = None
+    try:
+        _PL.check_request(model, request, models_path=catalog)
+    except _PL.PromptLimitError as exc:
+        return {"reason_code": exc.code if exc.code else "PROMPT_OVER_CAP",
+                "detail": str(exc)}
+    except Exception as exc:                            # noqa: BLE001
+        return {"reason_code": "PROMPT_LIMIT_UNAVAILABLE",
+                "detail": "the final-payload cap check could not run "
+                          "(%s: %s); a paid job never runs unchecked"
+                          % (type(exc).__name__, exc)}
+    return None
+
+
+def _templates_catalog(kind):
+    """The 67/68 catalog path via U15a's resolver, or None to let U6 walk."""
+    try:
+        core = str(Path(__file__).resolve().parents[1])
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        import prompt_templates as _PT
+        return _PT.catalog_path(kind)
+    except Exception:                                   # noqa: BLE001
+        return None
+
+
 ADAPTER_SKILL = "74-kie-live-adapter"
 ADAPTER_SCRIPT = "kie_live_adapter.py"
 ADAPTER_RELS = (
@@ -939,6 +1051,25 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         attempt_id=attempt_id,
                         evidence={"gate": sb_refusal.get("gate"),
                                   "generated": False})
+    # U15b: an H3 prompt must be assembled and receipted (PROMPT_NOT_TEMPLATED)
+    # and the FINAL payload must be re-measured against its cap, both BEFORE
+    # any ledger row or paid call. Nothing reserved, nothing sent.
+    tpl_refusal = prompt_templated_refusal(model, request, prompt)
+    if tpl_refusal:
+        return envelope("dispatch", "rejected", tpl_refusal["reason_code"],
+                        tpl_refusal["detail"]
+                        + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"generated": False, "gate": "U15b"})
+    cap_refusal = final_payload_cap_refusal(model, request, is_video)
+    if cap_refusal:
+        return envelope("dispatch", "rejected", cap_refusal["reason_code"],
+                        cap_refusal["detail"]
+                        + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"generated": False, "gate": "final-payload-cap"})
     # ---- 0. placeholder check (F10) ---------------------------------------
     # Before the ledger: a refused request reserves nothing and calls nothing.
     ph = _find_placeholder(request)

@@ -668,7 +668,7 @@ def painted_block(aspect_ratio="9:16"):
 
 
 def compile_prompt(shot, mode, lock, aspect_ratio="9:16",
-                   realism_block_path=None, lane_dir=None):
+                   realism_block_path=None, lane_dir=None, video=False):
     """Deterministic prompt compile for one Canvas to Life shot. No spend.
 
     mode "painted"       -> the painted [STYLE] block, identity lock, shot.
@@ -681,6 +681,10 @@ def compile_prompt(shot, mode, lock, aspect_ratio="9:16",
     Every prompt carries the identity lock, so the character is the same
     person on both sides of the switch. A 3-D mode is refused by name before
     anything else (`2D_TO_3D_NOT_USED`).
+
+    U15b: ``video=True`` is the VIDEO path: no square-bracket markers, no
+    generic [MOTION] line (H3 reads brackets as camera commands; per-shot
+    motion comes from the shot spec). The keyframe path is unchanged.
 
     Returns {"prompt", "mode", "style_block", "recipe_sha256", "lip_sync",
              "identity_lock_id"}.
@@ -707,20 +711,44 @@ def compile_prompt(shot, mode, lock, aspect_ratio="9:16",
     if mode == MODE_PAINTED:
         style_id = PAINTED_STYLE_ID
         block = painted_block(aspect_ratio)
-        parts = [header % (style_id, mode, aspect_ratio), block, lock_block]
     else:
         block = realism_block(realism_block_path, lane_dir)   # raises if absent
         style_id = REALISM_STYLE_ID
-        parts = [header % (style_id, mode, aspect_ratio), block]
-        if mode == MODE_GOLDEN:
-            parts.append(FINALE_BLOCK)
-        parts.append(lock_block)
-    parts.append("[SHOT:%s] %s [/SHOT]"
-                 % (shot["shot_id"], str(shot["base_prompt"]).strip()))
-    # Part F F12: the clip prompt asks for motion (clips must move).
-    parts.append("[MOTION] The subject moves naturally through the frame "
-                 "[/MOTION]")
-    prompt = "\n".join(parts)
+    if video:
+        # U15b video path: no square-bracket markers anywhere; the block text
+        # between [STYLE] and [/STYLE] is unchanged and the identity lock
+        # rides as plain words.
+        body = block
+        if body.startswith("[STYLE]"):
+            body = body[len("[STYLE]"):]
+        if body.rstrip().endswith("[/STYLE]"):
+            body = body.rstrip()[:-len("[/STYLE]")]
+        parts = ["%s, %s mode. %s" % (style_id, mode, body.strip())]
+        if mode != MODE_PAINTED and mode == MODE_GOLDEN:
+            parts.append(FINALE_BLOCK.replace("[FINALE]", "")
+                         .replace("[/FINALE]", "").strip())
+        parts.append(lock_block.replace("[IDENTITY_LOCK]", "Identity lock:")
+                     .replace("[/IDENTITY_LOCK]", "").strip())
+        parts.append(str(shot["base_prompt"]).strip())
+        prompt = " ".join(parts)
+        if "[" in prompt or "]" in prompt:
+            raise CanvasToLifeError(
+                "VIDEO_PROMPT_BRACKETS",
+                "a video prompt may carry no square brackets")
+    else:
+        if mode == MODE_PAINTED:
+            parts = [header % (style_id, mode, aspect_ratio), block, lock_block]
+        else:
+            parts = [header % (style_id, mode, aspect_ratio), block]
+            if mode == MODE_GOLDEN:
+                parts.append(FINALE_BLOCK)
+            parts.append(lock_block)
+        parts.append("[SHOT:%s] %s [/SHOT]"
+                     % (shot["shot_id"], str(shot["base_prompt"]).strip()))
+        # Part F F12: the clip prompt asks for motion (clips must move).
+        parts.append("[MOTION] The subject moves naturally through the frame "
+                     "[/MOTION]")
+        prompt = "\n".join(parts)
     return {
         "prompt": prompt,
         "mode": mode,
@@ -728,4 +756,5 @@ def compile_prompt(shot, mode, lock, aspect_ratio="9:16",
         "recipe_sha256": realism_sha256(block) if mode != MODE_PAINTED else None,
         "lip_sync": mode == MODE_REALISM and _lipsync(mode, shot),
         "identity_lock_id": lock["lock_id"],
+        "video": bool(video),
     }

@@ -799,7 +799,7 @@ def assert_version_e(plan, identity=None):
 # -------------------------------------------------------------- compile ----
 
 def compile_prompt(shot, mode, identity, aspect_ratio="9:16",
-                   transition_out=None):
+                   transition_out=None, video=False):
     """Deterministic prompt compile for one Canvas-to-3D shot. Mockable, no spend.
 
     mode "painted-2d"  -> painted [STYLE] block; never lip-sync.
@@ -842,6 +842,45 @@ def compile_prompt(shot, mode, identity, aspect_ratio="9:16",
                 "PROMPT_PHRASE_BANNED",
                 "%s carries %r, which belongs to the realism looks, not "
                 "Canvas to 3D" % (shot["shot_id"], banned))
+    if video:
+        # U15b video path: no square-bracket markers anywhere (H3 reads them
+        # as camera commands) and no generic [MOTION] line; per-shot motion
+        # comes from the shot spec. The block text itself is unchanged.
+        body = block
+        if body.startswith("[STYLE]"):
+            body = body[len("[STYLE]"):]
+        if body.rstrip().endswith("[/STYLE]"):
+            body = body.rstrip()[:-len("[/STYLE]")]
+        vparts = ["%s, %s mode. %s" % (style_id, mode, body.strip()),
+                  "Identity lock fingerprint %s for character %s."
+                  % (lock["fingerprint"], lock["character"])]
+        tr = transition_out or {}
+        if tr.get("kind") == "dissolve":
+            d = tr.get("dissolve_seconds")
+            if not isinstance(d, (int, float)) or \
+                    not (DISSOLVE_SECONDS[0] <= float(d) <= DISSOLVE_SECONDS[1]):
+                raise Canvas3DError("DISSOLVE_OUT_OF_RANGE",
+                                    "%s: dissolve %r outside %.1f-%.1fs"
+                                    % (shot["shot_id"], d,
+                                       DISSOLVE_SECONDS[0], DISSOLVE_SECONDS[1]))
+            vparts.append("Switch on the matching pose or framing at %.2f "
+                          "seconds into the clip; hold each style at least "
+                          "%.1f seconds; no flicker."
+                          % (float(d), HOLD_MIN_SECONDS))
+        vparts.append(base)
+        prompt = " ".join(vparts)
+        if "[" in prompt or "]" in prompt:
+            raise Canvas3DError("VIDEO_PROMPT_BRACKETS",
+                                "a video prompt may carry no square brackets")
+        return {
+            "prompt": prompt,
+            "mode": mode,
+            "style_block": block,
+            "identity_lock": lock["fingerprint"],
+            "lip_sync": _lipsync(mode, shot),
+            "look": LOOK_ID,
+            "video": True,
+        }
     parts = [
         "[compiled:style=%s mode=%s aspect=%s look=%s]"
         % (style_id, mode, aspect_ratio, LOOK_ID),
