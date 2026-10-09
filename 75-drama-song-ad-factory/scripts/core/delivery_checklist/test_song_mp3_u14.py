@@ -155,7 +155,8 @@ class SongMp3DoneWhen(unittest.TestCase):
                             "duration_s": 60.0, "resolution": "1080x1920",
                             "banner": BANNER})
             out = root / "batch.zip"
-            res = bz.build_batch_zip("Black CEO", ads, out)
+            res = bz.build_batch_zip("Black CEO", ads, out,
+                                    audio_gate=lambda p: {"ok": True})
             self.assertTrue(out.is_file())
             with zipfile.ZipFile(out) as z:
                 names = z.namelist()

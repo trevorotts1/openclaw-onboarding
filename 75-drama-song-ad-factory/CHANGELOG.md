@@ -6,6 +6,13 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.13 - 2026-10-09 - Batch MGB023 follow-up 2 (no more silent ads)
+
+- Delivery audio gate on EVERY path that hands the client a video: the final assembler (already), the 60 and 90 second clip cutdowns (`clip_cutdown.run_clips`, a refused clip is deleted), the batch zip (captioned ad and clean master) and the delivery checklist. Each one calls `delivery_audio.check_delivery_audio()` and fails closed.
+- `check_delivery_audio()` now enforces what the order says: AAC-LC, 48 kHz, moov before mdat (faststart), and not silent. New codes `DELIVERY_AUDIO_NOT_48K` and `DELIVERY_NOT_FASTSTART`; new `require_delivery_audio()` raises `DeliveryAudioRefused`.
+- `clip_cutdown.build_argv` used a bare `-c:a aac`; it now uses `AUDIO_OUT_ARGS` + `FASTSTART_ARGS`.
+- New `test_delivery_gate_paths.py` (one MP3-audio refusal test per delivery path) (shared core is now byte-identical to the 999 copy v2.7.38; `delivery_fixture.py` removed, tests build their own fixtures).
+
 ## v2.9.12 - 2026-10-09 - Batch MGB022 follow-up
 
 - FU-AAC-FINAL-MUX (#1785) plus the question-count wording fix: the intake card closing example ("1, 1, ...") is now built from the real question list (9, or 10 with a saved character) and the docstrings, help text and choice-card-spec say nine. New test `test_closing_example_answer_count_matches_question_count`.

@@ -49,7 +49,8 @@ class T(unittest.TestCase):
         class R:
             returncode = 0
         paths = run_clips("master.mp4", plan_clips(tl, 180), tempfile.mkdtemp(),
-                          runner=lambda argv, **k: calls.append(argv) or R())
+                          runner=lambda argv, **k: calls.append(argv) or R(),
+                          audio_gate=lambda p: {"ok": True})
         self.assertEqual([os.path.basename(p) for p in paths], ["clip-60s.mp4", "clip-90s.mp4"])
         durs = [float(a[a.index("-t") + 1]) for a in calls]
         self.assertTrue(50 <= durs[0] <= 58, durs)      # 60 s clip, ends 2 s early
