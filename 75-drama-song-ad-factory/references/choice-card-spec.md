@@ -38,6 +38,8 @@ Your drama song ad
   Style:        Lifelike 3D (default) / 2D Hand-Painted / Sketch to Life
                 / Canvas to Life / Canvas to 3D
   Music:        Soul Ballad (default) / R&B Flow / Soul Rise
+  Product tie:  about 7s (12.5% of runtime) planned connecting the story to
+                the product (10-15% target, never a cap; measured at delivery)
   Voice:        All Suno (default) / Velvet Voiceover (Google voiceover with
                 the song underneath, no echo effect)
   Clips:        (5 and 10 minutes only) automatic 60- or 90-second clips

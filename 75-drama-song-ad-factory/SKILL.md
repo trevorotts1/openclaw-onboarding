@@ -293,6 +293,18 @@ build - byte-identical; packaging re-checked on a clean copy by
 
 - `qc_gate.py` enforces Maker Self-Review; a maker's own PASS is never
   independent QC evidence.
+- Story arc rule (FU-U13, owner order 2026-10-08): every ad's story runs
+  struggle -> what changed -> the product is why -> get the product. The
+  product is named and connected inside the lyrics AND on screen (cover,
+  title, link), never only on an end card. The lyric/script and shot-plan
+  stages plan the spoken-word parts and the struggle motion shots from the
+  source material, and plan how many seconds connect the story to the
+  product: about 10-15% of runtime (`length_formula.plan_product_connection`,
+  carried on the plan as `product_connection` and shown on the choice card).
+  It is a TARGET, never a hard cap: the delivery checklist measures the
+  delivered run (`delivery_checklist.measure_product_connection`, row
+  `PRODUCT_CONNECTION`) and reports seconds and percent -- inside the band
+  is PASS, outside is FLAG, never a blocker by itself.
 - Every campaign artifact's twelve creative beats and twelve production
   stages stay separate contracts (directive 14).
 - QC independence: checkers are fresh lanes, never members of the build
