@@ -87,6 +87,14 @@ if str(_CORE) not in sys.path:
     sys.path.insert(0, str(_CORE))
 import kie_dispatch.model_lock as model_lock  # noqa: E402  (F16)
 
+# DEL-14: the quality check refuses a blur fill. scripts/ on the path for the
+# frame gate; a delivered file short of full height because of a fill fails
+# here, and the repair is crop-in re-lip-sync (never a fill).
+_SCRIPTS = str(_CORE.parent)
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+from qc_no_blur import quality_gate as no_blur  # noqa: E402  (DEL-14)
+
 TOOL_NAME = "delivery_checklist"
 TOOL_VERSION = "1.4.0"
 SCHEMA_VERSION = "1.0.0"          # final_assembler receipt schema
@@ -1675,6 +1683,13 @@ def delivery_battery(ad_dir, ad_audio_path, title, author, video_path=None):
         rows.append({"item": "DELIVERY_AUDIO_AAC",
                      "answer": "yes" if g["ok"] else "no",
                      "measurement": g["reason"], "code": g["reason_code"]})
+        # DEL-14: no blur fill, and the frame is full height. A delivered
+        # file that is short of full height because of a fill fails here.
+        nb = no_blur.check_deliverable(video_path)
+        rows.append({"item": "DELIVERY_NO_BLUR_FILL",
+                     "answer": "yes" if nb["ok"] else "no",
+                     "measurement": nb["reason"],
+                     "code": nb["reason_code"]})
     failing = [r["item"] for r in rows if r["answer"] != "yes"]
     codes = sorted({r.get("code") for r in rows if r.get("code")})
     detail = "; ".join("%s: %s" % (r["item"], r["measurement"])
