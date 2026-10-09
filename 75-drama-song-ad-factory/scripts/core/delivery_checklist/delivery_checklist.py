@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""delivery_checklist.py: the 11-question delivery QC (Trevor order 2026-10-08).
+"""delivery_checklist.py: the 12-question delivery QC (Trevor order 2026-10-08).
 
 Simple on purpose. This module is the ONE independent checker step that
 rides on the existing Final edit QC gate (17.5, qc_gate check "final_edit").
@@ -10,9 +10,16 @@ QC passes in its records array to core/qc_gate.py evaluate (G7 wiring:
 "--required final_edit,delivery_checklist").
 
 The checklist lives verbatim at
-references/QC-CHECKLIST-BEFORE-DELIVERY.md; its 11 questions are answered
-from MEASURED evidence in the delivery receipt -- each answer carries a
-yes/no plus the measurement that proves it.
+references/QC-CHECKLIST-BEFORE-DELIVERY.md; its 11 human questions are
+answered from MEASURED evidence in the delivery receipt -- each answer
+carries a yes/no plus the measurement that proves it.
+
+DEL-13 adds Q12 PACKAGE_COMPLETE: the delivery FOLDER itself must carry all
+12 package items of core/delivery_package (the canonical numbered file-name
+list), each one opening (PDF header, SRT cue structure, non-empty media,
+image directory). The receipt names the folder; this checker reads it and
+names every missing item in repair_scope. Q12 is a folder contract, not one
+of the 11 human checklist questions, so the reference document keeps 11.
 
 H11 (Part H, order 1225) adds Q8 LIP_SYNC (H2 numbers), Q9 FIRST_SUNG
 (H6 first-sung % of runtime), Q10 PICTURES_MATCH (H5 shot/time/line/match)
@@ -52,11 +59,15 @@ What evaluate() does per question, measured from the receipt only:
                  "source"/"source_ref" next to each measured value);
                  anything unmeasured must be written "UNMEASURED" and an
                  UNMEASURED value can never stand as a pass.
+ 12 PACKAGE   -- core/delivery_package.verify_folder(receipt folder): all 12
+                 package items present and opening; one missing item fails
+                 the run and is named (CHECKLIST_PACKAGE_INCOMPLETE).
 
 Fail-closed: a receipt that is not an object, a question with no answer, or
 an answer without its measurement is a FAIL naming exactly that part.
 stdlib only, no network, no provider call, no spend, no absolute operator
-path; evaluate() opens no file at all (the receipt is handed in as data).
+path; the receipt is handed in as data and Q12 opens ONLY the delivery
+folder it names -- never a provider, never an operator path.
 
 FU-U14 (Trevor: "make the mp3 part of the deliverable"): check_song_mp3()
 adds the song-mp3 item to the delivery battery as PASS/FAIL rows: the final
@@ -118,6 +129,10 @@ def missing_package_files(delivery_dir):
             out.append(name)
     return tuple(out)
 
+# DEL-13 folder contract: the 12 package items live in the sibling
+# delivery_package package (same core/ tree, same sys.path pattern). Q12
+# reads only the delivery folder the receipt names; no provider, no network.
+import delivery_package.contract as package_contract  # noqa: E402  (DEL-13)
 
 TOOL_NAME = "delivery_checklist"
 TOOL_VERSION = "1.4.0"
@@ -129,10 +144,12 @@ CHECK_ID = "delivery-checklist"   # record id inside the shared gate
 CHECKLIST_REF = "references/QC-CHECKLIST-BEFORE-DELIVERY.md"
 # Q1-Q7 = G7; Q8-Q11 = Part H unit H11 (Trevor order 1225): lip-sync
 # measured (H2), first-sung % (H6), pictures match words (H5), and every
-# numeric goal judged by Trevor's band.
+# numeric goal judged by Trevor's band. Q12 = DEL-13: the delivery folder
+# carries all 12 package items of core/delivery_package, fail closed.
 QUESTIONS = ("SUNG", "ON_TARGET", "WORDS", "FACES", "VOICE_MUSIC",
              "MODELS", "HONEST_RECEIPT",
-             "LIP_SYNC", "FIRST_SUNG", "PICTURES_MATCH", "GOALS_BAND")
+             "LIP_SYNC", "FIRST_SUNG", "PICTURES_MATCH", "GOALS_BAND",
+             "PACKAGE_COMPLETE")
 
 #: Trevor's TARGET RULE (2026-10-08 12:30, verbatim): "We always want to try
 #: to be within 5% of the goal. Once you get past 5%, 5% to 7% gets a flag.
@@ -245,6 +262,7 @@ REASON_CODES = {
     "FIRST_SUNG": "CHECKLIST_FIRST_SUNG_OFF",
     "PICTURES_MATCH": "CHECKLIST_PICTURE_MISMATCH",
     "GOALS_BAND": "CHECKLIST_GOAL_REDO",
+    "PACKAGE_COMPLETE": "CHECKLIST_PACKAGE_INCOMPLETE",
     "ANSWER_MISSING": "CHECKLIST_ANSWER_MISSING",
     "NO_MEASUREMENT": "CHECKLIST_NO_MEASUREMENT",
 }
@@ -260,6 +278,7 @@ CHECKLIST_LIPSYNC_FAILED = REASON_CODES["LIP_SYNC"]
 CHECKLIST_FIRST_SUNG_OFF = REASON_CODES["FIRST_SUNG"]
 CHECKLIST_PICTURE_MISMATCH = REASON_CODES["PICTURES_MATCH"]
 CHECKLIST_GOAL_REDO = REASON_CODES["GOALS_BAND"]
+CHECKLIST_PACKAGE_INCOMPLETE = REASON_CODES["PACKAGE_COMPLETE"]
 CHECKLIST_ANSWER_MISSING = REASON_CODES["ANSWER_MISSING"]
 CHECKLIST_NO_MEASUREMENT = REASON_CODES["NO_MEASUREMENT"]
 
@@ -1283,8 +1302,49 @@ def measure_villain_doctrine(shots, lines, runtime_s, villain=None):
 
 
 
+def _q12_package(receipt, ans, codes, qdetails):
+    """Q12 (DEL-13): the delivery folder carries all 12 package items.
+
+    The answer names the folder (delivery_folder, absolute or relative to
+    the receipt's run_root). The FOLDER is the evidence: every one of the 12
+    package items in core/delivery_package must be present and open. One
+    missing item fails Q12 and is named -- never a warning, never a pass by
+    absence. A folder that does not exist misses all 12.
+    """
+    folder = ans.get("delivery_folder")
+    if not (isinstance(folder, str) and folder.strip()):
+        codes.append("%s:PACKAGE_COMPLETE missing delivery_folder"
+                     % CHECKLIST_NO_MEASUREMENT)
+        return False
+    named = folder.strip()
+    root = Path(named)
+    if not root.is_absolute():
+        base = receipt.get("run_root") or receipt.get("root") or ""
+        if base:
+            root = Path(str(base)) / root
+    qdetails["folder"] = str(root)
+    qdetails["items_expected"] = len(package_contract.PACKAGE_ITEMS)
+    qdetails["items_present"] = 0
+    qdetails["missing_items"] = list(package_contract.ITEMS_BY_KEY)
+    qdetails["package_problems"] = []
+    if not root.is_dir():
+        codes.append("%s: delivery folder missing (%s)"
+                     % (CHECKLIST_PACKAGE_INCOMPLETE, named))
+        return False
+    report = package_contract.verify_folder(root)
+    qdetails["items_present"] = len(report["present"])
+    qdetails["missing_items"] = list(report["missing"])
+    qdetails["package_problems"] = report["problems"]
+    if not report["ok"]:
+        codes.append("%s: missing %s"
+                     % (CHECKLIST_PACKAGE_INCOMPLETE,
+                        ", ".join(report["missing"])))
+        return False
+    return True
+
+
 def evaluate(receipt):
-    """Answer the 11 questions from the delivery receipt.
+    """Answer the 12 questions from the delivery receipt.
 
     receipt maps question names (or "answers") to answer dicts carrying the
     MEASURED evidence. Returns:
@@ -1339,6 +1399,8 @@ def evaluate(receipt):
             qok = _q10_pictures(receipt, ans, qcodes, qdetails)
         elif q == "GOALS_BAND":
             qok = _q11_goals(receipt, ans, qcodes, qdetails)
+        elif q == "PACKAGE_COMPLETE":
+            qok = _q12_package(receipt, ans, qcodes, qdetails)
         codes.extend(qcodes)
         details.update(qdetails)
         if qok:
@@ -1433,6 +1495,10 @@ def _measurement_line(q, ans, qdetails):
     if q == "GOALS_BAND":
         return "%d goal(s) judged, %d flagged" % (
             d.get("goals_judged", 0), d.get("goals_flagged", 0))
+    if q == "PACKAGE_COMPLETE":
+        return "%d/%d package items in %s" % (
+            d.get("items_present", 0), d.get("items_expected", 0),
+            d.get("folder", "UNMEASURED"))
     return "source: %s" % d.get("source", "per-field source refs")
 
 
