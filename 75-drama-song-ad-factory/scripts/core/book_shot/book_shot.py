@@ -29,6 +29,7 @@ RULE from brief.language, never by what a model happened to produce.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -40,7 +41,6 @@ _gcore = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _gcore not in sys.path:
     sys.path.insert(0, _gcore)
 import load_governor as _LG  # noqa: E402
-
 TOOL_NAME = "book_shot"
 TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "blackceo.book-shot/v1"
@@ -117,6 +117,9 @@ BOOK_WRONG_DIRECTION = "BOOK_WRONG_DIRECTION"
 BOOK_NO_MOTION = "BOOK_NO_MOTION"
 BOOK_TITLE_WRONG = "BOOK_TITLE_WRONG"
 BOOK_OCR_UNAVAILABLE = "BOOK_OCR_UNAVAILABLE"
+BOOK_BLANK_PAGES = "BOOK_BLANK_PAGES"
+BOOK_PAGES_UNAVAILABLE = "BOOK_PAGES_UNAVAILABLE"
+BOOK_EXCERPT_OVERLAY_DEFERRED = "BOOK_EXCERPT_OVERLAY_DEFERRED"
 BOOK_CALIBRATION_FAILED = "BOOK_CALIBRATION_FAILED"
 BOOK_INPUT_INVALID = "BOOK_INPUT_INVALID"
 BOOK_FRAMES_UNAVAILABLE = "BOOK_FRAMES_UNAVAILABLE"
@@ -525,3 +528,229 @@ def qc_record(verdict, shot_id, reviewer, calibrated=False, refs=None,
 
 def dumps(d):
     return json.dumps(d, sort_keys=True, ensure_ascii=True)
+
+# ============================================================================
+# FU-U11: printed pages, the book plan hash, the plan card rows and the
+# excerpt overlay (DATA ONLY).
+# ============================================================================
+
+#: The excerpt cap (U11): the client supplies at most three lines, verbatim.
+EXCERPT_MAX_LINES = 3
+
+#: The ONE burn artifact in this codebase. It belongs to U9 (gated behind U8)
+#: and is NOT in this tree; U11 must never add a second burn module, an OCR
+#: helper or a frame-text reader.
+U9_CAPTIONS_BURN_MODULE = "scripts/core/final_assembler/captions_burn.py"
+
+#: Grayscale below this counts as ink when measuring a page region.
+PAGE_INK_DARK = 128
+#: Calibration margin: the printed control must beat the white control by
+#: this ink fraction, or the calibration itself is broken.
+PAGE_INK_MARGIN = 0.002
+#: The left and right page regions of an open book, as frame fractions
+#: (x0, y0, x1, y1). The gutter (0.5 w) sits between them on purpose: the
+#: gutter line is never counted as printed text on a blank-page control.
+PAGE_REGIONS = ((0.10, 0.25, 0.47, 0.75), (0.53, 0.25, 0.90, 0.75))
+
+def pages_block(spec):
+    """The PRINTED_PAGES fragment, CONSUMED verbatim from the H3 template.
+
+    U11 authors no prompt wording: the text is the ``PRINTED_PAGES`` fragment
+    of references/prompt-templates/models/minimax-h3.json. Returns the text
+    when the shot's pages mode is "texture", else None. A missing template
+    file is a loud BookShotError naming the path, never invented text.
+    """
+    if str((spec or {}).get("pages") or "").strip() != "texture":
+        return None
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    path = os.path.join(root, "references", "prompt-templates", "models",
+                        "minimax-h3.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            frag = (json.load(fh).get("fragments") or {})["PRINTED_PAGES"]
+    except (OSError, ValueError, KeyError) as exc:
+        raise BookShotError(BOOK_PAGES_UNAVAILABLE,
+                            "PRINTED_PAGES fragment unreadable at %s (%s)"
+                            % (path, exc)) from exc
+    return frag
+
+def _page_ink(frame, regions=None):
+    """Ink fraction for each page region of one frame (0.0..1.0 each)."""
+    cv2 = _cv2()
+    np = _np()
+    gray = frame if getattr(frame, "ndim", 3) == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape[:2]
+    out = []
+    for x0, y0, x1, y1 in (regions or PAGE_REGIONS):
+        p = gray[int(y0 * h):int(y1 * h), int(x0 * w):int(x1 * w)]
+        out.append(float(np.count_nonzero(p < PAGE_INK_DARK)) / float(p.size)
+                   if p.size else 0.0)
+    return out
+
+def _median(values):
+    v = sorted(values)
+    if not v:
+        return 0.0
+    mid = len(v) // 2
+    return v[mid] if len(v) % 2 else (v[mid - 1] + v[mid]) / 2.0
+
+def calibrate_pages():
+    """The printed-vs-white control the page check must pass first.
+
+    Builds the two shipped page fixtures locally (no network, no spend),
+    measures their ink fractions and returns the receipt the check requires.
+    Refuses BOOK_CALIBRATION_FAILED when the pair does not sort: a check that
+    cannot tell printed pages from blank ones proves nothing.
+    """
+    cv2, np = _cv2(), _np()
+    try:
+        from .fixtures import build_fixtures as _FIX
+    except ImportError:                              # script import
+        from fixtures import build_fixtures as _FIX   # type: ignore
+    printed = [ink for f in _FIX.open_book_frames(cv2, np, printed=True)
+               for ink in _page_ink(f)]
+    white = [ink for f in _FIX.open_book_frames(cv2, np, printed=False)
+             for ink in _page_ink(f)]
+    p_ink, w_ink = _median(printed), _median(white)
+    if not (p_ink > w_ink + PAGE_INK_MARGIN):
+        raise BookShotError(
+            BOOK_CALIBRATION_FAILED,
+            "printed control %.5f does not beat white control %.5f (margin "
+            "%.3f): the page check cannot discriminate and every verdict it "
+            "would return is UNAVAILABLE" % (p_ink, w_ink, PAGE_INK_MARGIN))
+    return {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
+            "tool_version": TOOL_VERSION, "control": "printed-vs-white",
+            "printed_ink": round(p_ink, 6), "white_ink": round(w_ink, 6),
+            "threshold": round((p_ink + w_ink) / 2.0, 6),
+            "margin": PAGE_INK_MARGIN, "sorted": True}
+
+def check_pages(clip=None, spec=None, frames=None, calibrated=None):
+    """Measured printed-vs-blank verdict for the open-book frames of a clip.
+
+    A page whose ink fraction sits under the CALIBRATED threshold is blank.
+    MORE THAN ONE blank page among the sampled open frames is FAIL
+    BOOK_BLANK_PAGES (a book's pages are printed pages). One blank page can
+    be a chapter break or a right-hand page not yet turned. UNAVAILABLE never
+    passes: no calibration receipt, an unsorted receipt, or no frames.
+    """
+    spec = spec or {}
+    checks = {}
+    if not isinstance(calibrated, dict) or not calibrated.get("sorted"):
+        return _verdict("UNAVAILABLE", BOOK_PAGES_UNAVAILABLE, checks,
+                        "no printed-vs-white calibration receipt; run "
+                        "calibrate_pages() first")
+    try:
+        with _LG.heavy_slot("book-shot-pages"):
+            if frames is None:
+                frames = _read_clip_frames(clip, max_frames=24)
+    except _LG.HeavyJobTimeout as exc:
+        return _verdict("UNAVAILABLE", BOOK_FRAMES_UNAVAILABLE, checks,
+                        str(exc), calibrated)
+    if not frames:
+        return _verdict("UNAVAILABLE", BOOK_FRAMES_UNAVAILABLE, checks,
+                        "no frames decoded from %s" % (clip,), calibrated)
+    window = spec.get("window")
+    win = frames[window[0]:window[1]] if isinstance(window, (list, tuple)) \
+        and len(window) == 2 else frames
+    regions = spec.get("page_regions")
+    threshold = float(calibrated.get("threshold") or 0.0)
+    inks, blanks = [], []
+    for i, f in enumerate(win):
+        for j, ink in enumerate(_page_ink(f, regions)):
+            inks.append(round(ink, 6))
+            if ink < threshold:
+                blanks.append({"frame": i, "page": "left" if j == 0 else "right",
+                               "ink": round(ink, 6)})
+    checks["pages"] = {"sampled_frames": len(win), "pages": len(inks),
+                       "threshold": threshold, "inks": inks, "blanks": blanks}
+    if len(blanks) > 1:
+        return _verdict("FAIL", BOOK_BLANK_PAGES, checks,
+                        "%d blank pages among %d sampled (ink under the "
+                        "calibrated threshold %.5f): a book's visible pages "
+                        "are printed pages" % (len(blanks), len(inks),
+                                               threshold), calibrated)
+    return _verdict("PASS", "BOOK_PAGES_OK", checks, "", calibrated)
+
+#: Plan keys that are the APPROVAL, not the plan: the hash is of the plan
+#: content, so the approval fields are excluded or the hash would chase
+#: itself every time a client approves.
+PLAN_HASH_EXCLUDED = ("approved_book_plan_sha256", "approved_at")
+
+def plan_sha256(plan):
+    """The canonical sha256 of a book plan's content (the producer's hash).
+
+    Stable across key order; the approval fields are excluded (see
+    PLAN_HASH_EXCLUDED). Jobs carry this value as ``book_plan_sha256`` and
+    kie_dispatch refuses a book video job whose hash is absent or differs
+    from ``approved_book_plan_sha256`` (BOOK_PLAN_NOT_APPROVED).
+    """
+    doc = {k: v for k, v in (plan or {}).items() if k not in PLAN_HASH_EXCLUDED}
+    blob = json.dumps(doc, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+def plan_card_rows(plan, excerpt=None):
+    """The Book shots block for the card: APPROVALS AND NOTICES only.
+
+    Trevor's locked rule: the card never offers a new choice here. Rows are
+    (label, text) pairs, in card row style. The approval row compares the
+    plan's own hash with the approved hash, so a plan edited after approval
+    shows NOT APPROVED, not a stale tick.
+    """
+    plan = plan if isinstance(plan, dict) else {}
+    rows = []
+    current, approved = plan_sha256(plan), plan.get("approved_book_plan_sha256")
+    if approved and str(approved) == current:
+        when = (" on %s" % plan["approved_at"]) if plan.get("approved_at") else ""
+        rows.append(("Book shots:",
+                     "APPROVED, plan %s%s. Book video jobs carry this hash."
+                     % (current[:12], when)))
+    else:
+        rows.append(("Book shots:",
+                     "NOT APPROVED -- no approved plan hash matches this "
+                     "plan. Book video jobs refuse (BOOK_PLAN_NOT_APPROVED) "
+                     "until the client approves the plan."))
+    if str(plan.get("pages") or "") == "texture":
+        rows.append(("Book pages:",
+                     "printed page texture -- every visible page carries "
+                     "printed text; a blank page fails review."))
+    ex = excerpt if isinstance(excerpt, dict) else {}
+    if ex.get("lines"):
+        rows.append(("Excerpt:",
+                     "%d client-supplied line(s) overlay the page; the "
+                     "client's own words, spelling checked, and the excerpt "
+                     "never reaches a video model." % len(ex["lines"])))
+    else:
+        rows.append(("Excerpt:",
+                     ex.get("note") or "no excerpt supplied -- the pages carry "
+                     "no overlay text."))
+    return rows
+
+def excerpt_overlay(lines, page=1):
+    """The client's excerpt as DATA ONLY, for U9's burn artifact.
+
+    Never a prompt: this dict is not part of any video-model request, and
+    nothing here reads text out of a frame (that is U9's captions_burn.py
+    side, deferred). Lines stay the client's words, verbatim and in order.
+    """
+    clean = [str(l).strip() for l in (lines or ())
+             if isinstance(l, str) and str(l).strip()]
+    return {"kind": "book-excerpt-overlay", "schema_version": SCHEMA_VERSION,
+            "lines": clean[:EXCERPT_MAX_LINES], "page": int(page or 1),
+            "burn_module": U9_CAPTIONS_BURN_MODULE, "burn_status": "deferred",
+            "reason_code": BOOK_EXCERPT_OVERLAY_DEFERRED,
+            "note": "data only: never part of any video-model prompt; burning "
+                    "it into frames belongs to the U9 artifact named in "
+                    "burn_module, which has not landed yet."}
+
+def burn_excerpt_overlay(overlay, frames=None):
+    """The ONE deferred burn call site in this codebase.
+
+    The burn itself belongs to U9's scripts/core/final_assembler/
+    captions_burn.py, which is NOT in this tree (U9 is gated behind U8), so
+    this placeholder REFUSES instead of becoming a second burn module. When
+    U9 lands, wire its entry function here and delete this guard.
+    """
+    return _verdict("UNAVAILABLE", BOOK_EXCERPT_OVERLAY_DEFERRED,
+                    {"overlay": overlay},
+                    "deferred: %s has not landed (U9). The excerpt stays data "
+                    "until it does." % U9_CAPTIONS_BURN_MODULE)
