@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.9
+version: v2.9.10
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -205,6 +205,35 @@ points accept, over 5 up to 10 accept with a flag, over 10 redo. The only
 hard reject is no sung stretch of at least 6 seconds. One constants set holds
 the numbers: `scripts/core/spoken_share/spoken_share.py`.
 
+Tag grammar and the checks around it (FU-U1, FU-U2, FU-U5, FU-U6; what main does):
+
+- **One tag grammar.** A lyric sheet is parsed once, by `suno_recipe`, and
+  `words_fit`, `lyric_structure` and `music_styles.sheet_deliveries` read that
+  same parse. A bracket tag names its delivery: `[Name (sung|spoken|rap): note]`
+  or `[Sung|Spoken|Rap - ...]`; the earliest delivery word wins. A lyric line
+  under a bracket the grammar cannot classify is refused
+  `UNTAGGED_LYRIC_LINES` (naming the lines), never dropped. Rule 1 above holds
+  for plain spoken lines; rap is its own delivery and is allowed only where the
+  style's data says `rap_allowed` (R&B Flow). The rap negative tags drop for a
+  rap style only.
+- **Style-aware length plan.** `length_formula.plan(L, spoken_share_pct,
+  style_id)` gives a rap style a rap budget; `words_fit.STYLE_RATES` is keyed by
+  style id; the offered lengths are `music_styles.OFFERED_LENGTHS_S`
+  (60, 90, 120, 180, 300, 600). Soul Ballad and Soul Rise plans are unchanged
+  (65 words at L=60).
+- **Voice tags come from the cast.** `suno_recipe.check_voice_tags` refuses a
+  character tag whose gender disagrees with the cast record
+  (`VOICE_TAG_MISMATCH`) or cannot be checked (`VOICE_TAG_UNCHECKED`).
+- **Request limits, measured last.** See "Request and prompt limits" below.
+- **Per-style bands (FU-U3, open pull request; refresh when it lands).** The
+  5/10 band is unchanged. Soul Ballad and Soul Rise stay at 22.5 runtime spoken
+  and 77.5 sung of voice. R&B Flow is judged against the share planned from the
+  approved sheet (a Trevor decision item in the plan, no new number invented),
+  rap is counted separately from plain speech, and a music-only gap is a fourth
+  delivery, `none`, that counts in runtime and never in voice time. The 6 s sung
+  stretch and the hook count stay hard. `spoken_share.STYLE_TARGETS` holds the
+  numbers.
+
 The only exemption is the Velvet Voiceover version (the spoken Google voice
 over the song, id `velvet_voiceover`), which keeps its own flow. Almost
 nobody asks for it. Every other style, including the All Suno voice default,
@@ -251,6 +280,25 @@ times. The Velvet Voiceover version is exempt.
    reset the ledger, create a fresh campaign to dodge parked state, or
    spend beyond the recorded ceiling.
 
+## Request and prompt limits (FU-U6, FU-U7, fail closed)
+
+`scripts/core/prompt_limits.py` is the one limit table. It reads the KIE
+catalogs (`68-kie-audio` for Suno, `67-kie-video` for video models) and adds a
+small override table for what the catalogs lack; every row carries its source
+and a VERIFIED or UNVERIFIED status.
+
+- **Suno:** lyrics 5,000 characters, style 1,000, title 80, `negativeTags`
+  1,000 (UNVERIFIED until the docs are re-read), duration 10-360 s. The final
+  payload is measured AFTER `ending_qc.with_clean_ending` appends the ending, so
+  a style that fit before the ending and not after is refused.
+- **Video and avatar:** the vendor cap per model (Hailuo family 2,000, Kling 2.6
+  image-to-video 2,500, MiniMax H3 7,000 with the owner band 5,000-6,800,
+  `kling/ai-avatar-standard` 2,500 UNVERIFIED). `kie_dispatch.dispatch` measures
+  the FINAL payload before any other gate.
+- A refusal is `PROMPT_OVER_CAP` naming field, characters, cap, source and
+  status. Nothing is ever truncated, and a paid video or avatar job with no
+  importable limit table is refused `PROMPT_LIMIT_UNAVAILABLE`.
+
 ## Captions and protected names (Part H, H7)
 
 Captions are the approved lyric sheet's own words, timed by the Suno
@@ -279,6 +327,24 @@ brand names (for example Stale, Stop Stale) are protected words:
   never a PASS; without a `timing` argument each check keeps its text
   comparison, and a run measures first via `caption_timing.captions(sheet)` /
   `lyric_observed(approved_lines)`.
+
+Captions caught early (FU-U8; what main does). `protected_names._tokens` folds
+U+2019 and U+2018 and normalises NFKC, so "could\u2019ve" is one word.
+`display_text()` turns performance spelling into the caption ("Girl, I got you-u"
+burns as "Girl, I got you"; a wordless vocalise makes no cue), and
+`build_captions` / `check_captions` use it. `check_lyrics_spelling` refuses a
+misspelled lyric word `LYRIC_MISSPELLED` inside
+`music_director.build_generate_request`, before any Suno payload exists.
+`intake.client_typo_question` sends a client typo back as ONE question and never
+rewrites the client's words. `kie_dispatch.onscreen_text_refusal` refuses
+`ONSCREEN_TEXT_NOT_CHECKED` for a keyframe or video whose on-screen text has no
+checked receipt, and the Script gate always requires a `spelling_grammar`
+record.
+
+NOT built on main (FU-U9, no branch yet): reading the burned caption text back
+off the rendered frames. Until it lands, the delivered caption text is checked
+against the approved sheet, not against the pixels; do not tell a client the
+frames were read. The checker that reports this is `UNAVAILABLE`, never PASS.
 
 ## Paid generation (what this skill may do)
 
@@ -505,7 +571,7 @@ with `python3 scripts/core/intake_preflight/factory.py character --client-dir
 <client data folder> save --name <name> --description <text> --image <file>
 [--image ...] --voice-notes <text>`. The library lives inside that client's own
 data folder (`character-library/<name>/`), never shared between clients. Later
-intake cards list saved characters under "Use a saved character?" (`character
+intake cards open with a CHARACTER question when the client has saved characters ("Do you want to create a new character for this ad, or use one you've used before? You have N characters saved with us.", option 1 = create a new character, recommended, then one "Use <Name> - <description>" option per saved character; the recap reads "Character: new" or "Character: <Name> (saved)"). With none saved there is no question: one line says a new character will be created and saved for next time (`character
 --client-dir <dir> card`; `factory.py card --client-dir <dir>` where the
 intake card exists). `character --client-dir <dir> use --name <name>` prints
 the brief fields (name, description, reference images, voice notes) to reuse.
@@ -517,12 +583,19 @@ distributions. Field-level rules live in `references/choice-card-spec.md`;
 human price snapshot in `references/price-menu.md`; stage order and QC in the
 SOP named above.
 
-- **Intake.** Quick mode by default (one sentence), Concept mode for a
+- **Intake.** The run opens with the intro, then the questions: send
+  `factory.py card --step --run-state-file <run-state.json>` first (it prints the
+  one-time intro, `references/choice-card-spec.md` section 2.3), then call it
+  again for question 1. Quick mode by default (one sentence), Concept mode for a
   client with their own story. At most three questions total, and ONE choice
   card with every default pre-selected, so a client can approve with one
   click.
 - **Lengths:** 60 seconds, 90 seconds, 3 minutes, 5 minutes, and a
   **10-minute long version**. Each length is its own song and timing map.
+  The 3, 5 and 10 minute ads each come with an automatic 60-second clip and
+  a 90-second clip (`scripts/core/clip_cutdown`; free, included in the
+  price). The intake card asks it as one full question with numbered options
+  that name the clips.
 - **Ends 2 seconds early (Part I, I4):** the master for a chosen length L is
   at most L-2 seconds (60 becomes 58, 30 becomes 28, 90 becomes 88, 120
   becomes 118), because a 60-second video that runs to 1:02 cannot be used in
@@ -710,6 +783,23 @@ SOP named above.
   image; one choice card covers the whole batch; one ad per book with its own
   campaign folder, receipt, spend-ledger run and Command Center deliverable;
   books and authors are never mixed; the card shows the batch total.
+  - **Book orientation contract (FU-U10, on main).** `scripts/core/book_shot/`
+    carries the seven-rule BOOK ORIENTATION CONTRACT and fixed prompt blocks
+    (left and right from the camera's view; front cover faces the camera; at
+    most one camera move, none for book shots). A book clip is accepted only
+    with a PASS `book_orientation` record from a calibrated checker:
+    `BOOK_MIRRORED`, `BOOK_COVER_NOT_FRONT`, `BOOK_SPINE_WRONG_SIDE`,
+    `BOOK_WRONG_DIRECTION`, `BOOK_NO_MOTION`. `calibrate_book.py` must sort a
+    known-good clip and its mirror, or every verdict is UNAVAILABLE. A book video
+    job without a start frame made from the cover file is refused
+    `BOOK_SHOT_NOT_CONTRACTED`. Intake takes `language` (default `en`).
+  - **Printed pages, plan hash and Book shots block (FU-U11, open branch
+    `unit/FU-U11`; refresh when it lands).** `check_pages` fails
+    `BOOK_BLANK_PAGES`; the approved plan is hashed (`plan_sha256`) and a book
+    video job whose hash is missing or stale is refused `BOOK_PLAN_NOT_APPROVED`;
+    both cards carry a Book shots approval block (approvals and notices, never a
+    new choice); an optional client-supplied `excerpt_lines` (max 3) goes to the
+    overlay only and is never sent to a video model.
 - **The song mp3 is part of the deliverable (FU-U14):** every delivered ad
   folder holds, beside the captioned and clean-master mp4s, the FINAL SONG as
   an mp3 (320 kbps, the exact song used in the ad, full length) plus the wav
@@ -727,3 +817,19 @@ SOP named above.
 - **Command Center:** one deliverable per ad, one Kanban card per ad and one
   parent card per batch; department lead role
   `vsl-video-sales-letter-specialist`.
+
+## Sections marked TODO (refresh when the named unit lands)
+
+- "Per-style bands (FU-U3...)" bullet in the Suno recipe, the matching
+  `QC.md` band line, and the SOP's spoken-band step - refresh when FU-U3
+  lands (PR #1752, base `unit/FU-U2`; `STYLE_TARGETS` is not on
+  `batch/mega-MGB015` yet).
+- `references/choice-card-spec.md` 2.3 - "NOT built on main (FU-U4, no branch
+  yet)" for the fit card: refresh when FU-U4 lands (PR #1757 rewrites that
+  section normatively).
+- "Captions and protected names" and the `QC.md` captions-at-the-end line -
+  "NOT built on main (FU-U9...)" for reading burned caption text back off
+  frames: refresh when FU-U9 lands.
+- Book bullets and the `QC.md` book line - FU-U11's `BOOK_BLANK_PAGES`,
+  `BOOK_PLAN_NOT_APPROVED` and the Book shots block are described as an open
+  branch: refresh when FU-U11 lands.

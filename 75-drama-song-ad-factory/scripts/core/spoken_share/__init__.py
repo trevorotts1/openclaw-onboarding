@@ -3,6 +3,12 @@ sung 77.5% of voice time, every length and every style, first real singing
 targeted at 15% of runtime, judged by Trevor's 5/10 band). Stdlib only, no network, no spend."""
 from .spoken_share import (  # noqa: F401
     ACCEPT_PTS,
+    ALIGNED_SOURCE,
+    BASIS_ALIGNED,
+    VOICE_DELIVERIES,
+    SEGMENT_DELIVERIES,
+    STYLE_TARGETS,
+    style_targets,
     BAND_ACCEPT,
     BAND_FLAG,
     BAND_REDO,
@@ -61,6 +67,12 @@ from .spoken_share import (  # noqa: F401
 
 __all__ = [
     "ACCEPT_PTS",
+    "ALIGNED_SOURCE",
+    "BASIS_ALIGNED",
+    "VOICE_DELIVERIES",
+    "SEGMENT_DELIVERIES",
+    "STYLE_TARGETS",
+    "style_targets",
     "BAND_ACCEPT",
     "BAND_FLAG",
     "BAND_REDO",
