@@ -382,6 +382,12 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None):
     opener_cap = OPENER_MAX_WORDS_SHORT if D <= 105 else OPENER_MAX_WORDS_LONG
     opener = min(opener_cap, max(wb["spoken_words"] // 4, 1))
     cta_cap = max(OUTRO_MAX_WORDS, wb["spoken_words"] - opener)
+    if _rap_style(style_id):
+        # FU-U2 x 2026-10-09 CTA scaling (train MGB013): a rap style keeps the
+        # fixed [Intro]/[Outro] caps so the allowance they leave unspent is the
+        # rap budget; the scaled CTA would spend all of it as speech.
+        opener = min(opener_cap, max(min(wb["spoken_words"], opener_cap + OUTRO_MAX_WORDS) // 4, 1))
+        cta_cap = OUTRO_MAX_WORDS
     spoken_words = min(wb["spoken_words"], opener + cta_cap)
     planned_share = round(spoken_words / SPOKEN_WPS / D * 100.0, 1)
     rap_words, rap_s = 0, 0.0

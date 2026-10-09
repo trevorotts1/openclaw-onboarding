@@ -37,11 +37,13 @@ FIXTURE = os.path.join(CORE, "suno_recipe", "fixtures", "one-check-lyrics.txt")
 #: The base-tree digests (FU-U1 tree), computed BEFORE this unit's change:
 #:   json.dumps(plan, sort_keys=True) with the FU-U13 product_connection key
 #:   removed (a sibling unit's key, not this unit's output).
+# MGB013: L150/L300 are main's digests (the fixed CTA cap was retired 2026-10-09);
+# L60 and L60_bsw are unchanged from the FU-U1 tree.
 BASE_SHA = {
     "L60": "05d36d4066c5fec710d1ec61f91a5a2345f2007848dc8bc7912e03a0776b3d4d",
     "L60_bsw": "e890c4a29922a9253cd8f293f4005fef9b29e4fc801e03d8f5688d2ee4373721",
-    "L150": "7ca34aa8fa247840cffab27d252a6ff61dbe7a5274e1aaf40aa43437a97a5afc",
-    "L300": "44969139cacfb6664336773c7d5614893a907179783952ea56d0927a6219ccac",
+    "L150": "e938e6a3f2b2ce46e3f796d25852218d1cc3ad858253d4fe60cfe46e8633e628",
+    "L300": "40f5cbe5290b764bfe5c9d324355260c2d358ef9e19f228fbce58ae50e6d16d5",
 }
 
 FAILS = []
