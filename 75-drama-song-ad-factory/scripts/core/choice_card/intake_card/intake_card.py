@@ -202,10 +202,32 @@ def conversation(replies, questions=None):
     return {"answers": answers, "done": done, "message": msg}
 
 
-def render_card(questions=None):
+def book_block(plan=None, excerpt=None):
+    """FU-U11: the Book shots block for the card -- APPROVALS AND NOTICES.
+
+    Row text is owned by book_shot.plan_card_rows (one copy); this only lays
+    it out. Never a new choice: the block adds no option, changes no answer
+    and blocks nothing here (the book job's gates run at dispatch and QC).
+    Returns [] when the card is not about a book or book_shot is absent, so
+    a non-book card is byte-identical to before.
+    """
+    if plan is None and excerpt is None:
+        return []
+    try:
+        from book_shot import book_shot as _bs
+    except ImportError:
+        return []
+    rows = _bs.plan_card_rows(plan, excerpt)
+    return ["Book shots"] + ["  %s %s" % (label, text) for label, text in rows]
+
+def render_card(questions=None, plan=None, excerpt=None):
     """The whole card as one string: blank line between questions, closing line."""
     qs = questions or QUESTIONS
-    return "\n\n".join(_blocks(qs) + [CLOSING_LINE])
+    parts = _blocks(qs) + [CLOSING_LINE]
+    block = book_block(plan, excerpt)
+    if block:
+        parts.insert(len(qs), "\n".join(block))
+    return "\n\n".join(parts)
 
 
 def format_questions(texts):
