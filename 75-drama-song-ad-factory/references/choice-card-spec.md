@@ -43,11 +43,19 @@ Your drama song ad
   Clips:        (5 and 10 minutes only) automatic 60- or 90-second clips
                 for ads and Reels
   Video model:  MiniMax H3, 768P  (RECOMMENDED)   [see all models and prices]
+  Villain:      <name>, shown in N shots    (FU-U16; from the story plan)
   Price:        computed by Skill 74 `price`   (+ the 20% retake allowance)
   Includes:     all video shots, the song, one image per shot
   Not included: the AI writing, planning and checking (runs on your own AI plan)
   [Approve]   [Change options]
 ```
+
+The `Villain:` line reads
+`Villain: <name>, shown in N shots` (from
+`length_formula.plan_villain_doctrine`'s `card_line`) and sits on the card so
+the client sees the story's villain before approving: the villain may be a
+person or not a person, and the count is the villain's OWN shots. Source:
+FU-U16 story doctrine, Trevor order 2026-10-08.
 
 Directive 24.3 note (owner order 2026-10-08): the card is one step with
 four picks, so the three-question cap applies to the story questions only.

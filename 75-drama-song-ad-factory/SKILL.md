@@ -19,6 +19,37 @@ lockstep is checked by the two tests this folder ships -
 Default production mode name: `drama-song-vsl`. Never make a third-party
 brand name the public product identity.
 
+## Creative doctrine: villain, pain, rise (Trevor order 2026-10-08)
+
+> "People don't care about the hero until they meet the villain." - Trevor Otts
+
+These are **not music videos**. They are compelling true stories told through
+the animation, the music and the lyrics - songs strong enough to sell as a
+soundtrack on their own (the Grey's Anatomy standard: you watch the show and
+you buy the music). Every ad has a compelling plot and a villain that evokes
+a visceral response, and every ad carries the **pain AND the rise**, so the
+audience feels the pain and the problem in the depth of their soul.
+
+- **The villain contract.** Every ad names its VILLAIN in the story plan. A
+  villain is a person OR not a person: cancer, debt, a layoff, a lie,
+  burnout, fear, the inner critic, a system. The villain must be (a) named
+  in the story plan, (b) shown on screen in concrete, visceral visual form
+  with its OWN shots - never implied, (c) felt in the lyrics with real
+  stakes and consequences, and (d) escalating, then confronted, then
+  defeated or transformed at the rise.
+- **The arc.** hook -> the world -> the villain arrives -> the pain deepens
+  (visceral, specific, from the source material) -> the lowest point -> the
+  turn (the product or book as the key) -> the rise -> the call to action.
+- **The numbers.** `length_formula.plan_villain_doctrine` fails CLOSED when
+  no villain is named or when the villain has no shot - the only two hard
+  cases. The pain share of runtime is a target band of 20-35 percent;
+  outside it is a FLAG carrying the measured seconds, never a block. Pain
+  gets real screen time; the rise is earned, never rushed.
+- **The checker.** `delivery_checklist.measure_villain_doctrine` reports a
+  `VILLAIN_DOCTRINE` row: villain shots, villain screen seconds, pain
+  seconds and rise seconds. The approval card carries
+  `Villain: <name>, shown in N shots`.
+
 ## Route boundaries
 
 Use this skill for song-driven direct-response video ads: a twelve-stage
