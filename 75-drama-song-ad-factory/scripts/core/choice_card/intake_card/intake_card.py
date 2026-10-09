@@ -300,10 +300,19 @@ def main(argv=None):
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
                          "card opens with 'Use a saved character?' (I6)")
+    ap.add_argument("--run-dir", default="",
+                    help="run folder; when the recap is confirmed, the answers are written "
+                         "to <run-dir>/card-answers.json (SCRIPT APPROVAL reads it)")
     a = ap.parse_args(argv)
     qs = _with_saved_character(a.client_dir)
     if a.step:
         st = conversation(a.reply, qs)
+        if st["done"] and a.run_dir:
+            core = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            if core not in sys.path:
+                sys.path.insert(0, core)
+            from script_approval import card_answers  # noqa: PLC0415
+            card_answers.write(a.run_dir, st["answers"], qs)
         if a.format == "text":
             sys.stdout.write(st["message"] + "\n")
         else:

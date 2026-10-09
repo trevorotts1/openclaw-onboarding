@@ -196,6 +196,39 @@ def test_delivery_uses_openclaw_send_and_failure_resends_on_resume():
         os.environ["PATH"] = old
 
 
+def confirm_card(run, script_answer):
+    """Drive the REAL card (factory.py card --step --run-dir) to a confirmed recap."""
+    os.remove(os.path.join(run, "card-answers.json"))
+    replies = ones()[:-1] + [script_answer] + ["yes"]
+    args = ["card", "--step", "--run-dir", run] + [x for r in replies for x in ("--reply", r)]
+    assert F.main(args) == 0
+
+
+def test_confirmed_recap_writes_answers_yes_pauses():
+    run = make_run()
+    confirm_card(run, "1")
+    rows = json.load(open(os.path.join(run, "card-answers.json")))
+    assert [r["id"] for r in rows] == [q["id"] for q in IC.QUESTIONS]
+    env = next_(run)
+    assert env["outcome"] == "waiting" and env["reason_code"] == "SCRIPT_AWAITING_APPROVAL", env
+    assert "THE SONG LYRICS" in "\n".join(env["data"]["delivered"])
+
+
+def test_confirmed_recap_no_goes_to_music():
+    run = make_run()
+    confirm_card(run, "2")
+    env = next_(run)
+    assert env["outcome"] == "ok" and env["data"]["stage"] == "music", env
+
+
+def test_unconfirmed_recap_writes_nothing():
+    run = make_run()
+    os.remove(os.path.join(run, "card-answers.json"))
+    args = ["card", "--step", "--run-dir", run] + [x for r in ones() for x in ("--reply", r)]
+    F.main(args)
+    assert not os.path.exists(os.path.join(run, "card-answers.json"))
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in sorted(globals().items()):

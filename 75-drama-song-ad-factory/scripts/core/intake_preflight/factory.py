@@ -377,6 +377,8 @@ def main(argv=None):
     c.add_argument("--target", default="", help="Telegram chat id")
     c.add_argument("--client-dir", default="",
                    help="Client data folder; adds 'Use a saved character?' when it has saved characters (I6).")
+    c.add_argument("--run-dir", default="",
+                   help="Run folder; the confirmed recap writes card-answers.json there.")
     c.add_argument("--step", action="store_true",
                    help="one question per message (I7): print only the next message")
     c.add_argument("--reply", action="append", default=[],
@@ -403,6 +405,7 @@ def main(argv=None):
         from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
         return _card.main(["--format", a.format, "--target", a.target]
                           + (["--client-dir", a.client_dir] if a.client_dir else [])
+                          + (["--run-dir", a.run_dir] if a.run_dir else [])
                           + (["--step"] if a.step else [])
                           + [x for r in a.reply for x in ("--reply", r)])
     if a.cmd == "intake":
