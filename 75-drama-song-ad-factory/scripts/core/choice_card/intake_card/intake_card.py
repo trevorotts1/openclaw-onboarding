@@ -130,8 +130,22 @@ def spend_question(price=None, limit=None, from_brief=False):
             "options": opts, "values": vals, "recommended": 0 if opts[:-1] else None}
 
 
+def _models_q():
+    from choice_card.intake_card import ai_models as AM
+    return {"id": "models", "why": "One AI builds your video and a different AI checks the work.",
+            "reason": "OpenRouter is the faster route, and a separate model checks the work.",
+            "label": "AI MODELS",
+            "ask": "Which AI should build your video, and which should check the work? "
+                   "OpenRouter is recommended because it's faster; Ollama works too.",
+            "options": [("Recommended setup", "An OpenRouter model builds, Claude Sonnet checks."),
+                        ("Choose my own", "Reply with the build model and the check model, "
+                         "e.g. 'DeepSeek builds, Sonnet checks'.")],
+            "recommended": 0}
+
+
 def _questions():
     return [
+        _models_q(),
         {"id": "length", "why": "Length decides the story size and the price.", "reason": "the standard length for ads, and it fits stories, reels and ads.", "label": "LENGTH", "ask": "How long do you want your ad to be? The longer ads also come with short clips you can post on social media.",
          "options": [("60 seconds", "The standard ad length."),
                      ("90 seconds", "Room for a fuller story."),
@@ -263,6 +277,13 @@ def _parse(reply, q):
     """Reply -> {"n": option number, "text": ..., "value": ...} or None."""
     t = (reply or "").strip().lower()
     opts = q["options"]
+    if q["id"] == "models":
+        from choice_card.intake_card import ai_models as AM
+        c, err = AM.parse(reply)
+        if not c:
+            return {"error": err}
+        return {"n": 1 if c == AM.recommended() else 2, "value": c,
+                "text": AM.label(c["build"]) + " builds, " + AM.label(c["check"]) + " checks"}
     if t in ("recommended", "recommend", "rec") or (t in _YES and len(opts) > 0):
         if q.get("recommended") is None:
             return None
@@ -296,13 +317,17 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
         qs = _priced(qs, answers)
         if len(answers) < len(qs) and fix is None:
             a = _parse(r, qs[len(answers)])
-            if a:
+            if a and "error" in a:
+                note = a["error"] + " "
+            elif a:
                 answers.append(a)
             else:
                 note = "Sorry, I did not catch that. "
         elif fix is not None:                       # re-answering one line
             a = _parse(r, qs[fix])
-            if a:
+            if a and "error" in a:
+                note = a["error"] + " "
+            elif a:
                 answers[fix], fix = a, None
             else:
                 note = "Sorry, I did not catch that. "
@@ -580,14 +605,14 @@ def _render_fit(card):
 def _with_saved_character(client_dir):
     """QUESTIONS, with the saved-character question first when the client has
     saved characters (Part I, I6). With a client folder but no saved characters
-    the plain seven open with one short line (``NO_SAVED_LINE``). No folder: plain six."""
+    the plain seven open with one short line (``NO_SAVED_LINE``). No folder: plain nine."""
     if not client_dir:
         return QUESTIONS
     from character_library import character_library as CL
     q = CL.saved_character_question(client_dir)
     if not q:
         return [dict(QUESTIONS[0], preface=NO_SAVED_LINE)] + QUESTIONS[1:]
-    return [q] + QUESTIONS
+    return QUESTIONS[:1] + [q] + QUESTIONS[1:]      # AI MODELS stays the first question
 
 
 try:

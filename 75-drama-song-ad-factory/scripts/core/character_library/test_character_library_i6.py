@@ -72,7 +72,8 @@ class RoundTrip(unittest.TestCase):
             out = subprocess.run([sys.executable, card, "--client-dir", self.client],
                                  capture_output=True, text=True, check=True).stdout
             self.assertIn("saved with us", out)
-            self.assertIn("Question 1 of 9", out)
+            self.assertIn("Question 1 of 10 - AI MODELS", out)
+            self.assertIn("Question 2 of 10 - ", out)
 
 
 if __name__ == "__main__":

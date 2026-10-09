@@ -148,15 +148,21 @@ pauses before the song (`script_approval/script_approval.py`; gate
 
 ## 2.1 Intake question card layout (Part H9, normative)
 
-The seven intake questions (length, music style, video style, video model,
-spend limit, storyboard approval, song approval) are built by
+The nine intake questions (AI models, length, music style, video style, video
+model, budget, storyboard approval, song approval, script approval) are built by
 `scripts/core/choice_card/intake_card/intake_card.py` and nowhere else. Never
 write them free hand and never carry them as one JSON string.
 
-- Each question is its own block: `Question 1 of 7 - LENGTH`, then the plain
+- Each question is its own block: `Question 2 of 9 - LENGTH`, then the plain
   question, then one numbered option per line (`1. 60 seconds - one short
   sentence. (RECOMMENDED)`). A blank line separates questions. The last line
   is the "how to answer" line.
+- Question 1 is AI MODELS: "Which AI should build your video, and which should
+  check the work? OpenRouter is recommended because it's faster; Ollama works
+  too." Option 1 is the recommended setup (an OpenRouter model builds, Claude
+  Sonnet checks); option 2 is the client's own pair, e.g. "DeepSeek builds,
+  Sonnet checks". The answer is a recorded preference (`ai_models` in the
+  approved summary), not a model switch. Test: `choice_card/intake_card/test_ai_models.py`.
 - Plain text only: no Markdown, no HTML, no parse mode, so no sender can strip
   or escape the line breaks.
 - Claude Code chat: run `factory.py card` and show its stdout as is (raw text,

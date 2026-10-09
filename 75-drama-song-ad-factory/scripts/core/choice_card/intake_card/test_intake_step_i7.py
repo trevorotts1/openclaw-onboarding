@@ -57,8 +57,8 @@ def test_recommended_bad_answer_and_spend_amount():
     st = IC.conversation(["recommended", "9"])
     assert st["message"].startswith("Sorry, I did not catch that. Question 2 of")
     assert len(st["answers"]) == 1
-    a = IC.conversation(["1", "1", "1", "1", "$25", "2"])["answers"]
-    assert a[4]["value"] == "25" and a[5]["n"] == 2
+    a = IC.conversation(["1"] * 5 + ["$25", "2"])["answers"]
+    assert a[5]["value"] == "25" and a[6]["n"] == 2
 
 
 def test_change_one_line_returns_to_recap():

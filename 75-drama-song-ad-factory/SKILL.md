@@ -598,6 +598,13 @@ This skill never picks, forces or recommends a model, an alias or an agent.
   model the user has not set up.
 - If the user names a model or agent, use exactly that one.
 
+The one AI MODELS question on the intake card (first question) asks which AI
+builds and which AI checks, with OpenRouter recommended and Ollama allowed. It
+only RECORDS the answer as `ai_models` in the approved intake summary, as a
+preference for the operator. The run itself still uses the session's own model;
+nothing here switches models. Names that are not routable are refused, and the
+checker must differ from the builder. Code: `scripts/core/choice_card/intake_card/ai_models.py`.
+
 ## Main window: orchestrate only, all work visible, no silent failure
 
 - The main window only operates and orchestrates. It does not do the build
