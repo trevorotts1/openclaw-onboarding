@@ -6,6 +6,45 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.1 - 2026-10-08 - W-G-008: parallel minute-lanes for ads 120 s and up
+
+Owner order (Trevor, 2026-10-08): "this type of intelligence should be built
+into skill 75 for all video 2 minutes and up". Reference run wf_9134d15e-b8e
+(the fixer split a 3-minute ad into parallel minute-lanes).
+- **`scripts/core/lane_planner.py` (new).** Below 120 s of song NOTHING
+  changes: one lane, today's flow. At 120 s and up, `plan_lanes(shots,
+  song_length_s)` cuts the shot list into N = ceil(L / 60) lanes of about 60 s,
+  every cut ON a shot boundary (a shot is never split; an unreachable boundary
+  fails closed `LANE_BOUNDARY_INSIDE_SHOT`). Shared steps run ONCE before the
+  split (`SHARED_STEPS_BEFORE`: song, song-checker, plan-shot-list, character,
+  closeup-picture-gate); each lane makes its own stills, motion clips and
+  lip-sync segments AT THE SAME TIME, on the same character, through the
+  picture gate, at most 2 lip-sync jobs per segment then the best take, with
+  mouth strips. Fan-in runs ONCE after the lanes (`SHARED_STEPS_AFTER`): one
+  edit over the full song, one independent checker for the whole ad (hard
+  audio-length rule, captions = lyrics, face through the call to action), one
+  repair.
+- **`SharedGovernor` (one governor across all lanes).** At most 20 NEW
+  generation requests per rolling 10 s in total; per-lane share floor(18 / N)
+  (3 lanes -> 6 each); every submit rides `load_governor.kie_request`, so a 429
+  is backed off and RESUBMITTED, never dropped. Heavy local jobs (ffmpeg) stay
+  at most 2 at once across all lanes through the EXISTING machine-wide gate
+  (`load_governor.heavy_slot`, re-exported as `lane_planner.heavy_slot`) -- no
+  second limiter.
+- **Resume and reuse.** `classify_tag(db_path, run_id, logical_key, ...)`
+  reads the run's spend ledger: a tag already in the ledger is POLLED, never
+  resubmitted; a finished file is REUSED, so a re-run never pays twice; every
+  lane plans against the ONE ledger run, so spend stays under the run cap
+  across all lanes together.
+- Tests: `scripts/core/test_lane_planner.py` (180 s -> 3 lanes on shot
+  boundaries; 90 s -> 1 lane; shared governor <= 20 per 10 s across 3 lanes on
+  a fake clock with a 429 resubmitted; a ledger-known tag is polled, a
+  finished file reused). Boundary battery: 119 stays 1, 120 splits, 179 stays
+  3, 180 stays 3.
+- Docs: SKILL.md "Parallel minute-lanes" section; the pipeline SOP
+  (`23-ai-workforce-blueprint/templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md`
+  DS-7 step 6) + `_index.json` content manifest restamp.
+
 ## v2.9.0 - 2026-10-08 - Batch MGB007: LSC001: one consolidated lip-sync change (LPG001 + LSL001 + LSR001)
 
 No version bump. Replaces onboarding #1697, #1698, #1699 (999-setup #72, #73, #86), which overlapped and partly contradicted each other.
