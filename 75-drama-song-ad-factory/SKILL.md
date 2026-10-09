@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.13
+version: v2.9.14
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -995,6 +995,27 @@ SOP named above.
 - **Command Center:** one deliverable per ad, one Kanban card per ad and one
   parent card per batch; department lead role
   `vsl-video-sales-letter-specialist`.
+
+## Ready-to-Post Kit (DEL-07)
+
+After delivery, build the kit that tells the client what to post where:
+`python3 scripts/core/ready_post_kit/ready_post_kit.py --run-dir "$RUN" --delivery "$DELIVERY" [--client-dir <client data folder>]`.
+It writes `07 - Ready-to-Post Kit.pdf` (the client-facing kit) and the same
+kit as `07 - Ready-to-Post Kit.json` into that delivery folder: which
+version to post where (every file found, plus the cutdowns
+`clip_cutdown.clips_for(length)` schedules), the link (brief link aliases ->
+a URL in the offer -> the `Banner link` line the batch README publishes), a
+caption and a suggested hashtag set for YouTube, Instagram, TikTok and
+Facebook, and a proper YouTube block (title <= 100 characters, description
+carrying the link and the hashtags, tags <= 500 characters, counts shown).
+The page is bright - white, dark ink, blue headings with the guide's gold
+rule - and nothing on it is under 12 pt. Fail closed by name: `KIT_NO_LINK`,
+`KIT_STORYBOARD_NOT_APPROVED`, `KIT_NO_SCRIPT`,
+`KIT_DELIVERY_RECEIPT_MISSING`, `KIT_CHECKLIST_FAILED` (a measured "no" in
+`delivery_checklist`) and `KIT_BANNED_TEXT` (a tool or model name, a dollar
+amount or an income promise anywhere in the copy - the kit never prints
+one). Full contract: `references/ready-post-kit.md`; proof:
+`scripts/core/ready_post_kit/test_ready_post_kit.py`.
 
 ## Sections marked TODO (refresh when the named unit lands)
 
