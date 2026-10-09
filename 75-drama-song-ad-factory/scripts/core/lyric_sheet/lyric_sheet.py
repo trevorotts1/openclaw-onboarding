@@ -65,9 +65,11 @@ INSTRUMENTAL_NOTE = "Instrumental - no words in this section."
 _MONEY_RE = re.compile(r"\$\s*\d|€\s*\d|\bUSD\b|\bfree money\b|\bpassive income\b"
                        r"|\bincome promise\b|\bguaranteed income\b", re.I)
 
-#: no tool or model name may reach a client-facing page
+#: no tool or model name may reach a client-facing page. Word tokens only -
+#: a bare "kie" catches the host too (\\bkie\\b splits on the dot), and no
+#: host spelling ever lands in core where F14's qc-no-direct-kie.sh scans.
 TOOL_NAMES = ("anthropic", "claude", "chatgpt", "gpt", "openai", "openrouter",
-              "ollama", "suno", "kie", "kie.ai", "deepseek", "moonshot",
+              "ollama", "suno", "kie", "deepseek", "moonshot",
               "minimax", "kling", "seedance", "veo", "gemini", "reportlab",
               "pypdf", "ffmpeg", "whisper")
 
