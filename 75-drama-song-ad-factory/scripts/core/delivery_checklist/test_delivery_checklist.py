@@ -737,7 +737,7 @@ class PackageFolderGate(unittest.TestCase):
 
     def test_only_the_package_question_is_in_repair_scope(self):
         folder = self.folder()
-        (folder / "07-ready-to-post-kit.pdf").unlink()
+        (folder / "07 - Ready-to-Post Kit.pdf").unlink()
         res = dc.evaluate(self.receipt(folder))
         self.assertEqual(res["repair_scope"], ["PACKAGE_COMPLETE"])
         self.assertTrue(all(a["answer"] == "yes"
@@ -746,7 +746,7 @@ class PackageFolderGate(unittest.TestCase):
 
     def test_empty_file_is_not_a_delivered_item(self):
         folder = self.folder()
-        (folder / "09-lyric-sheet.pdf").write_bytes(b"")
+        (folder / "09 - Lyric Sheet.pdf").write_bytes(b"")
         res = dc.evaluate(self.receipt(folder))
         self.assertFalse(res["pass"])
         self.assertIn("lyric_sheet", res["evidence"]["missing_items"])

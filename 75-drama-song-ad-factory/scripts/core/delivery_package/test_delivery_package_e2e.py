@@ -6,15 +6,12 @@ The whole run, for real: package_run discovers each package item's component
 one delivery folder, and the test then opens every one of them -- PDF header,
 SRT cue structure, media non-empty -- exactly as the client would.
 
-This test is deliberately NOT stubbed. When a sibling unit DEL-01..DEL-12 is
-not in the branch base, its component is not wired, the packaging call raises
-COMPONENT_MISSING and this test SKIPS with the full list of items still owed
--- the honest state of a delivery folder that cannot be built yet, never a
-fabricated green. A producer that raises (COMPONENT_FAILED) or a folder that
-does not verify (PACKAGE_INCOMPLETE) still FAILS here: only the not-yet-landed
-sibling is skippable. Re-run it once the sibling PRs merge; nothing here needs
-editing. The twelve-item gate itself stays hard meanwhile: delivery_checklist
-Q12 PACKAGE_COMPLETE fails the run on any missing package item.
+Every DEL-01..DEL-12 component now exports ``produce_delivery(run_dir, item)``
+and the ONE naming scheme lives in ``delivery_package.contract`` (``NN -
+Label.ext`` per item number), so all twelve items are produced and this test
+runs green with no skip. The twelve-item gate stays hard: delivery_checklist
+Q12 PACKAGE_COMPLETE fails the run on any missing package item, and the
+negative control below proves one missing item fails the folder contract.
 
 Run: python3 delivery_package/test_delivery_package_e2e.py
 """
@@ -52,26 +49,7 @@ class DeliveryPackageEndToEnd(unittest.TestCase):
     def test_01_fixture_run_packages_all_twelve_items_and_they_open(self):
         # the packaging call itself: every component discovered, every item
         # written under its canonical numbered name, folder verified.
-        try:
-            res = P.package_run(self.run_dir, self.out)
-        except P.PackageError as exc:
-            if exc.code == "COMPONENT_MISSING":
-                # Sibling DEL-01..DEL-12 producers are not in this branch's
-                # base yet. Stated, never green: the discovery path is
-                # SKIPPED until they land, and the reason carries the full
-                # list of items still owed. The twelve-item gate itself stays
-                # hard meanwhile -- delivery_checklist Q12 PACKAGE_COMPLETE
-                # fails the run on any missing item, and the contract suite
-                # (including test_full_packaging_path_writes_a_verifying_folder)
-                # still fail-closes on the same folder contract.
-                self.skipTest(
-                    "sibling delivery units still open -- %s. Re-run this "
-                    "test after the sibling PRs merge; Q12 PACKAGE_COMPLETE "
-                    "and the delivery_package contract tests stay hard."
-                    % exc.message)
-            self.fail(
-                "packaging refused this run -- %s\n%s"
-                % (exc.code, exc.message))
+        res = P.package_run(self.run_dir, self.out)
 
         self.assertEqual(len(res["items"]), 12)
         report = C.verify_folder(self.out)
@@ -85,6 +63,25 @@ class DeliveryPackageEndToEnd(unittest.TestCase):
                 with self.subTest(item=item.key, file=name, kind=kind):
                     self.assertTrue(path.exists(), "%s missing" % name)
                     self._opens(path, kind)
+
+    def test_02_every_component_exports_produce_delivery(self):
+        # no component is "not landed" any more; all twelve are wired.
+        for item in C.PACKAGE_ITEMS:
+            fn, note = P.resolve_producer(item)
+            self.assertIsNotNone(fn, "%s not wired: %s" % (item.key, note))
+            self.assertIn("wired via", note)
+
+    def test_03_negative_control_one_missing_item_fails_the_folder(self):
+        # the twelve-item gate is hard: drop one item, the folder must fail
+        # and name exactly that item. Mirrors delivery_checklist Q12.
+        victim = C.ITEMS_BY_KEY["welcome_sheet"]
+        folder = C.write_reference_package(self.tmp / "neg")
+        first = folder / victim.files[0]
+        first.unlink()
+        report = C.verify_folder(folder)
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["missing"], [victim.key])
+        self.assertEqual(report["problems"][0]["file"], victim.files[0])
 
     def _opens(self, path, kind):
         """Open one delivered file the way the contract defines 'opens'."""
