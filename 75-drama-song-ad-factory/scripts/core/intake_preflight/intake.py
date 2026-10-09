@@ -135,7 +135,12 @@ DEFAULTS = {
 }
 
 Q_OFFER = "What product/offer are we promoting, and what link or assets should we use?"
-Q_AUDIENCE = "Who is it for, and what should viewers do?"
+Q_AUDIENCE = ("Who is this ad for, and what should they do after watching it?\n"
+              "For example: 'Women 35-55 who want a second income - register for my free masterclass.'")
+Q_AUDIENCE_ONLY = ("Who is this ad for? "
+                   "For example: 'Women 35-55 who want a second income.'")
+Q_ACTION_ONLY = ("What should people do after watching? "
+                 "For example: 'Register for my free masterclass.'")
 Q_SPENDING = "What is the most you want to spend on this video? For example: $25."
 Q_WEBSITE = ("What is the exact website address you want people to go to? "
              "Type it exactly as it should appear, for example: example.com. "
@@ -337,8 +342,12 @@ def missing_essentials(fields, prov):
     qs = []
     if not fields.get("offer"):
         qs.append({"id": "offer", "question": Q_OFFER})
-    if not fields.get("audience") or not fields.get("action"):
-        qs.append({"id": "audience_action", "question": Q_AUDIENCE})
+    no_aud, no_act = not fields.get("audience"), not fields.get("action")
+    if no_aud or no_act:
+        # Ask only for the piece that is missing; same id either way.
+        qs.append({"id": "audience_action",
+                   "question": Q_AUDIENCE if no_aud and no_act
+                   else Q_AUDIENCE_ONLY if no_aud else Q_ACTION_ONLY})
     if not isinstance(fields.get("budget_minor"), int) or not fields.get("budget_currency"):
         qs.append({"id": "spending_authority", "question": Q_SPENDING})
     if wants_website(fields) and len(qs) < 3:
