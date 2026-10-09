@@ -413,9 +413,9 @@ def build_cover(run_dir, delivery_dir, ad_name, *, width=DEFAULT_WIDTH,
         argv = build_cover_argv(picked["path"], str(out), title_file,
                                 width=width, height=height, fontfile=fontfile,
                                 ffmpeg=ffmpeg)
-        launch = runner or _LG.run_ffmpeg
+        runner_fn = runner or _LG.run_ffmpeg
         try:
-            proc = launch(argv, "cover-image")
+            proc = runner_fn(argv, "cover-image")
             rc = getattr(proc, "returncode", 0)
         except OSError as exc:
             raise CoverImageError(RENDER_FAILED, "ffmpeg could not run: %s" % exc)
