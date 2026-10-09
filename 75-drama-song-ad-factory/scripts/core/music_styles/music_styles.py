@@ -407,7 +407,10 @@ def style_prompt(style_id, sung=None, sheet_text=None):
     if not deliveries:
         deliveries = set(STYLES[sid]["deliveries"])
     if not has_delivery_map(text, deliveries):
-        text = "%s %s" % (text.rstrip(".,"), _map_sentence(deliveries))
+        # U15d (design 4.2): the base text ends with a PERIOD before the map is
+        # appended. Without it "no distortion" ran into "The lead" and the style
+        # read "no distortion The lead SPEAKS ...".
+        text = "%s. %s" % (text.rstrip(".,"), _map_sentence(deliveries))
     return assert_delivery_map(sid, text, deliveries)
 
 

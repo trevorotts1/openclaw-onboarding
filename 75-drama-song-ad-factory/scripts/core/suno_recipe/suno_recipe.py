@@ -29,9 +29,11 @@ _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
+import ending_qc as _EQ         # noqa: E402
 import length_formula as _LF    # noqa: E402
 import music_styles as _MS      # noqa: E402
 import prompt_limits as _PL     # noqa: E402
+import prompt_templates as _PT  # noqa: E402
 import spoken_share as _SS      # noqa: E402
 import sung_hook as _SH         # noqa: E402
 
@@ -57,8 +59,19 @@ SUNO_STYLE_FIELD_MAX = 1000          # Suno style field character limit
 MIN_HOOK_REPEATS = 2
 MAX_SUNG_LINE_SYLLABLES = 8
 BAND_WORDING = "the full band keeps playing continuously under them"
-STYLE_LEAD = ("female lead, sung melody with long held open vowels, dry close vocal, "
-              "slow tempo, natural resolved ending, final chord rings out and fades")
+#: U15d (design 4.2): the style lead, the cue strings and the gender words are
+#: DATA now (references/prompt-templates/music/*.json and models/suno-v6.json),
+#: never constants here. STYLE_LEAD was `female lead, ... slow tempo` for every
+#: style, which contradicted the R&B Flow rap verses (file 18 E.2).
+PRODUCT_SHARE_FLOOR_PCT, PRODUCT_SHARE_CAP_PCT = 10.0, 15.0
+#: No-voice section tags: a tag only, NEVER a lyric line Suno could sing.
+NO_VOICE_TAGS = ("instrumental", "break")
+#: The villain/pain lyric guidance (U16) rides in the model block; read from
+#: product_style_bible/bible.py VILLAIN_LYRIC_GUIDANCE when that tree has it.
+VILLAIN_GUIDANCE_SOURCE = ("product_style_bible/bible.py VILLAIN_LYRIC_GUIDANCE "
+                           "(U16 onb 8467e0354d3116eec980928cab7abaab8cef51ed, "
+                           "999 c4787e2c13e71e3f7877d232aa7c80271f477adc)")
+_MUSIC_CACHE, _MODEL_CACHE = {}, {}
 #: Negative tags (research 09 + 10 + Trevor's dry rule). NEVER "spoken word".
 NEGATIVE_TAGS = ("rap", "rapping", "choir", "reverb", "echo", "band dropout",
                  "acapella sections", "talk-singing", "monotone delivery")
@@ -81,6 +94,82 @@ def _words(text):
     return _SH.words(text)
 
 
+# ---------------------------------------------------------------------------
+# U15d (design 4.2-4.3, 8.8): every style text, cue and gender word is DATA.
+#   references/prompt-templates/music/<style>.json  -> style_parts, cue_overrides,
+#                                                      negative_tags, rap_allowed
+#   references/prompt-templates/models/suno-v6.json -> cue_vocabulary, tag_grammar,
+#                                                      kie_params, hook_formula
+# Nothing below is a second copy of those files.
+
+def music_block(style_id):
+    """The music/<style>.json block for one style id. Fails closed, names path."""
+    sid = str(style_id)
+    if sid not in _MUSIC_CACHE:
+        _MUSIC_CACHE[sid] = _PT.load("music", sid)
+    return _MUSIC_CACHE[sid]
+
+
+def model_block():
+    """The models/suno-v6.json block."""
+    if "suno-v6" not in _MODEL_CACHE:
+        _MODEL_CACHE["suno-v6"] = _PT.load("model", "suno-v6")
+    return _MODEL_CACHE["suno-v6"]
+
+
+def vocal_gender_word(vocal_gender=None):
+    """The {gender} slot from the brief. Never hard-coded female (U15d/U5).
+
+    "f"/"female" and "m"/"male" map to the plain word; any other non-empty
+    string is the brief's own wording (the sheet example uses "Warm female");
+    None gives no gender word at all rather than a default one.
+    """
+    if vocal_gender is None:
+        return ""
+    if not isinstance(vocal_gender, str) or not vocal_gender.strip():
+        raise RecipeError("BAD_VOCAL_GENDER",
+                          "vocal_gender must be a non-empty string, got %r"
+                          % (vocal_gender,))
+    key = vocal_gender.strip().lower()
+    return {"f": "female", "female": "female",
+            "m": "male", "male": "male"}.get(key, vocal_gender.strip())
+
+
+def base_prompt(style_id):
+    """The style's own first part (data), WITHOUT the Suno-style-text wrapper."""
+    return "%s." % str(music_block(style_id)["style_parts"][0]).rstrip(".")
+
+
+#: The two fields the brief fills, which the model block documents in prose.
+KIE_BRIEF_FIELDS = ("vocal_gender", "duration")
+
+
+def kie_params():
+    """The concrete KIE generate values, read from models/suno-v6.json.
+
+    The model block carries prose for the two fields the brief fills
+    (vocal_gender, duration); only those are dropped, so a value the data
+    changes (model, weights, constraints) reaches the payload automatically.
+    """
+    block = model_block().get("kie_params") or {}
+    out = {k: v for k, v in block.items() if k not in KIE_BRIEF_FIELDS}
+    return out if isinstance(out.get("model"), str) else dict(KIE_PARAMS)
+
+
+def cue_for(delivery, tag, style_id=None):
+    """The cue string for one section, read from the data (design 4.3).
+
+    music/<style>.json cue_overrides first ("sung:hook"), then the model
+    block's cue_vocabulary; a section with no entry of its own falls back to
+    that delivery's verse cue, so a cue is never invented in code.
+    """
+    vocab = model_block()["cue_vocabulary"].get(delivery) or {}
+    key = str(tag).lower().split()[0]
+    over = (music_block(style_id).get("cue_overrides") or {}) if style_id else {}
+    return (over.get("%s:%s" % (delivery, key)) or vocab.get(key)
+            or vocab.get("verse") or "")
+
+
 def syllables(line):
     """Rough syllable count; hyphen-held vowels (sma-a-all) count once."""
     n = 0
@@ -101,29 +190,58 @@ def suno_style_ids():
     return tuple(_MS.style_ids())
 
 
-SUNG_DIRECTION = {"vocalise": "wordless, full melodic voice, two very long held notes",
-                  "hook": "full melody, slow long held notes"}
-SPOKEN_DIRECTION = "close dry voice, plain speech, no melody"
+def is_no_voice_tag(tag):
+    """True for a section that has NO voice: a tag only, never a lyric line."""
+    head = str(tag).lower()
+    return any(word in head for word in NO_VOICE_TAGS)
 
 
-def _tag(sec):
+def _tag(sec, style_id=None):
     d = sec["delivery"]
-    note = (SPOKEN_DIRECTION if d == "spoken" else
-            SUNG_DIRECTION.get(sec["tag"].lower().split()[0],
-                               "soulful female vocal, melodic, rhymed, slow long held notes"))
-    return "[%s (%s): %s]" % (sec["tag"], d, note)
+    if d is None or is_no_voice_tag(sec["tag"]):
+        # no voice: a TAG ONLY, with its cue inside the tag, never a line
+        return ("[%s: %s]" % (sec["tag"], sec["cue"])) if sec.get("cue") \
+            else "[%s]" % sec["tag"]
+    # A section may carry its own cue / vocalist label (a rap verse sung by
+    # "Vocal B, male voice"); otherwise the cue is read from the data.
+    note = sec.get("cue") or cue_for(d, sec["tag"], style_id)
+    voice = sec.get("voice")
+    if voice and note:
+        note = "%s, %s" % (voice, note)
+    return ("[%s (%s): %s]" % (sec["tag"], d, note)) if note else \
+        "[%s (%s)]" % (sec["tag"], d)
 
 
-def render_lyrics(sheet):
-    """Lyric sheet text: spoken tags only Intro/Outro, ends with [End]."""
-    return "\n\n".join(_tag(s) + "\n" + "\n".join(s["lines"]) for s in sheet) + "\n\n[End]"
+def render_lyrics(sheet, style_id=None):
+    """Lyric sheet text: spoken tags only Intro/Outro, ends with [End].
+
+    A no-voice section renders as a TAG with no lyric line: a line under an
+    instrumental tag would be SUNG by Suno (design 4.3).
+    """
+    out = []
+    for s in sheet:
+        if str(s["tag"]).strip().lower() == "end":
+            continue                          # the terminator is appended once
+        tag = _tag(s, style_id)
+        if s.get("delivery") is None or is_no_voice_tag(s["tag"]):
+            out.append(tag)
+        else:
+            out.append(tag + "\n" + "\n".join(s["lines"]))
+    return "\n\n".join(out) + "\n\n[End]"
 
 
-_TAG_RE = re.compile(r"^\[([^\]]*?)\s*\((sung|spoken)\)(?::[^\]]*)?\]\s*$", re.I)
+_TAG_RE = re.compile(r"^\[([^\]]*?)\s*\((sung|spoken|rap)\)(?::[^\]]*)?\]\s*$", re.I)
+#: A no-voice tag: [Instrumental Break: band only, no vocals], [Break], [End].
+_NO_VOICE_RE = re.compile(r"^\[([^\]]*)\]\s*$")
 
 
 def parse_lyrics(text):
-    """Inverse of render_lyrics. Untagged text yields an empty sheet."""
+    """Inverse of render_lyrics. Untagged text yields an empty sheet.
+
+    A no-voice tag ([Instrumental Break ...], [End]) parses with
+    delivery=None and NO lines: a line under one would be sung by Suno
+    (design 4.3), so check_no_voice_lines() refuses it on the raw text.
+    """
     sheet, cur = [], None
     for ln in str(text).splitlines():
         m = _TAG_RE.match(ln.strip())
@@ -131,10 +249,38 @@ def parse_lyrics(text):
             cur = {"tag": m.group(1).strip(), "delivery": m.group(2).lower(), "lines": []}
             sheet.append(cur)
         elif ln.strip().startswith("["):
+            # A no-voice tag ([Instrumental Break], [End]) carries no section
+            # and its following lines are refused by check_no_voice_lines,
+            # which reads the raw text; nothing about it enters the sheet.
             cur = None
         elif cur is not None and ln.strip():
             cur["lines"].append(ln.strip())
     return sheet
+
+
+def check_no_voice_lines(text):
+    """[] when no lyric line sits under a no-voice tag (design 4.3/8.8).
+
+    Suno sings whatever line it finds; "6 s, band only" under
+    [Instrumental Break] would be sung. The checker reads the RAW text,
+    because a parser could drop the line silently.
+    """
+    errs, no_voice = [], False
+    for ln in str(text).splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        if s.startswith("[") and s.endswith("]"):
+            no_voice = "(" not in s or is_no_voice_tag(s[1:].split(":")[0])
+            no_voice = no_voice or is_no_voice_tag(s)
+            continue
+        if s.startswith("["):
+            no_voice = False
+            continue
+        if no_voice:
+            errs.append("lyric line under a no-voice tag (it would be sung): %r" % s)
+            no_voice = False
+    return errs
 
 
 def sheet_words(sheet, delivery=None):
@@ -142,20 +288,36 @@ def sheet_words(sheet, delivery=None):
                if delivery in (None, s["delivery"]) for l in s["lines"])
 
 
-def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None):
+def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
+                      style_id=None):
     """Rules 1-3 on the sheet. Returns a list of errors (empty = pass).
 
     With length_s (delivered seconds) the I8 hook count and the length-formula
-    word budget are enforced too.
+    word budget are enforced too. style_id enables the data checks: rap is
+    allowed only where music/<style>.json says rap_allowed, and the R&B word
+    budget stays open pending U2 (the design measured the R&B sheets over the
+    ballad budget on purpose).
     """
     errs = []
     if not sheet:
         return ["no tagged sections: every section must be (sung) or (spoken)"]
+    allowed = ("sung", "spoken", "rap")
     for s in sheet:
-        if s.get("delivery") not in ("sung", "spoken") or not s.get("lines"):
-            errs.append("section %r needs delivery sung|spoken and lines" % s.get("tag"))
+        d, tag = s.get("delivery"), str(s.get("tag", ""))
+        if d is None or is_no_voice_tag(tag):
+            if s.get("lines"):
+                errs.append("section %r has no voice but carries lyric lines "
+                            "(Suno would sing them)" % tag)
+            continue
+        if d not in allowed or not s.get("lines"):
+            errs.append("section %r needs delivery sung|spoken|rap and lines" % s.get("tag"))
     if errs:
         return errs
+    rap_allowed = bool(music_block(style_id).get("rap_allowed")) if style_id else True
+    for s in sheet:
+        if s.get("delivery") == "rap" and not rap_allowed:
+            errs.append("rap lines in a style whose music data says rap_allowed false: %r"
+                        % s["tag"])
     for s in sheet:
         head = s["tag"].lower().split()[0]
         if s["delivery"] == "spoken" and head not in ("intro", "outro"):
@@ -176,8 +338,12 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None):
     hooks = [k for k in set(keys) if keys.count(k) >= MIN_HOOK_REPEATS]
     if not hooks:
         return errs + ["no repeated sung hook (same sung lines at least %d times)" % MIN_HOOK_REPEATS]
-    client = set(_words(client_text))
-    if not any(h and set(h) <= client for h in hooks):
+    client = set(_words(client_text or ""))
+    if not client:
+        # No brief at hand: the "client's own words" rule is unverifiable here
+        # (check_payload measures a finished payload), so it is not claimed.
+        pass
+    elif not any(h and set(h) <= client for h in hooks):
         errs.append("repeated hook is not built from the client's own words")
     elif length_s is not None:
         best = max(hooks, key=keys.count)
@@ -185,7 +351,11 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None):
     if length_s is not None:
         p = _LF.plan(length_s + _LF.END_EARLY_S, spoken_share_pct)
         total = sheet_words(sheet)
-        if total > p["words"]["total"] * 1.1 + 2:
+        # R&B word budget: U2 landed on 999 main only (MGB010a); on the
+        # onboarding tree the rap budget is still open (file 18 decision 1),
+        # so the ballad budget is not applied to a rap sheet there.
+        rap_pending = sheet_words(sheet, "rap") > 0 and not rap_allowed
+        if not rap_pending and total > p["words"]["total"] * 1.1 + 2:
             errs.append("%d words, the %d s budget is %d" % (total, length_s, p["words"]["total"]))
         intro = [s for s in sheet if s["delivery"] == "spoken" and s["tag"].lower().startswith("intro")]
         if intro and sheet_words(intro) > p["words"]["opener_max"]:
@@ -194,24 +364,149 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None):
     return errs
 
 
+def sheet_seconds(sheet, rate=None):
+    """Estimated delivered seconds of a sheet at the length-formula rates.
+
+    The rate for rap comes from music/<style>.json rap_rate_wps (data); the
+    sung and spoken rates stay length_formula's own measured constants. A
+    no-voice section contributes its own ``seconds`` when it carries one.
+    """
+    rate = rate or {"sung": _LF.SUNG_WPS, "spoken": _LF.SPOKEN_WPS}
+    total = 0.0
+    for s in sheet:
+        if s.get("delivery") is None or is_no_voice_tag(s.get("tag", "")):
+            total += float(s.get("seconds") or 0.0)
+            continue
+        wps = rate.get(s["delivery"])
+        if wps is None and s.get("style_id") is not None:
+            wps = music_block(s["style_id"]).get("rap_rate_wps")
+        total += sheet_words([s]) / float(wps or _LF.SUNG_WPS)
+    return round(total, 3)
+
+
+def is_product_section(tag):
+    """True for the product passage and its reprises ([Product (reprise 2)])."""
+    return str(tag).strip().lower().startswith("product")
+
+
+def product_share_pct(sheet, delivered_s):
+    """The product passage's share of the delivered seconds (U13: 10-15%).
+
+    Counts every [Product ...] section, reprises included, at the measured
+    delivery rates. This is the number the gate judges; the fixtures' own
+    measured block carries the same rule (design 4.6).
+    """
+    if not isinstance(delivered_s, (int, float)) or delivered_s <= 0:
+        raise RecipeError("BAD_DELIVERED_S",
+                          "delivered_s must be positive seconds, got %r" % (delivered_s,))
+    prod = [s for s in sheet if is_product_section(s.get("tag", ""))]
+    return round(100.0 * sheet_seconds(prod) / float(delivered_s), 2)
+
+
+def check_product_share(sheet, delivered_s,
+                        floor_pct=PRODUCT_SHARE_FLOOR_PCT,
+                        cap_pct=PRODUCT_SHARE_CAP_PCT):
+    """[] when the product passage covers 10-15% of the delivered seconds.
+
+    The rule is judged on the passage the sheet HAS: a sheet carrying no
+    [Product ...] section is the planner's business (U13/U15h own the product
+    seconds), not this gate's, so it makes no claim here rather than measuring
+    a share of zero.
+    """
+    if not any(is_product_section(s.get("tag", "")) for s in sheet):
+        return []
+    pct = product_share_pct(sheet, delivered_s)
+    if not floor_pct <= pct <= cap_pct:
+        return ["product passage is %.1f%% of the %g s delivered length, "
+                "outside %g-%g%%" % (pct, delivered_s, floor_pct, cap_pct)]
+    return []
+
+
 def hook_target(style_id, length_s):
     """I8 hook repeats for a style and delivered length (0 = exempt voiceover)."""
     return 0 if is_exempt(style_id) else _SH.hook_count(length_s)
 
 
 def negative_tags(style_id=None):
-    """The negative-tag string for a style (rap dropped for the rap style)."""
+    """The negative-tag string for a style, read from music/<style>.json (data).
+
+    The rap style's data carries no rap negatives; every other style keeps
+    them. No second copy lives here.
+    """
+    if style_id is not None and not is_exempt(style_id):
+        block = music_block(_style_key(style_id))
+        if block.get("negative_tags") is not None:
+            return str(block["negative_tags"])
     tags = [t for t in NEGATIVE_TAGS if not (style_id in RAP_STYLE_IDS and t.startswith("rap"))]
     return ", ".join(tags)
 
 
-def style_text(style_id, sheet=None):
-    """Suno style field: base prompt, the sung lead, ONE spoken mention, band wording."""
-    text = "%s, %s. Only the short intro and the final outro are spoken; %s." % (
-        _MS.style_prompt(style_id), STYLE_LEAD, BAND_WORDING)
+def _style_key(style_id):
+    """The data file's own style id (label or id accepted, via music_styles)."""
+    return _MS.style(style_id)["style_id"]
+
+
+def _gender_variant(part, gender_word):
+    """One style part with {gender} replaced by the brief's word (never fixed).
+
+    The data's placeholder is ``{gender} lead``; with a real gender word the
+    sentence reads "Warm female lead". The golden sheets wrote "Warm female
+    lead" from a brief whose word was "Warm female", so the word goes in
+    verbatim; with no word from the brief the placeholder is refused rather
+    than defaulted, because a hard-coded female is the U5 defect.
+    """
+    if "{gender}" in part:
+        if not gender_word:
+            raise RecipeError("GENDER_REQUIRED",
+                              "the style part needs {gender} and the brief names none: %r"
+                              % part)
+        return part.replace("{gender}", gender_word)
+    return part
+
+
+def style_text(style_id, sheet=None, vocal_gender="f"):
+    """Suno style field: the style's OWN parts, in order, one clean ending.
+
+    Built from music/<style>.json style_parts (design 4.2): part 1 is the base
+    prompt (ending with a period, which fixes the "no distortion The lead"
+    run-on), part 2 is the sung lead carrying the brief's gender word, part 3
+    the delivery map, part 4 the spoken clause. The gender word comes from the
+    brief (``vocal_gender``), never hard-coded female.
+
+    The style's data owns the negatives; the ending clause is ending_qc's
+    (composed there, never restated here).
+    """
+    if style_id is not None and not is_exempt(style_id):
+        sid = _style_key(style_id)
+        block = music_block(sid)
+        word = vocal_gender_word(vocal_gender)
+        parts = [_gender_variant(str(p).rstrip("."), word).rstrip(".") + "."
+                 for p in block["style_parts"]]
+        # The clean-ending clause is ending_qc's, appended the way ending_qc
+        # appends it (comma, no double period). It is here so the measured
+        # style counts equal the design's (623/699/707) and so the final
+        # payload is the same whether or not with_clean_ending has run.
+        text = " ".join(parts).rstrip(".") + ", " + _EQ.STYLE_ENDING + "."
+        # G1 delivery map: the map sentence must name the sheet's deliveries.
+        text = _MS.assert_delivery_map(sid, text, _sheet_deliveries(sheet, sid))
+        if len(text) > SUNO_STYLE_FIELD_MAX:
+            raise RecipeError("STYLE_TOO_LONG",
+                              "%d chars, limit %d" % (len(text), SUNO_STYLE_FIELD_MAX))
+        return text
+    text = "%s. Only the short intro and the final outro are spoken; %s." % (
+        _MS.style_prompt(style_id).rstrip(".,"), BAND_WORDING)
     if len(text) > SUNO_STYLE_FIELD_MAX:
         raise RecipeError("STYLE_TOO_LONG", "%d chars, limit %d" % (len(text), SUNO_STYLE_FIELD_MAX))
     return text
+
+
+def _sheet_deliveries(sheet, style_id):
+    """The deliveries a sheet names, or the style's own when it names none."""
+    if sheet:
+        names = {s["delivery"] for s in sheet if s.get("delivery") and s.get("lines")}
+        if names:
+            return names
+    return set(music_block(style_id)["deliveries"])
 
 
 def check_style_text(text):
@@ -242,31 +537,40 @@ def check_negatives(neg, style_id=None):
     return errs
 
 
-def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None):
+def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
+            vocal_gender="f", delivered_s=None):
     """THE gate every Suno style goes through. Returns style + lyrics text.
 
     Exempt (voiceover) -> {"exempt": True}. Unknown id -> fail closed.
+    ``delivered_s`` (or ``length_s``) enables the U13 product-share gate.
     """
     if is_exempt(style_id):
         return {"exempt": True}
     if style_id not in suno_style_ids():
         raise RecipeError("UNKNOWN_STYLE", "%r is not a Suno style and not "
                           "exempt; add it to music_styles" % (style_id,))
-    errs = check_lyric_sheet(sheet, client_text, length_s, spoken_share_pct)
+    errs = check_lyric_sheet(sheet, client_text, length_s, spoken_share_pct,
+                             style_id=style_id)
+    errs += check_no_voice_lines(render_lyrics(sheet, style_id))
+    d = delivered_s if delivered_s is not None else length_s
+    if d is not None:
+        errs += check_product_share(sheet, d)
     if errs:
         raise RecipeError("LYRICS_REJECTED", "; ".join(errs))
-    return {"exempt": False, "style": style_text(style_id, sheet),
-            "lyrics": render_lyrics(sheet), "negative_tags": negative_tags(style_id)}
+    return {"exempt": False, "style": style_text(style_id, sheet, vocal_gender),
+            "lyrics": render_lyrics(sheet, style_id),
+            "negative_tags": negative_tags(style_id)}
 
 
 def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f",
-                  spoken_share_pct=None):
+                  spoken_share_pct=None, delivered_s=None):
     """KIE generate-music input for one ad (snake_case). ``length_s`` is the
     DELIVERED length (chosen - 2). Raises RecipeError on any rule break."""
-    out = prepare(style_id, sheet, client_text, length_s, spoken_share_pct)
+    out = prepare(style_id, sheet, client_text, length_s, spoken_share_pct,
+                  vocal_gender, delivered_s)
     if out.get("exempt"):
         raise RecipeError("EXEMPT", "voiceover style has no Suno request")
-    req = dict(KIE_PARAMS)
+    req = kie_params()
     req.update({"duration": length_s, "vocal_gender": vocal_gender, "title": title,
                 "style": out["style"], "lyrics": out["lyrics"],
                 "negative_tags": out["negative_tags"]})
@@ -298,6 +602,50 @@ def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
     errs += check_lyric_sheet(parse_lyrics(lyrics_text), client_text or "", length_s)
     if errs:
         raise RecipeError("RECIPE_BYPASSED", "; ".join(errs))
+
+
+def check_payload(payload, client_text=None, vocal_gender=None):
+    """Every U15d rule on one BUILT payload (the golden-sheet shape). [] = pass.
+
+    Measures the FINAL payload: the style after ending_qc, the lyric chars per
+    segment, the title and the negative tags against their caps; the hook
+    count across all segments against sung_hook.hook_count(D); the product
+    share across all segments against 10-15%; and each segment's text against
+    the no-voice-line rule and a render/parse roundtrip.
+    """
+    errs = []
+    D = payload.get("delivered_s")
+    segs = payload.get("segments") or []
+    if not segs:
+        return ["payload carries no segments"]
+    sheets, hooks = [], 0
+    for i, seg in enumerate(segs):
+        text = seg.get("lyrics") or ""
+        errs += ["segment %d: %s" % (i, e) for e in check_no_voice_lines(text)]
+        if len(text) > 5000:
+            errs.append("segment %d lyrics is %d chars, cap 5000" % (i, len(text)))
+        sh = parse_lyrics(text)
+        sheets += sh
+        hooks += sum(1 for s in sh if str(s["tag"]).lower().startswith("hook"))
+    style = payload.get("style") or ""
+    errs += check_style_text(style)
+    title, neg = payload.get("title") or "", payload.get("negative_tags") or ""
+    if len(title) > 80:
+        errs.append("title is %d chars, cap 80" % len(title))
+    if len(neg) > 1000:
+        errs.append("negative_tags is %d chars, cap 1000" % len(neg))
+    sid = payload.get("music_style")
+    if sid and not is_exempt(sid):
+        errs += check_negatives(neg, sid)
+        errs += check_lyric_sheet(sheets, client_text or "", None, None, style_id=sid)
+        if vocal_gender is not None and "{gender}" in style:
+            errs.append("a {gender} placeholder reached the payload")
+    if D:
+        want = _SH.hook_count(D)
+        if hooks != want:
+            errs.append("hook count %d, the %g s delivered length needs %d" % (hooks, D, want))
+        errs += check_product_share(sheets, D)
+    return errs
 
 
 def score_take(take, hook_text=None, words=None, length_s=None):
