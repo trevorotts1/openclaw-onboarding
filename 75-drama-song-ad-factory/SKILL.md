@@ -810,3 +810,19 @@ SOP named above.
 - **Command Center:** one deliverable per ad, one Kanban card per ad and one
   parent card per batch; department lead role
   `vsl-video-sales-letter-specialist`.
+
+## Sections marked TODO (refresh when the named unit lands)
+
+- "Per-style bands (FU-U3...)" bullet in the Suno recipe, the matching
+  `QC.md` band line, and the SOP's spoken-band step - refresh when FU-U3
+  lands (PR #1752, base `unit/FU-U2`; `STYLE_TARGETS` is not on
+  `batch/mega-MGB015` yet).
+- `references/choice-card-spec.md` 2.3 - "NOT built on main (FU-U4, no branch
+  yet)" for the fit card: refresh when FU-U4 lands (PR #1757 rewrites that
+  section normatively).
+- "Captions and protected names" and the `QC.md` captions-at-the-end line -
+  "NOT built on main (FU-U9...)" for reading burned caption text back off
+  frames: refresh when FU-U9 lands.
+- Book bullets and the `QC.md` book line - FU-U11's `BOOK_BLANK_PAGES`,
+  `BOOK_PLAN_NOT_APPROVED` and the Book shots block are described as an open
+  branch: refresh when FU-U11 lands.
