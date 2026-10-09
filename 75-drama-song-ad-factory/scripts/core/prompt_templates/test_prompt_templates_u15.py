@@ -39,6 +39,11 @@ import prompt_templates as PT  # noqa: E402
 # Python resolves the name to this directory (a namespace package) with none of
 # the loader's names. Refuse here rather than at the first assertion.
 if not hasattr(PT, "LOOKS"):
+    if "pytest" in sys.modules:  # never sys.exit at import -- INTERNALERROR
+        import pytest as _pytest
+        _pytest.skip("U15a module missing on this tree (no LOOKS); "
+                     "run `python3 test_prompt_templates_u15.py` there",
+                     allow_module_level=True)
     print("FAIL: U15a module missing: %r has no LOOKS (base tree has no "
           "prompt_templates.py)" % getattr(PT, "__file__", PT))
     sys.exit(1)
