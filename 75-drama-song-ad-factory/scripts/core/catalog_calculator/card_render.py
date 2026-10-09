@@ -38,6 +38,21 @@ except ImportError:
     from choice_card.looks import looks as LOOKS          # type: ignore
     from music_styles import music_styles as MS           # type: ignore
 
+#: FU-U11: the Book shots block is APPROVALS AND NOTICES, never a new choice
+#: (Trevor's locked rule). The ROW TEXT is owned by book_shot.plan_card_rows,
+#: one copy; this module only lays it out in the card's own row style. A book
+#: shot is not a priced row, so it never touches the total.
+try:
+    from book_shot import book_shot as _BS
+except ImportError:
+    _CORE_HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _CORE_HERE not in sys.path:
+        sys.path.insert(0, _CORE_HERE)
+    try:
+        from book_shot import book_shot as _BS            # type: ignore
+    except ImportError:
+        _BS = None
+
 UNIT_NAME = "catalog-calculator.card-render"
 
 #: The card rows, in INSTRUCTIONS.md 213-221 order.
@@ -176,6 +191,7 @@ def render(card, price_fn):
                      "(added $%.2f for the reference pictures, included in the total)"
                      % ("Images:", plan["reference_images"], plan["keyframe_images"],
                         plan["reference_set_usd"]))
+    lines.extend(book_rows(card))
     if priced_ok and total is not None:
         retake = RETAKE_RATE * total
         lines.append("")
@@ -189,6 +205,27 @@ def render(card, price_fn):
         if reasons:
             lines.append("  (%s)" % "; ".join(reasons[:4]))
     return "\n".join(lines), priced_ok
+
+
+def book_rows(card):
+    """The Book shots block, or [] when the card is not a book campaign.
+
+    Rows come from book_shot.plan_card_rows (one owner of that wording) and
+    are re-laid in the card's own row style. APPROVALS AND NOTICES only: the
+    block never adds a choice, never changes the total, and never blocks the
+    card -- a book job's own gate (BOOK_PLAN_NOT_APPROVED, BOOK_BLANK_PAGES)
+    is enforced at dispatch and at QC, not here.
+    """
+    card = card if isinstance(card, dict) else {}
+    if str(card.get("campaign_type") or "").strip().lower() != "book" or _BS is None:
+        return []
+    plan = card.get("book_plan") if isinstance(card.get("book_plan"), dict) \
+        else {"pages": card.get("pages"), "approved_book_plan_sha256":
+              card.get("approved_book_plan_sha256"),
+              "approved_at": card.get("approved_at")}
+    excerpt = card.get("excerpt") if isinstance(card.get("excerpt"), dict) \
+        else {"lines": card.get("excerpt_lines")}
+    return ["  %-12s %s" % r for r in _BS.plan_card_rows(plan, excerpt)]
 
 
 def _load_shipped_catalog():
