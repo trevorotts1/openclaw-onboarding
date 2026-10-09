@@ -3023,6 +3023,8 @@ jobs:
           python3 -m pip install --quiet numpy opencv-python-headless
           # ffmpeg so the singing-detector suites can decode their mp3 fixtures
           command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; }
+          # tesseract so the book-orientation suite (FU-U10) can read the cover title
+          command -v tesseract >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr; }
           tests_rc=0
           empty_home=""
           while IFS= read -r t; do
