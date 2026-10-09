@@ -1,3 +1,7 @@
+## [v26.4.19]  -  2026-10-09  -  Batch MGB017: faster QC static (skill 75 v2.9.7)
+
+Released as one batch. Unit: #1754 qc-static prune and parallelise (dead and duplicate steps removed, skill 75 empty-HOME suite run in parallel; measured 1,034 s down to 444 s), the load-governor test no longer sleeps on a fresh runner, and the path-leak step now fails when its script fails. Skill 75 v2.9.7. Paired Command Center: v7.6.112.
+
 ## [v26.4.18]  -  2026-10-09  -  Batch MGB015: three Skill 75 units (drama song ad factory v2.9.6)
 
 Released as one batch. Units: #1744 FU-U2 style-aware length plan (a rap style keeps the fixed CTA cap and the unspent allowance becomes the rap budget); #1745 FU-U8 captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags); and #1749 FU-U15i docs in lockstep with the prompt. Skill 75 v2.9.6.
