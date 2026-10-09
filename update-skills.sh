@@ -7526,17 +7526,22 @@ sys.exit(0 if (isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()) 
     touch "$AGENTS_FILE" "$TOOLS_FILE" "$MEMORY_FILE" "$SOUL_FILE" \
           "$IDENTITY_FILE" "$USER_FILE" 2>/dev/null || true
 
-    # Sentinel: skip if this skill's core updates are already merged.
-    # v14.3.15: also check the 2026.x agent dir AGENTS.md so a box that was
-    # previously wired via the agent-dir path is not re-wired into the workspace.
+    # Sentinel: skip if this skill's core updates are already merged IN THE
+    # WORKSPACE TARGETS the verification gate reads.
+    # v14.3.15 added an extra leg reading the 2026.x agent-dir AGENTS.md stub
+    # ($WIRE_AGENT_DIR/AGENTS.md) so a box previously wired via the agent-dir
+    # path would not be re-wired. That leg was WRONG: the gate
+    # (scripts/onboarding-state.sh:456-465, lib-onboarding-state.sh
+    # oc_core_sentinel_present) reads ONLY the workspace core files, and the
+    # dual-write at the bottom of this function stamps the stub unconditionally.
+    # A stale stub sentinel therefore short-circuited the merge FOREVER while
+    # the gate kept reporting core-updates:sentinel-missing for 01/02/03/69/
+    # 71/72. The skip-check must judge the same files the gate does.
     local SENTINEL="<!-- skill:${SKILL_FOLDER}:core-update-applied -->"
     if grep -qF "$SENTINEL" "$AGENTS_FILE" 2>/dev/null || \
        grep -qF "$SENTINEL" "$TOOLS_FILE" 2>/dev/null || \
        grep -qF "$SENTINEL" "$MEMORY_FILE" 2>/dev/null || \
-       grep -qF "$SENTINEL" "$SOUL_FILE" 2>/dev/null || \
-       grep -qF "$SENTINEL" "$IDENTITY_FILE" 2>/dev/null || \
-       grep -qF "$SENTINEL" "$USER_FILE" 2>/dev/null || \
-       ([ -n "$WIRE_AGENT_DIR" ] && grep -qF "$SENTINEL" "$WIRE_AGENT_DIR/AGENTS.md" 2>/dev/null); then
+       grep -qF "$SENTINEL" "$SOUL_FILE" 2>/dev/null; then
       return 0
     fi
 

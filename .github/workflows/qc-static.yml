@@ -1384,6 +1384,13 @@ jobs:
           set -uo pipefail
           bash tests/unit/onboarding-state-lib-order.test.sh
 
+      - name: "W2 repo-fix locks: CORE_UPDATES stub-sentinel skip + eval-of-echo QC quoting"
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash tests/unit/core-updates-stub-sentinel-skip.test.sh
+          bash tests/unit/qc-scripts-eval-of-echo-quoting.test.sh
+
       - name: "box-fix locks: archived-skill retirement, update summary + JEV text, 999 clone on 9Router boxes"
         shell: bash
         run: |

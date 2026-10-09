@@ -641,8 +641,11 @@ def required_departments(fs, oc_root, ws, state, folders):
     Returns (required, source, stray): required maps the canonical label to every
     spelling it may appear under (folder names + canonicalized chosen/floor slugs);
     stray lists folders outside the requirement (reported, never failed, never
-    deleted). No chosen list at all (a pre-artifact build) => every folder stays
-    required, exactly the old behaviour. A missing sibling module => the same."""
+    deleted). No chosen list at all (a pre-artifact build) => the standard FLOOR
+    stays required and every non-floor folder is STRAY — a folder scan is never
+    the requirement, and promoting folders to hard requirements was the chronic
+    phase=7z phantom-FAIL class. A missing sibling module => the old
+    folder-scan behaviour (fail-closed, named source)."""
     df, bj = _load_floor_module(), _load_board_join_module()
     if df is None or bj is None:
         return {s: {s} for s in folders}, "folder-scan (floor/board-join module unavailable)", []
@@ -657,7 +660,14 @@ def required_departments(fs, oc_root, ws, state, folders):
         chosen = [s for s in (rec.get("slugs") or []) if isinstance(s, str) and s]
         source = "build-state chosenDepartments"
     if not chosen:
-        return {s: {s} for s in folders}, "folder-scan (no chosen list)", []
+        # No chosen list resolvable (no <company>/departments.json AND no
+        # build-state chosenDepartments record). The set the client chose is
+        # UNKNOWN, and a folder scan is never the requirement — promoting every
+        # on-disk folder (role-library template copies land under departments/
+        # without ever being chosen) was the chronic phase=7z phantom-FAIL
+        # class. Require nothing from the scan and route every folder into the
+        # stray/WARN branch; the named source records why (never stray=[]).
+        return {}, "no chosen list (folder scan is not the requirement)", sorted(folders)
 
     nm = df.load_naming_map()
     declined = df.declined_set(state)
@@ -1232,7 +1242,13 @@ def _resolve_company_dirs(fs, ws, oc_root):
                                                  departments.json at its root)
       3. <oc_root>/workspaces/command-center/
       4. <ws>/departments/                      (workspace-root company dir)
-    Returns (None, None) when nothing resolves — the subset then fails closed.
+    A candidate counts ONLY when it carries BOTH departments/ and departments.json —
+    folder existence alone is not a company dir. Returning one on folder existence
+    alone dropped the prover into the phantom folder-scan mode whenever
+    <ws>/departments/ existed without <ws>/departments.json (the chronic phase=7z
+    FAIL class, 2026-09/10: every role-library template copy became a required
+    agent+lane). Returns (None, None) when nothing resolves — the subset then fails
+    closed.
     """
     def _isdir(p):
         return fs.isdir(p)
@@ -1245,16 +1261,19 @@ def _resolve_company_dirs(fs, ws, oc_root):
         for name in fs.listdir(zhc):
             if name.startswith("."):
                 continue
-            dd = os.path.join(zhc, name, "departments")
-            if _isdir(dd):
-                return os.path.join(zhc, name), dd
+            cd = os.path.join(zhc, name)
+            if _isdir(os.path.join(cd, "departments")) and \
+               _isfile(os.path.join(cd, "departments.json")):
+                return cd, os.path.join(cd, "departments")
     for cand in (
         os.path.join(ws, "workspaces", "command-center"),
         os.path.join(oc_root, "workspaces", "command-center"),
     ):
-        if _isdir(os.path.join(cand, "departments")):
+        if _isdir(os.path.join(cand, "departments")) and \
+           _isfile(os.path.join(cand, "departments.json")):
             return cand, os.path.join(cand, "departments")
-    if _isdir(os.path.join(ws, "departments")):
+    if _isdir(os.path.join(ws, "departments")) and \
+       _isfile(os.path.join(ws, "departments.json")):
         return ws, os.path.join(ws, "departments")
     return None, None
 

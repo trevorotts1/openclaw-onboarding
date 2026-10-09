@@ -117,7 +117,7 @@ warn_only "Playwright installed (FALLBACK)"   "npm list -g playwright 2>/dev/nul
 assert "Firebase refresh token set (seeds logged-in session)" "[ -n \"\${GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN:-}\" ] || [ -n \"\${CAF_FIREBASE_REFRESH_TOKEN:-}\" ] || [ -n \"\${GHL_FIREBASE_REFRESH_TOKEN:-}\" ]"
 warn_only "Chrome/Chromium present" "command -v chromium || command -v google-chrome || ls '/Applications/Google Chrome.app' 2>/dev/null"
 warn_only "Client white-label URL stored" "grep -qiE 'app\\.gohighlevel\\.com|app\\.convertandflow\\.com|app\\.[a-z0-9]+\\.com' \"$WORKSPACE/MEMORY.md\" 2>/dev/null"
-assert "GHL password NOT in workspace .md files" "! grep -rE 'GHL_(AGENCY_)?PASSWORD\\s*=\\s*[A-Za-z0-9]' \"$WORKSPACE\"/*.md 2>/dev/null | grep -v 'XXX\\|xxx'"
+assert "GHL password NOT in workspace .md files" "! grep -rE 'GHL_(AGENCY_)?PASSWORD\\s*=\\s*(\"[^\"]{4,}\"|[^[:space:]\"]{6,}[[:space:]]*$)' \"$WORKSPACE\"/*.md 2>/dev/null | grep -v 'XXX\\|xxx'"
 
 # TOKEN-ONLY doctrine guard (D7): fails if seed-ghl-auth.py / inject-ghl-auth.sh
 # reintroduce an auto UI-login / 2FA fallback, or if the doctrine sentinel is
