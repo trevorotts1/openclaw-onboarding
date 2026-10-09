@@ -317,7 +317,10 @@ from `music_styles.OFFERED_LENGTHS_S`.
 
 Each length is its own song and timing map, never a cut-down of a longer one.
 Shot count is computed from the chosen model's maximum shot length; it is
-never hard-coded per length. Suno V6 produces 10-360 seconds in one
+never hard-coded per length. The storyboard picture count is a different and
+larger number, from the calculator rule in section 3.12: 8 pictures at 60
+seconds, 24 at 2 minutes, about one more for every five seconds after that,
+capped at 120 pictures per ad. Suno V6 produces 10-360 seconds in one
 generation, so every length is one generation; extend is used only to repair a
 section or to land an exact length.
 
@@ -619,6 +622,35 @@ Sketch to Life / Velvet pair is refused there too), `core/smp/saturday_prompt`.
 - Skill 74 active mode only: with KIE switched off the weekly step skips and
   says why in plain English (`core/smp/weekly_step.client_skip_reason`);
   never a fallback to a private KIE client.
+
+### 3.12 Storyboard picture count (DEL-15, normative)
+
+The card states the storyboard picture count for the chosen length, and the
+count must match `core/catalog_calculator.shot_count` exactly - the same
+numbers `references/price-menu.md` documents:
+
+| Length | Storyboard pictures |
+|---|---|
+| 60 seconds | 8 |
+| 2 minutes | 24 |
+| 3 minutes | 36 |
+| 5 minutes | 60 |
+| 10 minutes | 120 (at the cap) |
+
+- The rule is 8 pictures at 60 seconds, 24 at 2 minutes, then about one more
+  picture for every five seconds of runtime.
+- **The cap is 120 pictures per ad**, read from configuration, never
+  hard-coded in the calculator or in the card.
+- 90 seconds falls between the two anchors, so the card shows the
+  calculator's own count for it rather than a number copied from a table.
+- The storyboard picture count is a separate count, always at least as large
+  as the video shot count for the same ad; the two are never conflated or
+  added together.
+- No rate is printed next to the count: every price the client sees still
+  comes from Skill 74 `price` (section 4), and the per-picture price lives
+  only in `references/price-menu.md`.
+- The client guide states the same counts and the same cap
+  (`references/CLIENT-GUIDE.md`, STEP 15).
 
 ## 4. Price rules on the card
 

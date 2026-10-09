@@ -1036,6 +1036,7 @@ SOP named above.
   parent card per batch; department lead role
   `vsl-video-sales-letter-specialist`.
 
+<<<<<<< HEAD
 ## Ready-to-Post Kit (DEL-07)
 
 After delivery, build the kit that tells the client what to post where:
@@ -1056,6 +1057,22 @@ rule - and nothing on it is under 12 pt. Fail closed by name: `KIT_NO_LINK`,
 amount or an income promise anywhere in the copy - the kit never prints
 one). Full contract: `references/ready-post-kit.md`; proof:
 `scripts/core/ready_post_kit/test_ready_post_kit.py`.
+=======
+## Long-term direction: a series bible and episode continuity (DEL-18, docs only)
+
+A series bible and episode continuity is a **follow-on direction**, recorded
+here so the direction is not lost: one set of characters, look, voice and
+story threads kept consistent across a run of ads that belong to the same
+series, with each ad continuing the one before it instead of starting over.
+
+This is a note in the documentation and nothing more. **No series or episode
+code is built** - there is no series planner, no episode record, no
+continuity store and no price line for episodes anywhere in this skill. Every
+ad is still planned, priced, approved and delivered on its own, exactly as
+the choice card, the price menu and the stage runbook describe today. When
+this direction is picked up it becomes its own unit with its own intake,
+contract and tests; it is never bolted onto an existing stage.
+>>>>>>> origin/unit/PKG-06-U2
 
 ## Sections marked TODO (refresh when the named unit lands)
 
