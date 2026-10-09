@@ -311,6 +311,10 @@ def normalize(brief, settings=None):
     take("voice", (b("voice"), "provided"), (s("voice"), "inherited"),
          (DEFAULT_VOICE, "default"))
 
+    take("ai_models", (_ai_models(brief.get("ai_models")), "provided"),
+         (_ai_models(sdef.get("ai_models")), "inherited"),
+         (_ai_models(None, True), "default"))
+
     tlen = brief.get("target_length_s", sdef.get("target_length_s"))
     take("target_length_s", ((tlen if isinstance(tlen, (int, float)) and tlen > 0 else None),
                              "provided" if "target_length_s" in brief else "inherited"),
@@ -350,6 +354,20 @@ def missing_essentials(fields, prov):
     return qs[:3]
 
 
+def _ai_models(v, default=False):
+    """FU-AI-MODELS-QUESTION: the card's build/check choice, or None when absent or
+    not a routable, different pair. A recorded preference only (SKILL.md)."""
+    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    from choice_card.intake_card import ai_models as AM  # noqa: PLC0415
+    if default:
+        return AM.recommended()
+    if not isinstance(v, dict):
+        return None
+    return AM.check(v.get("build"), v.get("check"))[0]
+
+
 def _master_max(length_s):
     """I4: the master is planned and QC'd to chosen length minus 2 seconds."""
     core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -378,6 +396,7 @@ def summarize(fields, auth_status="missing"):
         "look": fields.get("look"),
         "music": fields.get("music"),
         "voice": fields.get("voice"),
+        "ai_models": fields.get("ai_models"),
         "assumptions": [f"{k}={v!r} (assumed default)" for k, v in fields.items()
                         if v == DEFAULTS.get(k)],
         "generation_ceiling": {"amount_minor": fields.get("budget_minor"),

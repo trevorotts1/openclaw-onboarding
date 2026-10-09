@@ -38,7 +38,7 @@ if _CORE not in sys.path:
 TELEGRAM_LIMIT = 4000
 
 CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
-                'like "1, 1, 1, 1, 1, 1". Say "all recommended" to take every '
+                'like "1, 1, 1, 1, 1, 1, 1". Say "all recommended" to take every '
                 'RECOMMENDED choice.')
 
 REC = "(RECOMMENDED)"
@@ -75,8 +75,22 @@ def _musics():
                  _MUSIC_SENTENCE)
 
 
+def _models_q():
+    from choice_card.intake_card import ai_models as AM
+    return {"id": "models", "why": "One AI builds your video and a different AI checks the work.",
+            "reason": "OpenRouter is the faster route, and a separate model checks the work.",
+            "label": "AI MODELS",
+            "ask": "Which AI should build your video, and which should check the work? "
+                   "OpenRouter is recommended because it's faster; Ollama works too.",
+            "options": [("Recommended setup", "An OpenRouter model builds, Claude Sonnet checks."),
+                        ("Choose my own", "Reply with the build model and the check model, "
+                         "e.g. 'DeepSeek builds, Sonnet checks'.")],
+            "recommended": 0}
+
+
 def _questions():
     return [
+        _models_q(),
         {"id": "length", "why": "Length decides the story size and the price.", "reason": "the standard length for ads, and it fits stories, reels and ads.", "label": "LENGTH", "ask": "How long should the ad be?",
          "options": [("60 seconds", "The standard ad length."),
                      ("90 seconds", "Room for a fuller story."),
@@ -152,6 +166,13 @@ def _parse(reply, q):
     """Reply -> {"n": option number, "text": ..., "value": ...} or None."""
     t = (reply or "").strip().lower()
     opts = q["options"]
+    if q["id"] == "models":
+        from choice_card.intake_card import ai_models as AM
+        c, err = AM.parse(reply)
+        if not c:
+            return {"error": err}
+        return {"n": 1 if c == AM.recommended() else 2, "value": c,
+                "text": AM.label(c["build"]) + " builds, " + AM.label(c["check"]) + " checks"}
     if t in ("recommended", "recommend", "rec") or (t in _YES and len(opts) > 0):
         n = q.get("recommended", 0) + 1
     elif t.isdigit() and 1 <= int(t) <= len(opts):
@@ -173,13 +194,17 @@ def conversation(replies, questions=None):
         note = ""
         if len(answers) < len(qs) and fix is None:
             a = _parse(r, qs[len(answers)])
-            if a:
+            if a and "error" in a:
+                note = a["error"] + " "
+            elif a:
                 answers.append(a)
             else:
                 note = "Sorry, I did not catch that. "
         elif fix is not None:                       # re-answering one line
             a = _parse(r, qs[fix])
-            if a:
+            if a and "error" in a:
+                note = a["error"] + " "
+            elif a:
                 answers[fix], fix = a, None
             else:
                 note = "Sorry, I did not catch that. "
@@ -267,8 +292,8 @@ def openclaw_send_argv(target, text):
 
 
 def _with_saved_character(client_dir):
-    """QUESTIONS, with the saved-character question first when the client has
-    saved characters (Part I, I6); otherwise the plain six."""
+    """QUESTIONS, with the saved-character question second (AI MODELS stays first) when the
+    client has saved characters (Part I, I6); otherwise the plain seven."""
     if not client_dir:
         return QUESTIONS
     from character_library import character_library as CL
@@ -277,11 +302,11 @@ def _with_saved_character(client_dir):
         return QUESTIONS
     q = dict(q, why="A saved character keeps the same face across your ads.",
              reason="you can still pick a new character if you prefer.")
-    return [q] + QUESTIONS
+    return QUESTIONS[:1] + [q] + QUESTIONS[1:]      # AI MODELS stays the first question
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Print the six-question intake card.")
+    ap = argparse.ArgumentParser(description="Print the seven-question intake card.")
     ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json"),
                     default="text",
                     help="text: raw card for the Claude Code chat. "
