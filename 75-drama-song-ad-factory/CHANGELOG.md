@@ -6,6 +6,11 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.1 - 2026-10-09 - Batch MGB008: W-G-007-amend, W-G-002-amend
+
+- Delivery checklist consumes the amended receipt fields (W-G-007-amend); kept-take tags merged with the calibrated verdict gate.
+- Delivery-named tag grammar in lyric_structure (W-G-002-amend).
+
 ## v2.9.0 - 2026-10-08 - Batch MGB007: LSC001: one consolidated lip-sync change (LPG001 + LSL001 + LSR001)
 
 No version bump. Replaces onboarding #1697, #1698, #1699 (999-setup #72, #73, #86), which overlapped and partly contradicted each other.

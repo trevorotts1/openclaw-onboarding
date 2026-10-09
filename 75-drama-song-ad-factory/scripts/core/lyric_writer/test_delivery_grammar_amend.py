@@ -30,6 +30,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
 sys.path.insert(0, CORE)
+sys.path.insert(0, HERE)
 
 # Judge the SOURCE on disk, never a stale __pycache__.
 _CACHE = os.path.join(HERE, "__pycache__")

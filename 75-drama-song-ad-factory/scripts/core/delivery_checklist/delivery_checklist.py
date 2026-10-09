@@ -875,7 +875,7 @@ def _q8_lip_sync(receipt, ans, codes, details):
         return False
     ok = src is not None
     flagged = []
-    flags, tagged = [], 0
+    flags, tagged, tag_names = [], 0, set()
     for i, c in enumerate(clips):
         cid = c.get("clip", "clip-%d" % (i + 1)) if isinstance(c, dict) \
             else "clip-%d" % (i + 1)
@@ -889,6 +889,7 @@ def _q8_lip_sync(receipt, ans, codes, details):
                 ok = False
                 continue
             tagged += 1
+            tag_names.add(tag)
             if tag in LIPSYNC_FLAG_TAGS and _clip_reason(c) is None:
                 codes.append("%s:LIP_SYNC %s is tagged %s with no flag/reason "
                              "shown" % (CHECKLIST_NO_MEASUREMENT, cid, tag))
@@ -924,6 +925,7 @@ def _q8_lip_sync(receipt, ans, codes, details):
     details["lipsync_clips"] = len(clips)
     details["lipsync_flagged"] = flagged
     details["lipsync_tagged"] = tagged
+    details["lipsync_tag_names"] = sorted(tag_names)
     if flags:
         details["lipsync_flags"] = flags
     return ok
@@ -1175,9 +1177,11 @@ def _measurement_line(q, ans, qdetails):
                 vm.get("mismatches", 0)))
         return ", ".join(parts)
     if q == "LIP_SYNC":
-        return "%d clip(s), %d flagged (ACCEPT_WITH_FLAG / held / kept best of 2), %d tagged kept-take%s" % (
+        return "%d clip(s), %d flagged (ACCEPT_WITH_FLAG / held / kept best of 2), %d tagged kept-take%s%s" % (
             d.get("lipsync_clips", 0), len(d.get("lipsync_flagged", [])),
             d.get("lipsync_tagged", 0),
+            (" (" + "/".join(d["lipsync_tag_names"]) + ")")
+            if d.get("lipsync_tag_names") else "",
             ("; " + " | ".join(d["lipsync_flags"])) if d.get("lipsync_flags") else "")
     if q == "FIRST_SUNG":
         return "first real singing at %.1f%% of runtime (%s)%s" % (

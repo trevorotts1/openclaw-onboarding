@@ -1,3 +1,7 @@
+## [v26.4.14]  -  2026-10-09  -  Batch MGB008: two Skill 75 units (drama song ad factory v2.9.1)
+
+Released as one batch. Units: #1705 W-G-007-amend the delivery checklist consumes the amended receipt fields; and #1706 W-G-002-amend delivery-named tag grammar in lyric_structure (review G4/G5). Skill 75 v2.9.1. Paired Command Center: v7.6.112.
+
 ## [v26.4.13]  -  2026-10-08  -  Batch MGB007: five Skill 75 units (drama song ad factory v2.9.0)
 
 Released as one batch. Units: #1695 FGD001 green the two red folded fast-guards (llm_score vendor drift, U88 timestamp flake); #1700 LSC001 one consolidated lip-sync change (picture gate, calibrated sync gate, best-practice rules); #1702 LSP001 approved lip-sync process; #1701 PAR003 final_assembler byte parity with 999-setup; #1703 PAR004 I6 factory --client-dir and singing detector fixtures. Skill 75 v2.9.0.

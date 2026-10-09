@@ -522,7 +522,7 @@ class G7DoneWhen(unittest.TestCase):
         """KEPT_BEST: kept though not clean -- flag shown, numbers ride."""
         receipt = full_answered_receipt()
         receipt["LIP_SYNC"]["clips"][1].update(
-            {"tag": "KEPT_BEST", "correlation": 0.40,
+            {"tag": "KEPT_BEST", "lip_verdict": "FAIL", "corr": 0.40,
              "flag": "syNCED keep-best: no clean take exists"})
         res = dc.evaluate(receipt)
         self.assertTrue(res["pass"], res["detail"])
@@ -537,7 +537,7 @@ class G7DoneWhen(unittest.TestCase):
         for tag in ("KEPT_BEST", "FLAGGED"):
             receipt = full_answered_receipt()
             receipt["LIP_SYNC"]["clips"][0].update(
-                {"tag": tag, "offset_s": 0.20})
+                {"tag": tag, "lip_verdict": "FAIL", "corr": 0.20})
             res = dc.evaluate(receipt)
             self.assertFalse(res["pass"], tag)     # no reason shown
             self.assertIn("LIP_SYNC", res["repair_scope"], tag)
@@ -555,7 +555,7 @@ class G7DoneWhen(unittest.TestCase):
 
     def test_amend_q8_tagged_row_still_needs_its_numbers(self):
         receipt = full_answered_receipt()
-        del receipt["LIP_SYNC"]["clips"][1]["frozen_s"]
+        del receipt["LIP_SYNC"]["clips"][1]["corr"]
         receipt["LIP_SYNC"]["clips"][1]["tag"] = "KEPT"
         res = dc.evaluate(receipt)
         self.assertFalse(res["pass"])
