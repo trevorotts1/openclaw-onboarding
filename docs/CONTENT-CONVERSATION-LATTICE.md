@@ -46,7 +46,7 @@ Workflow BUILDS route through Skill 44 (caf-direct, "Option 1 -- PRIMARY") when 
 
 When Skill 6 runs as part of a full-funnel build (SOP-07 P4 stage), after page build and verify pass Gate-3 it hands the live `page_ids` + opt-in form IDs to the CRM automation specialist to wire workflows, invoking Skill 44 for product creation, form wiring, and GoHighLevel workflow builds. Carrying `funnel_template_id` + `linked_automations` across the P4->P5 handoff is what makes Skill 44's complete-funnel automation expansion fire.
 
-> **Ground truth:** `06-ghl-install-pages/SKILL.md:81-99` ("Full-Funnel Pipeline Integration (Skill 44 seam)").
+> **Ground truth:** `06-ghl-install-pages/SKILL.md:105-128` ("Full-Funnel Pipeline Integration (Skill 44 seam)").
 
 ### 5. Backstop rail -- Skill 44 -> Skill 3, and Skill 6 -> Skill 3
 
@@ -62,7 +62,7 @@ These two edges are part of the same G+K.1 relationship map and are documented h
 
 | Edge | Ground truth | Tag |
 |---|---|---|
-| Graphics dept <-> Skill 45 <-> Skill 35 (image handoff) | `35-social-media-planner/INSTRUCTIONS.md:108-112` -- if the week's image asset comes from the Graphics department instead of the Image Generator step, it is gated by the Section 19a input-quality check: reject any graphics-department asset lacking a SOP-GIP-02 QC receipt >= 8.5. Skill 45 owns the SOPs + `diu_validator.py`. | VERIFIED |
+| Graphics dept <-> Skill 45 <-> Skill 35 (image handoff) | `35-social-media-planner/INSTRUCTIONS.md:119-121` -- if the week's image asset comes from the Graphics department instead of the Image Generator step, it is gated by the Section 19a input-quality check: reject any graphics-department asset lacking a SOP-GIP-02 QC receipt >= 8.5. Skill 45 owns the SOPs + `diu_validator.py`. | VERIFIED |
 | Skill 54 vs Skill 59 (two anthologies, different scopes) | `54-anthology-writer/SKILL.md` header -- Skill 54 is the LOCAL-ONLY methodology/gates skill: it touches no n8n, no Airtable, no Google Docs/Drive, no Slack, no Gmail, no Go High Level at runtime. Skill 59 (`59-anthology-engine/`) is the n8n/GHL/board-integrated engine. The GHL/n8n audit scopes to 59 (and 58); 54 is exempt **by design**, not by omission. | VERIFIED |
 
 ---
@@ -72,13 +72,13 @@ These two edges are part of the same G+K.1 relationship map and are documented h
 | Edge | Ground truth | Tag |
 |---|---|---|
 | **Skill 35 -> Skill 44** (posting rail) | `35-social-media-planner/INSTALL.md:241` | VERIFIED |
-| **Skill 35 -> Skill 6** (weekly landing page) | Skill 35 `CHANGELOG.md:59` (Gap C) -- the weekly campaign step MAY invoke Skill 6's `funnel_matcher.py --match` when the client supplies no static link; a client-provided link ALWAYS wins (sovereignty); matcher exists at `06-ghl-install-pages/tools/funnel_matcher.py` + `funnel_matcher_cli.py` | VERIFIED |
+| **Skill 35 -> Skill 6** (weekly landing page) | Skill 35 `CHANGELOG.md:189` (Gap C) -- the weekly campaign step MAY invoke Skill 6's `funnel_matcher.py --match` when the client supplies no static link; a client-provided link ALWAYS wins (sovereignty); matcher exists at `06-ghl-install-pages/tools/funnel_matcher.py` + `funnel_matcher_cli.py` | VERIFIED |
 | **Skill 35 -> Skill 38** (inbound conversations) | `38-conversational-ai-system/SKILL.md:35`; reciprocal `35-social-media-planner/SKILL.md:133` | VERIFIED |
 | **Skill 38 -> Skill 44** (workflow builds + runtime) | `38-conversational-ai-system/SKILL.md:33` and `:55` | VERIFIED |
-| **Skill 6 -> Skill 44** (full-funnel seam) | `06-ghl-install-pages/SKILL.md:81-99` | VERIFIED |
+| **Skill 6 -> Skill 44** (full-funnel seam) | `06-ghl-install-pages/SKILL.md:105-128` | VERIFIED |
 | **Skill 44 -> Skill 3** (browser backstop) | `44-convert-and-flow-operator/SKILL.md:3` | VERIFIED |
 | **Skill 6 -> Skill 3** (build rail) | `06-ghl-install-pages` browser-rail file set (see above) | VERIFIED |
-| **Graphics dept <-> Skill 45 <-> Skill 35** (image handoff) | `35-social-media-planner/INSTRUCTIONS.md:108-112` | VERIFIED |
+| **Graphics dept <-> Skill 45 <-> Skill 35** (image handoff) | `35-social-media-planner/INSTRUCTIONS.md:119-121` | VERIFIED |
 | **Skill 54 vs Skill 59** (two anthologies, different scopes) | `54-anthology-writer/SKILL.md` header | VERIFIED |
 
 ---
