@@ -173,10 +173,12 @@ def _parse(reply, q):
     return {"n": n, "text": opts[n - 1][0], "value": None, "id": q["id"]}
 
 
-def conversation(replies, questions=None):
+def conversation(replies, questions=None, run_dir=None):
     """Replay the client's replies from the start; return the state and the ONE
     message to send next. Stateless, so claude-nine and OpenClaw can both call
-    it with the replies so far. state: answers, done, message."""
+    it with the replies so far. state: answers, done, message. With run_dir, the
+    recap confirmation writes the SONG APPROVAL answer to the run
+    (song_choices.record_card_answer), so Yes turns the pick gate on."""
     qs = questions or QUESTIONS
     answers, fix, note, done = [], None, "", False
     for r in replies:
@@ -202,6 +204,9 @@ def conversation(replies, questions=None):
             else:
                 note = "Sorry, I did not catch that. "
     if done:
+        if run_dir:
+            from song_choices import song_choices as _sc   # noqa: PLC0415
+            _sc.record_card_answer(run_dir, answers)
         msg = "Locked in. I am starting now."
     elif fix is not None:
         msg = note + render_step(fix + 1, qs)
@@ -268,12 +273,13 @@ def telegram_payload(chat_id, text):
     return {"chat_id": chat_id, "text": text}
 
 
-def openclaw_send_argv(target, text):
+def openclaw_send_argv(target, text, media=()):
     """Exact argv for ``openclaw message send`` on Telegram. A list, not a
     shell string: run it with subprocess (shell=False) and the newlines in
     ``text`` reach the sender untouched."""
-    return ["openclaw", "message", "send", "--channel", "telegram",
-            "--target", str(target), "--message", text]
+    return (["openclaw", "message", "send", "--channel", "telegram",
+             "--target", str(target), "--message", text]
+            + [x for m in media for x in ("--media", str(m))])
 
 
 def _with_saved_character(client_dir):
@@ -302,13 +308,15 @@ def main(argv=None):
                          "given every --reply the client has sent so far (I7)")
     ap.add_argument("--reply", action="append", default=[],
                     help="a client reply, in order (repeat the flag)")
+    ap.add_argument("--run-dir", default="",
+                    help="run folder; the confirmed SONG APPROVAL answer is recorded here")
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
                          "card opens with 'Use a saved character?' (I6)")
     a = ap.parse_args(argv)
     qs = _with_saved_character(a.client_dir)
     if a.step:
-        st = conversation(a.reply, qs)
+        st = conversation(a.reply, qs, a.run_dir or None)
         if a.format == "text":
             sys.stdout.write(st["message"] + "\n")
         else:

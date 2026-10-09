@@ -13,6 +13,7 @@ frontmatter `version:` field).
 - The gate: `factory.py next` and `kie_dispatch` refuse picture timing, image, video and lip-sync work with `SONG_PICK_MISSING` until the client's pick is recorded; a missing or changed pick never defaults. On No nothing changes.
 - The card price adds the two extra song generations (`Song picks` row).
 - Tests: `song_choices/test_song_choices_fu_song.py`; the H9 and I6 card tests move to 7 and 8.
+- Wiring: the confirmed recap writes the SONG APPROVAL answer to the run (`intake_card.conversation(..., run_dir=)` / `factory.py card --step --run-dir` -> `song_choices.record_card_answer`), so Yes turns the gate on without a manual step; a recap change replaces it, a resume keeps it once versions exist. `deliver_choices(..., target=)` / `send_choices` send the message plus the three files in order through `openclaw_send_argv` (`--media`, same `openclaw message send` path as the card). Tests: `song_choices/test_song_wire_fu_song2.py`.
 
 ---
 

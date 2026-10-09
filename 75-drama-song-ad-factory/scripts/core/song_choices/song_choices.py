@@ -122,9 +122,10 @@ def _run_ffmpeg(argv):
     subprocess.run(argv, check=True, capture_output=True)
 
 
-def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg):
+def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=None, send=None):
     """Write SONG-CHOICES/ and the offered list into state.json. Returns the
-    client message. Zero good versions raises (fail closed)."""
+    client message. Zero good versions raises (fail closed). With a target the
+    message and the files go to the client right away (send_choices)."""
     good = [r for r in results if r["status"] != "FAILED" and r["take"]]
     if not good:
         raise ChoiceError("no song version passed the song checks; nothing to offer")
@@ -145,7 +146,29 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg):
     st = _state(run_dir) or {"required": True}
     st.update(required=True, offered=offered)
     _write(run_dir, "state.json", st)
-    return client_message(offered, [r["n"] for r in results if r["status"] == "FAILED"])
+    msg = client_message(offered, [r["n"] for r in results if r["status"] == "FAILED"])
+    if target:
+        send_choices(run_dir, target, send, msg)
+    return msg
+
+
+def _run_send(argv):
+    subprocess.run(argv, check=True, capture_output=True)
+
+
+def send_choices(run_dir, target, send=None, message=None):
+    """Client delivery: the intake card's own send path (intake_card.openclaw_send_argv,
+    `openclaw message send`) with the offered files attached in order 1, 2, 3.
+    send(argv) is the sink (default: run it). Returns the argv. Raises when
+    nothing is offered or the send fails, so a lost message is never silent."""
+    from choice_card.intake_card import intake_card as _IC   # noqa: PLC0415
+    offered = (_state(run_dir) or {}).get("offered") or {}
+    if not offered:
+        raise ChoiceError("no song versions are offered yet; nothing to send")
+    nums = sorted(offered, key=int)
+    argv = _IC.openclaw_send_argv(target, message or client_message(offered), media=[offered[n]["file"] for n in nums])
+    (send or _run_send)(argv)
+    return argv
 
 
 def client_message(offered, failed=()):
@@ -178,6 +201,20 @@ def _state(run_dir):
         return None
     with open(p, encoding="utf-8") as f:
         return json.load(f)
+
+
+def record_card_answer(run_dir, answers):
+    """The intake card's SONG APPROVAL answer -> the run (Yes turns the gate on,
+    No records No). Called when the recap is confirmed. A changed answer before
+    the songs are made replaces the old one; once versions exist (resume) the
+    recorded answer is kept untouched."""
+    from choice_card.intake_card import intake_card as _IC   # noqa: PLC0415
+    st = _state(run_dir)
+    if st and st.get("offered"):
+        return bool(st.get("required"))
+    required = _IC.song_required(answers)
+    init(run_dir, required)
+    return required
 
 
 def init(run_dir, required):
@@ -249,12 +286,17 @@ def main(argv=None):
     p = sub.add_parser("pick")
     p.add_argument("--run-dir", required=True)
     p.add_argument("--reply", required=True)
+    sd = sub.add_parser("send")
+    sd.add_argument("--run-dir", required=True)
+    sd.add_argument("--target", required=True)
     c = sub.add_parser("check")
     c.add_argument("--run-dir", required=True)
     a = ap.parse_args(argv)
     try:
         if a.cmd == "init":
             init(a.run_dir, a.required == "yes")
+        elif a.cmd == "send":
+            send_choices(a.run_dir, a.target)
         elif a.cmd == "pick":
             print("Picked: " + record_pick(a.run_dir, a.reply))
         else:

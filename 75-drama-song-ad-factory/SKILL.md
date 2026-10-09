@@ -526,9 +526,15 @@ pick your song." No picture timing, image, video or lip-sync spend happens
 until the pick is recorded (`song_choices.py pick`); `factory.py next` and
 `kie_dispatch` refuse with `SONG_PICK_MISSING` until then and never default.
 On No nothing changes: one song, no wait. The card price adds the two extra
-song generations (row `Song picks`). Record the card answer with
-`python3 scripts/core/song_choices/song_choices.py init --run-dir $RUN
---required yes|no` when the card is approved.
+song generations (row `Song picks`). The card answer is recorded
+automatically when the recap is confirmed (`factory.py card --step --run-dir
+$RUN --reply ...`, i.e. `intake_card.conversation(replies, run_dir=$RUN)` ->
+`song_choices.record_card_answer`): Yes turns the gate on, No records No, a
+changed answer at the recap replaces it, and a resumed run keeps what was
+recorded once versions exist. The three files and the message go to the client
+in one `openclaw message send` (`song_choices.send_choices`, files attached
+in order 1, 2, 3) before any later stage; the client's reply 1, 2 or 3 is
+recorded with `song_choices.py pick`.
 
 ## Version 2 production options (owner BUILD-OUT 2026-10-07)
 
