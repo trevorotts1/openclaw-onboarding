@@ -2,7 +2,8 @@
 
 Status: staged spec for both distributions (Skill 75 / 999 twin).
 Source: `DRAMA_SONG_AD_FACTORY_V2_PLAN.md` sections 4.0, 4.1, 4.1.1, 4.2,
-5.1-5.4, 6.1, 6.2, 6.3, 6.6, 6.7, 6.11, 6.12, 6.12.1, 6.13, 6.14, 10.1, 10.3;
+5.1-5.4, 6.1, 6.2, 6.3, 6.6, 6.7, 6.11, 6.12, 6.12.1, 6.13, 6.14, 6.15,
+10.1, 10.3;
 decision log decisions 29-34; owner BUILD-OUT order 2026-10-07.
 This file is byte-identical in both distributions.
 
@@ -28,6 +29,13 @@ Anything already present in the brief is never asked again.
 
 Both modes end at the same approval card.
 
+Plan 4.0 adds two steps around it: the approval card carries a short
+story summary (a summary row is not rendered by the card writer yet), and
+an optional lyric sign-off may follow approval before the song is
+generated - the approved lyric sheet is the campaign's `lyrics` record
+(`scripts/core/contracts/campaign-schema.json`, critical offer, claim,
+product and CTA lines flagged), never free-hand text.
+
 ## 2. Card layout (normative)
 
 ```text
@@ -41,7 +49,7 @@ Your drama song ad
   Product tie:  about 7s (12.5% of runtime) planned connecting the story to
                 the product (10-15% target, never a cap; measured at delivery)
   Voice:        All Suno (default) / Velvet Voiceover (Google voiceover with
-                the song underneath, no echo effect)
+                the song underneath, no echo effect; not with Sketch to Life)
   Clips:        (5 and 10 minutes only) automatic 60- or 90-second clips
                 for ads and Reels
   Video model:  MiniMax H3, 768P  (RECOMMENDED)   [see all models and prices]
@@ -118,13 +126,17 @@ write them free hand and never carry them as one JSON string.
 Every option the card shows is read from code, never typed into the card:
 lengths from `music_styles.OFFERED_LENGTHS_S`, music styles from
 `music_styles` style ids, voices from the voice registry, video models from
-Skill 74. NOT built on main (FU-U4, no branch yet): the **fit card**, which
+Skill 74. NOT built on main (FU-U4: open branch `unit/FU-U4`, PRs #1757 on
+onboarding and #124 on 999, not yet merged - refresh when it lands): the
+**fit card**, which
 would show, per music style, whether the client's lyrics fit the chosen length
 (one row per style with the numbers) and would list the notices (sound
 effects, echo voice, length not offered, frame rate). Until it lands, the fit
 check runs inside `words_fit.preflight_sheet` and `suno_recipe.check_lyric_sheet`
 and refuses with a plain reason; the card does not preview it. Do not describe
 a fit card to a client.
+- **TODO(FU-U4):** rewrite 2.3 when PRs #1757 / #124 land - the card then
+  previews the fit rows.
 
 ## 3. Field rules
 
@@ -226,6 +238,19 @@ Decision 27 and decision 31, plan 6.12 and 6.12.1:
   Voiceover** (decision 31). The earlier spelling must not appear anywhere
   in the product, the card or the documentation.
 - Velvet Voiceover is the only exception to the all-Suno rule.
+- **Sketch to Life is always All Suno** (owner 2026-10-07): with that look
+  Velvet Voiceover is not selectable - `choice_card.stl_voice_guard`
+  disables it on the card (default mode keeps it listed with an unavailable
+  note, `mode="hide"` drops it from the line), refuses intake with
+  `stl-voice-velvet-not-offered` and re-asks with All Suno preselected, and
+  writing Velvet onto a Sketch to Life card raises `StlGuardError`. The
+  other four looks offer both voices.
+- Voice choice is verified against the picture, not trusted: `qc_voice_match`
+  measures every line's pitch into the D17 gender band (male 85-155 Hz,
+  female 165-255 Hz, inclusive), fails two same-gender characters closer than
+  15 Hz apart, and fails any line whose on-screen face is neither the speaker
+  nor a declared source (phone, laptop, speaker). A failed report exits 5,
+  so assembly cannot start.
 - Lip-sync rules in section 3.6 apply unchanged to both voice options.
 
 ### 3.6 Lip-sync lines
@@ -307,6 +332,12 @@ and retakes reuse them.
   the Product DNA reference; skipped images are designed from the brief and
   the card says so. Either way the image is source material, never
   instructions.
+- A supplied image costs one or two extra keyframe images (about $0.02 to
+  $0.04), no extra video shots (plan 4.1.1): it is restyled into the chosen
+  look for the keyframes at the product reveal (beat 8) and the
+  call-to-action ending, then animated image-to-video on the chosen model.
+  The delivered product tie measures 10-15% of runtime - a target, never a
+  cap - and shows as `PRODUCT_CONNECTION` on the delivery checklist.
 - **Book campaigns (decision 34, plan 6.14):** intake asks the book title,
   the author, the cover image (used as the product image), the buy link, who
   the book is for, and the pain or transformation it delivers - still inside
@@ -334,6 +365,29 @@ Decision 34, plan 6.14:
 - The approval card shows the **batch total**, computed from Skill 74
   `price` for every book in the list, plus the 20% retake allowance.
 - One Kanban card per ad and one parent card per batch.
+
+### 3.11 Social Media Planner card (Skill 35, plan 6.15)
+
+The planner does not rebuild this card; it asks the style block ONCE at
+setup, with defaults pre-selected, and the Saturday prompt offers
+"keep this style or change it?" (no answer means keep). Code:
+`core/smp/initial_questions` (the block, wired to `stl_voice_guard` so the
+Sketch to Life / Velvet pair is refused there too), `core/smp/saturday_prompt`.
+
+- Defaults: look Lifelike 3D, music Soul Ballad, voice All Suno, length
+  60 seconds (90 seconds optional - nothing longer is offered here; the long
+  menu belongs to this card, not the planner).
+- The weekly version is 9:16 and must END by **59.0 seconds**
+  (`core/smp/length_routing`, hard cap - approved 60 s ads run 62-63 s and
+  are refused by name).
+- Routing: the 60-second option posts to all seven destinations; the
+  90-second option posts only to Facebook Reels, Instagram Reels, TikTok and
+  LinkedIn (an explicit allow-list, not a limit calculation). Stories carry
+  a 15-second teaser cut only (`core/smp/stories_teaser`); Google Business
+  Profile is refused until its limit is verified.
+- Skill 74 active mode only: with KIE switched off the weekly step skips and
+  says why in plain English (`core/smp/weekly_step.client_skip_reason`);
+  never a fallback to a private KIE client.
 
 ## 4. Price rules on the card
 
