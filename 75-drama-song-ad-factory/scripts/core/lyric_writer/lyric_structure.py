@@ -26,6 +26,20 @@ Suno never settled into singing. This module is the fix, in three parts:
      blocks exceed the budget or sit outside open/turn/CTA, or whose
      spoken blocks come closer than MIN_SUNG_BETWEEN sung lines apart.
 
+AMENDED (Trevor order 2026-10-08 11:50 EDT, part G amended by the Opus
+audio review; review items G4/G5): the compiler now builds the sheet with
+the DELIVERY NAMED IN EVERY TAG -- [Sung - ...], [Spoken - ...],
+[Rap - ...], in the forms that actually sang ([Sung - lead, long held
+notes]). Bare [Verse]/[Chorus]/[Bridge]/[Hook] tags name no delivery and
+are refused; a one-line sung block is refused (Suno chants one-liners);
+delivery changes are limited to at most one per SWITCH_EVERY_S seconds of
+runtime (O3 flipped delivery 9 times in 140 s and never settled into
+singing). The builder remedies all three before rendering: bare tags are
+re-labelled with their delivery, a one-line stanza is closed with the
+ECHO device (never a new word), and extra spoken blocks are demoted until
+the switch rate is legal, so build_sheet's own output always passes its
+own lint.
+
 Word-order guarantee: the re-set only cuts and merges phrases and may echo
 one existing end word. ``word_chain_intact`` in the lint re-proves that
 every original script word survives, in order, in the output.
@@ -44,9 +58,12 @@ import re
 import sys
 
 TOOL_NAME = "lyric_structure"
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.2.0"
 SCHEMA_VERSION = "blackceo.lyric-structure/v1"
-SOURCE = "Trevor order 1135 2026-10-08, Part G item G2"
+SOURCE = ("Trevor order 1135 2026-10-08 Part G item G2; amended by Trevor "
+          "order 2026-10-08 11:50 part G (review G4/G5): delivery named in "
+          "every tag, one-line sung blocks and bare tags refused, at most "
+          "one delivery switch per 20 s.")
 
 # ponytail: fixed ceilings from the order ("at most 3 blocks for a 60-150 s
 # ad"); scale only when an order names longer-length numbers.
@@ -75,6 +92,183 @@ SPLIT_PHRASE_ABOVE = 8  # phrases longer than this are split in halves
 SPOKEN_TAG = "spoken word"
 SECTION_TAG_RE = re.compile(r"^\s*\[([^\]]+)\]\s*$")
 EXIT = {"ok": 0, "rejected": 4, "error": 1}
+
+# ---- W-G-002 amend: the delivery-named tag grammar (review G4) ------------
+#: Words that name a delivery inside a tag. Matched at a word boundary on a
+#: punctuation-normalized tag, so "trap beat" is never read as rap.
+DELIVERY_WORDS = {
+    "rap": ("rap", "raps", "rapped", "rapping"),
+    "spoken": ("spoken", "speak", "speaks", "speaking", "talk", "talks",
+               "narrate", "narrated"),
+    "sung": ("sung", "sing", "sings", "singing"),
+}
+#: What a tag with no delivery word reads as for the switch rate: the O3
+#: fault's [Verse] beside [Spoken Word] is a [Sung] block in effect.
+DELIVERY_NONE_DEFAULT = "sung"
+INSTRUMENTAL = "instrumental"
+
+#: Order 1150 part G amend (review G4): at most one delivery switch per
+#: this many seconds of runtime. The O3 take flipped delivery 9 times in
+#: 140 s and Suno never settled into singing.
+SWITCH_EVERY_S = 20
+
+#: Default tag tails for the delivery-named form, taken from the forms that
+#: actually sang (review G4: [Sung - <lead>, long held notes]).
+TAG_TAILS = {
+    "sung": "lead, long held notes",
+    "spoken": "lead, plain natural speech over the music",
+    "rap": "lead, metered flow",
+}
+#: One regex over every delivery word, for stripping a tag down to its tail.
+#: IGNORECASE: render_tag feeds it its OWN output ("[Sung - Chorus]"), which
+#: capitalizes the delivery word -- without the flag the second render keeps
+#: "Sung" as tail text and drifts to "[Sung - Sung - Chorus]".
+_DELIVERY_WORD_RE = re.compile(
+    r"\b(%s)\b" % "|".join(w for ws in DELIVERY_WORDS.values() for w in ws),
+    re.IGNORECASE)
+
+
+def delivery_of_tag(tag):
+    """The delivery a tag names: "sung" / "spoken" / "rap" / "instrumental",
+    or None for a BARE structure tag ([Verse], [Chorus], [Bridge], [Hook]).
+
+    None is the O3 fault: a bare tag beside delivery-named ones let Suno
+    read the "sung" blocks as more of the same speech (review G4). The
+    EARLIEST delivery word in the tag wins, so a named lead may still say
+    "speaks softly" without turning a [Sung - ...] block spoken; ties go
+    rap -> spoken -> sung. Matched at word boundaries on a normalized tag,
+    so "trap beat" and "rapid" are never read as rap.
+    """
+    norm = re.sub(r"[^a-z0-9]+", " ", str(tag or "").lower()).strip()
+    if not norm:
+        return None
+    if re.search(r"\binstrumental\b", norm) or norm == "inst":
+        return INSTRUMENTAL
+    earliest = None
+    for rank, delivery in enumerate(("rap", "spoken", "sung")):
+        for word in DELIVERY_WORDS[delivery]:
+            m = re.search(r"\b%s\b" % word, norm)
+            if m is not None and (earliest is None
+                                  or (m.start(), rank) < earliest[:2]):
+                earliest = (m.start(), rank, delivery)
+    return earliest[2] if earliest else None
+
+
+def is_spoken(block):
+    """True when a block's tag names spoken delivery."""
+    return delivery_of_tag(block.get("tag")) == "spoken"
+
+
+def _effective_delivery(tag):
+    """The delivery a tag reads as: a bare tag never reaches Suno unnamed."""
+    return delivery_of_tag(tag) or DELIVERY_NONE_DEFAULT
+
+
+def _strip_delivery_words(tag):
+    """A tag with its delivery words removed -- the tail the render keeps.
+
+    "spoken word" strips to nothing (the classic label kept no tail), and
+    "sung smooth r&b hook" keeps "smooth r&b hook". Every one of these
+    rules lives once, here.
+    """
+    out = re.sub(r"\bspoken word\b", "spoken", str(tag or ""))
+    out = _DELIVERY_WORD_RE.sub(" ", out)
+    out = re.sub(r"\s*,\s*", ", ", out)
+    out = re.sub(r"\s+", " ", out).strip(" -,;")
+    return "" if out.lower() == "word" else out
+
+
+def render_tag(tag):
+    """The delivery-named label for one block tag (W-G-002 amend).
+
+    [Sung - <tail>], [Spoken - <tail>], [Rap - <tail>], [Instrumental]. A
+    tag that already named its delivery keeps its own tail words (e.g.
+    [Chanel - female voice, sung smooth R&B hook] keeps the speaker and
+    style after the delivery word is stripped); a bare [Verse] becomes
+    [Sung - Verse], defaulting to Sung, the delivery the O3 fault's bare
+    tags actually got. IDEMPOTENT: ``render_tag(render_tag(t))`` equals
+    ``render_tag(t)``, so a built sheet may be re-built without drift.
+    Acceptance: ``delivery_of_tag(render_tag(t))`` is never None.
+    """
+    raw = str(tag or "").strip()
+    if raw.startswith("[") and raw.endswith("]") and len(raw) > 2:
+        raw = raw[1:-1].strip()               # accept a rendered label back
+    delivery = delivery_of_tag(raw)
+    if delivery == INSTRUMENTAL:
+        return "[Instrumental]"
+    if delivery is None:
+        delivery, tail = DELIVERY_NONE_DEFAULT, raw
+    else:
+        tail = _strip_delivery_words(raw)
+    if not tail or tail.lower() in ("word", delivery):
+        tail = TAG_TAILS[delivery]
+    return "[%s - %s]" % (delivery.capitalize(), tail[0].upper() + tail[1:])
+
+
+def delivery_switches(blocks):
+    """How many times the delivery changes across the sheet's blocks.
+
+    Bare tags count as Sung (their effective delivery) and [Instrumental]
+    blocks are skipped -- they carry no delivery to switch away from.
+    """
+    seq = [_effective_delivery(b.get("tag")) for b in blocks]
+    seq = [d for d in seq if d != INSTRUMENTAL]
+    return sum(1 for a, b in zip(seq, seq[1:]) if a != b)
+
+
+def switch_allowance(seconds):
+    """At most one delivery switch per SWITCH_EVERY_S seconds of runtime.
+
+    Never zero: a sheet that opens sung and turns spoken once is not the
+    O3 fault (that one flipped 9 times in 140 s).
+    """
+    return max(1, int(_number(seconds, "seconds") // SWITCH_EVERY_S))
+
+
+def lint_delivery_grammar(blocks, seconds):
+    """W-G-002 amend (review G4): the delivery-named tag grammar, refused.
+
+    Checks, over one parsed sheet: every block tag names its delivery
+    (bare [Verse]/[Chorus]/[Bridge]/[Hook] refused); every sung block has
+    at least two lines (Suno chants one-liners); at most one delivery
+    switch per SWITCH_EVERY_S seconds of runtime. This is the refusal the
+    O3 sheet fails on; build_sheet remedies all three and ships a sheet
+    that passes.
+    """
+    secs = _number(seconds, "seconds")
+    checks, reasons = [], []
+
+    def expect(name, ok, detail=""):
+        checks.append({"check": name, "ok": bool(ok), "detail": detail})
+        if not ok:
+            reasons.append("%s%s" % (name, (": " + detail) if detail else ""))
+
+    bare = [(i + 1, str(b.get("tag") or "").strip())
+            for i, b in enumerate(blocks) if delivery_of_tag(b.get("tag")) is None]
+    expect("delivery-named-tags", not bare,
+           "sections %s name no delivery: use [Sung - ...], [Spoken - ...], "
+           "[Rap - ...] (G4)" % ", ".join("%d (%s)" % (i, t) for i, t in bare)
+           if bare else "")
+
+    one_line = [i + 1 for i, b in enumerate(blocks)
+                if _effective_delivery(b.get("tag")) == "sung"
+                and len(b.get("lines") or []) < 2]
+    expect("sung-block-two-lines", not one_line,
+           "sung sections %s carry one line -- a one-line sung block is "
+           "chanted, not sung (G4)" % one_line if one_line else "")
+
+    allowance = switch_allowance(secs)
+    switches = delivery_switches(blocks)
+    expect("delivery-switch-rate", switches <= allowance,
+           "%d delivery switches in %gs, at most %d (one per %ds) (G4)"
+           % (switches, secs, allowance, SWITCH_EVERY_S))
+
+    return {"verdict": "PASS" if not reasons else "FAIL",
+            "checks": checks,
+            "reasons": reasons,
+            "switches": switches,
+            "switch_allowance": allowance,
+            "grammar_version": TOOL_VERSION}
 
 
 class LyricStructureError(ValueError):
@@ -113,8 +307,9 @@ def parse_sheet(text):
     """Parse a Suno lyric sheet into blocks: [{"tag", "lines"}].
 
     A [Tag] line starts a block; every following non-blank line joins it.
-    Consecutive [Spoken Word] blocks merge into one block (two spoken
-    sections back to back are one spoken moment, not two blocks).
+    Consecutive spoken blocks merge into one block (two spoken sections
+    back to back are one spoken moment, not two blocks). Spoken is read
+    from the tag's delivery word, so [Spoken Word] and [Spoken - ...] merge.
     """
     if not isinstance(text, str) or not text.strip():
         raise LyricStructureError("EMPTY_SHEET", "sheet text is empty")
@@ -132,13 +327,16 @@ def parse_sheet(text):
             blocks.append({"tag": "", "lines": [line]})   # pre-tag opener
     # a header-only section carries no words: drop it (it is not a block, it
     # must not separate two spoken moments, and it must never reach the
-    # re-set as an empty stanza)
-    blocks = [b for b in blocks if b["lines"]]
-    # merge consecutive spoken blocks into one spoken moment
+    # re-set as an empty stanza). [Instrumental] is the exception -- it names
+    # a WORDLESS delivery by definition, so dropping it would silently delete
+    # the one tag Suno needs to know that stretch carries no voice.
+    blocks = [b for b in blocks
+              if b["lines"] or _effective_delivery(b["tag"]) == INSTRUMENTAL]
+    # merge consecutive spoken blocks into one spoken moment (delivery is
+    # read from the tag now, so [Spoken Word] and [Spoken - ...] merge)
     out = []
     for blk in blocks:
-        if (out and out[-1]["tag"] == SPOKEN_TAG
-                and blk["tag"] == SPOKEN_TAG):
+        if (out and is_spoken(out[-1]) and is_spoken(blk)):
             out[-1]["lines"].extend(blk["lines"])
         else:
             out.append(blk)
@@ -146,7 +344,7 @@ def parse_sheet(text):
 
 
 def spoken_blocks(blocks):
-    return [b for b in blocks if b["tag"] == SPOKEN_TAG]
+    return [b for b in blocks if is_spoken(b)]
 
 
 # ---- syllables / rhyme ----------------------------------------------------
@@ -311,7 +509,7 @@ def budget_spoken(blocks, seconds):
     parse_sheet, so merging is not a loss here.
     """
     budget = spoken_budget(seconds)
-    idxs = [i for i, b in enumerate(blocks) if b["tag"] == SPOKEN_TAG]
+    idxs = [i for i, b in enumerate(blocks) if is_spoken(b)]
     plan = {"budget": budget, "found": len(idxs), "kept": [], "demoted": [],
             "slots": {}}
     if len(idxs) <= budget:
@@ -345,7 +543,7 @@ def budget_spoken(blocks, seconds):
         plan["slots"]["turn"] = turn_i
     out = []
     for i, blk in enumerate(blocks):
-        if blk["tag"] != SPOKEN_TAG or i in keep:
+        if not is_spoken(blk) or i in keep:
             out.append(blk)
         else:
             plan["demoted"].append(i)
@@ -355,16 +553,18 @@ def budget_spoken(blocks, seconds):
     return out, plan
 
 
-def enforce_spoken_rules(blocks, plan):
+def enforce_spoken_rules(blocks, plan, seconds):
     """Demote every spoken block the lint would reject. Returns blocks.
 
-    The lint enforces two rules the count-based budget never reaches:
-    placement (open = first block, cta = last, turn = inside TURN_WINDOW)
-    and the MIN_SUNG_BETWEEN floor between consecutive spoken blocks. This
-    applies the same two rules as corrective action. Demotion keeps every
-    line (the block is re-set as a sung stanza afterwards) and never
-    changes the block count, so positions stay fixed: one pass per rule is
-    enough, and each demotion strictly lowers the spoken count, so this
+    The lint enforces rules the count-based budget never reaches: placement
+    (open = first block, cta = last, turn = inside TURN_WINDOW), the
+    MIN_SUNG_BETWEEN floor between consecutive spoken blocks, and (W-G-002
+    amend, review G4) the delivery-switch rate -- at most one switch per
+    SWITCH_EVERY_S seconds of runtime. This applies the same rules as
+    corrective action. Demotion keeps every line (the block is re-set as a
+    sung stanza afterwards) and never changes the block count, so positions
+    stay fixed; each demotion strictly lowers the spoken count and each
+    switch-rate demotion strictly lowers the switch count, so this
     terminates. The receipt (kept / demoted / slots) is rebuilt to match
     the sheet the lint will actually see.
     """
@@ -379,7 +579,7 @@ def enforce_spoken_rules(blocks, plan):
 
     # placement
     for i, blk in enumerate(blocks):
-        if blk["tag"] != SPOKEN_TAG or i in (0, n - 1):
+        if not is_spoken(blk) or i in (0, n - 1):
             continue
         pos = i / float(max(n - 1, 1))
         if not lo <= pos <= hi:
@@ -389,17 +589,32 @@ def enforce_spoken_rules(blocks, plan):
     # every following pair only grows, so one left-to-right pass settles it
     prev = None
     for i, blk in enumerate(blocks):
-        if blk["tag"] != SPOKEN_TAG:
+        if not is_spoken(blk):
             continue
         if prev is not None and i - prev - 1 < MIN_SUNG_BETWEEN:
             demote(i)
             continue
         prev = i
 
-    plan["kept"] = [i for i, b in enumerate(blocks) if b["tag"] == SPOKEN_TAG]
+    # W-G-002 amend (G4): switch rate. Consecutive spoken blocks were merged
+    # by parse_sheet, so every interior spoken block is flanked by non-spoken
+    # blocks: demoting it to sung strictly lowers the switch count (it never
+    # raises it), and each demotion removes one spoken block, so the loop
+    # terminates. When only open/cta spoken blocks remain the sheet is left
+    # to the lint -- a sheet that cannot legally hold its spoken blocks must
+    # be refused, not silently rewritten.
+    allowance = switch_allowance(seconds)
+    while delivery_switches(blocks) > allowance:
+        interior = [i for i, blk in enumerate(blocks)
+                    if is_spoken(blk) and i not in (0, n - 1)]
+        if not interior:
+            break
+        demote(interior[0])
+
+    plan["kept"] = [i for i, b in enumerate(blocks) if is_spoken(b)]
     slots = {}
     for i, blk in enumerate(blocks):
-        if blk["tag"] != SPOKEN_TAG:
+        if not is_spoken(blk):
             continue
         if i == 0:
             slots["open"] = i
@@ -422,11 +637,13 @@ def word_chain_intact(original_text, new_text):
 
 
 def lint_singability(blocks, seconds, original_text=None, new_text=None):
-    """The G2 singability lint. Returns {"verdict": PASS|FAIL, "checks", ...}.
+    """The G2 singability lint (amended W-G-002). Returns verdict/checks.
 
     Checks: spoken budget, spoken placement (open/turn/cta), MIN_SUNG_BETWEEN
     between spoken blocks, sung line length band, per-stanza meter spread,
-    stanza-final rhyme/near-rhyme/echo, and word-chain integrity.
+    stanza-final rhyme/near-rhyme/echo, word-chain integrity, and the
+    amended delivery-named grammar (delivery in every tag, no one-line sung
+    block, at most one delivery switch per SWITCH_EVERY_S seconds).
     """
     checks, reasons = [], []
 
@@ -434,6 +651,11 @@ def lint_singability(blocks, seconds, original_text=None, new_text=None):
         checks.append({"check": name, "ok": bool(ok), "detail": detail})
         if not ok:
             reasons.append("%s%s" % (name, (": " + detail) if detail else ""))
+
+    # W-G-002 amend (review G4): the delivery-named tag grammar.
+    grammar = lint_delivery_grammar(blocks, seconds)
+    checks.extend(grammar["checks"])
+    reasons.extend(grammar["reasons"])
 
     budget = spoken_budget(seconds)
     sp = spoken_blocks(blocks)
@@ -443,7 +665,7 @@ def lint_singability(blocks, seconds, original_text=None, new_text=None):
     n = len(blocks)
     lo, hi = TURN_WINDOW
     for i, blk in enumerate(blocks):
-        if blk["tag"] != SPOKEN_TAG:
+        if not is_spoken(blk):
             continue
         pos = i / float(max(n - 1, 1))
         slot = ("open" if i == 0 else
@@ -454,7 +676,7 @@ def lint_singability(blocks, seconds, original_text=None, new_text=None):
 
     sung_since = None
     for i, blk in enumerate(blocks):
-        if blk["tag"] == SPOKEN_TAG:
+        if is_spoken(blk):
             if sung_since is not None and sung_since < MIN_SUNG_BETWEEN:
                 expect("spoken-alternation", False,
                        "only %d sung blocks between spoken blocks at %d"
@@ -466,8 +688,9 @@ def lint_singability(blocks, seconds, original_text=None, new_text=None):
             sung_since += 1
 
     for bi, blk in enumerate(blocks):
-        if blk["tag"] == SPOKEN_TAG:
-            continue                       # spoken blocks are prose by design
+        if _effective_delivery(blk.get("tag")) in ("spoken", "rap",
+                                                   "instrumental"):
+            continue          # prose, rap and instrumentals are not sung
         lines = blk["lines"]
         if not lines:
             continue
@@ -500,6 +723,8 @@ def lint_singability(blocks, seconds, original_text=None, new_text=None):
             "spoken_blocks": len(sp),
             "checks": checks,
             "reasons": reasons,
+            "switches": grammar["switches"],
+            "switch_allowance": grammar["switch_allowance"],
             "word_chain_intact": chain,
             "lint_version": TOOL_VERSION}
 
@@ -507,35 +732,53 @@ def lint_singability(blocks, seconds, original_text=None, new_text=None):
 # ---- the builder ----------------------------------------------------------
 
 def build_sheet(sheet_text, seconds):
-    """G2 builder: budget + re-set + lint over one lyric sheet.
+    """G2 builder (amended W-G-002): budget + re-set + lint over one sheet.
 
     Returns {"schema_version", "outcome", "sheet", "lint", "budget",
-             "spoken_blocks", "demoted", "echoes"}. outcome "ok" only when
-    the lint passes.
+             "spoken_blocks", "demoted", "echoes", "input_grammar", ...}.
+    outcome "ok" only when the lint passes. The amend's compiler adds:
+    every emitted tag names its delivery ([Sung - ...], [Spoken - ...],
+    [Rap - ...]) -- a bare [Verse] is renamed, never shipped bare; a
+    one-line sung stanza is closed with the ECHO device, never left a
+    one-liner; extra spoken blocks are demoted until the switch rate is
+    legal; rap blocks pass through untouched. ``input_grammar`` carries
+    the refusal record for the sheet as it was handed in, so a caller can
+    see exactly what the compiler renamed or re-set.
     """
     secs = _number(seconds, "seconds")
-    blocks = parse_sheet(sheet_text)
-    if not blocks:
+    blocks_in = parse_sheet(sheet_text)
+    if not blocks_in:
         raise LyricStructureError("EMPTY_SHEET", "sheet has no lyric lines")
-    blocks, plan = budget_spoken(blocks, secs)
-    blocks = enforce_spoken_rules(blocks, plan)
+    input_grammar = lint_delivery_grammar(blocks_in, secs)
+
+    blocks, plan = budget_spoken(blocks_in, secs)
+    blocks = enforce_spoken_rules(blocks, plan, secs)
 
     out_blocks, echoes = [], 0
     for blk in blocks:
-        if blk["tag"] == SPOKEN_TAG:
-            out_blocks.append(blk)
+        delivery = _effective_delivery(blk.get("tag"))
+        if delivery in ("spoken", "rap", "instrumental"):
+            out_blocks.append(blk)      # prose, rap and instrumentals pass
             continue
         lines, echoed = reset_sung_stanza(blk["lines"])
         echoes += int(echoed)
-        out_blocks.append({"tag": blk.get("tag") or "verse", "lines": lines,
+        out_blocks.append({"tag": blk.get("tag") or "sung", "lines": lines,
                            **({"echo": True} if echoed else {})})
+    # a stanza whose lines carried no words (punctuation only) re-sets to
+    # nothing -- it never ships as an empty block (mirrors parse_sheet's
+    # header-only drop)
+    out_blocks = [b for b in out_blocks
+                  if b["lines"] or _effective_delivery(b.get("tag")) != "sung"]
+    # the emitted tag names its delivery -- the amend's grammar, enforced
+    # on the builder's OWN output before the lint ever sees it
+    for blk in out_blocks:
+        blk["tag"] = render_tag(blk.get("tag"))
 
     sheet_text_new = render_sheet(out_blocks)
     # word-chain over LYRIC WORDS only -- section tags are structure, not
     # copy, and a demoted block's [Spoken Word] label must not read as a
     # dropped word.
-    in_lines = " ".join(l for blk in parse_sheet(sheet_text)
-                        for l in blk["lines"])
+    in_lines = " ".join(l for blk in blocks_in for l in blk["lines"])
     out_lines = " ".join(l for blk in out_blocks for l in blk["lines"])
     lint = lint_singability(out_blocks, secs, in_lines, out_lines)
     return {
@@ -545,22 +788,63 @@ def build_sheet(sheet_text, seconds):
         "outcome": "ok" if lint["verdict"] == "PASS" else "rejected",
         "sheet": sheet_text_new,
         "lint": lint,
+        "input_grammar": input_grammar,
         "budget": plan["budget"],
         "spoken_blocks": len(spoken_blocks(out_blocks)),
         "demoted": plan["demoted"],
         "slots": plan["slots"],
         "echoes": echoes,
+        "switches": lint["switches"],
+        "switch_allowance": lint["switch_allowance"],
         "next_action": ("Proceed to Suno." if lint["verdict"] == "PASS"
                         else "Fix the lint reasons and re-run build_sheet."),
     }
 
 
+def check_sheet(sheet_text, seconds):
+    """W-G-002 amend: the refusal gate for a sheet AS WRITTEN (no remedy).
+
+    Parses and lints the sheet verbatim. This is where the O3 sheet is
+    refused with its reasons (bare tags, one-line sung block, delivery
+    changes over the rate). ``build_sheet`` is the remedying compiler and
+    reports what this gate found in its "input_grammar" field.
+    """
+    secs = _number(seconds, "seconds")
+    blocks = parse_sheet(sheet_text)
+    if not blocks:
+        raise LyricStructureError("EMPTY_SHEET", "sheet has no lyric lines")
+    lint = lint_singability(blocks, secs)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "tool_version": TOOL_VERSION,
+        "source": SOURCE,
+        "outcome": "ok" if lint["verdict"] == "PASS" else "rejected",
+        "lint": lint,
+        "reasons": lint["reasons"],
+        "switches": lint["switches"],
+        "switch_allowance": lint["switch_allowance"],
+        "next_action": ("Proceed to Suno." if lint["verdict"] == "PASS"
+                        else "Fix the reasons, or run build_sheet to compile "
+                             "a delivery-named sheet from this input."),
+    }
+
+
 def render_sheet(blocks):
+    """Render blocks back to a Suno sheet with the delivery in EVERY tag.
+
+    W-G-002 amend (review G4): the label is ``render_tag`` output -- a bare
+    [Verse] becomes [Sung - Verse], [Spoken Word] becomes [Spoken - Lead,
+    plain natural speech over the music]. A tag already in the
+    "[Delivery - ...]" form is kept as rendered (render_tag is idempotent
+    on its own output), so every label the builder emits names delivery.
+    """
     out = []
     for blk in blocks:
-        tag = (blk.get("tag") or "verse").strip().lower()
-        label = "[Spoken Word]" if tag == SPOKEN_TAG else \
-            "[" + "".join(w.capitalize() for w in re.split(r"[\s-]+", tag)) + "]"
+        tag = str(blk.get("tag") or "").strip()
+        if tag.startswith("[") and tag.endswith("]"):
+            label = tag                        # already rendered
+        else:
+            label = render_tag(tag)
         out.append(label)
         out.extend(blk["lines"])
         out.append("")
