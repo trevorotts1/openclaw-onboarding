@@ -53,7 +53,12 @@ class Recipe(unittest.TestCase):
             out = R.prepare(sid, sheet(), CLIENT)
             self.assertFalse(out["exempt"])
             self.assertEqual(R.check_style_text(out["style"]), [])
-            self.assertTrue(out["style"].startswith(MS.style_prompt(sid)))
+            # U15d: the style text is built from music/<style>.json, so it
+            # starts from the DATA's base prompt and carries the delivery map
+            # (the old startswith(MS.style_prompt) contract put the map last
+            # and the lead before it; the data order is base, lead, map).
+            self.assertTrue(out["style"].startswith(R.base_prompt(sid)), out["style"][:80])
+            self.assertIn("The lead SPEAKS the lines tagged Spoken", out["style"])
             self.assertLessEqual(len(out["style"]), 1000)
             self.assertEqual(R.check_negatives(out["negative_tags"], sid), [])
             self.assertNotIn("spoken word", out["negative_tags"])
