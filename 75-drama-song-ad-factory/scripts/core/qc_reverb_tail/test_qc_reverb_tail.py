@@ -482,8 +482,8 @@ def test_wav_path_matches_inline_samples():
           "%s vs %s" % (codes(ring_wav), codes(ring_inline)))
     check("missing wav file is AUDIO_MISSING",
           "AUDIO_MISSING" in codes(
-              MODULE.evaluate(report([line("w3", wav="/tmp/lane-AF-ECHO-U2-"
-                                                    "missing.wav")]))),
+              MODULE.evaluate(report([line("w3", wav=os.path.join(
+                  fixture_dir(), "missing.wav"))]))),
           "wav_path missing not refused")
 
 # ------------------------------------------------------------- qc record ----
@@ -556,7 +556,7 @@ def test_cli_ok_and_rejected():
     check("cli names the ringing reason", "RINGING_TAIL" in p2.stdout,
           p2.stdout[:400])
     p3 = subprocess.run([sys.executable, CLI, "check", "--report",
-                         "/tmp/lane-AF-ECHO-U2-nope.json"],
+                         os.path.join(fixture_dir(), "nope.json")],
                         capture_output=True, text=True)
     check("cli exit 1 on unreadable report", p3.returncode == 1,
           p3.returncode)
