@@ -6,6 +6,10 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.9 - 2026-10-09 - Client guide
+
+- FU-CLIENT-GUIDE: added references/CLIENT-GUIDE.md (opening, checklist, every question with examples and prep). Docs only.
+
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 
 - FU-PARITY: shared files aligned with 999 (v2.7.28 test fixes, delivery_checklist blank lines).
