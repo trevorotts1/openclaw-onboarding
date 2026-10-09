@@ -6,6 +6,14 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.14 - 2026-10-09 - DEL-12 welcome sheet + the canonical delivery package list
+
+- New `scripts/core/delivery_package/`: `package_items.py` holds `PACKAGE_ITEMS` / `PACKAGE_FILES` -- the canonical numbered file-name list for all 12 package items (01..12, 20 files), the single shared constant the client-facing page and the delivery gate both read.
+- `welcome_sheet.py` renders that constant into the one-page client WELCOME SHEET PDF: title, gold rule, every file with its number badge and one sentence on what it is for. Stdlib PDF 1.4 writer (base-14 Helvetica, no third-party library, no network), deterministic bytes, 13 pt body type, hard 12 pt floor.
+- `delivery_checklist` re-exports the constant and gains `missing_package_files(delivery_dir)`, so the gate reads ONE list instead of keeping a second copy beside the printed page.
+- New `scripts/core/delivery_package/test_welcome_sheet_del12.py` (11 tests): one page, all 20 names and 12 numbers present, no type below 12 pt, no client/model/tool name, no price or income claim, byte-identical rebuild, checklist shares the same object.
+
+
 ## v2.9.13 - 2026-10-09 - Batch MGB023 follow-up 2 (no more silent ads)
 
 - Delivery audio gate on EVERY path that hands the client a video: the final assembler (already), the 60 and 90 second clip cutdowns (`clip_cutdown.run_clips`, a refused clip is deleted), the batch zip (captioned ad and clean master) and the delivery checklist. Each one calls `delivery_audio.check_delivery_audio()` and fails closed.
