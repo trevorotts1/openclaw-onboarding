@@ -733,6 +733,8 @@ in one `openclaw message send` (`song_choices.send_choices`, files attached
 in order 1, 2, 3) before any later stage; the client's reply 1, 2 or 3 is
 recorded with `song_choices.py pick`.
 
+Client-facing question guide with examples and prep: `references/CLIENT-GUIDE.md`.
+
 ## Version 2 production options (owner BUILD-OUT 2026-10-07)
 
 Everything in this section is shared doctrine: identical in both

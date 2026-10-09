@@ -78,6 +78,9 @@ frontmatter `version:` field).
 - New card question SCRIPT APPROVAL (last question): the client can read and approve the story and song lyrics before the song is made. Yes sends the script and pauses before any song generation; edits are applied, re-checked and re-sent; missing approval fails closed (`SCRIPT_NOT_APPROVED`) in `kie_dispatch.dispatch` and `song_dispatch.run_takes`. No: unchanged.
 - Wired, nothing is called by hand: `factory.py next` runs `script_approval.stage.run_stage` when `music` is next and the card answer is Yes (checks, `request_approval`, send through `openclaw message send` or back to the chat, run recorded as waiting, outcome `waiting`). New `factory.py script-reply` carries the client's answer (`approve` or an edit that is re-checked and re-sent). Resume stays waiting and never re-sends a delivered script. The dispatch gates read the record from the run folder (`record_near`, `run_dir=`).
 - New `scripts/core/script_approval/` with `test_script_approval.py` and `test_script_wiring.py`.
+## v2.9.9 - 2026-10-09 - Client guide
+
+- FU-CLIENT-GUIDE: added references/CLIENT-GUIDE.md (opening, checklist, every question with examples and prep). Docs only.
 
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 

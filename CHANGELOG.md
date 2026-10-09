@@ -1,12 +1,10 @@
-<<<<<<< HEAD
 ## [v26.4.22]  -  2026-10-09  -  Batch MGB020: seven Skill 75 units, clearer intake questions (skill 75 v2.9.10)
 
 Released as one batch. Units: #1756 FU-PARITY skill 75 parity with the 999 copy (last commit); #1755 U12 docs and SOP in lockstep with the code; #1757 FU-U4 client lines are a contract, the STOP card lists only real options; #1770 FU-SAVED-CHARACTER-QUESTION saved characters asked as a clear numbered question; #1773 FU-AUDIENCE-QUESTION clearer who-is-it-for question; #1774 FU-LENGTH-CLIPS clearer length question, 3 minutes now comes with 60s and 90s clips; #1779 FU-INTRO-MESSAGE every run opens with a short intro of what the factory makes. Skill 75 v2.9.10. Paired Command Center: v7.6.112.
-=======
+
 ## [v26.4.22]  -  2026-10-09  -  FU-SCRIPT-APPROVAL: the client approves the script before the song (skill 75 v2.9.10)
 
 New card question 11, SCRIPT APPROVAL, wired into the run: on Yes, `factory.py next` sends the script through the client-delivery path and pauses before any music; `factory.py script-reply` carries the client's approve or edit. Dispatch gates find the record themselves.
->>>>>>> pr/1780
 
 ## [v26.4.21]  -  2026-10-09  -  Batch MGB019: skill 75 captions-final burn port and cast docstring (skill 75 v2.9.9)
 
