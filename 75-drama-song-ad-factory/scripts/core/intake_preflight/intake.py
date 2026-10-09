@@ -379,6 +379,21 @@ def _ai_models(v, default=False):
     return AM.check(v.get("build"), v.get("check"))[0]
 
 
+def _character_questions(brief):
+    """DEL-02: the character bible fields a declared character has not answered.
+
+    The description, background and ethnicity are part of intake -- the
+    character bible PDF is never rendered from a half-answered brief. Same
+    {"id", "question"} shape as ``missing_essentials``, so the envelope is
+    unchanged. A brief that declares no character asks nothing.
+    """
+    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    from character_bible import character_bible as CB  # noqa: PLC0415
+    return CB.questions(brief)
+
+
 def _master_max(length_s):
     """I4: the master is planned and QC'd to chosen length minus 2 seconds."""
     core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -601,6 +616,19 @@ def _evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=Non
                 "approval_invalidated": False, "changes": changes,
                 "next_stage": resume_state.get("next_stage"),
                 "next_action": resume_state.get("next_stage") or "Proceed to preflight."}
+    # DEL-02: character bible first only once the story essentials are answered,
+    # so the offer/audience/spend slots keep their existing order and cap.
+    if not missing_essentials(fields, prov):
+        char_qs = _character_questions(brief)
+        if char_qs:
+            return {"outcome": "waiting", "reason_code": "missing-character",
+                    "questions": char_qs,
+                    "question_message": _fmt([q["question"] for q in char_qs]),
+                    "summary": summary, "digest": digest, "provenance": prov,
+                    "auth_status": status, "approval_invalidated": False,
+                    "changes": [],
+                    "next_action": ("Answer the character questions in one reply; "
+                                    "they become the character bible.")}
     qs = missing_essentials(fields, prov)
     if qs:
         # The <=3 story questions are asked first; the choice card comes at
