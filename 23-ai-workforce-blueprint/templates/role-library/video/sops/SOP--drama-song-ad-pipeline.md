@@ -336,6 +336,9 @@ without an identity lock.
 3. Book shots follow the book orientation contract (no camera move; a PASS
    `book_orientation` record is required before the clip is accepted).
    Lip-sync clips are the 6 to 8 clips of 4 to 6 seconds per 60 s ad.
+   TODO (U11): the approved Book shots plan (plan hash, exact prompts with
+   character counts, page mode, camera, 2-attempt cap) is not built yet;
+   refresh this step when FU-U11 lands.
    Tight front-facing close-ups only. The input clip contains only the
    on-screen speaker's line - never a narrator, never another character,
    never a mixed vocal stem. No lip-sync on sketch shots.
@@ -345,6 +348,8 @@ without an identity lock.
 5. Assemble with FFmpeg: song as master timeline, shots cut to the timing
    map, captions on by default (one line at a time, white rounded box, kept
    above the bottom 20% in 9:16).
+   TODO (U9): captions are burned here; reading them back off the frames
+   (FU-U9) is not built yet — refresh this step when it lands.
 6. **Parallel minute-lanes (ads 120 s and up, W-G-008).** A song under 120 s
    keeps ONE lane, exactly as before. At 120 s and up, `lane_planner.plan_lanes`
    cuts the shot list into N = ceil(L / 60) lanes of about 60 s, every cut on a
@@ -405,7 +410,7 @@ CTA defect (17.8).
 | 1. Script | After lyrics | One independent judge (different agent AND model from the writer) | Missing or reordered beat (`story_arc` checks this already), claim not supported by the brief, wrong call-to-action text, offer name wrong, no `spelling_grammar` record |
 | 2. Song | After the master and timing map | Code only: `timing_guard`, `qc_reverb_tail`, `pitch_ban`, length window | Length outside the window, lyric coverage gap, reverb or echo found, pitch out of band |
 | 3. Shots | After generation | Code first (duration, aspect ratio, black frames via ffprobe). Then one independent visual checker, **only** for lip-sync shots (6 to 8 per 60 s ad) and the product and call-to-action shots | Wrong speaker on a lip-sync line, product or label wrong, accidental mouth movement on a narrator line, a book clip with no PASS `book_orientation` record |
-| 4. Final | After assembly, per shape | One independent checker plus code (loudness -14 LUFS, duration, file opens) | Any critical defect from the existing critical list |
+| 4. Final | After assembly, per shape | One independent checker plus code (duration, file opens). Loudness -14 LUFS is the `acceptance-profile.json` baseline, not a code check yet | Any critical defect from the existing critical list |
 
 Repair rules:
 
@@ -418,6 +423,10 @@ Repair rules:
 - "Unavailable" never counts as a pass.
 
 Reading the burned caption text back off the final frames (FU-U9) is not built yet; until it is, the Final gate reports caption text as checked against the approved sheet only.
+
+TODO (U11): a book clip with no approved Book shots plan hash
+(`BOOK_PLAN_NOT_APPROVED`) also fails gate 3 when FU-U11 lands; refresh this
+table then.
 
 **Outputs:** Per-gate PASS/FAIL/UNAVAILABLE records with evidence.
 **Hand to:** DS-10 or back to the failing stage.
