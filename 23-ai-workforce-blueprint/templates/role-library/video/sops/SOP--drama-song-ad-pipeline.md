@@ -347,7 +347,15 @@ Repair rules:
 
 1. Register only real files as deliverables: `delivery/final.mp4`,
    `campaign-manifest.json`, `cost-report.json`, `provenance.json`, the
-   captioned and clean variants, each clip and its SRT.
+   captioned and clean variants, each clip and its SRT, **and the song mp3**:
+   every ad folder carries `<Author> - <Title> - Song.mp3` (320 kbps, the
+   exact song used in the ad, full length; plus the wav when one exists)
+   beside the captioned and clean-master mp4s, so clients can release the
+   songs as an album. Gate it before delivery with
+   `delivery_checklist.check_song_mp3(<ad_dir>, <ad_audio>, <Title>, <Author>)`:
+   rows `SONG_MP3_FILE` / `SONG_MP3_DURATION` / `SONG_MP3_CORRELATION`
+   (duration within 0.1 s of the ad's audio, cross-correlation >= 0.95 with
+   it). A missing or mismatched mp3 is a FAIL, fail closed.
 2. **Mac and Claude-Nine clients:** copy finished deliverables to
    `~/Downloads/Drama Song Ads/<campaign-id>/`; working files stay in the run
    folder so resume and repair still work. **VPS clients:** deliver through
@@ -361,8 +369,15 @@ Repair rules:
    duplicate. One Kanban card per ad and one parent card per batch.
 4. Store the card's selections and approved price on the parent campaign.
    Log activities at milestones only; `blocked` stays reserved for a human.
+5. Batch zip (FU-U14): when a book/batch campaign finishes, build one zip per
+   client with `batch_zip.build_batch_zip(client, ads, out_path)` — one folder
+   per author holding that ad's captioned mp4, clean master mp4 and song mp3
+   (exactly three files per ad), plus a README listing every file, its
+   duration, resolution and the banner link. A missing file is a
+   `BatchZipError`; the zip never ships half a batch.
 
-**Outputs:** Deliverable files registered, board cards created and
+**Outputs:** Deliverable files registered (captioned mp4 + clean master +
+song mp3 per ad), the client batch zip, board cards created and
 acknowledged.
 **Hand to:** close, or DS-11 if anything parked.
 
