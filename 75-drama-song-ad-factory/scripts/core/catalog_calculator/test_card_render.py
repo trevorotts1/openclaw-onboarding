@@ -165,16 +165,26 @@ check("cli-credits-10-dollar-figure",
 # The fail-closed leg with HOME elsewhere: the shipped calculator and the
 # extension still resolve (no operator path), the card renders rows, and any
 # adapter loss shows "Price unavailable" — never a made-up number.
+_saved_home = os.environ.get("HOME")
 os.environ["HOME"] = os.sep + "nonexistent-w2-c-u1"
 text3, priced3 = card_render.render(_card, None)
+if _saved_home is None:          # one process with every other suite:
+    os.environ.pop("HOME", None)  # leave no HOME leak behind
+else:
+    os.environ["HOME"] = _saved_home
 check("home-cleared-still-renders",
       all(r + ":" in text3 for r in EXPECTED_ROWS), text3)
 check("home-cleared-unpriced-blocks", priced3 is False and
       "Price unavailable" in text3, text3)
 
-print()
-if FAILS:
-    print("FAILED %d checks: %s" % (len(FAILS), ", ".join(FAILS)))
-    sys.exit(1)
-print("ALL CHECKS PASS")
-sys.exit(0)
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
+
+
+if __name__ == "__main__":
+    print()
+    if FAILS:
+        print("FAILED %d checks: %s" % (len(FAILS), ", ".join(FAILS)))
+        sys.exit(1)
+    print("ALL CHECKS PASS")
+    sys.exit(0)

@@ -3037,3 +3037,19 @@ jobs:
           done < <(find 75-drama-song-ad-factory/scripts/core -type f -name 'test_*.py' -not -path '*/__pycache__/*' | sort)
           [ "$tests_rc" -eq 0 ] || exit 1
           echo "✓ Skill 75 scripts/core test suites pass with a fresh empty HOME"
+
+      # Unit TESTHYG-75: the per-file loop above cannot see a suite that dies
+      # at import (sys.exit at module level made the whole-tree pytest run
+      # INTERNALERROR, hiding every later failure). This step makes pytest
+      # collection itself a red build: every test_*.py under scripts/ must be
+      # pytest-collectable, and the tree must run green in ONE process.
+      - name: Skill 75 pytest collection + run (no hidden failures)
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -m pip install --quiet pytest
+          HOME="$(mktemp -d)" python3 -m pytest -q \
+            75-drama-song-ad-factory/scripts --collect-only
+          HOME="$(mktemp -d)" python3 -m pytest -q \
+            75-drama-song-ad-factory/scripts
+          echo "✓ Skill 75 scripts/ pytest-collectable and green"

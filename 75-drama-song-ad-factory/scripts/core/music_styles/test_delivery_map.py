@@ -409,9 +409,16 @@ for path in (os.path.join(HERE, "music_styles.py"),
           not bad, repr(bad))
 
 TOTAL = COUNT[0]
-print("")
-if FAILS:
-    print("FAIL: %d of %d check(s): %s" % (len(FAILS), TOTAL,
-                                           ", ".join(FAILS)))
-    raise SystemExit(1)
-print("ALL PASS (%d checks)" % TOTAL)
+
+
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
+
+
+if __name__ == "__main__":
+    print("")
+    if FAILS:
+        print("FAIL: %d of %d check(s): %s" % (len(FAILS), TOTAL,
+                                               ", ".join(FAILS)))
+        raise SystemExit(1)
+    print("ALL PASS (%d checks)" % TOTAL)

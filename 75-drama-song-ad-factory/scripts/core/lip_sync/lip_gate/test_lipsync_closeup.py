@@ -9,8 +9,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(CORE, "catalog_calculator"))
-import lip_gate as L                                  # noqa: E402
-import catalog_calculator as C                        # noqa: E402
+try:                                   # pytest imports the lip_gate PACKAGE first,
+    from lip_gate import lip_gate as L                # noqa: E402
+except ImportError:                    # while a script run gets the module file
+    import lip_gate as L                              # noqa: E402
+try:                                   # pytest imports the catalog_calculator PACKAGE,
+    from catalog_calculator import catalog_calculator as C  # noqa: E402
+except ImportError:                    # script run gets the module file
+    import catalog_calculator as C                        # noqa: E402
 
 # 1. the plan carries one lip-sync close-up per character
 plan = C.image_plan(4, ("9:16",), ["Ana", "Ben"], "m")
