@@ -996,6 +996,27 @@ SOP named above.
   parent card per batch; department lead role
   `vsl-video-sales-letter-specialist`.
 
+## Ready-to-Post Kit (DEL-07)
+
+After delivery, build the kit that tells the client what to post where:
+`python3 scripts/core/ready_post_kit/ready_post_kit.py --run-dir "$RUN" --delivery "$DELIVERY" [--client-dir <client data folder>]`.
+It writes `07 - Ready-to-Post Kit.pdf` (the client-facing kit) and the same
+kit as `07 - Ready-to-Post Kit.json` into that delivery folder: which
+version to post where (every file found, plus the cutdowns
+`clip_cutdown.clips_for(length)` schedules), the link (brief link aliases ->
+a URL in the offer -> the `Banner link` line the batch README publishes), a
+caption and a suggested hashtag set for YouTube, Instagram, TikTok and
+Facebook, and a proper YouTube block (title <= 100 characters, description
+carrying the link and the hashtags, tags <= 500 characters, counts shown).
+The page is bright - white, dark ink, blue headings with the guide's gold
+rule - and nothing on it is under 12 pt. Fail closed by name: `KIT_NO_LINK`,
+`KIT_STORYBOARD_NOT_APPROVED`, `KIT_NO_SCRIPT`,
+`KIT_DELIVERY_RECEIPT_MISSING`, `KIT_CHECKLIST_FAILED` (a measured "no" in
+`delivery_checklist`) and `KIT_BANNED_TEXT` (a tool or model name, a dollar
+amount or an income promise anywhere in the copy - the kit never prints
+one). Full contract: `references/ready-post-kit.md`; proof:
+`scripts/core/ready_post_kit/test_ready_post_kit.py`.
+
 ## Sections marked TODO (refresh when the named unit lands)
 
 - "Per-style bands (FU-U3...)" bullet in the Suno recipe, the matching
