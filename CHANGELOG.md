@@ -1,3 +1,7 @@
+## [v27.0.3]  -  2026-10-09  -  repo-fix: CORE_UPDATES stub-sentinel skip, skill 06 QC regex + guard timeout, skill 36 QC quoting, prove-zhe phantom folder-scan
+
+Four confirmed openclaw-onboarding defects from roll fleet-roll-20261009 REPO-FIX ALERTS (confirm report 2026-10-09T16:18:29Z). update-skills.sh wire_core_updates() no longer trusts a sentinel found only in the legacy agent-dir stub — it judges the same workspace core files the verification gate reads, so CORE_UPDATES payloads merge and the gate stops reporting core-updates:sentinel-missing for 01/02/03/69/71/72. Skill 06 QC: the password-hygiene regex no longer matches the skill's own documentation prose, and the verify-unfakeable guard batches its forbidden-string scan (measured 236s -> 8.3s, verdict unchanged) to fit the 180s qc-script deadline. Skill 36 QC: the eval-of-echo probes escape $ so JSON quotes survive, matching the W1 skill-12 shape. prove-zhe.py: _resolve_company_dirs requires departments.json (folder existence alone no longer wins) and no chosen list no longer promotes a folder scan to hard requirements — the chronic phase=7z phantom-FAIL class. New regression locks in tests/unit (both directions), wired into qc-static.yml.
+
 ## [v27.0.2]  -  2026-10-09  -  repo-fix: A3 install-status.txt exclusion, skill 12 QC quoting fix, lattice citation repins
 
 ## [v27.0.1]  -  2026-10-09  -  AAC delivery gate on every delivered video + card sync (skill 75 v2.9.13)

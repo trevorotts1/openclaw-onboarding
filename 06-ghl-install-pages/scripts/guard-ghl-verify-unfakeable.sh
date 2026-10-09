@@ -163,32 +163,40 @@ shopt -u nullglob
 if [ ${#PY_FILES[@]} -eq 0 ]; then
   fail "No .py files found in $TOOLS_DIR — cannot scan for forbidden strings"
 else
+  # PERFORMANCE (W2 fix): strip each file ONCE into a temp dir, then run ONE
+  # grep per forbidden string across all stripped files. The previous form
+  # forked a `grep -Fq` per source LINE per forbidden string (~153k forks on
+  # 54 files / 51k lines), costing ~250s — over the 180s qc-script deadline in
+  # scripts/onboarding-state.sh (run-with-deadline.py --label qc-script), so
+  # the guard timed out on a healthy box. Same stripper, same sentinel
+  # exemption, same verdict; measured ~5s batched.
+  STRIP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ghl-vu-strip.XXXXXX")"
+  trap 'rm -rf "$STRIP_DIR"' EXIT
+  for pyf in "${PY_FILES[@]}"; do
+    strip_python "$pyf" > "$STRIP_DIR/$(basename "$pyf").stripped"
+  done
   for forbidden in "${FORBIDDEN_STRINGS[@]}"; do
     hits_found=0
-    for pyf in "${PY_FILES[@]}"; do
-      fname="$(basename "$pyf")"
-      # Strip comments/docstrings so explanatory prose ("do NOT use...") doesn't
-      # trigger; we only flag the string when it appears in live code.
-      while IFS= read -r codeln; do
-        lineno="${codeln%%:*}"
-        code="${codeln#*:}"
-        [ -z "$code" ] && continue
-        if grep -Fq "$forbidden" <<<"$code"; then
-          # Allow the string in a pure assignment to a constant that is itself
-          # the forbidden-string SENTINEL (e.g. STORAGE_MARKER_IS_NOT_VERIFICATION
-          # = "marker in storage"). Such a line contains the string as a value,
-          # not as a pass criterion. Detect this by checking if the line is a
-          # simple constant assignment with no conditional/return around it.
-          if grep -Eiq \
-             '^\s*(STORAGE_MARKER_IS_NOT_VERIFICATION|_FORBIDDEN_|NOT_A_GATE|BANNED_STRING)\s*=' \
-             <<<"$code"; then
-            continue  # This is a sentinel constant — intentional, not a violation.
-          fi
-          fail "Forbidden string '$forbidden' found in $fname:$lineno (code context, not comment)"
-          hits_found=$((hits_found + 1))
-        fi
-      done < <(strip_python "$pyf")
-    done
+    while IFS= read -r hit; do
+      [ -n "$hit" ] || continue
+      stripped_file="${hit%%:*}"
+      rest="${hit#*:}"
+      lineno="${rest%%:*}"
+      code="${rest#*:}"
+      fname="$(basename "$stripped_file" .stripped)"
+      # Allow the string in a pure assignment to a constant that is itself
+      # the forbidden-string SENTINEL (e.g. STORAGE_MARKER_IS_NOT_VERIFICATION
+      # = "marker in storage"). Such a line contains the string as a value,
+      # not as a pass criterion. Detect this by checking if the line is a
+      # simple constant assignment with no conditional/return around it.
+      if grep -Eiq \
+         '^\s*(STORAGE_MARKER_IS_NOT_VERIFICATION|_FORBIDDEN_|NOT_A_GATE|BANNED_STRING)\s*=' \
+         <<<"$code"; then
+        continue  # This is a sentinel constant — intentional, not a violation.
+      fi
+      fail "Forbidden string '$forbidden' found in $fname:$lineno (code context, not comment)"
+      hits_found=$((hits_found + 1))
+    done < <(grep -F -n "$forbidden" "$STRIP_DIR"/*.stripped 2>/dev/null || true)
     if [ "$hits_found" -eq 0 ]; then
       pass "Forbidden string '$forbidden' absent from all tool code"
     fi

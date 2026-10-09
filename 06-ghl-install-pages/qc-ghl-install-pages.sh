@@ -117,7 +117,22 @@ warn_only "Playwright installed (FALLBACK)"   "npm list -g playwright 2>/dev/nul
 assert "Firebase refresh token set (seeds logged-in session)" "[ -n \"\${GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN:-}\" ] || [ -n \"\${CAF_FIREBASE_REFRESH_TOKEN:-}\" ] || [ -n \"\${GHL_FIREBASE_REFRESH_TOKEN:-}\" ]"
 warn_only "Chrome/Chromium present" "command -v chromium || command -v google-chrome || ls '/Applications/Google Chrome.app' 2>/dev/null"
 warn_only "Client white-label URL stored" "grep -qiE 'app\\.gohighlevel\\.com|app\\.convertandflow\\.com|app\\.[a-z0-9]+\\.com' \"$WORKSPACE/MEMORY.md\" 2>/dev/null"
-assert "GHL password NOT in workspace .md files" "! grep -rE 'GHL_(AGENCY_)?PASSWORD\\s*=\\s*[A-Za-z0-9]' \"$WORKSPACE\"/*.md 2>/dev/null | grep -v 'XXX\\|xxx'"
+# W4 union restore: the W2 end-of-line UNQUOTED branch (no-digit values to EOL)
+# was dropped by W2b, losing `GHL_AGENCY_PASSWORD=SuperSecret!` / `=huntersecret`.
+# Branch map: quoted-with-digit = quoted leak so annotated prose ("the password")
+# stays quiet; {6,} to EOL = unquoted no-digit secret running to end-of-line;
+# unquoted-with-digit = catches trailing prose after a digit value, so `=Sup3rS3cret!
+# copied from the vault` is caught and bare prose (no digit, not at EOL) is not.
+# W2's quoted [^"]{4,} branch stays OUT — it was the prose false-positive source.
+# RESIDUAL DECISION: the end-of-line branch stays at {6,}. Witnesses at {4,}:
+#   GHL_AGENCY_PASSWORD = none | = null | = true | = TODO  -> false-positive
+#   (4-char token to EOL), i.e. narrowing the floor FAILS good boxes to gain
+#   only the 5-char no-digit shape `=short`. Refused — the class is not widened.
+# Recorded, not chased: `=short` ({6,} floor, needs a digit or 6+ chars) and
+# no-digit value + SPACED trailing prose (`=SuperSecret! # backup`) — without a
+# digit, value and prose are indistinguishable from the shipped doc lines.
+# A glued comment stays one token and IS caught (`=SuperSecret!#backup`).
+assert "GHL password NOT in workspace .md files" "! grep -rE 'GHL_(AGENCY_)?PASSWORD\\s*=\\s*(\"[^\"]*[0-9][^\"]*\"|[^[:space:]\"]{6,}[[:space:]]*$|[^[:space:]\"]*[0-9][^[:space:]\"]*)' \"$WORKSPACE\"/*.md 2>/dev/null | grep -v 'XXX\\|xxx'"
 
 # TOKEN-ONLY doctrine guard (D7): fails if seed-ghl-auth.py / inject-ghl-auth.sh
 # reintroduce an auto UI-login / 2FA fallback, or if the doctrine sentinel is
