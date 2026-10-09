@@ -246,8 +246,13 @@ check("bind_plan still binds after floor remediation",
 check("no plan_shot_floor report row for compliant 14.2 shots",
       floor_rep == [])
 
-print()
-if FAILS:
-    print("FAILURES: %d -> %s" % (len(FAILS), FAILS))
-    sys.exit(1)
-print("ALL PASS (test_shot_floor_e3)")
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
+
+
+if __name__ == "__main__":
+    print()
+    if FAILS:
+        print("FAILURES: %d -> %s" % (len(FAILS), FAILS))
+        sys.exit(1)
+    print("ALL PASS (test_shot_floor_e3)")

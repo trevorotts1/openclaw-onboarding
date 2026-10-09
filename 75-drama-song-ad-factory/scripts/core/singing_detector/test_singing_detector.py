@@ -35,7 +35,11 @@ try:
     import numpy  # noqa: F401
 except ImportError:  # CI runner has no numpy; the detector needs it (declared in its docstring)
     print("note: numpy not installed - singing detector suite skipped (runs on boxes with numpy)")
-    sys.exit(0)
+    if __name__ == "__main__":
+        sys.exit(0)
+    import pytest
+    pytest.skip("numpy not installed; the detector needs it",
+                allow_module_level=True)
 import singing_detector as SD  # noqa: E402  (package under test)
 
 FAILS = []
@@ -337,5 +341,10 @@ check("no-label-input-in-api", not (_tree_args & _BAD_PARAMS),
       sorted(_tree_args & _BAD_PARAMS))
 
 # ---------------------------------------------------------------- finish
-print("%d checks failed / G3 suite done" % len(FAILS))
-sys.exit(1 if FAILS else 0)
+def test_suite_checks_pass():
+    assert not FAILS, FAILS
+
+
+if __name__ == "__main__":
+    print("%d checks failed / G3 suite done" % len(FAILS))
+    sys.exit(1 if FAILS else 0)

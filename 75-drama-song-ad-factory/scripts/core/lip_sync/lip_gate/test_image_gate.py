@@ -9,9 +9,14 @@ import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import image_gate as G                                 # noqa: E402
-import lip_gate as L                                   # noqa: E402
-import picture_gate as PG                              # noqa: E402
+try:                                   # pytest imports the lip_gate PACKAGE first,
+    from lip_gate import image_gate as G               # noqa: E402
+    from lip_gate import lip_gate as L                 # noqa: E402
+    from lip_gate import picture_gate as PG            # noqa: E402
+except ImportError:                    # while a script run gets the module files
+    import image_gate as G                             # noqa: E402
+    import lip_gate as L                               # noqa: E402
+    import picture_gate as PG                          # noqa: E402
 
 
 def png(w, h):
