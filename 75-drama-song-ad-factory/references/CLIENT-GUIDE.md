@@ -417,6 +417,10 @@ If you accept Lifelike 3D, we move on.
 
 **How to do it.** Plan on about ten minutes. Go shot by shot. Check that your product, logo and characters appear the way you want, and that the call to action lands at the end.
 
+**A signature opening you can ask for.**
+
+Your video can open with a sweeping drone fly-in.
+
 **What one shot from Maya's storyboard looked like:**
 
 > **Shot 4 of 10**
