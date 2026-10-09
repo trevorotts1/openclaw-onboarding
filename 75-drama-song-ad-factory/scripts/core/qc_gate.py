@@ -50,6 +50,12 @@ CHECKS = frozenset({
     # scripts/core/delivery_variants/cover_image.py): measured pixels, the
     # receipt sha256 and the README listing, never the row's own claim.
     "cover_image",
+
+    # DEL-01: the three clearly-labelled audio versions (full song,
+    # instrumental, voice only) plus the plain-English note ride on the
+    # delivery gate as one more independent record (checker
+    # delivery_variants/song_files.check_audio_versions).
+    "audio_versions",
     # G7 (Trevor order 1140): the 7-question delivery checklist rides on
     # the Final edit QC gate as one more independent record (check_id
     # "delivery-checklist", checker scripts/core/delivery_checklist/).

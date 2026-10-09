@@ -135,6 +135,13 @@ it advances. Standard library only; no credential value is ever printed.
       script, storyboard, clean and captioned video, 60 and 90 second clips, ready-to-post kit, cover
       thumbnail, lyric sheet, SRT, character images, welcome sheet), each one opening: `delivery_checklist`
       Q12 `PACKAGE_COMPLETE` fails the run and names every missing item.
+
+- [ ] Three audio versions (DEL-01): the same delivery folder holds `01 - Full Song.mp3`,
+      `02 - Instrumental.mp3` and `03 - Voice Only.mp3` (320 kbps each, from the run's own mix,
+      instrumental and vocal stem) plus `00 - About These Audio Files.txt`, the short plain-English
+      note on how the three differ; all listed in `delivery-receipt.json` and `README.md`;
+      `python3 scripts/core/delivery_variants/song_files.py check-versions <dir>` exits 0, and exits 5
+      when a version or the note is missing. A missing source is a refusal, never a two-version delivery.
 - [ ] Song mp3 in the deliverable (FU-U14, REQUIRED): the ad folder holds `<Author> - <Title> - Song.mp3`
       (320 kbps, the exact song used, full length; the wav too when one exists) beside the captioned and
       clean-master mp4s. `delivery_checklist.check_song_mp3(<ad_dir>, <ad_audio>, <Title>, <Author>)` returns
