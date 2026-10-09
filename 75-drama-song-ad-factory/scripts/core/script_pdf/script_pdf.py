@@ -74,15 +74,14 @@ REASON_PRICE = "SCRIPT_PDF_PRICE_IN_COPY"
 REASON_INCOME = "SCRIPT_PDF_INCOME_PROMISE"
 REASON_TOOL = "SCRIPT_PDF_TOOL_NAME_IN_COPY"
 REASON_LAYOUT = "SCRIPT_PDF_BAD_LAYOUT"
-REASON_UNREADABLE = "SCRIPT_PDF_UNREADABLE"
-REASON_MISSING = "SCRIPT_PDF_MISSING"
 
 DETAILS = {
     REASON_NOT_APPROVED: "the run's script approval record is missing or is "
                          "not approved, so there is no approved script to print",
     REASON_STALE: "the approved record covers different lyrics than "
                   "creative/script.json holds; this is not the approved revision",
-    REASON_NO_SOURCE: "creative/script.json is missing or has no song sections",
+    REASON_NO_SOURCE: "creative/script.json is missing, unreadable, or has "
+                      "no song sections",
     REASON_PRICE: "the copy carries a money figure, which never goes on a "
                   "client-facing page",
     REASON_INCOME: "the copy carries an income or earnings promise, which "
@@ -90,8 +89,6 @@ DETAILS = {
     REASON_TOOL: "the copy names a model, tool or platform, which never goes "
                  "on a client-facing page",
     REASON_LAYOUT: "the page could not be laid out inside the type floor",
-    REASON_UNREADABLE: "the PDF is missing, empty or not a PDF",
-    REASON_MISSING: "the script PDF is not in the delivery folder",
 }
 
 # --- content rules -------------------------------------------------------
@@ -185,27 +182,49 @@ def load_approved_source(run_dir, approval=None, doc=None):
 
     sheet = payload["sheet"]
     story = payload.get("story") or []
-    lyrics = payload.get("lyrics") or "\n".join(
-        line for sec in sheet for line in (sec.get("lines") or []))
-    sha = SA.lyrics_sha(lyrics)
-    if record.get("lyrics_sha") and record.get("lyrics_sha") != sha:
+    # A run directory is untrusted input. A section that is not an object, a
+    # line list that is a bare string, or an act that is not a pair must
+    # refuse as "no source" -- never raise out of this function and never be
+    # walked character by character.
+    if not isinstance(sheet, list) or not isinstance(story, list):
+        return _fail(REASON_NO_SOURCE)
+    if payload.get("title") is not None and not isinstance(payload.get("title"), str):
+        return _fail(REASON_NO_SOURCE)
+    for sec in sheet:
+        if not isinstance(sec, dict) or not isinstance(sec.get("lines") or [], list):
+            return _fail(REASON_NO_SOURCE)
+    for act in story:
+        if not (isinstance(act, (list, tuple)) and len(act) == 2
+                and isinstance(act[1] or [], list)):
+            return _fail(REASON_NO_SOURCE)
+    title = str(payload.get("title") or "Your song")
+    try:
+        lyrics = payload.get("lyrics") or "\n".join(
+            line for sec in sheet for line in (sec.get("lines") or []))
+        sha = SA.lyrics_sha(lyrics)
+        approved_sha = record.get("lyrics_sha")
+        lines = [title]
+        for act, act_lines in story:
+            lines.append(str(act))
+            lines.extend(str(x) for x in (act_lines or []))
+        for sec in sheet:
+            lines.append(str(sec.get("tag") or ""))
+            lines.extend(str(x) for x in (sec.get("lines") or []))
+        hit = copy_violation("\n".join(lines))
+    except (AttributeError, TypeError, ValueError):
+        return _fail(REASON_NO_SOURCE)
+
+    if approved_sha is not None and approved_sha != sha:
+        # Any mismatch -- including a hash the record cannot even render as
+        # one -- means this is not the revision that was approved.
         return _fail(REASON_STALE,
                      "approval covers a different revision of the lyrics "
                      "(approved %s, on disk %s)"
-                     % (record.get("lyrics_sha")[:12], sha[:12]))
-
-    lines = [payload.get("title") or "Your song"]
-    for act, act_lines in story:
-        lines.append(str(act))
-        lines.extend(str(x) for x in (act_lines or []))
-    for sec in sheet:
-        lines.append(str(sec.get("tag") or ""))
-        lines.extend(str(x) for x in (sec.get("lines") or []))
-    hit = copy_violation("\n".join(lines))
+                     % (str(approved_sha)[:12], sha[:12]))
     if hit:
         return _fail(hit[0], hit[1])
 
-    return {"ok": True, "title": payload.get("title") or "Your song",
+    return {"ok": True, "title": title,
             "story": [tuple(a) for a in story], "sheet": sheet,
             "lyrics": lyrics, "sha": sha}
 
@@ -217,13 +236,13 @@ def _footer(layout):
         y = PW.MARGIN_B - 34.0
         if y < 0:
             return []
-        ops = [PW._text_op(PW.MARGIN_L, y, PW.fit(
+        ops = [PW.text_op(PW.MARGIN_L, y, PW.fit(
             layout.title or PDF_LABEL, "F1", PW.MIN_PT, PW.PAGE_W - 240),
             "F1", PW.MIN_PT, PW.GREY)]
         label = "Page %d of %d" % (page, total)
         x = PW.PAGE_W - PW.MARGIN_R - PW.text_width(label, "F1", PW.MIN_PT)
-        ops.append(PW._text_op(x, y, label, "F1", PW.MIN_PT, PW.GREY))
-        ops.append(PW._rect_op(PW.MARGIN_L, y + 16,
+        ops.append(PW.text_op(x, y, label, "F1", PW.MIN_PT, PW.GREY))
+        ops.append(PW.rect_op(PW.MARGIN_L, y + 16,
                                PW.PAGE_W - PW.MARGIN_L - PW.MARGIN_R,
                                1.0, PW.HAIR))
         return ops
@@ -314,7 +333,7 @@ def _update_receipt(delivery_dir, entry):
     return path
 
 
-def _update_readme(delivery_dir, name, title, pages):
+def _update_readme(delivery_dir, name, pages):
     path = os.path.join(delivery_dir, README_NAME)
     block = "\n".join([
         README_BEGIN,
@@ -363,7 +382,7 @@ def render(run_dir, delivery_dir, *, approval=None, doc=None,
         "file": name, "sha256": digest, "pages": pages,
         "title": source["title"], "lyrics_sha": source["sha"],
         "schema_version": SCHEMA_VERSION})
-    _update_readme(delivery_dir, name, source["title"], pages)
+    _update_readme(delivery_dir, name, pages)
     return {"ok": True, "reason_code": None,
             "detail": "wrote %s (%d page%s)" % (name, pages,
                                                 "" if pages == 1 else "s"),
@@ -379,25 +398,17 @@ def check_pdf(path):
         if not os.path.isfile(path):
             return (FAIL, "%s missing" % os.path.basename(path))
         with open(path, "rb") as f:
-            head = f.read(8)
-            size = os.path.getsize(path)
-            f.seek(max(0, size - 4096))
-            tail = f.read()
-    except OSError as exc:
-        return (FAIL, "%s unreadable: %s" % (os.path.basename(path), exc))
-    if size < 512:
-        return (FAIL, "%s is %d bytes, too small to be a document"
-                % (os.path.basename(path), size))
-    if not head.startswith(b"%PDF-"):
-        return (FAIL, "%s is not a PDF" % os.path.basename(path))
-    if b"%%EOF" not in tail:
-        return (FAIL, "%s has no PDF end marker" % os.path.basename(path))
-    # Type floor: every Tf operator in the document carries its own size.
-    try:
-        with open(path, "rb") as f:
             body = f.read()
     except OSError as exc:
         return (FAIL, "%s unreadable: %s" % (os.path.basename(path), exc))
+    if len(body) < 512:
+        return (FAIL, "%s is %d bytes, too small to be a document"
+                % (os.path.basename(path), len(body)))
+    if not body.startswith(b"%PDF-"):
+        return (FAIL, "%s is not a PDF" % os.path.basename(path))
+    if b"%%EOF" not in body[-4096:]:
+        return (FAIL, "%s has no PDF end marker" % os.path.basename(path))
+    # Type floor: every Tf operator in the document carries its own size.
     sizes = [float(s) for s in re.findall(rb"/F\d\s+([0-9.]+)\s+Tf", body)]
     if not sizes:
         return (FAIL, "%s carries no text" % os.path.basename(path))

@@ -146,14 +146,14 @@ def _num(value):
     return ("%.2f" % value).rstrip("0").rstrip(".") or "0"
 
 
-def _text_op(x, y, text, font, size, color):
+def text_op(x, y, text, font, size, color):
     r, g, b = color
     return "BT /%s %s Tf %s %s %s rg 1 0 0 1 %s %s Tm (%s) Tj ET" % (
         font, _num(size), _num(r), _num(g), _num(b),
         _num(x), _num(y), _esc(text))
 
 
-def _rect_op(x, y, w, h, color):
+def rect_op(x, y, w, h, color):
     r, g, b = color
     return "%s %s %s rg %s %s %s %s re f" % (
         _num(r), _num(g), _num(b), _num(x), _num(y), _num(w), _num(h))
@@ -185,7 +185,7 @@ class Layout:
         return self.pages[-1]
 
     def _new_page(self):
-        self.pages.append([_rect_op(0, PAGE_H - 8, PAGE_W, 8, BAR)])
+        self.pages.append([rect_op(0, PAGE_H - 8, PAGE_W, 8, BAR)])
         self.y = PAGE_H - self.top
 
     def on_footer(self, fn):
@@ -212,7 +212,7 @@ class Layout:
         self.need(float(height))
         w = self.content_w if width is None else float(width)
         self.y -= float(height)
-        self._ops().append(_rect_op(self.left, self.y, w, float(height), color))
+        self._ops().append(rect_op(self.left, self.y, w, float(height), color))
 
     def para(self, text, *, font="F1", size=13.0, color=INK,
              indent=0.0, leading=None, space_before=0.0):
@@ -230,7 +230,7 @@ class Layout:
             if line:
                 baseline = self.y - float(size) * 0.80
                 self._ops().append(
-                    _text_op(self.left + float(indent), baseline, line,
+                    text_op(self.left + float(indent), baseline, line,
                              font, size, color))
             self.y -= lead
         return self

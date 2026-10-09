@@ -141,7 +141,7 @@ def test_outputs_a_wellformed_pdf():
 def test_footer_counts_pages():
     layout = PW.Layout()
     layout.on_footer(lambda page, total: [
-        PW._text_op(PW.MARGIN_L, 40, "Page %d of %d" % (page, total),
+        PW.text_op(PW.MARGIN_L, 40, "Page %d of %d" % (page, total),
                     "F1", PW.MIN_PT, PW.GREY)])
     for i in range(120):
         layout.para("line %d" % i, size=13.0, leading=19.0)

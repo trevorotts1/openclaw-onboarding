@@ -231,11 +231,32 @@ def test_long_script_lands_on_several_pages_inside_the_floor():
         assert verdict == SP.PASS, detail
 
 
+def test_malformed_script_document_refuses_without_raising():
+    shapes = [
+        {"title": "x", "story": "not a list", "sheet": SHEET},
+        {"title": "x", "story": [["Act", "not a list of lines"]], "sheet": SHEET},
+        {"title": "x", "story": [["Act"]], "sheet": SHEET},          # not a pair
+        {"title": "x", "story": [], "sheet": ["not an object"]},
+        {"title": "x", "story": [], "sheet": [{"tag": "V", "lines": "one line"}]},
+        {"title": {"not": "a string"}, "story": [], "sheet": SHEET},
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        run, delivery = _run(tmp)
+        for payload in shapes:
+            with open(os.path.join(run, "creative", "script.json"), "w",
+                      encoding="utf-8") as handle:
+                json.dump(payload, handle)
+            got = SP.render(run, delivery)
+            assert got["ok"] is False, (payload, got)
+            assert got["reason_code"] == SP.REASON_NO_SOURCE, (payload, got)
+        assert os.listdir(delivery) == [], os.listdir(delivery)
+
+
 def test_check_fails_closed_on_missing_and_on_small_type():
     with tempfile.TemporaryDirectory() as tmp:
         missing = os.path.join(tmp, "nope", SP.PDF_NAME)
         verdict, detail = SP.check_delivery(os.path.join(tmp, "nope"))
-        assert verdict == SP.FAIL and SP.REASON_MISSING not in detail
+        assert verdict == SP.FAIL, detail
         assert "missing" in detail or "unreadable" in detail, detail
 
         verdict, detail = SP.check_pdf(missing)
