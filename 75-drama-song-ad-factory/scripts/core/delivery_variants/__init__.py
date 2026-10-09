@@ -21,9 +21,17 @@ from .manifests import (
     write_provenance,
 )
 from .song_files import (
+    DELIVERY_VERSIONS,
+    VERSION_NOTE_NAME,
+    build_audio_versions,
     build_song_files,
+    check_audio_versions,
     check_song_files,
+    expected_version_files,
+    version_file_name,
+    version_note_text,
     write_song_docs,
+    write_version_docs,
 )
 from .variants import (
     ASPECTS,
@@ -53,6 +61,14 @@ __all__ = [
     "build_song_files",
     "check_song_files",
     "write_song_docs",
+    "DELIVERY_VERSIONS",
+    "VERSION_NOTE_NAME",
+    "build_audio_versions",
+    "check_audio_versions",
+    "expected_version_files",
+    "version_file_name",
+    "version_note_text",
+    "write_version_docs",
     "ASPECTS",
     "VariantError",
     "build_variant_plan",
