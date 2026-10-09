@@ -244,7 +244,8 @@ NEUTRAL_FALLBACK_SCORE = 0.6
 #: a hermetic test) resolve its OWN store instead of borrowing another
 #: installation's. A test holds the two lists in lockstep -- see
 #: _secret_store_files().
-_STORE_RELATIVE_PATHS = ("secrets/.env", "secrets/secrets.env", ".env", "workspace/secrets.env")
+_STORE_RELATIVE_PATHS = ("secrets/.env", "secrets/secrets.env", ".env", "workspace/secrets.env",
+                         "workspace/.env", "workspace/secrets/.env")
 
 #: A legal POSIX environment variable name. Anything else in a store file is
 #: skipped rather than trusted.
@@ -359,11 +360,17 @@ def _secret_store_files(environ=None) -> list:
     pin = str(view.get("OPENCLAW_SECRETS") or "").strip()
     if pin:
         files.append(pin)
-    for root in _openclaw_roots(view):
+    import glob
+    roots = list(_openclaw_roots(view))
+    if not _root_pin(view):
+        roots.append("/home/node/.openclaw")  # container root, as secret_helper (INF002)
+    for root in roots:
         for relative in _STORE_RELATIVE_PATHS:
             files.append(os.path.join(root, relative))
+        files.extend(sorted(glob.glob(os.path.join(root, "service-env", "*.env"))))
     if not _root_pin(view):
         home = str(view.get("HOME") or "").strip() or os.path.expanduser("~")
+        files += ["/data/clawd/secrets/.env", os.path.join(home, "clawd", "secrets", ".env")]
         files.append(os.path.join(home, ".env"))
     # DELIBERATELY NOT unioned with secret_helper.env_file_candidates().
     # That module's list is a module-level constant whose ~ was expanded ONCE,
