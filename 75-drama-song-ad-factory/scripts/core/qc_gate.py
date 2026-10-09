@@ -64,6 +64,9 @@ CHECKS = frozenset({
     # U8: the Script gate (SOP DS-9 gate 1) carries the spelling and
     # grammar record as one more independent check; see SCRIPT_STAGES.
     "spelling_grammar",
+    # DEL-05: the delivery folder ships the video twice (captioned + clean);
+    # every delivered video has to clear delivery_audio before it is listed.
+    "video_delivery",
 })
 # 17.8 critical categories (identity, lyrics, offer, claim, product_label,
 # CTA) ride on these checks: lyrics carries the critical-word coverage,
