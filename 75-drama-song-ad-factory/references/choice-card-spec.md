@@ -110,19 +110,27 @@ write them free hand and never carry them as one JSON string.
 
 Shown only when the client's data folder holds saved characters; it is then
 question 1 and the card has one more question. Built by
-`character_library.saved_character_question`, never free hand:
+`character_library.saved_character_question`, never free hand. N is how many
+characters the client has saved ("1 character", "2 characters"):
 
 ```
-Question 1 of 7 - SAVED CHARACTER
-You have saved characters from past ads. Do you want to use one of them in this ad, or make a brand-new character?
-1. Make a new character - I create a fresh character for this ad. (RECOMMENDED)
+Question 1 of 7 - CHARACTER
+Do you want to create a new character for this ad, or use one you've used before?
+You have 2 characters saved with us.
+1. Create a new character (recommended)
 2. Use <Name> - <the saved description, up to 90 characters>
-Reply with a number, or say "recommended".
+3. Use <Name> - ...
+Reply with a number, or 'recommended'.
 ```
 
 Reply 1 or "recommended" makes a new character; reply 2 and up loads that
 saved character. The recap line reads `Character: new` or
 `Character: <Name> (saved)`, and replying with its number re-asks the question.
+
+When the client has NO saved characters nothing is asked. One plain line is
+shown once, before the first question: "You don't have any saved characters
+yet, so I'll create a new one for this ad and save it for next time."
+
 Test: `character_library/test_saved_character_question.py`.
 
 ## 3. Field rules

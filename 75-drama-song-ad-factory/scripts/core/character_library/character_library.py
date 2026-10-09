@@ -120,17 +120,22 @@ def list_characters(client_dir):
 
 
 def saved_character_question(client_dir):
-    """The saved-character intake question (new character is option 1), or None when the library
-    is empty. Same shape as the intake_card questions."""
+    """The saved-character intake question (new character is option 1), or None
+    when the library is empty. Same shape as the intake_card questions; ``body``
+    is the exact text shown under the "Question i of M - CHARACTER" header."""
     chars = list_characters(client_dir)
     if not chars:
         return None
-    opts = [("Make a new character", "I create a fresh character for this ad.")]
+    n = len(chars)
+    ask = "Do you want to create a new character for this ad, or use one you've used before?"
+    opts = [("Create a new character", "")]
     opts += [("Use %s" % c["name"], c["description"][:90]) for c in chars]
-    return {"id": "saved_character", "label": "SAVED CHARACTER",
-            "ask": "You have saved characters from past ads. Do you want to use "
-                   "one of them in this ad, or make a brand-new character?",
-            "options": opts, "recommended": 0,
+    body = [ask, "You have %d character%s saved with us." % (n, "" if n == 1 else "s"),
+            "1. Create a new character (recommended)"]
+    body += ["%d. %s%s" % (i, o, " - " + d if d else "") for i, (o, d) in enumerate(opts[1:], 2)]
+    body.append("Reply with a number, or 'recommended'.")
+    return {"id": "saved_character", "label": "CHARACTER", "ask": ask,
+            "options": opts, "recommended": 0, "body": body,
             "recap": ["Character: new"] + ["Character: %s (saved)" % c["name"] for c in chars]}
 
 

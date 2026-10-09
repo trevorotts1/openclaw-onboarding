@@ -8,7 +8,7 @@ frontmatter `version:` field).
 
 ## v2.9.9 - 2026-10-09 - FU-SAVED-CHARACTER-QUESTION
 
-- The saved-character intake question is now a full question ("You have saved characters from past ads. Do you want to use one of them in this ad, or make a brand-new character?") with numbered options, "Make a new character" first and RECOMMENDED, then "Use <Name> - <description>" for each saved character. The recap reads "Character: new" / "Character: <Name> (saved)". Same condition (only when saved characters exist) and same effect of each answer. Test: `character_library/test_saved_character_question.py`.
+- The saved-character intake question now reads "Do you want to create a new character for this ad, or use one you've used before?" with "You have N character(s) saved with us." and numbered options: "Create a new character (recommended)" first, then "Use <Name> - <description>" for each saved character. With no saved characters nothing is asked; one line says a new character will be created and saved for next time. Same recap ("Character: new" / "Character: <Name> (saved)") and same effect of each answer. Test: `character_library/test_saved_character_question.py`.
 
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 

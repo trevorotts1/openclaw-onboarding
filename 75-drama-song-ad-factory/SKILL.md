@@ -505,7 +505,7 @@ with `python3 scripts/core/intake_preflight/factory.py character --client-dir
 <client data folder> save --name <name> --description <text> --image <file>
 [--image ...] --voice-notes <text>`. The library lives inside that client's own
 data folder (`character-library/<name>/`), never shared between clients. Later
-intake cards open with a SAVED CHARACTER question when the client has saved characters ("You have saved characters from past ads. Do you want to use one of them in this ad, or make a brand-new character?", option 1 = make a new character, RECOMMENDED, then one "Use <Name>" option per saved character; the recap reads "Character: new" or "Character: <Name> (saved)") (`character
+intake cards open with a CHARACTER question when the client has saved characters ("Do you want to create a new character for this ad, or use one you've used before? You have N characters saved with us.", option 1 = create a new character, recommended, then one "Use <Name> - <description>" option per saved character; the recap reads "Character: new" or "Character: <Name> (saved)"). With none saved there is no question: one line says a new character will be created and saved for next time (`character
 --client-dir <dir> card`; `factory.py card --client-dir <dir>` where the
 intake card exists). `character --client-dir <dir> use --name <name>` prints
 the brief fields (name, description, reference images, voice notes) to reuse.
