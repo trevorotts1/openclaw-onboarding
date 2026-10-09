@@ -102,6 +102,11 @@ def _questions():
          "options": [("Yes, show me first", "Nothing is generated until you say go."),
                      ("No, just make it", "I start as soon as the card is approved.")],
          "recommended": 0},
+        {"id": "script", "why": "The script is cheap to fix now and costly to fix after the song is made.", "reason": "you read the story and the lyrics before any money is spent on the song.", "label": "SCRIPT APPROVAL",
+         "ask": "Do you want to read and approve the script - your story and the song lyrics - before the song is made?",
+         "options": [("Yes, show me first", "Nothing is generated until you say go."),
+                     ("No, just make it", "I start as soon as the card is approved.")],
+         "recommended": 0},
     ]
 
 

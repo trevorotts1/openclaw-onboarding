@@ -18,6 +18,14 @@ are used (agents >= 1, kie_inflight <= 8, one machine-sized ffmpeg pool).
 
 No automatic runner: the agent loops next -> run the command -> register ->
 next (manual B1 step 5).
+
+SCRIPT APPROVAL (card question 11): when `next` would hand out the `music` stage
+and the client answered Yes, it first runs script_approval.stage.run_stage: sends
+the script through the client-delivery path (`openclaw message send` to --target,
+or, with no --target, the messages come back in data.messages for the chat),
+records the run as waiting and answers outcome "waiting" (exit 2) with no music
+command. `script-reply --run-dir D --reply TEXT` carries the client's answer:
+approve -> `next` hands out music; anything else -> the edit is re-checked and re-sent.
 """
 import argparse
 import json
@@ -197,6 +205,62 @@ def lane_size_payload():
     return out
 
 
+def _deliverer(a, out):
+    """The client-delivery sink: `openclaw message send` (intake_card.openclaw_send_argv)
+    to --target; with no --target the message is handed back for the chat."""
+    target = getattr(a, "target", "") or ""
+
+    def deliver(text):
+        out.append(text)
+        if target:
+            import subprocess
+            core = Path(__file__).resolve().parent.parent
+            if str(core) not in sys.path:
+                sys.path.insert(0, str(core))
+            from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
+            r = subprocess.run(_card.openclaw_send_argv(target, text), capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError("client delivery failed: %s" % (r.stderr or r.stdout)[:200])
+    return deliver
+
+
+def _script_gate(run_dir, a, reply):
+    core = Path(__file__).resolve().parent.parent
+    if str(core) not in sys.path:
+        sys.path.insert(0, str(core))
+    from script_approval import stage as _stage  # noqa: PLC0415
+    out = []
+    try:
+        r = _stage.run_stage(str(run_dir), _deliverer(a, out), reply=reply)
+    except Exception as e:  # noqa: BLE001 - delivery failed: stay paused, resume re-sends
+        return {"outcome": "error", "problems": [str(e)[:200]], "messages": out}
+    r["delivered"] = out
+    return r
+
+
+def _sa_envelope(cmd, sid, r):
+    oc = r["outcome"]
+    if oc == "error":
+        return envelope(cmd, sid, "error", "script-delivery-failed",
+                        "The script was not delivered; nothing was lost. Run it again.",
+                        data=r)
+    if oc == "blocked":
+        return envelope(cmd, sid, "rejected", "script-checks-failed",
+                        "Fix: %s" % "; ".join(r["problems"]), data=r)
+    if oc == "waiting":
+        return envelope(cmd, sid, "waiting", "SCRIPT_AWAITING_APPROVAL",
+                        "The client has the script. No song until they reply. When they do, "
+                        "run script-reply --run-dir <dir> --reply <their words>.", data=r)
+    return envelope(cmd, sid, "ok", "script-approved",
+                    "Script approved (or not asked for). Run `next` for the music stage.", data=r)
+
+
+def cmd_script_reply(a):
+    run_dir = Path(a.run_dir).expanduser().resolve()
+    return _sa_envelope("script-reply", run_dir.name or "run",
+                        _script_gate(run_dir, a, reply=a.reply))
+
+
 def cmd_next(a):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
     run_dir = Path(a.run_dir or ".").expanduser().resolve()
@@ -246,6 +310,11 @@ def cmd_next(a):
         return envelope("next", str(sid), "error", "runbook-row-missing",
                         "No runbook row for stage %r in %s"
                         % (next_stage, runbook_path))
+    sa = None
+    if next_stage == "music":
+        sa = _script_gate(run_dir, a, reply=None)
+        if sa["outcome"] != "go":
+            return _sa_envelope("next", str(sid), sa)
     lane = lane_size_payload()
     nxt = {"stage": next_stage, "command": row["command"],
            "produces": row.get("produces", ""), "lane_size": lane,
@@ -293,6 +362,14 @@ def main(argv=None):
                                     "how many lanes may run (manual 02 B1).")
     n.add_argument("--run-dir", required=True,
                    help="Run dir that holds control/state.sqlite3.")
+    n.add_argument("--target", default="",
+                   help="Client Telegram chat id for the SCRIPT APPROVAL message; "
+                        "empty = hand the message back for the chat.")
+    sr = sub.add_parser("script-reply", help="The client's reply to the script message "
+                                             "(SCRIPT APPROVAL): approve, or an edit.")
+    sr.add_argument("--run-dir", required=True)
+    sr.add_argument("--reply", required=True)
+    sr.add_argument("--target", default="")
     c = sub.add_parser("card", help="Print the six-question intake card as raw "
                                     "text (not JSON), or as send payloads (H9).")
     c.add_argument("--format", default="text",
@@ -332,6 +409,8 @@ def main(argv=None):
         env = cmd_intake(a)
     elif a.cmd == "preflight":
         env = cmd_preflight(a)
+    elif a.cmd == "script-reply":
+        env = cmd_script_reply(a)
     else:
         env = cmd_next(a)
     json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)

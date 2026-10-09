@@ -85,6 +85,23 @@ Built by `intake_card.conversation(replies)` (stateless: replay the replies so
 far), exposed as `factory.py card --step --reply ...`. Same code in claude-nine
 and OpenClaw. Test: `choice_card/intake_card/test_intake_step_i7.py`.
 
+## 2.1a SCRIPT APPROVAL (the last card question)
+
+Appended after STORYBOARD APPROVAL (the card's last question; the total
+count is computed, never typed):
+
+```
+Question N of M - SCRIPT APPROVAL
+Do you want to read and approve the script - your story and the song lyrics - before the song is made?
+1. Yes, show me first - Nothing is generated until you say go. (RECOMMENDED)
+2. No, just make it - I start as soon as the card is approved.
+```
+
+It appears in the recap and changes by number like every other line. On Yes
+the run sends the script after the story and lyric sheet pass their checks and
+pauses before the song (`script_approval/script_approval.py`; gate
+`check_script_approval`, refusal `SCRIPT_NOT_APPROVED`). On No: no change.
+
 ## 2.1 Intake question card layout (Part H9, normative)
 
 The six intake questions (length, music style, video style, video model,

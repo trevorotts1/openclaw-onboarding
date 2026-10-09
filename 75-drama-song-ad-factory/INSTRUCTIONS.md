@@ -227,6 +227,8 @@ run each argv without a shell). Never type them free hand or send them as one
 line: one block per question, one numbered option per line, a blank line
 between questions. See `references/choice-card-spec.md` section 2.1.
 
+**Script approval.** The card's last question (SCRIPT APPROVAL) lets the client read and approve the story and song lyrics before the song is made. On Yes, send the script, pause, and do not generate the song until "approve"; save the card answers (the `answers` list of `intake_card.conversation`) to `$RUN/card-answers.json` and the script to `$RUN/creative/script.json`; `factory.py next` then sends the script and pauses by itself, and `factory.py script-reply` carries the client's answer; see SKILL.md "Script approval before the song".
+
 **Ask them one at a time (I7).** Do not send the whole card. Run
 `factory.py card --step` (add one `--reply <what the client said>` per answer so
 far, in order; Telegram: `--format openclaw-json --target <chat id>`), send

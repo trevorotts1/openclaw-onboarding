@@ -1,3 +1,7 @@
+## [v26.4.22]  -  2026-10-09  -  FU-SCRIPT-APPROVAL: the client approves the script before the song (skill 75 v2.9.10)
+
+New card question 11, SCRIPT APPROVAL, wired into the run: on Yes, `factory.py next` sends the script through the client-delivery path and pauses before any music; `factory.py script-reply` carries the client's approve or edit. Dispatch gates find the record themselves.
+
 ## [v26.4.21]  -  2026-10-09  -  Batch MGB019: skill 75 captions-final burn port and cast docstring (skill 75 v2.9.9)
 
 Released as one batch. Units: #1766 FU-U9 captions-final: port captions_burn.overlay_excerpt, the one excerpt burn site (new captions_burn.py with test); #1764 cast-sweep: voice_casting coworker docstring matches the 2026-10-08 recast.

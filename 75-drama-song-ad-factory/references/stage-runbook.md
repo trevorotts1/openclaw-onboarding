@@ -22,6 +22,8 @@ Run each command from this skill's root (`75-drama-song-ad-factory/`). Substitut
 | final-qc | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage final-qc --records "$RUN/qc/records.json" --makers "$RUN/qc/makers.json" --required <required-checks>` | Approved final-QC verdict records on the rendered master (independent reviewer, UNAVAILABLE never passes). |
 | delivery | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage delivery --records "$RUN/qc/records.json" --makers "$RUN/qc/makers.json" --required <required-checks>` | Delivery gate record over the final package (master + `delivery_variants` plan + receipts); board event follows via `cc_sync` (import-only). |
 
+Script approval (card question SCRIPT APPROVAL): between `script-lyrics` and `music`, automatic. `factory.py next --run-dir "$RUN" [--target <chat id>]` runs it when `music` is next and the card answer (`$RUN/card-answers.json`) is Yes: story and lyric checks, `request_approval`, the script sent through the client-delivery path, the run recorded as waiting, outcome `waiting` (exit 2), no music command. The client's reply: `factory.py script-reply --run-dir "$RUN" --reply "<words>"` (approve -> `next` hands out `music`; anything else: apply the edit to `creative/script.json`, run `script-reply` again, it re-checks and re-sends). Resume never re-sends a delivered script. The music dispatch finds the record in the run folder itself. When the client answered No there is no pause.
+
 Story arc rule (FU-U13): every ad's story runs struggle -> what changed -> the
 product is why -> get the product. The product is named and connected inside
 the lyrics AND on screen (cover, title, link), never only on an end card. The
