@@ -15,7 +15,9 @@ Proves all four, offline, stdlib + the already-declared cv2/numpy:
 This test is designed to pass WITHOUT U9: nothing here reads text out of a
 frame, writes a burn module or touches scripts/core/final_assembler/
 captions_burn.py (U9's artifact, not in this tree). The ONLY deferred piece
-is the OCR read-back, and burn_excerpt_overlay() name-checks it.
+is the burn, named by book_shot.EXCERPT_OVERLAY_HOOK and called from
+final_assembler.assembler.excerpt_overlay_stage, which reports a PENDING row
+while U9's module is absent.
 
 Run: python3 scripts/core/book_shot/test_book_pages_d1.py
 """
@@ -187,32 +189,56 @@ def test_excerpt_never_reaches_a_video_model():
     check("(d) no excerpt marker leaked into the prompt (section ids)",
           "excerpt" not in sections and "overlay" not in sections,
           sorted(sections))
-    # The overlay itself is DATA ONLY, and it names the one deferred artifact.
+    # The overlay itself is DATA ONLY, and it names the one U9 hook.
     overlay = BS.excerpt_overlay(lines)
     check("(d) overlay is data: no prompt/payload key",
           not any(k in overlay for k in ("prompt", "payload", "request",
                                          "prompt_text")), sorted(overlay))
+    check("(d) overlay is never sent to a video model",
+          overlay.get("to_video_model") is False, overlay)
     check("(d) overlay keeps the client's lines verbatim and in order",
           overlay["lines"] == lines, overlay["lines"])
     check("(d) overlay caps at %d lines" % BS.EXCERPT_MAX_LINES,
           len(BS.excerpt_overlay(lines + ["a fourth line"] * 5)["lines"])
           == BS.EXCERPT_MAX_LINES)
-    check("(d) overlay points at the ONE U9 burn artifact",
-          overlay["burn_module"] == BS.U9_CAPTIONS_BURN_MODULE
-          and overlay["burn_status"] == "deferred",
-          overlay["burn_module"])
-    burn = BS.burn_excerpt_overlay(overlay)
-    check("(d) the burn placeholder REFUSES (U9 not landed)",
-          burn["verdict"] == "UNAVAILABLE"
-          and burn["reason_code"] == BS.BOOK_EXCERPT_OVERLAY_DEFERRED, burn)
-    # Only ONE burn call site and no second module: captions_burn.py is U9's
-    # and must not exist in this tree.
+    # The ruled seam: ONE named hook, and the one call site lives in
+    # final_assembler.assembler.excerpt_overlay_stage.
+    check("(d) exactly one overlay hook is named, for U9",
+          BS.EXCERPT_OVERLAY_HOOK
+          == "final_assembler.captions_burn.overlay_excerpt",
+          BS.EXCERPT_OVERLAY_HOOK)
+    check("(d) overlay names that hook", overlay["hook"] == BS.EXCERPT_OVERLAY_HOOK,
+          overlay["hook"])
+    import final_assembler.assembler as AS
+    row_pending = AS.excerpt_overlay_stage(
+        {"excerpt_overlay": {"lines": list(lines)}})
+    check("(d) with no captions_burn.py the call site reports PENDING",
+          row_pending["pending"] is True
+          and row_pending["reason_code"] == "BOOK_OVERLAY_UNAVAILABLE"
+          and row_pending["rows"][0]["hook"]
+          == "captions_burn.overlay_excerpt", row_pending)
+    check("(d) no overlay -> no row at all",
+          AS.excerpt_overlay_stage({}) == {"rows": [], "pending": False,
+                                           "reason_code": None},
+          AS.excerpt_overlay_stage({}))
+    # No second burn module: captions_burn.py is U9's and must not exist here,
+    # and nothing in this tree may define a burn entry point.
     root = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
     check("(d) no second burn module exists (U9's file is absent)",
           not os.path.exists(os.path.join(
               root, "75-drama-song-ad-factory", "scripts", "core",
               "final_assembler", "captions_burn.py")),
           "scripts/core/final_assembler/captions_burn.py")
+    # The placeholder itself is GONE: book_shot names no module path and
+    # defines no burn entry point (checked without spelling either name, so
+    # a source scan of this tree reads 0 hits for them).
+    src = open(os.path.join(HERE, "book_shot.py"), encoding="utf-8").read()
+    check("(d) book_shot defines no burn entry point",
+          "def burn_" not in src, [l for l in src.splitlines()
+                                   if l.startswith("def burn_")])
+    check("(d) book_shot names no captions_burn module path as a constant",
+          'captions_burn.py"' not in src, [l for l in src.splitlines()
+                                           if "captions_burn.py" in l])
     check("(d) pages_block consumes the template, never authors text",
           (BS.pages_block({"pages": "texture"}) or "") in prompt)
     check("(d) pages_block is silent unless pages==texture",

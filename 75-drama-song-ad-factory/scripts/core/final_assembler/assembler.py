@@ -462,6 +462,49 @@ def frame_text_gate(plan, ffmpeg=None, dry_run=False, frame_count=3,
     return rows, None
 
 
+def excerpt_overlay_stage(plan, dry_run=False):
+    """FU-U11 -- U9 SEAM. The client excerpt overlay, as DATA, before render.
+
+    THE ONE PLACE an excerpt overlay is handed to a render step. The burn
+    itself is U9's artifact and does NOT exist in this tree:
+
+        final_assembler/captions_burn.py :: overlay_excerpt
+
+    Until U9 lands, this function RETURNS A PENDING ROW and burns nothing --
+    it never draws text, never reads frame text, and never binds an OCR
+    engine. There is exactly ONE caption-burn site in this codebase and it is
+    U9's; this is a call site, not a second burn module.
+
+    The excerpt NEVER goes to a video model: ``plan`` carries it under
+    ``excerpt_overlay`` (data posted at assembly), while the H3 prompt is
+    built from the plan's prompt blocks and never reads this key.
+
+    Returns {"rows": [...], "pending": bool, "reason_code": str|None}.
+    """
+    overlay = (plan or {}).get("excerpt_overlay")
+    if not overlay:
+        return {"rows": [], "pending": False, "reason_code": None}
+    lines = list(overlay.get("lines") or [])
+    if not lines:
+        return {"rows": [], "pending": False, "reason_code": None}
+    burn = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "captions_burn.py")
+    if os.path.isfile(burn):
+        # U9 has landed: the burn is its call, not ours.
+        import importlib
+        mod = importlib.import_module("%s.captions_burn" % __package__
+                                      if __package__ else "captions_burn")
+        mod.overlay_excerpt(lines, provenance=overlay.get("provenance"))
+        return {"rows": [{"hook": "captions_burn.overlay_excerpt",
+                          "lines": len(lines), "burned": True}],
+                "pending": False, "reason_code": None}
+    return {"rows": [{"hook": "captions_burn.overlay_excerpt",
+                      "lines": len(lines), "burned": False,
+                      "pending": True, "artifact": burn,
+                      "artifact_present": False}],
+            "pending": True, "reason_code": "BOOK_OVERLAY_UNAVAILABLE"}
+
+
 def load_timeline(path):
     """Load + validate timeline.json. Returns dict or raises ValueError.
 
@@ -1267,6 +1310,9 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         return _fail(getattr(exc, "code", "FRAME_EXTRACT_UNAVAILABLE"),
                      next_action=msg, evidence={})
     if dry_run:
+        # FU-U11: the excerpt overlay row rides the DRY-RUN evidence too, so
+        # the pending U9 seam is visible before any render spend.
+        _excerpt = excerpt_overlay_stage(plan, dry_run=True)
         out = {"schema_version": SCHEMA_VERSION, "tool": TOOL_NAME,
                "tool_version": TOOL_VERSION, "command": "assemble",
                "outcome": "ok", "reason_code": "DRY_RUN",
@@ -1274,6 +1320,7 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                "evidence": {"argv": argv, "plan": plan,
                             "timeout_s": timeout, "lipsync": cov,
                             "frame_text": frows,
+                            "excerpt_overlay": _excerpt,
                             "motion": motion, "h5": _h5_ev},
                "state_version": 0}
         blocked = next((b for b in (cov, face, ffail) if b is not None), None)
