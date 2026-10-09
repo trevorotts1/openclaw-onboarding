@@ -6,6 +6,10 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.3 - 2026-10-09 - Batch MGB009 roll-up
+
+One version for four units that each carried v2.9.2: W-G-003-amend (singing detector aligned to Appendix A), W-G-008 (parallel minute-lanes for ads 120 s and up), W-F-U2 (whole-track retakes only, PARTIAL_SUNO_JOB gate) and FU-U13 (story arc rule and product-connection target). Their entries follow unchanged.
+
 ## v2.9.2 - 2026-10-09 - W-G-008: parallel minute-lanes for ads 120 s and up
 
 Owner order (Trevor, 2026-10-08): "this type of intelligence should be built
