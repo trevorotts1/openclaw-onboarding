@@ -124,6 +124,11 @@ it advances. Standard library only; no credential value is ever printed.
 - [ ] Song files (H14): a delivery folder holds `<ad>.mp3` (320 kbps) and `<ad>.wav` (plus
       `<ad>-instrumental.*` if one exists), all listed in `delivery-receipt.json` and `README.md`;
       `python3 scripts/core/delivery_variants/song_files.py check <dir> <ad>` exits 0, and exits 5 when any song file is missing.
+- [ ] Caption file (DEL-10): the delivery folder holds `10 - Captions.srt`, built from the measured
+      caption cues (`caption_timing.captions` -> `delivery_variants.export_captions_srt`); no measured
+      cues writes no file (no clock is ever invented). `python3 scripts/core/delivery_variants/caption_srt.py
+      check <delivery dir>` exits 0, and exits 5 when the file is missing or not valid SRT.
+      Run: `python3 scripts/core/delivery_variants/test_caption_srt_del10.py`.
 - [ ] Song mp3 in the deliverable (FU-U14, REQUIRED): the ad folder holds `<Author> - <Title> - Song.mp3`
       (320 kbps, the exact song used, full length; the wav too when one exists) beside the captioned and
       clean-master mp4s. `delivery_checklist.check_song_mp3(<ad_dir>, <ad_audio>, <Title>, <Author>)` returns

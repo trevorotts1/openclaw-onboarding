@@ -3,6 +3,12 @@
 Directive 17.8 (acceptance) + 20.4 (deliverables: campaign-manifest.json,
 cost-report.json, provenance.json). Stdlib only.
 """
+from .caption_srt import (
+    check_captions_srt,
+    export_captions_srt,
+    parse_srt,
+    srt_file_name,
+)
 from .checks import (
     CTA_HOLD_MIN_SECONDS,
     MOBILE_RENDITION_WIDTH_PX,
@@ -37,6 +43,10 @@ SCHEMA_VERSION = "1.0.0"
 TOOL_VERSION = "1.0.0"
 
 __all__ = [
+    "check_captions_srt",
+    "export_captions_srt",
+    "parse_srt",
+    "srt_file_name",
     "CTA_HOLD_MIN_SECONDS",
     "MOBILE_RENDITION_WIDTH_PX",
     "check_captions",
