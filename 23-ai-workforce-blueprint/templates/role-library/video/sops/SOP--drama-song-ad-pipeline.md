@@ -242,6 +242,18 @@ another character's line.
    realism for the hard-hitting emotional moments; golden realism for the
    transformation. Match poses, dissolve 0.3-0.4 s, hold each style at least
    3 seconds, no flicker, identity locked across styles.
+   The look's own file is `references/prompt-templates/looks/<look>.json`
+   (modes, beat-to-mode map, switch rules, lip-sync modes); the look text
+   lives once, in `references/prompt-templates/modes/`.
+   The style text is data, not prose: `suno_recipe` reads
+   `references/prompt-templates/music/<style>.json` and `models/suno-v6.json`
+   through `prompt_templates.suno_parts(style_id, length_s, vocal_gender)`,
+   and the caps are measured on the FINAL payload after `ending_qc` (U15d).
+   Length shapes (shots, H3 clips, lip-sync clips and seconds, lanes, hooks,
+   song words, spoken share, product seconds) come from the ONE table,
+   `references/prompt-templates/length-classes.json`
+   (`prompt_templates.length_class(L)`); a drifted row raises
+   `PROMPT_LENGTH_CLASS_DRIFT`, never a silent read.
 6. **Pitch check with an octave-error guard:** every line's measured pitch
    must fall in its character's gender range (roughly 85-155 Hz male,
    165-255 Hz female), and same-gender characters must measure as different
@@ -273,6 +285,22 @@ without an identity lock.
    glasses, accessories.
 4. Device orientation: a phone, laptop or letter faces the person reading it;
    show what is on a screen with a separate insert or over-the-shoulder shot.
+5. Every keyframe and clip prompt is ASSEMBLED, never hand-written: the shot
+   planner writes the FACTS (`shot_planner.prompt_spec_for` ->
+   `shot["prompt_spec"]`), and `prompt_templates.assemble_h3(spec)` builds the
+   payload from the model, look, mode, shot-type, length-class and music-style
+   layers plus those facts. MiniMax H3 payloads land in the owner band
+   **5,000-6,800 characters** (hard max 7,000): under 5,000 is a FLAG then an
+   expansion from the spec (never padding, `H3_THIN_SPEC` when the spec is
+   empty), over 6,800 is a TRIM, over 7,000 is a REFUSAL before any spend.
+   For a lip-synced character the avatar prompt is assembled by
+   `prompt_templates.assemble_kling_avatar` (three sentences, one emotion, the
+   `who` descriptor from the look's mode).
+6. Every assembled payload gets a prompt receipt (`prompt_sha256`, template
+   version, per-section character map, band verdict). A paid job whose prompt
+   has no matching receipt, or whose receipt says REFUSE or TRIM, is refused
+   `PROMPT_NOT_TEMPLATED` before the ledger, and final QC requires a
+   `prompt_compliance` record (one row per paid job matched to its receipt).
 
 **Outputs:** Keyframes, continuity record, product-reference record.
 **Hand to:** DS-7.

@@ -28,8 +28,12 @@ from __future__ import annotations
 from math import ceil, isfinite
 
 try:
-    import spoken_share as _SS                      # core/ on sys.path
+    import music_styles as _MS                      # core/ on sys.path
+    import music_styles.music_styles as _MSM        # the submodule: the LENGTHS table
+    import spoken_share as _SS
 except ImportError:                                 # imported as core.*
+    from .. import music_styles as _MS
+    from ..music_styles import music_styles as _MSM
     from .. import spoken_share as _SS
 
 TOOL_NAME = "words_fit"
@@ -40,13 +44,19 @@ SOURCE = ("Owner order 2026-10-08 11:50 (Part G, G9); review G7 measured "
 
 # ---- measured delivery rates (words per second) ---------------------------
 # Calm Soul Ballad defaults (review). R&B Flow hooks measured ~1.9 sung.
-# Rap has no separate calibration clip; 2.0 is the ballad-conservative
-# talking-over-a-beat rate (ponytail: raise when a rap calibration lands).
+# Rap: the One-Check calibration (plan A3, 2026-10-08) -- 278 rapped plus
+# spoken words over about 112.6 s of non-sung voice = about 2.47 w/s, a
+# LOWER bound (the non-sung time also holds instrumental gaps); 2.5 is that
+# calibration rounded up, never below it.
 DEFAULT_RATES = {"sung": 1.0, "spoken": 1.85, "rap": 2.0}
+#: FU-U2: keyed by music_styles STYLE ID (never the display label), so the
+#: card, the plan and the gate all name the same style. Rates for any style
+#: not listed here are the calm ballad defaults (fail closed: "too slow to
+#: fit", never "promised to fit").
 STYLE_RATES = {
-    "Soul Ballad": {"sung": 1.0, "spoken": 1.85, "rap": 2.0},
-    "R&B Flow": {"sung": 1.9, "spoken": 2.0, "rap": 2.5},
-    "Soul Rise": {"sung": 1.2, "spoken": 1.85, "rap": 2.0},
+    "soul-ballad": {"sung": 1.0, "spoken": 1.85, "rap": 2.0},
+    "rnb-flow": {"sung": 1.9, "spoken": 2.0, "rap": 2.5},
+    "soul-rise": {"sung": 1.2, "spoken": 1.85, "rap": 2.0},
 }
 
 #: Music-only intro + outro budgeted into the plan (seconds).
@@ -55,8 +65,10 @@ INTRO_OUTRO_S = 8.0
 #: Suno `duration` must be planned time + at least this share (G9).
 HEADROOM = 0.15
 
-#: Card lengths (choice-card-spec 3.1), seconds, ascending.
-CARD_LENGTHS_S = (60, 90, 180, 300, 600)
+#: Card lengths (choice-card-spec 3.1), seconds, ascending. FU-U2: the ONE
+#: copy is music_styles.OFFERED_LENGTHS_S (the 2-minute 120 s entry included);
+#: this name only re-exports it so no second list can drift.
+CARD_LENGTHS_S = tuple(_MSM.OFFERED_LENGTHS_S)
 
 #: The 5-point accept band (spoken_share ACCEPT_PTS); never a second 5 here.
 BAND_PTS = _SS.ACCEPT_PTS
@@ -82,10 +94,17 @@ def _num(v, name):
 
 
 def rates_for(style=None):
-    """Delivery rates for a music style; unknown/None -> Soul Ballad."""
-    if isinstance(style, str) and style in STYLE_RATES:
-        return dict(STYLE_RATES[style])
-    return dict(DEFAULT_RATES)
+    """Delivery rates for a music style; unknown/None -> Soul Ballad.
+
+    ``style`` may be a style id ("rnb-flow"), a display label ("R&B Flow") or
+    a card option record -- one normalizer (core/music_styles.style) decides,
+    so no caller can pass a spelling this module does not know.
+    """
+    try:
+        sid = _MS.style(style)["style_id"]
+    except (_MS.MusicStyleError, TypeError):
+        return dict(DEFAULT_RATES)
+    return dict(STYLE_RATES.get(sid, DEFAULT_RATES))
 
 
 def planned_seconds(sung_words, spoken_words, rap_words=0.0,
