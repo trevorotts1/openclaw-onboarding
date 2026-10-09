@@ -284,7 +284,7 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
         best = max(hooks, key=keys.count)
         errs += _SH.check_sheet_count(sheet, best, length_s)
     if length_s is not None:
-        p = _LF.plan(length_s + _LF.END_EARLY_S, spoken_share_pct)
+        p = _LF.plan(length_s + _LF.END_EARLY_S, spoken_share_pct, style_id=style_id)
         total = sheet_words(sheet)
         if total > p["words"]["total"] * 1.1 + 2:
             errs.append("%d words, the %d s budget is %d" % (total, length_s, p["words"]["total"]))

@@ -132,7 +132,9 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     """
     fit = None
     if length_s is not None:
-        fit = words_fit.preflight_sheet(length_s, lyrics_text)
+        # FU-U2: the style travels with the sheet, so R&B Flow is judged at
+        # R&B Flow rates and rap words are counted (never the ballad default).
+        fit = words_fit.preflight_sheet(length_s, lyrics_text, style=style_id)
         if fit["outcome"] != "ok":
             raise words_fit.WordsFitError(
                 fit["reason_code"],

@@ -58,10 +58,14 @@ SPOKEN_SHARE_MAX = _SS.CAP
 FIRST_SUNG_TARGET_PCT = _SS.FIRST_SUNG_TARGET_PCT
 check_first_sung = _SS.check_first_sung
 
-#: Offered lengths (owner D6 + D23) -> accepted spellings.
+#: Offered lengths (owner D6 + D23 + F15). 120 (the card's "2 minutes",
+#: F15 owner order 2026-10-08) sits between 90 and 180 -- the card always
+#: offered it; FU-U2 makes the code agree with the card.
 LENGTH_ALIASES = {
     "60": 60, "60s": 60, "60sec": 60, "60seconds": 60,
     "90": 90, "90s": 90, "90sec": 90, "90seconds": 90,
+    "120": 120, "120s": 120, "120sec": 120, "120seconds": 120,
+    "2m": 120, "2min": 120, "2minutes": 120,
     "180": 180, "3m": 180, "3min": 180, "3minutes": 180,
     "300": 300, "5m": 300, "5min": 300, "5minutes": 300,
     "600": 600, "10m": 600, "10min": 600, "10minutes": 600,
@@ -69,7 +73,7 @@ LENGTH_ALIASES = {
 
 #: Every length the factory offers. The D15 band is keyed by NONE of them --
 #: this tuple only bounds what a caller may ask about.
-OFFERED_LENGTHS_S = (60, 90, 180, 300, 600)
+OFFERED_LENGTHS_S = (60, 90, 120, 180, 300, 600)
 
 #: Delivery labels a timing segment may carry.
 DELIVERIES = ("spoken", "rap", "sung")

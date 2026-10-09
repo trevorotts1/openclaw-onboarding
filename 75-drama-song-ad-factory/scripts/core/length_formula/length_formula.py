@@ -39,8 +39,10 @@ _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
+import music_styles as _MS   # noqa: E402
 import sung_hook as _SH      # noqa: E402
 import spoken_share as _SS   # noqa: E402
+import words_fit as _WF      # noqa: E402
 
 TOOL_NAME = "length_formula"
 TOOL_VERSION = "1.0.0"
@@ -332,9 +334,33 @@ def plan_product_connection(plan, shots=None, lyric_lines=None):
     }
 
 
-def plan(chosen_length_s, spoken_share_pct=None):
+def _rap_style(style_id):
+    """True when the style's OWN deliveries include rap (R&B Flow, D18).
+
+    Unknown / absent style -> False (fail closed): an unrecognized style
+    never silently earns a rap allowance. One copy of the fact: the
+    deliveries come from core/music_styles, never a second list here.
+    """
+    try:
+        return "rap" in _MS.style(style_id)["deliveries"]
+    except _MS.MusicStyleError:
+        return False
+
+
+def plan(chosen_length_s, spoken_share_pct=None, style_id=None):
     """The full plan for one ad. ``spoken_share_pct`` is the ad's own setting
-    (default 20-25 -> 22.5; BSW passes (15, 20))."""
+    (default 20-25 -> 22.5; BSW passes (15, 20)).
+
+    FU-U2: ``style_id`` makes the plan style-aware. Rap styles (deliveries
+    include rap, i.e. R&B Flow) split the D15 spoken-STYLE allowance -- the
+    same f * delivered seconds every style already honors, because rap counts
+    as spoken-style delivery -- into the [Intro]/[Outro] spoken blocks (capped
+    exactly as before) plus a rap budget for the verses, at the calibrated
+    rap rate from core/words_fit (one copy of the number). The plan then
+    returns words {spoken, rap, sung} and a top-level ``rap_s``. No style, an
+    unknown style, Soul Ballad and Soul Rise keep the previous output
+    BYTE-IDENTICAL -- no rap key is added for them.
+    """
     L = chosen_length_s
     if isinstance(L, bool) or not isinstance(L, (int, float)) or L < 20 or L > 3600:
         raise LengthError("chosen length must be 20-3600 seconds, got %r" % (L,))
@@ -346,20 +372,33 @@ def plan(chosen_length_s, spoken_share_pct=None):
     spoken_words = min(wb["spoken_words"], opener_cap + OUTRO_MAX_WORDS)
     opener = min(opener_cap, max(spoken_words // 4, 1))
     planned_share = round(spoken_words / SPOKEN_WPS / D * 100.0, 1)
+    rap_words, rap_s = 0, 0.0
+    if _rap_style(style_id):
+        rap_s = max(wb["spoken_s"] - spoken_words / SPOKEN_WPS, 0.0)
+        rap_words = int(round(rap_s * _WF.rates_for(style_id)["rap"]))
+        # the D15 share counts rap as spoken-style: the plan reaches the
+        # requested target by construction, so the caps-bind note never fires.
+        planned_share = round((spoken_words / SPOKEN_WPS + rap_s) / D * 100.0, 1)
+    words = {"total": spoken_words + wb["sung_words"] + rap_words,
+             "spoken": spoken_words, "sung": wb["sung_words"], "opener_max": opener,
+             "closing": spoken_words - opener}
+    if rap_words:
+        words["rap"] = rap_words
     out = {
         "chosen_length_s": L, "delivered_s": D, "bracket": b["name"],
         "spoken_share_pct_requested": round(_spoken_share(spoken_share_pct) * 100, 1),
         "spoken_share_pct_planned": planned_share,
-        "words": {"total": spoken_words + wb["sung_words"], "spoken": spoken_words,
-                  "sung": wb["sung_words"], "opener_max": opener,
-                  "closing": spoken_words - opener},
+        "words": words,
         "sections": {"verses": b["verses"], "pre_chorus": b["pre"],
                      "chorus": b["chorus"], "bridge": b["bridge"]},
         "hook_repeats": _SH.hook_count(D),
         "hook_seconds": _SH.hook_times(D),
         "instrumental": {"breaks": b["breaks"], "seconds_each": b["break_s"]},
-        "spoken_placement": "[Intro] opener (%d words max) and [Outro] closing call to action only; "
-                            "never mid-song" % opener,
+        "spoken_placement": ("[Intro] opener (%d words max) and [Outro] closing call to "
+                             "action; rap verses run anywhere between the vocalise and "
+                             "the outro" % opener) if rap_words else
+                            ("[Intro] opener (%d words max) and [Outro] closing call to action only; "
+                             "never mid-song" % opener),
         "first_sung_by_s": round(D * _SS.FIRST_SUNG_TARGET_PCT / 100.0, 1),
         "extend": extend_plan(D),
         "continuity": ("same model, vocal gender, style text, tempo and key tag on every segment; "
@@ -369,6 +408,8 @@ def plan(chosen_length_s, spoken_share_pct=None):
     }
     # FU-U13: the plan carries its product-connection target seconds too.
     out["product_connection"] = plan_product_connection(out)
+    if rap_words:
+        out["rap_s"] = round(rap_s, 1)
     if planned_share + 1.0 < out["spoken_share_pct_requested"]:
         out["note"] = ("spoken block caps bind: set this ad's spoken target to %.1f%%"
                        % planned_share)
