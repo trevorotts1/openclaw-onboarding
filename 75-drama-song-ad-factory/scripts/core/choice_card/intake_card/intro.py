@@ -21,6 +21,8 @@ Answer a few quick questions, and we handle the rest:
 
 You approve the script, pick your favorite of 3 song versions, and sign off on the storyboard before any video is made. Longer videos also come with 60- and 90-second clips for social media.
 
+Before we start: if your video uses KIE.ai or OpenRouter models, top up your credits there first so your video doesn't stop halfway.
+
 Let's start - just a few quick questions."""
 
 
