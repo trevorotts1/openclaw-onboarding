@@ -110,6 +110,12 @@ except ImportError as _vsf_exc:      # pragma: no cover - packaging defect
         "scripts/video_still_fill/ (DEL-14 crop-in fill path); the skill "
         "package is incomplete (%s)" % (_vsf_exc,)) from _vsf_exc
 
+# DEL-14: blur fill is never used. scripts/ on the path for the refusal gate.
+_SCRIPTS = os.path.dirname(_CORE)
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+from qc_no_blur import assembler_gate as no_blur  # noqa: E402  (DEL-14)
+
 TOOL_NAME = "final_assembler"
 TOOL_VERSION = "1.0.1"
 SCHEMA_VERSION = "1.0.0"
@@ -1329,6 +1335,16 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
             plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
             plan.get("height", DEFAULT_HEIGHT))
     argv = build_argv(plan, output, ffmpeg)
+    # DEL-14: refuse an attempted blur fill BEFORE any render spend. The
+    # timeline (a renderer asking for a fill), the plan it built and the
+    # command (blur, edge-sampled backdrop, duplicated blurred strip,
+    # blurred mask, letterbox pad) are all scanned; the only path to full
+    # height is crop-in re-lip-sync.
+    nb = no_blur.check_render(plan={"timeline": tl, "plan": plan},
+                              argv=argv, frame_scan=False)
+    if not nb["ok"]:
+        return _fail(nb["reason_code"], next_action=nb["reason"],
+                     evidence={"qc_no_blur": nb})
     # E6 lip-sync coverage result rides in every receipt; only a FAIL
     # blocks the render. The dry-run receipt exists for exactly this.
     cov = lipsync_gate(plan)
@@ -1355,7 +1371,8 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                             "timeout_s": timeout, "lipsync": cov,
                             "frame_text": frows,
                             "excerpt_overlay": _excerpt,
-                            "motion": motion, "h5": _h5_ev},
+                            "motion": motion, "h5": _h5_ev,
+                            "qc_no_blur": nb},
                "state_version": 0}
         blocked = next((b for b in (cov, face, ffail) if b is not None), None)
         if blocked is not None:  # blocked before spend, but evidence stays
@@ -1457,6 +1474,18 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         if not ag["ok"]:
             return _fail(ag["reason_code"], next_action=ag["reason"],
                          evidence=evid)
+    # DEL-14: the produced frame itself. A fill that landed anyway is refused
+    # here, before anything is delivered: a frame short of full height
+    # because of a fill, an edge-sampled backdrop, a gaussian-filled
+    # background, a duplicated blurred strip, a blurred mask or letterbox
+    # bars. The repair is crop-in re-lip-sync, never a fill.
+    nf = no_blur.check_render(
+        output=output, expect_width=plan.get("width"),
+        expect_height=plan.get("height"), ffmpeg=ffmpeg, ffprobe=ffprobe)
+    evid["qc_no_blur"] = nf
+    if not nf["ok"]:
+        return _fail(nf["reason_code"], next_action=nf["reason"],
+                     evidence=evid)
     # Load governor: the master is verified; delete the stage intermediates the
     # timeline lists (never deliverables), log each deletion, record heavy-job waits.
     reg = _LG.StageRegistry()
