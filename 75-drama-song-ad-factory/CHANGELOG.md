@@ -6,6 +6,10 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.4 - 2026-10-09 - Batch MGB010 roll-up
+
+One version for the MGB010 units: TESTHYG-75 (skill 75 tests pytest-collectable and green in one process), FU-U14 (song mp3 part of every deliverable), FU-U10 (book orientation contract), FU-U6 (Suno request limits, fail closed), FU-U15a (template data layer), FU-U16 (story doctrine: villain, pain, rise), U15c (owner prompt band) and qc-kie-docs-host (F14 scanner exempts the docs host only). FU-U1 (rap-aware tag grammar) was held out: its test_tag_grammar_u1.py is not pytest-clean. Entries follow.
+
 ## v2.9.3 - 2026-10-09 - Batch MGB009 roll-up
 
 One version for four units that each carried v2.9.2: W-G-003-amend (singing detector aligned to Appendix A), W-G-008 (parallel minute-lanes for ads 120 s and up), W-F-U2 (whole-track retakes only, PARTIAL_SUNO_JOB gate) and FU-U13 (story arc rule and product-connection target). Their entries follow unchanged.
@@ -72,14 +76,14 @@ a target, not a hard cap.
   QC.md, and the onboarding-only SOP
   (23-ai-workforce-blueprint/.../SOP--drama-song-ad-pipeline.md).
 - Test: `scripts/core/length_formula/test_story_arc_u13.py`.
-## Unreleased - FU-U6: Suno request limits, fail closed, measured last
+## v2.9.4 (included) - FU-U6: Suno request limits, fail closed, measured last
 
 - New `scripts/core/prompt_limits.py`: one limit table read from the catalogs (`68-kie-audio/models.json` suno-generate: lyrics 5000, style 1000, title 80, duration 10-360; `67-kie-video/models.json` vendor caps per model), plus a skill-75 override table for what the catalogs lack (`negativeTags` 1000 and `kling/ai-avatar-standard` 2500, both stamped UNVERIFIED with source URL and the free docs re-read step). `check_request(model, request)` measures EVERY text field of the FINAL payload and refuses over-cap with `PROMPT_OVER_CAP: field, chars, cap, source, status`; it never truncates.
 - `music_director.build_generate_request` now measures the payload AFTER `ending_qc.with_clean_ending` appends the ending to the style (the E.2 order-of-mutation hole: a 1000-char style passed the old guard, the ending pushed it to 1054, and the final style was never re-measured).
 - `suno_recipe.build_request` measures its payload too; `song_dispatch.run_takes` compares the request duration with the G9 headroom (`words_fit.max_suno_duration(plan)`) as the plan default allows, while a patch/short duration is still refused.
 - Gate registered in `shared-utils/kie_prompt_gates.json`; the shared enforcer is called ceiling-only through the module (the 80 percent floor must not apply: the 67 house floor of 5000 sits above Kling's 2500 hard cap).
 - New test `music_director/test_prompt_limits_u6.py` (fails on the base tree: no `prompt_limits` module, 5001-char lyrics, a 1054-char final style and an 81-char title all built).
-## Unreleased - qc-kie-docs-host: F14 scanner exempts the docs host only
+## v2.9.4 (included) - qc-kie-docs-host: F14 scanner exempts the docs host only
 
 - `scripts/qc-no-direct-kie.sh`: the endpoint pattern `(https?://)?(api\.)?kie\.ai` matched a bare `docs.kie.ai` host, so the KIE documentation provenance URLs in `scripts/core/prompt_limits.py` (added by FU-U6) were reported as direct-KIE calls and the check exited 2 on a clean tree. The scan now extracts each host occurrence (`grep -oE`) and drops exactly the `docs.kie.ai` host — the exemption is decided per OCCURRENCE, so a line carrying both a docs URL and a real api URL still fails on the api record (a line-level `grep -v` would discard the whole line and let the real call escape). Every other host still bites: `api.kie.ai`, any other subdomain including ones nobody has thought of yet, and bare `kie.ai`. No filename exemption: a real direct call added to `prompt_limits.py` later is still caught.
 - New test `scripts/core/kie_dispatch/test_qc_docs_host.py` (fails on the base tree: the docs fixture exits 2). Covers the docs citation passing, the api call still failing by name, the mixed one-line docs+api case failing per occurrence, unknown subdomains and bare `kie.ai` failing, and the real core tree staying clean. Existing `test_model_lock_f14.py::test_qc_no_direct_kie` regression stays green.

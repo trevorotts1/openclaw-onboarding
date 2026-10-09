@@ -1,3 +1,7 @@
+## [v26.4.16]  -  2026-10-09  -  Batch MGB010: eight Skill 75 units (drama song ad factory v2.9.4)
+
+Released as one batch. Units: #1707 TESTHYG-75 skill 75 tests pytest-collectable and green in one process; #1716 FU-U14 song mp3 part of every deliverable; #1717 FU-U10 book orientation contract; #1719 FU-U6 Suno request limits; #1723 FU-U15a template data layer; #1721 FU-U16 story doctrine (villain, pain, rise); #1727 U15c owner prompt band; and #1729 qc-kie-docs-host F14 scanner exempts the docs host only. Skill 75 v2.9.4. Paired Command Center: v7.6.112.
+
 ## [v26.4.15]  -  2026-10-09  -  Batch MGB009: four Skill 75 units (drama song ad factory v2.9.3)
 
 Released as one batch. Units: #1709 W-G-003-amend singing detector aligned to Appendix A; #1710 W-G-008 parallel minute-lanes for drama song ads 120 s and up; #1712 W-F-U2 whole-track retakes only (PARTIAL_SUNO_JOB intake gate + live dispatch seam); and #1714 FU-U13 story arc rule + product-connection target (10-15 percent). Skill 75 v2.9.3. Paired Command Center: v7.6.112.
