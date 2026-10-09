@@ -12,12 +12,12 @@ Proves all four, offline, stdlib + the already-declared cv2/numpy:
   (d) the excerpt is NEVER sent to a video model: the assembled H3 video
       prompt never carries excerpt text, with the overlay built as DATA ONLY.
 
-This test is designed to pass WITHOUT U9: nothing here reads text out of a
-frame, writes a burn module or touches scripts/core/final_assembler/
-captions_burn.py (U9's artifact, not in this tree). The ONLY deferred piece
-is the burn, named by book_shot.EXCERPT_OVERLAY_HOOK and called from
-final_assembler.assembler.excerpt_overlay_stage, which reports a PENDING row
-while U9's module is absent.
+The excerpt seam is measured, never assumed: named by
+book_shot.EXCERPT_OVERLAY_HOOK and called from
+final_assembler.assembler.excerpt_overlay_stage, which reports a PENDING
+row while U9's final_assembler/captions_burn.py is absent and the burn
+once it lands. This test passes in either world; it never asserts a
+file's absence.
 
 Run: python3 scripts/core/book_shot/test_book_pages_d1.py
 """
@@ -210,25 +210,51 @@ def test_excerpt_never_reaches_a_video_model():
     check("(d) overlay names that hook", overlay["hook"] == BS.EXCERPT_OVERLAY_HOOK,
           overlay["hook"])
     import final_assembler.assembler as AS
-    row_pending = AS.excerpt_overlay_stage(
+    burn_py = os.path.join(CORE, "final_assembler", "captions_burn.py")
+    row_seam = AS.excerpt_overlay_stage(
         {"excerpt_overlay": {"lines": list(lines)}})
-    check("(d) with no captions_burn.py the call site reports PENDING",
-          row_pending["pending"] is True
-          and row_pending["reason_code"] == "BOOK_OVERLAY_UNAVAILABLE"
-          and row_pending["rows"][0]["hook"]
-          == "captions_burn.overlay_excerpt", row_pending)
+    check("(d) the seam row names U9's hook in either world",
+          bool(row_seam["rows"])
+          and row_seam["rows"][0]["hook"] == "captions_burn.overlay_excerpt",
+          row_seam)
+    if os.path.isfile(burn_py):
+        # U9 landed: the call site calls overlay_excerpt; the burn is its.
+        check("(d) with captions_burn.py present the seam reports the burn",
+              row_seam["pending"] is False
+              and row_seam["reason_code"] is None
+              and row_seam["rows"][0]["burned"] is True, row_seam)
+    else:
+        # U9 not in this tree yet: the call site reports PENDING, no burn.
+        check("(d) with no captions_burn.py the call site reports PENDING",
+              row_seam["pending"] is True
+              and row_seam["reason_code"] == "BOOK_OVERLAY_UNAVAILABLE"
+              and row_seam["rows"][0]["burned"] is False, row_seam)
     check("(d) no overlay -> no row at all",
           AS.excerpt_overlay_stage({}) == {"rows": [], "pending": False,
                                            "reason_code": None},
           AS.excerpt_overlay_stage({}))
-    # No second burn module: captions_burn.py is U9's and must not exist here,
-    # and nothing in this tree may define a burn entry point.
-    root = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
-    check("(d) no second burn module exists (U9's file is absent)",
-          not os.path.exists(os.path.join(
-              root, "75-drama-song-ad-factory", "scripts", "core",
-              "final_assembler", "captions_burn.py")),
-          "scripts/core/final_assembler/captions_burn.py")
+    # No SECOND burn module: the excerpt burn entry point may live only in
+    # final_assembler/captions_burn.py (U9's artifact, present or not).
+    strays = []
+    for _dp, _dns, _fns in os.walk(CORE):
+        for _fn in _fns:
+            if not _fn.endswith(".py") or _fn.startswith("test_"):
+                continue
+            _path = os.path.join(_dp, _fn)
+            if _fn == "captions_burn.py":
+                if os.path.dirname(_path) != os.path.join(
+                        CORE, "final_assembler"):
+                    strays.append(os.path.relpath(_path, CORE))
+                continue
+            try:
+                _txt = open(_path, encoding="utf-8").read()
+            except OSError:
+                continue
+            if any(_ln.startswith(("def overlay_excerpt", "def burn_"))
+                   for _ln in _txt.splitlines()):
+                strays.append(os.path.relpath(_path, CORE))
+    check("(d) no second burn module (only final_assembler/captions_burn.py)",
+          strays == [], strays)
     # The placeholder itself is GONE: book_shot names no module path and
     # defines no burn entry point (checked without spelling either name, so
     # a source scan of this tree reads 0 hits for them).
