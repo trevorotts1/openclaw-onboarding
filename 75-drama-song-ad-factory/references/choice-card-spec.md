@@ -52,6 +52,10 @@ Your drama song ad
                 the song underneath, no echo effect; not with Sketch to Life)
   Clips:        (5 and 10 minutes only) automatic 60- or 90-second clips
                 for ads and Reels
+
+                the song underneath, no echo effect)
+  Clips:        (3, 5 and 10 minutes) automatic 60-second and 90-second
+                clips to post on social media, included in the price
   Video model:  MiniMax H3, 768P  (RECOMMENDED)   [see all models and prices]
   Villain:      <name>, shown in N shots    (FU-U16; from the story plan)
   Price:        computed by Skill 74 `price`   (+ the 20% retake allowance)
@@ -178,6 +182,23 @@ Test: `character_library/test_saved_character_question.py`.
 ## 3. Field rules
 
 ### 3.1 Length
+
+The intake card asks it as one full question with five numbered options, each
+saying what the client gets (`core/choice_card/intake_card`, LENGTH):
+
+```text
+How long do you want your ad to be? The longer ads also come with short clips you can post on social media.
+1. 60 seconds
+2. 90 seconds
+3. 3 minutes + 60s and 90s clips
+4. 5 minutes + 60s and 90s clips
+5. 10 minutes (the long version) + 60s and 90s clips
+Reply with a number, or say "recommended".
+```
+
+The recap reads plainly: "Length: 3 minutes + 60s and 90s clips". The intake
+card offers these five lengths; the style-defaults menu (`style_defaults`)
+still carries the F15 2-minute value for the batch card.
 
 Offered values, in order: **60 seconds, 90 seconds, 2 minutes (new, added
 by F15, owner order 2026-10-08), 3 minutes, 5 minutes, 10-minute long
@@ -348,6 +369,21 @@ Decision 32, plan 6.13.
   TODO(FU-U9): refresh this sentence when caption read-back off the rendered
   frames lands (no onboarding branch; 999 `unit/FU-U9` carries only the
   excerpt burn).
+
+- Automatic clips come with the **3-minute, 5-minute and 10-minute** ads:
+  one 60-second clip and one 90-second clip each (`core/clip_cutdown`,
+  `clips_for`). On 60 s and 90 s the Clips row says "not offered".
+- Cutting a clip is free: it is an FFmpeg edit of the finished video, so the
+  price of the ad already includes the clips (the Clips row shows $0.00 and
+  says "included in the price").
+- `core/clip_cutdown.plan_clips` picks each clip from the timeline's lines:
+  whole lines only, at most L-2 seconds (58 s and 88 s), never into the end
+  card, opening on a line that puts the first sung hook inside the first 15%
+  of the clip (`core/sung_hook` placement), carrying as many hooks as fit
+  (two when the ad has two), preferring the window with the most story beats.
+  No window that meets those rules fails closed (`CLIP_NO_WINDOW`).
+  `build_argv` / `run_clips` cut it with a short fade-out; the captions are
+  re-timed by `captions_offset_s`.
 - Long-version shape choice is shown on the card: generate both shapes
   (roughly double the video cost, clips cut from the 9:16 version) or
   centre-crop to 9:16 (free, may cut off faces, the client must accept it).

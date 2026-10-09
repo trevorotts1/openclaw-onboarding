@@ -254,7 +254,7 @@ card. The answers and the time answered go into the receipt
 | Style | Lifelike 3D, 2D Hand-Painted, Sketch to Life, Canvas to Life, Canvas to 3D | Lifelike 3D |
 | Music | Soul Ballad, R&B Flow, Soul Rise | Soul Ballad |
 | Voice | All Suno, Velvet Voiceover | All Suno |
-| Clips | 60-second and 90-second clips | offered for the 5-minute and 10-minute lengths only |
+| Clips | 60-second and 90-second clips | come with the 3-minute, 5-minute and 10-minute lengths, included in the price |
 | Video model | MiniMax H3 768P (RECOMMENDED) and the full APPROVED list | MiniMax H3 at 768P |
 
 - **Lengths** 60 s / 90 s / **2 minutes (new, added by F15)** / 3 min /
@@ -262,9 +262,10 @@ card. The answers and the time answered go into the receipt
   never a cut-down.
 - **Shapes** 9:16, 16:9 or both, each generated natively - never a squash
   or crop of the other. "Both shapes" shows its own price before approval.
-- **Clips:** automatic 60- or 90-second clips are offered **only** for the
-  5-minute and 10-minute lengths. Cutting is free (FFmpeg edit, no new AI
-  media); the AI that picks the moments runs on the client's own AI plan.
+- **Clips:** the 3-minute, 5-minute and 10-minute ads each come with one
+  automatic 60-second clip and one 90-second clip (`core/clip_cutdown`).
+  Cutting is free (FFmpeg edit, no new AI media), so the price already
+  includes them. 60 s and 90 s ads get none.
 - **Five looks:** each look owns its style-bible block, its own switching
   rules and its own QC. The three hybrids switch on matched poses with a
   0.3-0.4 s dissolve, hold each style at least 3 seconds, never flicker, and

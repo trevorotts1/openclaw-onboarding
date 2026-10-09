@@ -45,6 +45,10 @@ _LENGTH_LABELS = {
     "5 minutes": 300,
     "10-minute long version": 600,
     "10 minutes": 600,
+    # intake card answers (the card text is what the client picked)
+    "3 minutes + 60s and 90s clips": 180,
+    "5 minutes + 60s and 90s clips": 300,
+    "10 minutes (the long version) + 60s and 90s clips": 600,
 }
 
 _SHAPE_ALIASES = {
