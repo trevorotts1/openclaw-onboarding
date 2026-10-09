@@ -217,10 +217,35 @@ def conversation(replies, questions=None):
     return {"answers": answers, "done": done, "message": msg}
 
 
-def render_card(questions=None):
-    """The whole card as one string: blank line between questions, closing line."""
+def render_card(questions=None, book_plan=None, notes=()):
+    """The whole card as one string: blank line between questions, closing line.
+
+    FU-U11: a book card also carries the Book shots APPROVAL BLOCK. It shows
+    approvals and notices only -- it adds no question and no option, so the
+    card's answer shape (one number per question, then yes) is unchanged.
+    """
     qs = questions or QUESTIONS
-    return "\n\n".join(_blocks(qs) + [CLOSING_LINE])
+    blocks = _blocks(qs) + [CLOSING_LINE]
+    book = _book_block(book_plan, notes)
+    if book:
+        blocks = blocks + book
+    return "\n\n".join(blocks)
+
+
+def _book_block(book_plan, notes=()):
+    """FU-U11: the Book shots approval block, or [] for a non-book card."""
+    if not book_plan:
+        return []
+    _core = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    if _core not in sys.path:
+        sys.path.insert(0, _core)
+    try:
+        from book_shot import book_shot as BS
+    except ImportError:
+        return ["Book shots: the book plan is present but the book module "
+                "could not be loaded, so its rows cannot be shown."]
+    return ["\n".join(BS.plan_card_block(book_plan, notes))]
 
 
 def format_questions(texts):
@@ -250,11 +275,18 @@ def _split_long(block, limit):
     return out + ([cur] if cur else [])
 
 
-def render_messages(questions=None, limit=TELEGRAM_LIMIT):
+def render_messages(questions=None, limit=TELEGRAM_LIMIT, book_plan=None,
+                    notes=()):
     """The card as a list of messages, each <= limit chars, split only between
-    questions (one message per question when they do not all fit)."""
+    questions (one message per question when they do not all fit).
+
+    FU-U11: a book card's approval block rides as its own message(s), after
+    the closing line; it is never split mid-row unless a single row exceeds
+    the limit.
+    """
     parts = []
-    for b in _blocks(questions or QUESTIONS) + [CLOSING_LINE]:
+    for b in _blocks(questions or QUESTIONS) + [CLOSING_LINE] + \
+            _book_block(book_plan, notes):
         parts.extend(_split_long(b, limit) if len(b) > limit else [b])
     msgs, cur = [], ""
     for p in parts:

@@ -136,6 +136,9 @@ def render(card, price_fn):
     or the intake card). ``price_fn`` is the Skill 74 ``price`` adapter
     ``(model, units) -> JSON``; None means render unpriced.
 
+    FU-U11: when the card carries a book plan (``book_plan``), the Book shots
+    APPROVAL BLOCK is appended -- approvals and notices, never a new choice.
+
     Returns (text, priced_ok). The card always renders every row; a card
     whose price cannot be read says "Price unavailable" on the total and is
     safe to show, and approval must stay blocked (fail closed, 4.4).
@@ -190,7 +193,26 @@ def render(card, price_fn):
         reasons = [str(r) for r in ((envelope or {}).get("reasons") or [])]
         if reasons:
             lines.append("  (%s)" % "; ".join(reasons[:4]))
+    lines += _book_block(card)
     return "\n".join(lines), priced_ok
+
+
+def _book_block(card):
+    """FU-U11: the Book shots approval block lines, or [] for a non-book card.
+
+    Imported lazily so a card render never depends on the book module being
+    present (and a non-book card never pays for it).
+    """
+    plan = (card or {}).get("book_plan")
+    if not plan:
+        return []
+    try:
+        from book_shot import book_shot as BS
+    except ImportError:
+        return ["", "Book shots: the book plan is present but the book module "
+                    "could not be loaded, so its rows cannot be shown."]
+    notes = list((card or {}).get("card_notes") or [])
+    return [""] + BS.plan_card_block(plan, notes)
 
 
 def _load_shipped_catalog():

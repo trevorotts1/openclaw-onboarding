@@ -265,20 +265,21 @@ def book_shot_refusal(model, request):
     """FU-U10: a BOOK video job needs the contract, or it does not dispatch.
 
     A request whose shot kind is "book" on a video model must carry
-    (a) the approved book PLAN hash -- but ONLY when the request carries a
-    ``book_plan_sha256`` field at all: the hash arrives with U11, so the plan
-    side of this check stays dormant until that field exists rather than
-    blocking a book job on a field no producer writes yet; and
+    (a) the approved book PLAN hash -- a book job that carries NO
+    ``book_plan_sha256`` is REFUSED with BOOK_PLAN_NOT_APPROVED (U11's
+    producer writes the field, so the requirement is ACTIVE: the dormant
+    period U10 shipped for ended when the producer landed); and
     (b) a start frame MADE FROM the cover file -- request["book_start_frame"]
     (or request["start_frame"]) naming a path whose sha256 equals the cover
     sha256 carried by the same request (request["book_cover_sha256"]) or
     computed from request["book_cover_path"].
 
     -> None when not a book job or the contract holds, else the refusal dict
-    with reason BOOK_SHOT_NOT_CONTRACTED. Fail-closed: an unreadable start
-    frame, a missing cover reference, or a start frame made from other bytes
-    refuses. Never touches the LIPSYNC_* seams: a lip-sync model is not a
-    book shot entry point.
+    with reason BOOK_PLAN_NOT_APPROVED (plan side) or
+    BOOK_SHOT_NOT_CONTRACTED (start frame side). Fail-closed: an unreadable
+    start frame, a missing cover reference, a missing or mismatched plan
+    hash, or a start frame made from other bytes refuses. Never touches the
+    LIPSYNC_* seams: a lip-sync model is not a book shot entry point.
     """
     req = request if isinstance(request, dict) else {}
     kind = req.get("shot_kind") or req.get("kind")
@@ -287,13 +288,27 @@ def book_shot_refusal(model, request):
     if not (req.get("request_kind") == "video" or _is_menu_video(model)
             or _modality(model) == "video"):
         return None
-    missing = []
-    # (a) plan hash: guarded so the check activates only when the field exists
-    # (U11 writes it; until then its absence is not a book-job failure).
+    # (a) plan hash: U11's producer writes book_plan_sha256, so the
+    # requirement is ACTIVE. Missing, empty, or mismatched -> refused.
     approved = req.get("approved_book_plan_sha256")
     carried = req.get("book_plan_sha256")
-    if carried is not None and str(carried) != str(approved or ""):
-        missing.append("book_plan_sha256 does not match the approved plan")
+    if not carried:
+        return {"reason_code": "BOOK_PLAN_NOT_APPROVED",
+                "detail": "no book_plan_sha256: the book plan has not been "
+                          "approved for this job",
+                "next_action": "Hash the approved book plan "
+                               "(book_shot.plan_sha256) and carry it as "
+                               "book_plan_sha256 alongside "
+                               "approved_book_plan_sha256, then resubmit."}
+    if not approved or str(carried) != str(approved):
+        return {"reason_code": "BOOK_PLAN_NOT_APPROVED",
+                "detail": "book_plan_sha256 does not match the approved "
+                          "plan (carried %s, approved %s)"
+                          % (_short(carried), _short(approved)),
+                "next_action": "The plan changed after approval. Re-approve "
+                               "the current plan and carry its hash, then "
+                               "resubmit."}
+    missing = []
     # (b) the start frame must be made from the cover file, byte for byte.
     frame = req.get("book_start_frame") or req.get("start_frame")
     cover_sha = req.get("book_cover_sha256")
@@ -323,6 +338,11 @@ def book_shot_refusal(model, request):
                                "(book_shot.prompt_blocks + image_model_blocks), "
                                "then resubmit."}
     return None
+
+def _short(value, n=12):
+    """A hash prefix for a refusal message. Never the secret, never a file."""
+    s = str(value or "")
+    return (s[:n] + "...") if len(s) > n else (s or "none")
 
 def _sha256_path(path):
     if not path or not os.path.isfile(str(path)):
