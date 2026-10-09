@@ -641,14 +641,16 @@ def required_departments(fs, oc_root, ws, state, folders):
     Returns (required, source, stray): required maps the canonical label to every
     spelling it may appear under (folder names + canonicalized chosen/floor slugs);
     stray lists folders outside the requirement (reported, never failed, never
-    deleted). No chosen list at all (a pre-artifact build) => the standard FLOOR
-    stays required and every non-floor folder is STRAY — a folder scan is never
-    the requirement, and promoting folders to hard requirements was the chronic
-    phase=7z phantom-FAIL class. A missing sibling module => the old
-    folder-scan behaviour (fail-closed, named source)."""
+    deleted). No chosen list at all (a pre-artifact build) => required is EMPTY
+    ({}: nothing is demanded) and every on-disk folder is STRAY — the chosen set
+    is UNKNOWN, the standard floor is NOT enforced from this function (floor
+    fail-closed lives in qc-assert-workspace-departments-built.sh), and promoting
+    folders to hard requirements was the chronic phase=7z phantom-FAIL class.
+    A missing sibling module => a NAMED fail-closed source
+    "floor/board-join module unavailable" (the old bare folder-scan promotion)."""
     df, bj = _load_floor_module(), _load_board_join_module()
     if df is None or bj is None:
-        return {s: {s} for s in folders}, "folder-scan (floor/board-join module unavailable)", []
+        return {s: {s} for s in folders}, "floor/board-join module unavailable", []
     canon = bj._load_canonical_slug()
     key = bj.make_keyer(df, canon)
 

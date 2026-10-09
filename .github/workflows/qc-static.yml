@@ -1391,6 +1391,12 @@ jobs:
           bash tests/unit/core-updates-stub-sentinel-skip.test.sh
           bash tests/unit/qc-scripts-eval-of-echo-quoting.test.sh
 
+      - name: "W2b repo-fix lock: skill-06 password-hygiene regex catches trailing-prose leaks"
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash tests/unit/qc-skill06-password-hygiene-regex.test.sh
+
       - name: "box-fix locks: archived-skill retirement, update summary + JEV text, 999 clone on 9Router boxes"
         shell: bash
         run: |
