@@ -86,6 +86,7 @@ _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 import master_length  # noqa: E402  (Part I I4)
+import delivery_audio  # noqa: E402  (FU-AAC-FINAL-MUX)
 
 TOOL_NAME = "final_assembler"
 TOOL_VERSION = "1.0.1"
@@ -1055,12 +1056,12 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
         fc.append(f"[{song_idx}:a]atrim=duration={total:.6f},"
                   f"apad=whole_dur={total:.6f},aresample=48000,"
                   "aformat=channel_layouts=stereo[aout]")
-        amap = ["-map", vlast, "-map", "[aout]", "-c:a", "aac"]
+        amap = ["-map", vlast, "-map", "[aout]", *delivery_audio.AUDIO_OUT_ARGS]
     else:
         amap = ["-map", vlast, "-an"]
     cmd += ["-filter_complex", ";".join(fc),
             *amap, "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            "-r", f"{fps:g}", "-movflags", "faststart", str(output)]
+            "-r", f"{fps:g}", *delivery_audio.FASTSTART_ARGS, str(output)]
     return cmd
 
 
@@ -1369,6 +1370,12 @@ def assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
         if abs(adur - vdur) > frame + 1e-3:
             return _fail("AV_DRIFT",
                          next_action="audio/video differ by >1 frame",
+                         evidence=evid)
+    if plan["song_path"]:  # FU-AAC-FINAL-MUX delivery gate: AAC, not silent
+        ag = delivery_audio.check_delivery_audio(output, ffprobe, ffmpeg)
+        evid["delivery_audio"] = ag
+        if not ag["ok"]:
+            return _fail(ag["reason_code"], next_action=ag["reason"],
                          evidence=evid)
     # Load governor: the master is verified; delete the stage intermediates the
     # timeline lists (never deliverables), log each deletion, record heavy-job waits.

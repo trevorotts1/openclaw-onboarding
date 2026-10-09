@@ -1661,7 +1661,7 @@ def check_song_mp3(ad_dir, ad_audio_path, title, author, ffprobe="ffprobe",
     return rows
 
 
-def delivery_battery(ad_dir, ad_audio_path, title, author):
+def delivery_battery(ad_dir, ad_audio_path, title, author, video_path=None):
     """The file-backed delivery battery rows (FU-U14: the song mp3 item).
 
     Same contract shape as evaluate(): pass / rows / reason_code /
@@ -1669,6 +1669,12 @@ def delivery_battery(ad_dir, ad_audio_path, title, author):
     repair scope) and never cancels the run.
     """
     rows = check_song_mp3(ad_dir, ad_audio_path, title, author)
+    if video_path:  # FU-AAC-FINAL-MUX: AAC + not silent, before delivery
+        import delivery_audio
+        g = delivery_audio.check_delivery_audio(video_path)
+        rows.append({"item": "DELIVERY_AUDIO_AAC",
+                     "answer": "yes" if g["ok"] else "no",
+                     "measurement": g["reason"], "code": g["reason_code"]})
     failing = [r["item"] for r in rows if r["answer"] != "yes"]
     codes = sorted({r.get("code") for r in rows if r.get("code")})
     detail = "; ".join("%s: %s" % (r["item"], r["measurement"])
