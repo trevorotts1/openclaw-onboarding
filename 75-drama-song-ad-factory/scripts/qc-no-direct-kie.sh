@@ -6,6 +6,15 @@
 # a QC fail). Scope: this skill tree (onboarding). The 999 copy is
 # W3-A's — run this script there is their unit's job, not ours.
 #
+# "Endpoint" means a KIE host occurrence — kie.ai, api.kie.ai, or any
+# other subdomain, including ones nobody has thought of yet. The ONE
+# exception is the documentation host docs.kie.ai (a docs URL is a
+# citation, not an API call), and it is applied per host OCCURRENCE:
+# -o pulls each host out of the line as its own record, so a line
+# carrying both a docs URL and a real api URL still fails on the api
+# record. A line-level filter would discard that whole line and let the
+# real direct call escape.
+#
 # Env: DRAMA75_CORE=<scripts/core dir> (default: resolve from this file).
 # Exit 0 = clean; exit 2 = direct-KIE call found (paths printed); exit 1 =
 # usage error.
@@ -24,17 +33,20 @@ hits="$(mktemp /tmp/qcndk-hits.XXXXXX)"
 trap 'rm -f "$hits"' EXIT
 
 if command -v grep >/dev/null 2>&1; then
-  # -r over core/, skip tests + pycache; endpoint = kie.ai host or KIE job
-  # submit path appearing in a non-dispatch module.
+  # -r over core/, skip tests + pycache; endpoint = a KIE host token.
+  # -o makes every host occurrence its own "path:line:host" record, so the
+  # docs.kie.ai exemption below is decided per OCCURRENCE, never per line;
+  # every host that is not exactly docs.kie.ai still bites.
   # shellcheck disable=SC2086
-  grep -rInE \
+  grep -rInoE \
     --exclude-dir=__pycache__ \
     --exclude-dir=.git \
     --exclude='test_*.py' \
     --exclude='*_test.py' \
     --exclude='conftest.py' \
-    -e '(https?://)?(api\.)?kie\.ai' \
+    -e '([A-Za-z0-9_-]+\.)*kie\.ai' \
     "$core" 2>/dev/null \
+  | grep -vE ':(docs\.kie\.ai)$' \
   | grep -vE '/kie_dispatch/(kie_dispatch|model_lock|unknown_resolution/|test_)' \
   | awk -F: '{print $1}' | sort -u > "$hits" || true
 else
