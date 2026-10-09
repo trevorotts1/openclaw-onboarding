@@ -141,7 +141,7 @@ STYLES = {
             "brushed kit entering at the chorus, deep rounded bass, "
             "soulful lead vocal with melismatic runs, close dry upfront "
             "vocal, minor key, restrained verse opening into a full-voiced "
-            "chorus, no distortion"
+            "chorus, no distortion."
         ),
     },
     "rnb-flow": {
