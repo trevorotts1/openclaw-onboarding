@@ -116,9 +116,9 @@ def test_soul_rise_alias_passes():
 def test_menu_values_pass_and_invented_numbers_refuse():
     ok = {"style": ["Soul Rise", "soul-rise", "R&B Flow", "soul-ballad"],
           "look": ["Lifelike 3D", "canvas-to-3d", "Sketch to Life"],
-          "length": ["60s", "90", "3m", "600", 180, 90],
-          "length_option": [60, 90, 180, 300, 600],
-          "target_length_s": [60, 90, 180, 300, 600],
+          "length": ["60s", "90", "2m", "3m", "600", 120, 180, 90],
+          "length_option": [60, 90, 120, 180, 300, 600],
+          "target_length_s": [60, 90, 120, 180, 300, 600],
           "spoken_share": [0.15, 0.225, 0.30]}
     for key, values in ok.items():
         for v in values:
@@ -127,7 +127,7 @@ def test_menu_values_pass_and_invented_numbers_refuse():
                   IB.reject_any_invented({key: v}))
     for brief in ({"style": "upbeat tropical EDM"},
                   {"length": 77}, {"length": "77 seconds"},
-                  {"length_option": 240}, {"target_length_s": 120},
+                  {"length_option": 240}, {"target_length_s": 150},
                   {"spoken_share": 0.80}, {"spoken_share": 10},
                   {"music_style": "lofi chill beats"},
                   {"look": "neon cyberpunk"}):

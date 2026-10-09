@@ -56,11 +56,38 @@ CHECKS = frozenset({
     # U15h (design 8.9): every paid prompt in the spend ledger carries a
     # matching receipt; final QC requires one row per ledger job.
     "prompt_compliance",
+    # U8: the Script gate (SOP DS-9 gate 1) carries the spelling and
+    # grammar record as one more independent check; see SCRIPT_STAGES.
+    "spelling_grammar",
 })
 # 17.8 critical categories (identity, lyrics, offer, claim, product_label,
 # CTA) ride on these checks: lyrics carries the critical-word coverage,
 # text_product carries identity/copy/CTA at the mobile rendition.
 CRITICAL_CHECKS = frozenset({"lyrics", "text_product"})
+
+#: U8: the checks the Script stage always requires. The script judge already
+#: covers beats/claims/CTA; spelling and grammar ride the SAME gate as a
+#: required record, so a stage cannot pass with the words unread.
+SCRIPT_STAGES = frozenset({"script", "script-lyrics"})
+
+def required_checks(stage, required, campaign_type=None):
+    """FU-U10: a book campaign's shots stage also requires book_orientation.
+
+    Acceptance is 'no book clip is accepted without a PASS book_orientation
+    record from a calibrated checker'; requiring the check for EVERY book
+    campaign (not just ones that remembered to ask) is what makes that true.
+
+    U8: a Script-stage gate always also requires the spelling_grammar record
+    (the words are read by the same independent judge, not by a later stage).
+    """
+    req = list(required or [])
+    ct = campaign_type if isinstance(campaign_type, str) else ""
+    if stage == "shots" and ct.strip().lower() in BOOK_CAMPAIGN_TYPES \
+            and "book_orientation" not in req:
+        req.append("book_orientation")
+    if stage in SCRIPT_STAGES and "spelling_grammar" not in req:
+        req.append("spelling_grammar")
+    return req
 
 EXIT = {"ok": 0, "waiting": 3, "parked": 4, "rejected": 5, "error": 1}
 
@@ -226,20 +253,6 @@ def validate_record(rec):
 
 BOOK_CAMPAIGN_TYPES = frozenset({"book"})
 
-def required_checks(stage, required, campaign_type=None):
-    """FU-U10: a book campaign's shots stage also requires book_orientation.
-
-    Acceptance is 'no book clip is accepted without a PASS book_orientation
-    record from a calibrated checker'; requiring the check for EVERY book
-    campaign (not just ones that remembered to ask) is what makes that true.
-    """
-    req = list(required or [])
-    ct = campaign_type if isinstance(campaign_type, str) else ""
-    if stage == "shots" and ct.strip().lower() in BOOK_CAMPAIGN_TYPES \
-            and "book_orientation" not in req:
-        req.append("book_orientation")
-    return req
-
 def evaluate(run_id, stage, records, makers, required,
              critical=CRITICAL_CHECKS, profile_version=None,
              expected_profile_version=None, expected_checker_version=None,
@@ -258,6 +271,10 @@ def evaluate(run_id, stage, records, makers, required,
     makers maps check_id -> maker identity (from artifact provenance).
     gate is PASS (advance), FAIL (targeted repair allowed) or BLOCKED
     (structural problem: no repair of the same records can pass).
+
+    U8: a Script-stage gate always also requires the ``spelling_grammar``
+    record (see ``required_checks``) -- the words are read by the same
+    independent judge that reads the beats, not by a later stage.
     """
     failures = []
     required = required_checks(stage, required, campaign_type)

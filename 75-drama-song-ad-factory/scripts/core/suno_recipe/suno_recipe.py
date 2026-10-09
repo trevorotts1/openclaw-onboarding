@@ -530,7 +530,7 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
         best = max(hooks, key=keys.count)
         errs += _SH.check_sheet_count(sheet, best, length_s)
     if length_s is not None:
-        p = _LF.plan(length_s + _LF.END_EARLY_S, spoken_share_pct)
+        p = _LF.plan(length_s + _LF.END_EARLY_S, spoken_share_pct, style_id=style_id)
         total = sheet_words(sheet)
         # R&B word budget: U2 landed on 999 main only (MGB010a); on the
         # onboarding tree the rap budget is still open (file 18 decision 1),

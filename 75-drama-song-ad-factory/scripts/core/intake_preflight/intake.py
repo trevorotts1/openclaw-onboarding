@@ -191,6 +191,56 @@ def _as_shape(v):
     return _SHAPE_ALIASES.get(re.sub(r"\s+", " ", v.strip().lower()), v.strip())
 
 
+def _load_protected_names():
+    """U8: protected_names for the client-word spelling question, else None."""
+    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    try:
+        import protected_names as PN  # noqa: PLC0415
+        return PN
+    except Exception:  # noqa: BLE001 - module missing: no question, no crash
+        return None
+
+
+_PN = _load_protected_names()
+
+def client_typo_question(fields):
+    """U8: (question dict, None) when the CLIENT's own words carry a word
+    that is not a real word, else (None, None).
+
+    Doc 18 B.2: a typo in the client's packet is never auto-fixed. It goes
+    back as ONE plain question naming the word, and the words are left
+    exactly as the client wrote them. Words the client approved
+    (``approved_spellings`` on the brief: dialect, vernacular, brand forms)
+    are never asked about, and the question rides the story questions -- it
+    does not add a fourth slot.
+    """
+    if _PN is None:
+        return None, None
+    lines = []
+    for value in (fields.get("packet_lines"), fields.get("on_screen_text")):
+        lines.extend(_PN._lines(value))
+    if not lines:
+        return None, None
+    protected = list(fields.get("protected") or [])
+    extra = list(fields.get("approved_spellings") or [])
+    errors = _PN.check_lyrics_spelling(lines, protected, extra)
+    if not errors:
+        return None, None
+    words, seen = [], set()
+    for e in errors:
+        for tok in _PN._tokens(e.split("word", 1)[-1]):
+            if tok and tok not in seen:
+                seen.add(tok)
+                words.append(tok)
+    shown = ", ".join(repr(w) for w in words[:3])
+    return ({"id": "client_typo",
+             "question": ("Your storyboard says %s. Is that exactly right, "
+                          "or did you mean something else? We will use your "
+                          "words as written." % shown),
+             "words": words}, None)
+
 def detect_injection(brief):
     """NAMES of brief fields whose text matches instruction-override patterns."""
     hits = []
@@ -370,6 +420,25 @@ def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None
                 "digest": digest, "provenance": prov, "untrusted_fields": hits,
                 "auth_status": status, "approval_invalidated": False, "changes": [],
                 "next_action": "Remove instruction language from brief fields and resubmit."}
+    # U8: the CLIENT's own words are spell-checked at intake, for free. A
+    # word that is not a real word goes BACK AS ONE QUESTION naming it --
+    # never an auto-fix, and the brief keeps the client's spelling.
+    probe = dict(fields, packet_lines=(brief or {}).get("packet_lines"),
+                 on_screen_text=(brief or {}).get("on_screen_text"),
+                 approved_spellings=(brief or {}).get("approved_spellings"),
+                 protected=(_PN.protected_list(brief)
+                            if _PN is not None else []))
+    typo, _ = client_typo_question(probe)
+    if typo is not None:
+        return {"outcome": "waiting", "reason_code": "client-typo-confirmation",
+                "questions": [typo],
+                "question_message": _fmt([typo["question"]]),
+                "summary": summary, "digest": digest, "provenance": prov,
+                "auth_status": status, "approval_invalidated": False,
+                "changes": [],
+                "next_action": "Answer the one question about your own words; "
+                               "your text stays exactly as you wrote it "
+                               "either way."}
     if resume_state and isinstance(resume_state, dict) and resume_state.get("digest"):
         prior = resume_state.get("summary") or {}
         cur = {k: summary.get(k) for k in ("offer", "audience", "cta", "placement",

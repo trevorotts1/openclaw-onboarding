@@ -1,3 +1,7 @@
+## [v26.4.18]  -  2026-10-09  -  Batch MGB015: three Skill 75 units (drama song ad factory v2.9.6)
+
+Released as one batch. Units: #1744 FU-U2 style-aware length plan (a rap style keeps the fixed CTA cap and the unspent allowance becomes the rap budget); #1745 FU-U8 captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags); and #1749 FU-U15i docs in lockstep with the prompt. Skill 75 v2.9.6.
+
 ## [v26.4.17]  -  2026-10-09  -  Batch MGB012: eight Skill 75 units (drama song ad factory v2.9.5)
 
 Released as one batch. Units: #1725 FU-U1 one lyric tag grammar, rap-aware, pytest-clean; #1733 FU-U7 video/avatar prompt caps at the caller; #1730 FU-U15e Kling avatar template; #1734 FU-U15d Suno V6 templates per style and per length; #1735 FU-U15b H3 assembler and the 5,000-6,800 band; #1742 U15f Kling as the card's video model; #1743 U15h length classes, product seconds and lanes in one table plus prompt compliance; and #1740 FU-U5 voice tags come from the cast. Skill 75 v2.9.5. Paired Command Center: v7.6.112.
