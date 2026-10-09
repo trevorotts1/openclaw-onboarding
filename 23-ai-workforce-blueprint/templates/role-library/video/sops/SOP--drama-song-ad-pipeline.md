@@ -234,18 +234,24 @@ another character's line.
 
 **Steps:**
 
-1. Generate the song with Suno through Skill 68. One generation covers every
-   length (V6 accepts 10-360 s); use **Suno extend only to hit an exact
-   length or to repair a section**, never as routine billing.
+1. Generate the song with Suno through Skill 68. One V6 generation covers
+   any length of 10-360 s; 60 s through 5 minutes are one base take
+   (`length-classes.json` `suno_generations`), and 10 minutes is **1 base plus
+   3 extends** (`length_formula.plan`). Use **Suno extend only to hit an
+   exact length or to repair a section**, never as routine billing: extend
+   carries no duration field, so the extended length is measured back, never
+   requested (`core/audio_c3/extend/suno_extend.py`).
 2. Apply the chosen music style: Soul Ballad (slow, emotional), R&B Flow
    (rap verses with a sung hook), or Soul Rise (slow through the pain, lifts
    at the turning point). One tag grammar parses the lyric sheet
    (`[Name (sung|spoken|rap): note]`); rap is counted in the word budget and
    allowed only for R&B Flow; an unclassifiable tag is `UNTAGGED_LYRIC_LINES`.
    The Suno request is measured last against `prompt_limits` (lyrics 5,000,
-   style 1,000 after the ending, title 80, negative tags 1,000); over any cap
-   is `PROMPT_OVER_CAP`, never truncated. Per-style spoken bands (FU-U3) are an
-   open pull request; refresh this step when it lands.
+   style 1,000 after the ending, title 80, negative tags 1,000 — the last is a
+   skill-75 override marked UNVERIFIED until the generate-music docs are
+   re-read); over any cap is `PROMPT_OVER_CAP`, never truncated. Per-style
+   spoken bands (FU-U3) are an open pull request; refresh this step when it
+   lands.
 3. All-Suno is the default: sung and spoken lines all come from Suno, spoken
    lines play over the music bed only, no singing-underneath layer. Velvet
    Voiceover is the only exception (DS-2 step 6).
@@ -259,9 +265,11 @@ another character's line.
    (modes, beat-to-mode map, switch rules, lip-sync modes); the look text
    lives once, in `references/prompt-templates/modes/`.
    The style text is data, not prose: `suno_recipe` reads
-   `references/prompt-templates/music/<style>.json` and `models/suno-v6.json`
-   through `prompt_templates.suno_parts(style_id, length_s, vocal_gender)`,
-   and the caps are measured on the FINAL payload after `ending_qc` (U15d).
+   `references/prompt-templates/music/<style>.json` and
+   `references/prompt-templates/models/suno-v6.json` through
+   `prompt_templates.load("music", style_id)` and `load("model", "suno-v6")`
+   (`suno_recipe.music_block` / `model_block`), and the caps are measured on
+   the FINAL payload after `ending_qc` (U15d).
    Length shapes (shots, H3 clips, lip-sync clips and seconds, lanes, hooks,
    song words, spoken share, product seconds) come from the ONE table,
    `references/prompt-templates/length-classes.json`
@@ -270,7 +278,10 @@ another character's line.
 6. **Pitch check with an octave-error guard:** every line's measured pitch
    must fall in its character's gender range (roughly 85-155 Hz male,
    165-255 Hz female), and same-gender characters must measure as different
-   voices. A mismatch fails and the line is regenerated in Suno.
+   voices. A mismatch fails and the line is regenerated in Suno, bounded at
+   `line_voice_fit.MAX_ROUNDS` (3); a line still out of band after the last
+   round rejects the run - the closest take is never kept
+   (`qc_voice_match/line_voice_fit.py`).
 
 **Outputs:** Song, style prompt, timing map, style-bible block, pitch check
 record.
@@ -313,10 +324,12 @@ without an identity lock.
    `prompt_templates.assemble_kling_avatar` (three sentences, one emotion, the
    `who` descriptor from the look's mode).
 6. Every assembled payload gets a prompt receipt (`prompt_sha256`, template
-   version, per-section character map, band verdict). A paid job whose prompt
-   has no matching receipt, or whose receipt says REFUSE or TRIM, is refused
-   `PROMPT_NOT_TEMPLATED` before the ledger, and final QC requires a
-   `prompt_compliance` record (one row per paid job matched to its receipt).
+   version, per-section character map, band verdict). A paid MiniMax H3 job
+   whose prompt has no matching receipt, or whose receipt says REFUSE or TRIM,
+   is refused `PROMPT_NOT_TEMPLATED` before the ledger — the refusal is scoped
+   to `minimax-h3/*` (`TEMPLATED_VIDEO_PREFIXES`); a Kling avatar job is
+   unchanged — and final QC requires a `prompt_compliance` record (one row per
+   paid job matched to its receipt).
 
 **Outputs:** Keyframes, continuity record, product-reference record.
 **Hand to:** DS-7.
