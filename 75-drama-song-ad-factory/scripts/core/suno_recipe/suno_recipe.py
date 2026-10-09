@@ -357,6 +357,118 @@ def sheet_words(sheet, delivery=None):
                if delivery in (None, s["delivery"]) for l in s["lines"])
 
 
+# ---- FU-U5: voice tags come from the cast ---------------------------------
+# Plan 18-OPUS-SKILL75-FUTURE-PLAN unit U5 / root cause A7: the One-Check
+# lyric sheet was hand-tagged "[... Desk Neighbor (rap): Female voice ...]"
+# while the cast record said the desk neighbour was a man, and no code ever
+# compared the two. This is the SHEET TAG versus CAST RECORD check. It is
+# NOT the style-prompt gender slot (U15d owns that: the {gender} in
+# music/*.json and suno-v6.json vocal_gender come from the brief, never
+# hard-coded), and it does not touch vocal_gender.
+GENDER_WORDS = {"female": "female", "woman": "female", "f": "female",
+                "male": "male", "man": "male", "m": "male"}
+#: Same two words voice_casting accepts; a cast that says anything else is
+#: not a gender this check can prove, so it fails closed.
+CAST_GENDERS = frozenset(("male", "female"))
+_GENDER_WORD_RE = re.compile(r"\b(female|woman|male|man)\b", re.I)
+_ANY_BRACKET_RE = re.compile(r"\[([^\]\n]*)\]")
+#: Section words that are never a character name (the recipe's own tags).
+_SECTION_WORDS = frozenset((
+    "rap", "verse", "hook", "intro", "outro", "bridge", "vocalise", "chorus",
+    "end", "instrumental", "break", "pre", "post", "section", "part"))
+
+
+def parse_voice_tags(sheet_text):
+    """Every bracket in a lyric sheet with the gender word it names.
+
+    Returns [{"tag", "gender", "name"}] per bracket. gender is
+    "female"/"male" or None when the bracket names no gender word; name is
+    the cast character the bracket names, or None when it names nobody
+    ([Hook], [Intro], [End]). One parser, so the check and any caller read
+    the same brackets (FU-U1's rule applied to this check).
+    """
+    out = []
+    for m in _ANY_BRACKET_RE.finditer(str(sheet_text or "")):
+        inner = m.group(1).strip()
+        norm = re.sub(r"[^a-z0-9]+", " ", inner.lower()).strip()
+        g = _GENDER_WORD_RE.search(norm)
+        out.append({"tag": inner,
+                    "gender": GENDER_WORDS[g.group(1).lower()] if g else None,
+                    "name": _tag_character(inner)})
+    return out
+
+
+def _tag_character(inner):
+    """The cast character a bracket names, or None when it names none.
+
+    "[Rap Verse 3 Desk Neighbor (rap): ...]" names "Desk Neighbor";
+    "[Hook (sung): ...]", "[Intro (spoken): ...]", "[End]" and
+    "[Instrumental Break]" name nobody and are never judged. The bracket's
+    own name (the text before the delivery in parentheses, or before the
+    first comma or dash) has its leading section words and numbers stripped.
+    """
+    head = re.split(r"[(,]", str(inner or ""))[0]
+    head = re.split(r"\s+-\s+|\s+-\s*|\s+—\s*", head)[0]
+    norm = re.sub(r"[^a-z0-9]+", " ", head.lower()).strip()
+    words = norm.split()
+    while words and (words[0] in _SECTION_WORDS or words[0].isdigit()):
+        words.pop(0)
+    name = " ".join(words).strip()
+    return name if len(name) >= 2 else None
+
+
+def check_voice_tags(sheet_text, cast_genders=None):
+    """FU-U5: every cast character's sheet tag gender equals the cast record.
+
+    ``cast_genders`` maps a cast character name to "male"/"female" (the
+    brief's ``characters[].gender``; ``protected_names.cast_genders`` builds
+    it from a brief). Returns a list of error strings, [] = pass.
+
+    - A bracket naming a cast character whose tag gender differs from the
+      cast -> VOICE_TAG_MISMATCH naming both sides.
+    - A bracket naming a cast character with NO gender word -> fail closed,
+      VOICE_TAG_UNCHECKED (an unverifiable tag is never a pass).
+    - A cast entry whose gender is neither "male" nor "female" -> fail
+      closed, VOICE_TAG_UNCHECKED: the check cannot prove the tag.
+    - A bracket naming no cast character ([Hook], [Intro], [End], a bare
+      [Rap Verse 3], a name the cast does not list) is never judged.
+    - No cast record at all (None or empty) -> []: the check is off, exactly
+      as today, so this unit changes nothing for a caller who passes no cast.
+
+    This never judges the style prompt and never touches vocal_gender: All
+    Suno is the default voice and this unit adds no voice option.
+    """
+    if not cast_genders:
+        return []
+    cast = {}
+    for name, gender in cast_genders.items():
+        g = str(gender or "").strip().lower()
+        cast[_norm_char(name)] = (name, g if g in CAST_GENDERS else None)
+    errs = []
+    for t in parse_voice_tags(sheet_text):
+        if not t["name"]:
+            continue
+        hit = cast.get(t["name"])
+        if hit is None:
+            continue                      # names nobody in this cast
+        name, want = hit
+        if want is None:
+            errs.append("VOICE_TAG_UNCHECKED: [%s] names %s, whose cast record "
+                        "has no gender (male|female)" % (t["tag"], name))
+        elif t["gender"] is None:
+            errs.append("VOICE_TAG_UNCHECKED: [%s] names %s with no gender "
+                        "word; the cast says %s" % (t["tag"], name, want))
+        elif t["gender"] != want:
+            errs.append("VOICE_TAG_MISMATCH: [%s] tags %s %s voice, the cast "
+                        "says %s" % (t["tag"], name, t["gender"], want))
+    return errs
+
+
+def _norm_char(name):
+    """A character name normalized for matching: case, spacing, separators."""
+    return re.sub(r"[^a-z0-9]+", " ", str(name or "").lower()).strip()
+
+
 def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
                       style_id=None):
     """Rules 1-3 on the sheet. Returns a list of errors (empty = pass).
@@ -650,13 +762,22 @@ def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f
 
 
 def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
-                  length_s=None):
+                  length_s=None, cast_genders=None):
     """Seam for music_director.build_generate_request. Raises RecipeError.
 
     With style_id: the full recipe is enforced (exempt id passes untouched).
     Without: a raw Suno base prompt is a bypass and is refused; any other
     free-form style text is left to the caller (legacy behavior).
+
+    FU-U5: with ``cast_genders`` (a name -> "male"/"female" map from the
+    brief's characters, e.g. ``protected_names.cast_genders(brief)``) every
+    sheet voice tag must agree with the cast record. This runs FIRST and in
+    BOTH branches, because the cheapest place to catch a wrong tag is before
+    any recipe work at all -- and it never touches vocal_gender.
     """
+    cast_errs = check_voice_tags(lyrics_text, cast_genders)
+    if cast_errs:
+        raise RecipeError("VOICE_TAG_MISMATCH", "; ".join(cast_errs))
     if style_id is None:
         if any(str(style_text_).startswith(_MS.style_prompt(i))
                for i in suno_style_ids()):
