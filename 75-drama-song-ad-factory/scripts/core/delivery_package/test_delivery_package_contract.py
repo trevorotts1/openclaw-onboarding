@@ -74,7 +74,7 @@ class CanonicalList(unittest.TestCase):
         for item in C.PACKAGE_ITEMS:
             self.assertEqual(len(item.files), len(item.kinds),
                              item.key)
-            prefix = "%02d-" % item.number
+            prefix = "%02d - " % item.number
             for name in item.files:
                 self.assertTrue(name.startswith(prefix),
                                 "%s: %s lacks %s" % (item.key, name, prefix))
@@ -126,30 +126,30 @@ class FolderContract(unittest.TestCase):
 
     def test_empty_file_does_not_open(self):
         folder = C.write_reference_package(self.tmp / "empty")
-        (folder / "03-script.pdf").write_bytes(b"")
+        (folder / "03 - SCRIPT.pdf").write_bytes(b"")
         report = C.verify_folder(folder)
         self.assertIn("script_pdf", report["missing"])
         self.assertEqual(report["problems"][0]["problem"], "empty")
 
     def test_renamed_text_file_is_not_a_pdf(self):
         folder = C.write_reference_package(self.tmp / "fakepdf")
-        (folder / "12-welcome-sheet.pdf").write_text("not a pdf",
-                                                     encoding="utf-8")
+        (folder / "12 - Welcome Sheet.pdf").write_text("not a pdf",
+                                                       encoding="utf-8")
         report = C.verify_folder(folder)
         self.assertIn("welcome_sheet", report["missing"])
         self.assertIn("no %PDF- header", report["problems"][0]["problem"])
 
     def test_srt_needs_a_cue_timing_line(self):
         folder = C.write_reference_package(self.tmp / "badsrt")
-        (folder / "10-captions.srt").write_text(SRT_BAD, encoding="utf-8")
+        (folder / "10 - Captions.srt").write_text(SRT_BAD, encoding="utf-8")
         report = C.verify_folder(folder)
         self.assertIn("captions_srt", report["missing"])
         self.assertIn("cue timing line", report["problems"][0]["problem"])
 
     def test_image_item_needs_a_directory_of_images(self):
         folder = C.write_reference_package(self.tmp / "images")
-        shutil.rmtree(folder / "11-character-images")
-        (folder / "11-character-images").write_bytes(b"one blob")
+        shutil.rmtree(folder / "11 - Character Images")
+        (folder / "11 - Character Images").write_bytes(b"one blob")
         report = C.verify_folder(folder)
         self.assertIn("character_images", report["missing"])
         self.assertEqual(report["problems"][0]["problem"], "not a directory")
@@ -186,8 +186,10 @@ class PackagingEntryPoint(unittest.TestCase):
                          "a refused packaging call must write nothing")
 
     def test_no_discovered_component_reports_every_item(self):
+        # Injected-empty producers: nothing is wired, so the call refuses
+        # before writing and names all 12 items still owed.
         with self.assertRaises(P.PackageError) as ctx:
-            P.package_run(self.run, self.out)
+            P.package_run(self.run, self.out, producers={})
         self.assertEqual(ctx.exception.code, "COMPONENT_MISSING")
         self.assertEqual(set(ctx.exception.items),
                          {i.key for i in C.PACKAGE_ITEMS})
@@ -219,11 +221,14 @@ class PackagingEntryPoint(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "BAD_INPUT")
 
     def test_resolve_producer_says_which_component_owes_the_call(self):
-        item = C.ITEMS_BY_KEY["welcome_sheet"]
+        # A synthetic item whose only candidate is a module that does not
+        # exist: discovery must say so, naming the unit and the module tried.
+        item = C.ITEMS_BY_KEY["welcome_sheet"]._replace(
+            producers=("del13_absent_component",))
         fn, note = P.resolve_producer(item)
         self.assertIsNone(fn)
         self.assertIn(item.unit, note)
-        self.assertIn("welcome_sheet", note)
+        self.assertIn("del13_absent_component", note)
 
     def test_resolve_producer_finds_a_wired_component(self):
         import types
