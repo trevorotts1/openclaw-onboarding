@@ -14,8 +14,9 @@ next`` will not hand out the video command until ``gate_open(run_dir)``;
 
 Run-dir files (all under ``$RUN``): ``storyboard/shot-list.json``,
 ``storyboard/contracts.json``, ``storyboard/stills.json`` ({shot_id: path}),
-``control/card-receipt.json`` (key ``storyboard_approval``: yes/no; missing
-means Yes, the card's recommended pick). Writes ``storyboard/approval.json``
+``control/card-receipt.json`` (key ``storyboard_approval``: true/false, written
+by ``record_card_answer`` when the intake card's recap is confirmed; no receipt
+file at all means an old run, treated as Yes, the card's recommended pick). Writes ``storyboard/approval.json``
 (state) and ``storyboard/gate.json`` ({shots, review}) for the video request's
 ``storyboard`` block. Stdlib only.
 """
@@ -73,12 +74,33 @@ def gate_open(run_dir):
 
 
 def wants_approval(run_dir):
-    r = _read(_p(run_dir, "control", "card-receipt.json"), {}) or {}
+    r = _read(_p(run_dir, "control", "card-receipt.json"))
+    if r is None:       # old run, no receipt: Yes (the card's recommended pick)
+        return True
     a = r.get("answers") if isinstance(r.get("answers"), dict) else r
-    v = a.get("storyboard_approval", True)
+    v = a.get("storyboard_approval", False)   # receipt present, key absent: not asked Yes
     if isinstance(v, str):
         return not v.strip().lower().startswith("n")
     return bool(v)
+
+
+def receipt_target(run_dir):
+    return (_read(_p(run_dir, "control", "card-receipt.json"), {}) or {}).get("target", "")
+
+
+def record_card_answer(run_dir, answers, questions, target=None):
+    """Called when the intake card's recap is confirmed. ``answers`` and
+    ``questions`` are the card's lists, same order. Writes
+    ``storyboard_approval`` (true when option 1, Yes) and the client's send
+    ``target`` into ``control/card-receipt.json``, keeping other keys."""
+    path = _p(run_dir, "control", "card-receipt.json")
+    r = _read(path, {}) or {}
+    for q, a in zip(questions, answers):
+        if q["id"] == "storyboard":
+            r["storyboard_approval"] = a["n"] == 1
+    if target:
+        r["target"] = str(target)
+    _write(path, r)
 
 
 def _record(run_dir, to):

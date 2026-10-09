@@ -163,7 +163,7 @@ def _parse(reply, q):
     return {"n": n, "text": opts[n - 1][0], "value": None}
 
 
-def conversation(replies, questions=None):
+def conversation(replies, questions=None, run_dir=None, target=None):
     """Replay the client's replies from the start; return the state and the ONE
     message to send next. Stateless, so claude-nine and OpenClaw can both call
     it with the replies so far. state: answers, done, message."""
@@ -192,6 +192,9 @@ def conversation(replies, questions=None):
             else:
                 note = "Sorry, I did not catch that. "
     if done:
+        if run_dir:     # recap confirmed: the storyboard answer goes to the run
+            from storyboard_director import approval_runner as _ar
+            _ar.record_card_answer(run_dir, answers, qs, target)
         msg = "Locked in. I am starting now."
     elif fix is not None:
         msg = note + render_step(fix + 1, qs)
@@ -292,13 +295,16 @@ def main(argv=None):
                          "given every --reply the client has sent so far (I7)")
     ap.add_argument("--reply", action="append", default=[],
                     help="a client reply, in order (repeat the flag)")
+    ap.add_argument("--run-dir", default="",
+                    help="run folder; when the recap is confirmed the storyboard "
+                         "answer is written to its control/card-receipt.json")
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
                          "card opens with 'Use a saved character?' (I6)")
     a = ap.parse_args(argv)
     qs = _with_saved_character(a.client_dir)
     if a.step:
-        st = conversation(a.reply, qs)
+        st = conversation(a.reply, qs, a.run_dir or None, a.target or None)
         if a.format == "text":
             sys.stdout.write(st["message"] + "\n")
         else:

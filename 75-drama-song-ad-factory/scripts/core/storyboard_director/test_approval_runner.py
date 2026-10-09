@@ -53,7 +53,8 @@ def make_run(choice="yes"):
     json.dump({"shots": shots}, open(os.path.join(sb, "shot-list.json"), "w"))
     json.dump(contracts, open(os.path.join(sb, "contracts.json"), "w"))
     json.dump(stills, open(os.path.join(sb, "stills.json"), "w"))
-    json.dump({"storyboard_approval": choice}, open(os.path.join(run, "control", "card-receipt.json"), "w"))
+    if choice:
+        json.dump({"storyboard_approval": choice}, open(os.path.join(run, "control", "card-receipt.json"), "w"))
     with SS.Store(os.path.join(run, "control", "state.sqlite3")) as st:
         st.init_run("run1", [s for s, _ in BATCH.STAGES])
     return run
@@ -175,6 +176,31 @@ def test_no_auto_approves_silently():
         check("No: missing still still blocks", getattr(e, "code", "") == "STORYBOARD_STILL_MISSING" and not AR.gate_open(run2), e)
 
 
+def card_then_run(storyboard_reply):
+    """Real intake card, answered end to end, then the runner on the same run dir."""
+    from choice_card.intake_card import intake_card as IC
+    run, w = make_run(None), World()
+    replies = ["recommended"] * (len(IC.QUESTIONS) - 1) + [storyboard_reply, "yes"]
+    st = IC.conversation(replies, IC.QUESTIONS, run, "555")
+    check("card done (%s)" % storyboard_reply, st["done"])
+    return run, w, AR.run(run, w.send)
+
+
+def test_card_answer_reaches_runner():
+    run, w, r = card_then_run("2")
+    rec = json.load(open(os.path.join(run, "control", "card-receipt.json")))
+    check("card No -> receipt false + target", rec == {"storyboard_approval": False, "target": "555"}, rec)
+    check("card No -> runner sends nothing, gate open", w.events == [] and AR.gate_open(run), (r, w.events))
+    run, w, r = card_then_run("1")
+    rec = json.load(open(os.path.join(run, "control", "card-receipt.json")))
+    check("card Yes -> receipt true", rec["storyboard_approval"] is True, rec)
+    check("card Yes -> message + 3 stills, gate closed", w.kinds() == ["message", "image", "image", "image"]
+          and not AR.gate_open(run), w.events)
+    run = make_run(None)
+    AR.run(run, w.send)
+    check("no receipt (old run) = Yes", not AR.gate_open(run))
+
+
 def test_default_sender_uses_openclaw_message_send():
     run, calls = make_run("yes"), []
     real = AR.subprocess.run
@@ -194,5 +220,6 @@ if __name__ == "__main__":
     test_yes_sends_card_and_three_images_before_any_video()
     test_unapproved_video_is_blocked()
     test_no_auto_approves_silently()
+    test_card_answer_reaches_runner()
     print("FAIL (%d): %s" % (len(FAILS), ", ".join(FAILS)) if FAILS else "ALL PASS")
     sys.exit(1 if FAILS else 0)
