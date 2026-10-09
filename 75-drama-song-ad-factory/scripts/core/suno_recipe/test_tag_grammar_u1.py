@@ -81,7 +81,16 @@ def test_a_parse_counts_all_three_deliveries():
     return sheet
 
 
-def test_b_lyric_gate_counts_rap_in_the_budget(sheet):
+def test_b_lyric_gate_counts_rap_in_the_budget(sheet=None):
+    if sheet is None:
+        # pytest runs this test standalone: main()'s return never reaches it,
+        # so build the sheet here. A parse failure is reported and leaves the
+        # sheet None, so the guard below still fails loudly (never a skip).
+        try:
+            sheet = R.parse_lyrics(load_fixture())
+        except Exception as exc:                    # noqa: BLE001
+            check("(b) parse_lyrics reads the One-Check sheet", False,
+                  "%s: %s" % (type(exc).__name__, exc))
     if sheet is None:
         check("(b) check_lyric_sheet sees rap (skipped: no sheet)", False)
         return
