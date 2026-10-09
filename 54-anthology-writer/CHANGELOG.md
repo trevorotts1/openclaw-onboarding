@@ -1,5 +1,9 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## v2.0.4 - 2026-10-09 - operator wording scrub
+
+- Wording scrub, behavior identical: the two-strike gate block in SKILL.md says the unlock is operator-only (no personal name).
+
 ## 1.4.10 — 2026-08-25 — tone-core GO fixes: doctrine docs match deterministic resolver
 
 - `intake/aw-intake-template.md` + `REPAIRS.md` G1 no longer describe prompt-level

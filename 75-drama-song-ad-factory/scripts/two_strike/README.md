@@ -94,11 +94,11 @@ Only the offending skill's own files. The wipe:
 After the wipe the folder holds exactly one file, `SKILL.md`, whose entire
 content is the stub string (`stub_bytes()` returns those exact bytes).
 
-## Unlock — Trevor only, restore from GitHub
+## Unlock — operator only, restore from GitHub
 
 There is no unlock function, no clear command, no reset flag and no
 self-service path in this module, by design. A wiped skill folder is restored
-by Trevor pulling the good bytes back down from GitHub. Nothing else unlocks
+by the operator pulling the good bytes back down from GitHub. Nothing else unlocks
 it, and deleting the counter file does not restore the skill.
 
 Operator steps, on the affected box (or over headless SSH):
@@ -132,7 +132,7 @@ Operator steps, on the affected box (or over headless SSH):
    This is bookkeeping only. It is not an unlock; the skill is already back
    from step 2.
 
-Only Trevor performs this restore. A client asking for it is answered with the
+Only the operator performs this restore. A client asking for it is answered with the
 stub sentence.
 
 ## Self-check
