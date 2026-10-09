@@ -31,6 +31,14 @@ if os.path.isdir(_CACHE):
             except OSError:
                 pass
 
+# pytest-collectable: this is a self-running suite (CI runs the file
+# directly); when pytest imports it for collection, skip instead of the
+# module-level sys.exit below, which used to raise INTERNALERROR.
+if "pytest" in sys.modules:  # imported by pytest for collection
+    import pytest as _pytest
+    _pytest.skip("self-running suite: run `python3 test_singing_detector.py`",
+                 allow_module_level=True)
+
 try:
     import numpy  # noqa: F401
 except ImportError:  # CI runner has no numpy; the detector needs it (declared in its docstring)
@@ -252,10 +260,17 @@ if _fixtures_ok:
                or min(sung_scores) <= SD.SING_THRESH_SEMITONES),
           {"max_spoken": max(spoken_scores, default=0.0),
            "min_sung": min(sung_scores, default=0.0)})
-    # O3 full track: the receipt number (G3 done-when: O3 measures ~0% sung)
+    # O3 full track: the receipt number. AMENDED (order 1150 part G amend,
+    # review G2): the shares come from the Appendix A series, whose published
+    # numbers for this stem are 6 s sung / 4.1% of runtime / longest 4 s /
+    # real_singing False (Appendix A footer).
     share = SD.share_for_stem(O3)
-    check("o3-measures-near-zero-sung", share["sung_pct"] <= 2.0,
+    check("o3-measures-near-zero-sung", share["sung_pct"] <= 5.0,
           share["sung_pct"])
+    check("o3-take-verdict-no-singing",
+          share["take_verdict"] == SD.VERDICT_NO_SINGING
+          and share["longest_sung_stretch_s"] == 4,
+          (share.get("take_verdict"), share.get("longest_sung_stretch_s")))
     check("o3-share-source-measured",
           share["share_source"] == "measured"
           and share["method"] == SD.METHOD, share["method"])
@@ -323,9 +338,12 @@ if _sung_fx:
 # ------------------------------------------------- 5. label-source ban (G5 seam)
 # A receipts dict that carries share_source=labels must be detectable: the
 # module exposes share_source="measured" and nothing else emits it.
-check("share-source-literal", '"share_source": "measured"' in SRC
-      and 'share_source' not in SRC.replace('"share_source": "measured"', ''),
-      "a second share_source value in the module")
+# every share_source VALUE written anywhere in the module must be the
+# measured literal; the docstring's API block mentions it too.
+import re as _re
+_ss_vals = _re.findall(r'share_source["\']?\s*[:=]\s*["\']([^"\']+)', SRC)
+check("share-source-literal",
+      bool(_ss_vals) and set(_ss_vals) == {"measured"}, _ss_vals)
 # The detector's public functions take NO label/lyric/section input: every
 # parameter name across the API must be audio/path/probe/window-shaped.
 _BAD_PARAMS = {"label", "labels", "sections", "lyrics", "lyric", "tags",
