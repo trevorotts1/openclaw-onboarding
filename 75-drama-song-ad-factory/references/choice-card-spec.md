@@ -44,7 +44,7 @@ Your drama song ad
                 for ads and Reels
   Video model:  MiniMax H3, 768P  (RECOMMENDED)   [see all models and prices]
   Price:        computed by Skill 74 `price`   (+ the 20% retake allowance)
-  Includes:     all video shots, the song, one image per shot
+  Includes:     all video shots, the song (song mp3 included), one image per shot
   Not included: the AI writing, planning and checking (runs on your own AI plan)
   [Approve]   [Change options]
 ```
@@ -308,6 +308,15 @@ On the parent campaign: every selection above, the approved price, the
 recorded ceiling, and the listed lip-sync lines. The Command Center keeps one
 deliverable per ad and one Kanban card per ad and per batch; the department
 map's lead role for this skill is `vsl-video-sales-letter-specialist`.
+
+The card promises **"song mp3 included"**: every delivered ad folder carries
+the final song as `<Author> - <Title> - Song.mp3` (320 kbps, the exact song
+used, full length) beside the captioned and clean-master mp4s. It is gated by
+`delivery_checklist.check_song_mp3()` (present, duration within 0.1 s of the
+ad audio, cross-correlation >= 0.95), and a finished book/batch campaign also
+ships one client zip (`batch_zip.build_batch_zip`) with every ad's three files
+and a README listing file, duration, resolution and banner link, so the client
+can release the whole album.
 
 ## Suno song recipe (applies to every Suno music style above)
 

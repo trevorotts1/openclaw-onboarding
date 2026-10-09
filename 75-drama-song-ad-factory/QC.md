@@ -70,6 +70,16 @@ it advances. Standard library only; no credential value is ever printed.
 - [ ] Song files (H14): a delivery folder holds `<ad>.mp3` (320 kbps) and `<ad>.wav` (plus
       `<ad>-instrumental.*` if one exists), all listed in `delivery-receipt.json` and `README.md`;
       `python3 scripts/core/delivery_variants/song_files.py check <dir> <ad>` exits 0, and exits 5 when any song file is missing.
+- [ ] Song mp3 in the deliverable (FU-U14, REQUIRED): the ad folder holds `<Author> - <Title> - Song.mp3`
+      (320 kbps, the exact song used, full length; the wav too when one exists) beside the captioned and
+      clean-master mp4s. `delivery_checklist.check_song_mp3(<ad_dir>, <ad_audio>, <Title>, <Author>)` returns
+      PASS rows `SONG_MP3_FILE` / `SONG_MP3_DURATION` / `SONG_MP3_CORRELATION` — duration within 0.1 s of the
+      ad's audio and cross-correlation >= 0.95 with it. A missing or mismatched mp3 is a FAIL (fail closed).
+      Run: `python3 scripts/core/delivery_checklist/test_song_mp3_u14.py`.
+- [ ] Batch zip (FU-U14): a finished book/batch campaign ships one zip per client,
+      `batch_zip.build_batch_zip(client, ads, out)` — one folder per author with the captioned ad, the clean
+      master and the song mp3 (exactly three files per ad) plus a README listing every file, duration,
+      resolution and banner link. A missing file is a `BatchZipError`.
 - [ ] Spend ledger: `init_run --ceiling` recorded; `reserve` before
       dispatch; duplicate `reserve` exits 5 `BAD_TRANSITION`;
       `can_spend` past ceiling exits 5 `BUDGET_EXCEEDED`; `park_run` exits 4
