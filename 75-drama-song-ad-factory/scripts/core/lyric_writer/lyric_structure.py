@@ -54,11 +54,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 
 TOOL_NAME = "lyric_structure"
 TOOL_VERSION = "0.2.0"
+#: core/ -- so the one tag grammar (suno_recipe) is importable from here.
+_CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCHEMA_VERSION = "blackceo.lyric-structure/v1"
 SOURCE = ("Trevor order 1135 2026-10-08 Part G item G2; amended by Trevor "
           "order 2026-10-08 11:50 part G (review G4/G5): delivery named in "
@@ -142,16 +145,12 @@ def delivery_of_tag(tag):
     norm = re.sub(r"[^a-z0-9]+", " ", str(tag or "").lower()).strip()
     if not norm:
         return None
-    if re.search(r"\binstrumental\b", norm) or norm == "inst":
-        return INSTRUMENTAL
-    earliest = None
-    for rank, delivery in enumerate(("rap", "spoken", "sung")):
-        for word in DELIVERY_WORDS[delivery]:
-            m = re.search(r"\b%s\b" % word, norm)
-            if m is not None and (earliest is None
-                                  or (m.start(), rank) < earliest[:2]):
-                earliest = (m.start(), rank, delivery)
-    return earliest[2] if earliest else None
+    # FU-U1: THE grammar lives in suno_recipe.parse_tag. Delegating keeps one
+    # owner, so this gate and the lyric gate measure the same sheet.
+    if _CORE not in sys.path:
+        sys.path.insert(0, _CORE)
+    from suno_recipe.suno_recipe import parse_tag
+    return parse_tag(norm)
 
 
 def is_spoken(block):
