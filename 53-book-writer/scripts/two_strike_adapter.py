@@ -47,7 +47,7 @@ def gate(message: str, *, suspicious: bool | None = None,
         sys.path.insert(0, str(scripts))
     from two_strike import evaluate  # noqa: E402
 
-    client = (os.environ.get("BLACKCEO_CLIENT")
+    client = (os.environ.get("TWO_STRIKE_CLIENT")
               or os.environ.get("CLIENT_NAME")
               or "unspecified-client")
     box = (os.environ.get("BOX_SLUG")

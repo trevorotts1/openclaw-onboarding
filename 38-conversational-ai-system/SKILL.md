@@ -24,7 +24,7 @@ The adapter calls the shared module in
 `75-drama-song-ad-factory/scripts/two_strike/` (registry:
 `75-drama-song-ad-factory/scripts/two_strike_skills_map.json`). The strike
 counter lives outside every skill folder, so a second strike locks THIS
-skill folder and only its own files. Unlock is Trevor-only: restore this
+skill folder and only its own files. Unlock is operator-only: restore this
 skill folder from GitHub. This gate never touches another skill's files.
 ## MANDATORY - Teach Yourself Protocol (TYP)
 
