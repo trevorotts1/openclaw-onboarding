@@ -191,6 +191,46 @@ def test_thin_brief_shows_new_sentence():
           repr(r.get("question_message")))
 
 
+def _aud_q(brief):
+    r = I.evaluate(brief, {})
+    qs = [q["question"] for q in r.get("questions") or [] if q["id"] == "audience_action"]
+    return qs[0] if qs else None
+
+
+def test_audience_action_question_variants():
+    """FU-AUDIENCE-QUESTION: both missing / audience missing / action missing."""
+    base = {"offer": "demo offer"}
+    both = ("Who is this ad for, and what should they do after watching it?\n"
+            "For example: 'Women 35-55 who want a second income - register for my free masterclass.'")
+    aud = "Who is this ad for? For example: 'Women 35-55 who want a second income.'"
+    act = "What should people do after watching? For example: 'Register for my free masterclass.'"
+    check("both missing renders exact text", _aud_q(base) == both, repr(_aud_q(base)))
+    check("audience missing renders exact text",
+          _aud_q(dict(base, action="Register for my free masterclass")) == aud,
+          repr(_aud_q(dict(base, action="Register"))))
+    check("action missing renders exact text",
+          _aud_q(dict(base, audience="Women 35-55")) == act,
+          repr(_aud_q(dict(base, audience="Women 35-55"))))
+    check("both present asks nothing",
+          _aud_q(dict(base, audience="Women 35-55", action="Register")) is None)
+    msg = I.evaluate(base, {}).get("question_message") or ""
+    check("message carries the two-part question", both in msg, repr(msg))
+
+
+def test_answer_parses_into_audience_and_action():
+    """The client's one-go answer still lands as audience + action (cta)."""
+    brief = {"offer": "demo offer", "audience": "Women 35-55 who want a second income",
+             "action": "register for my free masterclass"}
+    fields, prov = I.normalize(brief, {})
+    check("audience parsed", fields.get("audience") == brief["audience"], repr(fields.get("audience")))
+    check("action parsed", fields.get("action") == brief["action"], repr(fields.get("action")))
+    summary, _ = I.summarize(fields)
+    check("summary audience and cta", summary["audience"] == brief["audience"]
+          and summary["cta"] == brief["action"])
+    ids = [q["id"] for q in I.missing_essentials(fields, prov)]
+    check("answered brief no longer asks audience_action", "audience_action" not in ids, repr(ids))
+
+
 def test_credits_still_accepted():
     """L4 keep: the parser still takes credits as the currency unit."""
     fields, prov = I.normalize({"budget_minor": 2500, "budget_currency": "credits"}, {})
@@ -213,6 +253,8 @@ TESTS = [
     test_default_profile_known,
     test_cli_done_when,
     test_thin_brief_shows_new_sentence,
+    test_audience_action_question_variants,
+    test_answer_parses_into_audience_and_action,
     test_credits_still_accepted,
 ]
 
