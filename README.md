@@ -1,5 +1,7 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 
+> **v26.4.14 - Batch MGB008: two Skill 75 units (Skill 75 v2.9.1).** The delivery checklist consumes the amended receipt fields (W-G-007-amend) and the lyric structure accepts the delivery-named tag grammar (W-G-002-amend). Paired Command Center: **v7.6.112**.
+>
 > **v26.4.13 - Batch MGB007: five Skill 75 units (Skill 75 v2.9.0).** One consolidated lip-sync change (calibrated picture gate, calibrated sync gate, best-practice rules, LSC001) and the approved lip-sync process (LSP001); final_assembler byte parity with 999-setup (PAR003); the I6 factory `--client-dir` port with singing-detector fixtures (PAR004); and the two red folded fast-guards fixed (FGD001). Paired Command Center: **v7.6.112**.
 >
 > **v26.4.12 - Batch MGB006: three drama-song-ad units (Skill 75 v2.8.5).** The singing detector is wired into the QC gate and receipt paths (G3-WIRE); caption and lyric QC consume measured word timing (F18); the target engine on the 5/10 band is wired into the music director and retake manager (G4-WIRE). Paired Command Center: **v7.6.112**.
@@ -11,8 +13,6 @@
 > **v26.4.7 — Drama song ad factory batch (Skill 75 v2.8.0).** One batch release of 24 units: Part H (lip-sync offset and measured gate, fades and long gaps, pictures planned from real song timestamps, one singing rule with the 5/10 point band, readable intake card, protected names in captions, delivery checklist Q8-Q11, no hand-written pipeline scripts, song files MP3 320 and WAV), Part I (caption spelling and website, scenes match the song and faces, character reference sets, master length L-2, clean endings, character library, one-question-at-a-time intake, one sung hook by a length formula), the Suno song recipe default, the F1/F14/F15/E7 amendments, and the runtime-parity alias fix. Builds on v26.4.6. Paired Command Center: **v7.6.111**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **v26.4.14 - Batch MGB008: two Skill 75 units (Skill 75 v2.9.1).** The delivery checklist consumes the amended receipt fields (W-G-007-amend) and the lyric structure accepts the delivery-named tag grammar (W-G-002-amend). Paired Command Center: **v7.6.112**.
->
 > **Version:** see `/version` - this repo at v26.4.14.
 
 
