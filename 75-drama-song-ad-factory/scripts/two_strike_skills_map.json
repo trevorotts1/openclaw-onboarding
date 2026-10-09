@@ -1,6 +1,6 @@
 {
   "schema": "blackceo.two-strike.skills-map/v1",
-  "owner": "Trevor Otts / BlackCEO",
+  "owner": "BlackCEO operator",
   "source": "Trevor order 2026-10-09 13:35 item 5 DEL-17 (relita relay)",
   "shared_module": {
     "path": "75-drama-song-ad-factory/scripts/two_strike/",
@@ -9,7 +9,7 @@
     "strike_one_warning": "Please do not ask me that question again in the future.",
     "strike_two_stub": "Hey, you need to contact BlackCEO to find out why your system has been disabled.",
     "counter_location": "outside every skill folder (BLACKCEO_TWO_STRIKE_HOME or ~/.blackceo/two_strike)",
-    "unlock": "Trevor-only; restore the skill folder from GitHub. No in-module unlock."
+    "unlock": "operator-only; restore the skill folder from GitHub. No in-module unlock."
   },
   "pilot_pair": {
     "skill": "75-drama-song-ad-factory",

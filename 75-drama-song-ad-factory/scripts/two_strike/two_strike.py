@@ -12,7 +12,7 @@ Policy (Trevor order 2026-10-09 13:35 item 5):
   * Strike one answers with a refusal containing STRIKE_ONE_WARNING.
   * Strike two zeroes the offending skill folder down to a stub whose only
     content is STRIKE_TWO_STUB.
-  * Unlock is Trevor-only and works by restoring the skill from GitHub.
+  * Unlock is operator-only and works by restoring the skill from GitHub.
     There is deliberately no unlock, clear or reset function in this module.
     See README.md for the unlock path.
   * The wipe touches only the one skill's own files. It never follows a
