@@ -88,10 +88,7 @@ def _questions():
          "options": _musics(), "recommended": 0},
         {"id": "look", "why": "The look is what viewers see in every shot.", "reason": "it gives the most real, cinematic result.", "label": "VIDEO STYLE", "ask": "What should the video look like?",
          "options": _looks(), "recommended": 0},
-        {"id": "model", "why": "The video model sets how good the shots look and what they cost.", "reason": "it gives the best balance of quality and price.", "label": "VIDEO MODEL", "ask": "Which video model should make the shots?",
-         "options": [("MiniMax H3, 768P", "Best balance of quality and price."),
-                     ("Show me every model and its price", "I will list them, then you pick.")],
-         "recommended": 0},
+        _model_question("60 seconds"),
         {"id": "spend", "why": "This keeps you in control of the cost.", "reason": "it already covers a 20% allowance for redoing shots.", "label": "SPEND LIMIT",
          "ask": "What is the most you want to spend on this ad?",
          "options": [("The price on the card", "Includes a 20% allowance for redoing shots."),
@@ -103,6 +100,26 @@ def _questions():
                      ("No, just make it", "I start as soon as the card is approved.")],
          "recommended": 0},
     ]
+
+
+def _model_question(length_label):
+    """VIDEO MODEL: four models, each priced for the client's chosen length."""
+    from choice_card.video_models import video_models as VM
+    sec = VM.length_seconds(length_label)
+    return {"id": "model", "why": "The video model sets how good the shots look and what they cost.",
+            "reason": "it gives the best balance of quality and price.", "label": "VIDEO MODEL",
+            "ask": "Which video model should make your shots? Prices are for your %s ad, "
+                   "with the song, pictures and a 20%% redo allowance." % VM.length_phrase(sec),
+            "options": [(m["name"], "%s - about %s" % (m["blurb"], VM.label(m, sec))) for m in VM.MODELS],
+            "values": [VM.label(m, sec) for m in VM.MODELS],
+            "recommended": next(i for i, m in enumerate(VM.MODELS) if m["recommended"])}
+
+
+def _priced(qs, answers):
+    """Swap in the VIDEO MODEL question priced for the length already answered."""
+    if not answers or qs[0]["id"] != "length":
+        return qs
+    return [_model_question(answers[0]["text"]) if q["id"] == "model" else q for q in qs]
 
 
 QUESTIONS = _questions()
@@ -137,10 +154,11 @@ def render_step(i, questions=None):
 
 
 def render_recap(answers, questions=None):
-    qs = questions or QUESTIONS
+    qs = _priced(questions or QUESTIONS, answers)
     lines = ["Here is what you picked:"]
     for i, (q, a) in enumerate(zip(qs, answers), 1):
-        lines.append("%d. %s: %s" % (i, q["label"].title(), a["text"]))
+        price = (" - about " + q["values"][a["n"] - 1]) if q["id"] == "model" else ""
+        lines.append("%d. %s: %s%s" % (i, q["label"].title().replace("Model", "model"), a["text"], price))
     lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
     return "\n".join(lines)
 
@@ -171,6 +189,7 @@ def conversation(replies, questions=None):
     answers, fix, note, done = [], None, "", False
     for r in replies:
         note = ""
+        qs = _priced(qs, answers)
         if len(answers) < len(qs) and fix is None:
             a = _parse(r, qs[len(answers)])
             if a:
@@ -191,6 +210,7 @@ def conversation(replies, questions=None):
                 fix = int(t) - 1
             else:
                 note = "Sorry, I did not catch that. "
+    qs = _priced(qs, answers)
     if done:
         msg = "Locked in. I am starting now."
     elif fix is not None:

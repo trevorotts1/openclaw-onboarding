@@ -255,7 +255,7 @@ card. The answers and the time answered go into the receipt
 | Music | Soul Ballad, R&B Flow, Soul Rise | Soul Ballad |
 | Voice | All Suno, Velvet Voiceover | All Suno |
 | Clips | 60-second and 90-second clips | offered for the 5-minute and 10-minute lengths only |
-| Video model | MiniMax H3 768P (RECOMMENDED) and the full APPROVED list | MiniMax H3 at 768P |
+| Video model | MiniMax H3 768P (RECOMMENDED), Seedance 2.5, Seedance 2.0 Mini, Google Veo 3.1 - each priced for the chosen length (`core/choice_card/video_models`) | MiniMax H3 at 768P |
 
 - **Lengths** 60 s / 90 s / **2 minutes (new, added by F15)** / 3 min /
   5 min / **10-minute long version**; each is its own song and timing map,

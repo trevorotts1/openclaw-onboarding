@@ -41,7 +41,7 @@ def test_each_option_on_its_own_numbered_line_recommended_marked():
         opts = lines[2:]
         assert len(opts) == len(q["options"])
         for n, line in enumerate(opts, 1):
-            assert re.match(r"^%d\. .+ - .+[.)]$" % n, line), line
+            assert re.match(r"^%d\. .+ - .+[.)\d]$" % n, line), line  # a priced line ends in the dollar figure
             assert "\n" not in line
         assert sum(IC.REC in l for l in opts) == 1
         assert IC.REC in opts[q["recommended"]]

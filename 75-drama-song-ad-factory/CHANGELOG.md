@@ -6,6 +6,13 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.9 - 2026-10-09 - FU-VIDEO-MODEL-CHOICES: four video models, each with a price for your chosen length
+
+- The VIDEO MODEL intake question now lists four models with H3 first and RECOMMENDED: MiniMax H3, Seedance 2.5, Seedance 2.0 Mini, Google Veo 3.1. Each line carries one plain descriptor and "about $X" for the length the client already chose (same formula as the card: video + one keyframe per shot + one song, +20% redo allowance). The recap reads `Video model: Seedance 2.5 - about $68.40`. Seedance is ByteDance's video model (Seedream is image only). Seedance 2.0 Fast is not offered (clip range unconfirmed, not on the price menu); Mini is the lite tier.
+- One rates table with source URL and date: `scripts/core/choice_card/video_models/video_model_rates.json`. `video_models.build_request` builds the exact Skill 74 request per model; `video_models.lock_choice` writes the F14 lock.
+- `prompt_limits.MARKET_ALIASES`: the market id `veo-3-1` is held to the dedicated `veo3_fast` catalog entry; before this, a Veo 3.1 dispatch refused `PROMPT_LIMIT_NO_CATALOG`.
+- New test `scripts/core/choice_card/video_models/test_video_models.py` (11 checks, payload tests run through `kie_dispatch.dispatch` with a fake Skill 74; zero paid calls).
+
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 
 - FU-PARITY: shared files aligned with 999 (v2.7.28 test fixes, delivery_checklist blank lines).

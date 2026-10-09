@@ -1,0 +1,23 @@
+{
+  "_doc": "The one table behind the VIDEO MODEL question. KIE list prices, 1 credit = $0.005, silent shots, no video input, before any top-up bonus.",
+  "source_url": "https://docs.kie.ai/market/bytedance/seedance-2-5",
+  "source_note": "pricingDesc of each model in the KIE live model list (read through Skill 74 `price`), checked 2026-10-09; Veo: https://docs.kie.ai/veo3-api/generate-veo-3-video",
+  "checked": "2026-10-09",
+  "keyframe_usd": 0.02,
+  "song_usd": 0.06,
+  "redo_rate": 0.20,
+  "models": [
+    {"n": 1, "recommended": true, "name": "MiniMax H3", "blurb": "great quality, best value",
+     "kie_model": "minimax-h3/image-to-video", "lock": "minimax-h3/*", "resolution": "768P",
+     "unit": "second", "rate_usd": 0.04, "shot_s": 15},
+    {"n": 2, "recommended": false, "name": "Seedance 2.5", "blurb": "premium detail and motion",
+     "kie_model": "bytedance/seedance-2-5", "resolution": "720p",
+     "unit": "second", "rate_usd": 0.315, "shot_s": 15},
+    {"n": 3, "recommended": false, "name": "Seedance 2.0 Mini", "blurb": "quicker and cheaper",
+     "kie_model": "bytedance/seedance-2-mini", "resolution": "720p",
+     "unit": "second", "rate_usd": 0.041, "shot_s": 15},
+    {"n": 4, "recommended": false, "name": "Google Veo 3.1", "blurb": "top-tier realism",
+     "kie_model": "veo-3-1", "kie_tier": "veo3_fast", "resolution": "720p",
+     "unit": "clip", "rate_usd": 0.30, "shot_s": 8}
+  ]
+}
