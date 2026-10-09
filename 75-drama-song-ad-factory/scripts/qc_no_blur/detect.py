@@ -159,10 +159,17 @@ def scan_plan(plan):
 # fail-closed on purpose: a real master that trips them is repaired by the
 # crop-in path, never by loosening a number. Upgrade to a perceptual /
 # learned backdrop detector only when a shipped master shows a false fill.
-SAMPLE_W = 192             # analysis width; height follows the aspect
+SAMPLE_W = 192             # analysis width; height follows the frame
 BAND_MIN_PCT = 0.08        # a fill band is at least 8% of the frame
 BLUR_RATIO = 0.25          # band laplacian vs core laplacian
 BLUR_FLOOR = 0.35          # absolute floor when the core is flat too
+# A gaussian backdrop is a BIG band: a real fill covers the area the subject
+# does not (measured fills are 30%+ per side). Naturally smooth content --
+# a sky, a wall, a gradient bar in a test pattern -- is smooth AND small.
+# ponytail: a smooth band under this floor is legal content; fills smaller
+# than 18% per side are caught by the attempt gate (plan / argv), which is
+# why the pre-render scan is not optional.
+GAUSSIAN_MIN_PCT = 0.18
 EDGE_RANGE_MAX = 8.0       # gray levels: a stretched edge column is flat
 FLAT_ROWS_PCT = 0.80       # of the band must be flat to call it that
 PLAIN_MEAN_STD = 3.0       # a LEGAL plain band has a constant row mean
@@ -299,6 +306,8 @@ def _classify_band(rows_, lo, hi, h, w, stats):
             % (lo, hi, h, vmean, core_vd, band_sharp, core_sharp, pct))
     if static:
         return None        # a still, sharp band (a graphic): legal
+    if (hi - lo) / float(h) < GAUSSIAN_MIN_PCT:
+        return None        # a small smooth band: natural content, not a fill
     return violation(
         GAUSSIAN_FILL,
         "rows %d..%d of %d are a smooth backdrop "

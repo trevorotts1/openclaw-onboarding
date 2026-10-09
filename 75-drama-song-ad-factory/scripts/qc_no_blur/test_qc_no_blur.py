@@ -143,6 +143,26 @@ def make_plain_169(src, out):
     return out
 
 
+def make_small_smooth_band(src, out):
+    """A master with a SMOOTH top band of 14%: natural content, not a fill.
+
+    Regression for the fps_h3-style master: a legitimate frame with a smooth
+    (but structured) band under the gaussian-fill floor must never be
+    refused. The band is blurred content, so it is not flat, not a plain
+    bar and not a strip -- only its SIZE separates it from a real fill.
+    """
+    chain = ("[0:v]crop=203:360:218:0,scale=1080:1920:flags=lanczos,"
+             "setsar=1,split[a][b];"
+             "[a]crop=1080:270:0:0,gblur=sigma=16[top];"
+             "[b]crop=1080:1650:0:270[body];"
+             "[top][body]vstack=inputs=2,format=yuv420p[v]")
+    p = run([FFMPEG, "-y", "-hide_banner", "-nostats", "-v", "error",
+             "-i", str(src), "-filter_complex", chain, "-map", "[v]",
+             "-c:v", "libx264", "-preset", "veryfast", str(out)])
+    assert p.returncode == 0, p.stderr[-400:]
+    return out
+
+
 @unittest.skipUnless(have_ffmpeg(), "ffmpeg/ffprobe required")
 class TestTextGates(unittest.TestCase):
     """Attempt detection: pure text, no pixels."""
@@ -218,6 +238,8 @@ class TestGates(unittest.TestCase):
         cls.plain = make_crop_in(cls.src, os.path.join(cls.d, "plain.mp4"),
                                  plain_top=True)
         cls.wide = make_plain_169(cls.src, os.path.join(cls.d, "wide.mp4"))
+        cls.small = make_small_smooth_band(
+            cls.src, os.path.join(cls.d, "small.mp4"))
 
     @classmethod
     def tearDownClass(cls):
@@ -277,6 +299,13 @@ class TestGates(unittest.TestCase):
         g = AG.check_render(output=self.wide, expect_width=1280,
                             expect_height=720)
         self.assertTrue(g["ok"], g)
+
+    def test_small_smooth_band_is_not_a_fill(self):
+        """A ~14% smooth band is natural content (fps_h3-style master)."""
+        g = AG.check_render(output=self.small, expect_height=1920)
+        self.assertTrue(g["ok"], g)
+        self.assertTrue(QG.check_deliverable(self.small,
+                                             expect_height=1920)["ok"], g)
 
     def test_require_render_raises_with_the_violation(self):
         with self.assertRaises(AG.BlurFillRefused) as cm:
