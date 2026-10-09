@@ -412,6 +412,18 @@ def test_k_proper_sheet_goes_through_the_director():
     except Exception as exc:                     # noqa: BLE001 - report the refusal
         got = "%s: %s" % (type(exc).__name__, exc)
     check("k0 the proper R&B Flow sheet goes through the director", got == "villain_arrives", got[:300])
+    # round 4: the director's request is the DELIVERED length, so run_takes
+    # (mocked generator, no spend) takes it ("whole tracks only" never fires)
+    try:
+        seen = []
+        SD.run_takes(dict(req["input"], _hook_plan=req["_hook_plan"]),
+                     {"delivered_s": D, "style_id": "rnb-flow"}, lambda rq: seen.append(rq) or [],
+                     lambda t: {}, lambda t, r: None, CLIENT, CLIENT, cap_cents=6, cost_cents=6,
+                     kie=lambda fn, *a, **k: fn(), style_id="rnb-flow")
+        sent = seen[0]["duration"]
+    except Exception as exc:                     # noqa: BLE001 - report the refusal
+        sent = "%s: %s" % (type(exc).__name__, exc)
+    check("k3 director -> run_takes: Suno duration is the delivered %d s" % D, sent == D, str(sent)[:300])
     for sid, d in (("rnb-flow", 148), ("rnb-flow", 298), ("soul-ballad", 58), ("soul-rise", 598)):
         check("k1 %s at %d s: one floor for the contract and words-fit" % (sid, d),
               SC.sung_target(sid, d) == W.style_sung_target_pct(sid, d),
