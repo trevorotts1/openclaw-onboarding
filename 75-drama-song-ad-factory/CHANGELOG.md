@@ -6,6 +6,10 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.12 - 2026-10-09 - Batch MGB022 follow-up
+
+- FU-AAC-FINAL-MUX (#1785) plus the question-count wording fix: the intake card closing example ("1, 1, ...") is now built from the real question list (9, or 10 with a saved character) and the docstrings, help text and choice-card-spec say nine. New test `test_closing_example_answer_count_matches_question_count`.
+
 ## v2.9.11 - 2026-10-09 - Batch MGB021 roll-up
 
 - FU-U3, FU-RNBFLOW-SONG, FU-HOOK-PLACEMENT, FU-U11, U15g, FU-ONE-SPEND-QUESTION, FU-STYLE-QUESTIONS, FU-VIDEO-MODEL-CHOICES, FU-STORYBOARD-SHOWS-BOTH, FU-SONG-APPROVAL, FU-SCRIPT-APPROVAL, FU-CLIENT-GUIDE, FU-AI-MODELS-QUESTION and FU-TEST-TMP-ISOLATION land together. The intake card is AI MODELS, LENGTH, MUSIC STYLE, VIDEO STYLE, VIDEO MODEL, BUDGET, STORYBOARD APPROVAL, SONG APPROVAL, SCRIPT APPROVAL (nine questions; ten with a saved character, which sits second).
@@ -91,6 +95,12 @@ frontmatter `version:` field).
 - New first intake question, AI MODELS: which AI builds the video and which checks the work. OpenRouter is recommended (faster), Ollama is allowed, unknown names are refused politely, and the checker must differ from the builder.
 - Honest scope: the run still uses the session's own model. The answer is recorded as `ai_models` in the approved intake summary, as a preference for the operator.
 - The card now has seven questions (eight with a saved character, which comes second). Tests: `choice_card/intake_card/test_ai_models.py`; card-count checks in `test_intake_card_h9.py`, `test_intake_step_i7.py`, `test_character_library_i6.py` updated.
+
+## v2.9.10 - 2026-10-09 - FU-AAC-FINAL-MUX
+
+- Every delivered video is AAC-LC 48 kHz 256k with +faststart (QuickTime played MP3-in-MP4 silent): new core/delivery_audio.py shared argv constants plus a delivery gate (refuses non-aac or silent audio) wired into final_assembler.assemble and delivery_checklist.delivery_battery(video_path=).
+
+---
 
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 

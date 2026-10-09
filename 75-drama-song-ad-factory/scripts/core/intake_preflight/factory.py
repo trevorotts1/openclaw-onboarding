@@ -442,7 +442,7 @@ def main(argv=None):
     sr.add_argument("--run-dir", required=True)
     sr.add_argument("--reply", required=True)
     sr.add_argument("--target", default="")
-    c = sub.add_parser("card", help="Print the seven-question intake card as raw "
+    c = sub.add_parser("card", help="Print the intake card (nine questions, ten with a saved character) as raw "
                                     "text (not JSON), or as send payloads (H9).")
     c.add_argument("--format", default="text",
                    choices=("text", "openclaw-json", "telegram-json"))
