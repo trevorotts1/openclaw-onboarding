@@ -1,0 +1,32 @@
+{
+  "shot_type": "motion-broll",
+  "purpose": "A moving shot that carries the story between lines: walking, arriving, working, travelling. Fixes the F12 near-still clips.",
+  "camera_default": "[Tracking shot] or [Truck left]/[Truck right] matched to the subject's direction",
+  "camera_allowed": [
+    "[Tracking shot]",
+    "[Truck left]",
+    "[Truck right]",
+    "[Pan left]",
+    "[Pan right]",
+    "[Pedestal up]",
+    "[Push in]",
+    "[Static shot]"
+  ],
+  "required_spec": [
+    "subject",
+    "composition",
+    "action.start",
+    "action.end",
+    "action.direction",
+    "camera.direction",
+    "beats"
+  ],
+  "direction_rule": "Subject motion and camera motion are written as two sentences with their own direction words; when both move, say they move the same way at the same speed or name the difference.",
+  "negatives": [
+    "no moonwalking or sliding feet",
+    "no reversed walking direction",
+    "no extra pedestrians in focus"
+  ],
+  "beats_pattern": "enter/start position -> mid-path detail (glance, prop) -> reach end position -> held last frame",
+  "motion_floor": "motion_score >= 0.02 (MOTION_SCORE_LOW) or the clip is flagged CLIP_LOW_MOTION before assembly"
+}

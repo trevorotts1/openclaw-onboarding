@@ -1,0 +1,27 @@
+{
+  "style_id": "rnb-flow",
+  "label": "R&B Flow",
+  "deliveries": [
+    "spoken",
+    "rap",
+    "sung"
+  ],
+  "style_parts": [
+    "contemporary r&b with hip-hop flow, 84-94 bpm, crisp programmed drums with tight hats, deep sub bass, Rhodes chord stabs, bright synth plucks, smooth sung r&b hook, call-and-response ad-libs, confident swagger, dry upfront vocal, radio-ready mix.",
+    "{gender} lead sings the hook with sustained notes; the verses are rhythmic rap with clear diction over the beat.",
+    "The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music, RAPS the lines tagged Rap with confident metered flow, and SINGS the lines tagged Sung with long held notes.",
+    "The intro and the outro are spoken; the full band keeps playing continuously under them."
+  ],
+  "ending_clause_added_by_ending_qc": ", natural resolved ending, final chord rings out and fades",
+  "negative_tags": "choir, reverb, echo, band dropout, acapella sections, talk-singing, monotone delivery",
+  "rap_allowed": true,
+  "rap_rate_wps": 2.5,
+  "pending": "U2/U3: rap word budget and R&B Flow share targets wait on Trevor's decision (file 18 open decision 1). Default proposed there: target = the share planned from the approved sheet, judged on the 5/10 band.",
+  "skeleton_rule": "Intro (spoken) -> Vocalise -> Hook 1 by 15% -> Rap verse -> Hook -> Rap verse -> Product passage (sung) -> Hooks -> Outro (spoken CTA) -> [End]. The 6 s sung stretch and the hook count stay hard.",
+  "cue_overrides": {
+    "sung:hook": "smooth r&b melody, sustained notes, clear diction",
+    "sung:pre-hook": "smooth r&b melody, rhymed",
+    "sung:product": "smooth r&b melody, clear diction on the name",
+    "sung:bridge": "half-time r&b, sustained"
+  }
+}

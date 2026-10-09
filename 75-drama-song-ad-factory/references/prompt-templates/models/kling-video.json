@@ -1,0 +1,14 @@
+{
+  "model_block": "kling-video",
+  "applies_to": ["kling-3.0-omni/image-to-video", "kling-3.0-omni/text-to-video", "kling-3.0/video", "kling/v2-5-turbo-image-to-video-pro"],
+  "when_used": "Only when the card's video model (price menu, F14 lock) is a Kling video model instead of MiniMax H3. Never for lip-sync (that is kling/ai-avatar-standard, models/kling-ai-avatar-standard.json).",
+  "section_order": "Same order as minimax-h3.json, compressed: header, subject, action, reference, camera, lens_light, continuity, look, book, pages, physics, beats, policy, negatives.",
+  "section_scale": 0.38,
+  "differences_from_h3": [
+    "No bracket camera syntax: Kling takes the move in plain words, placed AFTER the subject's motion (file 17: 'Add camera movement after subject movement').",
+    "Look block uses the mode's kling_block (short form, about 350-450 characters), not the h3_block.",
+    "Negatives stay inside the prompt: the 67 catalog shows no negative_prompt control field for these KIE entries. Use a separate negative_prompt field only if a later catalog row lists it.",
+    "Band: 1,800-2,500 target (Kling recommends 2,500 or less); hard max from the catalog (3,072 omni, 2,500 for 3.0/video and 2.5 turbo).",
+    "Duration: kling-3.0-omni 3-15 s; 2.5 turbo 5 or 10 s only."
+  ]
+}

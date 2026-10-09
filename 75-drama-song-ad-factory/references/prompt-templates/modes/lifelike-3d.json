@@ -1,0 +1,11 @@
+{
+  "mode_id": "lifelike-3d",
+  "label": "Lifelike 3D (cinematic CGI)",
+  "source": "choice_card/looks LIFELIKE_3D_STYLE + canvas_3d_bible LIFELIKE_3D_STYLE, merged, no duplicates",
+  "h3_block": "High-end cinematic CGI animation that is clearly animated but carries lifelike faces with believable weight; never photoreal live-action and never a flat cartoon. Physically based shading, subsurface-scattered skin with soft pores and fine vellus detail, individually groomed hair strands, simulated cloth that folds and settles with real weight, and soft global illumination. Sets are CGI in the same render family as the characters: physically based surfaces with settled, believable wear and readable depth layers. A motivated key light with soft fill and a gentle rim; controlled specular highlights on skin, eyes, cloth and props. Filmic tone curve with rolled highlights and open shadows that still read on a phone screen. {palette} Fine film grain over a clean render, crisp silhouettes, no sharpening halo. Eyes carry wet highlights and tiny movements, so the face never looks plastic, waxy or dead.",
+  "palette_default": "Palette: filmic neutrals with amber warmth for home and hope and cool steel for stress.",
+  "kling_block": "Cinematic CGI animation, clearly animated with lifelike faces; physically based skin, groomed hair, simulated cloth, soft global illumination, motivated key with soft fill, filmic tone curve, fine grain, no plastic skin or dead eyes.",
+  "kling_who": "3D animated",
+  "keyframe_clause": "same 3D character, cinematic CGI render, physically based skin and groomed hair",
+  "lipsync_allowed": true
+}

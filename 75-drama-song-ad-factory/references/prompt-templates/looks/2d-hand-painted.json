@@ -1,0 +1,16 @@
+{
+  "look_id": "2d-hand-painted",
+  "label": "2D Hand-Painted",
+  "modes": [
+    "painted-2d"
+  ],
+  "beat_mode": {
+    "*": "painted-2d"
+  },
+  "switch": null,
+  "lipsync_modes": [
+    "painted-2d"
+  ],
+  "finale": "painted-2d",
+  "source": "style_bible_integration.DEFAULT_STYLE"
+}

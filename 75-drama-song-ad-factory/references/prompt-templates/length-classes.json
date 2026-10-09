@@ -1,0 +1,369 @@
+{
+  "_source": "length_formula.plan() on main d067ab9/ef1537d (default spoken target 22.5%), sung_hook, lipsync_clips.budget, shot_planner.plan_generation_count (4 s target shot), PR #96 lane_planner (W-G-008, OPEN, not on main), H3 catalog 4-15 s.",
+  "classes": {
+    "60": {
+      "chosen_s": 60,
+      "delivered_s": 58,
+      "bracket": "60s",
+      "shots_total": 15,
+      "lipsync_clips": [
+        6,
+        8
+      ],
+      "lipsync_seconds": [
+        29.0,
+        38.7
+      ],
+      "lipsync_clip_s": [
+        4,
+        6
+      ],
+      "h3_shots": [
+        7,
+        9
+      ],
+      "h3_seconds": [
+        19.3,
+        29.0
+      ],
+      "h3_request_s_per_clip": "clamp(ceil(shot_s + 1.0), 4, 15); about 5 s at the 4 s target shot",
+      "lanes": 1,
+      "kie_new_requests_per_lane_per_10s": 20,
+      "hooks": 3,
+      "song_words": {
+        "total": 66,
+        "spoken": 18,
+        "sung": 48,
+        "opener_max": 3
+      },
+      "sections": {
+        "verses": 1,
+        "pre_chorus": 0,
+        "chorus": 1,
+        "bridge": 0
+      },
+      "instrumental_breaks": {
+        "count": 0,
+        "seconds_each": 0
+      },
+      "spoken_share_planned_pct": 22.2,
+      "spoken_placement": "[Intro] opener + [Outro] CTA only",
+      "product_seconds": [
+        5.8,
+        8.7
+      ],
+      "suno_generations": "1 base",
+      "budget_drivers": [
+        "H3 seconds x H3 rate x shapes (one or both)",
+        "Kling lip-sync seconds x Kling rate x 2 (worst case, 2 tries)",
+        "one keyframe image per H3 shot + one close-up per speaking character",
+        "Suno takes until the first pass",
+        "20% retake allowance"
+      ]
+    },
+    "90": {
+      "chosen_s": 90,
+      "delivered_s": 88,
+      "bracket": "90s",
+      "shots_total": 22,
+      "lipsync_clips": [
+        9,
+        12
+      ],
+      "lipsync_seconds": [
+        44.0,
+        58.7
+      ],
+      "lipsync_clip_s": [
+        4,
+        6
+      ],
+      "h3_shots": [
+        10,
+        13
+      ],
+      "h3_seconds": [
+        29.3,
+        44.0
+      ],
+      "h3_request_s_per_clip": "clamp(ceil(shot_s + 1.0), 4, 15); about 5 s at the 4 s target shot",
+      "lanes": 1,
+      "kie_new_requests_per_lane_per_10s": 20,
+      "hooks": 4,
+      "song_words": {
+        "total": 95,
+        "spoken": 28,
+        "sung": 67,
+        "opener_max": 3
+      },
+      "sections": {
+        "verses": 2,
+        "pre_chorus": 2,
+        "chorus": 2,
+        "bridge": 0
+      },
+      "instrumental_breaks": {
+        "count": 1,
+        "seconds_each": 6
+      },
+      "spoken_share_planned_pct": 22.7,
+      "spoken_placement": "[Intro] opener + [Outro] CTA only",
+      "product_seconds": [
+        8.8,
+        13.2
+      ],
+      "suno_generations": "1 base",
+      "budget_drivers": [
+        "H3 seconds x H3 rate x shapes (one or both)",
+        "Kling lip-sync seconds x Kling rate x 2 (worst case, 2 tries)",
+        "one keyframe image per H3 shot + one close-up per speaking character",
+        "Suno takes until the first pass",
+        "20% retake allowance"
+      ]
+    },
+    "120": {
+      "chosen_s": 120,
+      "delivered_s": 118,
+      "bracket": "2min",
+      "shots_total": 30,
+      "lipsync_clips": [
+        12,
+        16
+      ],
+      "lipsync_seconds": [
+        59.0,
+        78.7
+      ],
+      "lipsync_clip_s": [
+        4,
+        6
+      ],
+      "h3_shots": [
+        14,
+        18
+      ],
+      "h3_seconds": [
+        39.3,
+        59.0
+      ],
+      "h3_request_s_per_clip": "clamp(ceil(shot_s + 1.0), 4, 15); about 5 s at the 4 s target shot",
+      "lanes": 2,
+      "kie_new_requests_per_lane_per_10s": 9,
+      "hooks": 5,
+      "song_words": {
+        "total": 128,
+        "spoken": 37,
+        "sung": 91,
+        "opener_max": 9
+      },
+      "sections": {
+        "verses": 2,
+        "pre_chorus": 2,
+        "chorus": 2,
+        "bridge": 1
+      },
+      "instrumental_breaks": {
+        "count": 1,
+        "seconds_each": 6
+      },
+      "spoken_share_planned_pct": 22.4,
+      "spoken_placement": "[Intro] opener + [Outro] CTA only",
+      "product_seconds": [
+        11.8,
+        17.7
+      ],
+      "suno_generations": "1 base",
+      "budget_drivers": [
+        "H3 seconds x H3 rate x shapes (one or both)",
+        "Kling lip-sync seconds x Kling rate x 2 (worst case, 2 tries)",
+        "one keyframe image per H3 shot + one close-up per speaking character",
+        "Suno takes until the first pass",
+        "20% retake allowance"
+      ],
+      "code_gap": "music_styles.OFFERED_LENGTHS_S and words_fit.CARD_LENGTHS_S still lack 120 (U2 fixes); length_formula and lipsync_clips already handle it."
+    },
+    "180": {
+      "chosen_s": 180,
+      "delivered_s": 178,
+      "bracket": "3min",
+      "shots_total": 45,
+      "lipsync_clips": [
+        18,
+        24
+      ],
+      "lipsync_seconds": [
+        89.0,
+        118.7
+      ],
+      "lipsync_clip_s": [
+        4,
+        6
+      ],
+      "h3_shots": [
+        21,
+        27
+      ],
+      "h3_seconds": [
+        59.3,
+        89.0
+      ],
+      "h3_request_s_per_clip": "clamp(ceil(shot_s + 1.0), 4, 15); about 5 s at the 4 s target shot",
+      "lanes": 3,
+      "kie_new_requests_per_lane_per_10s": 6,
+      "hooks": 8,
+      "song_words": {
+        "total": 172,
+        "spoken": 42,
+        "sung": 130,
+        "opener_max": 10
+      },
+      "sections": {
+        "verses": 2,
+        "pre_chorus": 2,
+        "chorus": 3,
+        "bridge": 1
+      },
+      "instrumental_breaks": {
+        "count": 2,
+        "seconds_each": 8
+      },
+      "spoken_share_planned_pct": 16.9,
+      "spoken_placement": "[Intro] opener + [Outro] CTA only",
+      "product_seconds": [
+        17.8,
+        26.7
+      ],
+      "suno_generations": "1 base",
+      "budget_drivers": [
+        "H3 seconds x H3 rate x shapes (one or both)",
+        "Kling lip-sync seconds x Kling rate x 2 (worst case, 2 tries)",
+        "one keyframe image per H3 shot + one close-up per speaking character",
+        "Suno takes until the first pass",
+        "20% retake allowance"
+      ],
+      "spoken_share_note": "length_formula caps spoken at opener + 30 words, so the plan reaches only 16.9%; the ad's own spoken target is stamped to the planned share and judged on the 5/10 band (SKILL: each ad can set its own). Open decision for Trevor."
+    },
+    "300": {
+      "chosen_s": 300,
+      "delivered_s": 298,
+      "bracket": "5min",
+      "shots_total": 75,
+      "lipsync_clips": [
+        30,
+        40
+      ],
+      "lipsync_seconds": [
+        149.0,
+        198.7
+      ],
+      "lipsync_clip_s": [
+        4,
+        6
+      ],
+      "h3_shots": [
+        35,
+        45
+      ],
+      "h3_seconds": [
+        99.3,
+        149.0
+      ],
+      "h3_request_s_per_clip": "clamp(ceil(shot_s + 1.0), 4, 15); about 5 s at the 4 s target shot",
+      "lanes": 5,
+      "kie_new_requests_per_lane_per_10s": 3,
+      "hooks": 12,
+      "song_words": {
+        "total": 257,
+        "spoken": 42,
+        "sung": 215,
+        "opener_max": 10
+      },
+      "sections": {
+        "verses": 3,
+        "pre_chorus": 2,
+        "chorus": 4,
+        "bridge": 1
+      },
+      "instrumental_breaks": {
+        "count": 3,
+        "seconds_each": 10
+      },
+      "spoken_share_planned_pct": 10.1,
+      "spoken_placement": "[Intro] opener + [Outro] CTA only",
+      "product_seconds": [
+        29.8,
+        44.7
+      ],
+      "suno_generations": "1 base",
+      "budget_drivers": [
+        "H3 seconds x H3 rate x shapes (one or both)",
+        "Kling lip-sync seconds x Kling rate x 2 (worst case, 2 tries)",
+        "one keyframe image per H3 shot + one close-up per speaking character",
+        "Suno takes until the first pass",
+        "20% retake allowance"
+      ],
+      "spoken_share_note": "length_formula caps spoken at opener + 30 words, so the plan reaches only 10.1%; the ad's own spoken target is stamped to the planned share and judged on the 5/10 band (SKILL: each ad can set its own). Open decision for Trevor."
+    },
+    "600": {
+      "chosen_s": 600,
+      "delivered_s": 598,
+      "bracket": "10min",
+      "shots_total": 150,
+      "lipsync_clips": [
+        60,
+        80
+      ],
+      "lipsync_seconds": [
+        299.0,
+        398.7
+      ],
+      "lipsync_clip_s": [
+        4,
+        6
+      ],
+      "h3_shots": [
+        70,
+        90
+      ],
+      "h3_seconds": [
+        199.3,
+        299.0
+      ],
+      "h3_request_s_per_clip": "clamp(ceil(shot_s + 1.0), 4, 15); about 5 s at the 4 s target shot",
+      "lanes": 10,
+      "kie_new_requests_per_lane_per_10s": 1,
+      "hooks": 12,
+      "song_words": {
+        "total": 474,
+        "spoken": 42,
+        "sung": 432,
+        "opener_max": 10
+      },
+      "sections": {
+        "verses": 5,
+        "pre_chorus": 4,
+        "chorus": 7,
+        "bridge": 2
+      },
+      "instrumental_breaks": {
+        "count": 5,
+        "seconds_each": 12
+      },
+      "spoken_share_planned_pct": 5.0,
+      "spoken_placement": "[Intro] opener + [Outro] CTA only",
+      "product_seconds": [
+        59.8,
+        89.7
+      ],
+      "suno_generations": "1 base + 3 extends",
+      "budget_drivers": [
+        "H3 seconds x H3 rate x shapes (one or both)",
+        "Kling lip-sync seconds x Kling rate x 2 (worst case, 2 tries)",
+        "one keyframe image per H3 shot + one close-up per speaking character",
+        "Suno takes until the first pass + extends",
+        "20% retake allowance"
+      ],
+      "spoken_share_note": "length_formula caps spoken at opener + 30 words, so the plan reaches only 5.0%; the ad's own spoken target is stamped to the planned share and judged on the 5/10 band (SKILL: each ad can set its own). Open decision for Trevor."
+    }
+  }
+}

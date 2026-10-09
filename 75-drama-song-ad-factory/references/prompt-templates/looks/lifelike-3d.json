@@ -1,0 +1,17 @@
+{
+  "look_id": "lifelike-3d",
+  "label": "Lifelike 3D",
+  "default": true,
+  "modes": [
+    "lifelike-3d"
+  ],
+  "beat_mode": {
+    "*": "lifelike-3d"
+  },
+  "switch": null,
+  "lipsync_modes": [
+    "lifelike-3d"
+  ],
+  "finale": "lifelike-3d",
+  "source": "choice_card/looks LIFELIKE_3D_STYLE"
+}

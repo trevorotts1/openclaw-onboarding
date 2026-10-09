@@ -13,6 +13,39 @@
 
 ---
 
+## Creative doctrine: villain, pain, rise (Trevor order 2026-10-08)
+
+> "People don't care about the hero until they meet the villain." - Trevor Otts
+
+These are **not music videos**. They are compelling true stories told through
+the animation, the music and the lyrics - songs strong enough to sell as a
+soundtrack on their own (the Grey's Anatomy standard: you watch the show and
+you buy the music). Every ad has a compelling plot, a villain that evokes a
+visceral response - a person OR not a person (cancer, debt, a layoff, a lie,
+burnout, fear, the inner critic, a system) - and every ad carries the **pain
+AND the rise**, so the audience feels the pain and the problem in the depth of
+their soul.
+
+- **Villain contract (DS-4, DS-5):** every ad names its villain in the story
+  plan; a villain is never implied. It is shown on screen in concrete,
+  visceral form with its OWN shots, felt in the lyrics with real stakes and
+  consequences, escalating, then confronted, then defeated or transformed at
+  the rise.
+- **The arc:** hook -> the world -> the villain arrives -> the pain deepens ->
+  the lowest point -> the turn (the product or book as the key) -> the rise ->
+  the call to action. Pain gets real screen time; the rise is earned, never
+  rushed.
+- **The numbers:** `length_formula.plan_villain_doctrine` fails CLOSED when no
+  villain is named or the villain has no shot - the only two hard cases. Pain
+  share of runtime: target band 20-35%; outside is a FLAG with the measured
+  seconds, never a block.
+- **The checker:** `delivery_checklist.measure_villain_doctrine` reports the
+  `VILLAIN_DOCTRINE` row (villain shots, villain screen seconds, pain seconds,
+  rise seconds); evidence only, never repair_scope. Approval card line:
+  `Villain: <name>, shown in N shots`.
+
+---
+
 ## DMAIC Coverage Map
 
 - **Define** — lock intake mode, the choice card and the approved price (DS-1, DS-2).

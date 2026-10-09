@@ -27,10 +27,11 @@ from .shot_planner import (
     E4_REASONS,
     E4_GATE_STEPS,
     validate_no_reuse,
-    plan_generation_count,
-    validate_story_order,
+    plan_generation_count,    validate_story_order,
     e4_final_checks,
     to_e4_qc_record,
+    prompt_spec_for,
+    PROMPT_SPEC_KEYS,
 )
 from .timestamp_plan import (  # Part H H5
     MAX_SLOWMO,
@@ -97,7 +98,7 @@ __all__ = [
     "intake_image_prompt", "intake_shot_prompts", "require_compiled",
     "TARGET_SHOT_SECONDS", "E4_REASONS", "E4_GATE_STEPS",
     "validate_no_reuse", "plan_generation_count", "validate_story_order",
-    "e4_final_checks", "to_e4_qc_record",
+    "e4_final_checks", "to_e4_qc_record", "prompt_spec_for", "PROMPT_SPEC_KEYS",
     "MOTION_SCORE_LOW", "CLIP_LOW_MOTION", "MotionScoreError",
     "gate_clip_motion",
 ]

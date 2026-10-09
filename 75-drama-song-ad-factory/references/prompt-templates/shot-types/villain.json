@@ -1,0 +1,28 @@
+{
+  "shot_type": "villain",
+  "purpose": "The villain's own shot (U16 carry-in, Trevor order 2026-10-08: people don't care about the hero until they meet the villain). A villain may be a person or NOT a person: cancer, debt, a layoff, a lie, burnout, fear, the inner critic, a system. The shot shows TEXTURE, SCALE, THREAT and the villain's PHYSICAL EFFECT on the hero.",
+  "u16_carry_in": "The guidance text lives in scripts/core/product_style_bible/bible.py as VILLAIN_SHOT_GUIDANCE (and VILLAIN_LYRIC_GUIDANCE for the Suno side); the assembler reads it from there and never forks it.",
+  "camera_default": "[Static shot] or a very slow [Push in]",
+  "camera_allowed": [
+    "[Static shot]",
+    "[Push in]",
+    "[Pull out]",
+    "[Pedestal down]"
+  ],
+  "required_spec": [
+    "subject",
+    "composition",
+    "action.start",
+    "action.end",
+    "visible_emotion",
+    "beats",
+    "motion_physics"
+  ],
+  "emotion_rule": "The fear, weight or dread reads on the hero's body, not in a grimace. A pain line never gets a smile. The villain's own shot never softens it.",
+  "negatives": [
+    "no smiling",
+    "no cartoon-villain theatrics",
+    "no horror gore"
+  ],
+  "beats_pattern": "the villain fills the frame -> the threat lands (texture, scale) -> the hero's body answers (breath, posture, hands, light on the face)"
+}

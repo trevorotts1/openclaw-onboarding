@@ -1,0 +1,47 @@
+{
+  "shot_id": "S07",
+  "shot_type": "talking-closeup",
+  "look": "lifelike-3d",
+  "mode": "lifelike-3d",
+  "model": "minimax-h3/image-to-video",
+  "duration_s": 6,
+  "aspect": "9:16",
+  "resolution": "768P",
+  "beat": "frozen",
+  "character": "renee",
+  "wardrobe": "home-night",
+  "intent": "Renee hears her own doubt in the sung line and decides not to cry; the viewer must feel the held breath before she gives in.",
+  "subject": "Renee, chest-up, centred in the frame with her eyes on the upper third line and her face turned five degrees toward screen-left of the lens. She sits at her kitchen table late at night; the edge of a white mug is just visible in the bottom-right corner of the frame.",
+  "composition": "Foreground: the out-of-focus rim of the mug at bottom right. Midground: Renee, sharp from the glasses to the collarbones. Background: a dark kitchen with one warm under-cabinet light strip at screen-right and a window at screen-left showing a deep blue night sky, both softly blurred into large circles of light.",
+  "action": {
+    "start": "The clip opens exactly on the first frame: Renee looking down at the table, shoulders slightly raised, glasses catching a small highlight.",
+    "end": "She lifts her eyes to look just past the lens toward screen-left, exhales through her nose, and her shoulders settle down by about two centimetres.",
+    "direction": "Her gaze travels upward and slightly toward screen-left; her head rises about five degrees and does not turn."
+  },
+  "camera": {
+    "command": "[Push in]",
+    "plain": "The camera pushes in very slowly and steadily toward her face, from a chest-up framing to a tight head-and-shoulders framing by the end of the clip, keeping her eyes on the upper third line. The camera does not pan, tilt or rotate."
+  },
+  "lens_light": "Equivalent of an 85 mm lens at a wide aperture, focus locked on her near eye through the glasses. The key light is the warm under-cabinet strip from screen-right at about 3,000 kelvin, falling across the screen-right side of her face and leaving a soft shadow on the screen-left side of her nose. A cool blue fill from the window at screen-left lifts the shadow side of her face just enough to keep detail. A thin warm rim catches the top of her hair. Night interior exposure, deep but detailed shadows, no blown highlights on the glasses.",
+  "visible_emotion": "held-back grief turning into tired resolve",
+  "motion_physics": "Her breath is visible as a small rise and fall of the cardigan at the collarbones every three to four seconds. The knit fabric settles in soft folds when her shoulders drop. Natural blinks happen twice, each about a third of a second. The glasses move with her head as one solid object and never slide. Light on her skin shifts subtly as her face rises into the key light.",
+  "beats": [
+    [
+      "0.0-1.5 s",
+      "She stays still, eyes down, one slow blink."
+    ],
+    [
+      "1.5-3.0 s",
+      "Her brows draw together slightly and her jaw tightens; she swallows once."
+    ],
+    [
+      "3.0-4.5 s",
+      "Her eyes lift to just past the lens toward screen-left and her head rises about five degrees."
+    ],
+    [
+      "4.5-6.0 s",
+      "She exhales through her nose and her shoulders settle; she holds the look, still and steady, into the last frame."
+    ]
+  ],
+  "negatives_extra": []
+}

@@ -86,8 +86,16 @@ def disp(script, label, model, lock=None, state_db=None, tmp=None,
     db = os.path.join(tmp, "spend-%s.db" % label)
     L.init_run(db, "run-f14", 10000)
     fake = Fake74(s)
+    # U15b: an H3 job is only dispatched with a matching prompt receipt; the
+    # stub prompt is "q"*200, so the stub carries its receipt (PASS).
+    import hashlib as _h
+    _stub_prompt = "q" * 200
     env = D.dispatch(
         model=model, request={"model": "m", "input": {"prompt": "p" * 200},
+                              "prompt_receipt": {
+                                  "prompt_sha256": _h.sha256(
+                                      _stub_prompt.encode("utf-8")).hexdigest(),
+                                  "check": {"verdict": "PASS", "reasons": []}},
                               # F15 seam: the F14 lock tests run past the
                               # card gate, so their stub carries the recorded
                               # receipt (both acceptance criteria satisfied).

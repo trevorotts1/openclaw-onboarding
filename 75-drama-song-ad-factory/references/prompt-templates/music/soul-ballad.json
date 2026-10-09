@@ -1,0 +1,20 @@
+{
+  "style_id": "soul-ballad",
+  "label": "Soul Ballad",
+  "default": true,
+  "deliveries": [
+    "spoken",
+    "sung"
+  ],
+  "style_parts": [
+    "soul ballad, slow emotional 62-68 bpm, warm felt piano, brushed kit entering at the chorus, deep rounded bass, soulful lead vocal with melismatic runs, close dry upfront vocal, minor key, restrained verse opening into a full-voiced chorus, no distortion.",
+    "{gender} lead, sung melody with long held open vowels, slow tempo.",
+    "The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music, and SINGS the lines tagged Sung with long held notes.",
+    "Only the short intro and the final outro are spoken; the full band keeps playing continuously under them."
+  ],
+  "ending_clause_added_by_ending_qc": ", natural resolved ending, final chord rings out and fades",
+  "negative_tags": "rap, rapping, choir, reverb, echo, band dropout, acapella sections, talk-singing, monotone delivery",
+  "rap_allowed": false,
+  "skeleton_rule": "Intro (spoken opener) -> Vocalise -> Hook 1 by 15% -> verses and pre-hooks between hooks -> Product passage on beat 8 -> remaining hooks evenly -> last hook near 90% -> Outro (spoken CTA) -> [End].",
+  "cue_overrides": {}
+}

@@ -1,0 +1,49 @@
+{
+  "shot_id": "S09",
+  "shot_type": "product-book",
+  "look": "lifelike-3d",
+  "mode": "lifelike-3d",
+  "model": "minimax-h3/image-to-video",
+  "duration_s": 6,
+  "aspect": "9:16",
+  "resolution": "768P",
+  "beat": "product_intro",
+  "character": "renee",
+  "wardrobe": "home-night",
+  "intent": "Product introduction: the book arrives as the turning point; the viewer must see the real cover, the right way round, and real printed pages.",
+  "subject": "The client's hardcover book lying closed on a light oak kitchen table, centred in the lower half of the frame, front cover up and facing the camera, viewed from slightly above at about forty degrees. Renee's two hands, cardigan cuffs visible, rest on the table either side of it.",
+  "composition": "Foreground: the near edge of the oak table with a soft wood grain. Midground: the book, sharp, filling about forty percent of the frame width. Background: a softly blurred kitchen with a warm lamp at screen-left and a small potted plant at screen-right, both reduced to gentle light shapes.",
+  "action": {
+    "start": "The clip opens exactly on the first frame: the book closed, front cover up, Renee's hands still on the table.",
+    "end": "Renee opens the front cover and turns two pages, one at a time, then rests her right hand flat on the table just right of the open book, her left hand still at its lower-left corner, with both open printed pages facing the camera.",
+    "direction": "Her right hand moves from the table to the right edge of the front cover; the cover and pages travel from right to left as the viewer sees them."
+  },
+  "camera": {
+    "command": "[Static shot]",
+    "plain": "The camera is completely still for the whole clip: no pan, no tilt, no zoom and no orbit around the book."
+  },
+  "lens_light": "Equivalent of a 50 mm lens at a moderate aperture so the whole book stays sharp from spine to fore-edge. Warm lamp light from screen-left at about 3,200 kelvin is the key, raking softly across the cover so its texture reads, with a gentle bounce from the white table runner filling the screen-right side. A faint specular highlight sits on the glossy cover without hiding any of the art.",
+  "book": "open",
+  "pages": "texture",
+  "visible_emotion": "hope, careful attention",
+  "motion_physics": "The cover has the weight of a real hardcover board: it lifts, pivots on the spine and lands flat with a small settle. Each page bends from the right fore-edge in a soft curve, travels through the air at an even speed and lies down flat on the left stack without bouncing. Her fingertips touch only the outer edge of each page. The book body stays still on the table, never sliding.",
+  "beats": [
+    [
+      "0.0-1.5 s",
+      "The book lies closed; her right hand moves to the right edge of the front cover."
+    ],
+    [
+      "1.5-3.0 s",
+      "She lifts the cover's right edge and swings it leftward until the book lies open."
+    ],
+    [
+      "3.0-5.0 s",
+      "She turns two pages, one at a time, each from the right-hand stack to the left-hand stack."
+    ],
+    [
+      "5.0-6.0 s",
+      "She rests her right hand flat beside the open book; both printed pages face the camera, held still."
+    ]
+  ],
+  "negatives_extra": []
+}

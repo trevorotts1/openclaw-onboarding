@@ -1,0 +1,13 @@
+{
+  "_note": "SAMPLE character record for the worked examples only (fictional). In a run this comes from character_continuity, never typed by hand.",
+  "renee": {
+    "identity": "Renee is the same woman in every shot: a Black woman in her mid-forties with warm deep-brown skin, a soft round face, full cheeks, short natural coily hair tapered at the sides and slightly fuller on top, round tortoiseshell glasses sitting level on the bridge of her nose, and small gold stud earrings. She is about five foot six with a soft, solid build.",
+    "wardrobe": {
+      "home-night": "a rust-orange knit cardigan over a cream crew-neck top and charcoal lounge trousers",
+      "street-day": "a camel wool coat over a cream top, dark jeans and white sneakers, a canvas tote on her right shoulder",
+      "office": "a navy blazer over a cream blouse, a canvas tote",
+      "finale": "the rust-orange cardigan over a white top"
+    },
+    "do_not_change": "Never change her hairstyle or hair length, never remove or reshape the glasses, never add jewellery beyond the gold studs, never lighten or darken her skin and never change her age."
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "mode_id": "golden-realism",
+  "label": "Golden realism (finale)",
+  "source": "realism block + hybrid/canvas_to_life FINALE_BLOCK",
+  "extends": "realism",
+  "h3_block_suffix": "Finale grade: golden-hour key light, warm amber highlights on skin, a soft golden rim on hair and shoulders and a hopeful sense of closure; the transformation and payoff play here, and the ad ends on this warmth.",
+  "kling_who": "photoreal",
+  "lipsync_allowed": false,
+  "lipsync_note": "Hybrid plan rule: lip-sync only on realism close-ups (hybrid._lipsync returns False for golden)."
+}

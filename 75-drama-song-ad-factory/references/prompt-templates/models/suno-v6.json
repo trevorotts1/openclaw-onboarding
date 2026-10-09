@@ -1,0 +1,54 @@
+{
+  "model_block": "suno-v6",
+  "route": "KIE generate-music (Skill 68 / 74 market createTask), custom mode",
+  "kie_params": {"model": "V6", "custom_mode": true, "instrumental": false, "style_weight": 0.75, "weirdness_constraint": 0.3, "variety": 0, "vocal_gender": "per brief (m|f)", "duration": "delivered seconds (L-2); G9 headroom question is open decision 3 in file 18"},
+  "never_set": ["audio_weight", "persona_id", "persona_model"],
+  "fields": {
+    "lyrics": {"cap": 5000, "kind": "verbatim", "built_by": "suno_recipe.render_lyrics from the music style's length skeleton + the lyric writer's lines"},
+    "style":  {"cap": 1000, "kind": "ceiling_only", "target_max": 700, "built_by": "music/<style>.json style_parts, joined in order; measured AFTER ending_qc appends the clean-ending clause"},
+    "title":  {"cap": 80,   "kind": "ceiling_only", "built_by": "ad name, plain words, no brand-name claims"},
+    "negative_tags": {"cap": 1000, "kind": "ceiling_only", "status": "UNVERIFIED cap", "built_by": "music/<style>.json negative_tags"}
+  },
+  "tag_grammar": {
+    "form": "[<Section> (<delivery>): <cue>]",
+    "delivery": ["sung", "spoken", "rap"],
+    "cue_max_chars": 70,
+    "cue_rule": "short and concrete (file 17); delivery named in every tag; a cue never carries plot or lyric words",
+    "multi_vocalist_form": "[<Section> (<delivery>): Vocal A, <gender word from cast> voice, <cue>]",
+    "multi_vocalist_rule": "labels repeat in every tag that voice sings; gender word comes from the cast record (U5), never hard-coded; identity is NOT guaranteed (file 17), so qc_voice_match line_voice_fit is the judge",
+    "section_names": ["Intro", "Vocalise", "Verse N", "Pre-Hook", "Hook", "Build", "Bridge", "Product", "Instrumental Break", "Outro"],
+    "end_tag": "[End]"
+  },
+  "cue_vocabulary": {
+    "sung":   {"vocalise": "wordless, full melodic voice, two very long held notes", "verse": "melodic, rhymed, slow long held notes", "hook": "full melody, sustained notes, slow long held notes", "product": "melodic, warm, clear diction on the name", "bridge": "half-time, stripped back, sustained", "build": "melodic, rising, tempo lifting"},
+    "spoken": {"intro": "close dry voice, plain speech, no melody", "outro": "calm close voice, plain speech, no melody"},
+    "rap":    {"verse": "tight rhythmic rap, conversational flow, clear diction", "verse_low": "low-register conversational rap, clear diction"}
+  },
+  "lyric_line_rules": [
+    "sung lines 5-6 syllables aimed, 8 at most (suno_recipe.MAX_SUNG_LINE_SYLLABLES)",
+    "sung lines rhymed AABB, ending on open vowels where possible (go, me, high, slow), with hyphen-held vowels on the held word (ri-i-ise)",
+    "a wordless sung vocalise comes before the first hook; the first hook never starts at 0 s",
+    "the hook is pasted in full every time it is sung (never 'repeat chorus')",
+    "numbers and times as words in sung text ('nine A M'); brand words in a pronounceable sheet spelling, display spelling for captions (U8 map)",
+    "no essential words inside parentheses",
+    "spoken text: short plain sentences, periods, no rhyme, no repetition (the contrast with the sung lines is the signal, file 09)",
+    "rap lines (R&B Flow only): 8-12 words per line, internal rhyme allowed, no line over 14 words"
+  ],
+  "hook_formula": {
+    "words": "4-10 of the client's own words (sung_hook.check_hook_text), protected names exact",
+    "shape": "one line of 6-8 syllables, or two lines of 5-6, ending on an open vowel; the payoff / brand promise",
+    "count": "sung_hook.hook_count(delivered_s) = clamp(1 + floor(D/25), 2, 12)",
+    "placement": "first by 15% of runtime, last near 90% (before the CTA), the rest evenly spaced (sung_hook.hook_times)"
+  },
+  "extend_rules": [
+    "Extend is used ONLY to land a length one generation cannot reach (delivered > 300 s, length_formula.MAX_GEN_S) or to repair a take that came back short.",
+    "Request: model ai-music-api/extend, input {audio_id, continue_at = measured audio length - 30, model = the source take's model}. No duration field: measure the returned take and re-plan from its real length.",
+    "Same style text, vocal gender, tempo and key words on every segment; the extend lyrics carry only the sections not yet sung, with their own [Section (delivery)] tags.",
+    "Never extend for billing or to pad a short song: a short take is regenerated whole unless only the tail is missing."
+  ],
+  "replace_section_rules": [
+    "LEARNED: KIE replace-section regenerates the TAIL from infillStartS, so it is never an in-place edit of a middle section.",
+    "Allowed only as a tail repair: the defect sits in the last part of the take, the regenerated region is at least 10 s and at most 50% of the original duration (68 catalog), and everything after infillStartS may change.",
+    "After any replace or extend, the WHOLE take is judged again by song_dispatch (singcheck, spoken share, sung of voice, 6 s stretch, hook count, script words, length, clean ending). A middle-section defect means regenerate the whole track."
+  ]
+}

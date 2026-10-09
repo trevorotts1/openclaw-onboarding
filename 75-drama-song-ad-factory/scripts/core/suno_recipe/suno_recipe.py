@@ -31,6 +31,7 @@ if _CORE not in sys.path:
 
 import length_formula as _LF    # noqa: E402
 import music_styles as _MS      # noqa: E402
+import prompt_limits as _PL     # noqa: E402
 import spoken_share as _SS      # noqa: E402
 import sung_hook as _SH         # noqa: E402
 
@@ -269,6 +270,9 @@ def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f
     req.update({"duration": length_s, "vocal_gender": vocal_gender, "title": title,
                 "style": out["style"], "lyrics": out["lyrics"],
                 "negative_tags": out["negative_tags"]})
+    # FU-U6 (plan E.1): the final payload measured against the catalog caps;
+    # over a cap, prompt_limits raises naming field, chars, cap, source, status.
+    _PL.check_request("suno-generate", req)
     return req
 
 

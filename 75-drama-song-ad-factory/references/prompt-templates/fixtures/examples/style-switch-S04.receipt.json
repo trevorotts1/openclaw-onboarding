@@ -1,0 +1,41 @@
+{
+  "shot_id": "S04",
+  "model": "minimax-h3/image-to-video",
+  "look": "sketch-to-life",
+  "mode": "sketch-ink",
+  "shot_type": "style-switch",
+  "template_version": "0.1.0-draft",
+  "manifest_sha256": "3f258e13c4d2bd04f36964b0b42f59373a9225c6ff114672f1a61d0c3eac571e",
+  "prompt_sha256": "b93d87e72b3436962054898be03f7c2ffbdb35d0c854873476140a54a6ce2192",
+  "chars": 5800,
+  "band": {
+    "floor": 5000,
+    "target_min": 5000,
+    "target_max": 6800,
+    "hard_max": 7000,
+    "owner": "Trevor 2026-10-08",
+    "below_floor": "FLAG_AND_EXPAND",
+    "above_target": "TRIM",
+    "above_hard_max": "REFUSE"
+  },
+  "sections": {
+    "header": 237,
+    "subject": 580,
+    "action": 764,
+    "reference": 306,
+    "camera": 165,
+    "lens_light": 409,
+    "continuity": 807,
+    "look": 901,
+    "physics": 342,
+    "beats": 329,
+    "policy": 289,
+    "negatives": 472
+  },
+  "check": {
+    "verdict": "PASS",
+    "chars": 5800,
+    "reasons": [],
+    "repeat_8gram": 0.001
+  }
+}

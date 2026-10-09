@@ -1,0 +1,41 @@
+{
+  "shot_id": "S05",
+  "model": "minimax-h3/image-to-video",
+  "look": "canvas-to-life",
+  "mode": "realism",
+  "shot_type": "struggle-beat",
+  "template_version": "0.1.0-draft",
+  "manifest_sha256": "3f258e13c4d2bd04f36964b0b42f59373a9225c6ff114672f1a61d0c3eac571e",
+  "prompt_sha256": "f15c38af150df54d9755c04a2b63b06ec6a3b79aa5909bba515fafe5dd3c7c38",
+  "chars": 5578,
+  "band": {
+    "floor": 5000,
+    "target_min": 5000,
+    "target_max": 6800,
+    "hard_max": 7000,
+    "owner": "Trevor 2026-10-08",
+    "below_floor": "FLAG_AND_EXPAND",
+    "above_target": "TRIM",
+    "above_hard_max": "REFUSE"
+  },
+  "sections": {
+    "header": 163,
+    "subject": 599,
+    "action": 476,
+    "reference": 306,
+    "camera": 121,
+    "lens_light": 432,
+    "continuity": 833,
+    "look": 974,
+    "physics": 406,
+    "beats": 364,
+    "policy": 289,
+    "negatives": 416
+  },
+  "check": {
+    "verdict": "PASS",
+    "chars": 5578,
+    "reasons": [],
+    "repeat_8gram": 0.0
+  }
+}

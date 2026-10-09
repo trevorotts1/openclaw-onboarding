@@ -1,0 +1,68 @@
+{
+  "length_s": 600,
+  "delivered_s": 598,
+  "music_style": "soul-rise",
+  "title": "Rest And Still Rise (Long Version)",
+  "style": "soul with a two-part arc, brooding 62-68 bpm opening lifting to an upbeat 100-112 bpm groove at the turn, warm piano and round bass foundation, percussion thickening as it lifts, triumphant horn stabs and claps from the turnaround, hopeful minor-to-major resolution, close dry upfront vocal, single continuous take. Warm female lead, sung melody with long held open vowels, rising in register after the turn. The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music, and SINGS the lines tagged Sung with long held notes. Only the short intro and the final outro are spoken; the full band keeps playing continuously under them, natural resolved ending, final chord rings out and fades.",
+  "negative_tags": "rap, rapping, choir, reverb, echo, band dropout, acapella sections, talk-singing, monotone delivery",
+  "vocal_gender": "f",
+  "kie_params": {
+    "model": "V6",
+    "custom_mode": true,
+    "instrumental": false,
+    "style_weight": 0.75,
+    "weirdness_constraint": 0.3,
+    "variety": 0,
+    "vocal_gender": "per brief (m|f)",
+    "duration": "delivered seconds (L-2); G9 headroom question is open decision 3 in file 18"
+  },
+  "segments": [
+    {
+      "kind": "base",
+      "lyrics": "[Intro (spoken): close dry voice, plain speech, no melody]\nTwo in the morning, and I am running on empty.\n\n[Vocalise (sung): wordless, full melodic voice, two very long held notes]\nOoh-oo-ooh, ooh-oo-ooh\n\n[Verse 1 (sung): melodic, rhymed, slow long held notes]\nThe alarm rings at fi-ive,\nI'm barely half a-alive,\nI rise before the su-un,\nthe coffee's barely do-one,\nI pack the lunches ti-ight,\nI'm on the train by li-ight,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Verse 2 (sung): melodic, rhymed, slow long held notes]\nI answer every ca-all,\nI'm holding up the wa-all,\nThe laundry never e-ends,\nI cancel on my frie-ends,\nThey called my name out lou-oud,\nI froze before the crow-owd,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Instrumental Break: band only, no vocals]\n\n[Verse 3 (sung): melodic, rhymed, slow long held notes]\nThe bills stack on the ta-able,\nI smile like I am a-able,\nI tell them I am fi-ine,\nI'm fraying at the li-ine,\nTwo in the morning, sti-ill,\nI cannot climb this hi-ill,\n\n[Pre-Hook (sung): melodic, rhymed, slow long held notes]\nThe doctor said slow dow-own,\nI nodded, wore my frow-own,\nMy mother did it, too-oo,\nshe never rested throu-ough,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Verse 4 (sung): melodic, rhymed, slow long held notes]\nMy daughter saw my fa-ace,\nshe saw me lose my pla-ace,\nI missed her school play ni-ight,\nI told myself all ri-ight,\nThe mirror looked so gre-ey,\nI didn't know the wa-ay,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Verse 5 (sung): melodic, rhymed, slow long held notes]\nI bought the planners, too-oo,\nI swore that I'd push throu-ough,\nI thought that rest was wea-eak,\nI thought that tired was mee-eek,\nThe car, the desk, the sto-ove,\nno room for any lo-ove,\n\n[End]"
+    },
+    {
+      "kind": "extend",
+      "lyrics": "[Instrumental Break: band only, no vocals]\n\n[Build (sung): melodic, rising, tempo lifting]\nA friend sat by my si-ide,\nshe said, you need not hi-ide,\nShe read a line to me-e,\nabout the right to be-e,\n\n[Product (sung): melodic, warm, clear diction on the name]\nShe handed me a bo-ook,\nThe Unhurried Year, look,\nEach page said slow and sta-ay,\nI read it every single da-ay,\nI took the book to be-ed,\nI heard what Dana sa-aid,\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise\n\n[Verse 6 (sung): melodic, rhymed, slow long held notes]\nI wondered, is this ri-ight?\nCan rest be how I fi-ight?\nRest is not quitting, no-o,\nit's how I learned to gro-ow,\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise\n\n[End]"
+    },
+    {
+      "kind": "extend",
+      "lyrics": "[Instrumental Break: band only, no vocals]\n\n[Product (reprise) (sung): melodic, warm, clear diction on the name]\nThe Unhurried Year I keep,\nthe night I learned to slee-eep,\nIt taught me how to sta-ay,\nand let the rush give wa-ay,\nOne chapter every ni-ight,\nmy mornings turned out ri-ight,\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise\n\n[Verse 7 (sung): melodic, rhymed, slow long held notes]\nI slowed my mornings dow-own,\nI laid the heavy crow-own,\nOne quiet cup of te-ea,\none hour just for me-e,\nI said no to a fa-vor,\nmy mornings got their fla-vor,\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise\n\n[Bridge (sung): upbeat groove, rising]\nNo more running on empty-y,\nno more proving I am wo-orthy,\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise\n\n[End]"
+    },
+    {
+      "kind": "extend",
+      "lyrics": "[Instrumental Break: band only, no vocals]\n\n[Verse 8 (sung): melodic, rhymed, slow long held notes]\nMy work got sharp and cle-ear,\nmy boss leaned in to he-ear,\nMy house is calm and free-ee,\nmy daughter smiles at me-e,\nMy daughter's laughing lou-oud,\nI'm standing tall and prou-oud,\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise\n\n[Product (reprise 2) (sung): melodic, warm, clear diction on the name]\nThe Unhurried Year, my gui-ide,\nit sits right by my si-ide,\n\n[Verse 9 (sung): melodic, rhymed, slow long held notes]\nThe bills are on a pla-an,\nI'm doing what I ca-an,\nI sleep the whole night throu-ough,\nthe morning feels brand new-ew,\nI'm softer and I'm stro-ong,\nI knew it all alo-ong,\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise\n\n[Bridge 2 (sung): half-time, stripped back, sustained]\nSo if you're running thi-in,\nlet rest come gently i-in,\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise\n\n[Outro (spoken): calm close voice, plain speech, no melody]\nThe Unhurried Year by Dana Wells gave me my mornings back. Rest is not quitting. Get the book today.\n\n[End]"
+    }
+  ],
+  "vocalists": null,
+  "measured": {
+    "lyrics_chars": [
+      1957,
+      774,
+      871,
+      1183
+    ],
+    "style_chars": 707,
+    "title_chars": 34,
+    "negative_tags_chars": 99,
+    "words": {
+      "sung": 484,
+      "spoken": 29,
+      "rap": 0
+    },
+    "words_total": 513,
+    "words_budget": {
+      "total": 474,
+      "spoken": 42,
+      "sung": 432,
+      "opener_max": 10,
+      "closing": 32
+    },
+    "hooks": 12,
+    "hooks_target": 12,
+    "est_seconds": 527.1,
+    "product_est_s": 70.1,
+    "product_share_pct": 11.7,
+    "errors": []
+  }
+}

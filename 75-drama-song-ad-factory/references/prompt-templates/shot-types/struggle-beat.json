@@ -1,0 +1,27 @@
+{
+  "shot_type": "struggle-beat",
+  "purpose": "Wound, frozen, exhaustion, fear, humiliation beats. Realism mode in Sketch to Life / Canvas to Life; lifelike 3D in Canvas to 3D.",
+  "camera_default": "[Static shot] or a very slow [Push in]",
+  "camera_allowed": [
+    "[Static shot]",
+    "[Push in]",
+    "[Pull out]",
+    "[Pedestal down]"
+  ],
+  "required_spec": [
+    "subject",
+    "composition",
+    "action.start",
+    "action.end",
+    "visible_emotion",
+    "beats",
+    "motion_physics"
+  ],
+  "emotion_rule": "A pain line never gets a smile. 'Warm' is a lighting word, never a face word. Wet glistening eyes only on the one or two deepest moments (realism note D20).",
+  "negatives": [
+    "no smiling",
+    "no theatrical crying or grimace",
+    "no melodramatic lighting flashes"
+  ],
+  "beats_pattern": "still weight -> the small break (hands, breath, shoulders) -> the held aftermath"
+}

@@ -65,6 +65,111 @@ _BRACKETS = (
 )
 
 
+# ---------------------------------------------------------------------------
+# FU-U16: story doctrine -- villain, pain, rise (Trevor order 2026-10-08).
+# "People don't care about the hero until they meet the villain." - Trevor Otts
+# These are not music videos: they are compelling true stories told through
+# the animation, the music and the lyrics, songs strong enough to sell as a
+# soundtrack (the Grey's Anatomy standard). Every ad carries the PAIN and the
+# RISE; every ad names its VILLAIN -- a person or not a person (cancer, debt,
+# a layoff, a lie, burnout, fear, the inner critic, a system) -- named in the
+# story plan, shown on screen in its OWN shots, felt in the lyrics, then
+# confronted and defeated or transformed at the rise.
+VILLAIN_PAIN_LO_PCT = 20.0            # pain share of runtime: target band
+VILLAIN_PAIN_HI_PCT = 35.0
+SHOT_DEFAULT_S = 3.0                  # a tagged shot with no stated duration
+STORY_ARC_U16 = ("hook", "the_world", "villain_arrives", "pain_deepens",
+                 "lowest_point", "the_turn", "the_rise", "call_to_action")
+VILLAIN_TAGS = ("villain",)
+
+def _u16_tagged(obj, tag):
+    if not isinstance(obj, dict):
+        return False
+    v = obj.get(tag)
+    if v is True:
+        return True
+    vis = obj.get("villain_visibility") if tag == "villain" else None
+    if tag == "villain" and isinstance(vis, str) and vis.strip().lower() not in ("", "none"):
+        return True
+    tags = obj.get("tags") or ()
+    if isinstance(tags, str):
+        tags = (tags,)
+    return tag in tags
+
+def _u16_seconds(obj):
+    for k in ("seconds", "duration_s", "duration"):
+        v = obj.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+            return float(v)
+    return SHOT_DEFAULT_S
+
+def plan_villain_doctrine(plan, shots=None, lyric_lines=None):
+    """FU-U16 planner: the villain contract, pain seconds and rise seconds.
+
+    Fails closed (verdict FAIL, never pass) on exactly two shapes: no villain
+    named in the story plan, or a named villain with no villain-tagged shot.
+    The pain share of runtime is a TARGET band of 20-35 percent: outside it
+    is a FLAG carrying the measured seconds and percent, never a block.
+    Stdlib only; pure; no network, no spend.
+    """
+    runtime_s = float(plan.get("delivered_s") or plan.get("chosen_length_s") or 0.0)
+    if runtime_s <= 0:
+        raise LengthError("plan carries no delivered_s/chosen_length_s")
+    shots = [s for s in (shots or []) if isinstance(s, dict)]
+    lines = [l for l in (lyric_lines or []) if isinstance(l, dict)]
+
+    villain = plan.get("villain")
+    if isinstance(villain, str):
+        villain = {"name": villain} if villain.strip() else None
+    name = villain.get("name") if isinstance(villain, dict) else None
+    named = bool(isinstance(name, str) and name.strip())
+
+    villain_shots = [s for s in shots if _u16_tagged(s, "villain")]
+    villain_seconds = round(sum(_u16_seconds(s) for s in villain_shots), 1)
+    pain_seconds = round(sum(_u16_seconds(o) for o in shots + lines
+                             if _u16_tagged(o, "pain")), 1)
+    rise_seconds = round(sum(_u16_seconds(o) for o in shots + lines
+                             if _u16_tagged(o, "rise")), 1)
+    pain_percent = round(pain_seconds / runtime_s * 100.0, 1)
+    in_target = VILLAIN_PAIN_LO_PCT <= pain_percent <= VILLAIN_PAIN_HI_PCT
+
+    fail_codes = []
+    if not named:
+        fail_codes.append("NO_VILLAIN_NAMED")
+    if named and not villain_shots:
+        fail_codes.append("VILLAIN_HAS_NO_SHOT")
+    flags = []
+    if not in_target:
+        flags.append("PAIN_SHARE_OUTSIDE_TARGET")
+    verdict = "FAIL" if fail_codes else ("PASS" if not flags else "FLAG")
+    return {
+        "arc": list(STORY_ARC_U16),
+        "arc_rule": ("hook -> the world -> the villain arrives -> the pain "
+                     "deepens -> the lowest point -> the turn (the product "
+                     "is the key) -> the rise -> the call to action; the "
+                     "pain gets real screen time and the rise is earned"),
+        "runtime_s": runtime_s,
+        "villain": {"name": name if named else None,
+                    "kind": (villain.get("kind") if isinstance(villain, dict)
+                             else None),
+                    "named": named},
+        "villain_shots": len(villain_shots),
+        "villain_seconds": villain_seconds,
+        "pain_seconds": pain_seconds,
+        "pain_percent": pain_percent,
+        "rise_seconds": rise_seconds,
+        "target_lo_pct": VILLAIN_PAIN_LO_PCT,
+        "target_hi_pct": VILLAIN_PAIN_HI_PCT,
+        "in_target": in_target,
+        "verdict": verdict,
+        "fail_codes": fail_codes,          # the only two hard cases
+        "flags": flags,
+        "blocking": bool(fail_codes),      # FLAG never blocks
+        "card_line": "Villain: %s, shown in %d shots"
+                     % (name if named else "NONE", len(villain_shots)),
+        "source": "FU-U16 villain doctrine (pain target 20-35% of runtime)",
+    }
+
 class LengthError(ValueError):
     pass
 

@@ -1,0 +1,67 @@
+{
+  "template": "models/kling-ai-avatar-standard.json",
+  "examples": [
+    {
+      "id": "K1",
+      "look": "lifelike-3d",
+      "mode": "lifelike-3d",
+      "segment": "hook 2 (sung)",
+      "line": "You can rest and still ri-i-ise",
+      "args": [
+        "lifelike-3d",
+        "woman",
+        "sings",
+        "hopeful",
+        "Her"
+      ],
+      "kw": {},
+      "prompt": "A 3D animated woman sings this line to the camera with a hopeful expression. Minimal head movement, steady locked camera, natural blinks, relaxed shoulders, chest-up framing, eyes to the lens. Her whole face and mouth stay fully visible, with no text, captions or watermark.",
+      "chars": 274,
+      "sentences": 3,
+      "errors": []
+    },
+    {
+      "id": "K2",
+      "look": "canvas-to-life",
+      "mode": "realism",
+      "segment": "opener (spoken)",
+      "line": "Two in the morning, and I am running on empty.",
+      "args": [
+        "realism",
+        "woman",
+        "says",
+        "weary",
+        "Her"
+      ],
+      "kw": {
+        "head_extra": ", a slight head tilt"
+      },
+      "prompt": "A photoreal woman says this line to the camera with a weary expression. Minimal head movement, a slight head tilt, steady locked camera, natural blinks, relaxed shoulders, chest-up framing, eyes to the lens. Her whole face and mouth stay fully visible, with no text, captions or watermark.",
+      "chars": 289,
+      "sentences": 3,
+      "errors": []
+    },
+    {
+      "id": "K3",
+      "look": "canvas-to-3d",
+      "mode": "lifelike-3d",
+      "segment": "verse 3 (rap, Vocal B)",
+      "line": "Told her you're tired, not broken, and rest isn't shame,",
+      "args": [
+        "lifelike-3d",
+        "man",
+        "raps",
+        "steady",
+        "His"
+      ],
+      "kw": {
+        "head_extra": ", a small nod on the strong beat",
+        "framing": "medium close-up, eyes to the lens"
+      },
+      "prompt": "A 3D animated man raps this line to the camera with a steady expression. Minimal head movement, a small nod on the strong beat, steady locked camera, natural blinks, relaxed shoulders, medium close-up, eyes to the lens. His whole face and mouth stay fully visible, with no text, captions or watermark.",
+      "chars": 301,
+      "sentences": 3,
+      "errors": []
+    }
+  ]
+}
