@@ -6,6 +6,10 @@ frontmatter `version:` field).
 
 ---
 
+## Unreleased - FU-U7: video/avatar prompt caps at the caller (H3, Kling, Hailuo)
+
+- Caller-side guards in `kie_dispatch.dispatch`: the FINAL video/avatar payload is measured against the U6 table (`prompt_limits.check_request`) before any other gate, so an over-cap prompt is refused `PROMPT_OVER_CAP` (field, chars, cap, source, status; never truncated) and a paid video/avatar job on an install without the table refuses `PROMPT_LIMIT_UNAVAILABLE`; nothing is reserved, nothing reaches Skill 74, and the ok receipt carries the measured `prompt_caps` rows. Table gains only what the catalogs lack for video: Hailuo family prefix 2,000, `kling-2.6/image-to-video` 2,500, and the Kling 2.5 Turbo `negative_prompt` 2,500 the catalog does not declare. New test `kie_dispatch/test_prompt_cap_u7.py` (fails on the base tree; 5/5 after).
+
 ## Unreleased - FU-U6: Suno request limits, fail closed, measured last
 
 - New `scripts/core/prompt_limits.py`: one limit table read from the catalogs (`68-kie-audio/models.json` suno-generate: lyrics 5000, style 1000, title 80, duration 10-360; `67-kie-video/models.json` vendor caps per model), plus a skill-75 override table for what the catalogs lack (`negativeTags` 1000 and `kling/ai-avatar-standard` 2500, both stamped UNVERIFIED with source URL and the free docs re-read step). `check_request(model, request)` measures EVERY text field of the FINAL payload and refuses over-cap with `PROMPT_OVER_CAP: field, chars, cap, source, status`; it never truncates.

@@ -62,6 +62,15 @@ import load_governor as _LG  # noqa: E402  (core/ is on sys.path just above)
 import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
 import kie_dispatch.model_lock as ML  # noqa: E402  (F14 video-model lock)
 
+#: FU-U7 final-payload prompt caps (plan E.1). Soft import like the F15 seam
+#: below: when the module is missing, a video or avatar job is refused
+#: fail-closed (there is no prompt cap without the table); image, music and
+#: other jobs keep their own gates either way.
+try:
+    import prompt_limits as _PL  # noqa: E402 (sibling module in the same core/ tree)
+except Exception:  # noqa: BLE001 - the gate below stays fail-closed without it
+    _PL = None
+
 #: F15 card gate (Critical, owner order 2026-10-08): dispatch refuses ANY
 #: paid job for a run whose state lacks all four choice-card answers. The
 #: import is soft -- the module must keep working when style_defaults is not
@@ -563,6 +572,60 @@ def _is_menu_video(model, _registry_probe=None):
             return True
     return False
 
+def _video_scope(model):
+    """True for the locked lip-sync avatar and the price-menu video families.
+    Those are the jobs whose prompt caps this skill owns; every other model
+    (off-menu ids, image/music jobs) keeps its own gate and defers to F14 and
+    the Skill 74 adapter budget."""
+    return ML.is_locked_lipsync(model) or _is_menu_video(model)
+
+def prompt_cap_rows(model, request):
+    """FU-U7: (refusal-or-None, measured rows) for the FINAL video/avatar payload.
+
+    The plan E.1 caps: MiniMax H3 7,000; Hailuo 2,000; Kling 2.5 Turbo /
+    2.6 i2v 2,500; Kling 3.0 / 3.0 Omni 3,072; the locked avatar 2,500
+    (UNVERIFIED, from the skill-75 override table). check_request measures
+    EVERY text field of the payload the dispatcher is about to send, so the
+    check lands after every upstream mutation (kling_prompt, the ending
+    append, a retake rewrite) and before any spend.
+
+    Fail closed on a known cap: a field over it refuses (PROMPT_OVER_CAP)
+    naming field, characters, cap, source and status - nothing reserved,
+    nothing sent, and the text is NEVER truncated. With no prompt-cap table
+    at all a paid video/avatar job refuses (PROMPT_LIMIT_UNAVAILABLE). A
+    model neither the catalogs nor the overrides hold is left to F14 (every
+    off-menu model refuses MODEL_NOT_ON_MENU there) and to the Skill 74
+    adapter's own prompt-budget step - no cap is invented for it here.
+    """
+    if _PL is None:
+        if not _video_scope(model):
+            return None, []
+        return ({"reason_code": "PROMPT_LIMIT_UNAVAILABLE",
+                 "next_action": ("the skill-75 prompt-cap table (prompt_limits) "
+                                 "is not importable, so no paid video/avatar "
+                                 "job can be measured; reinstall Skill 75 and "
+                                 "dispatch again. Nothing was reserved and "
+                                 "nothing was sent."),
+                 "evidence": {"generated": False, "field": "prompt",
+                              "chars": None, "cap": None,
+                              "cap_source": "skill-75 prompt_limits.py "
+                                            "(not importable)",
+                              "cap_status": "UNAVAILABLE"}}, [])
+    try:
+        return None, _PL.check_request(model, request)["measured"]
+    except _PL.PromptLimitError as e:
+        if e.code == "PROMPT_LIMIT_NO_CATALOG":
+            return None, []       # no cap to enforce; F14 + adapter budget stand
+        return ({"reason_code": e.code,
+                 "next_action": ("%s. Rewrite the final payload to fit cap %s "
+                                 "(%s) and dispatch again; nothing was reserved "
+                                 "and nothing was sent, and the prompt was NOT "
+                                 "truncated." % (e, e.cap, e.status)),
+                 "evidence": {"generated": False, "field": e.field,
+                              "chars": e.chars, "cap": e.cap,
+                              "cap_source": e.source,
+                              "cap_status": e.status}}, [])
+
 # ---- F6: no animation before storyboard approval -------------------------
 try:
     import storyboard_director as _SD                     # sibling core/ pkg
@@ -616,7 +679,26 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
     (state_store + run_id). No lock recorded -> refused fail-closed
     (VIDEO_MODEL_LOCK_MISSING); a different model -> VIDEO_MODEL_MISMATCH.
     Every model, video or not, must be on price-menu.md (MODEL_NOT_ON_MENU).
+
+    FU-U7 prompt caps (plan E.1): before ANY other gate, the FINAL payload is
+    measured against the per-model caps (H3 7,000; Hailuo 2,000; Kling 2.5
+    Turbo 2,500; Kling 3.0 / 3.0 Omni 3,072; the locked avatar 2,500). An
+    over-cap field refuses PROMPT_OVER_CAP with field, chars, cap, source and
+    status; nothing is reserved, nothing is sent, nothing is truncated.
     """
+    # ---- 0. FU-U7 prompt caps (final payload, before any spend) -----------
+    # The request IS the final payload here: every upstream mutation
+    # (kling_prompt, the clean-ending append, a retake rewrite) has already
+    # happened before dispatch is called. Nothing below may spend until the
+    # caps pass; the refusal and the ok receipt both carry the cap and status.
+    cap_refusal, prompt_caps = prompt_cap_rows(model, request)
+    if cap_refusal is not None:
+        return envelope("dispatch", "rejected", cap_refusal["reason_code"],
+                        cap_refusal["next_action"],
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence=cap_refusal["evidence"])
+
     # ---- 0. F14 model lock (before any ledger row) ------------------------
     # Scope: VIDEO jobs only. A video model must be on price-menu.md
     # (seedance-1.5-pro included) and must equal the card-locked choice.
@@ -1038,7 +1120,8 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                       "saved_paths": saved,
                       "credits_consumed": credits,
                       "actual_cost": actual, "warnings": warn,
-                      "wait_timeout_s": wait_s, "retries": 0},
+                      "wait_timeout_s": wait_s, "retries": 0,
+                      "prompt_caps": prompt_caps},
             state_version=rec.get("state_version", 0))
     except Exception as e:                                  # noqa: BLE001
         return stop("error", "dispatch-internal-error",

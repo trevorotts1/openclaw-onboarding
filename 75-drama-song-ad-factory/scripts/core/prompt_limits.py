@@ -1,18 +1,27 @@
 #!/usr/bin/env python3
-"""Prompt limits (FU-U6, plan E.1-E.3): one table, fail closed, measured LAST. Stdlib only.
+"""Prompt limits (FU-U6 + FU-U7, plan E.1-E.3): one table, fail closed, measured LAST. Stdlib only.
 
 The caps come from the skills' own catalogs, never copied here:
   * Skill 68 (68-kie-audio/models.json, entry "suno-generate") for the Suno
     generate fields: lyrics, style (per model version), title, duration.
   * Skill 67 (67-kie-video/models.json) for video/avatar: vendor_hard_cap_chars
     per model, and negative_prompt only where the entry declares it.
-  * A small Skill-75 override table for what the catalogs do not hold. Both
-    override entries are UNVERIFIED and carry the source URL and the free
-    confirm step.
+  * A small Skill-75 override table for what the catalogs do not hold, each
+    entry carrying the source URL, the cap status and the free confirm step.
+    FU-U7 adds: Hailuo 02 / 2.3 / 2.3 Fast prompt 2,000 (the catalog carries
+    no hailuo entry at all - the whole family prefix is held there, and H3
+    keeps the catalog's 7,000); Kling 2.6 i2v 2,500; and the Kling 2.5 Turbo
+    negative_prompt cap of 2,500 (the catalog verifies the prompt cap but does
+    not declare the field).
 
 check_request(model, request) measures EVERY text field of the FINAL payload.
 Over the cap is a refusal (PROMPT_OVER_CAP: field, characters, cap, source,
 status). It NEVER truncates.
+
+kie_dispatch.dispatch runs check_request on the final payload - after every
+mutation, before any spend - so a refused prompt reserves nothing and sends
+nothing; the refusal names the field, the characters, the cap, the source and
+the status, and the receipt carries the same row.
 
 Duration (10-360 s, VERIFIED) is not a text field and stays enforced by
 song_dispatch.validate_request; this module does not restate it.
@@ -20,9 +29,10 @@ song_dispatch.validate_request; this module does not restate it.
 Rule 12 seam: the numbers stay in the catalogs and in the declared override
 table; the shared enforcer is called ceiling-only (kind="verbatim") so the
 audit trail is kept, exactly as product_style_bible/bible.py does. The 80
-percent floor must NOT be applied here: Suno style is a descriptive prompt but
-the 67 house floor (5000) sits above Kling's 2500 hard cap, and the style
-floor would ban short professional styles (the One-Check style is 770 chars).
+percent floor must NOT be applied here: the 67 house floor (5000) sits above
+Kling's 2500 hard cap and H3's 7000 cap, and the floor would ban short
+professional prompts (the One-Check style is 770 chars, an avatar prompt is
+about 150).
 """
 from __future__ import annotations
 
@@ -32,7 +42,7 @@ import sys
 from pathlib import Path
 
 TOOL_NAME = "prompt_limits"
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "1.1.0"
 
 #: Skill-75 overrides for what the catalogs do not hold. UNVERIFIED entries.
 OVERRIDES = {
@@ -51,7 +61,39 @@ OVERRIDES = {
                   "2500 is the Kling Avatar API guidance)",
         "confirm": "read the ai-avatar-standard page on docs.kie.ai (free); no paid probe",
     },
+    "kling-2.6/image-to-video": {
+        "cap": 2500, "status": "VERIFIED",
+        "source_url": "https://docs.kie.ai/market/kling/",
+        "source": "skill-75 override (file 17: Kling 2.6 i2v prompt 2,500; 67 "
+                  "catalog carries the sibling kling-2.6/motion-control at 2,500 "
+                  "VERIFIED but holds no i2v entry)",
+        "confirm": "re-read the Kling 2.6 i2v page on docs.kie.ai (free); no paid probe",
+    },
 }
+
+#: FU-U7 (plan E.1, file 17): Hailuo 02 / 2.3 / 2.3 Fast prompt 2,000,
+#: VERIFIED for those models and NOT H3 (the catalog carries MiniMax H3 at
+#: 7,000). The 67 catalog has no hailuo entry at all, so the whole family
+#: prefix is held at 2,000 - a new hailuo variant cannot slip past unmeasured.
+HAILUO_PREFIX = "hailuo/"
+HAILUO = {
+    "cap": 2000, "status": "VERIFIED",
+    "source_url": "https://docs.kie.ai/market/hailuo/2-3-image-to-video-pro",
+    "source": "skill-75 override (file 17: Hailuo 02 / 2.3 / 2.3 Fast prompt "
+              "2,000, VERIFIED for those models, not H3; 07-kie-setup re-read)",
+}
+
+#: Kling 2.5 Turbo: file 17 holds prompt AND negative_prompt to 2,500 each.
+#: The 67 catalog verifies the prompt cap but declares no negative_prompt
+#: control field for these models, so the negative cap is added here at the
+#: same, file-17-verified number. Hailuo/H3 have no documented negative field
+#: at all (negatives go inside the prompt, short) so nothing is invented.
+NEGATIVE_PROMPT_CAPS = {
+    "kling/v2-5-turbo-text-to-video-pro": 2500,
+    "kling/v2-5-turbo-image-to-video-pro": 2500,
+}
+NEGATIVE_PROMPT_SOURCE = ("file 17 + 67-kie-video/models.json (the same 2,500 the "
+                          "catalog verifies for these Kling prompts), VERIFIED")
 
 #: The numbers the 68 catalog holds for suno-generate (VERIFIED 2026-10-06). Used
 #: ONLY when that catalog is unreachable from this install, so the guard stays armed.
@@ -80,12 +122,16 @@ class PromptLimitError(ValueError):
 def find_catalogs():
     """(68 audio models.json, 67 video models.json) from this file's position.
 
-    Same ancestor walk as music_director.workcopy_paths (tracked repo-root copy,
-    then the legacy <root>/onboarding layout). Missing entries stay None.
+    Same ancestor walk as kie_dispatch.resolve_adapter: the repo-root
+    distribution layout (68-kie-audio/ next to this skill, or under
+    onboarding/), then the 999-setup installer layout
+    (installer-registration/helpers/67-kie-video/, the tracked copy in that
+    distribution). Missing entries stay None.
     """
     audio = video = None
     for anc in Path(__file__).resolve().parents:
-        for cand in (anc, anc / "onboarding"):
+        for cand in (anc, anc / "onboarding",
+                     anc / "installer-registration" / "helpers"):
             if audio is None and (cand / "68-kie-audio" / "models.json").is_file():
                 audio = cand / "68-kie-audio" / "models.json"
             if video is None and (cand / "67-kie-video" / "models.json").is_file():
@@ -131,12 +177,17 @@ def video_caps(model, models_path=None):
 
     A missing catalog or a missing entry raises PromptLimitError (fail closed);
     a model the catalog carries with no published cap returns cap None and the
-    caller reports the status.
+    caller reports the status. Hailuo models are held at the file-17 cap of
+    2,000 even though the catalog carries no hailuo entry at all.
     """
     if model in OVERRIDES:
         o = OVERRIDES[model]
         return {"prompt": o["cap"], "negative_prompt": o["cap"], "status": o["status"],
                 "source": "%s; %s" % (o["source_url"], o["source"])}
+    if str(model).startswith(HAILUO_PREFIX):
+        return {"prompt": HAILUO["cap"], "negative_prompt": None,
+                "status": HAILUO["status"],
+                "source": "%s; %s" % (HAILUO["source_url"], HAILUO["source"])}
     path = models_path if models_path is not None else find_catalogs()[1]
     entry = _entry(path, model)
     if entry is None:
@@ -147,12 +198,17 @@ def video_caps(model, models_path=None):
                                "models.json (%s), status UNKNOWN: refusing (pass models_path)"
                                % (model, path or "not found"))
     cap = entry.get("vendor_hard_cap_chars")
-    return {"prompt": cap,
-            "negative_prompt": cap if "negative_prompt" in (entry.get("control_fields") or []) else None,
+    neg = cap if "negative_prompt" in (entry.get("control_fields") or []) else None
+    if neg is None and model in NEGATIVE_PROMPT_CAPS:
+        neg = NEGATIVE_PROMPT_CAPS[model]
+    return {"prompt": cap, "negative_prompt": neg,
             "status": entry.get("cap_status", "UNKNOWN"),
-            "source": "%s %s, source %s, VERIFIED %s" % (Path(path).name, model,
-                                                         entry.get("source_url", ""),
-                                                         entry.get("last_verified_at", ""))}
+            "source": "%s %s, source %s, VERIFIED %s%s" % (
+                Path(path).name, model, entry.get("source_url", ""),
+                entry.get("last_verified_at", ""),
+                ("; negative_prompt %s" % NEGATIVE_PROMPT_SOURCE)
+                if neg is not None and "negative_prompt" not in (entry.get("control_fields") or [])
+                else "")}
 
 
 # ---------------------------------------------------------------------------
