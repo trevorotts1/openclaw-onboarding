@@ -1,3 +1,7 @@
+## [v26.4.21]  -  2026-10-09  -  Batch MGB019: skill 75 captions-final burn port and cast docstring (skill 75 v2.9.9)
+
+Released as one batch. Units: #1766 FU-U9 captions-final: port captions_burn.overlay_excerpt, the one excerpt burn site (new captions_burn.py with test); #1764 cast-sweep: voice_casting coworker docstring matches the 2026-10-08 recast.
+
 ## [v26.4.20]  -  2026-10-09  -  Batch MGB018: skill 75 parity and test hygiene, batch-prep CI (skill 75 v2.9.8)
 
 Released as one batch. Units: #1756 FU-PARITY skill 75 parity with the 999 copy (v2.7.28 test fixes, delivery_checklist blank lines); #1765 sfx-f4 no module-level sys.exit on the U15 fail-first guards (one bad import no longer takes down the whole test tree); and #1763 batch-prep.sh stops mechanical red reruns and CI concurrency never cancels main. Skill 75 v2.9.8. Paired Command Center: v7.6.112.
