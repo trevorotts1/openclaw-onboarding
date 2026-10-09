@@ -22,6 +22,8 @@ Run each command from this skill's root (`75-drama-song-ad-factory/`). Substitut
 | final-qc | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage final-qc --records "$RUN/qc/records.json" --makers "$RUN/qc/makers.json" --required <required-checks>` | Approved final-QC verdict records on the rendered master (independent reviewer, UNAVAILABLE never passes). |
 | delivery | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage delivery --records "$RUN/qc/records.json" --makers "$RUN/qc/makers.json" --required <required-checks>` | Delivery gate record over the final package (master + `delivery_variants` plan + receipts); board event follows via `cc_sync` (import-only). |
 
+Storyboard approval point: after `image-keyframes` and before `video-generation`. The stills are made first (cheap), then the client sees each shot's written card AND its still together (`storyboard_director/approval_package.py`: `build` the message, `approve` to open the 14.1 gate, `revise_shot` to redo one shot). `kie_dispatch` refuses any video job until the shots are `storyboard_approved`.
+
 Story arc rule (FU-U13): every ad's story runs struggle -> what changed -> the
 product is why -> get the product. The product is named and connected inside
 the lyrics AND on screen (cover, title, link), never only on an end card. The
