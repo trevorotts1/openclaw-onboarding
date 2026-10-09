@@ -59,6 +59,10 @@ frontmatter `version:` field).
 - One rates table with source URL and date: `scripts/core/choice_card/video_models/video_model_rates.json`.
 - `prompt_limits.MARKET_ALIASES`: the market id `veo-3-1` is held to the dedicated `veo3_fast` catalog entry; before this, a Veo 3.1 dispatch refused `PROMPT_LIMIT_NO_CATALOG`.
 - New test `scripts/core/choice_card/video_models/test_video_models.py` (13 checks: question = card total for 4 models x 60 s / 3 min, pick -> card row and payload, payload tests run through `kie_dispatch.dispatch` with a fake Skill 74; zero paid calls).
+## v2.9.9 - 2026-10-09 - Storyboard approval shows each shot's card and its still
+
+- FU-STORYBOARD-SHOWS-BOTH: new `storyboard_director/approval_package.py` builds the approval message with the written card and the still image for every shot, in order; stills come before approval and video after it; approve opens the video gate; a shot edit regenerates and re-sends only that shot. Documented in SKILL.md, choice-card-spec.md and stage-runbook.md.
+- Wired into the live run: `storyboard_director/approval_runner.py:run` (via `factory.py storyboard`) sends the message plus each still through `openclaw message send`, records the video stage WAITING_APPROVAL, applies GO / `shot N: change ...`, auto-approves on No, and `factory.py next` withholds the video command until approved. End-to-end test: `test_approval_runner.py`.
 
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 

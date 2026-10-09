@@ -264,7 +264,8 @@ def _parse(reply, q):
     return {"n": n, "text": "up to " + _usd(value) if q["id"] == "spend" else opts[n - 1][0], "value": value}
 
 
-def conversation(replies, questions=None, state_store=None, run_id=None):
+def conversation(replies, questions=None, state_store=None, run_id=None,
+                 run_dir=None, target=None):
     """Replay the client's replies from the start; return the state and the ONE
     message to send next. Stateless, so claude-nine and OpenClaw can both call
     it with the replies so far. state: answers, done, message, video_model.
@@ -301,6 +302,9 @@ def conversation(replies, questions=None, state_store=None, run_id=None):
         from choice_card.video_models import video_models as VM
         VM.lock_choice(state_store, run_id, model_n)
     if done:
+        if run_dir:     # recap confirmed: the storyboard answer goes to the run
+            from storyboard_director import approval_runner as _ar
+            _ar.record_card_answer(run_dir, answers, qs, target)
         msg = "Locked in. I am starting now."
     elif fix is not None:
         msg = note + render_step(fix + 1, qs)
@@ -592,6 +596,9 @@ def main(argv=None):
                          "shown as spend option 1")
     ap.add_argument("--limit-from-brief", action="store_true",
                     help="the --limit came from the brief; labels option 1 'from your brief'")
+    ap.add_argument("--run-dir", default="",
+                    help="run folder; when the recap is confirmed the storyboard "
+                         "answer is written to its control/card-receipt.json")
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
                          "card opens with the saved-character question (I6)")
@@ -599,7 +606,7 @@ def main(argv=None):
     qs = [spend_question(a.price, a.limit, a.limit_from_brief) if q["id"] == "spend" else q
           for q in _with_saved_character(a.client_dir)]
     if a.step:
-        st = conversation(a.reply, qs)
+        st = conversation(a.reply, qs, run_dir=a.run_dir or None, target=a.target or None)
         if not a.reply and a.run_state_file and _intro_take(a.run_state_file):
             st = dict(st, message=_INTRO)          # FU-INTRO-MESSAGE
         if a.format == "text":

@@ -477,6 +477,18 @@ uncertain outcome. Always show the client the sentence from
   one clip before sending the next.
 - **KIE rate limit:** new generation submits are paced to 20 or fewer per rolling 10 s per KIE key; a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
 
+## What the storyboard is
+
+The storyboard is the written shot-by-shot plan: one card per shot with the
+exact line, what the viewer must understand, the place and action, and the
+emotion on the face. A still image is then made for every shot (stills are
+cheap; video clips are the expensive part), and the client approval shows
+BOTH together, each shot's written card and that shot's still, before any
+video money is spent. Code: `scripts/core/storyboard_director/approval_package.py`
+(`build` makes the message, `approve` is the only thing that opens the video
+gate, `revise_shot` fixes one shot and re-sends only that shot). Order:
+storyboard cards, stills, approval, video.
+
 ## Scenes must match the song and the faces (Part I I2)
 
 Plain rules, no exceptions:

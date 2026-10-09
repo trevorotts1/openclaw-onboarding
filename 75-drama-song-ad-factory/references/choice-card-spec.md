@@ -204,6 +204,18 @@ yet, so I'll create a new one for this ad and save it for next time."
 
 Test: `character_library/test_saved_character_question.py`.
 
+## 2.4 STORYBOARD APPROVAL shows both (normative)
+
+When the client answers Yes to "Do you want to approve the storyboard before
+any video is made?", the approval message shows, per shot in song order, the
+written card (shot number, time range, the exact line, what the viewer must
+understand, place and action, face emotion) AND that shot's still image.
+Stills are made first because they are cheap; no video job is submitted until
+the client approves. A client edit to one shot regenerates only that shot's
+still and re-sends only that shot. Built by
+`scripts/core/storyboard_director/approval_package.py`; a shot with an
+incomplete card or no still file blocks the approval message. The live run sends it with `factory.py storyboard` (see stage-runbook.md, Wiring).
+
 ## 3. Field rules
 
 ### 3.1 Length
