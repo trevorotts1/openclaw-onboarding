@@ -16,5 +16,7 @@
   "negative_tags": "rap, rapping, choir, reverb, echo, band dropout, acapella sections, talk-singing, monotone delivery",
   "rap_allowed": false,
   "skeleton_rule": "Intro (spoken opener) -> Vocalise -> Hook 1 by 15% -> verses and pre-hooks between hooks -> Product passage on beat 8 -> remaining hooks evenly -> last hook near 90% -> Outro (spoken CTA) -> [End].",
+  "villain_pain_lyric_guidance": "VILLAIN IN THE LYRICS (Suno): name the villain in the verses, carry a pain line with real stakes and consequences, then turn to the rise in the hook. First person, present tense, concrete nouns -- the listener must feel the pain and the problem in the depth of their soul before the rise lands.",
+  "villain_pain_lyric_guidance_source": "product_style_bible/bible.py VILLAIN_LYRIC_GUIDANCE (U16 onb 8467e0354d3116eec980928cab7abaab8cef51ed, 999 c4787e2c13e71e3f7877d232aa7c80271f477adc)",
   "cue_overrides": {}
 }
