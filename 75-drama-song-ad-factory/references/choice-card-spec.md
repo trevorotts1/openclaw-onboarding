@@ -106,6 +106,33 @@ write them free hand and never carry them as one JSON string.
   `--format telegram-json` body is the exact Bot API `sendMessage` payload.
 - The intake `question_message` uses the same layout (`format_questions`).
 
+## 2.3 Fit stop card (FU-U4, normative)
+
+When the client brings their own lines (concept mode, `brief.mode == "concept"`),
+their lines are a contract: `brief.packet_lines` is required (missing is refused
+with `PACKET_REQUIRED_IN_CONCEPT_MODE`), every line keeps its id, and no line is
+cut unless the client approves that exact line id.
+
+Before the card, code runs the free fit step (`choice_card/intake_card`
+`fit_card(brief, packet_lines)`; CLI `factory.py card --fit --brief-file F
+--packet-file P`). It prints one row per real music style at the client's length:
+room for N words, the seconds the client's words need, the delivery split, and
+fits or does not fit. When the chosen style does not fit, the card is a STOP card
+(outcome `waiting`, exit code 2). When it fits, exit code 0 and nothing is cut.
+
+Options are built only from registries; a test refuses any other id:
+
+| Option | Registry |
+|---|---|
+| A longer ad | `music_styles.OFFERED_LENGTHS_S`, only lengths above the client's |
+| A different music style | `music_styles.style_ids()` |
+| Voice | All Suno (default) or Velvet Voiceover, from `voice_velvet_echo` |
+| Fewer words | `words_fit`'s own `fewer_words` option, naming the exact line ids that would be cut, for the client to approve |
+
+The same card states, as notices and never as options, every storyboard item the
+skill will not make: sound effects (sfx stay off), an echo or reverb voice, a
+length that is not offered, and any fps other than the 30 fps master.
+
 ## 3. Field rules
 
 ### 3.1 Length

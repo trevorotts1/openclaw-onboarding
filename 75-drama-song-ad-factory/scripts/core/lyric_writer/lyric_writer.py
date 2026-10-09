@@ -272,6 +272,9 @@ def validate_lyrics(lines, brief=None):
 
     # H7: the sheet may not change a protected name or rewrite a packet line.
     packet = brief.get("packet_lines")
+    # FU-U4: concept mode without the client's lines is refused, never passed.
+    for msg in protected_names.packet_required(brief, packet):
+        errors.append({"error": "packet-required-in-concept-mode", "detail": msg})
     if packet is not None:
         for msg in protected_names.check_sheet(
                 lines, packet, protected_names.protected_list(brief)):

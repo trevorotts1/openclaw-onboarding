@@ -407,7 +407,84 @@ def auth_status_for(fields, digest, settings, now_unix=None):
     return "bound"
 
 
+# --- FU-U4: mode flag and notices ---------------------------------------------
+MODES = ("quick", "concept")
+MASTER_FPS = 30
+_SFX_SPEAKERS = ("sfx", "sound", "sound effect", "sound effects", "fx")
+_SFX_RE = re.compile(r"[\[(]\s*([A-Z][A-Z0-9' -]{2,})\s*[\])]")
+_ECHO_RE = re.compile(r"\b(echo\w*|reverb\w*)\b", re.I)
+
+
+def _core_path():
+    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core not in sys.path:
+        sys.path.insert(0, core)
+
+
+def mode_of(brief):
+    """"concept" when the brief says so, else "quick" (the default)."""
+    m = str((brief or {}).get("mode") or "").strip().lower()
+    return m if m in MODES else "quick"
+
+
+def notices(brief, packet_lines=None):
+    """Storyboard items the skill will NOT make, as plain notices (never options):
+    sound effects, an echo/reverb voice, a length that is not offered, fps.
+    Returns [{"kind", "items", "text"}], empty when nothing applies."""
+    _core_path()
+    from music_styles import music_styles as MS  # noqa: PLC0415
+    brief = brief or {}
+    lines = packet_lines if packet_lines is not None else brief.get("packet_lines") or []
+    sfx = [str(x).strip().upper() for x in (brief.get("sfx") or [])]
+    texts = [brief.get("voice"), brief.get("notes")]
+    for ln in lines:
+        if not isinstance(ln, dict):
+            ln = {"text": str(ln)}
+        text = str(ln.get("text") or "")
+        speaker = str(ln.get("speaker") or "").strip().lower()
+        if speaker in _SFX_SPEAKERS or str(ln.get("kind") or "").lower() == "sfx":
+            sfx.append(text.strip().upper())
+        notes = [ln.get("direction"), ln.get("note")]
+        for t in [text] + notes:
+            if isinstance(t, str):
+                sfx.extend(m.strip().upper() for m in _SFX_RE.findall(t))
+        texts += notes
+    echo = sorted({m.lower() for t in texts if isinstance(t, str) for m in _ECHO_RE.findall(t)})
+    out = []
+    sfx = [x for i, x in enumerate(sfx) if x and x not in sfx[:i]]
+    if sfx:
+        out.append({"kind": "sfx", "items": sfx,
+                    "text": "Sound effects (%s) are not made: sound effects stay off." % ", ".join(sfx)})
+    if echo:
+        out.append({"kind": "echo_voice", "items": echo,
+                    "text": "An echo or reverb voice is not made: the voice is dry and close "
+                            "(All Suno, or Velvet Voiceover with no echo effect)."})
+    n = _as_length(brief.get("length_option") or brief.get("target_length_s"))
+    if isinstance(n, int) and n not in MS.OFFERED_LENGTHS_S:
+        out.append({"kind": "length_not_offered", "items": [n],
+                    "text": "%d seconds is not an offered length; offered lengths are %s seconds."
+                            % (n, ", ".join(str(x) for x in MS.OFFERED_LENGTHS_S))})
+    fps = brief.get("fps")
+    if fps not in (None, "", MASTER_FPS, str(MASTER_FPS)):
+        out.append({"kind": "fps", "items": [fps],
+                    "text": "%s fps is not made: the master is %d fps." % (fps, MASTER_FPS)})
+    return out
+
+
 def evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None):
+    """_evaluate plus the FU-U4 mode flag and notices. Concept mode with no
+    packet_lines is waiting (PACKET_REQUIRED_IN_CONCEPT_MODE), never ok."""
+    r = _evaluate(brief, settings, resume_state, run_id, now_unix)
+    r["mode"] = mode_of(brief)
+    r["notices"] = notices(brief)
+    if r["mode"] == "concept" and r.get("outcome") == "ok" and not (brief or {}).get("packet_lines"):
+        r.update(outcome="waiting", reason_code="PACKET_REQUIRED_IN_CONCEPT_MODE",
+                 next_action="Concept mode: send the client's own script or storyboard lines "
+                             "(brief.packet_lines) before anything else.")
+    return r
+
+
+def _evaluate(brief, settings=None, resume_state=None, run_id=None, now_unix=None):
     settings = settings or {}
     hits = detect_injection(brief or {})
     fields, prov = normalize(brief, settings)
