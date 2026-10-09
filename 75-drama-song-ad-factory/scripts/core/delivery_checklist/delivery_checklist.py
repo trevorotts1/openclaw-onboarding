@@ -97,11 +97,13 @@ CHECKLIST_TOLERANCE_PCT = 5.0       # Q2 / Q11 clean-accept limit
 CHECKLIST_REDO_PCT = 10.0           # Q2 / Q11 redo line
 BAND_ACCEPT, BAND_FLAG, BAND_REDO = "ACCEPT", "ACCEPT_WITH_FLAG", "REDO"
 
-#: Q8 lip-sync gate: the H2 measured numbers (report 05, order 1225).
-LIPSYNC_MAX_OFFSET_S = 0.05         # mouth-vs-voice offset
-LIPSYNC_MIN_CORR = 0.55             # mouth/voice envelope correlation
-LIPSYNC_MIN_CONTROL_GAP = 0.25      # above the wrong-audio control
-LIPSYNC_MAX_FROZEN_S = 0.75         # longest frozen face
+#: Q8 lip-sync gate: the sync_check verdicts (LSL002) under Trevor's two-try
+#: keep-best rule (2026-10-08). The numbers live in lip_sync/lip_gate/sync_check.py.
+LIPSYNC_OK_VERDICTS = ("PASS", "ACCEPT_WITH_FLAG")
+LIPSYNC_HELD_VERDICTS = ("UNDETERMINED", "UNMEASURABLE")   # a person looked at the strip
+LIPSYNC_ALL_VERDICTS = LIPSYNC_OK_VERDICTS + LIPSYNC_HELD_VERDICTS + ("FAIL",)
+LIPSYNC_KEPT = "KEPT_BEST_OF_2"
+LIPSYNC_MAX_JOBS = 2
 #: Q9: first real singing (vocal stem) target, share of runtime (H6).
 FIRST_SUNG_TARGET_PCT = 15.0
 #: Q10: no slow-motion above this speed-down factor (H5).
@@ -658,51 +660,47 @@ def _q7_honest(receipt, ans, codes, details):
 
 # --------------------------------------------------------- Q8 LIP-SYNC
 def _q8_lip_sync(receipt, ans, codes, details):
-    """Every lip-sync clip passes the H2 measured gate; numbers shown."""
+    """Every lip-sync clip carries its lip_gate verdict and numbers. PASS and
+    ACCEPT_WITH_FLAG clips pass. UNDETERMINED / UNMEASURABLE (a sung line) pass
+    only after a person looked at the mouth strip (person_verdict PASS). A FAIL
+    take passes only as a flagged KEPT_BEST_OF_2 row (2 tries used at most, best
+    take kept, mouth-strip path shown). No clip is ever rejected for a
+    correlation number alone."""
     clips = ans.get("clips")
     src = _source_named(ans, codes, "LIP_SYNC")
     if not isinstance(clips, list) or not clips:
-        codes.append("%s:LIP_SYNC no per-clip offset/correlation list"
+        codes.append("%s:LIP_SYNC no per-clip lip_gate verdict list"
                      % CHECKLIST_NO_MEASUREMENT)
         return False
     ok = src is not None
-    worst_off, worst_corr = 0.0, 1.0
+    flagged = []
     for i, c in enumerate(clips):
         cid = c.get("clip", "clip-%d" % (i + 1)) if isinstance(c, dict) \
             else "clip-%d" % (i + 1)
-        vals = {k: _num(c.get(k)) if isinstance(c, dict) else None
-                for k in ("offset_s", "correlation", "control_correlation",
-                          "frozen_s")}
-        missing = [k for k, v in vals.items() if v is None]
-        if missing:
-            codes.append("%s:LIP_SYNC %s missing %s"
-                         % (CHECKLIST_NO_MEASUREMENT, cid, "/".join(missing)))
+        c = c if isinstance(c, dict) else {}
+        verdict = c.get("lip_verdict")
+        if verdict not in LIPSYNC_ALL_VERDICTS or _num(c.get("corr")) is None:
+            codes.append("%s:LIP_SYNC %s missing lip_verdict/corr"
+                         % (CHECKLIST_NO_MEASUREMENT, cid))
             ok = False
             continue
         bad = []
-        if abs(vals["offset_s"]) > LIPSYNC_MAX_OFFSET_S + 1e-9:
-            bad.append("offset %.3fs > %.2fs" % (vals["offset_s"],
-                                                 LIPSYNC_MAX_OFFSET_S))
-        if vals["correlation"] < LIPSYNC_MIN_CORR:
-            bad.append("corr %.2f < %.2f" % (vals["correlation"],
-                                              LIPSYNC_MIN_CORR))
-        if vals["correlation"] - vals["control_correlation"] \
-                < LIPSYNC_MIN_CONTROL_GAP - 1e-9:
-            bad.append("only %.2f above wrong-audio control (need %.2f)" % (
-                vals["correlation"] - vals["control_correlation"],
-                LIPSYNC_MIN_CONTROL_GAP))
-        if vals["frozen_s"] > LIPSYNC_MAX_FROZEN_S + 1e-9:
-            bad.append("frozen face %.2fs > %.2fs" % (vals["frozen_s"],
-                                                      LIPSYNC_MAX_FROZEN_S))
+        kept = c.get("verdict") == LIPSYNC_KEPT
+        if verdict != "PASS":
+            flagged.append(cid)
+        if verdict in LIPSYNC_HELD_VERDICTS and c.get("person_verdict") != "PASS" \
+                and not (kept and c.get("flag") and c.get("mouth_strip")):
+            bad.append("%s and no person_verdict PASS on the mouth strip" % verdict)
+        if verdict == "FAIL" and not (kept and c.get("flag") and c.get("mouth_strip")):
+            bad.append("FAIL and not a flagged %s row with a mouth strip" % LIPSYNC_KEPT)
+        if (c.get("jobs_total") or c.get("jobs_used") or 0) > LIPSYNC_MAX_JOBS:
+            bad.append("more than %d paid jobs on one segment" % LIPSYNC_MAX_JOBS)
         if bad:
             codes.append("%s:LIP_SYNC %s %s" % (CHECKLIST_LIPSYNC_FAILED, cid,
                                                   ", ".join(bad)))
             ok = False
-        worst_off = max(worst_off, abs(vals["offset_s"]))
-        worst_corr = min(worst_corr, vals["correlation"])
     details["lipsync_clips"] = len(clips)
-    details["lipsync_worst_offset_s"] = worst_off
-    details["lipsync_worst_corr"] = worst_corr
+    details["lipsync_flagged"] = flagged
     return ok
 
 
@@ -947,9 +945,8 @@ def _measurement_line(q, ans, qdetails):
                 vm.get("mismatches", 0)))
         return ", ".join(parts)
     if q == "LIP_SYNC":
-        return "%d clip(s), worst offset %.3fs, worst corr %.2f" % (
-            d.get("lipsync_clips", 0), d.get("lipsync_worst_offset_s", 0.0),
-            d.get("lipsync_worst_corr", 0.0))
+        return "%d clip(s), %d flagged (ACCEPT_WITH_FLAG / held / kept best of 2)" % (
+            d.get("lipsync_clips", 0), len(d.get("lipsync_flagged", [])))
     if q == "FIRST_SUNG":
         return "first real singing at %.1f%% of runtime (%s)%s" % (
             d.get("first_sung_pct", 0.0), d.get("first_sung_band", ""),

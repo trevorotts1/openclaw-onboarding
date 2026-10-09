@@ -297,12 +297,27 @@ card. The answers and the time answered go into the receipt
   first, and are listed on the approval card. Each is a paid job, so the cost
   roughly doubles and a plan past the spend cap is refused loudly. Every
   lip-sync source picture passes the lip-sync image gate before any paid job
-  (straight at the camera, head and shoulders 9:16, face 35-40% of the frame
-  height, mouth closed or slightly parted, nothing over mouth or jaw, soft even
-  light, same character as the storyboard, sharp and at least 1080x1920). Model order is
+  (the dispatcher measures the picture with `picture_gate`: PASS, ACCEPT_WITH_FLAG or
+  FAIL, and refuses a FAIL; `image_gate` uses those same numbers and adds only size
+  at least 720x1280 in 9:16, nothing over mouth or jaw, soft even light, same character
+  as the storyboard). Each clip is cut from the lead-vocal stem on phrase boundaries with
+  0.30 s before and 0.20 s after, prompted with "sings" or "says", and measured
+  by `sync_check` (PASS, ACCEPT_WITH_FLAG, FAIL, UNDETERMINED, UNMEASURABLE; `event_sync`
+  is advisory only). Two tries at most per segment, every name variant counted, the
+  second only on a person's call (a person marks a visible defect) and with a changed
+  input, never on a checker verdict, then the best take is kept and flagged
+  `KEPT_BEST_OF_2`. The approved process (SKILL.md "Lip-sync process", six rules): reuse
+  first (re-measure every take on disk, keep the best, drop defects, no new job where a
+  usable take exists); a sung line the checker cannot confirm is `KEPT_BEST (UNDETERMINED,
+  sung)`; an 8-frame mouth strip at `<delivery folder>/mouth-strips/<segment>.png` for
+  every UNDETERMINED or flagged segment, listed in the receipt; edit placement (trim to
+  audio length, place at the Suno word time corrected by the stem offset, lanczos upscale
+  to 1080x1920, drop frames to the native fps and never invent them, all ffmpeg through
+  `load_governor`); QC items 8 and 11 accept `KEPT_BEST` and flagged rows with a strip. Model order is
   Kling avatar `kling/ai-avatar-standard` first (a front-facing close-up
-  image plus that character's own isolated line), InfiniTalk
-  `infinitalk/from-audio` as backup, **Volcengine dropped**. Tight
+  image plus that character's own isolated line; THE lip-sync model), InfiniTalk
+  `infinitalk/from-audio` manual backup only (never called by the code, not on by
+  default), **Volcengine dropped**. Tight
   front-facing close-ups only. The input clip contains only the on-screen
   speaker's line - never a narrator, never another character, never a mixed
   vocal stem. Narrator, phone, voicemail and laptop voices may play as

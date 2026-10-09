@@ -1,3 +1,7 @@
+## [v26.4.13]  -  2026-10-08  -  Batch MGB007: five Skill 75 units (drama song ad factory v2.9.0)
+
+Released as one batch. Units: #1695 FGD001 green the two red folded fast-guards (llm_score vendor drift, U88 timestamp flake); #1700 LSC001 one consolidated lip-sync change (picture gate, calibrated sync gate, best-practice rules); #1702 LSP001 approved lip-sync process; #1701 PAR003 final_assembler byte parity with 999-setup; #1703 PAR004 I6 factory --client-dir and singing detector fixtures. Skill 75 v2.9.0.
+
 ## [v26.4.12]  -  2026-10-08  -  Batch MGB006: three Skill 75 units (drama song ad factory v2.8.5)
 
 Released as one batch. Units: #1692 G3-WIRE the singing detector wired into the QC gate and receipt paths; #1693 F18 caption and lyric QC consume F17's measured word timing; #1694 G4-WIRE the target engine on Trevor's 5/10 band, wired into music_director and retake_manager. Skill 75 v2.8.5.

@@ -50,6 +50,11 @@ ALLOWED_VIDEO_MODELS = (
 # family ("minimax-h3/*"); the card's per-member picks stay in the family.
 DEFAULT_VIDEO_MODEL = "minimax-h3/*"
 
+# Lip-sync is not a menu video model: Trevor locked the lip-sync model. The F14
+# video lock (menu + card choice) does not apply to it; kie_dispatch lets this
+# one model through F14 and then holds it to the picture gate.
+LOCKED_LIPSYNC_MODEL = "kling/ai-avatar-standard"
+
 # Walk up from this file for references/price-menu.md (kie_dispatch pattern).
 _PRICE_MENU_RELS = (("references", "price-menu.md"),)
 PRICE_MENU_ENV = "PRICE_MENU_MD"
@@ -76,6 +81,11 @@ class ModelLockError(Exception):
         self.reason = reason
         self.model = model
         self.message = message
+
+
+def is_locked_lipsync(model):
+    """True for the one lip-sync model Trevor locked (exact id)."""
+    return (model or "").strip() == LOCKED_LIPSYNC_MODEL
 
 
 def resolve_price_menu(explicit=None):

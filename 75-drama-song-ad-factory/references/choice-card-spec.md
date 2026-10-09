@@ -200,7 +200,7 @@ Model order:
 | Order | Model | KIE id | Notes |
 |---|---|---|---|
 | 1 (first) | Kling avatar | `kling/ai-avatar-standard` | A front-facing close-up image plus that character's own isolated line. 720P standard. |
-| 2 (backup) | InfiniTalk | `infinitalk/from-audio` | Used only when the Kling result fails QC. |
+| manual backup only | InfiniTalk | `infinitalk/from-audio` | Not on by default and never called automatically. A person may run it by hand. The 2-try keep-best rule keeps the best Kling take instead of switching model. |
 | dropped | Volcengine | - | **Dropped.** It barely moves a closed mouth; it is not offered and never appears in code paths, docs or the card. |
 
 Constraints:

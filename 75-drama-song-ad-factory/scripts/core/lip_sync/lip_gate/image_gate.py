@@ -1,29 +1,28 @@
 #!/usr/bin/env python3
-"""image_gate.py: lip-sync SOURCE PICTURE gate (owner order, Trevor 2026-10-08).
+"""image_gate.py: lip-sync SOURCE PICTURE check for run_gate (LSC001: one rule set).
 
 Runs on every lip-sync source picture BEFORE any paid lip-sync job
 (`lip_gate.run_gate` calls it first). It refuses LOUDLY, with every reason, and
 never passes silently: a measurement that could not be made is a refusal
 (`LIPSYNC_IMAGE_UNMEASURED:<field>`), not a pass.
 
-What a good lip-sync picture is, and how each point is checked:
+ONE RULE SET for close-ups: every number (face count, face height %, roll, yaw,
+jaw open, smile, lip gap, sharpness) is judged by `picture_gate.check_numbers`,
+the calibrated gate the dispatcher enforces (kie_dispatch.lipsync_picture_refusal),
+with its constants. This module only adds what that gate does not measure:
+  * file size: at least 720x1280 and 9:16 (a crop is fine when it passes)
+  * nothing over the mouth or jaw (mouth_occluded / jaw_occluded)
+  * no hard shadow across the mouth (mouth_hard_shadow)
+  * soft even light, background separated from the head
+  * same 3D character as the storyboard (reference_similarity)
+  * provenance (an upscaled picture is refused)
+picture_gate FAILs refuse; its FLAGS (smile, teeth, small face, mild tilt,
+...) are carried in numbers["flags"] and never refuse.
 
-  1. face looks straight at the camera   yaw/pitch from the injected detector
-  2. head-and-shoulders, portrait 9:16,   image size + face box height / frame
-     face ~35-40% of frame height          height (accept 30-45%), face centred
-  3. mouth closed or slightly parted,     mouth_open_ratio, teeth_smile flag
-     neutral, no big toothy smile
-  4. nothing over mouth or jaw            mouth_occluded / jaw_occluded flags
-  5. soft even light, no hard shadow      light_evenness, mouth_hard_shadow;
-     across the mouth, background           background_separation
-     separated from the head
-  6. same 3D character as the storyboard  reference_similarity vs the reference
-  7. sharp, >= 1080x1920, never cropped   size, sharpness, provenance
-
-Stdlib only, no network, no spend. The face detector / pose estimator is
-INJECTED (`analyze(path) -> dict`, fields below) so tests run at $0 and the
-real detector can be swapped without touching the rules. Resolution and aspect
-are read from the file header itself when a path is given.
+The analysis dict (injected `analyze(path)`; stdlib only, no network, no spend)
+is picture_measure.measure()'s numbers (face_count, face_h_pct, roll_deg,
+yaw_proxy, jaw_open, smile, inner_gap_pct, sharp_face_256) plus the extra
+fields above.
 
 Also holds `closeup_prompt()`: the image-generation prompt template for the
 lip-sync close-up, so the picture is MADE this way and not only checked.
@@ -32,23 +31,21 @@ from __future__ import annotations
 
 import struct
 
+try:
+    from . import picture_gate as PG
+except ImportError:                    # script import (tests run from here)
+    import picture_gate as PG
+
 TOOL_NAME = "lipsync_image_gate"
 
-# --- thresholds (calibrate on first real runs; every one is a named knob) ----
-MIN_W, MIN_H = 1080, 1920
+# --- thresholds this module owns (the close-up numbers live in picture_gate) --
+MIN_W, MIN_H = 720, 1280              # Kling standard outputs 720p
 ASPECT = 9.0 / 16.0
 ASPECT_TOL = 0.02
-FACE_H_TARGET = (0.35, 0.40)            # the aim; the prompt asks for this
-FACE_H_ACCEPT = (0.30, 0.45)            # the gate accepts this
-MAX_YAW_DEG = 10.0
-MAX_PITCH_DEG = 10.0
-CENTER_X = (0.35, 0.65)                 # face centre, share of frame width
-MAX_MOUTH_OPEN = 0.15                   # lip gap / mouth width: closed..parted
 MIN_LIGHT_EVENNESS = 0.70               # dim-side / bright-side face luma
 MIN_BG_SEPARATION = 0.15                # head-vs-background luma/colour gap
-MIN_SHARPNESS = 100.0                   # Laplacian variance on the face crop
 MIN_REF_SIMILARITY = 0.80               # same character as the storyboard ref
-BAD_PROVENANCE = ("cropped_from_wide", "upscaled")
+BAD_PROVENANCE = ("upscaled",)          # a crop is allowed when it passes every check
 
 # --- reason codes -----------------------------------------------------------
 IMAGE_MISSING = "LIPSYNC_IMAGE_MISSING"
@@ -57,10 +54,8 @@ UNMEASURED = "LIPSYNC_IMAGE_UNMEASURED"
 RESOLUTION = "LIPSYNC_IMAGE_RESOLUTION"
 NOT_PORTRAIT = "LIPSYNC_IMAGE_NOT_9X16"
 FACE_SIZE = "LIPSYNC_IMAGE_FACE_SIZE"
-FRAMING = "LIPSYNC_IMAGE_FRAMING"
 NOT_FRONTAL = "LIPSYNC_IMAGE_NOT_FRONTAL"
 MOUTH_OPEN = "LIPSYNC_IMAGE_MOUTH_OPEN"
-TOOTHY_SMILE = "LIPSYNC_IMAGE_TOOTHY_SMILE"
 OCCLUDED = "LIPSYNC_IMAGE_MOUTH_OR_JAW_COVERED"
 LIGHT = "LIPSYNC_IMAGE_LIGHT_UNEVEN"
 MOUTH_SHADOW = "LIPSYNC_IMAGE_MOUTH_SHADOW"
@@ -116,16 +111,15 @@ def image_size(path):
         return None
 
 
-def check_image(size, a):
-    """Pure rules. size=(w, h) or None; a = analysis dict. -> (reasons, nums).
+_PG_CODE = {"FACE_COUNT": UNMEASURED, "UNMEASURED": UNMEASURED, "FACE_SIZE": FACE_SIZE,
+            "HEAD_ROLL": NOT_FRONTAL, "HEAD_YAW": NOT_FRONTAL, "MOUTH_OPEN": MOUTH_OPEN,
+            "SOFT": SOFT}
 
-    a keys: face_box [x, y, w, h] px; yaw_deg; pitch_deg; mouth_open_ratio;
-    teeth_smile (bool); mouth_occluded (bool); jaw_occluded (bool);
-    light_evenness 0-1; mouth_hard_shadow (bool); background_separation 0-1;
-    reference_similarity 0-1 (vs the storyboard character reference);
-    sharpness; provenance (str, e.g. "generated").
-    """
-    r, nums = [], {}
+
+def check_image(size, a):
+    """Pure rules. size=(w, h) or None; a = analysis dict (see module doc).
+    -> (reasons, nums). The close-up numbers are picture_gate.check_numbers."""
+    r, nums, flags = [], {}, []
 
     def need(field, ok=_num):
         v = a.get(field)
@@ -150,38 +144,14 @@ def check_image(size, a):
             r.append((RESOLUTION, "%dx%d is below %dx%d" % (w, h, MIN_W, MIN_H)))
         if abs(w / float(h) - ASPECT) > ASPECT_TOL:
             r.append((NOT_PORTRAIT, "%dx%d is not portrait 9:16" % (w, h)))
-    box = a.get("face_box")
-    if not (isinstance(box, (list, tuple)) and len(box) == 4
-            and all(_num(x) for x in box) and box[2] > 0 and box[3] > 0):
-        r.append((UNMEASURED, "face_box was not measured (no face found?)"))
-    elif size:
-        share = box[3] / float(size[1])
-        cx = (box[0] + box[2] / 2.0) / float(size[0])
-        nums.update(face_height_share=round(share, 4), face_center_x=round(cx, 4))
-        if not FACE_H_ACCEPT[0] <= share <= FACE_H_ACCEPT[1]:
-            r.append((FACE_SIZE, "face is %.0f%% of frame height; need about "
-                      "%d-%d%% (accept %d-%d%%)" % (
-                          share * 100, FACE_H_TARGET[0] * 100,
-                          FACE_H_TARGET[1] * 100, FACE_H_ACCEPT[0] * 100,
-                          FACE_H_ACCEPT[1] * 100)))
-        if not CENTER_X[0] <= cx <= CENTER_X[1]:
-            r.append((FRAMING, "face centre is at %.0f%% of the width; keep "
-                      "the head centred (head and shoulders)" % (cx * 100)))
-    yaw, pitch = need("yaw_deg"), need("pitch_deg")
-    if yaw is not None and pitch is not None:
-        nums.update(yaw_deg=yaw, pitch_deg=pitch)
-        if abs(yaw) > MAX_YAW_DEG or abs(pitch) > MAX_PITCH_DEG:
-            r.append((NOT_FRONTAL, "head turned yaw %.1f / pitch %.1f deg; "
-                      "must look straight at the camera (+/-%d)" % (
-                          yaw, pitch, MAX_YAW_DEG)))
-    mo = need("mouth_open_ratio")
-    if mo is not None:
-        nums["mouth_open_ratio"] = mo
-        if mo > MAX_MOUTH_OPEN:
-            r.append((MOUTH_OPEN, "mouth open ratio %.2f > %.2f; closed or "
-                      "slightly parted only" % (mo, MAX_MOUTH_OPEN)))
-    if flag("teeth_smile"):
-        r.append((TOOTHY_SMILE, "big toothy smile; neutral expression needed"))
+    fails, pflags = PG.check_numbers(a)             # the ONE close-up rule set
+    for code, text in fails:
+        r.append((_PG_CODE.get(code, UNMEASURED), "%s: %s" % (code, text)))
+    flags.extend("%s: %s" % f for f in pflags)
+    for k in ("face_h_pct", "roll_deg", "yaw_proxy", "jaw_open", "smile",
+              "inner_gap_pct", "sharp_face_256"):
+        if _num(a.get(k)):
+            nums[k] = a[k]
     if flag("mouth_occluded") or flag("jaw_occluded"):
         r.append((OCCLUDED, "something covers the mouth or jaw (hand, "
                   "microphone, hair or hat brim)"))
@@ -205,17 +175,13 @@ def check_image(size, a):
         if sim < MIN_REF_SIMILARITY:
             r.append((WRONG_CHARACTER, "similarity to the storyboard "
                       "character reference %.2f < %.2f" % (sim, MIN_REF_SIMILARITY)))
-    sh = need("sharpness")
-    if sh is not None:
-        nums["sharpness"] = sh
-        if sh < MIN_SHARPNESS:
-            r.append((SOFT, "face sharpness %.0f < %.0f" % (sh, MIN_SHARPNESS)))
     prov = a.get("provenance")
     if not isinstance(prov, str) or not prov:
         r.append((UNMEASURED, "provenance was not recorded"))
     elif prov in BAD_PROVENANCE:
-        r.append((CROPPED, "picture is %s; generate it natively at 9:16"
-                  % prov))
+        r.append((CROPPED, "picture is %s; use a native or cropped 9:16 "
+                  "picture of at least %dx%d" % (prov, MIN_W, MIN_H)))
+    nums["flags"] = flags
     return r, nums
 
 
@@ -262,14 +228,13 @@ def closeup_prompt(character, style_clause="", reference_note=""):
         character.strip().rstrip("."),
         "same 3D character, face and styling as the approved storyboard "
         "reference" + (" (%s)" % reference_note.strip() if reference_note.strip() else ""),
-        "portrait 9:16, 1080x1920 or larger, generated natively at this "
-        "frame, not cropped from a wide shot",
-        "head-and-shoulders portrait, the face filling about 35-40 percent "
-        "of the frame height, head centred",
+        "portrait 9:16, 720x1280 or larger",
+        "chest-up portrait, the face filling about 30-40 percent of the "
+        "frame height, head centred",
         "face looking straight into the camera, eyes to lens, shoulders "
         "square, no head turn or tilt",
-        "mouth closed or very slightly parted, calm neutral expression, "
-        "lips relaxed, no big toothy smile, no teeth showing",
+        "lips relaxed and very slightly parted, calm neutral expression, "
+        "no big toothy smile, no teeth showing",
         "nothing covering the mouth or jaw: no hands, no microphone, no "
         "hair across the face, no hat brim, no scarf",
         "soft even light across the whole face, no hard shadow on the mouth "
