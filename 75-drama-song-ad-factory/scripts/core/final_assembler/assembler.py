@@ -78,8 +78,9 @@ except ImportError:  # direct script run from inside this directory
 # H12: receipt provenance stamp (same package).
 try:
     from . import master_provenance
-except ImportError:
-    import master_provenance  # type: ignore
+except ImportError:                     # direct-script fallback
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import master_provenance  # noqa: E402
 
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
@@ -346,9 +347,14 @@ def h5_gates(plan):
                   "song_end": (s["offset_frames"] + s["frames"]) / fps,
                   "shows_line_ids": s.get("shows_line_ids", [])}
                  for i, s in enumerate(segs)]
-        gate = tp.pictures_match_gate(shots, [
-            {"line_id": l["line_id"], "start": l["start_s"], "end": l["end_s"],
-             "text": l.get("text", "")} for l in plan["lines"]])
+        try:
+            gate = tp.pictures_match_gate(shots, [
+                {"line_id": l["line_id"], "start": l["start_s"],
+                 "end": l["end_s"], "text": l.get("text", "")}
+                for l in plan["lines"]])
+        except (KeyError, TypeError, AttributeError, tp.PlanError) as exc:
+            return _fail("TIMELINE_BAD_LINES", next_action=str(exc),
+                         evidence=ev), ev
         ev["pictures_match"] = gate
         if gate["outcome"] != "ok":
             return _fail(gate["reason_code"], next_action=(
@@ -677,7 +683,8 @@ def plan_timeline(tl, base_dir=".", probe=None):
             src_fps if src_fps is not None else fps, fps)
         item = {"src": s["src"], "frames": frames,
                 "snapped_dur": frames / fps, "transition": trans,
-                "xfade_dur": xd, "lip_sync": bool(s.get("lip_sync")), **rec}
+                "xfade_dur": xd, "lip_sync": bool(s.get("lip_sync")),
+                "hold": bool(s.get("hold")), **rec}
         if fw is not None:
             item["first_word_s"] = float(fw)
         # Part F F12: the timeline's per-segment motion_score (the
