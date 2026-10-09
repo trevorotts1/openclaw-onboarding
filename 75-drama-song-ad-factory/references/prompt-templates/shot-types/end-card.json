@@ -1,0 +1,25 @@
+{
+  "shot_type": "end-card",
+  "purpose": "The final plate under the CTA: product or book hero with clean negative space for the exact title, offer and link overlaid in post (never generated).",
+  "camera_default": "[Push in] slow, or [Static shot]",
+  "camera_allowed": [
+    "[Static shot]",
+    "[Push in]"
+  ],
+  "required_spec": [
+    "subject",
+    "composition",
+    "negative_space",
+    "action.start",
+    "action.end",
+    "beats"
+  ],
+  "space_rule": "Name the empty region (for example the upper third) and say it stays clean and evenly lit for overlay text.",
+  "finale_rule": "Golden realism for Sketch to Life and Canvas to Life when the story earns it; lifelike 3D for Canvas to 3D; the look's own mode otherwise.",
+  "negatives": [
+    "no generated text, logo or URL",
+    "no clutter in the reserved overlay space",
+    "no new characters entering"
+  ],
+  "beats_pattern": "settle -> small payoff motion -> hold the final composition for the overlay"
+}

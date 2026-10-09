@@ -1,0 +1,47 @@
+{
+  "shot_id": "S05",
+  "shot_type": "struggle-beat",
+  "look": "canvas-to-life",
+  "mode": "realism",
+  "model": "minimax-h3/image-to-video",
+  "duration_s": 6,
+  "aspect": "9:16",
+  "resolution": "768P",
+  "beat": "wound_deepens",
+  "character": "renee",
+  "wardrobe": "home-night",
+  "intent": "Wound deepens: two in the morning, the numbers do not work, and Renee runs out of strength.",
+  "subject": "Renee, seated at a small wooden kitchen table, framed from mid-thigh up, slightly to screen-left of centre. An open laptop sits in front of her at screen-right, its screen facing away from the camera so only its pale glow is seen. A stack of envelopes and one unfolded letter lie beside the laptop.",
+  "composition": "Foreground: the corner of the table and the envelopes, softly out of focus at the bottom of the frame. Midground: Renee, elbows on the table. Background: a dark kitchen doorway at screen-left, a microwave clock glowing as a small soft green blur at screen-right, and a window with blinds half closed.",
+  "action": {
+    "start": "The clip opens exactly on the first frame: Renee sitting upright, both hands flat on the table either side of the letter, staring at the laptop.",
+    "end": "She slowly lifts both hands, takes off her glasses with her right hand, sets them on the table, and presses the heels of both palms into her closed eyes, her shoulders curving forward.",
+    "direction": "Her hands travel up from the table to her face; her upper body leans about ten degrees toward the table. She does not turn."
+  },
+  "camera": {
+    "command": "[Static shot]",
+    "plain": "The camera is locked off on a tripod at her eye level for the whole clip, with no pan, tilt, zoom or drift."
+  },
+  "lens_light": "50 mm lens at a wide aperture, focus on her face and hands, with the background falling into soft blur. The key is the cool blue-white glow of the laptop from screen-right, low and close, lighting the underside of her face and the backs of her hands. A faint warm spill from a hallway light at screen-left traces the edge of her shoulder. Deep night exposure with crushed but not black shadows, cool steel grade, natural skin tones.",
+  "visible_emotion": "exhaustion and quiet despair",
+  "motion_physics": "The glasses fold as she lowers them and land on the wood with a small settling motion. Her palms press into her eye sockets and the cheeks lift slightly under the pressure. The cardigan sleeves slide back two centimetres from her wrists as her arms rise. Her breathing is slow and heavy, and her shoulders rise and fall once in a long breath. The laptop glow flickers faintly as the screen content changes.",
+  "beats": [
+    [
+      "0.0-1.5 s",
+      "She stares at the laptop, completely still, one slow blink."
+    ],
+    [
+      "1.5-3.0 s",
+      "She lifts her right hand and takes off her glasses, folding them."
+    ],
+    [
+      "3.0-4.5 s",
+      "She sets the glasses down beside the letter and brings both hands up to her face."
+    ],
+    [
+      "4.5-6.0 s",
+      "She presses her palms into her closed eyes and her shoulders curve forward; she holds there into the last frame."
+    ]
+  ],
+  "negatives_extra": []
+}

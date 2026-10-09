@@ -1,0 +1,45 @@
+{
+  "look_id": "sketch-to-life",
+  "label": "Sketch to Life",
+  "modes": [
+    "sketch-ink",
+    "realism",
+    "golden-realism"
+  ],
+  "beat_mode": {
+    "comedy": "sketch-ink",
+    "setup": "sketch-ink",
+    "everyday": "sketch-ink",
+    "doubt": "sketch-ink",
+    "transition": "sketch-ink",
+    "pain": "realism",
+    "shock": "realism",
+    "humiliation": "realism",
+    "numbness": "realism",
+    "anger": "realism",
+    "exhaustion": "realism",
+    "fear": "realism",
+    "turn": "realism",
+    "revelation": "realism",
+    "transformation": "golden-realism",
+    "payoff": "golden-realism"
+  },
+  "switch": {
+    "match_on": [
+      "pose",
+      "framing"
+    ],
+    "dissolve_s": [
+      0.3,
+      0.4
+    ],
+    "hold_min_s": 3.0,
+    "no_flicker": true,
+    "identity_lock": "required on every prompt"
+  },
+  "lipsync_modes": [
+    "realism"
+  ],
+  "finale": "golden-realism (required, hybrid_bible.plan_hybrid FINALE_BEAT_INVALID)",
+  "source": "style_bibles/hybrid/hybrid_bible.py"
+}

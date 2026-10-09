@@ -1,0 +1,43 @@
+{
+  "shot_id": "S02",
+  "shot_type": "motion-broll",
+  "look": "2d-hand-painted",
+  "mode": "painted-2d",
+  "model": "minimax-h3/image-to-video",
+  "duration_s": 6,
+  "aspect": "9:16",
+  "resolution": "768P",
+  "beat": "ordinary_world",
+  "character": "renee",
+  "wardrobe": "street-day",
+  "intent": "Ordinary world: Renee walks to work on a bright weekday morning, busy and capable, before anything breaks.",
+  "subject": "Renee, full figure, walking along a city sidewalk from screen-left toward screen-right, seen in profile with her right side toward the camera, coffee cup in her left hand and the canvas tote on her right shoulder.",
+  "composition": "She starts at the left third of the frame and travels to the right third. Foreground: the edge of a painted green street-tree planter at the bottom left. Midground: Renee on a pale grey sidewalk. Background: a row of painted brownstone shopfronts with striped awnings in coral and teal, a bus stop shelter at screen-right, and soft painted morning haze above the rooftops.",
+  "action": {
+    "start": "The clip opens on the first frame: Renee mid-stride at the left third, left foot forward, coffee cup at chest height.",
+    "end": "She reaches the right third of the frame, slows, glances down at her phone held in her right hand, and keeps walking out toward screen-right as the clip ends with her still inside the frame.",
+    "direction": "She walks from screen-left to screen-right at an easy brisk pace, about one stride per second, her body in profile the whole time and her face turning a few degrees toward the camera only when she glances at the phone."
+  },
+  "camera": {
+    "command": "[Tracking shot]",
+    "plain": "The camera tracks alongside her, moving toward screen-right at the same speed as her walk, so she stays roughly centred while the shopfronts slide from screen-right to screen-left behind her. The camera stays at her shoulder height and does not tilt."
+  },
+  "lens_light": "Painted equivalent of a 35 mm medium-wide framing, full figure with a little headroom. Morning sun from screen-left at a low angle paints a warm golden key on her face and coat and throws a long soft shadow toward screen-right along the sidewalk. Teal shade fills the shopfront doorways. Flat illustrated depth, with the background a slightly softer brush pass than the characters.",
+  "visible_emotion": "easy, focused, slightly rushed",
+  "motion_physics": "Her coat hem swings with each stride and lags a fraction behind her legs. The tote bounces gently against her hip on each step. Steam rises from the coffee cup and drifts backward toward screen-left because she is moving forward. Her heels lift and land with clear weight; her feet never slide on the sidewalk. Her free arm swings in a short arc.",
+  "beats": [
+    [
+      "0.0-2.0 s",
+      "Two full strides from the left third, eyes forward, a small sip of coffee."
+    ],
+    [
+      "2.0-4.0 s",
+      "She passes the bus shelter at screen-right of centre; her phone buzzes and she lifts it in her right hand to chest height."
+    ],
+    [
+      "4.0-6.0 s",
+      "She glances down at the screen, slows by half a step, then keeps walking toward screen-right, still inside the frame at the end."
+    ]
+  ],
+  "negatives_extra": []
+}

@@ -1,0 +1,12 @@
+{
+  "mode_id": "sketch-ink",
+  "label": "Sketch (black-and-white ink)",
+  "source": "style_bibles/hybrid SKETCH_STYLE",
+  "h3_block": "A black-and-white hand-drawn comic sketch: wobbly black ink line art on white paper, a single line weight with hand-hatched grey shading, simple rounded shapes and deadpan comic staging. No colour, no gradients, no photoreal texture and no 3D render anywhere. Flat comic perspective with a clear foreground and simple background sets drawn in the same ink line family, so furniture, doorframes and props show visible sketch strokes. Light is drawn, never rendered: white paper base, black ink shadow shapes and mid-grey hatching only where a shadow falls. Clean paper grain and crisp ink edges. The animation reads like a drawn animatic: poses hold for a beat, then move in clear arcs with a slight line boil, and reactions may be exaggerated for comedy beats. Dialogue would appear as speech bubbles added in the edit, so the drawing itself carries no lettering.",
+  "palette_default": "",
+  "kling_block": null,
+  "kling_who": null,
+  "keyframe_clause": "same character drawn as a black-and-white ink sketch, wobbly line, grey hatching",
+  "lipsync_allowed": false,
+  "lipsync_note": "Never lip-synced (choice-card-spec 3.3): speech bubbles or reactions instead."
+}

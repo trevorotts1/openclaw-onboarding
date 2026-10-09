@@ -1,0 +1,27 @@
+{
+  "shot_type": "talking-closeup",
+  "purpose": "Emotional close-up on a line that is NOT on the lip-sync list, or the matched cutaway framing right before/after a Kling lip-sync clip. The mouth stays closed: on every non-lip-sync shot accidental mouth movement is a QC failure (choice-card-spec 3.6).",
+  "camera_default": "[Push in] very slow, or [Static shot]",
+  "camera_allowed": [
+    "[Static shot]",
+    "[Push in]",
+    "[Pull out]"
+  ],
+  "required_spec": [
+    "subject",
+    "composition",
+    "action.start",
+    "action.end",
+    "visible_emotion",
+    "eye_line",
+    "beats"
+  ],
+  "mouth_rule": "Lips stay closed and relaxed for the whole clip; the performance lives in the eyes, brows, breath and a small head movement.",
+  "negatives": [
+    "no mouth movement, no speaking or singing motion",
+    "no teeth-baring smile on a pain line",
+    "no hand crossing the face"
+  ],
+  "beats_pattern": "settle (0-1.5 s) -> inner shift (eyes/brows) -> breath or swallow -> landing look that matches the next shot's first frame",
+  "lipsync_link": "When this shot sits next to a Kling clip, its framing must equal the close-up picture's framing (chest-up, eyes to lens) so the cut is invisible."
+}

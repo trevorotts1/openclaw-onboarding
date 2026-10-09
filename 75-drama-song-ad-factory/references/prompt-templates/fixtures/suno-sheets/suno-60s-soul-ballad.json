@@ -1,0 +1,53 @@
+{
+  "length_s": 60,
+  "delivered_s": 58,
+  "music_style": "soul-ballad",
+  "title": "Rest And Still Rise",
+  "style": "soul ballad, slow emotional 62-68 bpm, warm felt piano, brushed kit entering at the chorus, deep rounded bass, soulful lead vocal with melismatic runs, close dry upfront vocal, minor key, restrained verse opening into a full-voiced chorus, no distortion. Warm female lead, sung melody with long held open vowels, slow tempo. The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music, and SINGS the lines tagged Sung with long held notes. Only the short intro and the final outro are spoken; the full band keeps playing continuously under them, natural resolved ending, final chord rings out and fades.",
+  "negative_tags": "rap, rapping, choir, reverb, echo, band dropout, acapella sections, talk-singing, monotone delivery",
+  "vocal_gender": "f",
+  "kie_params": {
+    "model": "V6",
+    "custom_mode": true,
+    "instrumental": false,
+    "style_weight": 0.75,
+    "weirdness_constraint": 0.3,
+    "variety": 0,
+    "vocal_gender": "per brief (m|f)",
+    "duration": "delivered seconds (L-2); G9 headroom question is open decision 3 in file 18"
+  },
+  "segments": [
+    {
+      "kind": "base",
+      "lyrics": "[Intro (spoken): close dry voice, plain speech, no melody]\nRunning on empty.\n\n[Vocalise (sung): wordless, full melodic voice, two very long held notes]\nOoh-oo-ooh, ooh-oo-ooh\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Verse 1 (sung): melodic, rhymed, slow long held notes]\nThe bills stack on the ta-able,\nI smile like I am a-able,\nTwo in the morning, sti-ill,\nI cannot climb this hi-ill,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Product (sung): melodic, warm, clear diction on the name]\nShe handed me a bo-ook,\nThe Unhurried Year, look,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Outro (spoken): calm close voice, plain speech, no melody]\nThe Unhurried Year by Dana Wells. Rest is not quitting. Get the book today.\n\n[End]"
+    }
+  ],
+  "vocalists": null,
+  "measured": {
+    "lyrics_chars": [
+      897
+    ],
+    "style_chars": 623,
+    "title_chars": 19,
+    "negative_tags_chars": 99,
+    "words": {
+      "sung": 49,
+      "spoken": 17,
+      "rap": 0
+    },
+    "words_total": 66,
+    "words_budget": {
+      "total": 66,
+      "spoken": 18,
+      "sung": 48,
+      "opener_max": 3,
+      "closing": 15
+    },
+    "hooks": 3,
+    "hooks_target": 3,
+    "est_seconds": 63.9,
+    "product_est_s": 8.4,
+    "product_share_pct": 14.5,
+    "errors": []
+  }
+}
