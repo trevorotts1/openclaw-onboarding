@@ -130,7 +130,7 @@ def cmd_check(args):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="shot_planner", description=__doc__)
+    ap = argparse.ArgumentParser(prog="camera_shot_rules", description=__doc__)
     sub = ap.add_subparsers(dest="command", required=True)
     sub.add_parser("vocabulary", help="print the full vocabulary")
     p_plan = sub.add_parser("plan", help="build briefs from specs")

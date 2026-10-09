@@ -15,14 +15,14 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKILL_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 CORE = os.path.join(SKILL_ROOT, "scripts", "core")
-for _sub in ("", "video_still_fill"):
+for _sub in ("", "no_blur_fill"):
     _p = os.path.join(CORE, _sub)
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 import qc_gate  # noqa: E402
-import video_still_fill  # noqa: E402  (package)
-from video_still_fill import still_fill as SF  # noqa: E402
+import no_blur_fill  # noqa: E402  (package; NOT scripts/video_still_fill, the assembler render path)
+from no_blur_fill import still_fill as SF  # noqa: E402
 
 RUN = "pkg05u3"
 STAGE = "final_edit"

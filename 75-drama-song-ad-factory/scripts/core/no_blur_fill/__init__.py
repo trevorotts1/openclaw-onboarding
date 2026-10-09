@@ -1,4 +1,4 @@
-"""video_still_fill: full height by crop-in, never blur fill (DEL-14)."""
+"""no_blur_fill: full height by crop-in, never blur fill (DEL-14)."""
 from .still_fill import (  # noqa: F401
     EXIT,
     FILL_METHODS,

@@ -6,7 +6,7 @@ passes) and a negative case (the rule check runs and discriminates — the
 reason code appears). The compliant plan is exercised for music and for
 dialogue or narration alike. Run:
 
-    python3 scripts/shot_planner/test_del16_rules.py
+    python3 scripts/camera_shot_rules/test_del16_rules.py
 """
 from __future__ import annotations
 

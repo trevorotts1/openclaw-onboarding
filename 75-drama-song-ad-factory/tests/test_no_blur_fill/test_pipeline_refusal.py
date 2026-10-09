@@ -3,7 +3,7 @@
 
 Feeds the forbidden path through the pipeline and the gates around it:
   1. the render attempt itself (the gblur + mask chain, run on purpose) is
-     measured short of full height and refused by video_still_fill.verify_output;
+     measured short of full height and refused by no_blur_fill.verify_output;
   2. the QC gate refuses the attempt's PASS record (FILL_CLAIM_MEASURED);
   3. the source-level scanner refuses a core script carrying the chain
      (the spot-2 incident was exactly that, planted here as the control);

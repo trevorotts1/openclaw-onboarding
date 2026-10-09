@@ -1,4 +1,4 @@
-# shot_planner — DEL-16 camera rules (PKG-07-U2)
+# camera_shot_rules — DEL-16 camera rules (PKG-07-U2)
 
 The shot-planner rules layer: the camera vocabulary every shot brief
 carries, and the rules the plan must pass. The same rules run for music and
@@ -86,7 +86,7 @@ two minutes or more carry at least five shot types and three angles.
 ## Usage
 
 ```python
-from shot_planner import build_shot_brief, run_rule_checks
+from camera_shot_rules import build_shot_brief, run_rule_checks
 
 brief = build_shot_brief(
     shot_id="s1", framing="establishing_wide", angle="low",
@@ -101,15 +101,15 @@ CLI (same envelope and exit-code map as the control CLI: ok 0, error 1,
 waiting 2, parked 3, rejected 4):
 
 ```bash
-python3 scripts/shot_planner/cli.py vocabulary
-python3 scripts/shot_planner/cli.py plan  --specs specs.json
-python3 scripts/shot_planner/cli.py check --plan plan.json
+python3 scripts/camera_shot_rules/cli.py vocabulary
+python3 scripts/camera_shot_rules/cli.py plan  --specs specs.json
+python3 scripts/camera_shot_rules/cli.py check --plan plan.json
 ```
 
 ## Tests
 
 ```bash
-python3 scripts/shot_planner/test_del16_rules.py
+python3 scripts/camera_shot_rules/test_del16_rules.py
 ```
 
 The suite covers every rule above with a positive and a negative case, for

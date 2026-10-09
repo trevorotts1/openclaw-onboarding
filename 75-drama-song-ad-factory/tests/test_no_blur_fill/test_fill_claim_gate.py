@@ -8,7 +8,7 @@ blur fill is refused outright as FILL_CLAIM_MEASURED (structural -> BLOCKED:
 the same record can never pass; repair means a new crop-in render).
 
 The fill scanner lives in two places on purpose — qc_gate (stdlib, importable
-on a partial tree) and video_still_fill (the render path) — and this suite
+on a partial tree) and no_blur_fill (the proof copy of the render path) — and this suite
 asserts the two agree byte-for-byte, same pattern as the G3 detector-parity
 rule in core/test_g3_sung_claim_gate.py.
 
@@ -83,7 +83,7 @@ class FillClaimScanner(unittest.TestCase):
             fn_end = text.index("\n\n\n", end)
             return text[start:fn_end]
         gate_src = os.path.join(common.CORE, "qc_gate.py")
-        fill_src = os.path.join(common.CORE, "video_still_fill", "still_fill.py")
+        fill_src = os.path.join(common.CORE, "no_blur_fill", "still_fill.py")
         self.assertEqual(block(gate_src), block(fill_src))
 
 

@@ -17,10 +17,10 @@ Heavy renders go through load_governor like every other ffmpeg call site.
 Probe uses ffprobe only (same as final_assembler.probe_duration).
 
 CLI:
-  python3 video_still_fill.py render   --source <clip> --output <mp4> \
+  python3 scripts/core/no_blur_fill/still_fill.py render   --source <clip> --output <mp4> \
       [--center-x 0.5] [--fps N]
-  python3 video_still_fill.py inspect  --output <mp4>
-  python3 video_still_fill.py scan-core
+  python3 scripts/core/no_blur_fill/still_fill.py inspect  --output <mp4>
+  python3 scripts/core/no_blur_fill/still_fill.py scan-core
 
 Exit codes: ok=0, error=1, rejected=5 (blur fill found in core, or the
 rendered output is not a clean full-height crop-in).
@@ -291,6 +291,11 @@ def scan_core_scripts(core_dir):
                     text = fh.read().lower()
             except OSError:
                 continue
+            # The refusal gates are NAMED no_blur_fill / no-blur-fill (the QC
+            # check id, the delivery row, the package that holds this file):
+            # a name that says "no blur fill" is not a blur fill. Strip those
+            # names before looking for a real fill chain (gblur, boxblur ...).
+            text = text.replace("no_blur_fill", "").replace("no-blur-fill", "")
             for marker in BLUR_MARKERS:
                 if marker in text:
                     hits.append((os.path.relpath(p, core_dir), marker))

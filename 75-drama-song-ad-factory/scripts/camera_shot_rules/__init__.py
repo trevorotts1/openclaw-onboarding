@@ -1,4 +1,4 @@
-"""shot_planner package — DEL-16 shot-planner rules (PKG-07-U2).
+"""camera_shot_rules package — DEL-16 shot-planner rules (PKG-07-U2).
 
 The rules run for music and for dialogue or narration alike: the same
 vocabulary, the same checks, the same reason codes.
@@ -19,7 +19,7 @@ What ships here
 ``rules``        ``run_rule_checks`` — every DEL-16 rule over a plan,
                  returning a reason string per violation.
 
-CLI: ``python3 scripts/shot_planner/cli.py check --plan plan.json``
+CLI: ``python3 scripts/camera_shot_rules/cli.py check --plan plan.json``
 
 Planning ranges are planning ranges, not measured standards.
 """

@@ -18,12 +18,12 @@ What this suite proves, in order:
    (`OUTPUT_NOT_FULL_HEIGHT`), and an upright full-height file wearing the
    same tag is refused as `ROTATED_FILL`. The source-level scanner refuses
    any core script that carries the chain (planted-copy control included).
-2. **Green on crop-in.** `video_still_fill.render` scales the source until it
+2. **Green on crop-in.** `no_blur_fill.render` scales the source until it
    covers 9:16 and crops the overflow (uniform zoom, centred on the subject
    via `--center-x`); the output measures 1080x1920, passes `verify_output`
    and passes the QC gate.
 3. **Refusal gates fire.** `qc_gate.fill_claim` + the `no_blur_fill` check in
-   `scripts/core/qc_gate.py`, and `video_still_fill.build_argv`, which can
+   `scripts/core/qc_gate.py`, and `no_blur_fill.build_argv`, which can
    only ever emit `scale` + `crop` — no pad, no blur, no stretch.
 
 Run:
