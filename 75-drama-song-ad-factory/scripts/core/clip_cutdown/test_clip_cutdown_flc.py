@@ -14,6 +14,7 @@ CORE = os.path.dirname(HERE)
 sys.path.insert(0, CORE)
 from clip_cutdown import clips_for, plan_clips, build_argv, run_clips, ClipCutdownError  # noqa: E402
 from sung_hook import sung_hook as SH  # noqa: E402
+from delivery_fixture import make_video  # noqa: E402
 
 
 def timeline(total=178.0, end_card=None):
@@ -48,8 +49,12 @@ class T(unittest.TestCase):
 
         class R:
             returncode = 0
-        paths = run_clips("master.mp4", plan_clips(tl, 180), tempfile.mkdtemp(),
-                          runner=lambda argv, **k: calls.append(argv) or R())
+
+        def fake(argv, **k):                  # a real AAC file, so the delivery gate passes
+            calls.append(argv)
+            make_video(argv[-1])
+            return R()
+        paths = run_clips("master.mp4", plan_clips(tl, 180), tempfile.mkdtemp(), runner=fake)
         self.assertEqual([os.path.basename(p) for p in paths], ["clip-60s.mp4", "clip-90s.mp4"])
         durs = [float(a[a.index("-t") + 1]) for a in calls]
         self.assertTrue(50 <= durs[0] <= 58, durs)      # 60 s clip, ends 2 s early
