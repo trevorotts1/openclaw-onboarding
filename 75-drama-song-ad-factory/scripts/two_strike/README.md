@@ -45,7 +45,7 @@ client on two boxes, are counted apart.
 Every strike appends one JSON line naming the client, the box and the skill:
 
 ```json
-{"action": "refusal", "box": "rescue-karen-vaughn", "client": "karen-vaughn",
+{"action": "refusal", "box": "example-box", "client": "example-client",
  "reason": "extraction_attempt", "skill": "75-drama-song-ad-factory",
  "strike": 1, "ts": "2026-10-09T18:00:00Z"}
 ```
