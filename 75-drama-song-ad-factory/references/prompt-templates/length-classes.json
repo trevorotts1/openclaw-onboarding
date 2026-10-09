@@ -1,5 +1,5 @@
 {
-  "_source": "length_formula.plan() on main d067ab9/ef1537d (default spoken target 22.5%), sung_hook, lipsync_clips.budget, shot_planner.plan_generation_count (4 s target shot), PR #96 lane_planner (W-G-008, OPEN, not on main), H3 catalog 4-15 s.",
+  "_source": "length_formula.plan() + lipsync_clips.budget() + shot_planner.plan_generation_count (4 s target) + lane_planner (W-G-008; formula fallback while the module is not on this branch) + U13 product band, on the U15h branch; every row is proved equal to the code by prompt_templates.length_class / test_length_classes_u15h.py",
   "classes": {
     "60": {
       "chosen_s": 60,
@@ -212,10 +212,10 @@
       "kie_new_requests_per_lane_per_10s": 6,
       "hooks": 8,
       "song_words": {
-        "total": 172,
-        "spoken": 42,
+        "total": 186,
+        "spoken": 56,
         "sung": 130,
-        "opener_max": 10
+        "opener_max": 12
       },
       "sections": {
         "verses": 2,
@@ -227,7 +227,7 @@
         "count": 2,
         "seconds_each": 8
       },
-      "spoken_share_planned_pct": 16.9,
+      "spoken_share_planned_pct": 22.5,
       "spoken_placement": "[Intro] opener + [Outro] CTA only",
       "product_seconds": [
         17.8,
@@ -241,7 +241,7 @@
         "Suno takes until the first pass",
         "20% retake allowance"
       ],
-      "spoken_share_note": "length_formula caps spoken at opener + 30 words, so the plan reaches only 16.9%; the ad's own spoken target is stamped to the planned share and judged on the 5/10 band (SKILL: each ad can set its own). Open decision for Trevor."
+      "spoken_share_note": "length_formula.plan at 178 s reaches 22.5% with the CTA scale (Trevor 2026-10-09: the spoken band 20-25% holds at every length)."
     },
     "300": {
       "chosen_s": 300,
@@ -273,10 +273,10 @@
       "kie_new_requests_per_lane_per_10s": 3,
       "hooks": 12,
       "song_words": {
-        "total": 257,
-        "spoken": 42,
+        "total": 309,
+        "spoken": 94,
         "sung": 215,
-        "opener_max": 10
+        "opener_max": 12
       },
       "sections": {
         "verses": 3,
@@ -288,7 +288,7 @@
         "count": 3,
         "seconds_each": 10
       },
-      "spoken_share_planned_pct": 10.1,
+      "spoken_share_planned_pct": 22.5,
       "spoken_placement": "[Intro] opener + [Outro] CTA only",
       "product_seconds": [
         29.8,
@@ -302,7 +302,7 @@
         "Suno takes until the first pass",
         "20% retake allowance"
       ],
-      "spoken_share_note": "length_formula caps spoken at opener + 30 words, so the plan reaches only 10.1%; the ad's own spoken target is stamped to the planned share and judged on the 5/10 band (SKILL: each ad can set its own). Open decision for Trevor."
+      "spoken_share_note": "length_formula.plan at 298 s reaches 22.5% with the CTA scale (Trevor 2026-10-09)."
     },
     "600": {
       "chosen_s": 600,
@@ -334,10 +334,10 @@
       "kie_new_requests_per_lane_per_10s": 1,
       "hooks": 12,
       "song_words": {
-        "total": 474,
-        "spoken": 42,
+        "total": 620,
+        "spoken": 188,
         "sung": 432,
-        "opener_max": 10
+        "opener_max": 12
       },
       "sections": {
         "verses": 5,
@@ -349,7 +349,7 @@
         "count": 5,
         "seconds_each": 12
       },
-      "spoken_share_planned_pct": 5.0,
+      "spoken_share_planned_pct": 22.5,
       "spoken_placement": "[Intro] opener + [Outro] CTA only",
       "product_seconds": [
         59.8,
@@ -363,7 +363,7 @@
         "Suno takes until the first pass + extends",
         "20% retake allowance"
       ],
-      "spoken_share_note": "length_formula caps spoken at opener + 30 words, so the plan reaches only 5.0%; the ad's own spoken target is stamped to the planned share and judged on the 5/10 band (SKILL: each ad can set its own). Open decision for Trevor."
+      "spoken_share_note": "length_formula.plan at 598 s reaches 22.5% with the CTA scale (Trevor 2026-10-09)."
     }
   }
 }

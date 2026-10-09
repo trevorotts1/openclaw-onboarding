@@ -634,3 +634,110 @@ def to_e4_qc_record(timeline, reviewer, run_id, stage="final_edit",
         "checker_version": checker_version,
         "reviewer": reviewer,
     }
+
+# ---------------------------------------------------------------------------
+# U15b: prompt_spec_for -- the planner writes FACTS, never prose prompts.
+
+#: The action fields every H3 shot spec carries.
+PROMPT_SPEC_KEYS = ("subject", "composition", "action", "camera", "lens_light",
+                    "motion_physics", "beats")
+
+def prompt_spec_for(shot, contract, look_plan):
+    """Write ``shot["prompt_spec"]``: the H3 facts, never prose.
+
+    Reads the shot's 14.2 fields and the 14.3 contract (lyric text, viewer
+    understanding, character action, visible emotion) plus the look plan
+    (``hybrid.plan_hybrid`` / ``canvas_to_life.plan_hybrid`` /
+    ``canvas_3d.plan_switches`` return mode, transition_out and lip_sync).
+
+    The spec carries subject, composition, action start/end/direction, the
+    camera command and its plain-words form, lens and light, motion physics,
+    the beats and (on a style switch) the match pose. It never writes a
+    finished prompt: ``prompt_templates.assemble_h3`` does the assembly.
+
+    Returns the spec dict; also stores it on the shot. Raises PlanError
+    PROMPT_SPEC_INCOMPLETE naming what is missing.
+    """
+    if not isinstance(shot, dict):
+        raise PlanError("BAD_INPUT", "shot must be a record")
+    cc = validate_contract(contract)
+    if cc:
+        raise PlanError("PROMPT_SPEC_INCOMPLETE",
+                        "contract incomplete: %s" % "; ".join(cc))
+    if not isinstance(look_plan, dict):
+        raise PlanError("BAD_INPUT", "look_plan must be a record")
+    missing = [k for k in ("look", "mode") if not look_plan.get(k)]
+    if missing:
+        raise PlanError("PROMPT_SPEC_INCOMPLETE",
+                        "look_plan is missing %s (the choice card's style and "
+                        "the planned mode)" % ", ".join(missing))
+    spec = {
+        "shot_id": shot.get("shot_id"),
+        "shot_type": look_plan.get("shot_type") or shot.get("shot_type")
+        or "motion-broll",
+        "look": look_plan["look"],
+        "mode": look_plan["mode"],
+        "model": look_plan.get("model") or "minimax-h3/image-to-video",
+        "duration_s": shot.get("song_end", 0) - shot.get("song_start", 0),
+        "aspect": look_plan.get("aspect") or "9:16",
+        "beat": shot.get("story_stage", ""),
+        "intent": shot.get("visual_objective", ""),
+        "subject": shot.get("visual_objective", ""),
+        "composition": shot.get("camera_direction", ""),
+        "action": {
+            "start": contract.get("character_action", ""),
+            "end": contract.get("viewer_understanding", ""),
+            "direction": shot.get("camera_direction", ""),
+        },
+        "camera": look_plan.get("camera") or {"command": "[Static shot]",
+                                              "plain": ""},
+        "lens_light": look_plan.get("lens_light", ""),
+        "visible_emotion": contract.get("visible_emotion", ""),
+        "motion_physics": shot.get("motion_physics", ""),
+        "beats": shot.get("beats") or [],
+        "continuity": shot.get("continuity_constraints", []),
+        "negatives_extra": list(shot.get("negative_constraints", [])),
+    }
+    for key in ("subject", "lens_light", "motion_physics"):
+        if not str(spec[key]).strip():
+            raise PlanError("PROMPT_SPEC_INCOMPLETE",
+                            "shot %s: %s is empty; the planner must supply it"
+                            % (spec["shot_id"], key))
+    if not spec["action"]["start"] or not spec["action"]["end"]:
+        raise PlanError("PROMPT_SPEC_INCOMPLETE",
+                        "shot %s: action start/end come from the 14.3 "
+                        "contract (character_action, viewer_understanding)"
+                        % spec["shot_id"])
+    if not spec["beats"]:
+        raise PlanError("PROMPT_SPEC_INCOMPLETE",
+                        "shot %s: beats are required (3-5 time-stamped beats)"
+                        % spec["shot_id"])
+    if look_plan.get("match_pose"):
+        spec["match_pose"] = look_plan["match_pose"]
+    shot["prompt_spec"] = spec
+    return spec
+
+
+# ---------------------------------------------------------------------------
+# U15h: cross-check against the class table (design 6; never a second formula).
+
+def class_check(delivered_s):
+    """This module's generation count equals the class row's shots_total.
+
+    Cross-check only -- ``plan_generation_count`` stays THE shot sizing; the
+    class table is the shared reader (``prompt_templates.length_class``).
+    [] when they agree; the reasons name each drifted field otherwise.
+    """
+    try:
+        from prompt_templates import prompt_templates as _PT
+    except ImportError:                        # template layer not installed
+        return []
+    D = float(delivered_s)
+    L = int(D) + 2                             # chosen length: D = L - 2
+    try:
+        row = _PT.length_class(L)
+    except _PT.PromptTemplateError as e:
+        return ["length_class(%d): %s" % (L, e)]
+    mine = {"delivered_s": D, "shots_total": plan_generation_count(D)}
+    return ["%s class=%r ceil(D/4)=%r" % (f, row.get(f), v)
+            for f, v in sorted(mine.items()) if row.get(f) != v]

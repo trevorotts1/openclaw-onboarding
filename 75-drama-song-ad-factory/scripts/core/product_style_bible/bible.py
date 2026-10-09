@@ -254,14 +254,46 @@ def route_model(aspect_ratio):
 #: of flipped and invented covers, so these kinds must carry their own block.
 KIND_OWN_MOTION = frozenset({"book", "product", "insert"})
 
-def assert_compiled(prompt):
-    """Downstream guard: prompt came from the compiler, not manual copy."""
-    return isinstance(prompt, str) and "[compiled:style=" in prompt \
-        and "[STYLE]" in prompt and "[/STYLE]" in prompt
+def assert_compiled(prompt, receipt=None):
+    """Downstream guard: prompt came from the compiler, not manual copy.
+
+    Image (keyframe) prompts keep the marker path unchanged. U15b: a VIDEO
+    prompt carries no in-prompt markers (H3 reads square brackets as camera
+    commands), so a matching prompt receipt IS its proof of compiledness --
+    ``receipt`` is the dict ``prompt_templates.receipt()`` wrote, or a list of
+    them; a receipt whose ``prompt_sha256`` matches this prompt's sha256
+    passes. A receipt for different bytes never passes.
+    """
+    if not isinstance(prompt, str):
+        return False
+    if "[compiled:style=" in prompt and "[STYLE]" in prompt \
+            and "[/STYLE]" in prompt:
+        return True
+    if receipt is None:
+        return False
+    if isinstance(receipt, dict):
+        receipt = [receipt]
+    if not isinstance(receipt, (list, tuple)):
+        return False
+    import hashlib as _hashlib
+    want = _hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    for r in receipt:
+        if isinstance(r, dict) and r.get("prompt_sha256") == want:
+            return True
+    return False
 
 
-def compile_visual_prompt(style, characters, product, shot):
-    """Inject style bible + bind reference asset IDs. Raises CompilerError."""
+def compile_visual_prompt(style, characters, product, shot, video=False):
+    """Inject style bible + bind reference asset IDs. Raises CompilerError.
+
+    U15b: ``video=True`` is the VIDEO prompt path. H3 reads square brackets as
+    camera commands, so a video prompt carries NO in-prompt markers and no
+    generic [MOTION] line (per-shot motion comes from the shot spec's Physics
+    and Timing sections). Its proof of compiledness is the receipt from
+    ``prompt_templates.receipt()``, checked by ``assert_compiled(prompt,
+    receipt)``. The keyframe IMAGE path (video=False, the default) is
+    unchanged.
+    """
     serrs = validate_style(style)
     if serrs:
         raise CompilerError("STYLE_INVALID", "; ".join(serrs))
@@ -309,53 +341,76 @@ def compile_visual_prompt(style, characters, product, shot):
     cap = PROMPT_CAP_LEGACY if model == LEGACY_MODEL \
         else PROMPT_CAP_SUNBURST
     allow = product.get("approved_texts", [])
-    lines = ["[compiled:style=%s model=%s aspect=%s]"
-             % (style["style_id"], model, style["aspect_ratio"]),
-             "[STYLE]"]
-    for k in list(STYLE_TEXT_FIELDS) + ["aspect_ratio"]:
-        lines.append("%s: %s" % (k, style[k]))
-    for k in STYLE_LIST_MIN1:
-        lines.append("%s: %s" % (k, " | ".join(style[k])))
-    lines.append("[/STYLE]")
-    lines.append("[CHARACTER_REFS] %s [/CHARACTER_REFS]" % ", ".join(
-        "%s=%s" % (cid, "+".join(by_id[cid]["approved_reference_asset_ids"]))
-        for cid in cids))
-    lines.append("[PRODUCT_REFS] %s [/PRODUCT_REFS]" %
-                 ", ".join(product["required_product_reference_images"]))
-    lines.append("[TEXT_ALLOWLIST] %s [/TEXT_ALLOWLIST]" %
-                 ("; ".join(allow) if allow else "(none)"))
-    lines.append("[SHOT:%s] %s [/SHOT]" % (shot_id, base.strip()))
-    # Part F F12: every compiled clip prompt asks for motion — the failed
-    # 2026-10-08 runs produced near-still clips because the prompt never
-    # said the subject moves. Exact one-line wording, builder style.
-    #
-    # FU-U10: the generic line is a PEOPLE instruction ("limbs, head and
-    # camera ..."). On a book / product / insert shot a moving camera plus
-    # object rotation is the named cause of flipped and invented covers, so
-    # those kinds carry the shot's OWN motion block and never the generic
-    # line. A kind outside the people set with no motion refuses rather than
-    # silently shipping the wrong instruction.
-    kind = shot.get("kind", "people")
-    if isinstance(kind, str) and kind.strip().lower() in KIND_OWN_MOTION:
-        motion = shot.get("motion")
-        if not isinstance(motion, str) or not motion.strip():
-            raise CompilerError(
-                "MOTION_MISSING_FOR_SHOT",
-                "shot kind %r owns its motion block; set shot['motion'] "
-                "(people shots keep the generic F12 line)" % kind)
-        lines.append("[MOTION] %s [/MOTION]" % motion.strip())
+    if video:
+        # U15b video path: plain text, no square-bracket markers anywhere.
+        # The camera command and per-shot motion arrive with the shot spec;
+        # nothing here may emit "[...]" (H3 reads it as a camera command).
+        lines = ["%s. Recorded at %s." % (base.strip(), style["aspect_ratio"])]
+        for k in list(STYLE_TEXT_FIELDS) + ["aspect_ratio"]:
+            lines.append("%s: %s" % (k, style[k]))
+        for k in STYLE_LIST_MIN1:
+            lines.append("%s: %s" % (k, " | ".join(style[k])))
+        lines.append("Character references: %s." % ", ".join(
+            "%s=%s" % (cid, "+".join(by_id[cid]["approved_reference_asset_ids"]))
+            for cid in cids))
+        lines.append("Product references: %s." % ", ".join(
+            product["required_product_reference_images"]))
+        lines.append("Approved text only: %s." %
+                     ("; ".join(allow) if allow else "(none)"))
+        prompt = " ".join(lines)
+        if "[" in prompt or "]" in prompt:
+            raise CompilerError("VIDEO_PROMPT_BRACKETS",
+                                "a video prompt may carry no square brackets "
+                                "(H3 reads them as camera commands)")
     else:
-        lines.append("[MOTION] The subject moves naturally through the frame; "
-                     "limbs, head and camera stay in gentle continuous motion. "
-                     "[/MOTION]")
-    prompt = "\n".join(lines)
+        lines = ["[compiled:style=%s model=%s aspect=%s]"
+                 % (style["style_id"], model, style["aspect_ratio"]),
+                 "[STYLE]"]
+        for k in list(STYLE_TEXT_FIELDS) + ["aspect_ratio"]:
+            lines.append("%s: %s" % (k, style[k]))
+        for k in STYLE_LIST_MIN1:
+            lines.append("%s: %s" % (k, " | ".join(style[k])))
+        lines.append("[/STYLE]")
+        lines.append("[CHARACTER_REFS] %s [/CHARACTER_REFS]" % ", ".join(
+            "%s=%s" % (cid, "+".join(by_id[cid]["approved_reference_asset_ids"]))
+            for cid in cids))
+        lines.append("[PRODUCT_REFS] %s [/PRODUCT_REFS]" %
+                     ", ".join(product["required_product_reference_images"]))
+        lines.append("[TEXT_ALLOWLIST] %s [/TEXT_ALLOWLIST]" %
+                     ("; ".join(allow) if allow else "(none)"))
+        lines.append("[SHOT:%s] %s [/SHOT]" % (shot_id, base.strip()))
+        # Part F F12: every compiled clip prompt asks for motion — the failed
+        # 2026-10-08 runs produced near-still clips because the prompt never
+        # said the subject moves. Exact one-line wording, builder style.
+        #
+        # FU-U10: the generic line is a PEOPLE instruction ("limbs, head and
+        # camera ..."). On a book / product / insert shot a moving camera plus
+        # object rotation is the named cause of flipped and invented covers, so
+        # those kinds carry the shot's OWN motion block and never the generic
+        # line. A kind outside the people set with no motion refuses rather than
+        # silently shipping the wrong instruction.
+        kind = shot.get("kind", "people")
+        if isinstance(kind, str) and kind.strip().lower() in KIND_OWN_MOTION:
+            motion = shot.get("motion")
+            if not isinstance(motion, str) or not motion.strip():
+                raise CompilerError(
+                    "MOTION_MISSING_FOR_SHOT",
+                    "shot kind %r owns its motion block; set shot['motion'] "
+                    "(people shots keep the generic F12 line)" % kind)
+            lines.append("[MOTION] %s [/MOTION]" % motion.strip())
+        else:
+            lines.append("[MOTION] The subject moves naturally through the frame; "
+                         "limbs, head and camera stay in gentle continuous motion. "
+                         "[/MOTION]")
+        prompt = "\n".join(lines)
     if len(prompt) > cap:
         raise CompilerError("OVER_CAP", "%d > %d for %s"
                             % (len(prompt), cap, model))
-    enforce_prompt(prompt, model)
+    if not video:
+        enforce_prompt(prompt, model)
     return {"prompt": prompt, "model": model,
             "aspect_ratio": style["aspect_ratio"], "asset_ids": assets,
-            "prompt_chars": len(prompt)}
+            "prompt_chars": len(prompt), "video": bool(video)}
 
 
 def dumps_record(d):

@@ -19,11 +19,13 @@ Perplexity's 24-36 repeats at 10 min contradict the measured 3 repeats in
 58 s; one hook per 25 s of runtime keeps the hook a hook.
 
 Spoken placement is ONE rule for every length (recipe v2): spoken only in
-[Intro] and [Outro]. Opener <= 3 words up to 90 s (the measured pass), more
-only for long songs; the closing CTA carries the rest. Block caps keep a
-spoken block from turning the track into speech (15-28 word blocks failed);
-when the caps bind, the plan reports the share it can really reach and the
-ad's own target should be set to that.
+[Intro] and [Outro]. Opener <= 3 words up to 90 s (the measured pass), up to
+12 on a long song; the closing CTA carries the rest. The block caps keep the
+OPENER short; the CTA grows with the ad so the spoken share can REACH the
+owner band (Trevor, 2026-10-09: do not lower targets -- spoken is 20-25% of
+runtime, BSW 15-20%, at every length). The earlier fixed 30-word CTA cap
+clipped the plan to 16.9% at 3 min, 10.1% at 5 min and 5.0% at 10 min; it is
+retired. Short ads (60/90/120 s) are unchanged by this.
 
 Over one generation (MAX_GEN_S) the plan is a base take plus extends: same
 model, vocal gender, style, key and tempo, each extend continues
@@ -52,7 +54,16 @@ EXTEND_OVERLAP_S = 30     # continue_at = audio length - 30
 EXTEND_NEW_S = MAX_GEN_S - EXTEND_OVERLAP_S
 OPENER_MAX_WORDS_SHORT = 3        # up to 90 s: the measured pass
 OPENER_MAX_WORDS_LONG = 12
-OUTRO_MAX_WORDS = 30
+OUTRO_MAX_WORDS = 30              # the CTA's own floor cap; it scales for long ads
+#: Block caps that keep a spoken block from turning the track into speech. The
+#: OPENER never passes OPENER_MAX_WORDS_*; the CTA may carry what the ad's own
+#: spoken target needs once the length is past the short classes, so the band is
+#: reachable at every length (Trevor 2026-10-09). 30 words stays the CTA cap for
+#: every short ad and for any long ad the band does not push past it.
+def spoken_block_caps(D, spoken_words):
+    """(opener cap, CTA cap) for one delivered length and spoken word count."""
+    opener = OPENER_MAX_WORDS_SHORT if D <= 105 else OPENER_MAX_WORDS_LONG
+    return opener, max(OUTRO_MAX_WORDS, spoken_words - opener)
 
 # upper edge of the bracket (delivered seconds) -> section plan.
 _BRACKETS = (
@@ -343,8 +354,9 @@ def plan(chosen_length_s, spoken_share_pct=None):
     break_s = b["breaks"] * b["break_s"]
     wb = word_budget(D, spoken_share_pct, break_s)
     opener_cap = OPENER_MAX_WORDS_SHORT if D <= 105 else OPENER_MAX_WORDS_LONG
-    spoken_words = min(wb["spoken_words"], opener_cap + OUTRO_MAX_WORDS)
-    opener = min(opener_cap, max(spoken_words // 4, 1))
+    opener = min(opener_cap, max(wb["spoken_words"] // 4, 1))
+    cta_cap = max(OUTRO_MAX_WORDS, wb["spoken_words"] - opener)
+    spoken_words = min(wb["spoken_words"], opener + cta_cap)
     planned_share = round(spoken_words / SPOKEN_WPS / D * 100.0, 1)
     out = {
         "chosen_length_s": L, "delivered_s": D, "bracket": b["name"],
@@ -373,3 +385,43 @@ def plan(chosen_length_s, spoken_share_pct=None):
         out["note"] = ("spoken block caps bind: set this ad's spoken target to %.1f%%"
                        % planned_share)
     return out
+
+# ---------------------------------------------------------------------------
+# U15h: cross-check against the class table (design 6; never a second formula).
+
+def class_check(chosen_length_s):
+    """This module's plan equals the class row for L. [] when they agree.
+
+    Cross-check only -- ``plan()`` stays THE plan; the class table is the
+    shared reader (``prompt_templates.length_class``). Returns the reasons
+    naming each drifted field, so a table that describes a different song
+    than the code computes can never be read silently.
+    """
+    try:
+        from prompt_templates import prompt_templates as _PT
+    except ImportError:                        # template layer not installed
+        return []
+    L = int(chosen_length_s)
+    try:
+        row = _PT.length_class(L)
+    except _PT.PromptTemplateError as e:
+        return ["length_class(%d): %s" % (L, e)]
+    p = plan(L)
+    ext = p.get("extend") or []
+    mine = {"delivered_s": L - END_EARLY_S, "bracket": p["bracket"],
+            "hooks": p["hook_repeats"],
+            "song_words": {k: p["words"][k] for k in
+                           ("total", "spoken", "sung", "opener_max")},
+            "sections": dict(p["sections"]),
+            "instrumental_breaks": {"count": p["instrumental"]["breaks"],
+                                    "seconds_each": p["instrumental"]["seconds_each"]},
+            "spoken_share_planned_pct": p["spoken_share_pct_planned"],
+            "suno_generations": ("1 base" if not ext
+                                 else "1 base + %d extends" % len(ext))}
+    return ["%s class=%r plan=%r" % (f, row.get(f), v)
+            for f, v in sorted(mine.items()) if row.get(f) != v]
+
+
+if __name__ == "__main__":  # python3 length_formula.py <chosen_s>
+    import json
+    print(json.dumps(plan(float(sys.argv[1])), indent=2))

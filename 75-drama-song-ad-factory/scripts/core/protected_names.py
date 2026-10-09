@@ -60,6 +60,32 @@ def _lines(value):
             for x in (value or [])]
 
 
+def cast_genders(brief):
+    """The cast record a brief carries: {character name -> gender word}.
+
+    FU-U5: the brief's ``characters`` entries keep their gender (the same
+    entries ``protected_list`` reads for names), so the sheet voice-tag
+    check can compare a tag's gender word with the cast record. A string
+    entry or an entry with no gender value still appears, mapped to None,
+    so the check fails closed rather than skipping the character. Returns
+    {} when the brief carries no character list (the check is then off,
+    exactly as today).
+    """
+    out = {}
+    for item in (brief or {}).get("characters") or []:
+        if isinstance(item, dict):
+            name = item.get("name")
+            gender = item.get("gender")
+        else:
+            name, gender = item, None
+        if not isinstance(name, str) or not _tokens(name):
+            continue
+        key = " ".join(_tokens(name))
+        if key not in out:
+            out[name.strip()] = gender
+    return out
+
+
 def protected_list(brief):
     """Protected names of a brief: protected_names + characters + brands
     + product_name (strings or {name: ...} dicts). Order kept, no dupes."""

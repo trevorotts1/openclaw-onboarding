@@ -141,7 +141,7 @@ STYLES = {
             "brushed kit entering at the chorus, deep rounded bass, "
             "soulful lead vocal with melismatic runs, close dry upfront "
             "vocal, minor key, restrained verse opening into a full-voiced "
-            "chorus, no distortion"
+            "chorus, no distortion."
         ),
     },
     "rnb-flow": {
@@ -198,20 +198,18 @@ def sheet_deliveries(sheet_text):
     word boundary on a punctuation-normalized tag, so "trap beat" is never
     read as rap while "spoken-word" still counts. The sheet is a string of
     [Tag] blocks; a tag naming no delivery counts as nothing.
+
+    FU-U1: THE tag grammar lives in suno_recipe.parse_tag -- this delegates
+    to it so the delivery map and the lyric gate read the same sheet.
     """
     found = set()
     if not isinstance(sheet_text, str) or not sheet_text.strip():
         return found
+    from suno_recipe.suno_recipe import parse_tag
     for m in re.finditer(r"\[([^\]]*)\]", sheet_text):
-        norm = re.sub(r"[^a-z0-9]+", " ", m.group(1).lower()).strip()
-        if not norm:
-            continue
-        if any(re.search(r"\b%s\b" % t, norm) for t in SHEET_RAP_TAGS):
-            found.add("rap")
-        elif any(re.search(r"\b%s" % t, norm) for t in SHEET_SPOKEN_TAGS):
-            found.add("spoken")
-        elif any(re.search(r"\b%s" % t, norm) for t in SHEET_SUNG_TAGS):
-            found.add("sung")
+        d = parse_tag(m.group(1))
+        if d in ("sung", "spoken", "rap"):
+            found.add(d)
     return found
 
 
@@ -407,7 +405,10 @@ def style_prompt(style_id, sung=None, sheet_text=None):
     if not deliveries:
         deliveries = set(STYLES[sid]["deliveries"])
     if not has_delivery_map(text, deliveries):
-        text = "%s %s" % (text.rstrip(".,"), _map_sentence(deliveries))
+        # U15d (design 4.2): the base text ends with a PERIOD before the map is
+        # appended. Without it "no distortion" ran into "The lead" and the style
+        # read "no distortion The lead SPEAKS ...".
+        text = "%s. %s" % (text.rstrip(".,"), _map_sentence(deliveries))
     return assert_delivery_map(sid, text, deliveries)
 
 

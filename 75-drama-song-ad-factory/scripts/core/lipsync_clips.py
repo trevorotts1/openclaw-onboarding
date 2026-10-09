@@ -218,3 +218,32 @@ def choose_window(word_stamps, role="hook", min_s=CLIP_MIN_S, max_s=CLIP_MAX_S,
     for k in ("_rest", "_new"):
         best.pop(k)
     return best
+
+
+# ---------------------------------------------------------------------------
+# U15h: cross-check against the class table (design 6; never a second formula).
+
+def class_check(delivered_s):
+    """This module's budget equals the class row for that delivered length.
+
+    Cross-check only -- ``budget()`` stays THE lip-sync rule; the class table
+    is the shared reader (``prompt_templates.length_class``). [] when they
+    agree; the reasons name each drifted field otherwise.
+    """
+    try:
+        from prompt_templates import prompt_templates as _PT
+    except ImportError:                        # template layer not installed
+        return []
+    D = float(delivered_s)
+    L = int(D) + 2                             # chosen length: D = L - 2
+    try:
+        row = _PT.length_class(L)
+    except _PT.PromptTemplateError as e:
+        return ["length_class(%d): %s" % (L, e)]
+    b = budget(D)
+    mine = {"delivered_s": D,
+            "lipsync_clips": [b["min_clips"], b["max_clips"]],
+            "lipsync_seconds": [round(b["total_min_s"], 1),
+                                round(b["total_max_s"], 1)]}
+    return ["%s class=%r budget=%r" % (f, row.get(f), v)
+            for f, v in sorted(mine.items()) if row.get(f) != v]

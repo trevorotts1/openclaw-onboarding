@@ -29,6 +29,7 @@ lip-sync close-up, so the picture is MADE this way and not only checked.
 """
 from __future__ import annotations
 
+import os
 import struct
 
 try:
@@ -218,16 +219,36 @@ def require_source_image(image, analyze, size=None):
     return res
 
 
-def closeup_prompt(character, style_clause="", reference_note=""):
+def closeup_prompt(character, style_clause="", reference_note="", mode=None):
     """Image-generation prompt for the lip-sync close-up (the picture is MADE
-    this way). character: the approved 3D character description from the
-    storyboard reference; style_clause: the look's style bible line."""
+    this way). character: the approved character description from the
+    storyboard reference; style_clause: the look's style bible line.
+
+    U15e: pass ``mode`` (a render mode id) and the identity line and style
+    clause come from that mode's `keyframe_clause` (design 5.2: the close-up
+    picture carries the same mode as the clip and the Kling avatar prompt). A
+    realism close-up says "photoreal", never "same 3D character". With no mode
+    the wording is unchanged for older callers.
+    """
     if not isinstance(character, str) or not character.strip():
         raise ValueError("character description is required")
+    if mode:
+        import sys as _sys
+        _core = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        if _core not in _sys.path:
+            _sys.path.insert(0, _core)
+        import prompt_templates as _PT
+        clause = (_PT.load("mode", mode).get("keyframe_clause") or "").strip()
+        if not clause:
+            raise ValueError("mode %r carries no keyframe_clause" % (mode,))
+        identity = clause
+        style_clause = style_clause or clause
+    else:
+        identity = ("same 3D character, face and styling as the approved "
+                    "storyboard reference")
     parts = [
         character.strip().rstrip("."),
-        "same 3D character, face and styling as the approved storyboard "
-        "reference" + (" (%s)" % reference_note.strip() if reference_note.strip() else ""),
+        identity + (" (%s)" % reference_note.strip() if reference_note.strip() else ""),
         "portrait 9:16, 720x1280 or larger",
         "chest-up portrait, the face filling about 30-40 percent of the "
         "frame height, head centred",

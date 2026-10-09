@@ -523,13 +523,18 @@ FINALE_BLOCK = ("[FINALE] warm golden realism finale: golden-hour key light, "
 
 
 def compile_prompt(shot, mode, aspect_ratio="9:16",
-                   realism_block_path=None, lane_dir=None):
+                   realism_block_path=None, lane_dir=None, video=False):
     """Deterministic prompt compile for one hybrid shot. Mockable, no spend.
 
     mode "sketch"  -> sketch [STYLE] block only; no lip-sync.
     mode "realism" -> the realism recipe block, verbatim, nothing else.
     mode "golden-realism" -> the recipe block verbatim followed by the
         separate [FINALE] block; the recipe itself is never edited.
+
+    U15b: ``video=True`` is the VIDEO path. The prompt then carries no
+    square-bracket markers and no generic [MOTION] line (H3 reads brackets as
+    camera commands; per-shot motion comes from the shot spec). The block text
+    is the same and the keyframe image path (video=False) is unchanged.
 
     Returns {"prompt", "mode", "style_block", "recipe_sha256", "lip_sync"}.
     Raises HybridError when the recipe is missing (fail closed, paths named).
@@ -541,7 +546,6 @@ def compile_prompt(shot, mode, aspect_ratio="9:16",
             not str(shot.get("base_prompt", "")).strip():
         raise HybridError("SHOT_INVALID",
                           "shot dict with shot_id and base_prompt required")
-    header = "[compiled:hybrid-style=%s mode=%s aspect=%s]"
     if mode == MODE_SKETCH:
         style_id = SKETCH_STYLE_ID
         rec = sketch_style(aspect_ratio)
@@ -555,23 +559,42 @@ def compile_prompt(shot, mode, aspect_ratio="9:16",
                 rec["visual_continuity_constraints"]) + \
             "\nbanned_visual_cliches: %s" % " | ".join(
                 rec["banned_visual_cliches"]) + "\n[/STYLE]"
-        parts = [header % (style_id, mode, aspect_ratio), block]
     else:
         block = realism_block(realism_block_path, lane_dir)   # raises if absent
         style_id = REALISM_STYLE_ID
-        parts = [header % (style_id, mode, aspect_ratio), block]
+    if video:
+        # U15b video path: strip the [STYLE]/[/STYLE] wrapper markers; the
+        # text between them is unchanged and no bracket survives.
+        body = block
+        if body.startswith("[STYLE]"):
+            body = body[len("[STYLE]"):]
+        if body.rstrip().endswith("[/STYLE]"):
+            body = body.rstrip()[:-len("[/STYLE]")]
+        parts = ["%s, %s mode. %s" % (style_id, mode, body.strip())]
         if mode == MODE_GOLDEN:
+            parts.append(FINALE_BLOCK.replace("[FINALE]", "")
+                         .replace("[/FINALE]", "").strip())
+        parts.append(str(shot["base_prompt"]).strip())
+        prompt = " ".join(parts)
+        if "[" in prompt or "]" in prompt:
+            raise HybridError("VIDEO_PROMPT_BRACKETS",
+                              "a video prompt may carry no square brackets")
+    else:
+        header = "[compiled:hybrid-style=%s mode=%s aspect=%s]"
+        parts = [header % (style_id, mode, aspect_ratio), block]
+        if mode != MODE_SKETCH and mode == MODE_GOLDEN:
             parts.append(FINALE_BLOCK)
-    parts.append("[SHOT:%s] %s [/SHOT]"
-                 % (shot["shot_id"], str(shot["base_prompt"]).strip()))
-    # Part F F12: the clip prompt asks for motion (clips must move).
-    parts.append("[MOTION] The subject moves naturally through the frame "
-                 "[/MOTION]")
-    prompt = "\n".join(parts)
+        parts.append("[SHOT:%s] %s [/SHOT]"
+                     % (shot["shot_id"], str(shot["base_prompt"]).strip()))
+        # Part F F12: the clip prompt asks for motion (clips must move).
+        parts.append("[MOTION] The subject moves naturally through the frame "
+                     "[/MOTION]")
+        prompt = "\n".join(parts)
     return {
         "prompt": prompt,
         "mode": mode,
         "style_block": block,
         "recipe_sha256": realism_sha256(block) if mode != MODE_SKETCH else None,
         "lip_sync": mode == MODE_REALISM and _lipsync(mode, shot),
+        "video": bool(video),
     }
