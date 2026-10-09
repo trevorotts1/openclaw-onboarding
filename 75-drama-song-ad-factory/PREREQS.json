@@ -119,7 +119,7 @@
       "label": "Python 3 (control layer)",
       "check": { "binary": "python3" },
       "severity": "required",
-      "satisfy": "python3 must be on PATH: the shared control layer (factory.py intake/preflight, state, ledger, QC gates) is Python 3 standard library only, no pip packages. Verify: python3 --version. If missing, install Python 3 (Mac: brew install python3; VPS: apt-get install -y python3) and re-run."
+      "satisfy": "python3 must be on PATH: the shared control layer (factory.py intake/preflight, state, ledger, QC gates) is Python 3 standard library only, no pip packages (the one exception is the optional lip-sync picture gate: see python-mediapipe). Verify: python3 --version. If missing, install Python 3 (Mac: brew install python3; VPS: apt-get install -y python3) and re-run."
     },
     {
       "id": "ffmpeg-binary",
@@ -136,6 +136,22 @@
       "check": { "note": "F17 owner order 2026-10-08 (manual Part F F17, Critical): word timing comes from Suno's own timestamped lyrics via KIE ai-music-api/timeStamped-lyrics through core/kie_dispatch (tier 1, default, no local model). faster-whisper is the tier-2 LOCAL fallback, installed ONLY when this fallback is enabled, and it loads ONE model at a time in scripts/core/audio_c3/lyric_timing.py (one session per run, tracks transcribed one after another, small/medium int8); the Part D load guard (memory_guard, lane_size numbers) refuses a load past the machine's limit (LOCAL_MODEL_LOAD_REFUSED). NEVER openai-whisper (scripts/qc-no-local-asr.sh fails a hand-written whisper/asr script). Tier 3 is cloud speech-to-text with word timestamps on the CLIENT's own key only, never operator keys. Approved lyrics remain the source of truth; ASR output is timing/mismatch evidence only. Verified 2026-10-06 on the audited box: import faster_whisper -> ModuleNotFoundError; no pip on PATH; Python 3.14.7. Pin + hash arrive at release." },
       "severity": "optional",
       "satisfy": "pip install faster-whisper, then fetch the small.en model at int8 (WhisperModel(\"small.en\", compute_type=\"int8\")); installed ONLY when the tier-2 local fallback is enabled (tier 1 Suno timestamped lyrics stays the default). One model at a time in lyric_timing.py's WhisperSession; NEVER openai-whisper (the dispatcher and qc-no-local-asr.sh both refuse it)."
+    },
+    {
+      "id": "python-mediapipe",
+      "type": "python-package",
+      "label": "mediapipe + OpenCV (lip-sync picture gate)",
+      "check": {"pythonImports": ["mediapipe", "cv2", "numpy"]},
+      "severity": "optional",
+      "satisfy": "python3 -m pip install 'mediapipe>=0.10.14' opencv-python-headless numpy ; verify: python3 -c 'import mediapipe, cv2, numpy'."
+    },
+    {
+      "id": "face-landmarker-model",
+      "type": "file",
+      "label": "mediapipe face_landmarker.task (lip-sync picture gate model)",
+      "check": {"file": "assets/face_landmarker.task", "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"},
+      "severity": "optional",
+      "satisfy": "The picture gate looks for assets/face_landmarker.task (or the path in LIPSYNC_FACE_MODEL) and refuses every lip-sync job without the pinned file. From the skill folder run: python3 scripts/core/lip_sync/lip_gate/install_face_model.py (downloads Google's official float16 model from storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task, verifies the pinned sha256, places it). Re-running with a good file is a no-op. Re-run after every skill update."
     }
   ]
 }

@@ -169,8 +169,38 @@ to self-approve a run.
   `LIPSYNC_COVERAGE_BELOW_BAND`. The planner (`plan_lipsync_lines`) picks the
   lines (every sung hook, the spoken opener and closing first, each cut to 6 s).
 - Lip-sync source pictures: every one passes `lip_gate.image_gate` before any
-  paid lip-sync job; a refusal lists every `LIPSYNC_IMAGE_*` reason and a
-  measurement that could not be made is a refusal, never a pass.
+  paid lip-sync job (its close-up numbers are `picture_gate`'s, one rule set); a
+  refusal lists every `LIPSYNC_IMAGE_*` reason and a measurement that could not be
+  made is a refusal, never a pass.
+- LPG001/LPG002/LPG003: the measured close-up gate is enforced IN the dispatcher
+  (`kie_dispatch.lipsync_picture_refusal`): any kling/ai-avatar job (or a manual infinitalk job) without a
+  PASS or ACCEPT_WITH_FLAG `picture_gate` receipt (sha256 of the exact image, numbers and
+  flags recorded), or whose `input.image_url` is not the bound upload of those exact bytes
+  (`picture_gate.upload_measured`), is rejected `LIPSYNC_PICTURE_NOT_GATED` before the
+  ledger. FAIL = clear problems only: face count not 1, face height < 20% of frame,
+  |roll| > 20 deg, |yaw| > 0.25 (side profile), jawOpen > 0.30, sharpness < 60. Smile,
+  teeth, a face under 25%, |roll| > 5, |yaw| > 0.12 and sharpness < 100 are FLAGS
+  (ACCEPT_WITH_FLAG), never a failure and never a paid regeneration. QC fails a run whose
+  close-up receipt is missing or FAIL. mediapipe or the pinned face model missing =
+  refused (install: `python3 scripts/core/lip_sync/lip_gate/install_face_model.py`).
+- LPG003 F14: the locked lip-sync model `kling/ai-avatar-standard` is not a menu video
+  model; `dispatch` lets it past the F14 video lock and holds it to the picture gate
+  instead. Every other off-menu video model is still `MODEL_NOT_ON_MENU`.
+
+- Lip-sync sync check (looser, sung-aware, LSL002): `lip_gate.measure_file` / `judge`
+  run the validated `sync_check` measurement (mouth vs voice, lag +-10 frames, clip cut
+  to the audio length, chance test by rolls, repeated-hook lines dropped, corr floor
+  0.40, margin floor 0). SYNCED = PASS; WEAK = ACCEPT_WITH_FLAG (used, flag in the
+  receipt row); NOT_SYNCED = FAIL on a spoken line; on a SUNG line WEAK and NOT_SYNCED
+  are UNDETERMINED: held for a person to look at a mouth strip, no automatic paid
+  redo. UNMEASURABLE and UNDETERMINED fail `lip_gate.qc_check` until a person writes
+  `person_verdict: PASS` on the row. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
+  `lip_gate/event_sync.py` is ADVISORY (`advisory_event_sync` in the row), never gating.
+- Two-try rule (Trevor 2026-10-08): at most 2 paid `kling/ai-avatar-standard` jobs per
+  segment, every name variant counted; try 2 only on a hard defect with a changed input;
+  then the best take is kept with a `KEPT_BEST_OF_2 (tN)` receipt row, its numbers, flag
+  and mouth-strip path. `lip_gate.qc_check` accepts such a flagged row and rejects a
+  segment with more than 2 jobs. InfiniTalk is a manual backup only, never automatic.
 
 ## Clean ending (I5)
 

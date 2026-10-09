@@ -98,3 +98,6 @@ client-roster.txt
 .fleet-loaded-state.json.*
 .fleet-refresh-summary.json.*
 .fleet-retirement-triggered
+
+# LPG001: downloaded mediapipe face model (installed by lip_gate/install_face_model.py, never committed)
+75-drama-song-ad-factory/assets/face_landmarker.task

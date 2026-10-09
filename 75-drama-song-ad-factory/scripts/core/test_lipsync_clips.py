@@ -44,19 +44,31 @@ def test_check_clips():
     assert not C.check_clips([6] * 7 + [0], 60)["pass"]
 
 
-def test_cost_is_doubled_and_cap_refuses_loudly():
+def test_cost_is_priced_for_two_tries_by_default():
     rate = 0.04                                      # 720P Kling, from Skill 74
-    one = C.estimate_cost_usd(17.5, rate)            # old midpoint
-    two = C.estimate_cost_usd(35, rate)
+    assert C.MAX_TRIES == 2
+    one = C.estimate_cost_usd(17.5, rate, attempts=1)  # old midpoint, one try
+    two = C.estimate_cost_usd(35, rate, attempts=1)
     assert abs(two - 2 * one) < 1e-9 and two == 1.4
-    assert C.estimate_cost_usd(35, rate, shapes=2) == 2.8
-    ok = C.check_budget(35, rate, 2.0)
-    assert ok["pass"] and ok["cost_usd"] == 1.4
-    raises(C.OVER_CAP, C.check_budget, 35, rate, 1.0)      # not trimmed, refused
-    raises(C.OVER_CAP, C.check_budget, 35, rate, 2.0, 1, 2)  # worst case, 2 attempts
-    raises(C.PRICE_UNKNOWN, C.check_budget, 35, None, 2.0)
-    raises(C.PRICE_UNKNOWN, C.check_budget, 35, 0, 2.0)
+    worst = C.estimate_cost_usd(35, rate)            # default attempts=MAX_TRIES
+    assert worst == 2.8 == C.estimate_cost_usd(35, rate, attempts=2)
+    assert C.estimate_cost_usd(35, rate, shapes=2) == 5.6
+    ok = C.check_budget(35, rate, 3.0)
+    assert ok["pass"] and ok["cost_usd"] == 2.8
+    raises(C.OVER_CAP, C.check_budget, 35, rate, 2.0)    # 2 tries do not fit
+    assert C.check_budget(35, rate, 2.0, 1, 1)["cost_usd"] == 1.4
+    raises(C.PRICE_UNKNOWN, C.check_budget, 35, None, 3.0)
+    raises(C.PRICE_UNKNOWN, C.check_budget, 35, 0, 3.0)
     raises(C.CAP_UNKNOWN, C.check_budget, 35, rate, None)
+
+
+def test_two_try_rule_counts_every_name_variant():
+    keys = ["run/lip-ad-ss3", "run/lip-ad-ss3-b", "run/lip-ad-ss30", "run/lip-ad-ss4"]
+    assert C.count_jobs(keys, "ss3") == 2           # ss30 is another segment
+    assert C.count_jobs(keys, "ss4") == 1
+    assert C.check_try_limit(keys, "ss4") == 1      # one try left
+    assert C.check_try_limit([], "ss9") == 2
+    raises(C.TRY_LIMIT, C.check_try_limit, keys, "ss3")   # 3rd job refused
 
 
 if __name__ == "__main__":
