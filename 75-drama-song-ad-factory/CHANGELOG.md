@@ -6,6 +6,10 @@ frontmatter `version:` field).
 
 ---
 
+## Unreleased
+
+- FU-U11 tests: onboarding D1 gains the 999 `pages_frame` second fixture family (cross-generator PASS/FAIL), the half-blank chapter-break rule (exactly one blank passes), prompt-leak checks (H3 spec has no excerpt key; distinctive words and whole lines never reach the video prompt), intake `excerpt_lines` provenance and `EXCERPT_INVALID` fail-closed refusal, and the card block (APPROVED hash / NOT APPROVED / no numbered options across `plan_card_rows`, `card_render`, and `intake_card`). pytest no-silent-pass guard added. `skill-version.txt` v2.9.8 -> v2.9.9 (G3).
+
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 
 - FU-PARITY: shared files aligned with 999 (v2.7.28 test fixes, delivery_checklist blank lines).
