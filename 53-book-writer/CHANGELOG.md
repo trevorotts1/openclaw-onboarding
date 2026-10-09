@@ -1,3 +1,7 @@
+## v2.0.5 - 2026-10-09 - operator wording scrub
+
+- Wording scrub, behavior identical: the two-strike gate block in SKILL.md says the unlock is operator-only (no personal name).
+
 ## 1.3.1 — F4.3 na_autopick wired; forbidden self-pick prose removed (tone-core GO fixes)
 
 - **na_autopick resolver WIRED into the runtime**: `run_book_writer.py` now resolves every

@@ -1,7 +1,7 @@
 {
   "schema": "blackceo.two-strike.skills-map/v1",
   "owner": "BlackCEO operator",
-  "source": "Trevor order 2026-10-09 13:35 item 5 DEL-17 (relita relay)",
+  "source": "operator order 2026-10-09 13:35 item 5 DEL-17 (relita relay)",
   "shared_module": {
     "path": "75-drama-song-ad-factory/scripts/two_strike/",
     "entry": "evaluate(client, box, skill, message, skill_dir=..., suspicious=...)",

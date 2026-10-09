@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, opt-in, registration, challenge, sales, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system.
-version: 1.2.6
+version: 1.2.7
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -25,7 +25,7 @@ The adapter calls the shared module in
 `75-drama-song-ad-factory/scripts/two_strike/` (registry:
 `75-drama-song-ad-factory/scripts/two_strike_skills_map.json`). The strike
 counter lives outside every skill folder, so a second strike locks THIS
-skill folder and only its own files. Unlock is Trevor-only: restore this
+skill folder and only its own files. Unlock is operator-only: restore this
 skill folder from GitHub. This gate never touches another skill's files.
 This is the canonical BlackCEO **single-page** landing-page production skill for OpenClaw. It converts a client brief into a complete Standard or Long-Form BlackCEO Signature Page while preserving BlackCEO copy, design, visual intelligence, image-prompt, QC, and public/private separation rules.
 

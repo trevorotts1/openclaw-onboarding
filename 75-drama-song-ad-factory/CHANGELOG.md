@@ -6,6 +6,10 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.16 - 2026-10-09 - operator wording scrub
+
+- Wording scrub, behavior identical: the two-strike unlock line says operator-only (no personal name) in the SKILL.md gate block, the `two_strike.py` policy docstring, the `two_strike_skills_map.json` source field and the two-strike README.
+
 ## v2.9.15 - 2026-10-09 - Batch PKG v27.1.0 roll-up: the complete delivery package, no blur fill, storyboard picture budget, camera vocabulary, two-strike gate
 
 Released as one batch with onboarding v27.1.0. Units: FU-DEL-01 three audio versions and note; FU-DEL-02 character bible PDF and image bible; FU-DEL-03 script PDF; FU-DEL-04 storyboard grid PDF; FU-DEL-05 video twice, captioned and clean; FU-DEL-06 60 and 90 second clips; FU-DEL-07 ready-to-post kit; FU-DEL-08 cover image; FU-DEL-09 lyric sheet PDF; FU-DEL-10 caption file; FU-DEL-11 character images; FU-DEL-12 welcome sheet and package list; FU-DEL-13 delivery folder contract and the 12-item hard gate; PKG-05 (DEL-14) crop-in full height, refusal gates, proof suite and docs; PKG-06 (DEL-15) storyboard picture counts, price surfaces and proof; PKG-07 (DEL-16) camera vocabulary, shot planner rules, signature presets and proof; PKG-08 (DEL-17) two-strike shared module, wiring into six skills, fake-skill proof.
