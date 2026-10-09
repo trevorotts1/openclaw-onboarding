@@ -35,6 +35,9 @@ from .presets import (
     MID_SCENE,
     VIDEO_START,
     SCENE_START,
+    SCENE_TRANSITION,
+    SCENE_END,
+    REVEAL,
     TRANSITION,
     CLOSING,
     PRESETS,
@@ -128,11 +131,30 @@ MISSING_DOLLY_SHOT = "MISSING_DOLLY_SHOT_AT_LEAST_120S"
 
 
 def family(move_id):
-    """"drone", "dolly" or "other" for a preset id."""
+    """"drone", "dolly" or "other" for a move id.
+
+    Accepts this package's preset ids, the vocabulary data layer's
+    ``sig_``-prefixed signature ids, and the vocabulary's plain move ids
+    such as ``drone_fly`` -- so a shot record carrying either source is
+    judged by the same rules.
+    """
+    if not isinstance(move_id, str) or not move_id:
+        return "other"
     try:
         return get_preset(move_id)["family"]
     except KeyError:
-        return "other"
+        pass
+    if move_id.startswith("sig_"):
+        try:
+            return get_preset(move_id[4:])["family"]
+        except KeyError:
+            pass
+    low = move_id.lower()
+    if "drone" in low or "aerial" in low:
+        return DRONE_FAMILY
+    if "dolly" in low or low in ("lateral_truck", "truck"):
+        return DOLLY_FAMILY
+    return "other"
 
 
 def _move_ids(shots):
@@ -176,15 +198,21 @@ def check_signature_minimums(duration_seconds, shots, client_declined=False):
 # --------------------------------------------------------------------------- #
 # 4. drone placement
 # --------------------------------------------------------------------------- #
+# Every placement the shipped vocabulary data layer writes on a shot record,
+# plus the plain "transition" alias.
 PLACEMENTS = (
-    VIDEO_START, SCENE_START, TRANSITION,
-    DIALOGUE_CLOSE_UP, MID_SCENE, CLOSING,
+    VIDEO_START, SCENE_START, SCENE_TRANSITION, TRANSITION,
+    SCENE_END, REVEAL, CLOSING, DIALOGUE_CLOSE_UP, MID_SCENE,
 )
 
 # A drone shot sits on an establishing moment (the video opening, a scene
-# opening) or a transition moment. Nothing else. Closing is not one of
-# them: a closing beat belongs to a pull-back or a dolly out on the ground.
-DRONE_ALLOWED_PLACEMENTS = frozenset({VIDEO_START, SCENE_START, TRANSITION})
+# opening) or a transition moment -- leaving a scene, arriving in one, or a
+# reveal. Nothing else. A dialogue close-up, mid-scene action and the final
+# closing beat are never a drone moment: those belong to the ground.
+DRONE_ALLOWED_PLACEMENTS = frozenset({
+    VIDEO_START, SCENE_START, SCENE_TRANSITION, TRANSITION,
+    SCENE_END, REVEAL,
+})
 
 DRONE_MISPLACED = "DRONE_MISPLACED"
 UNKNOWN_PLACEMENT = "UNKNOWN_PLACEMENT"
@@ -215,7 +243,7 @@ def check_drone_placement(shots):
 # --------------------------------------------------------------------------- #
 # 5. per-model test flag
 # --------------------------------------------------------------------------- #
-MODEL_TEST_FLAG = "per_model_test"
+MODEL_TEST_FLAG = "test_per_model"
 
 # Moves whose wording is actively disputed between guides: one guide warns
 # that this jargon is less reliable than plain wording, another lists it as

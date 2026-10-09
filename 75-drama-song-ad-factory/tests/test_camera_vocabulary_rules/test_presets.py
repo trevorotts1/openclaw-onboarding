@@ -15,7 +15,7 @@ import camera_signatures as cs  # noqa: E402
 
 REQUIRED_FIELDS = (
     "id", "name", "family", "drop_at", "prompt_phrase", "emotion",
-    "use_when", "ai_risk", "per_model_test", "one_move",
+    "use_when", "ai_risk", "test_per_model", "one_move",
 )
 RISK_LEVELS = frozenset({"low", "medium", "high"})
 FAMILIES = frozenset({"drone", "dolly"})
@@ -39,7 +39,7 @@ class EveryPresetIsComplete(unittest.TestCase):
             self.assertIn(p["ai_risk"]["level"], RISK_LEVELS)
             self.assertTrue(p["ai_risk"]["note"].strip())
             self.assertIs(p["one_move"], True)
-            self.assertIsInstance(p["per_model_test"], bool)
+            self.assertIsInstance(p["test_per_model"], bool)
             self.assertIsInstance(p["drop_at"], tuple)
             self.assertGreater(len(p["drop_at"]), 0)
 
@@ -54,6 +54,24 @@ class EveryPresetIsComplete(unittest.TestCase):
 
     def test_family_lookup_falls_back_to_other(self):
         self.assertEqual(cs.family("not_a_move"), "other")
+        self.assertEqual(cs.family(""), "other")
+        self.assertEqual(cs.family(None), "other")
+
+    def test_family_resolves_the_vocabulary_layers_sig_prefix(self):
+        # references/camera-vocabulary.json ships its signature ids as
+        # sig_<id>; a shot record may carry either spelling
+        self.assertEqual(cs.family("sig_drone_fly_in"), "drone")
+        self.assertEqual(cs.family("sig_lateral_truck"), "dolly")
+        self.assertEqual(cs.family("sig_dolly_in"), "dolly")
+
+    def test_family_recognises_a_plain_aerial_move_id(self):
+        self.assertEqual(cs.family("drone_fly"), "drone")
+        self.assertEqual(cs.family("aerial_reveal"), "drone")
+        self.assertEqual(cs.family("truck"), "dolly")
+
+    def test_family_does_not_overclaim(self):
+        for mid in ("static", "pan", "tilt", "crane", "whip_pan", "zoom_in"):
+            self.assertEqual(cs.family(mid), "other", mid)
 
     def test_every_drone_preset_drops_only_at_allowed_placements(self):
         for pid in cs.DRONE_PRESET_IDS:
@@ -66,6 +84,18 @@ class EveryPresetIsComplete(unittest.TestCase):
         for p in cs.PRESETS:
             self.assertNotIn("dialogue_close_up", p["drop_at"], p["id"])
             self.assertNotIn("mid_scene", p["drop_at"], p["id"])
+
+    def test_no_drone_preset_drops_at_the_closing_beat(self):
+        for pid in cs.DRONE_PRESET_IDS:
+            self.assertNotIn("closing", cs.get_preset(pid)["drop_at"], pid)
+
+    def test_a_drone_preset_drops_at_a_scene_transition(self):
+        # the vocabulary data layer names this placement; a drone that
+        # cannot bridge two scenes is only half a signature move
+        self.assertIn("scene_transition",
+                      cs.get_preset("aerial_reveal")["drop_at"])
+        frag = cs.drop_preset("aerial_reveal", "scene_transition")
+        self.assertEqual(frag["family"], "drone")
 
 
 class DroppingPresets(unittest.TestCase):

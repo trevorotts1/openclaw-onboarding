@@ -33,7 +33,7 @@ class FlagOnEveryShippedMove(unittest.TestCase):
         self.assertEqual(check_model_test_flag(), [])
 
     def test_the_flag_name_is_the_documented_one(self):
-        self.assertEqual(MODEL_TEST_FLAG, "per_model_test")
+        self.assertEqual(MODEL_TEST_FLAG, "test_per_model")
         for p in presets_mod.PRESETS:
             self.assertIn(MODEL_TEST_FLAG, p, p["id"])
 

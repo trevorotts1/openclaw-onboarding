@@ -18,7 +18,7 @@ Field contract, every preset:
   emotion         what it makes the viewer feel
   use_when        when the planner should reach for it
   ai_risk         {"level": low|medium|high, "note": "..."}
-  per_model_test  bool -- sources disagree between models, so the move is
+  test_per_model  bool -- sources disagree between models, so the move is
                   re-proven per model before it is trusted
   one_move        always True: one generated move per clip, no exceptions
 
@@ -28,18 +28,23 @@ Presets carry no model names, no vendor names and no tool names.
 DRONE_FAMILY = "drone"
 DOLLY_FAMILY = "dolly"
 
-# Placements a preset may be dropped at. A drone preset may only ever be
-# dropped at an establishing or transition moment -- see rules.PLACEMENTS.
+# Placements a preset may be dropped at. The names are the ones the
+# vocabulary data layer ships, so a shot record read from either source is
+# judged the same way. A drone preset may only ever be dropped at an
+# establishing or transition moment -- see rules.DRONE_ALLOWED_PLACEMENTS.
 VIDEO_START = "video_start"
 SCENE_START = "scene_start"
-TRANSITION = "transition"
+TRANSITION = "transition"           # alias kept for callers that use it
+SCENE_TRANSITION = "scene_transition"
+SCENE_END = "scene_end"
+REVEAL = "reveal"
+CLOSING = "closing"
 DIALOGUE_CLOSE_UP = "dialogue_close_up"
 MID_SCENE = "mid_scene"
-CLOSING = "closing"
 
 
 def _preset(pid, name, family, drop_at, phrase, emotion, use_when,
-            level, note, per_model_test):
+            level, note, test_per_model):
     return {
         "id": pid,
         "name": name,
@@ -49,7 +54,7 @@ def _preset(pid, name, family, drop_at, phrase, emotion, use_when,
         "emotion": emotion,
         "use_when": use_when,
         "ai_risk": {"level": level, "note": note},
-        "per_model_test": bool(per_model_test),
+        "test_per_model": bool(test_per_model),
         "one_move": True,
     }
 
@@ -67,7 +72,7 @@ PRESETS = (
         True),
     _preset(
         "aerial_reveal", "Aerial reveal", DRONE_FAMILY,
-        (VIDEO_START, SCENE_START, TRANSITION),
+        (VIDEO_START, SCENE_START, SCENE_TRANSITION, REVEAL),
         "slow aerial drone pull-back reveal, rising to show the whole location",
         "Geography, revelation, breathing room.",
         "Reveal a location; bridge two places.",
@@ -76,7 +81,7 @@ PRESETS = (
         True),
     _preset(
         "drone_ascend", "Ascending drone", DRONE_FAMILY,
-        (SCENE_START, TRANSITION),
+        (SCENE_START, SCENE_TRANSITION, SCENE_END),
         "drone ascending straight up, camera tilting down over the scene",
         "Release, overview, hope.",
         "Leave a small subject in a big world; hand off to a new scene.",
@@ -85,7 +90,7 @@ PRESETS = (
         True),
     _preset(
         "drone_descend", "Descending drone", DRONE_FAMILY,
-        (SCENE_START, TRANSITION),
+        (SCENE_START, SCENE_TRANSITION),
         "drone descending from high above down toward the subject",
         "Arrival, focus closing in, decision.",
         "Drop from a wide into a specific place or person.",
@@ -94,7 +99,7 @@ PRESETS = (
         True),
     _preset(
         "drone_orbit", "Drone orbit", DRONE_FAMILY,
-        (TRANSITION,),
+        (SCENE_TRANSITION, REVEAL),
         "slow half-orbit from the drone, circling part way around the subject",
         "Importance, tension, hero status.",
         "Mark a pivotal beat between two scenes.",
@@ -103,7 +108,7 @@ PRESETS = (
         True),
     _preset(
         "drone_fly_over", "Drone fly-over", DRONE_FAMILY,
-        (VIDEO_START, SCENE_START, TRANSITION),
+        (VIDEO_START, SCENE_START, SCENE_TRANSITION),
         "slow aerial drone fly-over, forward motion over the landscape",
         "Freedom, awe, geography, spectacle.",
         "Open a story; connect two places.",
@@ -112,7 +117,7 @@ PRESETS = (
         True),
     _preset(
         "drone_pull_back_reveal", "Drone pull-back reveal", DRONE_FAMILY,
-        (SCENE_START, TRANSITION),
+        (SCENE_TRANSITION, SCENE_END, REVEAL),
         "drone pulling back and up, revealing how large the surroundings are",
         "Context, insignificance, perspective.",
         "End a beat on scale; cut to a new location.",
@@ -121,7 +126,7 @@ PRESETS = (
         True),
     _preset(
         "drone_push_in", "Drone push-in", DRONE_FAMILY,
-        (SCENE_START, TRANSITION),
+        (VIDEO_START, SCENE_START, SCENE_TRANSITION),
         "drone pushing in from a wide establishing view down toward the subject",
         "Attention, arrival, the world narrowing to one thing.",
         "Start a scene wide and land on the subject.",
@@ -141,7 +146,7 @@ PRESETS = (
         True),
     _preset(
         "dolly_out", "Dolly out", DOLLY_FAMILY,
-        (TRANSITION, CLOSING),
+        (SCENE_TRANSITION, SCENE_END, CLOSING),
         "slow dolly out, pulling back from the subject",
         "Withdrawal, loneliness, context revealed.",
         "Pull away after news; release the scene.",
@@ -150,7 +155,7 @@ PRESETS = (
         True),
     _preset(
         "dolly_and_track", "Dolly and track", DOLLY_FAMILY,
-        (SCENE_START, TRANSITION),
+        (SCENE_START, SCENE_TRANSITION),
         "camera tracks alongside the subject, moving with them through the space",
         "Momentum, journey, following along.",
         "Start a scene that begins in motion; travel between two beats.",
@@ -159,7 +164,7 @@ PRESETS = (
         True),
     _preset(
         "dolly_zoom", "Dolly zoom", DOLLY_FAMILY,
-        (TRANSITION,),
+        (SCENE_TRANSITION, REVEAL),
         "dolly zoom vertigo effect, background stretching behind a steady subject",
         "Dread, vertigo, reality shifting.",
         "One realisation, once per piece at most.",
@@ -168,7 +173,7 @@ PRESETS = (
         True),
     _preset(
         "lateral_truck", "Lateral truck", DOLLY_FAMILY,
-        (SCENE_START, TRANSITION),
+        (SCENE_START, SCENE_TRANSITION),
         "camera trucks left, sideways move, parallax in the foreground",
         "Kinetic discovery, moving through a space.",
         "Start a scene that travels; reveal items along a wall.",

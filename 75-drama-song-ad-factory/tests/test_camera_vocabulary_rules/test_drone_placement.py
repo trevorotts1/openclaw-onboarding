@@ -33,10 +33,11 @@ class AllowedMoments(unittest.TestCase):
     def test_a_drone_on_a_transition_is_allowed(self):
         self.assertEqual(check_drone_placement([shot("transition")]), [])
 
-    def test_the_allowed_set_is_exactly_those_three(self):
+    def test_the_allowed_set_is_exactly_the_establishing_and_transition_moments(self):
         self.assertEqual(
             set(DRONE_ALLOWED_PLACEMENTS),
-            {"video_start", "scene_start", "transition"})
+            {"video_start", "scene_start", "scene_transition", "transition",
+             "scene_end", "reveal"})
 
 
 class ForbiddenMoments(unittest.TestCase):
@@ -89,18 +90,22 @@ class NonDroneShotsAreNotJudged(unittest.TestCase):
 
 
 class PlacementVocabulary(unittest.TestCase):
-    def test_the_five_placements_are_named(self):
+    def test_the_placements_are_named(self):
         self.assertEqual(
             set(PLACEMENTS),
-            {"video_start", "scene_start", "transition",
-             "dialogue_close_up", "mid_scene", "closing"})
+            {"video_start", "scene_start", "scene_transition", "transition",
+             "scene_end", "reveal", "closing",
+             "dialogue_close_up", "mid_scene"})
 
     def test_every_preset_placement_is_a_known_placement(self):
-        sys.path.insert(0, str(SKILL / "scripts"))
         import camera_signatures as cs
         for p in cs.PRESETS:
             for place in p["drop_at"]:
                 self.assertIn(place, PLACEMENTS, p["id"])
+
+    def test_the_dialogue_close_up_and_mid_scene_are_never_allowed_for_a_drone(self):
+        for place in ("dialogue_close_up", "mid_scene", "closing"):
+            self.assertNotIn(place, DRONE_ALLOWED_PLACEMENTS)
 
 
 if __name__ == "__main__":
