@@ -711,6 +711,11 @@ SOP named above.
   flicker, identity locked; golden realism carries the transformation and
   payoff.
 - **Music (decision 30):** Soul Ballad (default), R&B Flow, Soul Rise.
+- **Style questions on the intake card:** each music and video option shows
+  one plain line saying what it is; Sketch to Life shows as "Sketch to Life
+  (Hybrid)"; video options show a `Watch:` sample link from
+  `scripts/core/choice_card/intake_card/style_samples.json` (no link when the
+  table says `null`). See `references/choice-card-spec.md`.
 - **One-track soundtrack (decisions 27, 31, F1):** ONE Suno generation makes
   the whole soundtrack. Every spoken passage is written into the song's own
   lyrics, tagged as spoken (`[Spoken]` + the character's voice tag), so Suno

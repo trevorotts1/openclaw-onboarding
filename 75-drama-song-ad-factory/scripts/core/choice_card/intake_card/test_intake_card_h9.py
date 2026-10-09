@@ -38,7 +38,7 @@ def test_six_questions_each_own_block():
 def test_each_option_on_its_own_numbered_line_recommended_marked():
     for q, b in zip(IC.QUESTIONS, _blocks(CARD)):
         lines = b.split("\n")
-        opts = lines[2:]
+        opts = [l for l in lines[2:] if not l.startswith("   Watch: ")]   # sample links sit under their option
         assert len(opts) == len(q["options"])
         for n, line in enumerate(opts, 1):
             assert re.match(r"^%d\. .+ - .+(?:[.)]|\d)$" % n, line), line
@@ -62,9 +62,10 @@ def test_no_markup_that_a_sender_could_strip():
 def test_messages_under_limit_and_split_between_questions():
     one = IC.render_messages()
     assert len(one) == 1 and one[0] == CARD
-    small = IC.render_messages(limit=500)
+    # 1000 not 400: the video question now carries five sample links (FU-STYLE-QUESTIONS)
+    small = IC.render_messages(limit=1000)
     assert len(small) > 1
-    assert all(len(m) <= 500 for m in small)
+    assert all(len(m) <= 1000 for m in small)
     assert "\n\n".join(small) == CARD         # only blank-line seams were cut
     for m in small:                       # never starts a message mid-question
         assert m.startswith("Question") or m == IC.CLOSING_LINE
