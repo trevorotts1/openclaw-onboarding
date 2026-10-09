@@ -49,6 +49,7 @@ _gcore = _gos.path.abspath(_gos.path.join(_gos.path.dirname(__file__), '..', '..
 if _gcore not in _gsys.path:
     _gsys.path.insert(0, _gcore)
 import load_governor as _LG  # noqa: E402
+import prompt_templates as _PT  # noqa: E402  (U15e: the avatar template)
 
 TOOL_NAME = "lip_gate"
 SCHEMA_VERSION = "4.0.0"
@@ -73,18 +74,6 @@ IMPROVED_INPUT = {
     "tail_s": 0.20,
 }
 
-_PROMPT = {
-    "sung": "A 3D animated {who} sings this line to the camera with a {emo} "
-            "expression. Minimal head movement, steady locked camera, natural "
-            "blinks, relaxed shoulders. {Poss} whole face and mouth stay fully "
-            "visible. No text, captions or watermark.",
-    "spoken": "A 3D animated {who} says this line to the camera, {emo}. "
-              "Minimal head movement, steady locked camera, natural blinks. "
-              "{Poss} whole face and mouth stay fully visible. No text, "
-              "captions or watermark.",
-}
-
-
 class LipTryLimit(Exception):
     """A third paid lip-sync job was asked for. Nothing was spent."""
 
@@ -93,15 +82,28 @@ class LipTryLimit(Exception):
         self.code = code
 
 
-def kling_prompt(kind, who="woman", emotion=None):
-    """Kling prompt: 'sings' on sung lines, 'says' on spoken ones, ONE emotion,
-    minimal head movement, steady camera. Mouth timing comes from the audio, so
-    it never says 'lips open and close in time'."""
-    if kind not in _PROMPT:
-        raise ValueError("kind must be 'sung' or 'spoken'")
-    emo = (emotion or ("calm, earnest" if kind == "sung" else "calm and sincere")).strip()
-    poss = "His" if who.strip().lower() in ("man", "boy", "father", "dad") else "Her"
-    return _PROMPT[kind].format(who=who.strip(), emo=emo, Poss=poss)
+def kling_prompt(kind, who="woman", emotion=None, mode="lifelike-3d"):
+    """Kling avatar prompt (U15e): 'sings' on sung lines, 'says' on spoken ones.
+    The `who` descriptor comes from the look's mode (`modes/<mode>.json`
+    kling_who), never a hard-coded "3D animated". Rap lines use verb='raps'
+    through prompt_templates.assemble_kling_avatar directly.
+
+    Delegates to assemble_kling_avatar (design 2.3/5.1): three sentences, ONE
+    emotion, steady locked camera. A mode that may not be lip-synced
+    (sketch-ink, golden-realism) raises LIPSYNC_NOT_ALLOWED_FOR_MODE. Mouth
+    timing comes from the audio, so it never says 'lips open and close in time'.
+    The default emotion is ONE word ('calm'), never a comma-joined pair.
+    """
+    if kind == "sung":
+        verb, default_emo = "sings", "calm"
+    elif kind == "spoken":
+        verb, default_emo = "says", "calm"
+    else:
+        raise ValueError("kind must be 'sung' or 'spoken', not %r" % (kind,))
+    emo = (emotion or default_emo).strip()
+    noun = who.strip()
+    poss = "His" if noun.lower() in ("man", "boy", "father", "dad") else "Her"
+    return _PT.assemble_kling_avatar(mode, noun, verb, emo, poss)
 
 
 measure = SC.measure_sync
