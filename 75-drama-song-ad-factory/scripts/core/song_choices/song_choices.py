@@ -125,7 +125,9 @@ def _run_ffmpeg(argv):
 def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=None, send=None):
     """Write SONG-CHOICES/ and the offered list into state.json. Returns the
     client message. Zero good versions raises (fail closed). With a target the
-    message and the files go to the client right away (send_choices)."""
+    message and the files go to the client right away (send_choices). No target
+    argument: the client's chat id the card recorded in the run is used. No
+    target anywhere (CLI-only run): the message and file paths are printed."""
     good = [r for r in results if r["status"] != "FAILED" and r["take"]]
     if not good:
         raise ChoiceError("no song version passed the song checks; nothing to offer")
@@ -147,8 +149,12 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
     st.update(required=True, offered=offered)
     _write(run_dir, "state.json", st)
     msg = client_message(offered, [r["n"] for r in results if r["status"] == "FAILED"])
+    target = target or st.get("target")
     if target:
         send_choices(run_dir, target, send, msg)
+    else:
+        print(msg + "\n\nNO CLIENT TARGET RECORDED FOR THIS RUN - nothing was sent. Send these files to the client yourself, in order:")
+        print("\n".join(offered[n]["file"] for n in sorted(offered, key=int)))
     return msg
 
 
@@ -203,7 +209,7 @@ def _state(run_dir):
         return json.load(f)
 
 
-def record_card_answer(run_dir, answers):
+def record_card_answer(run_dir, answers, target=None):
     """The intake card's SONG APPROVAL answer -> the run (Yes turns the gate on,
     No records No). Called when the recap is confirmed. A changed answer before
     the songs are made replaces the old one; once versions exist (resume) the
@@ -213,13 +219,16 @@ def record_card_answer(run_dir, answers):
     if st and st.get("offered"):
         return bool(st.get("required"))
     required = _IC.song_required(answers)
-    init(run_dir, required)
+    init(run_dir, required, target or (st or {}).get("target"))
     return required
 
 
-def init(run_dir, required):
-    """Record the card answer. Call once when the card is approved."""
-    _write(run_dir, "state.json", {"required": bool(required), "offered": {}})
+def init(run_dir, required, target=None):
+    """Record the card answer (and the client's chat id). Call once when the card is approved."""
+    st = {"required": bool(required), "offered": {}}
+    if target:
+        st["target"] = str(target)
+    _write(run_dir, "state.json", st)
 
 
 def _sha(p):

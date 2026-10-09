@@ -173,12 +173,13 @@ def _parse(reply, q):
     return {"n": n, "text": opts[n - 1][0], "value": None, "id": q["id"]}
 
 
-def conversation(replies, questions=None, run_dir=None):
+def conversation(replies, questions=None, run_dir=None, target=None):
     """Replay the client's replies from the start; return the state and the ONE
     message to send next. Stateless, so claude-nine and OpenClaw can both call
     it with the replies so far. state: answers, done, message. With run_dir, the
     recap confirmation writes the SONG APPROVAL answer to the run
-    (song_choices.record_card_answer), so Yes turns the pick gate on."""
+    (song_choices.record_card_answer), so Yes turns the pick gate on. target (the
+    client's chat id) is stored with it so the 3-song message goes to that client."""
     qs = questions or QUESTIONS
     answers, fix, note, done = [], None, "", False
     for r in replies:
@@ -206,7 +207,7 @@ def conversation(replies, questions=None, run_dir=None):
     if done:
         if run_dir:
             from song_choices import song_choices as _sc   # noqa: PLC0415
-            _sc.record_card_answer(run_dir, answers)
+            _sc.record_card_answer(run_dir, answers, target)
         msg = "Locked in. I am starting now."
     elif fix is not None:
         msg = note + render_step(fix + 1, qs)
@@ -316,7 +317,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     qs = _with_saved_character(a.client_dir)
     if a.step:
-        st = conversation(a.reply, qs, a.run_dir or None)
+        st = conversation(a.reply, qs, a.run_dir or None, a.target or None)
         if a.format == "text":
             sys.stdout.write(st["message"] + "\n")
         else:

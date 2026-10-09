@@ -115,6 +115,31 @@ def test_message_and_three_files_reach_the_sink_in_order_before_any_video_stage(
             raise AssertionError("sending with nothing offered must fail loud")
 
 
+def test_card_target_is_used_with_no_target_passed_by_the_caller():
+    with tempfile.TemporaryDirectory() as tmp:
+        run = T._stage_run(tmp)
+        with redirect_stdout(io.StringIO()):
+            F.main(["card", "--step", "--run-dir", run, "--target", "777"] + [x for r in YES for x in ("--reply", r)])
+        sent = []
+        msg = _offer(tmp, run, send=sent.append)                     # caller passes NO target=
+        assert len(sent) == 1
+        argv = sent[0]
+        assert argv[argv.index("--target") + 1] == "777"
+        media = [argv[i + 1] for i, a in enumerate(argv) if a == "--media"]
+        assert [os.path.basename(m)[:4] for m in media] == ["1 - ", "2 - ", "3 - "]
+        assert argv[argv.index("--message") + 1] == msg
+
+
+def test_no_target_anywhere_prints_message_and_paths_never_silent():
+    with tempfile.TemporaryDirectory() as tmp:
+        run = T._stage_run(tmp)
+        IC.conversation(YES, run_dir=run)                            # CLI-only: no target
+        sent, out = [], io.StringIO()
+        with redirect_stdout(out):
+            _offer(tmp, run, send=sent.append)
+        assert sent == [] and "NO CLIENT TARGET" in out.getvalue() and out.getvalue().count("SONG-CHOICES") >= 3
+
+
 if __name__ == "__main__":
     if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
         sys.exit("ffmpeg and ffprobe are required for this suite")
