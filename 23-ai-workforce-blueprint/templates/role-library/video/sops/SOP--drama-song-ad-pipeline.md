@@ -91,11 +91,18 @@ their soul.
 
 1. Present ONE card with every default pre-selected, so the client can
    approve with a single click. Fields, in order: Length, Shape, Style,
-   Music, Voice, Clips, Video model, Price, Includes, Not included,
-   `[Approve]` / `[Change options]`. Full field rules:
+   Music, Product tie, Voice, Clips, Video model, Villain, Price, Includes,
+   Not included, `[Approve]` / `[Change options]`. Every option is read from
+   code (the registry), never typed in; a book campaign also shows the Book
+   shots approval block (approvals and notices only; FU-U11, open branch
+   `unit/FU-U11` - refresh this sentence when it lands). Full field rules:
    `references/choice-card-spec.md`.
-2. **Length:** 60 seconds, 90 seconds, 3 minutes, 5 minutes, **10-minute
-   long version** (decision 32). Default from the brief, else 60 seconds.
+   **TODO (FU-U4):** when the fit card lands (PR #1757), add its per-style
+   fit row to this field list - `choice-card-spec.md` 2.3 marks it "not built
+   on main" until then.
+2. **Length:** 60 seconds, 90 seconds, 2 minutes, 3 minutes, 5 minutes,
+   **10-minute long version** (decision 32; the list is
+   `music_styles.OFFERED_LENGTHS_S`). Default from the brief, else 60 seconds.
    Each length is its own song and timing map.
 3. **Shape:** 9:16, 16:9, or both (decision 2). Default 9:16. Each shape is
    generated natively; never squash or crop the other.
@@ -109,8 +116,11 @@ their soul.
    character, the song's sung version of each spoken line playing softly
    underneath with the music bed dipped, **no echo effect, no reverb**. The
    option was renamed from its earlier echo-flavoured name; that earlier
-   spelling must not appear anywhere in code, card or documentation. Velvet Voiceover is the only
-   exception to the all-Suno rule.
+   spelling must not appear anywhere in code, card or documentation. Velvet
+   Voiceover is the only exception to the all-Suno rule. **Sketch to Life is
+   always All Suno** (owner 2026-10-07): with that look Velvet Voiceover is
+   not selectable - `choice_card.stl_voice_guard` refuses the pair
+   (`stl-voice-velvet-not-offered`) and re-asks with All Suno preselected.
 7. **Clips (decision 32):** automatic 60- or 90-second clips are offered for
    the **5-minute and 10-minute lengths only**; on shorter lengths the row is
    hidden and says so.
@@ -184,25 +194,36 @@ model maximum.
 
 1. Build the fifteen-beat Resilia arc (cold-open teaser through direct pitch)
    and scale it to the chosen length: 60 s takes the ten strongest beats,
-   90 s takes all but "converts", 3 minutes and 5 minutes and 10 minutes take
-   all fifteen.
+   90 s takes all but "converts", 2 minutes takes all fifteen (every beat's
+   share clears the 3-second merge floor at 120 s), and 3 minutes, 5 minutes
+   and 10 minutes take all fifteen.
 2. Write lyrics as sales copy: first person, one idea per line,
    pronunciation-tested product words, claims truthful and evidence-backed.
-3. Tag every line with its character's voice, for example
-   `[Female voice - coworker, hushed]`.
+3. Tag every line with its character's voice in the one grammar the recipe
+   parses - `[Name (sung|spoken|rap): note]`, for example
+   `[Coworker (spoken): Female voice, hushed]`. A bracket that names no
+   delivery word is refused `UNTAGGED_LYRIC_LINES` before any Suno payload,
+   never silently dropped.
 4. Give **every character its own Suno voice pack** - no two characters share
    a voice. Two characters of the same gender get clearly different voices
-   (age, pitch range or tone).
-5. Flag the lip-sync lines: the pain peak, the product line, the call to
-   action, and the chorus hook once at its strongest - three to four lines,
-   about 15 to 20 seconds, listed on the approval card.
+   (age, pitch range or tone). A character's tag gender must equal the cast
+   record (`VOICE_TAG_MISMATCH`); a spelling error in the lyrics is refused
+   `LYRIC_MISSPELLED` before any Suno payload, and a client's own typo goes
+   back to the client as one question, never an auto-fix.
+5. Flag the lip-sync lines: clips go first on every sung hook, the spoken
+   opener and the spoken closing line (`lipsync_clips.PRIORITY_ROLES`), then
+   the pain peak, the product line, the call to action, and the chorus hook
+   once at its strongest. Lip-sync is 6 to 8 short clips of 4 to 6 seconds
+   per 60 s ad (30 to 40 seconds), scaled with the length, listed on the
+   approval card.
 6. **Story arc rule and product-connection target (FU-U13, owner order
    2026-10-08):** every ad's story runs struggle -> what changed -> the
    product is why -> get the product. Name the product and connect it to
    the story inside the lyrics AND on screen (cover, title, link) - never
-   only on an end card. Plan the spoken-word parts (inside the spoken band)
-   and the motion shots showing the character's struggle, taken from the
-   source material. Plan how much of the runtime connects the story to the
+   only on an end card. Plan the spoken-word parts (inside the spoken band;
+   TODO (FU-U3): per-style spoken bands are not on this base yet - refresh
+   this clause when FU-U3 lands) and the motion shots showing the character's
+   struggle, taken from the source material. Plan how much of the runtime connects the story to the
    product: aim for 10-15% (`length_formula.plan_product_connection` puts
    the planned seconds and percent on the plan; the lyric sheet carries a
    per-line `product` tag). This is a TARGET, not a hard cap - the delivery
@@ -227,12 +248,24 @@ another character's line.
 
 **Steps:**
 
-1. Generate the song with Suno through Skill 68. One generation covers every
-   length (V6 accepts 10-360 s); use **Suno extend only to hit an exact
-   length or to repair a section**, never as routine billing.
+1. Generate the song with Suno through Skill 68. One V6 generation covers
+   any length of 10-360 s; 60 s through 5 minutes are one base take
+   (`length-classes.json` `suno_generations`), and 10 minutes is **1 base plus
+   3 extends** (`length_formula.plan`). Use **Suno extend only to hit an
+   exact length or to repair a section**, never as routine billing: extend
+   carries no duration field, so the extended length is measured back, never
+   requested (`core/audio_c3/extend/suno_extend.py`).
 2. Apply the chosen music style: Soul Ballad (slow, emotional), R&B Flow
    (rap verses with a sung hook), or Soul Rise (slow through the pain, lifts
-   at the turning point).
+   at the turning point). One tag grammar parses the lyric sheet
+   (`[Name (sung|spoken|rap): note]`); rap is counted in the word budget and
+   allowed only for R&B Flow; an unclassifiable tag is `UNTAGGED_LYRIC_LINES`.
+   The Suno request is measured last against `prompt_limits` (lyrics 5,000,
+   style 1,000 after the ending, title 80, negative tags 1,000 — the last is a
+   skill-75 override marked UNVERIFIED until the generate-music docs are
+   re-read); over any cap is `PROMPT_OVER_CAP`, never truncated. Per-style
+   spoken bands (FU-U3) are an open pull request; refresh this step when it
+   lands.
 3. All-Suno is the default: sung and spoken lines all come from Suno, spoken
    lines play over the music bed only, no singing-underneath layer. Velvet
    Voiceover is the only exception (DS-2 step 6).
@@ -246,9 +279,11 @@ another character's line.
    (modes, beat-to-mode map, switch rules, lip-sync modes); the look text
    lives once, in `references/prompt-templates/modes/`.
    The style text is data, not prose: `suno_recipe` reads
-   `references/prompt-templates/music/<style>.json` and `models/suno-v6.json`
-   through `prompt_templates.suno_parts(style_id, length_s, vocal_gender)`,
-   and the caps are measured on the FINAL payload after `ending_qc` (U15d).
+   `references/prompt-templates/music/<style>.json` and
+   `references/prompt-templates/models/suno-v6.json` through
+   `prompt_templates.load("music", style_id)` and `load("model", "suno-v6")`
+   (`suno_recipe.music_block` / `model_block`), and the caps are measured on
+   the FINAL payload after `ending_qc` (U15d).
    Length shapes (shots, H3 clips, lip-sync clips and seconds, lanes, hooks,
    song words, spoken share, product seconds) come from the ONE table,
    `references/prompt-templates/length-classes.json`
@@ -257,7 +292,10 @@ another character's line.
 6. **Pitch check with an octave-error guard:** every line's measured pitch
    must fall in its character's gender range (roughly 85-155 Hz male,
    165-255 Hz female), and same-gender characters must measure as different
-   voices. A mismatch fails and the line is regenerated in Suno.
+   voices. A mismatch fails and the line is regenerated in Suno, bounded at
+   `line_voice_fit.MAX_ROUNDS` (3); a line still out of band after the last
+   round rejects the run - the closest take is never kept
+   (`qc_voice_match/line_voice_fit.py`).
 
 **Outputs:** Song, style prompt, timing map, style-bible block, pitch check
 record.
@@ -282,7 +320,10 @@ without an identity lock.
    recognisable. A skipped image is designed from the brief and the card says
    so.
 3. Keep the Continuity Bible across shapes and lengths: same faces, hair,
-   glasses, accessories.
+   glasses, accessories. Any text that will appear on a picture is checked
+   first (`ONSCREEN_TEXT_NOT_CHECKED` otherwise). Book campaigns: the keyframe
+   is made from the client's cover file, front cover facing the camera, never
+   mirrored.
 4. Device orientation: a phone, laptop or letter faces the person reading it;
    show what is on a screen with a separate insert or over-the-shoulder shot.
 5. Every keyframe and clip prompt is ASSEMBLED, never hand-written: the shot
@@ -297,10 +338,12 @@ without an identity lock.
    `prompt_templates.assemble_kling_avatar` (three sentences, one emotion, the
    `who` descriptor from the look's mode).
 6. Every assembled payload gets a prompt receipt (`prompt_sha256`, template
-   version, per-section character map, band verdict). A paid job whose prompt
-   has no matching receipt, or whose receipt says REFUSE or TRIM, is refused
-   `PROMPT_NOT_TEMPLATED` before the ledger, and final QC requires a
-   `prompt_compliance` record (one row per paid job matched to its receipt).
+   version, per-section character map, band verdict). A paid MiniMax H3 job
+   whose prompt has no matching receipt, or whose receipt says REFUSE or TRIM,
+   is refused `PROMPT_NOT_TEMPLATED` before the ledger — the refusal is scoped
+   to `minimax-h3/*` (`TEMPLATED_VIDEO_PREFIXES`); a Kling avatar job is
+   unchanged — and final QC requires a `prompt_compliance` record (one row per
+   paid job matched to its receipt).
 
 **Outputs:** Keyframes, continuity record, product-reference record.
 **Hand to:** DS-7.
@@ -317,7 +360,13 @@ without an identity lock.
    line; InfiniTalk `infinitalk/from-audio` only when Kling fails QC;
    **Volcengine is dropped** and never appears in a code path, a document or
    the card.
-3. Tight front-facing close-ups only. The input clip contains only the
+3. Book shots follow the book orientation contract (no camera move; a PASS
+   `book_orientation` record is required before the clip is accepted).
+   Lip-sync clips are the 6 to 8 clips of 4 to 6 seconds per 60 s ad.
+   TODO (U11): the approved Book shots plan (plan hash, exact prompts with
+   character counts, page mode, camera, 2-attempt cap) is not built yet;
+   refresh this step when FU-U11 lands.
+   Tight front-facing close-ups only. The input clip contains only the
    on-screen speaker's line - never a narrator, never another character,
    never a mixed vocal stem. No lip-sync on sketch shots.
 4. Unknown or timed-out jobs are resolved by **querying KIE task status**,
@@ -326,6 +375,8 @@ without an identity lock.
 5. Assemble with FFmpeg: song as master timeline, shots cut to the timing
    map, captions on by default (one line at a time, white rounded box, kept
    above the bottom 20% in 9:16).
+   TODO (U9): captions are burned here; reading them back off the frames
+   (FU-U9) is not built yet — refresh this step when it lands.
 6. **Parallel minute-lanes (ads 120 s and up, W-G-008).** A song under 120 s
    keeps ONE lane, exactly as before. At 120 s and up, `lane_planner.plan_lanes`
    cuts the shot list into N = ceil(L / 60) lanes of about 60 s, every cut on a
@@ -383,10 +434,10 @@ CTA defect (17.8).
 
 | Gate | When | Who checks | What fails it |
 |---|---|---|---|
-| 1. Script | After lyrics | One independent judge (different agent AND model from the writer) | Missing or reordered beat (`story_arc` checks this already), claim not supported by the brief, wrong call-to-action text, offer name wrong |
+| 1. Script | After lyrics | One independent judge (different agent AND model from the writer) | Missing or reordered beat (`story_arc` checks this already), claim not supported by the brief, wrong call-to-action text, offer name wrong, no `spelling_grammar` record |
 | 2. Song | After the master and timing map | Code only: `timing_guard`, `qc_reverb_tail`, `pitch_ban`, length window | Length outside the window, lyric coverage gap, reverb or echo found, pitch out of band |
-| 3. Shots | After generation | Code first (duration, aspect ratio, black frames via ffprobe). Then one independent visual checker, **only** for lip-sync shots (3 to 4) and the product and call-to-action shots | Wrong speaker on a lip-sync line, product or label wrong, accidental mouth movement on a narrator line |
-| 4. Final | After assembly, per shape | One independent checker plus code (loudness -14 LUFS, duration, file opens) | Any critical defect from the existing critical list |
+| 3. Shots | After generation | Code first (duration, aspect ratio, black frames via ffprobe). Then one independent visual checker, **only** for lip-sync shots (6 to 8 per 60 s ad) and the product and call-to-action shots | Wrong speaker on a lip-sync line, product or label wrong, accidental mouth movement on a narrator line, a book clip with no PASS `book_orientation` record |
+| 4. Final | After assembly, per shape | One independent checker plus code (duration, file opens). Loudness -14 LUFS is the `acceptance-profile.json` baseline, not a code check yet | Any critical defect from the existing critical list |
 
 Repair rules:
 
@@ -397,6 +448,12 @@ Repair rules:
   spend so far.
 - Never re-run a passed gate.
 - "Unavailable" never counts as a pass.
+
+Reading the burned caption text back off the final frames (FU-U9) is not built yet; until it is, the Final gate reports caption text as checked against the approved sheet only.
+
+TODO (U11): a book clip with no approved Book shots plan hash
+(`BOOK_PLAN_NOT_APPROVED`) also fails gate 3 when FU-U11 lands; refresh this
+table then.
 
 **Outputs:** Per-gate PASS/FAIL/UNAVAILABLE records with evidence.
 **Hand to:** DS-10 or back to the failing stage.

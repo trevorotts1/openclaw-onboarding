@@ -6,6 +6,21 @@ frontmatter `version:` field).
 
 ---
 
+## Unreleased
+
+- **U12: docs in lockstep with the code.** SKILL.md gains the tag-grammar /
+  style-plan / voice-tag / per-style-band bullets in the Suno recipe, the
+  "Request and prompt limits" section, the early-captions paragraph (with
+  FU-U9 named as NOT built) and the book-orientation bullets (FU-U11, open
+  branch); QC.md gains one section; the onboarding SOP DS-2/4/5/6/7/9 is
+  brought to the same facts (DS-4 step 5 now says 6 to 8 clips of 4 to 6
+  seconds); `references/choice-card-spec.md` gains 2.3 (options come from the
+  registry; the fit card FU-U4 is not built) and the machine-checked
+  "Offered lengths (seconds): 60, 90, 120, 180, 300, 600." line. SKILL.md
+  closes with a "Sections marked TODO" block naming FU-U3, FU-U4, FU-U9 and
+  FU-U11 as the sections to refresh when those land. New test
+  `scripts/core/prompt_templates/test_docs_u12.py`.
+
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 
 - FU-PARITY: shared files aligned with 999 (v2.7.28 test fixes, delivery_checklist blank lines).
