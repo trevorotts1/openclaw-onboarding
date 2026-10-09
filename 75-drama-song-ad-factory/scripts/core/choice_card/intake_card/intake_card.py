@@ -42,7 +42,7 @@ CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
                 'RECOMMENDED choice.')
 
 SHORT_CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
-                      'like "1, 1, 1, 1, 1, 1". For the SPEND LIMIT, reply with a dollar amount.')
+                      'like "1, 1, 1, 1, 1, 1". For the BUDGET, reply with a dollar amount.')
 
 REC = "(RECOMMENDED)"
 
@@ -87,25 +87,27 @@ def _usd(x):
     return "$%.2f" % float(str(x).lstrip("$"))
 
 
-def spend_question(price=None, limit=None):
+def spend_question(price=None, limit=None, from_brief=False):
     """The ONE money question, asked here and nowhere else (FU-ONE-SPEND-QUESTION).
     price: the card's total in dollars (20% redo allowance included). limit: a
-    ceiling the brief already gave. Neither is ever defaulted: the client must reply."""
+    maximum already known. from_brief: that maximum came from the brief (not a --limit
+    override). Neither is ever defaulted: the client must reply."""
     opts, vals = [], {}
     if limit is not None:
-        opts.append(("Your limit: " + _usd(limit), "from your brief"))
+        opts.append(("Your max: " + _usd(limit), "from your brief" if from_brief else None))
         vals[len(opts)] = str(limit).lstrip("$")
     if price is not None:
-        opts.append((_usd(price), "the price shown above (includes a 20% allowance for redoing shots)"))
+        opts.append((_usd(price), "the estimated price for your video, including a 20% allowance for redoing shots"))
         vals[len(opts)] = str(price).lstrip("$")
-    opts.append(("A different limit", "reply with a dollar amount, like $25"))
+    opts.append(("A different maximum", "reply with a dollar amount, like $25"))
     return {"id": "spend", "why": "This keeps you in control of the cost.",
-            "reason": ("it is the limit you already gave in your brief." if limit is not None else
+            "reason": ("it is the maximum you already gave in your brief." if limit is not None and from_brief else
+                       "it is the maximum you set." if limit is not None else
                        "it covers the whole price, with room to redo shots." if price is not None else
                        "you choose the number."),
-            "label": "SPEND LIMIT",
-            "ask": ("How much are you OK spending on this ad?" if opts[:-1] else
-                    "How much are you OK spending on this ad? Reply with a dollar amount, like $25."),
+            "label": "BUDGET",
+            "ask": ("What's the most you want to spend on this video?" if opts[:-1] else
+                    "What's the most you want to spend on this video? Reply with a dollar amount, like $25."),
             # no price and no limit: nothing to recommend, the client types an amount
             "options": opts, "values": vals, "recommended": 0 if opts[:-1] else None}
 
@@ -143,7 +145,7 @@ def _block(i, total, q):
     lines = ["Question %d of %d - %s" % (i, total, q["label"]), q["ask"]]
     for n, (opt, sentence) in enumerate(q["options"], 1):
         mark = (" " + REC) if n - 1 == q.get("recommended") else ""
-        lines.append("%d. %s - %s%s" % (n, opt, sentence, mark))
+        lines.append("%d. %s%s%s" % (n, opt, " - " + sentence if sentence else "", mark))
     return "\n".join(lines)
 
 
@@ -160,7 +162,7 @@ def render_step(i, questions=None):
     lines = ["Question %d of %d - %s" % (i, len(qs), q["label"]), q["why"], "", q["ask"]]
     for n, (opt, sentence) in enumerate(q["options"], 1):
         mark = (" " + REC) if n - 1 == q.get("recommended") else ""
-        lines.append("%d. %s - %s%s" % (n, opt, sentence, mark))
+        lines.append("%d. %s%s%s" % (n, opt, " - " + sentence if sentence else "", mark))
     r = q.get("recommended", 0)
     if r is None:
         lines += ["", "Reply with a dollar amount, like $25."]
@@ -193,13 +195,13 @@ def _parse(reply, q):
     elif t.isdigit() and 1 <= int(t) <= len(opts):
         n = int(t)
     elif q["id"] == "spend" and t.lstrip("$").replace(".", "", 1).isdigit():
-        return {"n": len(opts), "text": "up to $" + t.lstrip("$"), "value": t.lstrip("$")}
+        return {"n": len(opts), "text": "up to " + _usd(t), "value": t.lstrip("$")}
     else:
         return None
     value = q.get("values", {}).get(n)
-    if q["id"] == "spend" and value is None:      # "A different limit" with no amount, or a
+    if q["id"] == "spend" and value is None:      # "A different maximum" with no amount, or a
         return None                               # bare "yes": no amount = no spend
-    return {"n": n, "text": opts[n - 1][0], "value": value}
+    return {"n": n, "text": "up to " + _usd(value) if q["id"] == "spend" else opts[n - 1][0], "value": value}
 
 
 def conversation(replies, questions=None):
@@ -337,11 +339,13 @@ def main(argv=None):
     ap.add_argument("--limit", default=None,
                     help="a spend limit the brief already gave, in dollars; "
                          "shown as spend option 1")
+    ap.add_argument("--limit-from-brief", action="store_true",
+                    help="the --limit came from the brief; labels option 1 'from your brief'")
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
                          "card opens with 'Use a saved character?' (I6)")
     a = ap.parse_args(argv)
-    qs = [spend_question(a.price, a.limit) if q["id"] == "spend" else q
+    qs = [spend_question(a.price, a.limit, a.limit_from_brief) if q["id"] == "spend" else q
           for q in _with_saved_character(a.client_dir)]
     if a.step:
         st = conversation(a.reply, qs)

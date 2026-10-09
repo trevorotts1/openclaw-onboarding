@@ -344,14 +344,17 @@ def main(argv=None):
         if core not in sys.path:
             sys.path.insert(0, core)
         from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
-        limit = a.limit
+        limit, from_brief = a.limit, False
         for doc in ((_load(a.summary_file) if a.summary_file else None),
                     (_load(a.brief_file) if a.brief_file else json.loads(a.brief) if a.brief else None)):
-            limit = limit or limit_from(doc)
+            if not limit:
+                limit = limit_from(doc)
+                from_brief = bool(limit)
         return _card.main(["--format", a.format, "--target", a.target]
                           + (["--client-dir", a.client_dir] if a.client_dir else [])
                           + (["--price", a.price] if a.price else [])
                           + (["--limit", limit] if limit else [])
+                          + (["--limit-from-brief"] if limit and from_brief else [])
                           + (["--step"] if a.step else [])
                           + [x for r in a.reply for x in ("--reply", r)])
     if a.cmd == "intake":
