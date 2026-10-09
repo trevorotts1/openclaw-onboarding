@@ -32,6 +32,14 @@ from .variants import (
     expected_dimensions,
     safe_area,
 )
+from .video_delivery import (
+    VideoDeliveryError,
+    build_video_delivery,
+    captioned_name,
+    check_video_delivery,
+    clean_name,
+    write_video_docs,
+)
 
 SCHEMA_VERSION = "1.0.0"
 TOOL_VERSION = "1.0.0"
@@ -58,4 +66,10 @@ __all__ = [
     "build_variant_plan",
     "expected_dimensions",
     "safe_area",
+    "VideoDeliveryError",
+    "build_video_delivery",
+    "captioned_name",
+    "check_video_delivery",
+    "clean_name",
+    "write_video_docs",
 ]
