@@ -359,6 +359,7 @@ TOOL_VERSION = "1.0.0"
 SCHEMA_VERSION = "blackceo.kie-dispatch/envelope/v1"
 EXIT = {"ok": 0, "error": 1, "waiting": 3, "parked": 4, "rejected": 5}
 
+
 #: U15b: the models whose prompts come from the template assembler
 #: (prompt_templates.assemble_h3). An H3 video job must carry the prompt
 #: receipt for the exact prompt bytes; the keyframe image path is unchanged.
@@ -412,8 +413,8 @@ def prompt_templated_refusal(model, request, prompt):
         return {"reason_code": "PROMPT_NOT_TEMPLATED",
                 "detail": "the matching receipt's verdict is %s: %s"
                           % (verdict.upper(),
-                             "; ".join((match.get("check") or {}).get("reasons",
-                                                                     []) or []))}
+                             "; ".join((match.get("check") or {}).get(
+                                 "reasons", []) or []))}
     return None
 
 
@@ -469,7 +470,6 @@ def _templates_catalog(kind):
         return _PT.catalog_path(kind)
     except Exception:                                   # noqa: BLE001
         return None
-
 
 ADAPTER_SKILL = "74-kie-live-adapter"
 ADAPTER_SCRIPT = "kie_live_adapter.py"
@@ -1050,16 +1050,16 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         pic + " Nothing was reserved and nothing was sent.",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id, evidence={"generated": False})
-    book = book_shot_refusal(model, request)      # FU-U10: book job contract
-    if book is not None:
-        return envelope("dispatch", "rejected", book["reason_code"],
-                        book["detail"] + " " + book["next_action"],
-                        run_id=run_id, logical_key=logical_key,
-                        attempt_id=attempt_id, evidence={"generated": False})
     onscreen = onscreen_text_refusal(model, request)
     if onscreen is not None:                # U8: no paid job prints an unchecked string
         return envelope("dispatch", "rejected", "ONSCREEN_TEXT_NOT_CHECKED",
                         onscreen + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
+    book = book_shot_refusal(model, request)      # FU-U10: book job contract
+    if book is not None:
+        return envelope("dispatch", "rejected", book["reason_code"],
+                        book["detail"] + " " + book["next_action"],
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id, evidence={"generated": False})
     if not model:
@@ -1140,7 +1140,8 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         + " Nothing was reserved and nothing was sent.",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id,
-                        evidence={"generated": False, "gate": "final-payload-cap"})
+                        evidence={"generated": False,
+                                  "gate": "final-payload-cap"})
     # ---- 0. placeholder check (F10) ---------------------------------------
     # Before the ledger: a refused request reserves nothing and calls nothing.
     ph = _find_placeholder(request)
