@@ -60,6 +60,9 @@ class RoundTrip(unittest.TestCase):
         self.assertIn("Maya", run("character", "--client-dir", self.client, "list").stdout)
         self.assertIn("Yes, use Maya",
                       run("character", "--client-dir", self.client, "card").stdout)
+        out = run("card", "--client-dir", self.client).stdout  # factory card passes --client-dir (I6)
+        self.assertIn("Use a saved character?", out)
+        self.assertNotIn("Use a saved character?", run("card").stdout)
         card = os.path.join(HERE, "..", "choice_card", "intake_card", "intake_card.py")
         if os.path.exists(card):  # H9 card present in this tree
             out = subprocess.run([sys.executable, card, "--client-dir", self.client],
