@@ -8,8 +8,12 @@
 # quotes), so real-leak lines with trailing prose were MISSED:
 #   GHL_AGENCY_PASSWORD=Sup3rS3cret! # operator backup        -> PASSed (leak slipped)
 #   GHL_AGENCY_PASSWORD = Sup3rS3cret! (see vault)            -> PASSed (leak slipped)
-# W2b tightens on "looks-like-assignment-of-a-secret" (value carries a digit)
-# instead of "reaches end-of-line", so trailing prose can no longer hide a leak.
+# W2b tightened on "looks-like-assignment-of-a-secret" (value carries a digit),
+# but REPLACED the end-of-line branch, losing no-digit values at EOL:
+#   GHL_AGENCY_PASSWORD=SuperSecret! / GHL_PASSWORD=huntersecret -> MISSED at W2b
+# W4 UNIONS both branches: quoted-with-digit | unquoted no-digit to EOL |
+# unquoted-with-digit. Trailing prose can no longer hide a digit-bearing leak,
+# and no-digit values to end-of-line are caught again.
 #
 # BOTH DIRECTIONS, executing the REAL assert line extracted VERBATIM from the
 # qc script (never a hand-copied expression) against a temp workspace:
@@ -100,6 +104,15 @@ run_case "plain secret"          'GHL_AGENCY_PASSWORD=Sup3rS3cret!' FAIL
 run_case "quoted secret"         'GHL_PASSWORD="hunter2xyz2"' FAIL
 run_case "secret + # comment"    'GHL_AGENCY_PASSWORD=Sup3rS3cret! # operator backup' FAIL
 run_case "secret + (parens)"     'GHL_AGENCY_PASSWORD = Sup3rS3cret! (see vault)' FAIL
+
+# ── W4: no-digit values — the W2b sensitivity regression (lost at e151a5dac) ──
+run_case "no-digit secret to EOL" 'GHL_AGENCY_PASSWORD=SuperSecret!' FAIL
+# Trailing comment glued to the value (no separating space) stays inside the
+# unquoted token, so the end-of-line branch catches it. The SPACED form
+# (`=SuperSecret! # backup`) is a RECORDED RESIDUAL, not chased: without a
+# digit signal it is structurally indistinguishable from the shipped doc lines,
+# and closing it would mean widening the value class (prose false positives).
+run_case "no-digit secret + trailing comment" 'GHL_AGENCY_PASSWORD=SuperSecret!#backup' FAIL
 
 echo ""
 echo "RESULTS: $PASS passed, $FAIL failed"
