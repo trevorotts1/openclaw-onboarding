@@ -197,6 +197,37 @@ def lane_size_payload():
     return out
 
 
+def _approval_runner():
+    core = str(Path(__file__).resolve().parent.parent)
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    try:
+        from storyboard_director import approval_runner  # noqa: PLC0415
+        return approval_runner
+    except ImportError:
+        return None
+
+
+def cmd_storyboard(a):
+    """storyboard --run-dir D --target CHAT [--reply TEXT]: one approval step."""
+    ar = _approval_runner()
+    run_dir = str(Path(a.run_dir).expanduser().resolve())
+    sid = Path(run_dir).name or "run"
+    if ar is None:
+        return envelope("storyboard", sid, "error", "approval-runner-missing",
+                        "storyboard_director/approval_runner.py not importable.")
+    try:
+        r = ar.run(run_dir, ar.openclaw_sender(a.target), reply=a.reply)
+    except Exception as e:   # ApprovalError, missing files, send failure: loud, no video
+        return envelope("storyboard", sid, "error", getattr(e, "code", "storyboard-failed"),
+                        str(e)[:300])
+    out = "ok" if r["action"] in ("approved", "revised") else "waiting"
+    return envelope("storyboard", sid, out, r["action"],
+                    "Run `next` for the video stage." if r["action"] == "approved"
+                    else "Waiting for the client's reply (GO, or 'shot N: change ...').",
+                    data=r)
+
+
 def cmd_next(a):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
     run_dir = Path(a.run_dir or ".").expanduser().resolve()
@@ -241,6 +272,15 @@ def cmd_next(a):
         return envelope("next", str(sid), "ok", "run-complete",
                         "Every stage is COMPLETE; the run is delivered. "
                         "Nothing left to run.")
+    if next_stage == "video-generation":      # storyboard approval point
+        ar = _approval_runner()
+        if ar is not None and not ar.gate_open(str(run_dir)):
+            return envelope("next", str(sid), "waiting", "storyboard-approval-required",
+                            "Video is blocked until the storyboard is approved. Run "
+                            "`factory.py storyboard --run-dir %s --target <chat id>` "
+                            "(sends the shot cards + stills once; reply GO or "
+                            "'shot N: change ...' via --reply)." % run_dir,
+                            data={"stage": next_stage})
     row = rows.get(next_stage) or {"command": "", "produces": ""}
     if not row["command"]:
         return envelope("next", str(sid), "error", "runbook-row-missing",
@@ -293,6 +333,11 @@ def main(argv=None):
                                     "how many lanes may run (manual 02 B1).")
     n.add_argument("--run-dir", required=True,
                    help="Run dir that holds control/state.sqlite3.")
+    sb = sub.add_parser("storyboard", help="Storyboard approval step: send cards + "
+                        "stills, or apply the client's reply.")
+    sb.add_argument("--run-dir", required=True)
+    sb.add_argument("--target", default="", help="Telegram chat id")
+    sb.add_argument("--reply", default=None, help="The client's reply, if any.")
     c = sub.add_parser("card", help="Print the six-question intake card as raw "
                                     "text (not JSON), or as send payloads (H9).")
     c.add_argument("--format", default="text",
@@ -332,6 +377,8 @@ def main(argv=None):
         env = cmd_intake(a)
     elif a.cmd == "preflight":
         env = cmd_preflight(a)
+    elif a.cmd == "storyboard":
+        env = cmd_storyboard(a)
     else:
         env = cmd_next(a)
     json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)
