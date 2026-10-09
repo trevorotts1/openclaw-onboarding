@@ -28,6 +28,12 @@ E2 (manual Part E): the MISSING transition default is "fade" with
   changed (fully backward compatible).
 
 Rules:
+- DEL-14 (unit PKG-05-U1): every segment reaches the master canvas by
+  CROP-IN -- scale up until the frame covers W x H, then cut the overhang
+  off, anchored at the top so the plain top is the source's own. Never
+  stretched, never letterboxed, never filled from a blurred copy of its
+  own edge. The filter comes from scripts/video_still_fill/, the one
+  path that owns full height.
 - Video is the master duration; the song is laid under it
   (trimmed/padded to the video duration). Clip audio is ignored:
   silent-video default with the song as soundtrack.
@@ -87,6 +93,22 @@ if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 import master_length  # noqa: E402  (Part I I4)
 import delivery_audio  # noqa: E402  (FU-AAC-FINAL-MUX)
+
+# DEL-14 (unit PKG-05-U1): the still-fill path lives one level above core,
+# at scripts/video_still_fill/. Every segment reaches full height by
+# crop-in through it -- never stretched, never letterboxed, never filled
+# from a blurred copy of its own edge. Fail closed: a master cannot render
+# on a box where the path is missing.
+_scripts = os.path.dirname(_CORE)
+if _scripts not in sys.path:
+    sys.path.insert(0, _scripts)
+try:
+    import video_still_fill as _VSF  # noqa: E402
+except ImportError as _vsf_exc:      # pragma: no cover - packaging defect
+    raise ImportError(
+        "STILL_FILL_PATH_MISSING: final_assembler needs "
+        "scripts/video_still_fill/ (DEL-14 crop-in fill path); the skill "
+        "package is incomplete (%s)" % (_vsf_exc,)) from _vsf_exc
 
 TOOL_NAME = "final_assembler"
 TOOL_VERSION = "1.0.1"
@@ -549,6 +571,15 @@ def load_timeline(path):
             raise ValueError(
                 f"TIMELINE_BAD_SEGMENT: segments[{i}].lip_sync must be "
                 "boolean")
+    # DEL-14: the canvas has to be a real frame the crop-in path can cover.
+    # A malformed size would silently clamp the crop and ship a frame short
+    # of full height, so it fails here, at load (same 1920x1080 fallback
+    # plan_timeline has always applied).
+    try:
+        _VSF.geometry(tl.get("width", 1920), tl.get("height", 1080))
+    except _VSF.StillFillError as _exc:
+        raise ValueError(
+            "TIMELINE_BAD_SIZE: %s" % (_exc,)) from _exc
     # F8: optional end card marker (and sung/spoken line windows) are
     # validated here, at load, when present — fail closed on bad shape.
     if tl.get("endcard_start_s") is not None:
@@ -1067,8 +1098,10 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
         # interpolated H3 clip (timebase 1/30) cannot meet in xfade/concat
         # unless every chain ends on the same timebase.
         step += f"settb=1/{fps:g},"
-        fc.append(f"[{i}:v]{step}"
-                  f"scale={w}:{h},setsar=1[v{i}]")
+        # DEL-14: full height by crop-in (cover, then cut the overhang off,
+        # top anchored), never a bare `scale=W:H` stretch and never a
+        # padded or filled backdrop.
+        fc.append(f"[{i}:v]{step}{_VSF.cover_crop_filter(w, h)}[v{i}]")
     if len(segs) == 1:
         vlast = "[v0]"
     elif all(s["transition"] == "none" for s in segs[1:]):
