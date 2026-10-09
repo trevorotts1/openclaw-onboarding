@@ -45,6 +45,11 @@ VERDICTS = frozenset({"PASS", "FAIL", "UNAVAILABLE"})
 CHECKS = frozenset({
     "export", "timeline", "lyrics", "timing", "audio", "text_product",
     "continuity", "creative", "song", "storyboard", "video", "final_edit", "song_files",
+    # DEL-08: the one cover image (thumbnail) rides the delivery gate as one
+    # more independent record (check_id "cover_image", checker
+    # scripts/core/delivery_variants/cover_image.py): measured pixels, the
+    # receipt sha256 and the README listing, never the row's own claim.
+    "cover_image",
     # G7 (Trevor order 1140): the 7-question delivery checklist rides on
     # the Final edit QC gate as one more independent record (check_id
     # "delivery-checklist", checker scripts/core/delivery_checklist/).
