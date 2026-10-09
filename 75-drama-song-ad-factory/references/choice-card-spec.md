@@ -499,6 +499,12 @@ Decision 32, plan 6.13.
   No window that meets those rules fails closed (`CLIP_NO_WINDOW`).
   `build_argv` / `run_clips` cut it with a short fade-out; the captions are
   re-timed by `captions_offset_s`.
+- `core/delivery_clips` puts both clips in the client's delivery folder with
+  clear numbered names (`6 - 60-second clip.mp4`, `6 - 90-second clip.mp4`,
+  item 6), runs `delivery_audio.check_delivery_audio()` on every delivered
+  file after the rename, and merges the rows into `delivery-receipt.json` and
+  `README.md` (merge, never clobber). `check_clips` fails closed (a promised
+  clip missing, unlisted, or a refused gate); 60 s and 90 s ads owe none.
 - Long-version shape choice is shown on the card: generate both shapes
   (roughly double the video cost, clips cut from the 9:16 version) or
   centre-crop to 9:16 (free, may cut off faces, the client must accept it).

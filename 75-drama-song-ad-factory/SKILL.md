@@ -792,8 +792,10 @@ SOP named above.
   **10-minute long version**. Each length is its own song and timing map.
   The 3, 5 and 10 minute ads each come with an automatic 60-second clip and
   a 90-second clip (`scripts/core/clip_cutdown`; free, included in the
-  price). The intake card asks it as one full question with numbered options
-  that name the clips.
+  price); both clips land in the delivery folder with clear numbered names
+  (`scripts/core/delivery_clips`, item 6 of the delivery package, every file
+  through `delivery_audio.check_delivery_audio()`). The intake card asks it
+  as one full question with numbered options that name the clips.
 - **Ends 2 seconds early (Part I, I4):** the master for a chosen length L is
   at most L-2 seconds (60 becomes 58, 30 becomes 28, 90 becomes 88, 120
   becomes 118), because a 60-second video that runs to 1:02 cannot be used in
