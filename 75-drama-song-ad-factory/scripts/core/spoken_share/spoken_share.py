@@ -58,8 +58,15 @@ TARGET = SPOKEN_TARGET_PCT / 100.0
 FLOOR = SPOKEN_MIN_PCT / 100.0
 CAP = SPOKEN_MAX_PCT / 100.0
 
-#: Delivery labels a timing segment may carry.
+#: Lyric delivery labels: what a sheet tag or a sung/rap/spoken line carries.
 DELIVERIES = ("spoken", "rap", "sung")
+#: Timing-segment deliveries: the lyric deliveries plus FU-U3's "none" --
+#: time with no voice at all (music-only intro, gaps, the end card). "none"
+#: counts in RUNTIME and never in voice time; it is a segment state, not a
+#: sheet tag, so it never joins DELIVERIES.
+SEGMENT_DELIVERIES = DELIVERIES + ("none",)
+#: Deliveries that ARE voice (somebody is speaking, rapping or singing).
+VOICE_DELIVERIES = frozenset(DELIVERIES)
 
 #: Rap is talking over a beat, so it is spoken-style delivery. Counting it is
 #: what stops a rap-heavy cut from measuring under the floor by accident.
@@ -89,6 +96,50 @@ SUNG_STRETCH_JOIN_S = 0.25
 TARGET_ACCEPT_PCT = ACCEPT_PTS
 TARGET_FLAG_PCT = FLAG_PTS
 REAL_SINGING_STRETCH_S = NO_REAL_SINGING_STRETCH_S
+
+# ---- FU-U3: bands per music style -----------------------------------------
+# One band (5/10) for every style, never changed. What U3 adds is WHICH
+# number each style is judged against, per delivery:
+#   * soul-ballad / soul-rise keep today's numbers EXACTLY: spoken share of
+#     runtime 22.5, sung-of-voice 77.5. No rap delivery.
+#   * rnb-flow: the DEFAULT IS A TREVOR-DECISION ITEM, flagged in the plan
+#     (doc 18, section 9, item 1). No new number was invented here. The
+#     documented default is: the target = the share PLANNED from the
+#     approved sheet (the U2 plan's spoken_share_pct_planned), judged on the
+#     5/10 band, so a take that matches its approved plan is not FAIL by
+#     construction; plain spoken (NOT rap) keeps the 22.5% runtime target;
+#     rap is its own DELIVERY, measured on its own planned seconds, never
+#     folded into the spoken target; the 6 s sung stretch and the hook count
+#     stay exactly as they are.
+#: Per-style targets. ``spoken_pct`` = runtime spoken target;
+#: ``sung_of_voice_pct`` = sung share of voice; ``rap_s`` = rap seconds each
+#: style's own approved plan holds (0 = rap never appears in this style);
+#: ``target_from_plan`` = use the plan's own planned share as the target.
+STYLE_TARGETS = {
+    "soul-ballad": {"spoken_pct": SPOKEN_TARGET_PCT, "sung_of_voice_pct": SUNG_TARGET_PCT,
+                    "rap_delivery": False, "target_from_plan": False},
+    "soul-rise": {"spoken_pct": SPOKEN_TARGET_PCT, "sung_of_voice_pct": SUNG_TARGET_PCT,
+                  "rap_delivery": False, "target_from_plan": False},
+    # R&B Flow: rap is its own delivery. The rap target is the share the
+    # approved plan names (per delivery, 5/10 band); plain spoken keeps the
+    # 22.5% runtime target; sung-of-voice is recorded, not a planned target
+    # (a rap sheet's sung content is the hook and its ad-libs, which no word
+    # count can plan -- a 77.5% gate on it would be FAIL by construction).
+    "rnb-flow": {"spoken_pct": SPOKEN_TARGET_PCT, "sung_of_voice_pct": None,
+                 "rap_delivery": True, "target_from_plan": True},
+}
+DEFAULT_STYLE_TARGET = STYLE_TARGETS["soul-ballad"]
+
+
+def style_targets(style_id=None):
+    """The targets for one style. Unknown/absent style -> Soul Ballad's
+    (the default style), so a caller that forgets the style gets today's
+    numbers, never a silent rap allowance."""
+    if style_id is None:
+        return dict(DEFAULT_STYLE_TARGET)
+    return dict(STYLE_TARGETS.get(str(style_id).strip().lower(),
+                                  DEFAULT_STYLE_TARGET))
+
 VERDICT_PASS = "PASS"
 VERDICT_FLAG = "FLAG"    # accepted, but the receipt must carry the flag
 VERDICT_FAIL = "FAIL"    # past FLAG_PTS: REDO (never keep the closest)
@@ -165,34 +216,53 @@ MEASURED_SOURCE = "measured"
 #: only -- a planned number is never a result (G8 / review G1).
 BASIS_MEASURED = "measured"
 BASIS_PLANNED = "planned"
+#: FU-U3: "aligned" = measured word timestamps x the sheet's own delivery
+#: labels (Suno aligned words joined to the line each word came from). It is
+#: the ONLY basis a rap-versus-speech split may use, and it is NEVER recorded
+#: as "measured": the split rests on the sheet's labels as well as the audio.
+BASIS_ALIGNED = "aligned"
+ALIGNED_SOURCE = BASIS_ALIGNED
 
 def segment_basis(segments):
     """Basis of one segment list: "measured" only when EVERY segment is
-    detector output carrying source="measured" (plus its detector version
-    and stem id); a list built from lyric/section labels is "planned"."""
+    detector output carrying source="measured"; "aligned" when every segment
+    carries source "measured" or "aligned" and at least one carries
+    "aligned"; a list built from lyric/section labels is "planned"."""
     if not isinstance(segments, list) or not segments:
         return BASIS_PLANNED
+    have_aligned = False
     for seg in segments:
-        if not isinstance(seg, dict) or seg.get("source") != MEASURED_SOURCE:
+        if not isinstance(seg, dict):
             return BASIS_PLANNED
-    return BASIS_MEASURED
+        src = seg.get("source")
+        if src == ALIGNED_SOURCE:
+            have_aligned = True
+        elif src != MEASURED_SOURCE:
+            return BASIS_PLANNED
+    return BASIS_ALIGNED if have_aligned else BASIS_MEASURED
 
 def _require_basis(segments, basis, where):
     """G8 gate: refuse a label timeline where a measurement is required.
 
     basis="measured" (the default on every measuring function) demands
-    detector segments; basis="planned" is the planner's own timeline and is
-    allowed, but its result names itself planned and is never a share of
-    record.
+    detector segments; basis="aligned" (the rap-versus-speech split) accepts
+    detector or aligned segments, never labels; basis="planned" is the
+    planner's own timeline and is allowed, but its result names itself planned
+    and is never a share of record.
     """
-    if basis != BASIS_MEASURED:
+    if basis == BASIS_PLANNED:
         return
-    if segment_basis(segments) != BASIS_MEASURED:
+    have = segment_basis(segments)
+    ok = (have == BASIS_MEASURED
+          if basis == BASIS_MEASURED else have in (BASIS_MEASURED, BASIS_ALIGNED))
+    if not ok:
         raise SpokenShareError(
             "LABELS_NOT_MEASURED",
             "%s: segments are built from lyric labels, not measured; feed "
             "the detector output (source=\"measured\", detector version and "
-            "stem id), or pass basis=\"planned\" to plan with labels" % where)
+            "stem id), or align the words to the sheet labels (basis="
+            "\"aligned\"), or pass basis=\"planned\" to plan with labels"
+            % where)
 
 def _provenance(segments, out):
     """Stamp the measurement's provenance onto a result dict."""
@@ -239,10 +309,10 @@ def _segments(segments):
                                    % (type(seg).__name__,))
         delivery = seg.get("delivery")
         if (not isinstance(delivery, str)
-                or delivery.strip().lower() not in DELIVERIES):
+                or delivery.strip().lower() not in SEGMENT_DELIVERIES):
             raise SpokenShareError("BAD_DELIVERY",
                                    "delivery must be one of %s, got %r"
-                                   % (list(DELIVERIES), delivery))
+                                   % (list(SEGMENT_DELIVERIES), delivery))
         delivery = delivery.strip().lower()
         if "seconds" in seg:
             secs = _number(seg["seconds"], "seconds")
@@ -269,50 +339,77 @@ def _segments(segments):
     return out
 
 
-def measure_share(segments, basis=BASIS_MEASURED):
+def measure_share(segments, basis=BASIS_MEASURED, style_id=None):
     """Spoken-style share of runtime from timing segments (G8: AUDIO, never
     labels).
 
     ``basis="measured"`` (default) accepts only detector segments carrying
-    source="measured"; a list built from lyric/section labels is refused
-    with LABELS_NOT_MEASURED ("labels, not measured"). ``basis="planned"``
-    is the planner's own timeline: it is measured and returned, but the
-    result carries basis="planned" / share_source="planned" and is never a
-    share of record.
+    source="measured"; ``basis="aligned"`` accepts detector or word-aligned
+    segments (the rap-versus-speech split, recorded as "aligned" and NEVER as
+    "measured"); a list built from lyric/section labels is refused with
+    LABELS_NOT_MEASURED ("labels, not measured"). ``basis="planned"`` is the
+    planner's own timeline: it is measured and returned, but the result
+    carries basis="planned" / share_source="planned" and is never a share of
+    record.
 
     Rap is spoken-style, so it is counted -- that is the rule that catches a
-    rap-heavy R&B cut. Returns spoken/rap/sung/total seconds, the
-    spoken-style share as a fraction of total, and ``first_sung_start_s``
-    (None when the cut carries no sung line). Total 0 is refused rather than
+    rap-heavy R&B cut. ``style_id`` marks which style's rules apply: a rap
+    style (R&B Flow, the U2 plan) reports the rap share SEPARATELY
+    (``rap_share_pct``), because rap is its own delivery there and its target
+    comes from the plan, never from the spoken 22.5 target; every other style
+    reports it inside the spoken-style share exactly as before.
+
+    Segments with delivery "none" (music-only intro, gaps, the end card) count
+    in RUNTIME and never in voice time -- a music-only gap is not spoken.
+
+    Returns spoken/rap/sung/none seconds, the spoken-style share as a
+    fraction of total, ``rap_share_pct``, and ``first_sung_start_s`` (None
+    when the cut carries no sung line). Total 0 is refused rather than
     reported as 0%.
     """
     parsed = _segments(segments)
     _require_basis(segments, basis, "measure_share")
-    seconds = dict.fromkeys(DELIVERIES, 0.0)
+    t = style_targets(style_id)
+    seconds = dict.fromkeys(SEGMENT_DELIVERIES, 0.0)
     for delivery, _start, _end, secs in parsed:
         seconds[delivery] += secs
-    spoken, rap, sung = (seconds[d] for d in ("spoken", "rap", "sung"))
-    total = spoken + rap + sung
+    spoken, rap, sung, none = (seconds[d] for d in SEGMENT_DELIVERIES)
+    total = spoken + rap + sung + none
     if total <= 0:
         raise SpokenShareError("ZERO_RUNTIME",
                                "segments total 0 seconds; share undefined")
-    spoken_style = sum(v for d, v in seconds.items()
-                       if d in SPOKEN_STYLE_DELIVERIES)
+    if t["rap_delivery"]:
+        # rap is its own delivery: spoken share counts plain spoken only.
+        spoken_style = spoken
+        spoken_denominator = total - rap
+        spoken_style_pct = (spoken / spoken_denominator * 100.0
+                            if spoken_denominator > 0 else 0.0)
+    else:
+        spoken_style = spoken + rap
+        spoken_denominator = total
+        spoken_style_pct = spoken_style / total * 100.0
     sung_starts = [start for delivery, start, _e, _s in parsed
                    if delivery == "sung"]
     out = {
         "spoken_seconds": round(spoken, 6),
         "rap_seconds": round(rap, 6),
         "sung_seconds": round(sung, 6),
+        "none_seconds": round(none, 6),
+        "voice_seconds": round(spoken + rap + sung, 6),
         "total_seconds": round(total, 6),
         "spoken_style_seconds": round(spoken_style, 6),
+        "spoken_denominator_seconds": round(spoken_denominator, 6),
         "share": round(spoken_style / total, 6),
         "share_pct": share_pct(spoken_style / total),
+        "spoken_share_pct_of_voice": round(spoken_style_pct, 3),
+        "rap_share_pct": round(rap / total * 100.0, 3) if total else 0.0,
+        "style_id": t and style_id,
+        "target_pct": t["spoken_pct"],
         "sung_share": round(sung / total, 6),
         "first_sung_start_s": min(sung_starts) if sung_starts else None,
         "opener_seconds": (round(min(sung_starts), 6)
                            if sung_starts else None),
-        "rap_counts_as_spoken": True,
+        "rap_counts_as_spoken": not t["rap_delivery"],
     }
     return _provenance(segments, out)
 
@@ -333,29 +430,49 @@ def sung_of_voice_pct(sung_s, spoken_s):
 
 
 def check_sung_of_voice(segments=None, target_pct=None, sung_s=None,
-                        spoken_s=None, basis=BASIS_MEASURED):
+                        spoken_s=None, basis=BASIS_MEASURED, style_id=None):
     """Judge singing against voice time with Trevor's band.
 
-    Give timing ``segments`` (rap counts as spoken) or ``sung_s`` and
-    ``spoken_s`` directly. ``target_pct`` defaults to SUNG_TARGET_PCT (77.5).
+    Give timing ``segments`` (rap counts as voice; "none" never does) or
+    ``sung_s`` and ``spoken_s`` directly. ``target_pct`` defaults to the
+    style's own sung-of-voice target (SUNG_TARGET_PCT, 77.5, for every style
+    except a rap style whose sung content is the hook: there the percentage is
+    RECORDED (``gated: False``) rather than gated, because no word count can
+    plan a rap sheet's sung share and a 77.5 gate on it would be FAIL by
+    construction).
     Returns {"verdict": PASS|FLAG|FAIL, "band", "sung_of_voice_pct",
     "target_pct", "gap_pts", "reasons", "flags", ...}. The only other hard
     reject (no 6 s sung stretch) is check_real_singing, run on segments.
     """
+    t = style_targets(style_id)
     if segments is not None:
-        m = measure_share(segments, basis)
+        m = measure_share(segments, basis, style_id=style_id)
         sung_s = m["sung_seconds"]
-        spoken_s = m["spoken_style_seconds"]
-    target = SUNG_TARGET_PCT if target_pct is None else float(target_pct)
+        spoken_s = round(m["voice_seconds"] - m["sung_seconds"], 6)
+    if target_pct is None:
+        target_pct = t["sung_of_voice_pct"]
+    gated = target_pct is not None
     pct = sung_of_voice_pct(sung_s, spoken_s)
+    out = {"gated": gated, "style_id": style_id,
+           "sung_of_voice_pct": round(pct, 3),
+           "sung_seconds": float(sung_s),
+           "spoken_seconds": float(spoken_s),
+           "target_pct": None if target_pct is None else float(target_pct),
+           "reasons": [], "flags": []}
+    if not gated:
+        out.update({"verdict": VERDICT_PASS, "band": BAND_ACCEPT,
+                    "gap_pts": None})
+        out["note"] = (
+            "sung-of-voice %g%% of voice time for %s is recorded, not gated "
+            "(hook content, not a planned share)" % (pct, style_id))
+        return out
+    target = float(target_pct)
     j = judge_gap(pct, target)
     text = ("sung %.1f%% of voice time (sung %.1f s, spoken %.1f s), target "
             "%g%%, %.1f points off" % (pct, float(sung_s), float(spoken_s),
                                        target, j["gap_pts"]))
-    out = {"verdict": j["verdict"], "band": j["band"],
-           "sung_of_voice_pct": round(pct, 3), "target_pct": target,
-           "gap_pts": j["gap_pts"], "sung_seconds": float(sung_s),
-           "spoken_seconds": float(spoken_s), "reasons": [], "flags": []}
+    out.update({"verdict": j["verdict"], "band": j["band"],
+                "gap_pts": j["gap_pts"]})
     if j["verdict"] == VERDICT_FLAG:
         out["flags"].append("FLAG: " + text)
     elif j["verdict"] == VERDICT_FAIL:
@@ -441,7 +558,8 @@ def target_for_range(range_pct=None):
     return (float(lo) + float(hi)) / 2.0
 
 
-def check_share(share, segments=None, basis=BASIS_MEASURED, target_pct=None):
+def check_share(share, segments=None, basis=BASIS_MEASURED, target_pct=None,
+                style_id=None):
     """Enforce the band on one measured share. Never raises on a share that
     is merely out of band -- that is a FAIL verdict, not an error.
 
@@ -449,8 +567,10 @@ def check_share(share, segments=None, basis=BASIS_MEASURED, target_pct=None):
              "reasons": [...]}. Raises SpokenShareError only for a malformed
     share, which is a caller bug.
 
-    segments, when given, is measured first and its share is the one judged
-    (rap included); share then must agree with it or the check fails closed.
+    segments, when given, is measured first (under the same ``style_id``
+    semantics: for a rap style the share is plain spoken, rap reported
+    separately) and its share is the one judged; share then must agree with
+    it or the check fails closed.
     """
     if isinstance(share, bool) or not isinstance(share, (int, float)):
         raise SpokenShareError("BAD_SHARE",
@@ -461,6 +581,7 @@ def check_share(share, segments=None, basis=BASIS_MEASURED, target_pct=None):
         raise SpokenShareError("BAD_SHARE",
                                "share must be finite, got %r" % (share,))
     measured = None
+    t = style_targets(style_id)
     result = {
         "share": share,
         "share_pct": share_pct(share),
@@ -470,13 +591,13 @@ def check_share(share, segments=None, basis=BASIS_MEASURED, target_pct=None):
         "floor_pct": SPOKEN_MIN_PCT,
         "cap_pct": SPOKEN_MAX_PCT,
         "target_pct": SPOKEN_TARGET_PCT,
-        "rap_counts_as_spoken": True,
+        "rap_counts_as_spoken": not t["rap_delivery"],
         "measurement": None,
         "checker_version": TOOL_VERSION,
         "source": SOURCE,
     }
     if segments is not None:
-        measured = measure_share(segments, basis)
+        measured = measure_share(segments, basis, style_id=style_id)
         result["measurement"] = measured
         result["basis"] = measured["basis"]
         result["share_source"] = measured["basis"]
@@ -548,11 +669,18 @@ def longest_sung_stretch_s(segments):
 
 
 def segments_from_sung_stretches(stretches, total_s, detector_version=None,
-                                 stem_id=None):
+                                 stem_id=None, voiced=None):
     """Turn the vocal-stem detector's sung stretches [(start, end), ...]
     into spoken/sung segments covering ``total_s``, so the measured stem
-    feeds check_first_sung. Whatever the detector did not call sung is
-    spoken-style here.
+    feeds check_first_sung.
+
+    FU-U3: ``voiced`` = the voiced ranges [(start, end), ...] measured on the
+    vocal stem (RMS). Time outside them is music only: it becomes a fourth
+    delivery "none", which counts in RUNTIME and never in voice time -- a
+    music-only intro, gap or end card is NOT speech, so it can no longer
+    inflate the spoken seconds or deflate the sung share of voice. With no
+    ``voiced`` given, behavior is exactly as before (everything not sung is
+    spoken-style), so existing callers keep their numbers.
 
     Every produced segment carries source="measured" (plus the detector
     version and stem id when given) -- this is the one builder whose output
@@ -564,14 +692,42 @@ def segments_from_sung_stretches(stretches, total_s, detector_version=None,
         stamp["detector_version"] = detector_version
     if stem_id is not None:
         stamp["stem_id"] = stem_id
+    voice = (sorted((float(a), float(b)) for a, b in voiced)
+             if voiced else None)
+
+    def fill(gap_start, gap_end, delivery):
+        """One un-sung gap -> segments, split at the voiced/unvoiced edges."""
+        if gap_end <= gap_start:
+            return
+        if voice is None:
+            out.append(dict(stamp, delivery=delivery, start=gap_start,
+                            end=gap_end))
+            return
+        pos = gap_start
+        for a, b in voice:
+            if b <= pos or a >= gap_end:
+                continue
+            if a > pos:
+                out.append(dict(stamp, delivery="none", start=pos,
+                                end=min(a, gap_end)))
+            seg_start = max(pos, a)
+            seg_end = min(b, gap_end)
+            if seg_end > seg_start:
+                out.append(dict(stamp, delivery=delivery, start=seg_start,
+                                end=seg_end))
+            pos = seg_end
+            if pos >= gap_end:
+                return
+        if pos < gap_end:
+            out.append(dict(stamp, delivery="none", start=pos, end=gap_end))
+
     for start, end in sorted((float(a), float(b)) for a, b in stretches):
         if start > cursor:
-            out.append(dict(stamp, delivery="spoken", start=cursor, end=start))
+            fill(cursor, start, "spoken")
         out.append(dict(stamp, delivery="sung", start=start, end=end))
         cursor = max(cursor, end)
     if total_s > cursor:
-        out.append(dict(stamp, delivery="spoken", start=cursor,
-                        end=float(total_s)))
+        fill(cursor, float(total_s), "spoken")
     return out
 
 
@@ -802,6 +958,12 @@ __all__ = [
     "check_share",
     "is_spoken_style",
     "measure_share",
+    "STYLE_TARGETS",
+    "style_targets",
+    "BASIS_ALIGNED",
+    "ALIGNED_SOURCE",
+    "VOICE_DELIVERIES",
+    "SEGMENT_DELIVERIES",
     "BASIS_MEASURED",
     "BASIS_PLANNED",
     "MEASURED_SOURCE",

@@ -103,7 +103,7 @@ def cmd_intake(a):
                     data={k: r.get(k) for k in ("questions", "question_message", "summary",
                                                 "digest", "provenance", "auth_status",
                                                 "approval_invalidated", "changes",
-                                                "untrusted_fields", "next_stage")},
+                                                "untrusted_fields", "next_stage", "mode", "notices")},
                     state_version={"expected": (resume or {}).get("digest") if resume else None,
                                    "current": r.get("digest")})
 
@@ -304,6 +304,12 @@ def main(argv=None):
                    help="one question per message (I7): print only the next message")
     c.add_argument("--reply", action="append", default=[],
                    help="a client reply so far, in order (repeat the flag)")
+    c.add_argument("--fit", action="store_true",
+                   help="FU-U4: the fit STOP card for the client's own lines "
+                        "(--brief-file, --packet-file); exit 2 when they do not fit")
+    c.add_argument("--brief-file", default=None)
+    c.add_argument("--packet-file", default=None,
+                   help="JSON list of client lines {id, speaker, text, scene}")
     ch = sub.add_parser("character", help="Per-client character library: ask / save / "
                                           "list / use / card (Part I, I6). Extra args pass through.")
     args = sys.argv[1:] if argv is None else list(argv)
@@ -324,6 +330,12 @@ def main(argv=None):
         if core not in sys.path:
             sys.path.insert(0, core)
         from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
+        if a.fit:
+            brief = _load(a.brief_file) if a.brief_file else {}
+            packet = _load(a.packet_file) if a.packet_file else brief.get("packet_lines")
+            card = _card.fit_card(brief, packet)
+            sys.stdout.write(card["text"] + "\n")
+            return EXIT[card["outcome"]]
         return _card.main(["--format", a.format, "--target", a.target]
                           + (["--client-dir", a.client_dir] if a.client_dir else [])
                           + (["--step"] if a.step else [])

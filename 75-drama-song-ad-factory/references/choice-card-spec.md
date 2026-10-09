@@ -121,22 +121,32 @@ write them free hand and never carry them as one JSON string.
   `--format telegram-json` body is the exact Bot API `sendMessage` payload.
 - The intake `question_message` uses the same layout (`format_questions`).
 
-## 2.3 Options on the card come from the registry (fit card)
+## 2.3 Fit stop card (FU-U4, normative)
 
-Every option the card shows is read from code, never typed into the card:
-lengths from `music_styles.OFFERED_LENGTHS_S`, music styles from
-`music_styles` style ids, voices from the voice registry, video models from
-Skill 74. NOT built on main (FU-U4: open branch `unit/FU-U4`, PRs #1757 on
-onboarding and #124 on 999, not yet merged - refresh when it lands): the
-**fit card**, which
-would show, per music style, whether the client's lyrics fit the chosen length
-(one row per style with the numbers) and would list the notices (sound
-effects, echo voice, length not offered, frame rate). Until it lands, the fit
-check runs inside `words_fit.preflight_sheet` and `suno_recipe.check_lyric_sheet`
-and refuses with a plain reason; the card does not preview it. Do not describe
-a fit card to a client.
-- **TODO(FU-U4):** rewrite 2.3 when PRs #1757 / #124 land - the card then
-  previews the fit rows.
+When the client brings their own lines (concept mode, `brief.mode == "concept"`),
+their lines are a contract: `brief.packet_lines` is required (missing is refused
+with `PACKET_REQUIRED_IN_CONCEPT_MODE`), every line keeps its id, and no line is
+cut unless the client approves that exact line id.
+
+Before the card, code runs the free fit step (`choice_card/intake_card`
+`fit_card(brief, packet_lines)`; CLI `factory.py card --fit --brief-file F
+--packet-file P`). It prints one row per real music style at the client's length:
+room for N words, the seconds the client's words need, the delivery split, and
+fits or does not fit. When the chosen style does not fit, the card is a STOP card
+(outcome `waiting`, exit code 2). When it fits, exit code 0 and nothing is cut.
+
+Options are built only from registries; a test refuses any other id:
+
+| Option | Registry |
+|---|---|
+| A longer ad | `music_styles.OFFERED_LENGTHS_S`, only lengths above the client's |
+| A different music style | `music_styles.style_ids()` |
+| Voice | All Suno (default) or Velvet Voiceover, from `voice_velvet_echo` |
+| Fewer words | `words_fit`'s own `fewer_words` option, naming the exact line ids that would be cut, for the client to approve |
+
+The same card states, as notices and never as options, every storyboard item the
+skill will not make: sound effects (sfx stay off), an echo or reverb voice, a
+length that is not offered, and any fps other than the 30 fps master.
 
 ## 3. Field rules
 

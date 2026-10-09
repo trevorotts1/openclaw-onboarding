@@ -36,8 +36,8 @@ import sung_hook as _SH      # noqa: E402
 import words_fit as _WF      # noqa: E402
 
 TOOL_NAME = "song_dispatch"
-TOOL_VERSION = "1.0.0"
-GATES = ("detector", "spoken_share", "sung_of_voice", "sung_stretch", "hook", "script_words",
+TOOL_VERSION = "1.1.0"
+GATES = ("detector", "spoken_share", "rap_share", "sung_of_voice", "sung_stretch", "hook", "script_words",
          "length", "music_under_speech", "clean_ending", "first_sung")
 MUSIC_UNDER_SPEECH_MIN = 0.3     # music level under speech / music level under singing
 NEAR_SILENT_DBFS = -50.0         # RMS of the final 2 s below this = near silent
@@ -84,10 +84,49 @@ def _w(t):
     return _SH.words(t)
 
 
-def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None):
-    """Gate a measured take. ``take`` = {segments (measured), aligned_words,
-    duration_s, detector, music_under_speech_ratio, tail_rms_dbfs,
-    first_sung_s}. Returns {verdict, gates:{name:{verdict,detail}}, score}."""
+def _planned_pct(plan, style_id, key):
+    """Percent of delivered runtime the approved plan gives one delivery.
+
+    FU-U3: R&B Flow targets are judged against the share the APPROVED plan
+    names (plan 18 section 9 item 1, documented default) -- never a new
+    number. planned % = words[key] / words_fit rate for that delivery,
+    over the plan's delivered seconds. Missing word counts -> None (the
+    caller falls back to the style's constant).
+    """
+    words = (plan or {}).get("words") or {}
+    if key not in words or key == "rap" and "rap" not in words:
+        return None
+    delivered = (plan or {}).get("delivered_s")
+    if not isinstance(delivered, (int, float)) or delivered <= 0:
+        return None
+    rate = _WF.rates_for(style_id).get(key)
+    if not rate:
+        return None
+    return round(float(words[key]) / float(rate) / float(delivered) * 100.0, 3)
+
+
+def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
+               style_id=None):
+    """Gate a measured take. ``take`` = {segments (measured and/or aligned),
+    aligned_words, duration_s, detector, music_under_speech_ratio,
+    tail_rms_dbfs, first_sung_s}. Returns {verdict, gates:{name:{verdict,
+    detail}}, score}.
+
+    FU-U3: ``style_id`` carries the music style through the judge. Bands per
+    style (spoken_share.STYLE_TARGETS), the SAME 5/10 band everywhere:
+      * Soul Ballad / Soul Rise: spoken-style share vs the ad's own target
+        (22.5 default) and sung-of-voice vs 77.5 -- today's numbers exactly;
+      * R&B Flow: rap is its own delivery. The plain-spoken share and the
+        rap share are judged against the share each delivery has in the
+        APPROVED plan (the U2 plan's word counts at the style's measured
+        rates -- the documented default from plan 18 section 9 item 1, a
+        TREVOR-DECISION ITEM, never a number invented here), each on the
+        5/10 band; plain spoken with no rap keeps the 22.5 runtime target;
+        sung-of-voice is RECORDED for a rap sheet (hook content, not a
+        planned share). The 6 s sung stretch and the hook count stay hard.
+    Rap-versus-speech comes from aligned segments (source="aligned", basis
+    "aligned"), never recorded as "measured".
+    """
     D = plan["delivered_s"]
     segs = take.get("segments") or []
     g = {}
@@ -96,21 +135,65 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None):
         g[name] = {"verdict": verdict, "detail": detail}
 
     det = str(take.get("detector", ""))
-    ok = bool(segs) and all(s.get("source") == "measured" for s in segs) and det.startswith("singing_detector 2")
+    srcs = {s.get("source") for s in segs if isinstance(s, dict)}
+    ok = (bool(segs) and bool(srcs)
+          and srcs <= {"measured", "aligned"} and "measured" in srcs
+          and det.startswith("singing_detector 2"))
     put("detector", "PASS" if ok else "FAIL", det or "no detector record")
     if not ok:
         return _finish(g)
-    tgt = _SS.target_for_range(spoken_range_pct)
-    m = _SS.measure_share(segs)
-    r = _SS.check_share(m["share"], segs, tgt)
-    put("spoken_share", r["verdict"], "%.1f%% vs %.1f" % (r["share_pct"], tgt))
-    v = (_SS.check_sung_of_voice(segs) if m["sung_seconds"] + m["spoken_style_seconds"] > 0
+    basis = _SS.segment_basis(segs)
+    t = _SS.style_targets(style_id)
+    m = _SS.measure_share(segs, basis, style_id=style_id)
+    # spoken target per style: plan-derived for a rap style, the ad's own
+    # range (22.5 default) otherwise.
+    if t["rap_delivery"] and t["target_from_plan"]:
+        planned = _planned_pct(plan, style_id, "spoken")
+        tgt = _SS.SPOKEN_TARGET_PCT if planned is None else planned
+        target_src = "approved plan" if planned is not None else "default"
+    else:
+        tgt = _SS.target_for_range(spoken_range_pct)
+        target_src = "ad range"
+    r = _SS.check_share(m["share"], segs, basis, target_pct=tgt,
+                        style_id=style_id)
+    put("spoken_share", r["verdict"],
+        "%.1f%% vs %.1f (%s, plain spoken, %s basis)"
+        % (m["share_pct"], tgt, target_src, basis))
+    # rap: its own delivery. A rap style judges the measured rap share
+    # against the plan's own rap share; a style without rap wants ZERO rap
+    # (a take that carries rap under Soul Ballad is a FAIL, band included).
+    if t["rap_delivery"]:
+        planned_rap = _planned_pct(plan, style_id, "rap")
+        if m["rap_seconds"] > 0 or planned_rap:
+            j = _SS.judge_gap(m["rap_share_pct"],
+                              _SS.SPOKEN_TARGET_PCT if planned_rap is None
+                              else planned_rap)
+            put("rap_share", j["verdict"],
+                "%.1f%% vs %s (%s)" % (m["rap_share_pct"],
+                                       "n/a" if planned_rap is None
+                                       else "%.1f" % planned_rap,
+                                       "approved plan" if planned_rap is not None
+                                       else "default"))
+        else:
+            put("rap_share", "PASS", "no rap planned, none measured")
+    else:
+        put("rap_share", "PASS" if m["rap_seconds"] <= 0 else
+            _SS.judge_gap(m["rap_share_pct"], 0.0)["verdict"],
+            "%.1f%% rap (Soul style allows none)" % m["rap_share_pct"])
+    v = (_SS.check_sung_of_voice(segs, basis=basis, style_id=style_id)
+         if m["voice_seconds"] - m["sung_seconds"] > 0
          else {"verdict": "FAIL", "sung_of_voice_pct": 0})
-    put("sung_of_voice", v["verdict"], "%.1f%% of voice" % v.get("sung_of_voice_pct", 0))
+    put("sung_of_voice", v["verdict"],
+        "%.1f%% of voice%s" % (v.get("sung_of_voice_pct", 0),
+                               "" if v.get("gated", True)
+                               else " (recorded, not gated for %s)" % style_id))
     real = _SS.check_real_singing(segs)
     put("sung_stretch", "PASS" if real.get("verdict", "PASS") != "FAIL" and not real.get("reasons") else "FAIL",
         "6 s sung stretch")
-    rec = _SH.measure(hook_text, take.get("aligned_words") or [], segs, _SH.hook_count(D))
+    # The hook is counted on the DETECTOR segments only: aligned segments
+    # carry the sheet's labels, and sung_hook.measure requires measured ones.
+    hook_segs = [s for s in segs if s.get("source") == "measured"]
+    rec = _SH.measure(hook_text, take.get("aligned_words") or [], hook_segs, _SH.hook_count(D))
     put("hook", "PASS" if rec["measured"] >= 2 and rec["verdict"] != "FAIL" else
         ("FLAG" if rec["measured"] >= 2 else "FAIL"), "%d of %d" % (rec["measured"], rec["target"]))
     have = set(_w(" ".join(w.get("word", "") for w in take.get("aligned_words") or [])))
@@ -147,7 +230,7 @@ def _finish(g):
 
 def run_takes(request, plan, generate, measure, save, script_words, hook_text,
               spoken_range_pct=None, cap_cents=SPEND_CAP_CENTS, cost_cents=GEN_COST_CENTS,
-              kie=_LG.kie_request):
+              kie=_LG.kie_request, style_id=None):
     """Generate until a take passes or the cap is spent.
 
     generate(request) -> list of takes (2 per generation, each with audio ids);
@@ -172,7 +255,7 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
         spent += cost_cents
         for take in kie(lambda: generate(request), "song generate", generation=True):
             take = dict(take, **measure(take))
-            rcpt = judge_take(take, plan, script_words, hook_text, spoken_range_pct)
+            rcpt = judge_take(take, plan, script_words, hook_text, spoken_range_pct, style_id)
             save(take, rcpt)                               # stem + timestamps, every take
             receipts.append(rcpt)
             if rcpt["verdict"] == "PASS":
