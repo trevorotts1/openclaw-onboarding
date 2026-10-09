@@ -79,12 +79,15 @@ HOME2="$WORK/home-leak"
 STAGED2="$(stage_install "$HOME2")"
 OUT2="$(HOME="$HOME2" PATH="$LEAK_BIN2:$PATH" bash "$STAGED2/qc-agent-browser.sh" 2>&1)"
 RC2=$?
-if [[ "$RC2" -ne 0 ]] && echo "$OUT2" | grep -q "✗ FAIL — this smoke test's own Chromium process is still alive"; then
+# here-strings, not `echo "$OUTn" | grep -q`: under `set -o pipefail` a grep -q
+# that matches early closes the pipe, echo's next write raises SIGPIPE, and the
+# pipeline reports failure even though the text WAS present (seen in CI on case 4).
+if [[ "$RC2" -ne 0 ]] && grep -q "✗ FAIL — this smoke test's own Chromium process is still alive" <<<"$OUT2"; then
   pass "a session left open after the smoke test FAILS QC (not warns) -- assert upgrade proven"
 else
   fail "expected a hard FAIL line for the leaked session and non-zero exit; rc=$RC2, output: $OUT2"
 fi
-if echo "$OUT2" | grep -qE "⚠ WARN.*this smoke test's own Chromium"; then
+if grep -qE "⚠ WARN.*this smoke test's own Chromium" <<<"$OUT2"; then
   fail "the leaked-session line is still WARN-worded -- assert upgrade did not actually happen"
 fi
 kill_stub_pidfile "$PIDFILE"
@@ -105,7 +108,7 @@ HOME3="$WORK/home-clean"
 STAGED3="$(stage_install "$HOME3")"
 OUT3="$(HOME="$HOME3" PATH="$CLEAN_BIN:$PATH" bash "$STAGED3/qc-agent-browser.sh" 2>&1)"
 RC3=$?
-if [[ "$RC3" -eq 0 ]] && echo "$OUT3" | grep -q "✓ PASS — zero Chromium processes spawned by this smoke test remain alive"; then
+if [[ "$RC3" -eq 0 ]] && grep -q "✓ PASS — zero Chromium processes spawned by this smoke test remain alive" <<<"$OUT3"; then
   pass "a session that closes cleanly PASSES QC (the gate isn't permanently red)"
 else
   fail "expected a clean PASS for a well-behaved close; rc=$RC3, output: $OUT3"
@@ -124,8 +127,8 @@ echo "$!" > "$PRE_PIDFILE"
 OUT4="$(HOME="$HOME4" PATH="$PREEXIST_BIN:$PATH" bash "$STAGED4/qc-agent-browser.sh" 2>&1)"
 RC4=$?
 if [[ "$RC4" -eq 0 ]] \
-   && echo "$OUT4" | grep -q "⚠ WARN — 1 pre-existing scoped agent-browser Chromium process" \
-   && ! echo "$OUT4" | grep -q "✗ FAIL — this smoke test's own Chromium process"; then
+   && grep -q "⚠ WARN — 1 pre-existing scoped agent-browser Chromium process" <<<"$OUT4" \
+   && ! grep -q "✗ FAIL — this smoke test's own Chromium process" <<<"$OUT4"; then
   pass "a pre-existing session (planted before this run) is reported WARN, never FAIL, and QC still PASSES overall"
 else
   fail "expected a WARN-only pre-existing line and overall PASS; rc=$RC4, output: $OUT4"
