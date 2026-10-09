@@ -185,7 +185,7 @@ def test_style_text_per_style_and_gendered():
     check("R&B Flow lead drops the ballad wording",
           "long held open vowels" not in rnb and "slow tempo" not in rnb, rnb)
     check("R&B Flow lead keeps the dry close vocal rule",
-          "dry close vocal" in rnb, rnb)
+          "dry close vocal" in rnb or "dry upfront vocal" in rnb, rnb)  # U15d: the style data says "dry upfront vocal"
     check("ballad lead keeps its wording",
           "long held open vowels" in ballad, ballad)
     check("gender comes from vocal_gender",
