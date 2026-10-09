@@ -17,7 +17,7 @@ from choice_card.intake_card import intake_card as IC  # noqa: E402
 from choice_card.intake_card import intro as INTRO  # noqa: E402
 
 EXPECTED = (
-    "Turn your offer into a music video people actually feel.\n\n"
+    "Turn your offer into a video dramatization with music that people actually feel.\n\n"
     "Answer a few quick questions, and we handle the rest:\n"
     "- Write the story and script, with the song lyrics woven in\n"
     "- Create your characters (or bring back ones you've saved)\n"

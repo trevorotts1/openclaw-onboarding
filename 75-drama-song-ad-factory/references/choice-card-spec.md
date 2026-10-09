@@ -91,7 +91,7 @@ The run opens with the intro, then the questions. The intro is sent ONCE, as
 its own message, at the start of a new interactive run, right before the first
 question. Exact text (one constant: `scripts/core/choice_card/intake_card/intro.py`):
 
-> Turn your offer into a music video people actually feel.
+> Turn your offer into a video dramatization with music that people actually feel.
 >
 > Answer a few quick questions, and we handle the rest:
 > - Write the story and script, with the song lyrics woven in
