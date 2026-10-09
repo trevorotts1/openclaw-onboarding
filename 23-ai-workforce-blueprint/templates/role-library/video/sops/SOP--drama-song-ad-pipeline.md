@@ -94,8 +94,12 @@ their soul.
    Music, Product tie, Voice, Clips, Video model, Villain, Price, Includes,
    Not included, `[Approve]` / `[Change options]`. Every option is read from
    code (the registry), never typed in; a book campaign also shows the Book
-   shots approval block (approvals and notices only). Full field rules:
+   shots approval block (approvals and notices only; FU-U11, open branch
+   `unit/FU-U11` - refresh this sentence when it lands). Full field rules:
    `references/choice-card-spec.md`.
+   **TODO (FU-U4):** when the fit card lands (PR #1757), add its per-style
+   fit row to this field list - `choice-card-spec.md` 2.3 marks it "not built
+   on main" until then.
 2. **Length:** 60 seconds, 90 seconds, 2 minutes, 3 minutes, 5 minutes,
    **10-minute long version** (decision 32; the list is
    `music_styles.OFFERED_LENGTHS_S`). Default from the brief, else 60 seconds.
@@ -112,8 +116,11 @@ their soul.
    character, the song's sung version of each spoken line playing softly
    underneath with the music bed dipped, **no echo effect, no reverb**. The
    option was renamed from its earlier echo-flavoured name; that earlier
-   spelling must not appear anywhere in code, card or documentation. Velvet Voiceover is the only
-   exception to the all-Suno rule.
+   spelling must not appear anywhere in code, card or documentation. Velvet
+   Voiceover is the only exception to the all-Suno rule. **Sketch to Life is
+   always All Suno** (owner 2026-10-07): with that look Velvet Voiceover is
+   not selectable - `choice_card.stl_voice_guard` refuses the pair
+   (`stl-voice-velvet-not-offered`) and re-asks with All Suno preselected.
 7. **Clips (decision 32):** automatic 60- or 90-second clips are offered for
    the **5-minute and 10-minute lengths only**; on shorter lengths the row is
    hidden and says so.
@@ -187,29 +194,36 @@ model maximum.
 
 1. Build the fifteen-beat Resilia arc (cold-open teaser through direct pitch)
    and scale it to the chosen length: 60 s takes the ten strongest beats,
-   90 s takes all but "converts", 3 minutes and 5 minutes and 10 minutes take
-   all fifteen.
+   90 s takes all but "converts", 2 minutes takes all fifteen (every beat's
+   share clears the 3-second merge floor at 120 s), and 3 minutes, 5 minutes
+   and 10 minutes take all fifteen.
 2. Write lyrics as sales copy: first person, one idea per line,
    pronunciation-tested product words, claims truthful and evidence-backed.
-3. Tag every line with its character's voice, for example
-   `[Female voice - coworker, hushed]`.
+3. Tag every line with its character's voice in the one grammar the recipe
+   parses - `[Name (sung|spoken|rap): note]`, for example
+   `[Coworker (spoken): Female voice, hushed]`. A bracket that names no
+   delivery word is refused `UNTAGGED_LYRIC_LINES` before any Suno payload,
+   never silently dropped.
 4. Give **every character its own Suno voice pack** - no two characters share
    a voice. Two characters of the same gender get clearly different voices
    (age, pitch range or tone). A character's tag gender must equal the cast
    record (`VOICE_TAG_MISMATCH`); a spelling error in the lyrics is refused
    `LYRIC_MISSPELLED` before any Suno payload, and a client's own typo goes
    back to the client as one question, never an auto-fix.
-5. Flag the lip-sync lines: the pain peak, the product line, the call to
-   action, and the chorus hook once at its strongest. Lip-sync is 6 to 8
-   short clips of 4 to 6 seconds per 60 s ad (30 to 40 seconds), scaled with
-   the length, listed on the approval card.
+5. Flag the lip-sync lines: clips go first on every sung hook, the spoken
+   opener and the spoken closing line (`lipsync_clips.PRIORITY_ROLES`), then
+   the pain peak, the product line, the call to action, and the chorus hook
+   once at its strongest. Lip-sync is 6 to 8 short clips of 4 to 6 seconds
+   per 60 s ad (30 to 40 seconds), scaled with the length, listed on the
+   approval card.
 6. **Story arc rule and product-connection target (FU-U13, owner order
    2026-10-08):** every ad's story runs struggle -> what changed -> the
    product is why -> get the product. Name the product and connect it to
    the story inside the lyrics AND on screen (cover, title, link) - never
-   only on an end card. Plan the spoken-word parts (inside the spoken band)
-   and the motion shots showing the character's struggle, taken from the
-   source material. Plan how much of the runtime connects the story to the
+   only on an end card. Plan the spoken-word parts (inside the spoken band;
+   TODO (FU-U3): per-style spoken bands are not on this base yet - refresh
+   this clause when FU-U3 lands) and the motion shots showing the character's
+   struggle, taken from the source material. Plan how much of the runtime connects the story to the
    product: aim for 10-15% (`length_formula.plan_product_connection` puts
    the planned seconds and percent on the plan; the lyric sheet carries a
    per-line `product` tag). This is a TARGET, not a hard cap - the delivery
