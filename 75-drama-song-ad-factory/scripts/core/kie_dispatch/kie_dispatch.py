@@ -47,6 +47,7 @@ Output: a single JSON object (the envelope) on stdout.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sqlite3
@@ -185,6 +186,99 @@ def lipsync_picture_refusal(model, request):
     except Exception as exc:                                # noqa: BLE001
         return str(exc) or type(exc).__name__
     return None
+
+def book_shot_refusal(model, request):
+    """FU-U10: a BOOK video job needs the contract, or it does not dispatch.
+
+    A request whose shot kind is "book" on a video model must carry
+    (a) the approved book PLAN hash -- but ONLY when the request carries a
+    ``book_plan_sha256`` field at all: the hash arrives with U11, so the plan
+    side of this check stays dormant until that field exists rather than
+    blocking a book job on a field no producer writes yet; and
+    (b) a start frame MADE FROM the cover file -- request["book_start_frame"]
+    (or request["start_frame"]) naming a path whose sha256 equals the cover
+    sha256 carried by the same request (request["book_cover_sha256"]) or
+    computed from request["book_cover_path"].
+
+    -> None when not a book job or the contract holds, else the refusal dict
+    with reason BOOK_SHOT_NOT_CONTRACTED. Fail-closed: an unreadable start
+    frame, a missing cover reference, or a start frame made from other bytes
+    refuses. Never touches the LIPSYNC_* seams: a lip-sync model is not a
+    book shot entry point.
+    """
+    req = request if isinstance(request, dict) else {}
+    kind = req.get("shot_kind") or req.get("kind")
+    if not isinstance(kind, str) or kind.strip().lower() != "book":
+        return None
+    if not (req.get("request_kind") == "video" or _is_menu_video(model)
+            or _modality(model) == "video"):
+        return None
+    missing = []
+    # (a) plan hash: guarded so the check activates only when the field exists
+    # (U11 writes it; until then its absence is not a book-job failure).
+    approved = req.get("approved_book_plan_sha256")
+    carried = req.get("book_plan_sha256")
+    if carried is not None and str(carried) != str(approved or ""):
+        missing.append("book_plan_sha256 does not match the approved plan")
+    # (b) the start frame must be made from the cover file, byte for byte.
+    frame = req.get("book_start_frame") or req.get("start_frame")
+    cover_sha = req.get("book_cover_sha256")
+    if not cover_sha and req.get("book_cover_path"):
+        cover_sha = _sha256_path(req.get("book_cover_path"))
+    if not frame:
+        missing.append("no start frame made from the cover file "
+                       "(book_start_frame)")
+    elif not cover_sha:
+        missing.append("no cover sha256 to bind the start frame to "
+                       "(book_cover_sha256 or book_cover_path)")
+    else:
+        fsha = _sha256_path(frame)
+        if fsha is None:
+            missing.append("start frame unreadable: %s" % frame)
+        elif fsha != cover_sha:
+            # A frame made from the cover may be composited (the cover sitting
+            # in a scene), so an exact byte match is not required -- but a
+            # frame that shares nothing with the cover is an invented cover.
+            if not _frame_shows_cover(frame, req.get("book_cover_path")):
+                missing.append("start frame is not made from the cover file")
+    if missing:
+        return {"reason_code": "BOOK_SHOT_NOT_CONTRACTED",
+                "detail": "; ".join(missing),
+                "next_action": "Build the book shot from the contract: a "
+                               "start frame made from the client's cover file "
+                               "(book_shot.prompt_blocks + image_model_blocks), "
+                               "then resubmit."}
+    return None
+
+def _sha256_path(path):
+    if not path or not os.path.isfile(str(path)):
+        return None
+    h = hashlib.sha256()
+    try:
+        with open(str(path), "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+    except OSError:
+        return None
+    return h.hexdigest()
+
+def _frame_shows_cover(frame_path, cover_path):
+    """True when the frame contains the cover file (ORB inliers).
+
+    Composites are expected, so this is the measured test -- never a naming
+    convention. A missing cv2 or an unreadable file is False (fail closed)."""
+    if not cover_path:
+        return False
+    try:
+        import book_shot as _BS
+        import cv2 as _cv2
+        img = _cv2.imread(str(frame_path))
+        if img is None:
+            return False
+        m = _BS.detect_cover(img, str(cover_path))
+        return bool(m["cover_hits"])
+    except Exception:                                       # noqa: BLE001
+        return False
 
 TOOL_NAME = "kie_dispatch"
 TOOL_VERSION = "1.0.0"
@@ -695,6 +789,12 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
     if pic is not None:                     # LPG001: no paid lip-sync on an ungated picture
         return envelope("dispatch", "rejected", "LIPSYNC_PICTURE_NOT_GATED",
                         pic + " Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
+    book = book_shot_refusal(model, request)      # FU-U10: book job contract
+    if book is not None:
+        return envelope("dispatch", "rejected", book["reason_code"],
+                        book["detail"] + " " + book["next_action"],
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id, evidence={"generated": False})
     if not model:
