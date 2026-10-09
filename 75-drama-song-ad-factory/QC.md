@@ -134,6 +134,14 @@ it advances. Standard library only; no credential value is ever printed.
       `batch_zip.build_batch_zip(client, ads, out)` — one folder per author with the captioned ad, the clean
       master and the song mp3 (exactly three files per ad) plus a README listing every file, duration,
       resolution and banner link. A missing file is a `BatchZipError`.
+- [ ] Storyboard grid PDF (DEL-04, REQUIRED): the delivery folder holds `04-storyboard.pdf` — every approved
+      scene picture in a grid with its shot number and timecode, the lyric line it plays over and what
+      happens, in song order. `storyboard_grid.deliver(<run dir>, <delivery folder>)` reads
+      `storyboard/gate.json` and refuses `STORYBOARD_NOT_APPROVED` without it; a missing still or an
+      incomplete card passes through `storyboard_director.approval_package`'s own refusal. Every drawn size
+      is >= 12 pt and the text carries no model or tool name, dollar amount or income promise
+      (`storyboard_grid.forbidden_text`, `CLIENT_TEXT_FORBIDDEN`).
+      Run: `python3 scripts/core/storyboard_grid/test_storyboard_grid.py`.
 - [ ] Spend ledger: `init_run --ceiling` recorded; `reserve` before
       dispatch; duplicate `reserve` exits 5 `BAD_TRANSITION`;
       `can_spend` past ceiling exits 5 `BUDGET_EXCEEDED`; `park_run` exits 4
