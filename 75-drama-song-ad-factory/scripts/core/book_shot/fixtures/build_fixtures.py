@@ -102,6 +102,40 @@ def open_book_frames(cv2, np, printed=True, count=6, w=FRAME_W, h=FRAME_H):
         frames.append(f)
     return frames
 
+def pages_frame(cv2, np, kind="printed", w=FRAME_W, h=FRAME_H):
+    """An OPEN book's double page: "printed" (dense type) or "white" (blank).
+
+    The SECOND fixture family (the 999 half's generator, ported for parity):
+    a different drawing style from open_book_frames -- column layout, page
+    numbers, paragraph gaps -- so the calibrated page check is proven on a
+    generator it was NOT calibrated against. Both kinds share the same paper
+    colour and the same gutter, so the only signal the checker may use is
+    the printed ink itself.
+    """
+    f = np.full((h, w, 3), 245, np.uint8)
+    f[:, int(w * 0.5):int(w * 0.5) + 2] = (120, 120, 120)        # gutter
+    if kind == "white":
+        return f
+    rng = np.random.default_rng(11)
+    # Two columns of dense serif-ish text lines, with paragraph blocks.
+    for col_x in (int(w * 0.06), int(w * 0.54)):
+        y = int(h * 0.10)
+        col_w = int(w * 0.38)
+        while y < int(h * 0.92):
+            n_lines = int(rng.integers(3, 7))                    # a paragraph
+            for _ in range(n_lines):
+                if y > int(h * 0.90):
+                    break
+                cv2.line(f, (col_x, y), (col_x + col_w, y), (25, 25, 25), 2)
+                y += 9
+            y += 12                                              # paragraph gap
+    # Page numbers at the foot of each page.
+    cv2.putText(f, "142", (int(w * 0.30), int(h * 0.95)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (30, 30, 30), 1, cv2.LINE_AA)
+    cv2.putText(f, "143", (int(w * 0.78), int(h * 0.95)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (30, 30, 30), 1, cv2.LINE_AA)
+    return f
+
 def write_pngs(tmpdir, cv2, images):
     out = {}
     for name, img in images.items():
