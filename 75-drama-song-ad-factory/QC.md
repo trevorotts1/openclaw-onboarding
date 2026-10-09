@@ -145,6 +145,10 @@ it advances. Standard library only; no credential value is ever printed.
       "no job re-dispatched"; unknown run -> exit 1 `NO_SUCH_RUN`.
 - [ ] EXAMPLES.md command list contains ONLY these implemented commands.
 
+TODO (U4): FU-U4 adds intake modes (`--brief-file`, `--packet-file`,
+`PACKET_REQUIRED_IN_CONCEPT_MODE`); refresh the functional checks above when it
+lands.
+
 ## 5. Section 17 Evidence Gates (the production QC contract)
 Every row below is a directive section 17 gate. Verdicts are recorded as
 qc-schema records and enforced by `qc_gate.py evaluate`; the gate is
@@ -298,6 +302,8 @@ the lyrics, captions and end card (`WEBSITE_NOT_VERBATIM`).
 Run `qc_voice_match/line_voice_fit.py` (`enforce`) before assembly. Each line is measured inside the vocal stem (median pitch of its voiced frames) against the declared voice band of the character whose face is shown. Distance outside the band, as a percent of the nearest edge: up to 5 accept; over 5 up to 10 accept with a flag in the receipt; over 10 is `VOICE_FACE_MISMATCH` and that take is regenerated (never keep the closest). The receipt carries `median_hz`, `band_hz`, `deviation_pct` and every attempt per line. A line still failing after the regeneration rounds rejects the run.
 
 ## Lyric sheet, request limits, captions and books (U12; what main checks)
+
+TODO (U3, U9): refresh the band bullet and the caption bullet below when FU-U3 (per-style spoken bands) and FU-U9 (burned-caption readback) land.
 
 - **One tag grammar.** The sheet is parsed once (`suno_recipe`); a lyric line under an unclassifiable tag is `UNTAGGED_LYRIC_LINES`. Rap is counted in the word budget and allowed only for a rap style (R&B Flow). A character tag whose gender disagrees with the cast record is `VOICE_TAG_MISMATCH`; one that cannot be checked is `VOICE_TAG_UNCHECKED`.
 - **Request limits.** `PROMPT_OVER_CAP` (field, characters, cap, source, status) for Suno lyrics 5,000, style 1,000 (measured after the ending is appended), title 80, `negativeTags` 1,000 (UNVERIFIED), and for every video and avatar prompt at dispatch; `PROMPT_LIMIT_UNAVAILABLE` when a paid job has no limit table. Nothing is truncated.
