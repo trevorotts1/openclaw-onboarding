@@ -63,15 +63,17 @@ class DeliveryPaths(unittest.TestCase):
             json.dump({"schema_version": A.TIMELINE_SCHEMA, "fps": 30, "width": 64, "height": 64,
                        "song_path": song, "transition": "none",
                        "segments": [{"src": clip, "dur": 2.0}]}, f)
+        real_gate, args = A.lipsync_gate, A.delivery_audio.AUDIO_OUT_ARGS
         A.lipsync_gate = lambda plan: None   # coverage is not under test here
+        self.addCleanup(setattr, A, "lipsync_gate", real_gate)
         ok = A.assemble(tl, os.path.join(self.d, "ok.mp4"), base_dir=self.d)
         self.assertEqual(ok.get("outcome"), "ok", ok)          # control: real AAC passes
-        saved = list(DA.AUDIO_OUT_ARGS)
-        DA.AUDIO_OUT_ARGS[:] = ["-c:a", "libmp3lame", "-strict", "-2"]
+        saved = list(args)
+        args[:] = ["-c:a", "libmp3lame", "-strict", "-2"]
         try:
             bad = A.assemble(tl, os.path.join(self.d, "bad.mp4"), base_dir=self.d)
         finally:
-            DA.AUDIO_OUT_ARGS[:] = saved
+            args[:] = saved
         self.assertNotEqual(bad.get("outcome"), "ok", bad)
         self.assertIn(DA.BAD_CODEC, str(bad))
 

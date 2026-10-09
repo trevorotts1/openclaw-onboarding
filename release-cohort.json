@@ -1,7 +1,7 @@
 {
   "onb_sha": "c14ed614670cbe28304fbbda5ee1bba2075edd4b",
   "cc_sha": "ef6b9364e8ddd695f357cca2f3ed41ab75262a13",
-  "onb_version": "v26.4.24",
+  "onb_version": "v26.4.25",
   "cc_version": "v7.6.112",
   "contract": "1.1.0",
   "notes": "Release-cohort manifest instance (spec 14.8/17.4): the tested ONB and Command Center SHAs/versions this release is bound to. onb_sha/cc_sha are the origin/main tips the release was tested at; onb_version is this repo's /version, cc_version is the pinned Command Center version (cc-compat.json commandCenter.pinnedTag, == CC /version); contract is the shared decision bridge schema version (shared-utils/decision-engine.py BRIDGE_SCHEMA_VERSION, == CC contract.ts DECISION_SCHEMA_VERSION). Read and validated by shared-utils/decision_engine_train/train.py::_load_cohort_manifest via shared-utils/decision_engine/modes/cohort.py::validate_cohort; promote() refuses a pair that does not match this exact tested pair. onb_version and cc_version are rolled by scripts/roll-release-cohort.py (called by bump-version.sh); onb_sha/cc_sha are set at release time to the tested ONB main tip and the peeled SHA of the pinned CC tag."
