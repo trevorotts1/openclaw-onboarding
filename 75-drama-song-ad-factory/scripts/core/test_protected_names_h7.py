@@ -67,12 +67,14 @@ class SheetBuildGate(unittest.TestCase):
     def test_suno_request_not_built_with_changed_name(self):
         import music_director as MD
         with self.assertRaises(ValueError) as cm:
+            # exempt style id: the packet check is under test, and a sung sheet
+            # with no style_id is refused "UNMEASURED: style_id" first
             MD.build_generate_request(BAD, "style", "t", packet_lines=PACKET,
-                                      protected=NAMES)
+                                      protected=NAMES, style_id="velvet_voiceover")
         self.assertIn(P.CODE_PACKET, str(cm.exception))
         try:  # a clean sheet builds (needs the kie catalog; absent in some packagings)
             MD.build_generate_request(GOOD, "style", "t", packet_lines=PACKET,
-                                      protected=NAMES)
+                                      protected=NAMES, style_id="velvet_voiceover")
         except FileNotFoundError:
             pass
 

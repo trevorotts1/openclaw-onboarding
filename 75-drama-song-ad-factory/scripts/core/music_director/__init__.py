@@ -34,6 +34,7 @@ import protected_names
 import words_match
 import words_fit
 import target_engine as TE
+from sung_hook import hook_placement
 
 TOOL_NAME = "music_director"
 TOOL_VERSION = "1.0.0"
@@ -112,7 +113,8 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
                            duration=None, callback_url="https://example.invalid/cb",
                            packet_lines=None, protected=(),
-                           style_id=None, client_text=None, length_s=None):
+                           style_id=None, client_text=None, length_s=None,
+                           true_at_beat=None, hook_plan=None):
     """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
 
     F7 (words match the script exactly): when ``packet_lines`` is given, the
@@ -129,6 +131,16 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     ``words_fit.WordsFitError`` carrying longer ad / lower sung target /
     fewer words. A feasible plan stamps ``input.duration`` with planned
     time + 15% headroom unless the caller already set ``duration``.
+
+    FU-HOOK-PLACEMENT: ``true_at_beat`` (the story beat where the hook's
+    words become true, from the story plan) makes the director emit the
+    sheet's hook_plan (``hook_placement.plan_for``: {"true_at_beat", "beats"
+    measured from the sheet}); the recipe guard measures where every hook
+    sits against it (rules 2-3), and the request carries it as
+    ``_hook_plan`` (underscore: song_dispatch.run_takes moves it into the
+    judge's plan and never sends it to KIE). A caller-made ``hook_plan`` is
+    checked and carried the same way. With a Suno style and neither, the
+    guard refuses: "UNMEASURED: hook_plan". Shape in SKILL.md "Hook placement".
     """
     fit = None
     if length_s is not None:
@@ -148,7 +160,10 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     misspelled = protected_names.check_lyrics_spelling(lyrics_text, protected)
     if misspelled:
         raise ValueError("; ".join(misspelled))
-    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # recipe v2 + I8
+    if hook_plan is None and true_at_beat is not None:
+        hook_plan = hook_placement.plan_for(lyrics_text, length_s, true_at_beat, style_id)
+    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s,
+                              hook_plan=hook_plan)  # recipe v2 + I8 + hook placement
     if packet_lines is not None and protected:
         # H7 (supersedes the F7 whole-text match, which forbids any sung
         # line beyond the packet): every packet line verbatim and every
@@ -181,6 +196,8 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     # prompt_limits raises PROMPT_OVER_CAP naming field, chars, cap, source and
     # status; nothing is ever truncated.
     prompt_limits.check_request(GENERATE_CATALOG_ID, req)
+    if hook_plan is not None:
+        req["_hook_plan"] = hook_plan
     return req
 
 

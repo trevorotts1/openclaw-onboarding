@@ -11,7 +11,10 @@ Rules (Trevor 2026-10-08):
   * EVERY take is judged: singing detector v2, spoken share band (per-ad
     target), sung share of voice, 6 s sung stretch, hook sung 2+, all script
     words, length (L-2), music level under spoken lines, clean ending (no
-    near-silent final 2 s), first sung time;
+    near-silent final 2 s), first sung time, and hook placement (FU-HOOK-
+    PLACEMENT: Suno added or moved no hook block earlier than the sheet and
+    sang the first hook after the build-up window) -- before any picture or
+    video spend;
   * stop at the first PASS, else deliver the best FLAG take inside the
     per-author spend cap, never a FAIL;
   * the vocal stem and timestamps are saved for EVERY take;
@@ -33,12 +36,13 @@ import load_governor as _LG   # noqa: E402
 import spoken_share as _SS   # noqa: E402
 import suno_recipe as _R     # noqa: E402
 import sung_hook as _SH      # noqa: E402
+from sung_hook import hook_placement as _HP   # noqa: E402
 import words_fit as _WF      # noqa: E402
 
 TOOL_NAME = "song_dispatch"
 TOOL_VERSION = "1.0.0"
 GATES = ("detector", "spoken_share", "sung_of_voice", "sung_stretch", "hook", "script_words",
-         "length", "music_under_speech", "clean_ending", "first_sung")
+         "length", "music_under_speech", "clean_ending", "first_sung", "hook_placement")
 MUSIC_UNDER_SPEECH_MIN = 0.3     # music level under speech / music level under singing
 NEAR_SILENT_DBFS = -50.0         # RMS of the final 2 s below this = near silent
 SPEND_CAP_CENTS = 1000           # per author (Trevor 2026-10-08)
@@ -58,8 +62,14 @@ def refuse_asr(engine):
     return e
 
 
-def validate_request(req, style_id=None, client_text=""):
-    """List of refusals for a KIE generate-music input; [] = send it."""
+def validate_request(req, style_id=None, client_text="", delivered_s=None):
+    """List of refusals for a KIE generate-music input; [] = send it.
+
+    ``delivered_s`` is the plan's delivered seconds (plan["delivered_s"]),
+    never the request duration, which carries Suno's 15% headroom: the
+    style contract (core/song_contract, FU-RNBFLOW-SONG) counts hooks on it,
+    and a missing style_id or delivered_s is a refusal ("UNMEASURED: ..."),
+    never a skipped check."""
     errs = []
     if req.get("model") != "V6":
         errs.append("model must be V6")
@@ -84,10 +94,14 @@ def _w(t):
     return _SH.words(t)
 
 
-def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None):
+def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
+               style_id=None, sheet_text=None):
     """Gate a measured take. ``take`` = {segments (measured), aligned_words,
     duration_s, detector, music_under_speech_ratio, tail_rms_dbfs,
-    first_sung_s}. Returns {verdict, gates:{name:{verdict,detail}}, score}."""
+    first_sung_s}. The hook_placement gate always runs: ``sheet_text`` (the
+    lyrics sent to Suno, or plan["sheet_text"]), the style (``style_id``
+    or plan["style_id"]) or plan["hook_plan"] missing = FAIL "UNMEASURED:
+    <field>". Returns {verdict, gates:{name:{verdict,detail}}, score}."""
     D = plan["delivered_s"]
     segs = take.get("segments") or []
     g = {}
@@ -110,7 +124,8 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None):
     real = _SS.check_real_singing(segs)
     put("sung_stretch", "PASS" if real.get("verdict", "PASS") != "FAIL" and not real.get("reasons") else "FAIL",
         "6 s sung stretch")
-    rec = _SH.measure(hook_text, take.get("aligned_words") or [], segs, _SH.hook_count(D))
+    rec = _SH.measure(hook_text, take.get("aligned_words") or [], segs,
+                     _HP.hook_target(D, plan.get("hook_plan")))
     put("hook", "PASS" if rec["measured"] >= 2 and rec["verdict"] != "FAIL" else
         ("FLAG" if rec["measured"] >= 2 else "FAIL"), "%d of %d" % (rec["measured"], rec["target"]))
     have = set(_w(" ".join(w.get("word", "") for w in take.get("aligned_words") or [])))
@@ -135,6 +150,12 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None):
         put("first_sung", j["verdict"], "%.1f s" % fs)
     else:
         put("first_sung", "FAIL", "unmeasured")
+    # FU-HOOK-PLACEMENT rule 4: always on; a missing input is a FAIL, never a skip
+    sheet = sheet_text or plan.get("sheet_text")
+    sid = style_id or plan.get("style_id")
+    hp = _HP.check_returned(sheet, take.get("aligned_words") or [], sid, D, plan.get("hook_plan"))
+    put("hook_placement", hp["verdict"], "; ".join(hp["reasons"]) or
+        "first hook %s s (window %s s)" % (hp["first_hook_s"], hp["min_first_hook_s"]))
     return _finish(g)
 
 
@@ -147,7 +168,7 @@ def _finish(g):
 
 def run_takes(request, plan, generate, measure, save, script_words, hook_text,
               spoken_range_pct=None, cap_cents=SPEND_CAP_CENTS, cost_cents=GEN_COST_CENTS,
-              kie=_LG.kie_request):
+              kie=_LG.kie_request, style_id=None):
     """Generate until a take passes or the cap is spent.
 
     generate(request) -> list of takes (2 per generation, each with audio ids);
@@ -166,13 +187,18 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
         raise DispatchError("whole tracks only: request duration %r != planned %r (or its %r s "
                             "Suno headroom; never a patch)"
                             % (request.get("duration"), plan["delivered_s"], allowed))
+    # FU-HOOK-PLACEMENT: the director's hook_plan rides the request as
+    # _hook_plan; it moves into the judge's plan and never reaches KIE.
+    plan = dict(plan, hook_plan=request.get("_hook_plan") or plan.get("hook_plan"))
+    request = {k: v for k, v in request.items() if k != "_hook_plan"}
     refuse_asr("faster-" + "wh" + "isper")
     spent, receipts, best = 0, [], None
     while spent + cost_cents <= cap_cents:
         spent += cost_cents
         for take in kie(lambda: generate(request), "song generate", generation=True):
             take = dict(take, **measure(take))
-            rcpt = judge_take(take, plan, script_words, hook_text, spoken_range_pct)
+            rcpt = judge_take(take, plan, script_words, hook_text, spoken_range_pct,
+                              style_id, request.get("lyrics"))
             save(take, rcpt)                               # stem + timestamps, every take
             receipts.append(rcpt)
             if rcpt["verdict"] == "PASS":

@@ -3,7 +3,7 @@
   "delivered_s": 178,
   "music_style": "soul-ballad",
   "title": "Rest And Still Rise (3 Minute)",
-  "style": "soul ballad, slow emotional 62-68 bpm, warm felt piano, brushed kit entering at the chorus, deep rounded bass, soulful lead vocal with melismatic runs, close dry upfront vocal, minor key, restrained verse opening into a full-voiced chorus, no distortion. Warm female lead, sung melody with long held open vowels, slow tempo. The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music, and SINGS the lines tagged Sung with long held notes. Only the short intro and the final outro are spoken; the full band keeps playing continuously under them, natural resolved ending, final chord rings out and fades.",
+  "style": "soul ballad, slow emotional 62-68 bpm, warm felt piano, brushed kit entering at the chorus, deep rounded bass, soulful lead vocal with melismatic runs, close dry upfront vocal, minor key, restrained verse opening into a full-voiced chorus, no distortion. Warm female lead, sung melody with long held open vowels, slow tempo. The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music, and SINGS the lines tagged Sung with long held notes. Only the short intro and the final outro are spoken; the full band keeps playing continuously under them, natural resolved ending, final chord rings out and fades. Sing the sections in the order written; the song never opens with the hook: build up through the verse first.",
   "negative_tags": "rap, rapping, choir, reverb, echo, band dropout, acapella sections, talk-singing, monotone delivery",
   "vocal_gender": "f",
   "kie_params": {
@@ -19,35 +19,38 @@
   "segments": [
     {
       "kind": "base",
-      "lyrics": "[Intro (spoken): close dry voice, plain speech, no melody]\nTwo in the morning, and I am running on empty.\n\n[Vocalise (sung): wordless, full melodic voice, two very long held notes]\nOoh-oo-ooh, ooh-oo-ooh\n\n[Verse 1 (sung): melodic, rhymed, slow long held notes]\nI rise before the su-un,\nthe coffee's barely do-one,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Verse 2 (sung): melodic, rhymed, slow long held notes]\nThey called my name out lou-oud,\nI froze before the crow-owd,\nThe bills stack on the ta-able,\nI smile like I am a-able,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Instrumental Break: band only, no vocals]\n\n[Pre-Hook (sung): melodic, rhymed, slow long held notes]\nTwo in the morning, sti-ill,\nI cannot climb this hi-ill,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Verse 3 (sung): melodic, rhymed, slow long held notes]\nMy daughter saw my fa-ace,\nshe saw me lose my pla-ace,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Pre-Hook (sung): melodic, rhymed, slow long held notes]\nA friend sat by my si-ide,\nshe said, you need not hi-ide,\n\n[Product (sung): melodic, warm, clear diction on the name]\nShe handed me a bo-ook,\nThe Unhurried Year, look,\nEach page said slow and sta-ay,\nI read it every single da-ay,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Instrumental Break: band only, no vocals]\n\n[Bridge (sung): half-time, stripped back, sustained]\nI slowed my mornings dow-own,\nI laid the heavy crow-own,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Verse 4 (sung): melodic, rhymed, slow long held notes]\nMy house is calm and free-ee,\nmy daughter smiles at me-e,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Outro (spoken): calm close voice, plain speech, no melody]\nThe Unhurried Year by Dana Wells showed me that rest is not quitting. Get the book today, and take your mornings back.\n\n[End]"
+      "lyrics": "[Intro (spoken): close dry voice, plain speech, no melody]\nRunning on empty, again.\n\n[Vocalise (sung): wordless, full melodic voice, two very long held notes]\nOoh-oo-ooh, ooh-oo-ooh\n\n[Verse 1 (sung): melodic, rhymed, slow long held notes]\nI rise before the su-un,\nthe coffee's barely do-one,\n\n[Pre-Chorus (sung): melodic, rising, tempo lifting]\nI'm running out of ro-oom,\nI'm fading in the glo-oom,\n\n[Verse 2 (sung): melodic, rhymed, slow long held notes]\nThe bills stack on the ta-able,\nI smile like I am a-able,\nI tell them I am fi-ine,\nI'm fraying at the li-ine,\n\n[Pre-Hook (sung): melodic, rhymed, slow long held notes]\nTwo in the morning, sti-ill,\nI cannot climb this hi-ill,\n\n[Verse 3 (sung): melodic, rhymed, slow long held notes]\nMy daughter saw my fa-ace,\nshe saw me lose my pla-ace,\n\n[Instrumental Break: band only, no vocals]\n\n[Product (sung): melodic, warm, clear diction on the name]\nShe handed me a bo-ook,\nThe Unhurried Year, look,\nEach page said slow and sta-ay,\nI read it every single da-ay,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise,\nthe morning in your e-eyes\n\n[Bridge (sung): half-time, stripped back, sustained]\nI slowed my mornings dow-own,\nI laid the heavy crow-own,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise,\nthe morning in your e-eyes\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise,\nthe morning in your e-eyes\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise,\nthe morning in your e-eyes\n\n[Outro (spoken): calm close voice, plain speech, no melody]\nThe Unhurried Year by Dana Wells. Get the book today, and take your mornings back.\n\n[End]"
     }
   ],
   "vocalists": null,
   "measured": {
     "lyrics_chars": [
-      2298
+      1778
     ],
     "style_chars": 623,
     "title_chars": 30,
     "negative_tags_chars": 99,
     "words": {
-      "sung": 155,
-      "spoken": 32,
+      "sung": 140,
+      "spoken": 19,
       "rap": 0
     },
-    "words_total": 187,
+    "words_total": 159,
     "words_budget": {
-      "total": 172,
-      "spoken": 42,
+      "total": 186,
+      "spoken": 56,
       "sung": 130,
-      "opener_max": 10,
-      "closing": 32
+      "opener_max": 12,
+      "closing": 44
     },
-    "hooks": 8,
-    "hooks_target": 8,
-    "est_seconds": 189.7,
+    "hooks": 4,
+    "hooks_target": 4,
+    "est_seconds": 144.4,
     "product_est_s": 19.6,
     "product_share_pct": 11.0,
     "errors": []
+  },
+  "hook_plan": {
+    "true_at_beat": "the_turn"
   }
 }

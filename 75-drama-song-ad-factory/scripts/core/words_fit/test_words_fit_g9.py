@@ -138,8 +138,9 @@ def test_band_comes_from_spoken_share():
 
 
 def test_share_off_target_offers_lower_target():
-    # Words fit the card, but the mix's sung share is >10 points from target.
-    r = W.preflight(300, 200, 5, sung_target_pct=55.0, style="Soul Ballad")
+    # Words fit the card, but the mix's sung share is >10 points SHORT of the
+    # target (FU-RNBFLOW-SONG: the target is a floor; over it is never a miss).
+    r = W.preflight(300, 5, 200, sung_target_pct=55.0, style="Soul Ballad")
     check("word-mix share miss is waiting",
           r["outcome"] == "waiting", r.get("detail"))
     check("share miss reason SHARE_OFF_TARGET",

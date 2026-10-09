@@ -77,11 +77,14 @@ class Sheet(unittest.TestCase):
         self.assertTrue(H.check_sheet_count(sheet, HOOK, 118))
 
     def test_recipe_enforces_count_for_every_suno_style(self):
+        pre = {"tag": "Pre-Chorus", "delivery": "sung", "lines": ["For every family"]}
+        plan = {"true_at_beat": "villain_arrives",
+                "beats": ["villain_arrives", "pain_deepens", "lowest_point", "the_turn", "the_rise"]}
         for sid in R.suno_style_ids():
             lead = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
                     {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-oh"]}]
-            sheet = lead + H.build_lyric_sheet(VERSES, HOOK, 118)
-            self.assertEqual(R.prepare(sid, sheet, CLIENT, 118)["exempt"], False)
+            sheet = lead + H.build_lyric_sheet(VERSES, HOOK, 118, pre=pre)
+            self.assertEqual(R.prepare(sid, sheet, CLIENT, 118, hook_plan=plan)["exempt"], False)
             with self.assertRaises(R.RecipeError):
                 R.prepare(sid, lead + H.build_lyric_sheet(VERSES, HOOK, 58), CLIENT, 118)
 

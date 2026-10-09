@@ -234,24 +234,24 @@ def test_e_the_recipe_seam_refuses():
     else:
         check("(e) guard_request raises RecipeError for the wrong tag", False,
               "guard_request returned without raising")
-    # the clean live fixture passes the seam (DIRECTION B through the seam)
-    try:
-        out = R.guard_request("style text", load_fixture(), style_id=None,
-                              cast_genders=LIVE_CAST)
-        check("(e) the clean live fixture passes the seam", out is None, repr(out))
-    except Exception as exc:                            # noqa: BLE001
-        check("(e) the clean live fixture passes the seam", False,
-              "%s: %s" % (type(exc).__name__, exc))
-    # a sheet whose brackets name no cast character is left alone
-    try:
-        out = R.guard_request("style text",
-                              "[Hook (sung): full melody]\nline one\n",
-                              style_id=None, cast_genders=LIVE_CAST)
-        check("(e) brackets naming no cast character are never judged",
-              out is None, repr(out))
-    except Exception as exc:                            # noqa: BLE001
-        check("(e) brackets naming no cast character are never judged", False,
-              "%s: %s" % (type(exc).__name__, exc))
+    # the clean live fixture passes the voice-tag check at the seam (DIRECTION
+    # B); with no style_id the seam then refuses it "UNMEASURED: style_id"
+    # (no gate switches itself off), never a voice-tag error
+    check("(e) the clean live fixture passes the voice-tag check",
+          R.check_voice_tags(load_fixture(), LIVE_CAST) == [],
+          repr(R.check_voice_tags(load_fixture(), LIVE_CAST)))
+    for label, text in (("the clean live fixture", load_fixture()),
+                        ("brackets naming no cast character",
+                         "[Hook (sung): full melody]\nline one\n")):
+        try:
+            out = R.guard_request("style text", text, style_id=None,
+                                  cast_genders=LIVE_CAST)
+            check("(e) %s with no style_id is refused UNMEASURED, not voice-judged" % label,
+                  False, "returned %r" % (out,))
+        except R.RecipeError as exc:
+            check("(e) %s with no style_id is refused UNMEASURED, not voice-judged" % label,
+                  "UNMEASURED: style_id" in str(exc) and "VOICE_TAG" not in str(exc),
+                  str(exc)[:160])
 
 def test_g_plan_time_record_and_the_brief_helper():
     """The plan unit row's own acceptance, plus the brief -> map helper.
@@ -295,14 +295,18 @@ def test_g_plan_time_record_and_the_brief_helper():
 
 
 def test_f_all_suno_is_unchanged():
-    sheet_text = ("[Vocalise (sung): wordless]\noo-oo\n\n"
+    # FU-HOOK-PLACEMENT: Intro, Vocalise, Verse, then the Hook (the hook is
+    # the payoff, never the opener); a 28 s ad, so the build-up is measured.
+    sheet_text = ("[Intro (spoken): close]\nhello there\n\n"
+                  "[Vocalise (sung): wordless]\noo-oo\n\n"
+                  "[Verse (sung): melodic]\nthe nights were long\nI held on strong\n\n"
                   "[Hook (sung): full melody]\ngirl i got you\n\n"
                   "[Hook (sung): full melody]\ngirl i got you\n\n"
                   "[Outro (spoken): close]\nbye now\n\n[End]\n")
     sheet = R.parse_lyrics(sheet_text)
     try:
         req = R.build_request("soul-ballad", sheet, "girl i got you",
-                              "T", None)
+                              "T", 28, hook_plan={"true_at_beat": "the_world"})
     except Exception as exc:                            # noqa: BLE001
         check("(f) build_request still builds a clean sheet", False,
               "%s: %s" % (type(exc).__name__, exc))

@@ -3,7 +3,7 @@
   "delivered_s": 118,
   "music_style": "soul-rise",
   "title": "Rest And Still Rise (Soul Rise)",
-  "style": "soul with a two-part arc, brooding 62-68 bpm opening lifting to an upbeat 100-112 bpm groove at the turn, warm piano and round bass foundation, percussion thickening as it lifts, triumphant horn stabs and claps from the turnaround, hopeful minor-to-major resolution, close dry upfront vocal, single continuous take. Warm female lead, sung melody with long held open vowels, rising in register after the turn. The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music, and SINGS the lines tagged Sung with long held notes. Only the short intro and the final outro are spoken; the full band keeps playing continuously under them, natural resolved ending, final chord rings out and fades.",
+  "style": "soul with a two-part arc, brooding 62-68 bpm opening lifting to an upbeat 100-112 bpm groove at the turn, warm piano and round bass foundation, percussion thickening as it lifts, triumphant horn stabs and claps from the turnaround, hopeful minor-to-major resolution, close dry upfront vocal, single continuous take. Warm female lead, sung melody with long held open vowels, rising in register after the turn. The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music, and SINGS the lines tagged Sung with long held notes. Only the short intro and the final outro are spoken; the full band keeps playing continuously under them, natural resolved ending, final chord rings out and fades. Sing the sections in the order written; the song never opens with the hook: build up through the verse first.",
   "negative_tags": "rap, rapping, choir, reverb, echo, band dropout, acapella sections, talk-singing, monotone delivery",
   "vocal_gender": "f",
   "kie_params": {
@@ -19,23 +19,23 @@
   "segments": [
     {
       "kind": "base",
-      "lyrics": "[Intro (spoken): close dry voice, plain speech, no melody]\nTwo in the morning. Running on empty again.\n\n[Vocalise (sung): wordless, full melodic voice, two very long held notes]\nOoh-oo-ooh, ooh-oo-ooh\n\n[Verse 1 (sung): melodic, rhymed, slow long held notes]\nI rise before the su-un,\nthe coffee's barely do-one,\nI pack the lunches ti-ight,\nI'm on the train by li-ight,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Verse 2 (sung): melodic, rhymed, slow long held notes]\nThe bills stack on the ta-able,\nI smile like I am a-able,\nTwo in the morning, sti-ill,\nI cannot climb this hi-ill,\n\n[Hook (sung): full melody, sustained notes, slow long held notes]\nYou can rest and still ri-i-ise\n\n[Instrumental Break: band only, no vocals]\n\n[Build (sung): melodic, rising, tempo lifting]\nA friend sat by my si-ide,\nshe said, you need not hi-ide,\n\n[Product (sung): melodic, warm, clear diction on the name]\nShe handed me a bo-ook,\nThe Unhurried Year, look,\nEach page said slow and sta-ay,\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise\n\n[Bridge (sung): upbeat groove, rising]\nI slowed my mornings dow-own,\nI laid the heavy crow-own,\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise\n\n[Outro (spoken): calm close voice, plain speech, no melody]\nThe Unhurried Year by Dana Wells. Rest is not quitting. Get the book today and take your mornings back.\n\n[End]"
+      "lyrics": "[Intro (spoken): close dry voice, plain speech, no melody]\nRunning on empty again.\n\n[Vocalise (sung): wordless, full melodic voice, two very long held notes]\nOoh-oo-ooh, ooh-oo-ooh\n\n[Verse 1 (sung): melodic, rhymed, slow long held notes]\nI rise before the su-un,\nthe coffee's barely do-one,\n\n[Pre-Chorus (sung): melodic, rising, tempo lifting]\nI'm running out of ro-oom,\nI'm fading in the glo-oom,\n\n[Verse 2 (sung): melodic, rhymed, slow long held notes]\nThe bills stack on the ta-able,\nI smile like I am a-able,\n\n[Pre-Chorus 2 (sung): melodic, rising, tempo lifting]\nTwo in the morning, sti-ill,\nI cannot climb this hi-ill,\n\n[Verse 3 (sung): melodic, rhymed, slow long held notes]\nMy daughter saw my fa-ace,\nshe saw me lose my pla-ace,\n\n[Instrumental Break: band only, no vocals]\n\n[Product (sung): melodic, warm, clear diction on the name]\nShe handed me a bo-ook,\nThe Unhurried Year, look,\nEach page said slow and sta-ay,\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise,\nthe morning in your e-eyes\n\n[Bridge (sung): upbeat groove, rising]\nI slowed my mornings dow-own,\nI laid the heavy crow-own,\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise,\nthe morning in your e-eyes\n\n[Hook (sung): full melody, upbeat groove, full voice]\nYou can rest and still ri-i-ise,\nthe morning in your e-eyes\n\n[Outro (spoken): calm close voice, plain speech, no melody]\nThe Unhurried Year by Dana Wells. Get the book today.\n\n[End]"
     }
   ],
   "vocalists": null,
   "measured": {
     "lyrics_chars": [
-      1559
+      1486
     ],
     "style_chars": 707,
     "title_chars": 31,
     "negative_tags_chars": 99,
     "words": {
-      "sung": 109,
-      "spoken": 27,
+      "sung": 112,
+      "spoken": 14,
       "rap": 0
     },
-    "words_total": 136,
+    "words_total": 126,
     "words_budget": {
       "total": 128,
       "spoken": 37,
@@ -43,11 +43,14 @@
       "opener_max": 9,
       "closing": 28
     },
-    "hooks": 5,
-    "hooks_target": 5,
-    "est_seconds": 133.2,
+    "hooks": 3,
+    "hooks_target": 3,
+    "est_seconds": 114.7,
     "product_est_s": 14.0,
     "product_share_pct": 11.9,
     "errors": []
+  },
+  "hook_plan": {
+    "true_at_beat": "the_turn"
   }
 }

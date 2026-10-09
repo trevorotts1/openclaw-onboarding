@@ -51,10 +51,11 @@ def check(name, cond, detail=""):
 
 CLIENT = "I am not small. I never was. One seed of truth made me strong. She Found Power in the Climb."
 HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
+HOOK_PLAN = {"true_at_beat": "the_world"}   # FU-HOOK-PLACEMENT: hooks measured from the sheet
 SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
          {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
-         {"tag": "Hook 1", "delivery": "sung", "lines": HOOK},
          {"tag": "Verse", "delivery": "sung", "lines": ["One seed of truth made me stro-o-ong,"]},
+         {"tag": "Hook 1", "delivery": "sung", "lines": HOOK},
          {"tag": "Hook 2", "delivery": "sung", "lines": HOOK},
          {"tag": "Hook 3", "delivery": "sung", "lines": HOOK},
          {"tag": "Outro", "delivery": "spoken", "lines": ["She Found Power in the Climb. Get the book. Link below."]}]
@@ -148,42 +149,48 @@ def test_negative_tags_over_1001_refused_unverified():
 
 # ---- 3. the clear paths still pass ----------------------------------------
 def test_clear_path_builds_and_is_measured():
-    req = R.build_request("soul-ballad", SHEET, CLIENT, "T", 58)
+    req = R.build_request("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN)
     rows = {m["field"]: m for m in PL.check_request("suno-generate", req)["measured"]}
     check("clean payload passes and every field is measured",
           set(rows) >= {"lyrics", "style", "title", "negative_tags"}, sorted(rows))
     check("clean style row is under cap", rows["style"]["chars"] <= rows["style"]["cap"], rows["style"])
     check("build_generate_request passes on the clean sheet",
           bool(MD.build_generate_request(R.render_lyrics(SHEET), R.style_text("soul-ballad"), "T",
-                                         style_id="soul-ballad", client_text=CLIENT)))
+                                         style_id="soul-ballad", client_text=CLIENT,
+                                         length_s=58, true_at_beat="the_world")))
 
 
 # ---- 4. the 999 dispatch seam: G9 headroom allowed, a patch still refused -
 def test_dispatch_allows_headroom_duration():
-    plan = LF.plan(60, (15, 20))
-    req = R.build_request("soul-ballad", SHEET, CLIENT, "T", plan["delivered_s"])
+    plan = dict(LF.plan(60, (15, 20)), style_id="soul-ballad", hook_plan=HOOK_PLAN)
+    req = R.build_request("soul-ballad", SHEET, CLIENT, "T", plan["delivered_s"], hook_plan=HOOK_PLAN)
     req["duration"] = 67.0  # stub take, never real audio
     GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 2, "source": "measured"},
                          {"delivery": "sung", "start": 2.5, "end": 45, "source": "measured"},
                          {"delivery": "spoken", "start": 45, "end": 54, "source": "measured"}],
             "detector": "singing_detector 2.0.0", "duration_s": 57.5, "first_sung_s": 2.5,
             "music_under_speech_ratio": 0.6, "tail_rms_dbfs": -30.0}
-    words = [{"word": w, "startS": i, "endS": i + 0.5} for i, w in
-             enumerate(("one closed door oo-o-oh i am not small i never was one seed of truth made me "
-                        "strong i am not small i never was i am not small i never was she found power "
-                        "in the climb get the book link below").split())]
+    # FU-HOOK-PLACEMENT: Suno's aligned words carry each section header inline
+    # on the section's first word; the always-on hook_placement gate reads them.
+    words = []
+    for block in req["lyrics"].split("\n\n"):
+        head, *lines = block.split("\n")
+        toks = " ".join(lines).split() or [""]
+        words += [{"word": (head + "\n" + w + " ") if k == 0 else w + " "} for k, w in enumerate(toks)]
+    words = [dict(w, startS=i, endS=i + 0.5) for i, w in enumerate(words)]
     GOOD["aligned_words"] = [dict(w, startS=3 + i, endS=3.5 + i) for i, w in enumerate(words)]
     hook = " ".join(HOOK)
     script = "One closed door. She Found Power in the Climb. Get the book. Link below."
     # headroom (plan + >=15%) and the exact planned length are both accepted;
     # a patch/short duration is still refused before any spend.
     out = SD.run_takes(req, plan, lambda rq: [dict(GOOD), dict(GOOD)], lambda t: {},
-                       lambda t, r: None, script, hook, (15, 20), kie=lambda fn, lbl, generation=False: fn())
+                       lambda t, r: None, script, hook, (15, 20), kie=lambda fn, lbl, generation=False: fn(),
+                       style_id="soul-ballad")
     check("G9 headroom duration accepted (no whole-track refusal)",
           out["verdict"] in ("PASS", "FLAG", "FAIL") and out["spent_cents"] == 6, out)
     out2 = SD.run_takes(dict(req, duration=plan["delivered_s"]), plan, lambda rq: [dict(GOOD), dict(GOOD)],
                         lambda t: {}, lambda t, r: None, script, hook, (15, 20),
-                        kie=lambda fn, lbl, generation=False: fn())
+                        kie=lambda fn, lbl, generation=False: fn(), style_id="soul-ballad")
     check("exact planned duration still accepted", out2["spent_cents"] == 6, out2)
     try:
         SD.run_takes(dict(req, duration=30), plan, lambda rq: [], lambda t: {}, lambda t, r: None,

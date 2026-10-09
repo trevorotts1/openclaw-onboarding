@@ -286,8 +286,34 @@ def check_lyrics_spelling(lyrics, protected=(), extra_words=()):
     payload is built (`music_director.build_generate_request`).
     """
     lines = [display_text(x) for x in _lines(lyrics)]
+    lines = [" ".join(_held_reading(t, protected, extra_words) for t in ln.split())
+             for ln in lines]
     return ["%s %s" % (CODE_LYRIC, e)
             for e in check_spelling(lines, protected, extra_words)]
+
+
+def _held_reading(tok, protected=(), extra_words=()):
+    """The word a hyphen hold sings, for the spelling check only: "re-est" ->
+    "rest", "lo-ook" -> "look", "dow-own" -> "down" (the part after the
+    hyphen repeats the vowel sound that ends the part before it). Used only
+    when the token as written fails and its held reading is a real word, so
+    a real misspelling ("re-esst" -> "resst") is still refused and a real
+    hyphenated word is still checked as written."""
+    i = len(tok)
+    while i > 0 and tok[i - 1] in ",.!?;:":
+        i -= 1
+    word, tail = tok[:i], tok[i:]
+    parts = word.split("-")
+    if len(parts) < 2 or not check_spelling([word], protected, extra_words):
+        return tok
+    out = parts[0]
+    for p in parts[1:]:
+        k = next((k for k in range(min(len(out), len(p)), 0, -1)
+                  if out[-k:].lower() == p[:k].lower() and re.search("[aeiouy]", p[:k], re.I)), 0)
+        if not k:
+            return tok
+        out += p[k:]
+    return out + tail if not check_spelling([out], protected, extra_words) else tok
 
 
 def check_confusables(lines, exempt_lines=()):
@@ -398,7 +424,8 @@ _DICT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 #: Sung filler and slang the dictionary lacks. Add here, never loosen the check.
 _EXTRA = frozenset("""ok okay yeah yep nope hey hi oh ah aw uh um mm hmm woah whoa
 gonna wanna gotta kinda cuz ya y'all na la da doo wow ain't tv dvd app apps
-online email website url wifi""".split())
+online email website url wifi
+isn't wasn't weren't aren't didn't doesn't hasn't haven't hadn't couldn't wouldn't shouldn't""".split())
 _VOCAL_RE = re.compile(r"^[aeiouhm]+$")  # ooh, ahh, mmm: held vowels
 _SHORT_CVC = re.compile(r"^[^aeiou]{1,2}[aeiou][^aeiouwxy]$")
 _dict_cache = []
