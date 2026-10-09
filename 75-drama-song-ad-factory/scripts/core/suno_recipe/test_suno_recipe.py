@@ -125,26 +125,19 @@ class Recipe(unittest.TestCase):
         self.assertEqual(R.parse_lyrics(R.render_lyrics(s)), s)
 
     def test_request_seam_blocks_bypass(self):
-        # The skill-tree conftest drops skill modules between pytest
-        # collections; a bare `import music_director` here would re-execute
-        # suno_recipe into a SECOND copy, and the director's guard would then
-        # raise that copy's RecipeError -- never the one `R` above holds.
-        # Import the recipe and the director in one wave so both share ONE
-        # suno_recipe and the seam is judged on one exception class (I8).
-        for _name in ("music_director", "suno_recipe"):
-            sys.modules.pop(_name, None)
-        import suno_recipe as R_now                        # noqa: E402
         import music_director as MD
+        import suno_recipe as R        # same wave as MD: the collection drop (conftest) re-executes both
         raw = MS.style_prompt("rnb-flow")
-        with self.assertRaises(R_now.RecipeError):      # raw style, no recipe
+        with self.assertRaises(R.RecipeError):          # raw style, no recipe
             MD.build_generate_request("la la", raw, "T")
-        with self.assertRaises(R_now.RecipeError):      # recipe id, no band wording
+        with self.assertRaises(R.RecipeError):          # recipe id, no band wording
             MD.build_generate_request("la la", raw, "T", style_id="rnb-flow",
                                       client_text=CLIENT)
-        R_now.guard_request(raw, "la la", "velvet_voiceover")  # exempt id passes
+        R.guard_request(raw, "la la", "velvet_voiceover")     # exempt id passes
 
     def test_request_seam_accepts_recipe_output(self):
         import music_director as MD
+        import suno_recipe as R        # same wave as MD: the collection drop (conftest) re-executes both
         if not MD.workcopy_paths()["models"].is_file():
             self.skipTest("68-kie-audio catalog not in this checkout")
         out = R.prepare("rnb-flow", sheet(), CLIENT)

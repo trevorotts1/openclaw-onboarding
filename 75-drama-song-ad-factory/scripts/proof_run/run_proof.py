@@ -729,17 +729,21 @@ def stage_spoken_grace():
     # Trevor's rules: 20-25% spoken, 5 pts accept, 5-10 flag, past 10 redo.
     # Each share is paired with the segments that measure it, so the check
     # cannot pass on a number the timing disagrees with.
-    within = ss.check_share(0.255, [
+    def _m(segs):  # G8: shares are measured; stamp the detector provenance
+        return [dict(x, source="measured", detector="singing_detector",
+                     detector_version="proof", stem_id="proof-stem")
+                for x in segs]
+    within = ss.check_share(0.255, _m([
         {"delivery": "spoken", "start": 0.0, "end": 7.65},   # 25.5% of 30 s
-        {"delivery": "sung", "start": 7.65, "end": 30.0}])
-    flagged = ss.check_share(0.32, [
+        {"delivery": "sung", "start": 7.65, "end": 30.0}]))
+    flagged = ss.check_share(0.32, _m([
         {"delivery": "spoken", "start": 0.0, "end": 9.6},     # 32% of 30 s
-        {"delivery": "sung", "start": 9.6, "end": 30.0}])
-    beyond = ss.check_share(0.56, [
+        {"delivery": "sung", "start": 9.6, "end": 30.0}]))
+    beyond = ss.check_share(0.56, _m([
         {"delivery": "spoken", "start": 0.0, "end": 16.8},    # 56% of 30 s
-        {"delivery": "sung", "start": 16.8, "end": 30.0}])
-    all_spoken = ss.check_share(1.0, [{"delivery": "spoken",
-                                       "start": 0.0, "end": 30.0}])
+        {"delivery": "sung", "start": 16.8, "end": 30.0}]))
+    all_spoken = ss.check_share(1.0, _m([{"delivery": "spoken",
+                                          "start": 0.0, "end": 30.0}]))
     ok = (within["verdict"] == "PASS"
           and within["share_pct"] == 25.5
           and within.get("in_band") is True
