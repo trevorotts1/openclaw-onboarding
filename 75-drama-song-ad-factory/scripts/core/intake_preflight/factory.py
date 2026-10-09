@@ -241,6 +241,18 @@ def cmd_next(a):
         return envelope("next", str(sid), "ok", "run-complete",
                         "Every stage is COMPLETE; the run is delivered. "
                         "Nothing left to run.")
+    if stages.index(next_stage) > stages.index("music"):    # SONG APPROVAL gate (fail closed)
+        try:
+            _c = str(Path(__file__).resolve().parent.parent)
+            if _c not in sys.path:
+                sys.path.insert(0, _c)
+            from song_choices import song_choices as _sc  # noqa: PLC0415
+            hold = _sc.refusal(str(run_dir))
+        except Exception as exc:  # noqa: BLE001 - a broken gate never opens
+            hold = {"reason_code": "SONG_GATE_BROKEN", "next_action": "song gate failed: %r" % (exc,)}
+        if hold:
+            return envelope("next", str(sid), "error", hold["reason_code"], hold["next_action"],
+                            data={"stage": next_stage, "detail": hold.get("detail", "")})
     row = rows.get(next_stage) or {"command": "", "produces": ""}
     if not row["command"]:
         return envelope("next", str(sid), "error", "runbook-row-missing",
@@ -293,7 +305,7 @@ def main(argv=None):
                                     "how many lanes may run (manual 02 B1).")
     n.add_argument("--run-dir", required=True,
                    help="Run dir that holds control/state.sqlite3.")
-    c = sub.add_parser("card", help="Print the six-question intake card as raw "
+    c = sub.add_parser("card", help="Print the seven-question intake card as raw "
                                     "text (not JSON), or as send payloads (H9).")
     c.add_argument("--format", default="text",
                    choices=("text", "openclaw-json", "telegram-json"))

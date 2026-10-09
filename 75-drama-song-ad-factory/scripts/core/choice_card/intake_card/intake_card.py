@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""intake_card: the six intake questions as a card a client can read (H9).
+"""intake_card: the seven intake questions as a card a client can read (H9).
 
 Trevor 2026-10-08: the questions arrived "smashed together, no spaces, nothing
 on different lines". Cause: nothing built the card -- the agent wrote it free
@@ -7,7 +7,7 @@ hand, the JSON envelope carried it as one escaped string, and the only joiner
 (``"\\n".join``) gave no blank line between questions. This module is the one
 place the text is built, with a fixed layout:
 
-    Question 1 of 6 - LENGTH
+    Question 1 of 7 - LENGTH
     How long should the ad be?
     1. 60 seconds - one sentence. (RECOMMENDED)
     2. 90 seconds - one sentence.
@@ -38,7 +38,7 @@ if _CORE not in sys.path:
 TELEGRAM_LIMIT = 4000
 
 CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
-                'like "1, 1, 1, 1, 1, 1". Say "all recommended" to take every '
+                'like "1, 1, 1, 1, 1, 1, 1". Say "all recommended" to take every '
                 'RECOMMENDED choice.')
 
 REC = "(RECOMMENDED)"
@@ -102,10 +102,20 @@ def _questions():
          "options": [("Yes, show me first", "Nothing is generated until you say go."),
                      ("No, just make it", "I start as soon as the card is approved.")],
          "recommended": 0},
+        {"id": "song", "why": "The song is the heart of the ad, and it is cheap to change now and costly after video is made.", "reason": "you hear three labelled versions and pick your favourite before any money is spent on video.", "label": "SONG APPROVAL",
+         "ask": "Do you want to hear and pick the song before any video is made?",
+         "options": [("Yes, send me 3 versions to choose from", "Three labelled songs; nothing else starts until you pick, and two extra songs are added to the price."),
+                     ("No, just make it", "I make one song and keep going.")],
+         "recommended": 0},
     ]
 
 
 QUESTIONS = _questions()
+
+
+def song_required(answers):
+    """True when the client answered Yes to SONG APPROVAL (3 versions, then a pick)."""
+    return any(a.get("id") == "song" and a.get("n") == 1 for a in answers)
 
 
 def _block(i, total, q):
@@ -157,10 +167,10 @@ def _parse(reply, q):
     elif t.isdigit() and 1 <= int(t) <= len(opts):
         n = int(t)
     elif q["id"] == "spend" and t.lstrip("$").replace(".", "", 1).isdigit():
-        return {"n": 2, "text": "up to $" + t.lstrip("$"), "value": t.lstrip("$")}
+        return {"n": 2, "text": "up to $" + t.lstrip("$"), "value": t.lstrip("$"), "id": q["id"]}
     else:
         return None
-    return {"n": n, "text": opts[n - 1][0], "value": None}
+    return {"n": n, "text": opts[n - 1][0], "value": None, "id": q["id"]}
 
 
 def conversation(replies, questions=None):
@@ -268,7 +278,7 @@ def openclaw_send_argv(target, text):
 
 def _with_saved_character(client_dir):
     """QUESTIONS, with the saved-character question first when the client has
-    saved characters (Part I, I6); otherwise the plain six."""
+    saved characters (Part I, I6); otherwise the plain seven."""
     if not client_dir:
         return QUESTIONS
     from character_library import character_library as CL
@@ -281,7 +291,7 @@ def _with_saved_character(client_dir):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Print the six-question intake card.")
+    ap = argparse.ArgumentParser(description="Print the seven-question intake card.")
     ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json"),
                     default="text",
                     help="text: raw card for the Claude Code chat. "

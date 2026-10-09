@@ -6,6 +6,16 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.9 - 2026-10-09 - FU-SONG-APPROVAL: hear and pick the song before any video
+
+- New intake question 7 of 7, SONG APPROVAL ("Do you want to hear and pick the song before any video is made?"). The card, recap and "number of a line to change it" carry it; the count is now 7 (8 with the saved-character question).
+- On Yes the song stage makes three arrangement variants of the same lyric sheet in parallel (`scripts/core/song_choices/`, data table `variants.json`), each judged by `song_dispatch`, a failed one regenerated once then reported; delivered as `SONG-CHOICES/N - LABEL (description).mp3` with title tags and `README.txt`.
+- The gate: `factory.py next` and `kie_dispatch` refuse picture timing, image, video and lip-sync work with `SONG_PICK_MISSING` until the client's pick is recorded; a missing or changed pick never defaults. On No nothing changes.
+- The card price adds the two extra song generations (`Song picks` row).
+- Tests: `song_choices/test_song_choices_fu_song.py`; the H9 and I6 card tests move to 7 and 8.
+
+---
+
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 
 - FU-PARITY: shared files aligned with 999 (v2.7.28 test fixes, delivery_checklist blank lines).

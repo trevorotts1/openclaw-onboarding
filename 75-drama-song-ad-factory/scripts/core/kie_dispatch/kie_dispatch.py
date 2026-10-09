@@ -976,6 +976,16 @@ def check_storyboard_approval(shots, review, request=None):
     return None
 
 
+def _song_pick_refusal(model, run_dir):
+    """SONG APPROVAL seam (song_choices.refusal); a broken gate refuses."""
+    try:
+        from song_choices import song_choices as _sc
+        return _sc.dispatch_refusal(_modality(model) == "music", run_dir)
+    except Exception as exc:  # noqa: BLE001 - a gate that cannot run never opens
+        return {"reason_code": "SONG_GATE_BROKEN", "detail": "song gate failed: %r." % (exc,),
+                "next_action": "Fix the song-choices gate before any paid job."}
+
+
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
              attempt_id, estimated_cost, prompt="", units=1, stage="kie",
              owner="kie-dispatch", adapter_path=None, runner=None,
@@ -1122,6 +1132,14 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         attempt_id=attempt_id,
                         evidence={"gate": sb_refusal.get("gate"),
                                   "generated": False})
+    # SONG APPROVAL: no picture, video or lip-sync job before the client's song
+    # pick is recorded (only the song stage itself may run). Fail closed.
+    song_hold = _song_pick_refusal(model, os.path.dirname(os.path.abspath(str(ledger_db))))
+    if song_hold:
+        return envelope("dispatch", "rejected", song_hold["reason_code"],
+                        song_hold["detail"] + " " + song_hold["next_action"],
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
     # U15b: an H3 prompt must be assembled and receipted (PROMPT_NOT_TEMPLATED)
     # and the FINAL payload must be re-measured against its cap, both BEFORE
     # any ledger row or paid call. Nothing reserved, nothing sent.

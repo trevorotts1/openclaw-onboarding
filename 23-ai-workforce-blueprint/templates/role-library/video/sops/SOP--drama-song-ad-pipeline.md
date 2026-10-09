@@ -233,6 +233,12 @@ another character's line.
 2. Apply the chosen music style: Soul Ballad (slow, emotional), R&B Flow
    (rap verses with a sung hook), or Soul Rise (slow through the pain, lifts
    at the turning point).
+   **Song approval (FU-SONG-APPROVAL):** when the client answered Yes to the
+   SONG APPROVAL card question, make three labelled versions of the song (three
+   arrangements of the chosen style, in parallel), deliver them in
+   `SONG-CHOICES/`, and stop until the client replies 1, 2 or 3. No timing map,
+   image, video or lip-sync work starts before the pick; the picked file is the
+   song for the rest of the run. On No, make one song and continue.
 3. All-Suno is the default: sung and spoken lines all come from Suno, spoken
    lines play over the music bed only, no singing-underneath layer. Velvet
    Voiceover is the only exception (DS-2 step 6).

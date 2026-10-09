@@ -143,6 +143,7 @@ def render(card, price_fn):
     priced_ok = False
     total = None
     envelope = None
+    song_extra = None
 
     if price_fn is not None:
         choice = default_choice(card)
@@ -155,6 +156,9 @@ def render(card, price_fn):
             if ok_card:
                 priced_ok = True
                 total = ok_card["price_usd"]
+                if card.get("song_choices"):      # SONG APPROVAL = Yes: 2 extra song generations
+                    song_extra = 2 * float(_row_dollars(ok_card)["Music"])
+                    total += song_extra
                 values["Video model"] = _model_label(ok_card.get("model_id"))
                 row_dollars = _row_dollars(ok_card)
             else:
@@ -170,6 +174,10 @@ def render(card, price_fn):
         lines.append("  %-12s %s%s" % (row + ":", values[row],
                                        ("   " + figure) if figure else ""))
 
+    if card.get("song_choices"):
+        lines.append("  %-12s 3 labelled versions to choose from (2 extra songs%s), nothing else starts until you pick"
+                     % ("Song picks:", (", added $%.2f, included in the total" % song_extra)
+                        if priced_ok and song_extra is not None else ", price unavailable"))
     plan = ((envelope or {}).get("card") or {}).get("image_plan") if priced_ok else None
     if plan:
         lines.append("  %-12s %d character reference pictures + %d shot pictures "

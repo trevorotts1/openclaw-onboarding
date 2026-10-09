@@ -510,6 +510,26 @@ intake cards list saved characters under "Use a saved character?" (`character
 intake card exists). `character --client-dir <dir> use --name <name>` prints
 the brief fields (name, description, reference images, voice notes) to reuse.
 
+## Song approval (FU-SONG-APPROVAL)
+
+The intake card's seventh question is SONG APPROVAL: "Do you want to hear and
+pick the song before any video is made?" (1. Yes, send me 3 versions to choose
+from (recommended), 2. No, just make it). On Yes the song stage makes THREE
+versions of the same lyric sheet in parallel, each a different arrangement of
+the client's music style (the variant table is `scripts/core/song_choices/
+variants.json`). Each version passes the same song checks as a single song
+(`song_dispatch`: lyrics, hook placement, voice rules); a version that fails
+is regenerated once, then reported. They land in `SONG-CHOICES/` in the
+delivery folder as `1 - <LABEL> (<description>).mp3` (title tag = the same
+label) with a `README.txt`, and the client message ends "Reply 1, 2 or 3 to
+pick your song." No picture timing, image, video or lip-sync spend happens
+until the pick is recorded (`song_choices.py pick`); `factory.py next` and
+`kie_dispatch` refuse with `SONG_PICK_MISSING` until then and never default.
+On No nothing changes: one song, no wait. The card price adds the two extra
+song generations (row `Song picks`). Record the card answer with
+`python3 scripts/core/song_choices/song_choices.py init --run-dir $RUN
+--required yes|no` when the card is approved.
+
 ## Version 2 production options (owner BUILD-OUT 2026-10-07)
 
 Everything in this section is shared doctrine: identical in both
