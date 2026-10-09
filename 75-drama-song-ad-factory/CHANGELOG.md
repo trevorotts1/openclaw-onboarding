@@ -6,6 +6,12 @@ frontmatter `version:` field).
 
 ---
 
+## Unreleased - 2026-10-09 - DEL-01: three audio versions + note in the delivery folder
+
+- The delivery folder now ships the song three clearly-labelled ways, all from EXISTING pipeline output (the finished mix, the instrumental the run made, the vocal stem saved for every take; nothing re-synthesised): `delivery_variants.build_audio_versions(mix, delivery_dir, instrumental, vocal_stem)` encodes `01 - Full Song.mp3`, `02 - Instrumental.mp3` and `03 - Voice Only.mp3` (MP3 320 kbps each) and writes `00 - About These Audio Files.txt`, the short plain-English note on how the three differ; `write_version_docs` lists them in `delivery-receipt.json` and `README.md` (merge, never clobber). Every source is required -- a missing mix, instrumental or vocal stem raises `ValueError`, never a two-version delivery dressed up as three.
+- `check_audio_versions` / `python3 scripts/core/delivery_variants/song_files.py check-versions <dir>` fails a missing version, a missing note, or anything unlisted in the receipt or README (exit 5). The check is registered as `audio_versions` in `qc_gate.CHECKS` so the delivery gate can require it. `delivery_variants` exports `build_audio_versions` / `check_audio_versions` / `write_version_docs` / `version_note_text` / `expected_version_files` / `version_file_name` / `DELIVERY_VERSIONS` / `VERSION_NOTE_NAME`.
+- Test: `scripts/core/delivery_variants/test_audio_versions_del01.py` (13 tests: the three numbered MP3s and note, fail-closed on a missing/empty source, the note is plain English with no model/tool names or dollar amounts, one table drives labels/note/QC so they cannot drift, missing file/unlisted/rewrite-once/bitrate/duration/receipt-shape, and the `qc_gate.CHECKS` registration). No version bump.
+
 ## v2.9.13 - 2026-10-09 - Batch MGB023 follow-up 2 (no more silent ads)
 
 - Delivery audio gate on EVERY path that hands the client a video: the final assembler (already), the 60 and 90 second clip cutdowns (`clip_cutdown.run_clips`, a refused clip is deleted), the batch zip (captioned ad and clean master) and the delivery checklist. Each one calls `delivery_audio.check_delivery_audio()` and fails closed.
