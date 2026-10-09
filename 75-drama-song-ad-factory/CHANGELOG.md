@@ -13,6 +13,13 @@ frontmatter `version:` field).
 - Fail closed: a missing view names exactly the missing views and leaves the delivery folder untouched (the whole plan is computed before any write); the same for NO_CHARACTERS, SOURCE_MISSING, BAD_IMAGE and DUPLICATE_SLUG. Receipt rows carry source basename + bytes, never an absolute path.
 - New `test_character_images_del11.py` (14 unit tests). Shared `scripts/core/character_images/` is byte-identical to the 999-setup copy (v2.7.39).
 
+## v2.9.14 - 2026-10-09 - FU-DEL-09: the lyric sheet PDF
+
+- New `scripts/core/lyric_sheet/`: the run's approved `creative/script.json` rendered into the delivery folder as `09 - Lyric Sheet.pdf`. Section headings come from the song's own tags (one break per block, song order), the approved title and lines print verbatim, and nothing on the page is under 12 pt. Bright page: white paper, near-black ink, gold eyebrow and rule, footer on every page.
+- Stdlib-only PDF writer (this core is stdlib-only), deterministic bytes: no date, no random id, same approved sheet renders identical.
+- Refuses fail-closed: `MONEY_ON_PAGE` (chrome wording), `TOOL_NAME_ON_PAGE` (a tool or model name reaching the page), `SCRIPT_MISSING` / `SCRIPT_UNREADABLE` / `EMPTY_SHEET`. A lyrics-only run reuses `lyric_writer.lyric_structure.parse_sheet`, so both approved inputs give the same section structure.
+- 17 unit tests in `test_lyric_sheet.py` (size floor, section order, pagination, wrap maths, refusal paths, delivery-folder write, CLI exit codes).
+
 ## v2.9.13 - 2026-10-09 - Batch MGB023 follow-up 2 (no more silent ads)
 
 - Delivery audio gate on EVERY path that hands the client a video: the final assembler (already), the 60 and 90 second clip cutdowns (`clip_cutdown.run_clips`, a refused clip is deleted), the batch zip (captioned ad and clean master) and the delivery checklist. Each one calls `delivery_audio.check_delivery_audio()` and fails closed.
