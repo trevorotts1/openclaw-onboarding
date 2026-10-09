@@ -33,6 +33,7 @@ import load_governor as _LG   # noqa: E402
 import spoken_share as _SS   # noqa: E402
 import suno_recipe as _R     # noqa: E402
 import sung_hook as _SH      # noqa: E402
+import words_fit as _WF      # noqa: E402
 
 TOOL_NAME = "song_dispatch"
 TOOL_VERSION = "1.0.0"
@@ -156,9 +157,15 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     request draws from the 20-per-10-s bucket and a 429 is resubmitted.
     Returns {delivered, verdict, receipts, spent_cents}.
     """
-    if request.get("duration") != plan["delivered_s"]:
-        raise DispatchError("whole tracks only: request duration %r != planned %r (never patch)"
-                            % (request.get("duration"), plan["delivered_s"]))
+    # G9 (FU-U6, plan E.2 default): the request carries the planned time plus the
+    # >=15 percent Suno headroom; the master is still trimmed to L-2 by
+    # master_length, so "whole tracks only" is judged against that headroom
+    # (words_fit.max_suno_duration), never a patch/short duration.
+    allowed = _WF.max_suno_duration(plan["delivered_s"])
+    if request.get("duration") not in (plan["delivered_s"], allowed):
+        raise DispatchError("whole tracks only: request duration %r != planned %r (or its %r s "
+                            "Suno headroom; never a patch)"
+                            % (request.get("duration"), plan["delivered_s"], allowed))
     refuse_asr("faster-" + "wh" + "isper")
     spent, receipts, best = 0, [], None
     while spent + cost_cents <= cap_cents:
