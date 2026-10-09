@@ -5,7 +5,7 @@ The picture gate refuses every lip-sync job without this file. One command:
 
     python3 scripts/core/lip_sync/lip_gate/install_face_model.py
 
-Downloads from Google's official bucket, verifies the pinned sha256 and size,
+Fetches the model from Google's official bucket, verifies the pinned sha256 and size,
 and places it at <skill>/assets/face_landmarker.task (where picture_measure
 looks). Stdlib only. Re-running with a good file in place is a no-op. A wrong
 hash deletes nothing that was good and exits 1.

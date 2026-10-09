@@ -27,7 +27,7 @@ def gen(provider, spec):
 bad = {"offset_s": 0.3, "lag_frames": 9, "corr": 0.1, "pct": 0.9, "control_corr": 0.5, "margin": -0.4, "unmeasurable": None}
 L.run_gate("l1", gen, lambda clip: bad, source_image=pic,
            image_check=lambda img: {"pass": True},
-           retry_input={"window": "next-best"}, acquire=lambda: None)
+           retry_input={"window": "next-best"}, person_verdict="DEFECT", acquire=lambda: None)
 assert seen == [("kling", pic), ("kling", pic)], seen
 
 # 3. QC: missing close-up fails; unclear mouth fails; clear passes

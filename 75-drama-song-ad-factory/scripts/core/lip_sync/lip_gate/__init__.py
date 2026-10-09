@@ -7,6 +7,10 @@ from .lip_gate import (  # noqa: F401
     LipTryLimit, advisory_file, envelope, judge, kling_prompt, measure,
     measure_file, qc_check, run_gate, score,
 )
+from .lip_process import (  # noqa: F401
+    edit_plan, mouth_strip_argv, pick_kept, placement_s, receipt_row,
+    retry_allowed, strip_path,
+)
 from .image_gate import (  # noqa: F401
     LipsyncImageRefused, check_source_image, closeup_prompt, image_size,
     require_source_image,

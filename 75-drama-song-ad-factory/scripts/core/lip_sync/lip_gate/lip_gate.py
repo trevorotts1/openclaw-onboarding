@@ -18,10 +18,10 @@ after that it goes with whatever is the best one"), in code:
   * kling/ai-avatar-standard is THE lip-sync model. No other model, no third job.
   * at most 2 paid jobs per segment, every name variant counted (`prior_jobs`);
   * try 1 already uses the padded cut (0.30 s lead-in, 0.20 s tail);
-  * try 2 runs ONLY on a hard defect (a FAIL verdict, or a defect a person saw:
-    `hard_defects` on the measurement) and ONLY with a CHANGED input
-    (`retry_input`, e.g. the next-best choose_window window); never on
-    ACCEPT_WITH_FLAG, UNDETERMINED or UNMEASURABLE;
+  * try 2 (LSP001) runs ONLY on a PERSON'S call: `person_verdict="DEFECT"` or a
+    defect a person saw (`hard_defects` on the measurement), with fewer than 2
+    jobs and a CHANGED input (`retry_input`, e.g. the next-best choose_window
+    window). NEVER on a checker verdict, FAIL included (lip_process.retry_allowed);
   * then the best take is kept: receipt row `KEPT_BEST_OF_2` with numbers, flag
     and the mouth-strip path;
   * every paid submit goes through load_governor.kie_request; landmark work goes
@@ -37,9 +37,11 @@ import subprocess
 
 try:                                   # package import
     from . import image_gate
+    from . import lip_process as LP
     from . import sync_check as SC
 except ImportError:                    # script import (tests run from here)
     import image_gate
+    import lip_process as LP
     import sync_check as SC
 # Skill 75 load governor: every heavy local job goes through it (see load_governor/).
 import os as _gos, sys as _gsys
@@ -147,7 +149,7 @@ def score(j):
 
 def run_gate(line_id, generate, measure_clip, source_image=None, image_check=None,
              sung=False, retry_input=None, prior_jobs=0, make_strip=None,
-             advisory=None, acquire=None):
+             advisory=None, acquire=None, person_verdict=None):
     """Orchestrate at most MAX_TRIES (2) paid kling/ai-avatar-standard jobs for
     one segment. Injected providers, so mocked runs cost $0.
 
@@ -170,9 +172,11 @@ def run_gate(line_id, generate, measure_clip, source_image=None, image_check=Non
         call; no picture, no checker, or a failing picture raises
         image_gate.LipsyncImageRefused with every reason; nothing is spent.
 
-    Try 2 runs ONLY when try 1 is a hard defect (FAIL). PASS, ACCEPT_WITH_FLAG,
-    UNDETERMINED and UNMEASURABLE all stop: a second paid job would not change
-    them. Returns the receipt row.
+    person_verdict: "DEFECT" when a person marked a visible defect on this
+        segment (defects file or receipt field). Without it, or a person-seen
+        `hard_defects` entry, NO try 2 runs, whatever the checker said.
+    Every verdict stops after try 1 unless a person called a defect: a second
+    paid job would not change a checker verdict. Returns the receipt row.
     """
     left = MAX_TRIES - int(prior_jobs)
     if left <= 0:
@@ -194,18 +198,22 @@ def run_gate(line_id, generate, measure_clip, source_image=None, image_check=Non
     spec1 = dict(IMPROVED_INPUT, source_image=source_image, **{"try": 1})
     attempts = [_attempt(spec1, generate, measure_clip, sung, advisory, acquire, line_id)]
     flag = None
-    if attempts[0]["judge"]["verdict"] == FAIL and left >= 2:
+    person = person_verdict or ("DEFECT" if attempts[0]["judge"].get("hard_defects") else None)
+    if person:
         spec2 = dict(retry_input or {}, source_image=source_image, **{"try": 2})
-        if retry_input and not _same(spec2, spec1):
+        ok, why = LP.retry_allowed(
+            usable_take=False, person_verdict=person, jobs=int(prior_jobs) + 1,
+            input_fingerprint=_fp(spec2), prior_fingerprints=[_fp(spec1)])
+        if ok and retry_input:
             attempts.append(_attempt(spec2, generate, measure_clip, sung, advisory,
                                      acquire, line_id))
         else:
-            flag = "RETRY_REFUSED: try 2 needs a changed input; kept try 1"
+            flag = "RETRY_REFUSED (%s): try 2 needs a changed input; kept try 1" % (why or LP.SAME_INPUT)
     return _row(line_id, attempts, flag, make_strip, prior_jobs)
 
 
-def _same(a, b):
-    return {k: v for k, v in a.items() if k != "try"} == {k: v for k, v in b.items() if k != "try"}
+def _fp(spec):
+    return repr(sorted((k, repr(v)) for k, v in spec.items() if k != "try"))
 
 
 def _attempt(spec, generate, measure_clip, sung, advisory, acquire, line_id):
@@ -287,8 +295,12 @@ def qc_check(rows):
     that carries numbers, the flag text and a mouth-strip path. More than 2 paid
     jobs on a segment always fails. An UNDETERMINED or UNMEASURABLE row (a sung
     line) clears only when a person looked at a mouth strip and wrote
-    person_verdict = "PASS" on the row."""
+    person_verdict = "PASS" on the row. A KEPT_BEST row (lip_process: reuse-first
+    take, "KEPT_BEST (UNDETERMINED, sung)" or a flagged spoken row) passes when
+    it carries numbers and a mouth-strip path."""
     def ok(r):
+        if str(r.get("tag", "")).startswith(LP.KEPT_BEST):   # LSP001 reuse-first row
+            return not LP.qc_rows([r])["failed"]
         v = r.get("verdict")
         if "numbers" not in r or r.get("jobs_total", r.get("jobs_used", 1)) > MAX_TRIES:
             return False

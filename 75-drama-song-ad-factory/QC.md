@@ -197,10 +197,22 @@ to self-approve a run.
   `person_verdict: PASS` on the row. Controls: `lip_sync/lip_gate/calibrate_sync.py`.
   `lip_gate/event_sync.py` is ADVISORY (`advisory_event_sync` in the row), never gating.
 - Two-try rule (Trevor 2026-10-08): at most 2 paid `kling/ai-avatar-standard` jobs per
-  segment, every name variant counted; try 2 only on a hard defect with a changed input;
-  then the best take is kept with a `KEPT_BEST_OF_2 (tN)` receipt row, its numbers, flag
-  and mouth-strip path. `lip_gate.qc_check` accepts such a flagged row and rejects a
+  segment, every name variant counted; try 2 only on a person's call (a defects file or
+  `person_verdict` "DEFECT") with a changed input, never on a checker verdict; then the
+  best take is kept with a `KEPT_BEST_OF_2 (tN)` receipt row, its numbers, flag and
+  mouth-strip path. `lip_gate.qc_check` accepts such a flagged row and rejects a
   segment with more than 2 jobs. InfiniTalk is a manual backup only, never automatic.
+- Lip-sync process (LSP001, Trevor approved 2026-10-08), what QC checks: (1) reuse first:
+  a segment with a usable take on disk has no new paid job in the ledger; (2) a sung line
+  the checker cannot confirm is tagged `KEPT_BEST (UNDETERMINED, sung)`, a borderline
+  spoken line is kept and flagged; (3) every UNDETERMINED or flagged row carries a
+  mouth-strip path (`<delivery folder>/mouth-strips/<segment>.png`) and the receipt lists
+  them for a person; (4) every second paid job traces to a person-marked defect, a
+  changed input and fewer than 2 prior jobs; (5) clips are trimmed to audio length, placed
+  at the Suno time corrected by the stem offset, lanczos-upscaled to 1080x1920, conformed
+  by dropping frames (no minterpolate) through `load_governor`; (6) rows list the take
+  kept, jobs used (n of 2), verdict and numbers, flag and strip path, and
+  `lip_gate.qc_check` accepts `KEPT_BEST` and flagged rows that carry a strip path.
 
 ## Clean ending (I5)
 
