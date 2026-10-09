@@ -106,6 +106,38 @@ LIPSYNC_KEPT = "KEPT_BEST_OF_2"
 LIPSYNC_MAX_JOBS = 2
 #: Q9: first real singing (vocal stem) target, share of runtime (H6).
 FIRST_SUNG_TARGET_PCT = 15.0
+
+#: FU-U16 villain doctrine row: "People don't care about the hero until they
+#: meet the villain." - Trevor Otts. Reports villain shots, villain screen
+#: seconds, pain seconds and rise seconds. Pain 20-35% of runtime is a
+#: TARGET: outside is FLAG with the measured seconds, never a block. Only
+#: the planner fails closed (no villain named / villain has no shot); this
+#: checker row is evidence and never joins repair_scope.
+VILLAIN_PAIN_LO_PCT = 20.0
+VILLAIN_PAIN_HI_PCT = 35.0
+VILLAIN_ROW = "VILLAIN_DOCTRINE"
+_VD_SHOT_S = 3.0
+
+def _vd_tagged(obj, tag):
+    if not isinstance(obj, dict):
+        return False
+    if obj.get(tag) is True:
+        return True
+    if tag == "villain":
+        vis = obj.get("villain_visibility")
+        if isinstance(vis, str) and vis.strip().lower() not in ("", "none"):
+            return True
+    tags = obj.get("tags") or ()
+    if isinstance(tags, str):
+        tags = (tags,)
+    return tag in tags
+
+def _vd_seconds(obj):
+    for k in ("seconds", "duration_s", "duration"):
+        v = obj.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+            return float(v)
+    return _VD_SHOT_S
 #: Q10: no slow-motion above this speed-down factor (H5).
 MAX_SLOWDOWN = 1.15
 
@@ -1056,6 +1088,75 @@ def _q11_goals(receipt, ans, codes, details):
 
 
 # ----------------------------------------------------------------- evaluate
+def measure_villain_doctrine(shots, lines, runtime_s, villain=None):
+    """FU-U16: measure the villain, pain and rise from the delivered run.
+
+    "People don't care about the hero until they meet the villain."
+    - Trevor Otts. Reports villain shots, villain screen seconds, pain
+    seconds and rise seconds against the measured runtime. Evidence only:
+    this row never joins repair_scope and never blocks beyond the planner's
+    two fail-closed cases (no villain named / villain with no shot).
+    """
+    def _num(v):
+        return float(v) if isinstance(v, (int, float)) \
+            and not isinstance(v, bool) and v > 0 else None
+
+    rt = _num(runtime_s)
+    if rt is None:
+        return {"verdict": "UNAVAILABLE",
+                "measurement": "UNMEASURED: no runtime_s for the run",
+                "reason_codes": ["VILLAIN_DOCTRINE_UNMEASURED"],
+                "seconds": None, "blocking": False}
+    shots = [s for s in (shots or []) if isinstance(s, dict)]
+    lines = [l for l in (lines or []) if isinstance(l, dict)]
+    name = None
+    if isinstance(villain, dict):
+        name = villain.get("name")
+    elif isinstance(villain, str) and villain.strip():
+        name = villain
+    named = bool(isinstance(name, str) and name.strip())
+    villain_shots = [s for s in shots if _vd_tagged(s, "villain")]
+    villain_seconds = round(sum(_vd_seconds(s) for s in villain_shots), 1)
+    pain_seconds = round(sum(_vd_seconds(o) for o in shots + lines
+                             if _vd_tagged(o, "pain")), 1)
+    rise_seconds = round(sum(_vd_seconds(o) for o in shots + lines
+                             if _vd_tagged(o, "rise")), 1)
+    pain_percent = round(pain_seconds / rt * 100.0, 1)
+    in_band = VILLAIN_PAIN_LO_PCT <= pain_percent <= VILLAIN_PAIN_HI_PCT
+    codes = []
+    if not named:
+        codes.append("NO_VILLAIN_NAMED")
+    if named and not villain_shots:
+        codes.append("VILLAIN_HAS_NO_SHOT")
+    if not in_band:
+        codes.append("PAIN_SHARE_OUTSIDE_TARGET")
+    verdict = "FAIL" if any(c in ("NO_VILLAIN_NAMED", "VILLAIN_HAS_NO_SHOT")
+                            for c in codes) else ("PASS" if not codes else "FLAG")
+    why = []
+    if "NO_VILLAIN_NAMED" in codes:
+        why.append("no villain named in the story plan")
+    if "VILLAIN_HAS_NO_SHOT" in codes:
+        why.append("villain has no shot of its own")
+    if "PAIN_SHARE_OUTSIDE_TARGET" in codes:
+        why.append("%.1f%% pain outside the %.0f-%.0f%% target"
+                   % (pain_percent, VILLAIN_PAIN_LO_PCT, VILLAIN_PAIN_HI_PCT))
+    return {"verdict": verdict,
+            "villain_shots": len(villain_shots),
+            "villain_seconds": villain_seconds,
+            "pain_seconds": pain_seconds, "pain_percent": pain_percent,
+            "rise_seconds": rise_seconds, "runtime_s": rt,
+            "in_target": in_band, "reason_codes": codes,
+            "blocking": False,     # evidence row; the planner carries the gate
+            "card_line": "Villain: %s, shown in %d shots"
+                         % (name if named else "NONE", len(villain_shots)),
+            "measurement": ("villain doctrine: %s; pain %.1fs = %.1f%% of "
+                            "%.1fs runtime; villain %d shots / %.1fs; rise "
+                            "%.1fs (%s%s)" % (name if named else "NO VILLAIN",
+                                              pain_seconds, pain_percent, rt,
+                                        len(villain_shots), villain_seconds,
+                                        rise_seconds, verdict,
+                                        "; " + "; ".join(why) if why else ""))}
+
 def evaluate(receipt):
     """Answer the 11 questions from the delivery receipt.
 
@@ -1122,6 +1223,12 @@ def evaluate(receipt):
                           "measurement": "; ".join(qcodes) or
                                          "UNMEASURED: no measurement"}
             failing.append(q)
+    # FU-U16: the villain-doctrine row is reported, never enforced. Evidence
+    # only: it never joins repair_scope, and the planner owns the two
+    # fail-closed cases.
+    details[VILLAIN_ROW] = measure_villain_doctrine(
+        receipt.get("shots"), receipt.get("lyrics"),
+        receipt.get("runtime_s"), receipt.get("villain"))
     if codes:
         return {"pass": False,
                 "answers": answers,
@@ -1224,6 +1331,12 @@ def to_qc_record(result, run_id, stage, reviewer, check_id=None,
     # the summary, each as yes/no plus the measurement that proves it
     lines = ["%s=%s(%s)" % (q, a["answer"], a["measurement"][:80])
              for q, a in sorted(answers.items())]
+    # FU-U16: the villain-doctrine measurement rides the same summary (the
+    # approval card line is evidence["VILLAIN_DOCTRINE"]["card_line"]).
+    vd = (result.get("evidence") or {}).get(VILLAIN_ROW)
+    if isinstance(vd, dict):
+        lines.append("%s=%s(%s)" % (VILLAIN_ROW, vd.get("verdict", "?"),
+                                    str(vd.get("measurement", ""))[:120]))
     passed = bool(result["pass"])
     summary = ("delivery checklist %s: %d/%d measured%s | %s"
                % ("pass" if passed else "FAIL",
