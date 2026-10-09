@@ -262,23 +262,27 @@ def lipsync_picture_refusal(model, request):
     return None
 
 def book_shot_refusal(model, request):
-    """FU-U10: a BOOK video job needs the contract, or it does not dispatch.
+    """FU-U10 + FU-U11: a BOOK video job needs the contract, or it does not
+    dispatch.
 
     A request whose shot kind is "book" on a video model must carry
-    (a) the approved book PLAN hash -- but ONLY when the request carries a
-    ``book_plan_sha256`` field at all: the hash arrives with U11, so the plan
-    side of this check stays dormant until that field exists rather than
-    blocking a book job on a field no producer writes yet; and
+    (a) the approved book PLAN hash -- FU-U11 ACTIVATES this now that a
+    producer writes the field (book_shot.plan_sha256): the request must carry
+    ``book_plan_sha256`` AND ``approved_book_plan_sha256``, and they must
+    match, or the refusal is BOOK_PLAN_NOT_APPROVED (the U10 form of this
+    check ran only when the field was present, because no producer wrote it
+    yet); and
     (b) a start frame MADE FROM the cover file -- request["book_start_frame"]
     (or request["start_frame"]) naming a path whose sha256 equals the cover
     sha256 carried by the same request (request["book_cover_sha256"]) or
     computed from request["book_cover_path"].
 
     -> None when not a book job or the contract holds, else the refusal dict
-    with reason BOOK_SHOT_NOT_CONTRACTED. Fail-closed: an unreadable start
-    frame, a missing cover reference, or a start frame made from other bytes
-    refuses. Never touches the LIPSYNC_* seams: a lip-sync model is not a
-    book shot entry point.
+    (reason BOOK_PLAN_NOT_APPROVED for the plan side, BOOK_SHOT_NOT_CONTRACTED
+    for the frame side). Fail-closed: an unreadable start frame, a missing
+    cover reference, or a start frame made from other bytes refuses. Never
+    touches the LIPSYNC_* seams: a lip-sync model is not a book shot entry
+    point.
     """
     req = request if isinstance(request, dict) else {}
     kind = req.get("shot_kind") or req.get("kind")
@@ -287,13 +291,25 @@ def book_shot_refusal(model, request):
     if not (req.get("request_kind") == "video" or _is_menu_video(model)
             or _modality(model) == "video"):
         return None
-    missing = []
-    # (a) plan hash: guarded so the check activates only when the field exists
-    # (U11 writes it; until then its absence is not a book-job failure).
+    # (a) plan hash: U11 ACTIVATES the requirement. A book job without a
+    # producer-written plan hash, or with a hash no approval covers, refuses.
+    # Collected into `missing` alongside the frame rule below so a job that
+    # breaks both rules is told both things, and the frame rule (U10) keeps
+    # its own refusal text.
     approved = req.get("approved_book_plan_sha256")
     carried = req.get("book_plan_sha256")
-    if carried is not None and str(carried) != str(approved or ""):
-        missing.append("book_plan_sha256 does not match the approved plan")
+    missing = []
+    plan_bad = None
+    if carried is None or not str(carried):
+        plan_bad = ("no book_plan_sha256 on the request: the book plan hash "
+                    "(book_shot.plan_sha256) must be computed and carried, "
+                    "and covered by an approved_book_plan_sha256")
+    elif not approved:
+        plan_bad = ("no approved_book_plan_sha256: the client has not "
+                    "approved this book plan")
+    elif str(carried) != str(approved):
+        plan_bad = ("book_plan_sha256 does not match the approved plan: the "
+                    "plan changed after approval")
     # (b) the start frame must be made from the cover file, byte for byte.
     frame = req.get("book_start_frame") or req.get("start_frame")
     cover_sha = req.get("book_cover_sha256")
@@ -322,6 +338,14 @@ def book_shot_refusal(model, request):
                                "start frame made from the client's cover file "
                                "(book_shot.prompt_blocks + image_model_blocks), "
                                "then resubmit."}
+    if plan_bad:
+        return {"reason_code": "BOOK_PLAN_NOT_APPROVED",
+                "detail": plan_bad,
+                "next_action": "Produce the plan hash with "
+                               "book_shot.plan_sha256(plan), have the client "
+                               "approve it at the card (the Book shots row), "
+                               "then resubmit with book_plan_sha256 and "
+                               "approved_book_plan_sha256 matching."}
     return None
 
 def _sha256_path(path):
