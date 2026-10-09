@@ -512,6 +512,19 @@ video money is spent. Code: `scripts/core/storyboard_director/approval_package.p
 gate, `revise_shot` fixes one shot and re-sends only that shot). Order:
 storyboard cards, stills, approval, video.
 
+## No blur fill: crop-in is the only path to full height (DEL-14)
+
+Blur fill is never used in any stage of this skill. A frame short of full
+height is never topped up with an edge-sampled backdrop, a gaussian-blurred or
+blurred mask fill, a duplicated blurred strip, a letterbox bar or a stretched
+picture. Crop-in of the source frame is the only path to full height: scale
+the source uniformly until it covers nine-by-sixteen, then crop the overflow
+centred on the lip-sync subject, so the subject fills the frame under a plain
+top. A render attempt that carries a blur fill is refused with a named error
+before any money is spent, the quality check fails a deliverable whose height
+came from a fill, and the repair is the crop-in re-lip-sync of that shot,
+never a fill. Proof: `tests/test_no_blur_fill/`.
+
 ## Scenes must match the song and the faces (Part I I2)
 
 Plain rules, no exceptions:

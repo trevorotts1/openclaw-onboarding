@@ -311,3 +311,16 @@ TODO (U3, U9): refresh the band bullet and the caption bullet below when FU-U3 (
 - **Captions at the end: UNMEASURED on main.** Reading the burned text back off the frames (FU-U9) is not built. Report delivery caption text as checked against the approved sheet only.
 - **Book campaigns.** The shots stage requires a PASS `book_orientation` record (`BOOK_MIRRORED`, `BOOK_COVER_NOT_FRONT`, `BOOK_SPINE_WRONG_SIDE`, `BOOK_WRONG_DIRECTION`, `BOOK_NO_MOTION`; UNAVAILABLE never advances; the checker must pass its calibration pair). `BOOK_SHOT_NOT_CONTRACTED` for a book video job with no start frame from the cover file. FU-U11 (open branch) adds `BOOK_BLANK_PAGES` and `BOOK_PLAN_NOT_APPROVED`; refresh this line when it lands.
 - **Per-style spoken bands.** FU-U3 (open pull request) judges R&B Flow against its planned share and counts music-only time as neither sung nor spoken; Soul Ballad and Soul Rise stay at 22.5 / 77.5. The 5/10 band and the 6 s sung stretch do not change.
+
+## No blur fill (DEL-14)
+
+Blur fill is never used. Full height comes from crop-in of the source frame
+only: uniform scale to cover nine-by-sixteen, then a centred crop on the
+lip-sync subject. QC refuses the deliverable when the height came from a fill
+— an edge-sampled or gaussian-blurred backdrop, a blurred mask, a duplicated
+blurred strip, a letterbox bar or a stretched picture. The refused shot is
+redone by the crop-in re-lip-sync path and re-checked; a filled frame is never
+waived through, and a PASS record for the no_blur_fill check that names a
+blur fill is refused as FILL_CLAIM_MEASURED. Proof lives in the canonical
+build tree's `tests/test_no_blur_fill/`: a blur-fill render fails red, the
+crop-in render passes, and the refusal gates fire.
