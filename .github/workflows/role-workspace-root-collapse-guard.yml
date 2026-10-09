@@ -60,7 +60,7 @@ permissions:
 
 concurrency:
   group: role-workspace-root-collapse-guard-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   role-workspace-root-collapse-guard:
