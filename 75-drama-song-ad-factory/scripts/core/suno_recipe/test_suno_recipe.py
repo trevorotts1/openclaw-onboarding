@@ -25,14 +25,18 @@ def sheet(hook=HOOK, repeats=3, vocalise=True):
     s = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]}]
     if vocalise:
         s.append({"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,", "A-a-a-a-a-ah,"]})
+    # FU-HOOK-PLACEMENT: the verse builds up to the hook; the hook never opens.
+    s.append({"tag": "Verse", "delivery": "sung",
+              "lines": ["One seed of truth made me stro-o-ong,", "One seed is a-all I ne-e-eed,"]})
     for i in range(repeats):
         s.append({"tag": "Hook %d" % (i + 1), "delivery": "sung", "lines": list(hook)})
-        if i == 0:
-            s.append({"tag": "Verse", "delivery": "sung",
-                      "lines": ["One seed of truth made me stro-o-ong,", "One seed is a-all I ne-e-eed,"]})
     s.append({"tag": "Outro", "delivery": "spoken",
               "lines": ["She Found Power in the Climb. Get the book. Link below."]})
     return s
+
+
+#: The story beat of every hook block (FU-HOOK-PLACEMENT rules 2-3).
+HOOK_PLAN = {"true_at_beat": "the_world"}   # FU-HOOK-PLACEMENT: hooks measured from the sheet
 
 
 def seg(d, a, b, src="measured"):
@@ -50,7 +54,7 @@ class Recipe(unittest.TestCase):
         self.assertEqual(set(ids), set(MS.style_ids()))
         self.assertTrue(ids)
         for sid in ids:
-            out = R.prepare(sid, sheet(), CLIENT)
+            out = R.prepare(sid, sheet(), CLIENT, 58, hook_plan=HOOK_PLAN)
             self.assertFalse(out["exempt"])
             self.assertEqual(R.check_style_text(out["style"]), [])
             # U15d: the style text is built from music/<style>.json, so it
@@ -109,7 +113,7 @@ class Recipe(unittest.TestCase):
         self.assertTrue(R.check_negatives("rap, choir, reverb, echo, spoken word"))
         self.assertTrue(R.check_negatives("rap"))                      # dry rule missing
         self.assertNotIn("rap", R.negative_tags("rnb-flow"))           # the rap style keeps its rap
-        req = R.build_request("soul-ballad", sheet(), CLIENT, "T", 58)
+        req = R.build_request("soul-ballad", sheet(), CLIENT, "T", 58, hook_plan=HOOK_PLAN)
         self.assertEqual((req["model"], req["custom_mode"], req["style_weight"], req["variety"],
                           req["weirdness_constraint"], req["vocal_gender"], req["duration"]),
                          ("V6", True, 0.75, 0, 0.3, "f", 58))
@@ -140,10 +144,11 @@ class Recipe(unittest.TestCase):
         import suno_recipe as R        # same wave as MD: the collection drop (conftest) re-executes both
         if not MD.workcopy_paths()["models"].is_file():
             self.skipTest("68-kie-audio catalog not in this checkout")
-        out = R.prepare("rnb-flow", sheet(), CLIENT)
+        out = R.prepare("rnb-flow", sheet(), CLIENT, 58, hook_plan=HOOK_PLAN)
         out["style"] = out["style"]
         req = MD.build_generate_request(out["lyrics"], out["style"], "T",
-                                        style_id="rnb-flow", client_text=CLIENT)
+                                        style_id="rnb-flow", client_text=CLIENT,
+                                        length_s=58, true_at_beat="the_world")
         self.assertTrue(req["input"]["style"].startswith(out["style"]))  # I5 appends ending words
 
     def test_take_scored_from_labels_fails(self):

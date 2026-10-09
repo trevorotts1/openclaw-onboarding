@@ -18,6 +18,14 @@ are used (agents >= 1, kie_inflight <= 8, one machine-sized ffmpeg pool).
 
 No automatic runner: the agent loops next -> run the command -> register ->
 next (manual B1 step 5).
+
+SCRIPT APPROVAL (card question 11): when `next` would hand out the `music` stage
+and the client answered Yes, it first runs script_approval.stage.run_stage: sends
+the script through the client-delivery path (`openclaw message send` to --target,
+or, with no --target, the messages come back in data.messages for the chat),
+records the run as waiting and answers outcome "waiting" (exit 2) with no music
+command. `script-reply --run-dir D --reply TEXT` carries the client's answer:
+approve -> `next` hands out music; anything else -> the edit is re-checked and re-sent.
 """
 import argparse
 import json
@@ -88,6 +96,20 @@ def envelope(command, run_id, outcome, reason_code, next_action,
 def _load(path):
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+def limit_from(doc):
+    """Dollars (str) from a brief or intake summary/envelope, or None. Minor units,
+    USD only (or no currency named); anything else is left for the client to type."""
+    if not isinstance(doc, dict):
+        return None
+    doc = ((doc.get("data") or {}).get("summary") or doc.get("summary") or doc)
+    ceil = doc.get("generation_ceiling") or {}
+    minor = doc.get("budget_minor", doc.get("budget_amount_minor", ceil.get("amount_minor")))
+    cur = str(doc.get("budget_currency") or doc.get("currency") or ceil.get("currency") or "usd").lower()
+    if not isinstance(minor, int) or isinstance(minor, bool) or minor <= 0 or cur != "usd":
+        return None
+    return "%d.%02d" % divmod(minor, 100)
 
 
 def cmd_intake(a):
@@ -197,6 +219,94 @@ def lane_size_payload():
     return out
 
 
+def _approval_runner():
+    core = str(Path(__file__).resolve().parent.parent)
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    try:
+        from storyboard_director import approval_runner  # noqa: PLC0415
+        return approval_runner
+    except ImportError:
+        return None
+
+
+def cmd_storyboard(a):
+    """storyboard --run-dir D --target CHAT [--reply TEXT]: one approval step."""
+    ar = _approval_runner()
+    run_dir = str(Path(a.run_dir).expanduser().resolve())
+    sid = Path(run_dir).name or "run"
+    if ar is None:
+        return envelope("storyboard", sid, "error", "approval-runner-missing",
+                        "storyboard_director/approval_runner.py not importable.")
+    try:
+        r = ar.run(run_dir, ar.openclaw_sender(a.target or ar.receipt_target(run_dir)),
+                   reply=a.reply)
+    except Exception as e:   # ApprovalError, missing files, send failure: loud, no video
+        return envelope("storyboard", sid, "error", getattr(e, "code", "storyboard-failed"),
+                        str(e)[:300])
+    out = "ok" if r["action"] in ("approved", "revised") else "waiting"
+    return envelope("storyboard", sid, out, r["action"],
+                    "Run `next` for the video stage." if r["action"] == "approved"
+                    else "Waiting for the client's reply (GO, or 'shot N: change ...').",
+                    data=r)
+
+
+def _deliverer(a, out):
+    """The client-delivery sink: `openclaw message send` (intake_card.openclaw_send_argv)
+    to --target; with no --target the message is handed back for the chat."""
+    target = getattr(a, "target", "") or ""
+
+    def deliver(text):
+        out.append(text)
+        if target:
+            import subprocess
+            core = Path(__file__).resolve().parent.parent
+            if str(core) not in sys.path:
+                sys.path.insert(0, str(core))
+            from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
+            r = subprocess.run(_card.openclaw_send_argv(target, text), capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError("client delivery failed: %s" % (r.stderr or r.stdout)[:200])
+    return deliver
+
+
+def _script_gate(run_dir, a, reply):
+    core = Path(__file__).resolve().parent.parent
+    if str(core) not in sys.path:
+        sys.path.insert(0, str(core))
+    from script_approval import stage as _stage  # noqa: PLC0415
+    out = []
+    try:
+        r = _stage.run_stage(str(run_dir), _deliverer(a, out), reply=reply)
+    except Exception as e:  # noqa: BLE001 - delivery failed: stay paused, resume re-sends
+        return {"outcome": "error", "problems": [str(e)[:200]], "messages": out}
+    r["delivered"] = out
+    return r
+
+
+def _sa_envelope(cmd, sid, r):
+    oc = r["outcome"]
+    if oc == "error":
+        return envelope(cmd, sid, "error", "script-delivery-failed",
+                        "The script was not delivered; nothing was lost. Run it again.",
+                        data=r)
+    if oc == "blocked":
+        return envelope(cmd, sid, "rejected", "script-checks-failed",
+                        "Fix: %s" % "; ".join(r["problems"]), data=r)
+    if oc == "waiting":
+        return envelope(cmd, sid, "waiting", "SCRIPT_AWAITING_APPROVAL",
+                        "The client has the script. No song until they reply. When they do, "
+                        "run script-reply --run-dir <dir> --reply <their words>.", data=r)
+    return envelope(cmd, sid, "ok", "script-approved",
+                    "Script approved (or not asked for). Run `next` for the music stage.", data=r)
+
+
+def cmd_script_reply(a):
+    run_dir = Path(a.run_dir).expanduser().resolve()
+    return _sa_envelope("script-reply", run_dir.name or "run",
+                        _script_gate(run_dir, a, reply=a.reply))
+
+
 def cmd_next(a):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
     run_dir = Path(a.run_dir or ".").expanduser().resolve()
@@ -241,11 +351,37 @@ def cmd_next(a):
         return envelope("next", str(sid), "ok", "run-complete",
                         "Every stage is COMPLETE; the run is delivered. "
                         "Nothing left to run.")
+    if next_stage == "video-generation":      # storyboard approval point
+        ar = _approval_runner()
+        if ar is not None and not ar.gate_open(str(run_dir)):
+            return envelope("next", str(sid), "waiting", "storyboard-approval-required",
+                            "Video is blocked until the storyboard is approved. Run "
+                            "`factory.py storyboard --run-dir %s --target <chat id>` "
+                            "(sends the shot cards + stills once; reply GO or "
+                            "'shot N: change ...' via --reply)." % run_dir,
+                            data={"stage": next_stage})
+    if stages.index(next_stage) > stages.index("music"):    # SONG APPROVAL gate (fail closed)
+        try:
+            _c = str(Path(__file__).resolve().parent.parent)
+            if _c not in sys.path:
+                sys.path.insert(0, _c)
+            from song_choices import song_choices as _sc  # noqa: PLC0415
+            hold = _sc.refusal(str(run_dir))
+        except Exception as exc:  # noqa: BLE001 - a broken gate never opens
+            hold = {"reason_code": "SONG_GATE_BROKEN", "next_action": "song gate failed: %r" % (exc,)}
+        if hold:
+            return envelope("next", str(sid), "error", hold["reason_code"], hold["next_action"],
+                            data={"stage": next_stage, "detail": hold.get("detail", "")})
     row = rows.get(next_stage) or {"command": "", "produces": ""}
     if not row["command"]:
         return envelope("next", str(sid), "error", "runbook-row-missing",
                         "No runbook row for stage %r in %s"
                         % (next_stage, runbook_path))
+    sa = None
+    if next_stage == "music":
+        sa = _script_gate(run_dir, a, reply=None)
+        if sa["outcome"] != "go":
+            return _sa_envelope("next", str(sid), sa)
     lane = lane_size_payload()
     nxt = {"stage": next_stage, "command": row["command"],
            "produces": row.get("produces", ""), "lane_size": lane,
@@ -293,7 +429,20 @@ def main(argv=None):
                                     "how many lanes may run (manual 02 B1).")
     n.add_argument("--run-dir", required=True,
                    help="Run dir that holds control/state.sqlite3.")
-    c = sub.add_parser("card", help="Print the six-question intake card as raw "
+    sb = sub.add_parser("storyboard", help="Storyboard approval step: send cards + "
+                        "stills, or apply the client's reply.")
+    sb.add_argument("--run-dir", required=True)
+    sb.add_argument("--target", default="", help="Telegram chat id")
+    sb.add_argument("--reply", default=None, help="The client's reply, if any.")
+    n.add_argument("--target", default="",
+                   help="Client Telegram chat id for the SCRIPT APPROVAL message; "
+                        "empty = hand the message back for the chat.")
+    sr = sub.add_parser("script-reply", help="The client's reply to the script message "
+                                             "(SCRIPT APPROVAL): approve, or an edit.")
+    sr.add_argument("--run-dir", required=True)
+    sr.add_argument("--reply", required=True)
+    sr.add_argument("--target", default="")
+    c = sub.add_parser("card", help="Print the seven-question intake card as raw "
                                     "text (not JSON), or as send payloads (H9).")
     c.add_argument("--format", default="text",
                    choices=("text", "openclaw-json", "telegram-json"))
@@ -302,6 +451,14 @@ def main(argv=None):
                    help="Client data folder; adds the saved-character question when it has saved characters (I6).")
     c.add_argument("--run-state-file", default="",
                    help="with --step and no replies: first call sends the one-time intro, next call question 1")
+    c.add_argument("--price", default=None, help="card total in dollars, shown in the spend question")
+    c.add_argument("--limit", default=None, help="spend limit in dollars; overrides the one found in the brief or summary")
+    c.add_argument("--brief", default=None, help="Brief as JSON string; its budget_minor becomes spend option 1.")
+    c.add_argument("--brief-file", default=None, help="Brief JSON file (or the planner's); same.")
+    c.add_argument("--summary-file", default=None,
+                   help="intake output (envelope or summary) JSON; its generation_ceiling becomes spend option 1.")
+    c.add_argument("--run-dir", default="",
+                   help="Run dir; the confirmed card writes control/card-receipt.json (storyboard), the SONG APPROVAL answer and card-answers.json (SCRIPT APPROVAL) there.")
     c.add_argument("--step", action="store_true",
                    help="one question per message (I7): print only the next message")
     c.add_argument("--reply", action="append", default=[],
@@ -309,7 +466,6 @@ def main(argv=None):
     c.add_argument("--fit", action="store_true",
                    help="FU-U4: the fit STOP card for the client's own lines "
                         "(--brief-file, --packet-file); exit 2 when they do not fit")
-    c.add_argument("--brief-file", default=None)
     c.add_argument("--packet-file", default=None,
                    help="JSON list of client lines {id, speaker, text, scene}")
     ch = sub.add_parser("character", help="Per-client character library: ask / save / "
@@ -338,8 +494,18 @@ def main(argv=None):
             card = _card.fit_card(brief, packet)
             sys.stdout.write(card["text"] + "\n")
             return EXIT[card["outcome"]]
+        limit, from_brief = a.limit, False
+        for doc in ((_load(a.summary_file) if a.summary_file else None),
+                    (_load(a.brief_file) if a.brief_file else json.loads(a.brief) if a.brief else None)):
+            if not limit:
+                limit = limit_from(doc)
+                from_brief = bool(limit)
         return _card.main(["--format", a.format, "--target", a.target]
                           + (["--client-dir", a.client_dir] if a.client_dir else [])
+                          + (["--price", a.price] if a.price else [])
+                          + (["--limit", limit] if limit else [])
+                          + (["--limit-from-brief"] if limit and from_brief else [])
+                          + (["--run-dir", a.run_dir] if a.run_dir else [])
                           + (["--step"] if a.step else [])
                           + (["--run-state-file", a.run_state_file] if a.run_state_file else [])
                           + [x for r in a.reply for x in ("--reply", r)])
@@ -347,6 +513,10 @@ def main(argv=None):
         env = cmd_intake(a)
     elif a.cmd == "preflight":
         env = cmd_preflight(a)
+    elif a.cmd == "storyboard":
+        env = cmd_storyboard(a)
+    elif a.cmd == "script-reply":
+        env = cmd_script_reply(a)
     else:
         env = cmd_next(a)
     json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)

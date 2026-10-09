@@ -10,7 +10,8 @@ change. Stdlib only, zero network, zero paid calls.
       ending_qc.with_clean_ending), an 81-char title and 1,001-char negative
       tags are each refused;
   (c) the six golden payloads pass with the hook count equal to
-      sung_hook.hook_count;
+      hook_placement.hook_target (sung_hook.hook_count after the sheet's
+      story beat);
   (d) a lyric line under an [Instrumental ...] tag is refused;
   (e) a product share outside 10-15 percent is refused;
   (f) a 3-minute, a 5-minute and a 10-minute plan each land inside 20-25%
@@ -41,7 +42,7 @@ import music_director as MD       # noqa: E402
 import prompt_limits as PL        # noqa: E402
 import prompt_templates as PT     # noqa: E402
 import suno_recipe as R           # noqa: E402
-import sung_hook as SH            # noqa: E402
+from sung_hook import hook_placement as HP   # noqa: E402
 
 SHEETS_DIR = str(PT.TEMPLATES_DIR / "fixtures" / "suno-sheets")
 GOLDENS = sorted(glob.glob(os.path.join(SHEETS_DIR, "*.json")))
@@ -62,10 +63,10 @@ def check(name, cond, detail=""):
 def _base_sheet(product=False):
     s = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
          {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
-         {"tag": "Hook", "delivery": "sung", "lines": list(HOOK)},
          {"tag": "Verse", "delivery": "sung",
           "lines": ["One seed of truth made me stro-o-ong,",
                     "One seed is a-all I ne-e-eed,"]},
+         {"tag": "Hook", "delivery": "sung", "lines": list(HOOK)},
          {"tag": "Hook 2", "delivery": "sung", "lines": list(HOOK)},
          {"tag": "Hook 3", "delivery": "sung", "lines": list(HOOK)}]
     if product:
@@ -128,10 +129,16 @@ def test_b_caps_are_refused():
     line = "a" * 40
     n = -(-(5001 - len(base)) // 41) + 1
     s = _base_sheet()
-    s[3] = {"tag": "Verse", "delivery": "sung", "lines": [line] * n}
+    s[2] = {"tag": "Verse", "delivery": "sung", "lines": [line] * n}
     lyric = R.render_lyrics(s, "soul-ballad")
     check("b0 the padded lyric really is over 5,000 chars", len(lyric) > 5000, len(lyric))
-    e, _ = _refused(R.build_request, "soul-ballad", s, CLIENT, "T", None)
+    # FU-HOOK-PLACEMENT: build_request now refuses a missing length as
+    # UNMEASURED before any cap, so the lyric cap is measured at the
+    # music_director seam (no recipe style, no length), the same seam as b3.
+    # (an exempt style id: a sung sheet with no style_id is refused
+    # "UNMEASURED: style_id" before any cap is measured)
+    e, _ = _refused(MD.build_generate_request, lyric, "plain style", "T",
+                    style_id="velvet_voiceover")
     check("b1 a lyric over 5,000 chars is refused",
           e is not None and getattr(e, "field", None) == "lyrics", e)
 
@@ -140,12 +147,13 @@ def test_b_caps_are_refused():
     final = EQ.with_clean_ending(lyric, style)[1]
     check("b2 ending_qc makes the style cross 1,000", len(final) > 1000, len(final))
     e, _ = _refused(MD.build_generate_request, R.render_lyrics(_base_sheet(), "rnb-flow"),
-                    style, "T")
+                    style, "T", style_id="velvet_voiceover")
     check("b3 the FINAL style over 1,000 chars is refused",
           e is not None and getattr(e, "field", None) == "style", e)
 
     # 81-char title.
-    e, _ = _refused(R.build_request, "soul-ballad", _base_sheet(), CLIENT, "T" * 81, None)
+    e, _ = _refused(R.build_request, "soul-ballad", _base_sheet(), CLIENT, "T" * 81, 58,
+                    hook_plan={"true_at_beat": "the_world"})
     check("b4 an 81-char title is refused",
           e is not None and getattr(e, "field", None) == "title", e)
 
@@ -165,14 +173,18 @@ def test_c_golden_payloads_pass():
     for f in GOLDENS:
         name = os.path.basename(f)
         payload = json.loads(open(f, encoding="utf-8").read())
-        errs = R.check_payload(payload)
+        text = "\n\n".join(seg["lyrics"] for seg in payload["segments"])
+        chorus = next(" ".join(s["lines"]) for s in R.parse_lyrics(text)
+                      if s["tag"].lower().startswith("hook"))   # the client's own words
+        errs = R.check_payload(payload, chorus)
         check("c1 %s passes every U15d rule" % name, not errs, errs)
         hooks = sum(1 for seg in payload["segments"]
                     for ln in (seg.get("lyrics") or "").splitlines()
                     if ln.strip().lower().startswith("[hook"))
-        want = SH.hook_count(payload["delivered_s"])
-        check("c2 %s hook count %d == sung_hook.hook_count(%d)"
-              % (name, hooks, payload["delivered_s"]), hooks == want, hooks)
+        # FU-HOOK-PLACEMENT: the count follows the sheet's story beat
+        want = HP.hook_target(payload["delivered_s"], payload["hook_plan"])
+        check("c2 %s hook count %d == hook_placement.hook_target(%d, %s)"
+              % (name, hooks, payload["delivered_s"], payload["hook_plan"]), hooks == want, hooks)
         style = R.style_text(payload["music_style"], None, "Warm female")
         check("c3 %s style is rebuilt byte-for-byte from the data" % name,
               style == payload["style"], style[:80])

@@ -10,9 +10,12 @@ Formula (named constants, tunable):
     L = delivered seconds (the I4 rule already made that chosen length - 2).
     28 s -> 2, 58 s -> 3, 88 s -> 4, 118 s -> 5, 178 s -> 8, 298 s -> 12.
 
-Placement: first hook sung by FIRST_HOOK_AT of runtime (the H6 15% target),
-last hook at LAST_HOOK_AT (near the end, before the call to action / end
-card), the rest evenly between.
+Placement (FU-HOOK-PLACEMENT, Trevor 2026-10-09): the hook is the payoff,
+never the opener. The first hook comes after the build-up (a verse, plus a
+pre-chorus where the style has one) and at the story beat where its words
+become true; returns never go backwards (core/sung_hook/hook_placement.py).
+hook_times is only the even spacing used when no plan gives the first
+hook second: FIRST_HOOK_AT of runtime, last at LAST_HOOK_AT.
 
 Measured: a hook counts only if its words sit inside a take segment the
 singing detector measured as sung (never from labels). Band (Trevor):
@@ -73,10 +76,11 @@ def check_hook_text(hook, client_text, protected_names=()):
     return errs
 
 
-def build_lyric_sheet(verses, hook_lines, length_s):
+def build_lyric_sheet(verses, hook_lines, length_s, pre=None):
     """Interleave the hook into the verses the right number of times.
 
-    verses: [{"tag","delivery","lines"}]. One verse opens, then the hook;
+    verses: [{"tag","delivery","lines"}]. One verse opens (then ``pre``, the
+    pre-chorus section, when the style has one), then the hook;
     remaining verses spread evenly between later hooks; last section is a
     hook. Returns a recipe-format sheet whose hook sections are tagged Hook.
     """
@@ -86,6 +90,8 @@ def build_lyric_sheet(verses, hook_lines, length_s):
     rest = list(verses)
     if rest:
         gaps[0].append(rest.pop(0))
+    if pre:
+        gaps[0].append(dict(pre))
     for j, v in enumerate(rest):
         gaps[1 + j * (n - 1) // len(rest)].append(v)
     sheet = []
@@ -98,16 +104,19 @@ def _hook_key(sheet, hook_lines):
     return tuple(_words(" ".join(hook_lines)))
 
 
-def check_sheet_count(sheet, hook_lines, length_s):
-    """The sheet must carry the hook exactly hook_count(length_s) times, sung,
-    with the first by the second section and the last sung section a hook."""
-    key, n, errs = _hook_key(sheet, hook_lines), hook_count(length_s), []
+def check_sheet_count(sheet, hook_lines, length_s, want=None):
+    """The sheet must carry the hook exactly ``want`` times (default
+    hook_count(length_s); hook_placement.hook_target when a hook_plan
+    reduces it), sung, after a verse, and the last sung section a hook."""
+    key, errs = _hook_key(sheet, hook_lines), []
+    n = hook_count(length_s) if want is None else want
     idx = [i for i, s in enumerate(sheet) if s.get("delivery") == "sung"
            and tuple(_words(" ".join(s["lines"]))) == key]
     if len(idx) != n:
         errs.append("hook appears %d times, %d s needs %d" % (len(idx), length_s, n))
-    if idx and idx[0] > 3:
-        errs.append("first hook is section #%d, want within the first four (intro, vocalise, one verse, hook)" % (idx[0] + 1))
+    if idx and not any("verse" in str(s.get("tag", "")).lower() for s in sheet[:idx[0]]):
+        errs.append("first hook is section #%d with no verse before it: the hook is the "
+                    "payoff, never the opener" % (idx[0] + 1))
     sung = [i for i, s in enumerate(sheet) if s.get("delivery") == "sung"]
     if idx and sung and idx[-1] != sung[-1]:
         errs.append("last sung section is not the hook")
@@ -125,7 +134,10 @@ def measure(hook_text, words, segments, target):
     if not segs or any(s.get("source") != "measured" for s in segs):
         return judge(hook_text, target, [], reason="segments are not detector-measured")
     key = _words(hook_text)
-    seq = [(_words(w.get("word", "")) or [""])[0] for w in words]
+    # Suno's aligned words carry section headers inline ("[Hook (sung): ...]\nGirl, "):
+    # strip them so the section's first sung word is the word read
+    seq = [(_words(re.sub(r"\[[^\]]*\]?|^[^\[]*\]", " ", w.get("word", ""))) or [""])[0]
+           for w in words]
     hits, i = [], 0
     while key and i + len(key) <= len(seq):
         if seq[i:i + len(key)] == key:

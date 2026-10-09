@@ -1,0 +1,126 @@
+{
+ "_doc": "AI MODELS question (FU-AI-MODELS-QUESTION). Models the build lane and the check lane can name. Route: openrouter (recommended) | ollama (allowed) | deepseek-direct | router-alias (a 9Router chain the box already has). Slugs match shared-utils/model-capabilities.json verified_slugs. This is a preference record only: the session runs on the model the user configured (SKILL.md, the user's choice wins).",
+ "recommended": {
+  "build": "openrouter/z-ai/glm-5.3-flash",
+  "check": "sonnet-chain"
+ },
+ "models": [
+  {
+   "id": "openrouter/z-ai/glm-5.3-flash",
+   "label": "GLM 5.3 Flash (OpenRouter)",
+   "route": "openrouter",
+   "aliases": [
+    "glm",
+    "glm 5.3 flash",
+    "glm 5.3 flash openrouter"
+   ]
+  },
+  {
+   "id": "openrouter/z-ai/glm-5.3",
+   "label": "GLM 5.3 (OpenRouter)",
+   "route": "openrouter",
+   "aliases": [
+    "glm 5.3",
+    "glm 5.3 openrouter"
+   ]
+  },
+  {
+   "id": "openrouter/deepseek/deepseek-v4-flash",
+   "label": "DeepSeek V4 Flash (OpenRouter)",
+   "route": "openrouter",
+   "aliases": [
+    "deepseek",
+    "deepseek v4 flash",
+    "deepseek openrouter"
+   ]
+  },
+  {
+   "id": "ollama/deepseek-v4.1-flash",
+   "label": "DeepSeek V4.1 Flash (Ollama)",
+   "route": "ollama",
+   "aliases": [
+    "ollama",
+    "ollama deepseek",
+    "deepseek ollama",
+    "deepseek on ollama"
+   ]
+  },
+  {
+   "id": "ollama/minimax-m3",
+   "label": "MiniMax M3 (Ollama)",
+   "route": "ollama",
+   "aliases": [
+    "minimax",
+    "minimax m3",
+    "minimax ollama"
+   ]
+  },
+  {
+   "id": "sonnet-chain",
+   "label": "Claude Sonnet",
+   "route": "router-alias",
+   "aliases": [
+    "sonnet",
+    "claude sonnet",
+    "sonnet chain"
+   ]
+  },
+  {
+   "id": "opus-chain",
+   "label": "Claude Opus",
+   "route": "router-alias",
+   "aliases": [
+    "opus",
+    "claude opus",
+    "opus chain"
+   ]
+  },
+  {
+   "id": "haiku-chain",
+   "label": "Claude Haiku",
+   "route": "router-alias",
+   "aliases": [
+    "haiku",
+    "claude haiku",
+    "haiku chain"
+   ]
+  },
+  {
+   "id": "fusion-chain",
+   "label": "Fusion",
+   "route": "router-alias",
+   "aliases": [
+    "fusion",
+    "fusion chain"
+   ]
+  },
+  {
+   "id": "ollama/kimi-k2.6",
+   "label": "Kimi K2.6 (Ollama)",
+   "route": "ollama",
+   "aliases": [
+    "kimi",
+    "kimi k2.6",
+    "kimi ollama"
+   ]
+  },
+  {
+   "id": "ollama/agnes",
+   "label": "Agnes (Ollama)",
+   "route": "ollama",
+   "aliases": [
+    "agnes",
+    "agnes ollama"
+   ]
+  },
+  {
+   "id": "deepseek/deepseek-v4.1-flash",
+   "label": "DeepSeek V4.1 Flash (DeepSeek direct)",
+   "route": "deepseek-direct",
+   "aliases": [
+    "deepseek direct",
+    "deepseek v4.1 flash direct"
+   ]
+  }
+ ]
+}

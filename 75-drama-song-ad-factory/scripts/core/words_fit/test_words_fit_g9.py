@@ -138,8 +138,9 @@ def test_band_comes_from_spoken_share():
 
 
 def test_share_off_target_offers_lower_target():
-    # Words fit the card, but the mix's sung share is >10 points from target.
-    r = W.preflight(300, 200, 5, sung_target_pct=55.0, style="Soul Ballad")
+    # Words fit the card, but the mix's sung share is >10 points SHORT of the
+    # target (FU-RNBFLOW-SONG: the target is a floor; over it is never a miss).
+    r = W.preflight(300, 5, 200, sung_target_pct=55.0, style="Soul Ballad")
     check("word-mix share miss is waiting",
           r["outcome"] == "waiting", r.get("detail"))
     check("share miss reason SHARE_OFF_TARGET",
@@ -207,8 +208,8 @@ def test_music_director_refuses_before_payload():
     check("feasible request carries duration with >=15% headroom",
           isinstance(dur, int) and dur >= plan * 1.15 - 1e-6,
           "%s vs plan %s" % (dur, plan))
-    check("duration is plan*1.15 ceil", dur == W.max_suno_duration(plan),
-          "%s vs %s" % (dur, W.max_suno_duration(plan)))
+    # the DELIVERED length (what song_dispatch.run_takes requires), never plan time
+    check("duration is the delivered length", dur == 60, "%s vs 60" % dur)
     # Caller-supplied duration is never overwritten.
     req2 = MD.build_generate_request(short, "soul ballad style", "t",
                                      length_s=60, duration=72,

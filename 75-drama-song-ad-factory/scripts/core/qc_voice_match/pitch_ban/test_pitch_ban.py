@@ -9,14 +9,15 @@ python3 (assert-based, non-zero exit on failure) and under pytest.
 Run:  python3 core/qc_voice_match/pitch_ban/test_pitch_ban.py
   or: python3 -m pytest core/qc_voice_match/pitch_ban/
 Env:  PITCH_BAN_FIXTURE_DIR keeps the JSON scratch files somewhere durable
-      (default /tmp/AF-ECHO-U3-fixtures).
+      (default: a fresh per-process temp dir, deleted at exit).
 """
 from __future__ import annotations
 
+import atexit
 import json
 import math
 import os
-import socket
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -58,10 +59,18 @@ def synth(f0, harmonics=(1.0, 0.5, 0.3), seconds=SECONDS, rate=RATE):
     return out
 
 
+_FIXTURE_DIR = []
+
+
 def fixture_dir():
-    d = os.environ.get("PITCH_BAN_FIXTURE_DIR") or os.path.join(
-        tempfile.gettempdir(),
-        "%s-AF-ECHO-U3-fixtures" % socket.gethostname())
+    """A fresh per-process dir (a fixed /tmp path collides with concurrent
+    runs); removed at exit. PITCH_BAN_FIXTURE_DIR overrides and is kept."""
+    d = os.environ.get("PITCH_BAN_FIXTURE_DIR")
+    if not d:
+        if not _FIXTURE_DIR:
+            _FIXTURE_DIR.append(tempfile.mkdtemp(prefix="AF-ECHO-U3-fixtures-"))
+            atexit.register(shutil.rmtree, _FIXTURE_DIR[0], True)
+        d = _FIXTURE_DIR[0]
     os.makedirs(d, exist_ok=True)
     return d
 

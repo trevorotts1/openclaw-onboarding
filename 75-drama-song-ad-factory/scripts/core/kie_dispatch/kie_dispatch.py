@@ -265,20 +265,21 @@ def book_shot_refusal(model, request):
     """FU-U10: a BOOK video job needs the contract, or it does not dispatch.
 
     A request whose shot kind is "book" on a video model must carry
-    (a) the approved book PLAN hash -- but ONLY when the request carries a
-    ``book_plan_sha256`` field at all: the hash arrives with U11, so the plan
-    side of this check stays dormant until that field exists rather than
-    blocking a book job on a field no producer writes yet; and
+    (a) the approved book PLAN hash -- a book job that carries NO
+    ``book_plan_sha256`` is REFUSED with BOOK_PLAN_NOT_APPROVED (U11's
+    producer writes the field, so the requirement is ACTIVE: the dormant
+    period U10 shipped for ended when the producer landed); and
     (b) a start frame MADE FROM the cover file -- request["book_start_frame"]
     (or request["start_frame"]) naming a path whose sha256 equals the cover
     sha256 carried by the same request (request["book_cover_sha256"]) or
     computed from request["book_cover_path"].
 
     -> None when not a book job or the contract holds, else the refusal dict
-    with reason BOOK_SHOT_NOT_CONTRACTED. Fail-closed: an unreadable start
-    frame, a missing cover reference, or a start frame made from other bytes
-    refuses. Never touches the LIPSYNC_* seams: a lip-sync model is not a
-    book shot entry point.
+    with reason BOOK_PLAN_NOT_APPROVED (plan side) or
+    BOOK_SHOT_NOT_CONTRACTED (start frame side). Fail-closed: an unreadable
+    start frame, a missing cover reference, a missing or mismatched plan
+    hash, or a start frame made from other bytes refuses. Never touches the
+    LIPSYNC_* seams: a lip-sync model is not a book shot entry point.
     """
     req = request if isinstance(request, dict) else {}
     kind = req.get("shot_kind") or req.get("kind")
@@ -287,13 +288,27 @@ def book_shot_refusal(model, request):
     if not (req.get("request_kind") == "video" or _is_menu_video(model)
             or _modality(model) == "video"):
         return None
-    missing = []
-    # (a) plan hash: guarded so the check activates only when the field exists
-    # (U11 writes it; until then its absence is not a book-job failure).
+    # (a) plan hash: U11's producer writes book_plan_sha256, so the
+    # requirement is ACTIVE. Missing, empty, or mismatched -> refused.
     approved = req.get("approved_book_plan_sha256")
     carried = req.get("book_plan_sha256")
-    if carried is not None and str(carried) != str(approved or ""):
-        missing.append("book_plan_sha256 does not match the approved plan")
+    if not carried:
+        return {"reason_code": "BOOK_PLAN_NOT_APPROVED",
+                "detail": "no book_plan_sha256: the book plan has not been "
+                          "approved for this job",
+                "next_action": "Hash the approved book plan "
+                               "(book_shot.plan_sha256) and carry it as "
+                               "book_plan_sha256 alongside "
+                               "approved_book_plan_sha256, then resubmit."}
+    if not approved or str(carried) != str(approved):
+        return {"reason_code": "BOOK_PLAN_NOT_APPROVED",
+                "detail": "book_plan_sha256 does not match the approved "
+                          "plan (carried %s, approved %s)"
+                          % (_short(carried), _short(approved)),
+                "next_action": "The plan changed after approval. Re-approve "
+                               "the current plan and carry its hash, then "
+                               "resubmit."}
+    missing = []
     # (b) the start frame must be made from the cover file, byte for byte.
     frame = req.get("book_start_frame") or req.get("start_frame")
     cover_sha = req.get("book_cover_sha256")
@@ -323,6 +338,11 @@ def book_shot_refusal(model, request):
                                "(book_shot.prompt_blocks + image_model_blocks), "
                                "then resubmit."}
     return None
+
+def _short(value, n=12):
+    """A hash prefix for a refusal message. Never the secret, never a file."""
+    s = str(value or "")
+    return (s[:n] + "...") if len(s) > n else (s or "none")
 
 def _sha256_path(path):
     if not path or not os.path.isfile(str(path)):
@@ -934,6 +954,13 @@ def prompt_cap_rows(model, request):
                               "cap_source": e.source,
                               "cap_status": e.status}}, [])
 
+try:
+    import script_approval as _SA                         # sibling core/ pkg
+except ImportError as _e:
+    if "script_approval" not in str(_e):
+        raise
+    _SA = None
+
 # ---- F6: no animation before storyboard approval -------------------------
 try:
     import storyboard_director as _SD                     # sibling core/ pkg
@@ -974,6 +1001,32 @@ def check_storyboard_approval(shots, review, request=None):
                 "detail": gate.get("reason_code", "storyboard-gate-closed"),
                 "gate": gate}
     return None
+
+
+def _song_pick_refusal(model, run_dir):
+    """SONG APPROVAL seam (song_choices.refusal); a broken gate refuses."""
+    try:
+        from song_choices import song_choices as _sc
+        return _sc.dispatch_refusal(_modality(model) == "music", run_dir)
+    except Exception as exc:  # noqa: BLE001 - a gate that cannot run never opens
+        return {"reason_code": "SONG_GATE_BROKEN", "detail": "song gate failed: %r." % (exc,),
+                "next_action": "Fix the song-choices gate before any paid job."}
+
+
+def check_script_approval_gate(model, request, save_dir=None):
+    """SCRIPT APPROVAL: a music job for a run whose client asked to approve the
+    script first refuses until the script is approved. Others untouched."""
+    req = request if isinstance(request, dict) else {}
+    if _modality(model) != "music" or _SA is None:
+        return None
+    inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+    # The record rides the request, else it is found in the run folder (request
+    # run_dir, or the save dir and its parent): nobody has to pass it by hand.
+    rec = req.get("script_approval")
+    if rec is None:
+        rec = _SA.record_near(req.get("run_dir"), save_dir)
+    return _SA.check_script_approval(rec,
+                                     req.get("lyrics") or inp.get("lyrics") or "")
 
 
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
@@ -1035,6 +1088,8 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                 "dispatch an un-locked video job",
                 run_id=run_id, logical_key=logical_key,
                 attempt_id=attempt_id)
+        from choice_card.video_models import video_models as _VM  # client's pick -> resolution/tier
+        request = _VM.apply_locked_choice(request, locked)
         if not ML.matches_family(model, locked):
             return envelope(
                 "dispatch", "rejected", "VIDEO_MODEL_MISMATCH",
@@ -1122,6 +1177,21 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         attempt_id=attempt_id,
                         evidence={"gate": sb_refusal.get("gate"),
                                   "generated": False})
+    # SONG APPROVAL: no picture, video or lip-sync job before the client's song
+    # pick is recorded (only the song stage itself may run). Fail closed.
+    song_hold = _song_pick_refusal(model, os.path.dirname(os.path.abspath(str(ledger_db))))
+    if song_hold:
+        return envelope("dispatch", "rejected", song_hold["reason_code"],
+                        song_hold["detail"] + " " + song_hold["next_action"],
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
+    # SCRIPT APPROVAL: no song generation before the client approves the script.
+    sa_refusal = check_script_approval_gate(model, request, save_dir)
+    if sa_refusal:
+        return envelope("dispatch", "rejected", sa_refusal["reason_code"],
+                        sa_refusal["detail"], run_id=run_id,
+                        logical_key=logical_key, attempt_id=attempt_id,
+                        evidence={"generated": False})
     # U15b: an H3 prompt must be assembled and receipted (PROMPT_NOT_TEMPLATED)
     # and the FINAL payload must be re-measured against its cap, both BEFORE
     # any ledger row or paid call. Nothing reserved, nothing sent.

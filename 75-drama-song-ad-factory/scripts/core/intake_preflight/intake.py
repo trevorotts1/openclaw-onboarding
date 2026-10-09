@@ -1,7 +1,8 @@
 """intake.py: short adaptive opening intake (directive 24.3, 24.2 row 1). stdlib only.
 
-Essentials (max 3 questions, one message): offer / audience+action / spending
-authority. Never invents a spending ceiling or currency conversion. Brief text
+Essentials (max 3 questions, one message): offer / audience+action / website
+or placement. Money is NOT asked here: the choice card asks it once, with the
+real price. Never invents a spending ceiling or currency conversion. Brief text
 is source material, never auth/policy (injection -> rejected, auth untouched).
 
 Version-2 card fields (H8): length_option, shape, look, music and voice are
@@ -145,7 +146,6 @@ Q_AUDIENCE_ONLY = ("Who is this ad for? "
                    "For example: 'Women 35-55 who want a second income.'")
 Q_ACTION_ONLY = ("What should people do after watching? "
                  "For example: 'Register for my free masterclass.'")
-Q_SPENDING = "What is the most you want to spend on this video? For example: $25."
 Q_WEBSITE = ("What is the exact website address you want people to go to? "
              "Type it exactly as it should appear, for example: example.com. "
              "We will use it word for word in the song, captions and end card.")
@@ -320,6 +320,10 @@ def normalize(brief, settings=None):
     take("voice", (b("voice"), "provided"), (s("voice"), "inherited"),
          (DEFAULT_VOICE, "default"))
 
+    take("ai_models", (_ai_models(brief.get("ai_models")), "provided"),
+         (_ai_models(sdef.get("ai_models")), "inherited"),
+         (_ai_models(None, True), "default"))
+
     tlen = brief.get("target_length_s", sdef.get("target_length_s"))
     take("target_length_s", ((tlen if isinstance(tlen, (int, float)) and tlen > 0 else None),
                              "provided" if "target_length_s" in brief else "inherited"),
@@ -352,8 +356,6 @@ def missing_essentials(fields, prov):
         qs.append({"id": "audience_action",
                    "question": Q_AUDIENCE if no_aud and no_act
                    else Q_AUDIENCE_ONLY if no_aud else Q_ACTION_ONLY})
-    if not isinstance(fields.get("budget_minor"), int) or not fields.get("budget_currency"):
-        qs.append({"id": "spending_authority", "question": Q_SPENDING})
     if wants_website(fields) and len(qs) < 3:
         qs.append({"id": "website", "question": Q_WEBSITE})
     qs = qs[:3]
@@ -361,6 +363,20 @@ def missing_essentials(fields, prov):
     if ambiguous and not any(q["id"] == "placement" for q in qs):
         qs.append({"id": "placement", "question": Q_PLACEMENT})
     return qs[:3]
+
+
+def _ai_models(v, default=False):
+    """FU-AI-MODELS-QUESTION: the card's build/check choice, or None when absent or
+    not a routable, different pair. A recorded preference only (SKILL.md)."""
+    core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    from choice_card.intake_card import ai_models as AM  # noqa: PLC0415
+    if default:
+        return AM.recommended()
+    if not isinstance(v, dict):
+        return None
+    return AM.check(v.get("build"), v.get("check"))[0]
 
 
 def _master_max(length_s):
@@ -391,6 +407,7 @@ def summarize(fields, auth_status="missing"):
         "look": fields.get("look"),
         "music": fields.get("music"),
         "voice": fields.get("voice"),
+        "ai_models": fields.get("ai_models"),
         "assumptions": [f"{k}={v!r} (assumed default)" for k, v in fields.items()
                         if v == DEFAULTS.get(k)],
         "generation_ceiling": {"amount_minor": fields.get("budget_minor"),

@@ -1,0 +1,27 @@
+{
+  "_note": "Three arrangement variants per music style, one table. Each clause is appended to the style's own Suno style text; it must not hold a word the style bans (choir, reverb, echo, rap, spoken) and stays under 140 characters.",
+  "rnb-flow": [
+    {"id": "polished-modern", "label": "POLISHED MODERN", "description": "clean, radio-ready R&B with tight drums",
+     "clause": "Arrangement: polished modern R&B production, tight crisp drums, glossy synth pads, clean studio sound"},
+    {"id": "warm-live-band", "label": "WARM LIVE BAND", "description": "a warm live band feel with bass, keys and guitar",
+     "clause": "Arrangement: warm live band feel, round electric bass, soft Rhodes keys, gentle clean guitar, relaxed pocket"},
+    {"id": "cinematic-strings", "label": "CINEMATIC STRINGS", "description": "big film-style strings that swell under the hook",
+     "clause": "Arrangement: cinematic string section, swelling violins and cellos, soft piano, film-score drama"}
+  ],
+  "soul-ballad": [
+    {"id": "intimate-piano", "label": "INTIMATE PIANO", "description": "close, tender piano and voice",
+     "clause": "Arrangement: intimate solo piano, soft brushed drums, close tender mood"},
+    {"id": "warm-live-band", "label": "WARM LIVE BAND", "description": "a warm live band feel with bass, keys and guitar",
+     "clause": "Arrangement: warm live band feel, round electric bass, soft organ, gentle clean guitar, slow pocket"},
+    {"id": "cinematic-strings", "label": "CINEMATIC STRINGS", "description": "big film-style strings that swell under the hook",
+     "clause": "Arrangement: cinematic string section, slow swelling violins and cellos, soft piano, film-score drama"}
+  ],
+  "soul-rise": [
+    {"id": "modern-lift", "label": "MODERN LIFT", "description": "modern drums and synths that lift into the groove",
+     "clause": "Arrangement: modern production, soft pads that build into tight upbeat drums and bright synths at the lift"},
+    {"id": "warm-live-band", "label": "WARM LIVE BAND", "description": "a warm live band that lifts into a groove",
+     "clause": "Arrangement: warm live band feel, round bass, soulful organ and clean guitar, lifting into a live groove"},
+    {"id": "cinematic-strings", "label": "CINEMATIC STRINGS", "description": "film-style strings that open into a big finish",
+     "clause": "Arrangement: cinematic strings and piano, a steady build opening into a big sweeping upbeat finish"}
+  ]
+}

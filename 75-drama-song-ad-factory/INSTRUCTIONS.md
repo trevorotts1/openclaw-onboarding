@@ -215,17 +215,19 @@ Human price snapshot: `references/price-menu.md`. Stage order, QC, delivery
 and PARKED handling: `SOP--drama-song-ad-pipeline.md`.
 
 **Intake.** Quick mode is the default; Concept mode is for a client with
-their own story. Directive 24.3 still caps intake at three questions in one
-message, and the options are presented as ONE choice card with every default
+their own story. Directive 24.3 still caps intake at three story questions in one
+message (none about money; the card asks it once), and the options are presented as ONE choice card with every default
 pre-selected, so a client can approve with a single click. On resume the
 card shows only what changed.
 
-**Asking the six intake questions (H9).** Build them with
+**Asking the seven intake questions (H9).** Build them with
 `python3 scripts/core/intake_preflight/factory.py card` (Claude Code chat:
 show stdout as is; Telegram: `--format openclaw-json --target <chat id>`,
 run each argv without a shell). Never type them free hand or send them as one
 line: one block per question, one numbered option per line, a blank line
 between questions. See `references/choice-card-spec.md` section 2.1.
+
+**Script approval.** The card's last question (SCRIPT APPROVAL) lets the client read and approve the story and song lyrics before the song is made. On Yes, send the script, pause, and do not generate the song until "approve"; save the card answers (the `answers` list of `intake_card.conversation`) to `$RUN/card-answers.json` and the script to `$RUN/creative/script.json`; `factory.py next` then sends the script and pauses by itself, and `factory.py script-reply` carries the client's answer; see SKILL.md "Script approval before the song".
 
 **Ask them one at a time (I7).** Do not send the whole card. Run
 `factory.py card --step` (add one `--reply <what the client said>` per answer so
@@ -255,7 +257,7 @@ card. The answers and the time answered go into the receipt
 | Music | Soul Ballad, R&B Flow, Soul Rise | Soul Ballad |
 | Voice | All Suno, Velvet Voiceover | All Suno |
 | Clips | 60-second and 90-second clips | come with the 3-minute, 5-minute and 10-minute lengths, included in the price |
-| Video model | MiniMax H3 768P (RECOMMENDED) and the full APPROVED list | MiniMax H3 at 768P |
+| Video model | MiniMax H3 768P (RECOMMENDED), Seedance 2.5, Seedance 2.0 Mini, Google Veo 3.1 - each priced for the chosen length (`core/choice_card/video_models`) | MiniMax H3 at 768P |
 
 - **Lengths** 60 s / 90 s / **2 minutes (new, added by F15)** / 3 min /
   5 min / **10-minute long version**; each is its own song and timing map,

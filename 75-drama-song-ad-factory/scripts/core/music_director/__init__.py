@@ -34,6 +34,7 @@ import protected_names
 import words_match
 import words_fit
 import target_engine as TE
+from sung_hook import hook_placement
 
 TOOL_NAME = "music_director"
 TOOL_VERSION = "1.0.0"
@@ -113,7 +114,7 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
                            duration=None, callback_url="https://example.invalid/cb",
                            packet_lines=None, protected=(),
                            style_id=None, client_text=None, length_s=None,
-                           mode=None):
+                           mode=None, true_at_beat=None, hook_plan=None):
     """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
 
     F7 (words match the script exactly): when ``packet_lines`` is given, the
@@ -128,8 +129,20 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     BEFORE any payload is built (and before the recipe guard, so the three
     options always reach the person). Infeasible raises
     ``words_fit.WordsFitError`` carrying longer ad / lower sung target /
-    fewer words. A feasible plan stamps ``input.duration`` with planned
-    time + 15% headroom unless the caller already set ``duration``.
+    fewer words. A feasible plan stamps ``input.duration`` with the
+    DELIVERED length (``length_s``, the card minus the END_EARLY_S tail),
+    the number song_dispatch.run_takes requires, unless the caller already
+    set ``duration``.
+
+    FU-HOOK-PLACEMENT: ``true_at_beat`` (the story beat where the hook's
+    words become true, from the story plan) makes the director emit the
+    sheet's hook_plan (``hook_placement.plan_for``: {"true_at_beat", "beats"
+    measured from the sheet}); the recipe guard measures where every hook
+    sits against it (rules 2-3), and the request carries it as
+    ``_hook_plan`` (underscore: song_dispatch.run_takes moves it into the
+    judge's plan and never sends it to KIE). A caller-made ``hook_plan`` is
+    checked and carried the same way. With a Suno style and neither, the
+    guard refuses: "UNMEASURED: hook_plan". Shape in SKILL.md "Hook placement".
     """
     # FU-U4: concept mode means the client's own lines; no packet, no request.
     errors = protected_names.packet_required({"mode": mode}, packet_lines)
@@ -153,7 +166,10 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     misspelled = protected_names.check_lyrics_spelling(lyrics_text, protected)
     if misspelled:
         raise ValueError("; ".join(misspelled))
-    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # recipe v2 + I8
+    if hook_plan is None and true_at_beat is not None:
+        hook_plan = hook_placement.plan_for(lyrics_text, length_s, true_at_beat, style_id)
+    # The client's own lines are a contract: a sheet that drops one is refused
+    # naming the line before the recipe guard asks about style or hook placement.
     if packet_lines is not None and (protected or any(
             isinstance(x, dict) for x in packet_lines)):
         # H7 (supersedes the F7 whole-text match, which forbids any sung
@@ -167,6 +183,8 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
         errors = words_match.validate_words_match(lyrics_text, packet_lines)
         if errors:
             raise ValueError("; ".join(errors))
+    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s,
+                              hook_plan=hook_plan)  # recipe v2 + I8 + hook placement
     if not instrumental:  # I5: ask for a real ending (outro + resolved chord)
         lyrics_text, style_text = ending_qc.with_clean_ending(lyrics_text, style_text)
     ver = _checked_version(version)
@@ -180,13 +198,18 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
         req["input"]["vocal_gender"] = vocal_gender
     if duration is not None:
         req["input"]["duration"] = duration
-    elif fit is not None:  # G9: plan + >=15% Suno headroom when length was carded
-        req["input"]["duration"] = words_fit.max_suno_duration(fit["plan_s"])
+    elif fit is not None:
+        # The DELIVERED length (card - END_EARLY_S tail; ``length_s`` here),
+        # which song_dispatch.run_takes requires ("whole tracks only"). The
+        # words-fit check above stays on planned vocal time.
+        req["input"]["duration"] = length_s
     # FU-U6 (plan E.2): the FINAL payload, measured after every mutation
     # (with_clean_ending appends the ending to the style ABOVE). Over a cap,
     # prompt_limits raises PROMPT_OVER_CAP naming field, chars, cap, source and
     # status; nothing is ever truncated.
     prompt_limits.check_request(GENERATE_CATALOG_ID, req)
+    if hook_plan is not None:
+        req["_hook_plan"] = hook_plan
     return req
 
 

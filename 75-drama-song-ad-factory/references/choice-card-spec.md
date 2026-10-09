@@ -50,13 +50,10 @@ Your drama song ad
                 the product (10-15% target, never a cap; measured at delivery)
   Voice:        All Suno (default) / Velvet Voiceover (Google voiceover with
                 the song underneath, no echo effect; not with Sketch to Life)
-  Clips:        (5 and 10 minutes only) automatic 60- or 90-second clips
-                for ads and Reels
-
-                the song underneath, no echo effect)
   Clips:        (3, 5 and 10 minutes) automatic 60-second and 90-second
                 clips to post on social media, included in the price
-  Video model:  MiniMax H3, 768P  (RECOMMENDED)   [see all models and prices]
+  Video model:  MiniMax H3 (RECOMMENDED) / Seedance 2.5 / Seedance 2.0 Mini /
+                Google Veo 3.1, each with its price for the chosen length
   Villain:      <name>, shown in N shots    (FU-U16; from the story plan)
   Price:        computed by Skill 74 `price`   (+ the 20% retake allowance)
   Includes:     all video shots, the song (song mp3 included), one image per shot
@@ -88,7 +85,7 @@ previous selections kept.
 
 The intake is a conversation, not a form. One message per turn:
 
-1. `Question 3 of 6 - VIDEO STYLE`, then a one-sentence reason the question
+1. `Question 3 of 7 - VIDEO STYLE`, then a one-sentence reason the question
    matters, then the question.
 2. Options as a numbered list, one per line, each with a short plain
    description; the RECOMMENDED option is marked and followed by "I recommend
@@ -132,17 +129,40 @@ the next call prints question 1. A run state that already shows `intro_shown`
 never prints it again. Without `--run-state-file` the card is unchanged.
 Test: `choice_card/intake_card/test_intro_message.py`.
 
+## 2.1b SCRIPT APPROVAL (the last card question)
+
+Appended after STORYBOARD APPROVAL (the card's last question; the total
+count is computed, never typed):
+
+```
+Question N of M - SCRIPT APPROVAL
+Do you want to read and approve the script - your story and the song lyrics - before the song is made?
+1. Yes, show me first - Nothing is generated until you say go. (RECOMMENDED)
+2. No, just make it - I start as soon as the card is approved.
+```
+
+It appears in the recap and changes by number like every other line. On Yes
+the run sends the script after the story and lyric sheet pass their checks and
+pauses before the song (`script_approval/script_approval.py`; gate
+`check_script_approval`, refusal `SCRIPT_NOT_APPROVED`). On No: no change.
+
 ## 2.1 Intake question card layout (Part H9, normative)
 
-The six intake questions (length, music style, video style, video model,
-spend limit, storyboard approval) are built by
+The nine intake questions (AI models, length, music style, video style, video
+model, budget, storyboard approval, song approval, script approval) are built by
 `scripts/core/choice_card/intake_card/intake_card.py` and nowhere else. Never
 write them free hand and never carry them as one JSON string.
 
-- Each question is its own block: `Question 1 of 6 - LENGTH`, then the plain
+- Each question is its own block: `Question 2 of 9 - LENGTH`, then the plain
   question, then one numbered option per line (`1. 60 seconds - one short
   sentence. (RECOMMENDED)`). A blank line separates questions. The last line
   is the "how to answer" line.
+- Question 1 is AI MODELS: "Which AI should build your video, and which should
+  check the work? OpenRouter is recommended because it's faster; Ollama works
+  too." Option 1 is the recommended setup (an OpenRouter model builds, Claude
+  Sonnet checks); option 2 is the client's own pair, e.g. "DeepSeek builds,
+  Sonnet checks". The answer is a recorded preference (`ai_models` in the
+  approved summary), not a model switch. Test: `choice_card/intake_card/test_ai_models.py`.
 - Plain text only: no Markdown, no HTML, no parse mode, so no sender can strip
   or escape the line breaks.
 - Claude Code chat: run `factory.py card` and show its stdout as is (raw text,
@@ -153,7 +173,7 @@ write them free hand and never carry them as one JSON string.
   `--format telegram-json` body is the exact Bot API `sendMessage` payload.
 - The intake `question_message` uses the same layout (`format_questions`).
 
-## 2.3 Fit stop card (FU-U4, normative)
+## 2.5 Fit stop card (FU-U4, normative)
 
 When the client brings their own lines (concept mode, `brief.mode == "concept"`),
 their lines are a contract: `brief.packet_lines` is required (missing is refused
@@ -183,12 +203,12 @@ length that is not offered, and any fps other than the 30 fps master.
 ### 2.1a Saved character question (FU-SAVED-CHARACTER-QUESTION, normative)
 
 Shown only when the client's data folder holds saved characters; it is then
-question 1 and the card has one more question. Built by
+question 2 (AI MODELS stays question 1) and the card has one more question. Built by
 `character_library.saved_character_question`, never free hand. N is how many
 characters the client has saved ("1 character", "2 characters"):
 
 ```
-Question 1 of 7 - CHARACTER
+Question 2 of 10 - CHARACTER
 Do you want to create a new character for this ad, or use one you've used before?
 You have 2 characters saved with us.
 1. Create a new character (recommended)
@@ -206,6 +226,54 @@ shown once, before the first question: "You don't have any saved characters
 yet, so I'll create a new one for this ad and save it for next time."
 
 Test: `character_library/test_saved_character_question.py`.
+
+## 2.4 STORYBOARD APPROVAL shows both (normative)
+
+When the client answers Yes to "Do you want to approve the storyboard before
+any video is made?", the approval message shows, per shot in song order, the
+written card (shot number, time range, the exact line, what the viewer must
+understand, place and action, face emotion) AND that shot's still image.
+Stills are made first because they are cheap; no video job is submitted until
+the client approves. A client edit to one shot regenerates only that shot's
+still and re-sends only that shot. Built by
+`scripts/core/storyboard_director/approval_package.py`; a shot with an
+incomplete card or no still file blocks the approval message. The live run sends it with `factory.py storyboard` (see stage-runbook.md, Wiring).
+
+## 2.6 Song approval (FU-SONG-APPROVAL, normative)
+
+Question 8 of 9, label `SONG APPROVAL`, built by `intake_card.py` like the
+storyboard question (the saved-character question, when shown, makes it 9 of 10):
+
+```text
+Question 8 of 9 - SONG APPROVAL
+Do you want to hear and pick the song before any video is made?
+1. Yes, send me 3 versions to choose from - ... (RECOMMENDED)
+2. No, just make it - I make one song and keep going.
+```
+
+- It appears in the recap ("8. Song Approval: ...") and the recap's "number of
+  a line to change it" reopens it.
+- **Yes:** the song stage generates three versions of the same lyric sheet IN
+  PARALLEL inside the chosen music style, three arrangement variants from the
+  data table `scripts/core/song_choices/variants.json` (for R&B Flow: Polished
+  Modern, Warm Live Band, Cinematic Strings). Every version must pass the
+  song checks (`song_dispatch.judge_take`: lyrics, hook placement, voice rules)
+  before it is offered; a failed version is regenerated once, then reported
+  and left out.
+- **Labels:** one folder `SONG-CHOICES/` in the client's delivery folder with
+  `1 - <LABEL> (<one-line description>).mp3`, `2 - ...`, `3 - ...`, each file's
+  embedded title tag set to the same label (`ffmpeg -c copy -metadata
+  title=...`), and `README.txt` (one line per file: label, length,
+  description). The client message lists the three by number and label and says
+  "Reply 1, 2 or 3 to pick your song."
+- **Gate:** no picture timing, image, video or lip-sync spend until the pick is
+  recorded (`song_choices.record_pick`); the picked file becomes the song for
+  the rest of the run (`<run>/music/picked-song.mp3`). A missing, unreadable or
+  changed pick blocks (`SONG_PICK_MISSING`, from `factory.py next` and
+  `kie_dispatch`) and never defaults.
+- **No:** exactly as before. One song, no wait.
+- **Price:** with Yes the card adds two extra song generations to the total and
+  shows them on a `Song picks:` row (`card_render`, `song_choices: true`).
 
 ## 3. Field rules
 
@@ -280,7 +348,7 @@ and rules, and the template system owns the prompt text (design 2.4).
 |---|---|
 | **Lifelike 3D** (default) | Cinematic CGI animation; clearly animated, lifelike faces |
 | **2D Hand-Painted** | Hand-painted 2D cartoon |
-| **Sketch to Life** | Black-and-white hand-drawn sketch switching to realism, warm golden realism finale |
+| **Sketch to Life (Hybrid)** | Black-and-white hand-drawn sketch switching to realism, warm golden realism finale |
 | **Canvas to Life** | 2D hand-painted cartoon switching to realism, golden realism finale |
 | **Canvas to 3D** | 2D hand-painted cartoon switching to lifelike 3D and back (Version E, offered) |
 
@@ -297,6 +365,19 @@ Rules:
   Canvas to 3D lip-syncs only on lifelike 3D close-ups.
 - If the client picks nothing, the card states that Lifelike 3D is the
   default and applies it.
+- **How the client sees it (FU-STYLE-QUESTIONS):** the VIDEO STYLE question
+  is "How should your video look?" and every option has one plain line of at
+  most 12 words (Lifelike 3D: polished animated movie look with lifelike
+  faces; 2D Hand-Painted: a warm, hand-painted cartoon from start to finish;
+  Sketch to Life (Hybrid): black-and-white pencil sketch that turns into real
+  footage; Canvas to Life: painted cartoon that turns into real footage;
+  Canvas to 3D: painted cartoon that turns into lifelike 3D). "Hybrid" is the
+  official name of the sketch-and-real-footage look and shows on Sketch to
+  Life only (the Canvas to 3D bible says 2D-to-3D is not hybrid, D18). Each
+  option with a sample shows a `Watch:` link under it. The links live in
+  `scripts/core/choice_card/intake_card/style_samples.json` (look id to https
+  URL, `null` = no sample yet, nothing is shown). Change a sample by editing
+  that file only. Canvas to Life has no sample yet.
 
 ### 3.4 Music
 
@@ -310,6 +391,12 @@ Decision 30, plan 6.7:
 
 The song brief, the Suno style prompt and the spoken/sung balance all follow
 this choice.
+
+The client sees the MUSIC STYLE question as "Which sound fits your story?",
+each option with one plain line: Soul Ballad - slow, heartfelt singing; builds
+to a big emotional chorus. R&B Flow - rhythmic rap verses, then a smooth sung
+hook you remember. Soul Rise - starts slow and sad, then lifts into an upbeat,
+hopeful groove.
 
 ### 3.5 Voice
 
@@ -419,10 +506,44 @@ Decision 32, plan 6.13.
 ### 3.8 Video model
 
 Default **MiniMax H3 at 768P** (decision 5). No choice means MiniMax H3, and
-the card says so. `[see all models and prices]` opens the full chart from the
-price menu, sorted cheapest first, for the selected length, showing one-shape
-and both-shapes prices and the retake allowance. Seedance 2.5 at 1080p is
-marked PREMIUM with its price shown plainly.
+the card says so.
+
+**The intake question (FU-VIDEO-MODEL-CHOICES, 2026-10-09).** After the
+client picks a length, the video model question lists four models, each with
+its price for THAT length, one plain descriptor each (about 8 words), and H3
+first and marked RECOMMENDED:
+
+```
+Question 4 of 6 - VIDEO MODEL
+Which video model should make your shots? Prices are for your 3-minute ad,
+with the song, pictures and a 20% redo allowance.
+1. MiniMax H3 - great quality, best value - about $9.17 (RECOMMENDED)
+2. Seedance 2.5 - premium detail and motion - about $68.57
+3. Seedance 2.0 Mini - quicker and cheaper - about $9.38
+4. Google Veo 3.1 - top-tier realism - about $9.07
+```
+
+Seedance is ByteDance's VIDEO model (Seedream is its image model and cannot
+make shots). The four models, provider ids and rates live in ONE table,
+`scripts/core/choice_card/video_models/video_model_rates.json` (from
+the KIE live model list, checked 2026-10-09), each at the resolution the
+factory really renders: H3 768P, Seedance 2.5 720p, Seedance 2.0 Mini 720p,
+Google Veo 3.1 Fast 720p (per 8-second clip). The figure shown comes from the
+SAME function as the final card (`card_render.price_envelope`): video + one
+keyframe per shot + the character reference pictures + the song, then the
+20% redo allowance, so the number in the question is the number on the card
+(for the standard 9:16 ad with one main character; more characters or both
+shapes re-price on the card with the same function). Skill 74 `price` returns
+the highest listed tier, so the chosen model's video line is priced from the
+table instead; Skill 74's own behaviour for other skills is unchanged.
+The recap line reads `Video model: Seedance 2.5 - about $68.57` (3-minute ad). The
+pick is written to run state (the F14 video-model lock) when the client
+answers; the card's Video model row reads it there, and dispatch reads it too
+and submits that model's provider id and resolution (Seedance: `generate_audio`
+off; Veo 3.1: top-level `veo-3-1`, tier `veo3_fast` inside `input`).
+
+Seedance 2.0 Fast is not offered: its 4-15 s clip range is unconfirmed and it
+is not on the price menu; Mini is the "lite" tier on the menu.
 
 If MiniMax H3 is unavailable, the factory says so and offers the next
 cheapest APPROVED model that fits, with its price. It never switches models
@@ -507,6 +628,8 @@ Sketch to Life / Velvet pair is refused there too), `core/smp/saturday_prompt`.
 4. If a live rate cannot be read, the card says the price is unavailable and
    does not start paid work.
 5. On resume the card shows only what changed, plus the next stage.
+6. With SONG APPROVAL = Yes the total includes the two extra song generations
+   (section 2.6).
 
 ## 5. Skill 74 mode gate
 
@@ -547,8 +670,11 @@ The four rules (recipe v2, replaces G12):
    text, and the style says the full band keeps playing under the spoken lines.
 2. Sung lines are short (5-6 syllables aimed, 8 at most), rhymed, with
    hyphen-held vowels, after a wordless sung vocalise.
-3. The first hook comes after the vocalise, never at 0 s; the hook is the
-   client's own words, repeated by length (`core/sung_hook`).
+3. The hook is the payoff, never the opener: it comes after the build-up
+   (a verse, plus a pre-chorus or build where the style and length plan
+   have one), measured at or after the story beat where its words become
+   true; the hook is the client's own words, repeated by
+   length (`core/sung_hook`, `core/sung_hook/hook_placement.py`).
 4. Each take's singing is measured, not taken from its labels.
 
 Word budget, section plan, hook repeats, spoken placement, instrumental breaks

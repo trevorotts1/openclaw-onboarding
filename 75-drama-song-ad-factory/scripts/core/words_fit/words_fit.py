@@ -107,6 +107,28 @@ def rates_for(style=None):
     return dict(STYLE_RATES.get(sid, DEFAULT_RATES))
 
 
+def style_sung_target_pct(style=None, length_s=None):
+    """The style's own sung-of-voice target, judged as a FLOOR (the rule
+    song_contract holds every sheet to): more singing is never a fault, so a
+    Soul sheet may be almost all sung. A rap style (R&B Flow) takes the sung
+    share its own length plan holds once its rap budget is carved out, at
+    the style's rates; every other style (and no style) keeps the 77.5%."""
+    try:
+        sid = _MS.style(style)["style_id"]
+    except (_MS.MusicStyleError, TypeError):
+        return DEFAULT_SUNG_TARGET_PCT
+    if "rap" not in _MS.style(sid)["deliveries"] or length_s is None:
+        return DEFAULT_SUNG_TARGET_PCT
+    try:
+        import length_formula as _LF                # lazy: length_formula imports this module
+    except ImportError:
+        from .. import length_formula as _LF
+    w, r = _LF.plan(length_s + _LF.END_EARLY_S, style_id=sid)["words"], rates_for(sid)
+    sung = w["sung"] / float(r["sung"])
+    voice = sung + w["spoken"] / float(r["spoken"]) + w.get("rap", 0) / float(r["rap"])
+    return round(100.0 * sung / voice, 1)
+
+
 def planned_seconds(sung_words, spoken_words, rap_words=0.0,
                     intro_outro_s=INTRO_OUTRO_S, rates=None):
     """Planned vocal seconds = sum(words / rate) + intro/outro.
@@ -221,7 +243,7 @@ def preflight(chosen_length_s, sung_words, spoken_words, rap_words=0.0,
     L = _num(chosen_length_s, "chosen_length_s")
     if L <= 0:
         raise WordsFitError("BAD_INPUT", "chosen_length_s must be > 0")
-    target = (DEFAULT_SUNG_TARGET_PCT if sung_target_pct is None
+    target = (style_sung_target_pct(style, L) if sung_target_pct is None
               else _num(sung_target_pct, "sung_target_pct"))
     if not 0.0 < target <= 100.0:
         raise WordsFitError("BAD_INPUT",
@@ -232,7 +254,8 @@ def preflight(chosen_length_s, sung_words, spoken_words, rap_words=0.0,
 
     plan_s = planned_seconds(sung_words, spoken_words, rap_words, io, r)
     share = sung_share_of_voice(sung_words, spoken_words, rap_words, r)
-    gap_pts = round(abs(share - target), 6)
+    # the target is a FLOOR, the same rule as song_contract: only a shortfall counts
+    gap_pts = round(max(0.0, target - share), 6)
     dur = suno_duration_s(plan_s)
 
     base = {
@@ -268,7 +291,7 @@ def preflight(chosen_length_s, sung_words, spoken_words, rap_words=0.0,
     if too_long:
         reasons.append("plan %.1fs exceeds the %gs card" % (plan_s, L))
     if share_off:
-        reasons.append("sung share %.1f%% is %g points from target %.1f%%"
+        reasons.append("sung share %.1f%% is %g points short of the target %.1f%%"
                        % (share, gap_pts, target))
 
     if max_f is None:

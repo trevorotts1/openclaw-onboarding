@@ -102,6 +102,11 @@ SUNO_FALLBACK = {"lyrics": 5000, "style": 1000, "title": 80,
                  "status": "VERIFIED"}
 
 
+#: The market createTask id for Veo 3.1 ("veo-3-1", tier in input.model) is
+#: the same model family as the dedicated catalog entry; hold it to that entry.
+MARKET_ALIASES = {"veo-3-1": "veo3_fast"}
+
+
 class PromptLimitError(ValueError):
     """A final-payload text field is over its cap. Never truncates."""
 
@@ -180,6 +185,7 @@ def video_caps(model, models_path=None):
     caller reports the status. Hailuo models are held at the file-17 cap of
     2,000 even though the catalog carries no hailuo entry at all.
     """
+    model = MARKET_ALIASES.get(model, model)
     if model in OVERRIDES:
         o = OVERRIDES[model]
         return {"prompt": o["cap"], "negative_prompt": o["cap"], "status": o["status"],

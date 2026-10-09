@@ -107,7 +107,7 @@ class SeamTests(unittest.TestCase):
     def test_matching_lyrics_build_payload(self):
         req = self.md.build_generate_request(
             "I'm gonna show you the kitchen\nIt changed my mornings forever.",
-            "ballad", "T",
+            "ballad", "T", style_id="velvet_voiceover",
             packet_lines=["I'm gonna show you the kitchen",
                           "it changed my mornings forever"])
         self.assertEqual(req["input"]["lyrics"],
@@ -119,7 +119,7 @@ class SeamTests(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             self.md.build_generate_request(
                 "I'm gonna show you the kitchen\nIt changed my mornings forever.",
-                "ballad", "T",
+                "ballad", "T", style_id="velvet_voiceover",
                 packet_lines=["I'm going to show you the kitchen",
                               "It changed my mornings forever."])
         self.assertIn(CODE, str(cm.exception))
@@ -128,12 +128,12 @@ class SeamTests(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             self.md.build_generate_request(
                 "I'm gonna show you the kitchen\nIt changed my mornings forever.\nextra line here",
-                "ballad", "T", packet_lines=PACKET)
+                "ballad", "T", packet_lines=PACKET, style_id="velvet_voiceover")
         self.assertIn(CODE, str(cm.exception))
 
     def test_packet_lines_none_keeps_old_behavior(self):
         req = self.md.build_generate_request(
-            "I'm gonna show you the kitchen", "ballad", "T")
+            "I'm gonna show you the kitchen", "ballad", "T", style_id="velvet_voiceover")
         self.assertEqual(req["input"]["lyrics"],
                          "I'm gonna show you the kitchen"
                          "\n\n[Outro]\n[Resolve on final chord]\n")  # I5 ending

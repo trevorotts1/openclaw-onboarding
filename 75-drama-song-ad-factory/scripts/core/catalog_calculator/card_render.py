@@ -30,6 +30,7 @@ except ImportError:  # script import from inside this directory
 
 try:
     from choice_card.looks import looks as LOOKS
+    from choice_card.video_models import video_models as VM
     from music_styles import music_styles as MS
     from clip_cutdown import clips_for
 except ImportError:
@@ -37,6 +38,7 @@ except ImportError:
     if _CORE_HERE not in sys.path:
         sys.path.insert(0, _CORE_HERE)
     from choice_card.looks import looks as LOOKS          # type: ignore
+    from choice_card.video_models import video_models as VM  # type: ignore
     from music_styles import music_styles as MS           # type: ignore
     from clip_cutdown import clips_for                    # type: ignore
 
@@ -76,28 +78,55 @@ def _cents(value):
     return int(round(float(value) * 100))
 
 
-def default_choice(card):
+def default_choice(card, model=None):
     """The D5/D24 default choice for one ad, from a card's five fields.
+    ``model`` is the client's video model table entry (default: H3).
 
     Batch cards choose the five fields once; this turns them into the
     calculator's ``choice`` + shipped fixtures, so a card renders with real
     prices without any operator path or catalog sync state.
     """
-    length = LENGTH_SECONDS.get(str(card.get("length") or "60 seconds"), 60)
+    label = str(card.get("length") or "60 seconds")
+    try:    # the intake option text ("3 minutes + 60s and 90s clips") is not a LENGTH_SECONDS key
+        length = LENGTH_SECONDS.get(label) or VM.length_seconds(label)
+    except ValueError:
+        length = 60
     shape = str(card.get("shape") or "9:16")
     shapes = ("9:16", "16:9") if shape == "both" else (shape if shape in
                                                        ("9:16", "16:9") else "9:16",)
     return {
         "length_seconds": length,
         "shapes": list(shapes),
-        "model": DEFAULT_VIDEO_MODEL,
+        "model": (model or VM.chosen())["kie_model"],
         "music_model": DEFAULT_MUSIC_MODEL,
         "image_model": DEFAULT_IMAGE_MODEL,
         "main_characters": card.get("main_characters") or 1,
     }
 
 
-def _row_values(card):
+def price_envelope(card, price_fn, state_store=None, run_id=None, catalog=None):
+    """THE price: the question, the final card and batch all call this.
+
+    The client's model comes from card["video_model"] (option number) or the run
+    state lock; the video line is priced at the resolution the factory renders,
+    everything else (pictures, song, lip-sync) through ``price_fn``.
+    Returns (envelope, model_entry).
+    """
+    m = VM.chosen(state_store, run_id, card.get("video_model"))
+    env = price_card_ext(default_choice(card, m), VM.catalog_for(m, catalog or _load_shipped_catalog()),
+                         VM.rated_price_fn(m, price_fn))
+    return env, m
+
+
+def quote(n, length_label):
+    """Question price for option n at the chosen length: the card's own total
+    with its 20% redo allowance, in dollars (None if the card cannot price it)."""
+    env, _m = price_envelope({"length": length_label, "video_model": n}, None)
+    card = env.get("card") if env.get("state") == "ok" else None
+    return card["spending_limit_usd"] if card else None
+
+
+def _row_values(card, model=None):
     """The seven INSTRUCTIONS.md row values in card order."""
     shape = str(card.get("shape") or "9:16")
     voice = str(card.get("voice") or "all-suno")
@@ -111,7 +140,7 @@ def _row_values(card):
         "Voice": voice_label,
         "Clips": CLIPS_OFFER.get(str(card.get("length") or "60 seconds"),
                                  "automatic 60-second and 90-second clips"),
-        "Video model": "MiniMax H3 768P (RECOMMENDED)",
+        "Video model": VM.row_label(model or VM.chosen(None, None, card.get("video_model"))),
     }
 
 
@@ -129,35 +158,39 @@ def _music_label(music_id):
         return str(music_id or "Soul Ballad")
 
 
-def render(card, price_fn):
+def render(card, price_fn, state_store=None, run_id=None):
     """The one-click card in plain text, dollar figures included.
 
     ``card`` is any card dict with the five once-chosen fields (batch make_card
     or the intake card). ``price_fn`` is the Skill 74 ``price`` adapter
     ``(model, units) -> JSON``; None means render unpriced.
 
+    FU-U11: when the card carries a book plan (``book_plan``), the Book shots
+    APPROVAL BLOCK is appended -- approvals and notices, never a new choice.
+
     Returns (text, priced_ok). The card always renders every row; a card
     whose price cannot be read says "Price unavailable" on the total and is
     safe to show, and approval must stay blocked (fail closed, 4.4).
     """
-    values = _row_values(card)
+    model = VM.chosen(state_store, run_id, card.get("video_model"))
+    values = _row_values(card, model)
     lines = []
     priced_ok = False
     total = None
     envelope = None
+    song_extra = None
 
     if price_fn is not None:
-        choice = default_choice(card)
-        # The fixture catalog ships with the calculator; the shipped catalog
-        # is data in the repo, never an operator path.
+        # The shipped catalog is data in the repo, never an operator path.
         try:
-            catalog = _load_shipped_catalog()
-            envelope = price_card_ext(choice, catalog, price_fn)
+            envelope, _m = price_envelope(card, price_fn, state_store, run_id)
             ok_card = envelope.get("card") if envelope.get("state") == "ok" else None
             if ok_card:
                 priced_ok = True
                 total = ok_card["price_usd"]
-                values["Video model"] = _model_label(ok_card.get("model_id"))
+                if card.get("song_choices"):      # SONG APPROVAL = Yes: 2 extra song generations
+                    song_extra = 2 * float(_row_dollars(ok_card)["Music"])
+                    total += song_extra
                 row_dollars = _row_dollars(ok_card)
             else:
                 row_dollars = None
@@ -172,6 +205,10 @@ def render(card, price_fn):
         lines.append("  %-12s %s%s" % (row + ":", values[row],
                                        ("   " + figure) if figure else ""))
 
+    if card.get("song_choices"):
+        lines.append("  %-12s 3 labelled versions to choose from (2 extra songs%s), nothing else starts until you pick"
+                     % ("Song picks:", (", added $%.2f, included in the total" % song_extra)
+                        if priced_ok and song_extra is not None else ", price unavailable"))
     plan = ((envelope or {}).get("card") or {}).get("image_plan") if priced_ok else None
     if plan:
         lines.append("  %-12s %d character reference pictures + %d shot pictures "
@@ -179,10 +216,11 @@ def render(card, price_fn):
                      % ("Images:", plan["reference_images"], plan["keyframe_images"],
                         plan["reference_set_usd"]))
     if priced_ok and total is not None:
-        retake = RETAKE_RATE * total
+        extra = song_extra or 0.0           # the two extra songs carry the 20% allowance too
+        retake = ok_card["retake_allowance_usd"] + extra * RETAKE_RATE
         lines.append("")
         lines.append("  %-12s $%.2f + $%.2f retake allowance (20%%) = $%.2f"
-                     % ("Total:", total, retake, total + retake))
+                     % ("Total:", total, retake, ok_card["spending_limit_usd"] + extra * (1 + RETAKE_RATE)))
     else:
         lines.append("")
         lines.append("  %-12s Price unavailable -- media generation pricing is "
@@ -190,7 +228,26 @@ def render(card, price_fn):
         reasons = [str(r) for r in ((envelope or {}).get("reasons") or [])]
         if reasons:
             lines.append("  (%s)" % "; ".join(reasons[:4]))
+    lines += _book_block(card)
     return "\n".join(lines), priced_ok
+
+
+def _book_block(card):
+    """FU-U11: the Book shots approval block lines, or [] for a non-book card.
+
+    Imported lazily so a card render never depends on the book module being
+    present (and a non-book card never pays for it).
+    """
+    plan = (card or {}).get("book_plan")
+    if not plan:
+        return []
+    try:
+        from book_shot import book_shot as BS
+    except ImportError:
+        return ["", "Book shots: the book plan is present but the book module "
+                    "could not be loaded, so its rows cannot be shown."]
+    notes = list((card or {}).get("card_notes") or [])
+    return [""] + BS.plan_card_block(plan, notes)
 
 
 def _load_shipped_catalog():
@@ -200,13 +257,6 @@ def _load_shipped_catalog():
     path = os.path.join(here, "extensions", "fixtures", "catalog.json")
     with open(path, encoding="utf-8") as f:
         return json.load(f)
-
-
-def _model_label(model_id):
-    """Row-7 label from a priced model id (MiniMax stays RECOMMENDED)."""
-    if model_id and DEFAULT_VIDEO_MODEL == model_id:
-        return "MiniMax H3 768P (RECOMMENDED)"
-    return str(model_id or "MiniMax H3 768P (RECOMMENDED)")
 
 
 def _row_dollars(priced_card):

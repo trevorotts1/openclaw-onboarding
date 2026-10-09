@@ -23,33 +23,36 @@ def _blocks(text):
     return text.split("\n\n")
 
 
-def test_six_questions_each_own_block():
-    assert N == 6
+def test_nine_questions_each_own_block():
+    assert N == 9
     blocks = _blocks(CARD)
-    assert len(blocks) == N + 1                       # six questions + closing
+    assert len(blocks) == N + 1                       # nine questions + closing
     for i, b in enumerate(blocks[:N], 1):
         first = b.split("\n")[0]
         assert first.startswith("Question %d of %d - " % (i, N)), first
     labels = [b.split("\n")[0].split(" - ")[1] for b in blocks[:N]]
-    assert labels == ["LENGTH", "MUSIC STYLE", "VIDEO STYLE", "VIDEO MODEL",
-                      "SPEND LIMIT", "STORYBOARD APPROVAL"]
+    assert labels == ["AI MODELS", "LENGTH", "MUSIC STYLE", "VIDEO STYLE", "VIDEO MODEL",
+                      "BUDGET", "STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"]
 
 
 def test_each_option_on_its_own_numbered_line_recommended_marked():
     for q, b in zip(IC.QUESTIONS, _blocks(CARD)):
         lines = b.split("\n")
-        opts = lines[2:]
+        opts = [l for l in lines[2:] if not l.startswith("   Watch: ")]   # sample links sit under their option
         assert len(opts) == len(q["options"])
         for n, line in enumerate(opts, 1):
-            assert re.match(r"^%d\. .+ - .+[.)]$" % n, line), line
+            assert re.match(r"^%d\. .+ - .+[.)\d]$" % n, line), line  # a priced line ends in the dollar figure
             assert "\n" not in line
+        if q["recommended"] is None:        # unpriced BUDGET: nothing to recommend
+            assert not any(IC.REC in l for l in opts)
+            continue
         assert sum(IC.REC in l for l in opts) == 1
         assert IC.REC in opts[q["recommended"]]
 
 
 def test_closing_line_last():
-    assert _blocks(CARD)[-1] == IC.CLOSING_LINE
-    assert CARD.startswith("Question 1 of 6")
+    assert _blocks(CARD)[-1] == IC._closing(IC.QUESTIONS)
+    assert CARD.startswith("Question 1 of 9")
 
 
 def test_no_markup_that_a_sender_could_strip():
@@ -59,9 +62,10 @@ def test_no_markup_that_a_sender_could_strip():
 def test_messages_under_limit_and_split_between_questions():
     one = IC.render_messages()
     assert len(one) == 1 and one[0] == CARD
-    small = IC.render_messages(limit=500)
+    # 1000 not 400: the video question now carries five sample links (FU-STYLE-QUESTIONS)
+    small = IC.render_messages(limit=1000)
     assert len(small) > 1
-    assert all(len(m) <= 500 for m in small)
+    assert all(len(m) <= 1000 for m in small)
     assert "\n\n".join(small) == CARD         # only blank-line seams were cut
     for m in small:                       # never starts a message mid-question
         assert m.startswith("Question") or m == IC.CLOSING_LINE

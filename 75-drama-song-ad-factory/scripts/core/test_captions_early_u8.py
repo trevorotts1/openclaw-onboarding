@@ -98,10 +98,15 @@ class DisplaySpellingReachesTheCaption(unittest.TestCase):
         self.assertEqual(P.check_captions(cues, self.SHEET), [])
 
 
+EXEMPT = "velvet_voiceover"
+
+
 class LyricSpellingRefusedBeforeSuno(unittest.TestCase):
     """(c) A misspelled word is refused before any payload is built."""
 
     GOOD = "[Sung - lead, ballad]\nI cleaned the kitchen all day"
+    # the spelling gate is what is under test: an exempt (voiceover) style id,
+    # because a sung sheet with no style_id is refused "UNMEASURED: style_id"
 
     def setUp(self):
         import music_director
@@ -115,13 +120,13 @@ class LyricSpellingRefusedBeforeSuno(unittest.TestCase):
         self.md._cat = self._saved
 
     def test_clean_sheet_still_builds(self):
-        req = self.md.build_generate_request(self.GOOD, "ballad", "T")
+        req = self.md.build_generate_request(self.GOOD, "ballad", "T", style_id=EXEMPT)
         self.assertIn("kitchen", req["input"]["lyrics"])
 
     def test_misspelled_sheet_is_refused_and_builds_nothing(self):
         bad = self.GOOD.replace("kitchen", "kitchan")
         with self.assertRaises(ValueError) as cm:
-            self.md.build_generate_request(bad, "ballad", "T")
+            self.md.build_generate_request(bad, "ballad", "T", style_id=EXEMPT)
         self.assertIn(P.CODE_LYRIC, str(cm.exception))
         self.assertIn("kitchan", str(cm.exception))
 
@@ -130,7 +135,7 @@ class LyricSpellingRefusedBeforeSuno(unittest.TestCase):
         # be what the spelling gate refuses.
         sheet = ("[Vocalise]\nOo-o-o-o-o-oh,\n[Sung - lead, ballad]\n"
                  "I am not sma-a-all")
-        req = self.md.build_generate_request(sheet, "ballad", "T")
+        req = self.md.build_generate_request(sheet, "ballad", "T", style_id=EXEMPT)
         self.assertIn("sma-a-all", req["input"]["lyrics"])
 
 
