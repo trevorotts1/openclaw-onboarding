@@ -106,6 +106,18 @@ _should_exclude() {
     # class as the */OpenMontage/*, */node_modules/*, and */working/* exclusions.
     model-map.json)
       return 0 ;;
+    # A3 INSTALL-NOTE FIX: the installers of 48-facebook-ad-generator
+    # (install.sh -> kie_install_note.py) and 59-anthology-engine (install.sh)
+    # write an install-status.txt note INTO the installed skill dir at install
+    # time on keyless boxes. It is ABSENT from the clean source tree (never
+    # git-tracked), so it landed in the DEST digest only, making SRC != DEST
+    # and falsely failing the A3 content gate — withholding the version stamp
+    # on exactly the boxes that need it most. It is an install-run note, not
+    # shipped content, so excluding it on BOTH sides does not weaken A3 (all
+    # shipped .md/.py/.sh skill files remain in scope). Same class as
+    # model-map.json above.
+    install-status.txt)
+      return 0 ;;
   esac
   case "$f" in
     */.git/*) return 0 ;;
