@@ -47,17 +47,27 @@ REC = "(RECOMMENDED)"
 #: Looks and music come from the choice-card modules so the menu cannot drift.
 #: Short plain sentences (the library descriptions are build notes, not client text).
 _LOOK_SENTENCE = {
-    "lifelike-3d": "Cinematic, lifelike animated people.",
-    "2d-hand-painted": "A hand-painted cartoon look.",
-    "sketch-to-life": "A pencil sketch that turns into real footage.",
-    "canvas-to-life": "A painted cartoon that turns into real footage.",
-    "canvas-to-3d": "A painted cartoon that turns into lifelike 3D.",
+    "lifelike-3d": "polished animated movie look with lifelike faces.",
+    "2d-hand-painted": "a warm, hand-painted cartoon from start to finish.",
+    "sketch-to-life": "black-and-white pencil sketch that turns into real footage.",
+    "canvas-to-life": "painted cartoon that turns into real footage.",
+    "canvas-to-3d": "painted cartoon that turns into lifelike 3D.",
 }
+#: Client-facing names. "Hybrid" is the official name of the sketch-and-real-footage
+#: look (its bible and id are still `hybrid`); the card label stays Sketch to Life.
+_LOOK_NAME = {"sketch-to-life": "Sketch to Life (Hybrid)"}
 _MUSIC_SENTENCE = {
-    "soul-ballad": "Slow, emotional, soulful singing.",
-    "rnb-flow": "Smooth R&B with a catchy sung hook.",
-    "soul-rise": "Starts soulful and lifts into an upbeat groove.",
+    "soul-ballad": "slow, heartfelt singing; builds to a big emotional chorus.",
+    "rnb-flow": "rhythmic rap verses, then a smooth sung hook you remember.",
+    "soul-rise": "starts slow and sad, then lifts into an upbeat, hopeful groove.",
 }
+
+
+def _sample_links():
+    """look id -> https sample-video link (style_samples.json); missing or null = no link."""
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "style_samples.json"), encoding="utf-8") as f:
+        return {k: v for k, v in json.load(f).items() if v}
 
 
 def _menu(ids, labels, sentences):
@@ -66,7 +76,15 @@ def _menu(ids, labels, sentences):
 
 def _looks():
     from choice_card.looks import looks as L
-    return _menu(L.LOOK_ORDER, L.LOOK_LABELS, _LOOK_SENTENCE)
+    labels = {i: _LOOK_NAME.get(i, L.LOOK_LABELS[i]) for i in L.LOOK_ORDER}
+    return _menu(L.LOOK_ORDER, labels, _LOOK_SENTENCE)
+
+
+def _look_links():
+    """Sample link per look option, by option number (1-based); none = no entry."""
+    from choice_card.looks import looks as L
+    links = _sample_links()
+    return {n: links[i] for n, i in enumerate(L.LOOK_ORDER, 1) if i in links}
 
 
 def _musics():
@@ -84,10 +102,10 @@ def _questions():
                      ("5 minutes", "A long story, with automatic 60 and 90 second clips."),
                      ("10-minute long version", "The full-length cut, with automatic clips.")],
          "recommended": 0},
-        {"id": "music", "why": "The song carries the feeling of the whole ad.", "reason": "it is the style that tests best for emotional stories.", "label": "MUSIC STYLE", "ask": "What should the song sound like?",
+        {"id": "music", "why": "The song carries the feeling of the whole ad.", "reason": "it is the style that tests best for emotional stories.", "label": "MUSIC STYLE", "ask": "Which sound fits your story?",
          "options": _musics(), "recommended": 0},
-        {"id": "look", "why": "The look is what viewers see in every shot.", "reason": "it gives the most real, cinematic result.", "label": "VIDEO STYLE", "ask": "What should the video look like?",
-         "options": _looks(), "recommended": 0},
+        {"id": "look", "why": "The look is what viewers see in every shot.", "reason": "it gives the most real, cinematic result.", "label": "VIDEO STYLE", "ask": "How should your video look? Tap a link to watch a sample.",
+         "options": _looks(), "links": _look_links(), "recommended": 0},
         {"id": "model", "why": "The video model sets how good the shots look and what they cost.", "reason": "it gives the best balance of quality and price.", "label": "VIDEO MODEL", "ask": "Which video model should make the shots?",
          "options": [("MiniMax H3, 768P", "Best balance of quality and price."),
                      ("Show me every model and its price", "I will list them, then you pick.")],
@@ -108,11 +126,20 @@ def _questions():
 QUESTIONS = _questions()
 
 
-def _block(i, total, q):
-    lines = ["Question %d of %d - %s" % (i, total, q["label"]), q["ask"]]
+def _option_lines(q):
+    """Numbered option lines; an option with a sample link gets an indented line under it."""
+    out = []
     for n, (opt, sentence) in enumerate(q["options"], 1):
         mark = (" " + REC) if n - 1 == q.get("recommended") else ""
-        lines.append("%d. %s - %s%s" % (n, opt, sentence, mark))
+        out.append("%d. %s - %s%s" % (n, opt, sentence, mark))
+        if n in q.get("links", {}):
+            out.append("   Watch: " + q["links"][n])
+    return out
+
+
+def _block(i, total, q):
+    lines = ["Question %d of %d - %s" % (i, total, q["label"]), q["ask"]]
+    lines += _option_lines(q)
     return "\n".join(lines)
 
 
@@ -127,9 +154,7 @@ def render_step(i, questions=None):
     qs = questions or QUESTIONS
     q = qs[i - 1]
     lines = ["Question %d of %d - %s" % (i, len(qs), q["label"]), q["why"], "", q["ask"]]
-    for n, (opt, sentence) in enumerate(q["options"], 1):
-        mark = (" " + REC) if n - 1 == q.get("recommended") else ""
-        lines.append("%d. %s - %s%s" % (n, opt, sentence, mark))
+    lines += _option_lines(q)
     r = q.get("recommended", 0)
     lines += ["", "I recommend option %d (%s) because %s" % (r + 1, q["options"][r][0], q["reason"]),
               "Reply with a number, or say \"recommended\"."]

@@ -158,7 +158,7 @@ and rules, and the template system owns the prompt text (design 2.4).
 |---|---|
 | **Lifelike 3D** (default) | Cinematic CGI animation; clearly animated, lifelike faces |
 | **2D Hand-Painted** | Hand-painted 2D cartoon |
-| **Sketch to Life** | Black-and-white hand-drawn sketch switching to realism, warm golden realism finale |
+| **Sketch to Life (Hybrid)** | Black-and-white hand-drawn sketch switching to realism, warm golden realism finale |
 | **Canvas to Life** | 2D hand-painted cartoon switching to realism, golden realism finale |
 | **Canvas to 3D** | 2D hand-painted cartoon switching to lifelike 3D and back (Version E, offered) |
 
@@ -175,6 +175,19 @@ Rules:
   Canvas to 3D lip-syncs only on lifelike 3D close-ups.
 - If the client picks nothing, the card states that Lifelike 3D is the
   default and applies it.
+- **How the client sees it (FU-STYLE-QUESTIONS):** the VIDEO STYLE question
+  is "How should your video look?" and every option has one plain line of at
+  most 12 words (Lifelike 3D: polished animated movie look with lifelike
+  faces; 2D Hand-Painted: a warm, hand-painted cartoon from start to finish;
+  Sketch to Life (Hybrid): black-and-white pencil sketch that turns into real
+  footage; Canvas to Life: painted cartoon that turns into real footage;
+  Canvas to 3D: painted cartoon that turns into lifelike 3D). "Hybrid" is the
+  official name of the sketch-and-real-footage look and shows on Sketch to
+  Life only (the Canvas to 3D bible says 2D-to-3D is not hybrid, D18). Each
+  option with a sample shows a `Watch:` link under it. The links live in
+  `scripts/core/choice_card/intake_card/style_samples.json` (look id to https
+  URL, `null` = no sample yet, nothing is shown). Change a sample by editing
+  that file only. Canvas to Life has no sample yet.
 
 ### 3.4 Music
 
@@ -188,6 +201,12 @@ Decision 30, plan 6.7:
 
 The song brief, the Suno style prompt and the spoken/sung balance all follow
 this choice.
+
+The client sees the MUSIC STYLE question as "Which sound fits your story?",
+each option with one plain line: Soul Ballad - slow, heartfelt singing; builds
+to a big emotional chorus. R&B Flow - rhythmic rap verses, then a smooth sung
+hook you remember. Soul Rise - starts slow and sad, then lifts into an upbeat,
+hopeful groove.
 
 ### 3.5 Voice
 

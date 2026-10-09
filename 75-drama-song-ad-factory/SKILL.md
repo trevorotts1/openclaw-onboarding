@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.8
+version: v2.9.9
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -542,6 +542,11 @@ SOP named above.
   flicker, identity locked; golden realism carries the transformation and
   payoff.
 - **Music (decision 30):** Soul Ballad (default), R&B Flow, Soul Rise.
+- **Style questions on the intake card:** each music and video option shows
+  one plain line saying what it is; Sketch to Life shows as "Sketch to Life
+  (Hybrid)"; video options show a `Watch:` sample link from
+  `scripts/core/choice_card/intake_card/style_samples.json` (no link when the
+  table says `null`). See `references/choice-card-spec.md`.
 - **One-track soundtrack (decisions 27, 31, F1):** ONE Suno generation makes
   the whole soundtrack. Every spoken passage is written into the song's own
   lyrics, tagged as spoken (`[Spoken]` + the character's voice tag), so Suno
