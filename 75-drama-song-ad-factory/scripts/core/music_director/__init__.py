@@ -141,6 +141,13 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
                 fit["detail"] + " | options: "
                 + "; ".join("%s -> %s" % (k, v.get("detail", v))
                             for k, v in (fit.get("options") or {}).items()))
+    # U8: the DISPLAY words are spell-checked before the recipe guard, so a
+    # misspelled lyric is refused with the word named while nothing has been
+    # built yet (it used to surface only at delivery). Performance spelling
+    # ("you-u", "sma-a-all") is display_text's own job and never refused.
+    misspelled = protected_names.check_lyrics_spelling(lyrics_text, protected)
+    if misspelled:
+        raise ValueError("; ".join(misspelled))
     suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s)  # recipe v2 + I8
     if packet_lines is not None and protected:
         # H7 (supersedes the F7 whole-text match, which forbids any sung

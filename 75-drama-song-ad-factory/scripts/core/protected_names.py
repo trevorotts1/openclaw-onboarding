@@ -30,6 +30,7 @@ import difflib
 import gzip
 import os
 import re
+import unicodedata
 
 TOOL_VERSION = "1.0.0"
 CODE_SHEET = "PROTECTED_NAME_CHANGED"
@@ -40,16 +41,33 @@ CODE_SOURCE = "CAPTION_SOURCE_NOT_SHEET"
 CODE_SPELL = "CAPTION_MISSPELLED"
 CODE_WEBSITE = "WEBSITE_NOT_VERBATIM"
 CODE_NO_DICT = "SPELLCHECK_DICTIONARY_MISSING"
+#: U8: a lyric word that is not a real word (checked on the DISPLAY text,
+#: before any Suno payload is built).
+CODE_LYRIC = "LYRIC_MISSPELLED"
+#: U8: a real word in the wrong place (your/you're). A FLAG, never a fix.
+CODE_CONFUSABLE = "GRAMMAR_FLAG"
 
 #: The only text source a caption may come from.
 CAPTION_TEXT_SOURCE = "approved-lyric-sheet"
 
 _WORD_RE = re.compile(r"[a-z0-9]+(?:'[a-z0-9]+)?")
 _TAG_RE = re.compile(r"\[[^\]\n]*\]")
+#: U8: the typographic apostrophe a real storyboard carries ("could’ve").
+_QUOTES = {0x2018: "'", 0x2019: "'", 0x02BC: "'"}
+_VOCALISE_RE = re.compile(r"^[aeiouhm]+$")  # ooh, ahh, mmm: no words to show
+
+
+def _plain(text):
+    """U8: NFKC plus the typographic apostrophe mapped to the plain one.
+
+    "could’ve" used to tokenise to "could" + "ve" (the splitter is ASCII
+    only), so a misspelled contraction passed every word check.
+    """
+    return unicodedata.normalize("NFKC", str(text or "")).translate(_QUOTES)
 
 
 def _tokens(text):
-    return _WORD_RE.findall(_TAG_RE.sub(" ", text or "").casefold())
+    return _WORD_RE.findall(_TAG_RE.sub(" ", _plain(text)).casefold())
 
 
 def _lines(value):
@@ -183,11 +201,130 @@ def check_sung_names(sheet, sung_words, protected=()):
             for (name, _), heard in sorted(bad.items(), key=lambda kv: kv[0][1])]
 
 
-def build_captions(sheet, aligned_words):
+def _collapse_hold(word):
+    """U8: a hyphen HOLD ("you-u", "sma-a-all", "stro-o-ong") -> its word.
+
+    A hold is a run of single-vowel segments between the word and its tail
+    ("sma"+"a"+"all", "ne"+"e"+"eed"). Single-vowel segments are dropped and
+    the junction's repeated letter merges, so "sma-a-all" -> "small" and
+    "stro-o-ong" -> "strong". A token with no such segment is not a hold and
+    comes back untouched, which is what keeps real hyphenated words
+    ("no-one", "ne-ever") exactly as written.
+    """
+    parts = word.split("-")
+    if len(parts) < 2:
+        return word
+    # A lowercase single-vowel segment is the HELD vowel: "a-all", "sma-a-all",
+    # "wa-a-as". An uppercase one is a word of its own ("A-List") and stays.
+    keep = [p for i, p in enumerate(parts)
+            if not (i and len(p) == 1 and p in "aeiouhm")]
+    if len(keep) == len(parts) or not keep:
+        return word  # no held vowel, or nothing left: not a hold
+    joined = keep[0]
+    for p in keep[1:]:
+        if joined and p and joined[-1].lower() == p[0].lower():
+            joined += p[1:]
+        else:
+            joined += p
+    return joined or word
+
+
+def display_text(line, display_map=None):
+    """U8: the spelling a caption shows, from a line written for the singer.
+
+    The recipe requires performance spelling -- hyphen-held vowels ("Girl, I
+    got you-u", "Ooh-oo-ooh") -- and those used to go on screen as written.
+    A hold collapses to its word ("you-u" -> "you", "sma-a-all" -> "small")
+    and a real hyphenated word ("no-one") is left exactly as written. A line
+    that is nothing but held vowels (a wordless vocalise) has no display
+    text at all -- it is sung, never shown. An optional ``display_map``
+    {performance: display} wins over the rule.
+    """
+    text = _plain(line).strip()
+    if not text:
+        return ""
+    body = _TAG_RE.sub(" ", text)
+    stripped = re.sub(r"[\s\-,.!?;:']", "", body)
+    if stripped and all(c in "aeiouhm" for c in stripped.casefold()):
+        return ""  # wordless vocalise: no words to show
+    pmap = display_map or {}
+    out = []
+    for tok in text.split():
+        i = len(tok)
+        while i > 0 and tok[i - 1] in ",.!?;:":
+            i -= 1
+        word, tail = tok[:i], tok[i:]
+        if word in pmap:
+            out.append(str(pmap[word]) + tail)
+            continue
+        out.append(_collapse_hold(word) + tail)
+    return " ".join(out).strip()
+
+
+#: U8: the two confusions a token alone can PROVE, as (pattern, what it
+#: should read as). A hit is a FLAG for a person to answer, never a fix:
+#: a bare "your" is correct English most of the time, so only the tells
+#: that cannot be right are listed.
+_CONFUSABLE_TELLS = (
+    (re.compile(r"\byour\s+(i|you|we|they|he|she|it|not|nothing|the|a|an)\b",
+                re.I), "you're"),
+    (re.compile(r"\byou're\s+(the|a|an|my|his|her|their|our|own)\b", re.I),
+     "your"),
+    (re.compile(r"\b(more|less|better|worse|other|rather|fewer|older|"
+                r"younger|bigger|smaller|longer|shorter)\s+then\b", re.I),
+     "than"),
+)
+
+
+def check_lyrics_spelling(lyrics, protected=(), extra_words=()):
+    """U8 build gate: [] when every DISPLAY word of the lyric text is a real
+    word, else one error per unknown word with the word shown.
+
+    The check runs on ``display_text`` of each line, so the recipe's own
+    performance spelling ("you-u", "sma-a-all", a wordless vocalise) is
+    never the thing refused -- the misspelling is. Runs before any Suno
+    payload is built (`music_director.build_generate_request`).
+    """
+    lines = [display_text(x) for x in _lines(lyrics)]
+    return ["%s %s" % (CODE_LYRIC, e)
+            for e in check_spelling(lines, protected, extra_words)]
+
+
+def check_confusables(lines, exempt_lines=()):
+    """U8: FLAG the real-but-wrong words a token can prove wrong. Never a fix.
+
+    Only the text the skill wrote itself is checked: a line listed in
+    ``exempt_lines`` (a client packet line, approved vernacular) is skipped,
+    because the client's own words are asked about, never rewritten. Returns
+    one "GRAMMAR_FLAG ..." string per hit; [] when nothing hits.
+    """
+    exempt = {str(x).strip() for x in (exempt_lines or ())}
+    out = []
+    for line in _lines(lines):
+        text = str(line).strip()
+        if not text or text in exempt:
+            continue
+        for pattern, reads_as in _CONFUSABLE_TELLS:
+            m = pattern.search(text)
+            if m:
+                out.append("%s %r reads like %r in %r (a person confirms; "
+                           "nothing is rewritten)"
+                           % (CODE_CONFUSABLE, m.group(0).strip(),
+                              reads_as, text))
+    return out
+
+
+def build_captions(sheet, aligned_words, display_map=None):
     """One cue per sheet line: {text, start, end}. Text is ALWAYS the sheet's
     own text; aligned_words ([{word,start,end}] from Suno timestamps) supply
     times only. A sheet word with no matching timed word borrows its
-    neighbour's time. Lines with no words at all (tags) are skipped."""
+    neighbour's time. Lines with no words at all (tags) are skipped.
+
+    U8: the text a caption shows is the DISPLAY spelling, never the singing
+    one -- "Girl, I got you-u" is performed that way and burned as "Girl, I
+    got you", and a wordless vocalise line makes no cue at all. ``display_map``
+    is an optional {performance: display} map merged over the built-in rule.
+    """
     sheet_lines = [s for s in _lines(sheet) if _tokens(s)]
     want, owner = [], []
     for i, line in enumerate(sheet_lines):
@@ -208,26 +345,38 @@ def build_captions(sheet, aligned_words):
     known = [a for a in at if a]
     cues = []
     for i, line in enumerate(sheet_lines):
+        text = display_text(line, display_map)
+        if not text:  # a wordless vocalise is sung, never shown
+            continue
         t = [at[k] for k in range(len(want)) if owner[k] == i and at[k]]
         if not t and known:  # whole line untimed: sit after the previous cue
             prev = cues[-1]["end"] if cues else known[0][0]
             t = [(prev, prev)]
-        cues.append({"text": line.strip(),
+        cues.append({"text": text,
                      "start": min(a for a, _ in t) if t else 0.0,
                      "end": max(b for _, b in t) if t else 0.0})
     return cues
 
 
-def check_captions(cues, sheet, protected=(), text_source=CAPTION_TEXT_SOURCE):
+def check_captions(cues, sheet, protected=(), text_source=CAPTION_TEXT_SOURCE,
+                   display_map=None):
     """QC gate. cues: list of {text} / str lines. [] when the caption words
     equal the approved sheet word for word, else error strings. Any
     mismatch fails; a changed protected name is named. A caption whose
-    ``text_source`` is not the approved sheet (speech-to-text) fails."""
+    ``text_source`` is not the approved sheet (speech-to-text) fails.
+
+    U8: the comparison is against the sheet's DISPLAY spelling, because that
+    is what a caption shows -- "Girl, I got you-u" in the sheet is on screen
+    as "Girl, I got you", and calling that a mismatch would fail every
+    recipe-compliant sheet.
+    """
     errors = []
     if text_source != CAPTION_TEXT_SOURCE:
         errors.append("%s text_source %r, captions must come from %s, "
                       "never speech-to-text"
                       % (CODE_SOURCE, text_source, CAPTION_TEXT_SOURCE))
+    sheet = [display_text(x, display_map) for x in _lines(sheet)]
+    sheet = [x for x in sheet if x.strip()]
     want = _tokens("\n".join(_lines(sheet)))
     got = _tokens("\n".join(_lines(cues)))
     for tag, i1, i2, j1, j2 in _align(want, got):
