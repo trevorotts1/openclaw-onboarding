@@ -148,6 +148,33 @@ The same card states, as notices and never as options, every storyboard item the
 skill will not make: sound effects (sfx stay off), an echo or reverb voice, a
 length that is not offered, and any fps other than the 30 fps master.
 
+### 2.1a Saved character question (FU-SAVED-CHARACTER-QUESTION, normative)
+
+Shown only when the client's data folder holds saved characters; it is then
+question 1 and the card has one more question. Built by
+`character_library.saved_character_question`, never free hand. N is how many
+characters the client has saved ("1 character", "2 characters"):
+
+```
+Question 1 of 7 - CHARACTER
+Do you want to create a new character for this ad, or use one you've used before?
+You have 2 characters saved with us.
+1. Create a new character (recommended)
+2. Use <Name> - <the saved description, up to 90 characters>
+3. Use <Name> - ...
+Reply with a number, or 'recommended'.
+```
+
+Reply 1 or "recommended" makes a new character; reply 2 and up loads that
+saved character. The recap line reads `Character: new` or
+`Character: <Name> (saved)`, and replying with its number re-asks the question.
+
+When the client has NO saved characters nothing is asked. One plain line is
+shown once, before the first question: "You don't have any saved characters
+yet, so I'll create a new one for this ad and save it for next time."
+
+Test: `character_library/test_saved_character_question.py`.
+
 ## 3. Field rules
 
 ### 3.1 Length

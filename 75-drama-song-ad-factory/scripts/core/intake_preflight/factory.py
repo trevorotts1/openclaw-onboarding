@@ -299,7 +299,7 @@ def main(argv=None):
                    choices=("text", "openclaw-json", "telegram-json"))
     c.add_argument("--target", default="", help="Telegram chat id")
     c.add_argument("--client-dir", default="",
-                   help="Client data folder; adds 'Use a saved character?' when it has saved characters (I6).")
+                   help="Client data folder; adds the saved-character question when it has saved characters (I6).")
     c.add_argument("--step", action="store_true",
                    help="one question per message (I7): print only the next message")
     c.add_argument("--reply", action="append", default=[],

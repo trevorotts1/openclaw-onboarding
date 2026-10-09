@@ -108,7 +108,14 @@ def _questions():
 QUESTIONS = _questions()
 
 
+#: Shown once, before the first question, when the client has no saved characters.
+NO_SAVED_LINE = ("You don't have any saved characters yet, so I'll create a new one "
+                 "for this ad and save it for next time.")
+
+
 def _block(i, total, q):
+    if "body" in q:                       # saved-character question: fixed text
+        return "\n".join(["Question %d of %d - %s" % (i, total, q["label"])] + q["body"])
     lines = ["Question %d of %d - %s" % (i, total, q["label"]), q["ask"]]
     for n, (opt, sentence) in enumerate(q["options"], 1):
         mark = (" " + REC) if n - 1 == q.get("recommended") else ""
@@ -117,7 +124,10 @@ def _block(i, total, q):
 
 
 def _blocks(questions):
-    return [_block(i, len(questions), q) for i, q in enumerate(questions, 1)]
+    blocks = [_block(i, len(questions), q) for i, q in enumerate(questions, 1)]
+    if questions and questions[0].get("preface"):
+        blocks[0] = questions[0]["preface"] + "\n\n" + blocks[0]
+    return blocks
 
 
 def render_step(i, questions=None):
@@ -126,6 +136,8 @@ def render_step(i, questions=None):
     explained, then how to answer."""
     qs = questions or QUESTIONS
     q = qs[i - 1]
+    if "body" in q:
+        return _block(i, len(qs), q)
     lines = ["Question %d of %d - %s" % (i, len(qs), q["label"]), q["why"], "", q["ask"]]
     for n, (opt, sentence) in enumerate(q["options"], 1):
         mark = (" " + REC) if n - 1 == q.get("recommended") else ""
@@ -140,7 +152,8 @@ def render_recap(answers, questions=None):
     qs = questions or QUESTIONS
     lines = ["Here is what you picked:"]
     for i, (q, a) in enumerate(zip(qs, answers), 1):
-        lines.append("%d. %s: %s" % (i, q["label"].title(), a["text"]))
+        lines.append("%d. %s" % (i, q["recap"][a["n"] - 1] if "recap" in q
+                                 else "%s: %s" % (q["label"].title(), a["text"])))
     lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
     return "\n".join(lines)
 
@@ -197,6 +210,8 @@ def conversation(replies, questions=None):
         msg = note + render_step(fix + 1, qs)
     elif len(answers) < len(qs):
         msg = note + render_step(len(answers) + 1, qs)
+        if not replies and qs[0].get("preface"):
+            msg = qs[0]["preface"] + "\n\n" + msg
     else:
         msg = note + render_recap(answers, qs)
     return {"answers": answers, "done": done, "message": msg}
@@ -409,15 +424,14 @@ def _render_fit(card):
 
 def _with_saved_character(client_dir):
     """QUESTIONS, with the saved-character question first when the client has
-    saved characters (Part I, I6); otherwise the plain six."""
+    saved characters (Part I, I6). With a client folder but no saved characters
+    the plain six open with one short line (``NO_SAVED_LINE``). No folder: plain six."""
     if not client_dir:
         return QUESTIONS
     from character_library import character_library as CL
     q = CL.saved_character_question(client_dir)
     if not q:
-        return QUESTIONS
-    q = dict(q, why="A saved character keeps the same face across your ads.",
-             reason="you can still pick a new character if you prefer.")
+        return [dict(QUESTIONS[0], preface=NO_SAVED_LINE)] + QUESTIONS[1:]
     return [q] + QUESTIONS
 
 
@@ -435,7 +449,7 @@ def main(argv=None):
                     help="a client reply, in order (repeat the flag)")
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
-                         "card opens with 'Use a saved character?' (I6)")
+                         "card opens with the saved-character question (I6)")
     a = ap.parse_args(argv)
     qs = _with_saved_character(a.client_dir)
     if a.step:
