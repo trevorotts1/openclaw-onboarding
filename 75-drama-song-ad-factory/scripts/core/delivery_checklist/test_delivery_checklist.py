@@ -132,6 +132,33 @@ def measured_yes(q, receipt):
     return receipt
 
 
+def _detector_record(sung=61.0, runtime=60.0, take="o3"):
+    """A G3 detector record (the record the amended G5 receipt is built from)."""
+    sung_share = sung / 100.0
+    return {"tool": "singing_detector", "tool_version": "2.0.0",
+            "sung_share": sung_share, "spoken_share": 1.0 - sung_share,
+            "rap_share": 0.0, "no_voice_share": 0.0, "confidence": 0.9,
+            "measured": True, "runtime_s": runtime, "take": take}
+
+
+def g5_measured_block(sung=61.0, runtime=60.0):
+    """The block core/singing_detector/receipt_evidence.measured_share()
+    builds -- built HERE by that real module, never hand-shaped, so the
+    test proves the two units agree on the field names."""
+    RE = dc._receipt_evidence()
+    assert RE is not None, "receipt_evidence reader missing"
+    return RE.measured_share(_detector_record(sung, runtime))
+
+
+def g5_full_block(sung=61.0, runtime=60.0):
+    """The full amended receipt block: shares + target + gap + takes."""
+    RE = dc._receipt_evidence()
+    assert RE is not None, "receipt_evidence reader missing"
+    return RE.receipt_block(_detector_record(sung, runtime),
+                            target={"sung_share": 0.60},
+                            rounds_used=1, selected_take=None)
+
+
 class G7DoneWhen(unittest.TestCase):
     # ---- done-when 1: missing ANY measured answer FAILS the gate -------
     def test_missing_answer_fails(self):
@@ -378,6 +405,158 @@ class G7DoneWhen(unittest.TestCase):
         self.assertTrue(res["evidence"]["on_target_flags"])
         r["ON_TARGET"]["shares"]["spoken"]["measured_pct"] = 56.0   # 11 off
         self.assertEqual(dc.evaluate(r)["repair_scope"], ["ON_TARGET"])
+
+    # ---- amend (order 1150 part G): the checklist consumes the amended
+    # receipt fields -- G5's receipt_evidence, the G3-WIRE provenance
+    # suffix, KEPT_BEST and flagged lip-sync rows ---------------------------
+    def test_amend_q1_consumes_measured_share_block(self):
+        """The G5 measured_share() block is the authority Q1 answers with."""
+        receipt = full_answered_receipt()
+        receipt["SUNG"] = {"style": "sung",
+                           "receipt_evidence": g5_measured_block(sung=61.0)}
+        res = dc.evaluate(receipt)
+        self.assertTrue(res["pass"], res["detail"])
+        line = res["answers"]["SUNG"]["measurement"]
+        self.assertIn("sung 61.0%", line)
+        self.assertIn("singing_detector", line)
+
+    def test_amend_q1_full_receipt_block_with_takes(self):
+        """receipt_block() (shares + target + gap + every take) also passes."""
+        receipt = full_answered_receipt()
+        receipt["receipt_evidence"] = g5_full_block(sung=61.0)
+        res = dc.evaluate(receipt)
+        self.assertTrue(res["pass"], res["detail"])
+
+    def test_amend_q1_block_missing_a_field_fails(self):
+        """A block missing ANY promised share FAILS (G7 law 2)."""
+        for key in ("sung_pct", "spoken_pct", "rap_pct", "no_voice_pct",
+                    "sung_seconds", "runtime_s"):
+            receipt = full_answered_receipt()
+            block = g5_measured_block()
+            del block[key]
+            receipt["SUNG"] = {"style": "sung", "receipt_evidence": block}
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"], "missing %s must FAIL" % key)
+            self.assertIn("SUNG", res["repair_scope"])
+
+    def test_amend_q1_block_without_detector_or_confidence_fails(self):
+        for key in ("detector", "confidence"):
+            receipt = full_answered_receipt()
+            block = g5_measured_block()
+            del block[key]
+            receipt["SUNG"] = {"style": "sung", "receipt_evidence": block}
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"], key)
+            self.assertIn("SUNG", res["repair_scope"])
+
+    def test_amend_q1_label_shaped_block_fails(self):
+        """A label-shaped block: source != measured is the failed-ad shape."""
+        receipt = full_answered_receipt()
+        block = g5_measured_block()
+        block["source"] = "labelled"
+        receipt["SUNG"] = {"style": "sung", "receipt_evidence": block}
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("SUNG", res["repair_scope"])
+
+    def test_amend_q1_label_shaped_plain_field_fails(self):
+        """The plain-field path: 54% 'sung' whose source names labels."""
+        for src in ("labels", "planned", "section labels",
+                    "verse/chorus time"):
+            receipt = full_answered_receipt()
+            receipt["SUNG"] = {
+                "style": "sung", "sung_pct": 54.0, "spoken_pct": 46.0,
+                "detector": "singing-detector(vocal-stem)", "source": src}
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"], src)
+            self.assertIn("SUNG", res["repair_scope"], src)
+
+    def test_amend_q1_block_with_dishonest_take_fails(self):
+        """check_receipt is the reader: a label-shaped take FAILS inside Q1."""
+        receipt = full_answered_receipt()
+        block = g5_full_block()
+        block["takes"].append({"take": "o4", "sung_pct": 44.0,
+                               "source": "labels"})
+        receipt["SUNG"] = {"style": "sung", "receipt_evidence": block}
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("SUNG", res["repair_scope"])
+
+    def test_amend_q1_provenance_suffix_appears(self):
+        """The G3-WIRE provenance suffix rides the SUNG measurement, in the
+        exact shape sung_vocal_guard.record_for_gate prints and core/qc_gate
+        requires on a PASS sung claim."""
+        res = dc.evaluate(full_answered_receipt())
+        line = res["answers"]["SUNG"]["measurement"]
+        self.assertIn("share_source=measured", line)
+        self.assertIn("sung_share=61.0%", line)
+        self.assertIn("detector=singing-detector(vocal-stem)", line)
+        self.assertIn(dc.provenance_suffix("singing-detector(vocal-stem)",
+                                           None, 61.0), line)
+        # the record's summary carries the same suffix, so the provenance
+        # travels with the qc record too
+        rec = dc.to_qc_record(res, RUN, STAGE, REVIEWER)
+        self.assertIn("share_source=measured", rec["evidence"]["summary"])
+        self.assertIn("sung_share=61.0%", rec["evidence"]["summary"])
+        # a label-shaped receipt's record never claims a measured share
+        bad = full_answered_receipt()
+        bad["SUNG"] = {"style": "sung", "sung_pct": 54.0, "spoken_pct": 46.0,
+                       "detector": "singing-detector(vocal-stem)",
+                       "source": "labels"}
+        res_bad = dc.evaluate(bad)
+        self.assertNotIn("share_source=measured",
+                         res_bad["answers"]["SUNG"]["measurement"])
+
+    def test_amend_q8_kept_best_row_flags_not_fails(self):
+        """KEPT_BEST: kept though not clean -- flag shown, numbers ride."""
+        receipt = full_answered_receipt()
+        receipt["LIP_SYNC"]["clips"][1].update(
+            {"tag": "KEPT_BEST", "correlation": 0.40,
+             "flag": "syNCED keep-best: no clean take exists"})
+        res = dc.evaluate(receipt)
+        self.assertTrue(res["pass"], res["detail"])
+        line = res["answers"]["LIP_SYNC"]["measurement"]
+        self.assertIn("KEPT_BEST", line)
+        self.assertIn("1 tagged kept-take", line)
+        # the untagged shifted row still FAILS (existing law untouched)
+        receipt["LIP_SYNC"]["clips"][1]["tag"] = ""
+        self.assertEqual(dc.evaluate(receipt)["repair_scope"], ["LIP_SYNC"])
+
+    def test_amend_q8_flagged_row_needs_reason(self):
+        for tag in ("KEPT_BEST", "FLAGGED"):
+            receipt = full_answered_receipt()
+            receipt["LIP_SYNC"]["clips"][0].update(
+                {"tag": tag, "offset_s": 0.20})
+            res = dc.evaluate(receipt)
+            self.assertFalse(res["pass"], tag)     # no reason shown
+            self.assertIn("LIP_SYNC", res["repair_scope"], tag)
+            receipt["LIP_SYNC"]["clips"][0]["note"] = "kept, no clean take"
+            res = dc.evaluate(receipt)
+            self.assertTrue(res["pass"], (tag, res["detail"]))
+            self.assertIn(tag, res["answers"]["LIP_SYNC"]["measurement"])
+
+    def test_amend_q8_unknown_tag_fails(self):
+        receipt = full_answered_receipt()
+        receipt["LIP_SYNC"]["clips"][0]["tag"] = "PROBABLY_FINE"
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("LIP_SYNC", res["repair_scope"])
+
+    def test_amend_q8_tagged_row_still_needs_its_numbers(self):
+        receipt = full_answered_receipt()
+        del receipt["LIP_SYNC"]["clips"][1]["frozen_s"]
+        receipt["LIP_SYNC"]["clips"][1]["tag"] = "KEPT"
+        res = dc.evaluate(receipt)
+        self.assertFalse(res["pass"])
+        self.assertIn("LIP_SYNC", res["repair_scope"])
+
+    def test_amend_g5_reader_matches_receipt_evidence_api(self):
+        """The checklist reads the same module G5 producers write."""
+        RE = dc._receipt_evidence()
+        self.assertIsNotNone(RE, "receipt_evidence reader not loadable")
+        self.assertEqual(dc._g5_problem(g5_measured_block()), "")
+        verdict = RE.check_receipt({"sung_pct": 54.0, "source": "labels"})
+        self.assertEqual(verdict["verdict"], "FAIL")
 
     # ---- gate wiring ------------------------------------------------------
     def test_record_wires_into_shared_gate(self):
