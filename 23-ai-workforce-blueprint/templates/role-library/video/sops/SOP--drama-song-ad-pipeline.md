@@ -163,7 +163,20 @@ model maximum.
 5. Flag the lip-sync lines: the pain peak, the product line, the call to
    action, and the chorus hook once at its strongest - three to four lines,
    about 15 to 20 seconds, listed on the approval card.
-6. **Speaker contract (plan 6.6):** the person visible while a line plays
+6. **Story arc rule and product-connection target (FU-U13, owner order
+   2026-10-08):** every ad's story runs struggle -> what changed -> the
+   product is why -> get the product. Name the product and connect it to
+   the story inside the lyrics AND on screen (cover, title, link) - never
+   only on an end card. Plan the spoken-word parts (inside the spoken band)
+   and the motion shots showing the character's struggle, taken from the
+   source material. Plan how much of the runtime connects the story to the
+   product: aim for 10-15% (`length_formula.plan_product_connection` puts
+   the planned seconds and percent on the plan; the lyric sheet carries a
+   per-line `product` tag). This is a TARGET, not a hard cap - the delivery
+   checklist measures the delivered run (`measure_product_connection`,
+   row `PRODUCT_CONNECTION`) and reports the seconds and percent: inside
+   the band is PASS, outside is a FLAG, never a blocker by itself.
+7. **Speaker contract (plan 6.6):** the person visible while a line plays
    must be the one speaking it, or the voice's source device. Narrator,
    phone, voicemail and laptop voices are allowed as voice-over but are
    **never lip-synced onto a person**.
