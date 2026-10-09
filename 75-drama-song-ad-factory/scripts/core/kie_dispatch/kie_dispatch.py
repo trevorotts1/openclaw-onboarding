@@ -124,6 +124,43 @@ try:  # F4: no automatic Suno sound effects (audio_c3/sfx_off)
 except ImportError:  # pragma: no cover - flat script path
     from audio_c3 import sfx_off as _sfx_off  # type: ignore # noqa: E402
 
+try:  # F2: whole-track retakes only in F1 mode (audio_c3/soundtrack)
+    import audio_c3.soundtrack as _SND  # noqa: E402
+except ImportError:  # pragma: no cover - flat script path
+    from audio_c3 import soundtrack as _SND  # type: ignore # noqa: E402
+
+PARTIAL_SUNO_JOB = "PARTIAL_SUNO_JOB"
+
+def suno_job_refusal(request):
+    """F2 intake seam: [] when a Suno job may go, else the refusal reasons.
+
+    Fires only for a run in F1 mode -- the request itself carries the F1
+    soundtrack stamp (``generate_soundtrack_request`` output) or carries
+    ``request["run_receipt"]``, the run's receipt with the recorded stamp
+    (``record_soundtrack`` output). A run with no stamp is untouched (F2
+    constrains F1-mode runs only).
+
+    The job row is ``request["suno_job"]`` when given; without it, the
+    F1-stamped request IS the one full-track generation. A partial shape
+    (a per-line slice, a spoken-take patch, a second bed) refuses
+    ``PARTIAL_SUNO_JOB`` here, before any ledger row or Skill 74 call.
+    """
+    req = request if isinstance(request, dict) else {}
+    receipt = req.get("run_receipt")
+    if not isinstance(receipt, dict):
+        rs = req.get("run_state")
+        receipt = rs.get("run_receipt") if isinstance(rs, dict) else None
+    if not isinstance(receipt, dict):
+        receipt = req
+    block = receipt.get("soundtrack") \
+        if isinstance(receipt, dict) else None
+    if not isinstance(block, dict) or block.get("mode") != _SND.TRACK_MODE:
+        return []
+    job = req.get("suno_job")
+    if not isinstance(job, dict):
+        job = {"kind": _SND.FULL_TRACK_KIND}
+    return _SND.refuse_partial_suno_job(receipt, job)
+
 
 def lipsync_picture_refusal(model, request):
     """LPG001/LPG002 hard block: a lip-sync job (kling ai-avatar, infinitalk)
@@ -694,6 +731,21 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         "record an estimated cost before dispatch",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
+    # F2 intake seam: a run in F1 mode takes whole tracks only. A partial
+    # slice/patch job refuses PARTIAL_SUNO_JOB here, before the ledger row
+    # and before any Skill 74 call. Runs with no F1 soundtrack stamp are
+    # untouched.
+    f2_reasons = suno_job_refusal(request)
+    if f2_reasons:
+        return envelope("dispatch", "rejected", PARTIAL_SUNO_JOB,
+                        "whole-track retakes only in F1 mode: one full-track "
+                        "generation or ONE whole-track retake of a failed "
+                        "take; a slice/patch job is refused (manual Part F "
+                        "F2). Nothing was reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"intake_errors": f2_reasons,
+                                  "generated": False})
     # F6: a run cannot animate before storyboard approval is recorded.
     sb_refusal = check_storyboard_approval(None, None, request)
     if sb_refusal:

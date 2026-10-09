@@ -140,6 +140,9 @@ print("PASS  py_compile sfx_off.py clean")
 print("")
 if FAILS:
     print("FAILED: %d check(s): %s" % (len(FAILS), ", ".join(FAILS)))
-    sys.exit(1)
-print("ALL PASS")
-sys.exit(0)
+else:
+    print("ALL PASS")
+# Bare-directory pytest collection imports this module; only a direct run
+# may sys.exit (a module-level exit is a pytest INTERNALERROR).
+if __name__ == "__main__":
+    sys.exit(1 if FAILS else 0)
