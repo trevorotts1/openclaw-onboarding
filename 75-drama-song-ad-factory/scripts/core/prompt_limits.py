@@ -88,7 +88,7 @@ HAILUO = {
 #: control field for these models, so the negative cap is added here at the
 #: same, file-17-verified number. Hailuo/H3 have no documented negative field
 #: at all (negatives go inside the prompt, short) so nothing is invented.
-NEGATIVE_PROMPT_CAPS = {
+KLING25_NEG_TABLE = {
     "kling/v2-5-turbo-text-to-video-pro": 2500,
     "kling/v2-5-turbo-image-to-video-pro": 2500,
 }
@@ -199,8 +199,8 @@ def video_caps(model, models_path=None):
                                % (model, path or "not found"))
     cap = entry.get("vendor_hard_cap_chars")
     neg = cap if "negative_prompt" in (entry.get("control_fields") or []) else None
-    if neg is None and model in NEGATIVE_PROMPT_CAPS:
-        neg = NEGATIVE_PROMPT_CAPS[model]
+    if neg is None and model in KLING25_NEG_TABLE:
+        neg = KLING25_NEG_TABLE[model]
     return {"prompt": cap, "negative_prompt": neg,
             "status": entry.get("cap_status", "UNKNOWN"),
             "source": "%s %s, source %s, VERIFIED %s%s" % (
