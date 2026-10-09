@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import tempfile
 
@@ -96,6 +97,31 @@ def test_printed_vs_white():
           r_nocal["verdict"] == "UNAVAILABLE"
           and r_nocal["reason_code"] == BS.BOOK_PAGES_UNAVAILABLE,
           r_nocal["reason_code"])
+    # The SECOND fixture family (the 999 half's generator, ported for parity):
+    # the same calibrated check must sort a generator it was NOT calibrated on.
+    pf_print = FIX.pages_frame(cv2, np, "printed")
+    pf_white = FIX.pages_frame(cv2, np, "white")
+    r_pf_print = BS.check_pages(frames=[pf_print, pf_print, pf_print], calibrated=cal)
+    r_pf_white = BS.check_pages(frames=[pf_white, pf_white, pf_white], calibrated=cal)
+    check("(a) the second fixture family printed page PASSes the same check",
+          r_pf_print["verdict"] == "PASS", r_pf_print["reason_code"])
+    check("(a) the second fixture family white page FAILs BOOK_BLANK_PAGES",
+          r_pf_white["verdict"] == "FAIL"
+          and r_pf_white["reason_code"] == BS.BOOK_BLANK_PAGES,
+          r_pf_white["reason_code"])
+    # ONE blank page among printed ones is a chapter break: only MORE THAN
+    # ONE blank fails. Paint the right page white inside a printed frame.
+    half = printed[2].copy()
+    half[:, half.shape[1] // 2 + 2:] = (250, 250, 250)
+    r_half = BS.check_pages(frames=[half, printed[3]], calibrated=cal)
+    check("(a) exactly one blank page does not fail (chapter-break rule)",
+          r_half["verdict"] == "PASS"
+          and len(r_half["checks"]["pages"]["blanks"]) == 1,
+          (r_half["verdict"], r_half["checks"]["pages"]["blanks"]))
+    # The blank-page FAIL names the measured blank count, not a bare code.
+    check("(a) the blank-page FAIL names the measured blank count",
+          "blank pages among" in (r_white.get("detail") or "")
+          and "threshold" in (r_white.get("detail") or ""), r_white.get("detail"))
     bad_cal = dict(cal, sorted=False)
     r_badcal = BS.check_pages(frames=white, calibrated=bad_cal)
     check("an unsorted calibration never yields a verdict",
@@ -275,6 +301,119 @@ def test_excerpt_never_reaches_a_video_model():
     texts = " ".join(t for _, t in rows)
     check("(d) the card says the excerpt never reaches a video model",
           "never reaches a video model" in texts, texts)
+    # The pending row names the artifact U9 must land (not a wire-up).
+    r0 = row_seam["rows"][0]
+    check("(d) the pending row names captions_burn.py as the U9 artifact",
+          r0.get("artifact", "").endswith("final_assembler/captions_burn.py"),
+          r0)
+
+# ---- (d) the assembled prompt never leaks excerpt words ---------------------
+def test_prompt_never_carries_excerpt_words():
+    """The video model's prompt is built from subject only; excerpt is DATA."""
+    import prompt_templates as PT
+    lines = ["Mrs. Abernathy's secret ledger of the harbor",
+             "She read it twice before the storm",
+             "The tide keeps every promise"]
+    spec_path = (PT.TEMPLATES_DIR / "fixtures" / "h3-specs"
+                 / "product-book-S09.json")
+    spec = json.loads(spec_path.read_text("utf-8"))
+    check("(d) the H3 spec carries no excerpt key at all",
+          "excerpt" not in spec, sorted(spec))
+    # Assemble the video prompt with the excerpt present in the plan payload.
+    chars = json.loads((PT.TEMPLATES_DIR / "fixtures" / "h3-specs"
+                        / "sample-characters.json").read_text("utf-8"))
+    plan = dict(spec, excerpt_overlay={"lines": lines})
+    prompt, sections = PT.assemble_h3(plan, chars)
+    check("(d) the video prompt never reads the overlay key",
+          "overlay" not in prompt.lower() and "excerpt" not in sections,
+          prompt)
+    # Distinctive-word proof: every distinctive excerpt word is absent.
+    distinctive = ("abernathy", "ledger", "harbor", "storm", "tide",
+                   "promise", "secret")
+    leaked = [w for w in distinctive if w in prompt.lower()]
+    check("(d) the assembled prompt never carries excerpt words",
+          not leaked, leaked)
+    # No whole excerpt line appears in the template prompt.
+    whole = [ln for ln in lines if ln.lower() in prompt.lower()]
+    check("(d) no whole excerpt line appears in the template prompt",
+          not whole, whole)
+
+# ---- (d) intake excerpt surface (fail closed) -------------------------------
+def test_intake_excerpt_fail_closed():
+    """>3 lines or a typo is REFUSED at intake; spell-clean lines survive."""
+    import importlib
+    IB = importlib.import_module("intake_book.book")
+    clean = ["She read the old letter twice", "The rain kept falling all night",
+             "He closed the door and waited"]
+    lines, prov, errs = IB.excerpt_lines({"excerpt_lines": clean})
+    check("intake excerpt_lines: provided lines come back verbatim",
+          lines == clean and prov == "provided" and errs == [],
+          (lines, prov, errs))
+    lines2, prov2, errs2 = IB.excerpt_lines({})
+    check("intake excerpt_lines: no excerpt key -> missing, no error",
+          lines2 == [] and prov2 == "missing" and errs2 == [], (lines2, prov2))
+    lines3, prov3, errs3 = IB.excerpt_lines(
+        {"excerpt_lines": clean + ["a fourth line"]})
+    check("intake excerpt_lines: >3 lines truncated and reports an error",
+          len(lines3) == 3 and errs3, (len(lines3), errs3))
+    # evaluate() refuses a bad excerpt with a reason_code, no questions burned.
+    bad = IB.evaluate({"excerpt_lines": clean + ["a fourth line"],
+                       "book_title": "T", "author": "A",
+                       "buy_link": "https://x.example/b", "audience": "a",
+                       "pain_or_transformation": "p"})
+    check("intake evaluate: >3 excerpt lines is REFUSED EXCERPT_INVALID",
+          bad.get("outcome") == "rejected"
+          and bad.get("reason_code") == IB.EXCERPT_INVALID
+          and bad.get("questions") == [], bad)
+    bad2 = IB.evaluate({"excerpt_lines": ["The kitchn was empty"],
+                        "book_title": "T", "author": "A",
+                        "buy_link": "https://x.example/b", "audience": "a",
+                        "pain_or_transformation": "p"})
+    check("intake evaluate: a misspelled excerpt is REFUSED EXCERPT_INVALID",
+          bad2.get("outcome") == "rejected"
+          and bad2.get("reason_code") == IB.EXCERPT_INVALID, bad2)
+
+# ---- (d) card block carries the hash, never a new choice --------------------
+def test_card_block_carries_plan_hash():
+    """plan_card_rows / card_render / intake_card all show APPROVED hash."""
+    import importlib
+    CR = importlib.import_module("catalog_calculator.card_render")
+    IC = importlib.import_module("choice_card.intake_card.intake_card")
+    plan = {"pages": "texture", "book_title": "The Harbor Ledger",
+            "author": "A. Author", "excerpt_lines": ["A short line"]}
+    h = BS.plan_sha256(plan)
+    appr = dict(plan, approved_book_plan_sha256=h, approved_at="2026-10-09")
+    rows = BS.plan_card_rows(appr, None)
+    texts = " ".join(t for _, t in rows)
+    check("card: plan_card_rows shows the APPROVED plan hash",
+          h[:12] in texts and "APPROVED" in texts
+          and "NOT APPROVED" not in texts, texts)
+    check("card: plan_card_rows shows no numbered options",
+          not re.search(r"\b[1-9]\d*\.", texts), texts)
+    unapp = BS.plan_card_rows(plan, None)
+    check("card: an unapproved plan shows NOT APPROVED",
+          "NOT APPROVED" in " ".join(t for _, t in unapp),
+          " ".join(t for _, t in unapp))
+    # The calculator card block requires campaign_type == "book".
+    rendered, _ = CR.render({"length": "60 seconds", "campaign_type": "book",
+                             "book_plan": appr}, None)
+    check("card: calculator card carries the Book block + hash",
+          "Book shots" in rendered and h[:12] in rendered, rendered)
+    rendered2, _ = CR.render({"length": "60 seconds"}, None)
+    check("card: non-book calculator card has no Book block",
+          "Book shots" not in rendered2, rendered2)
+    # The intake card carries the same block via render_card(plan=, excerpt=).
+    ic_card = IC.render_card(None, plan=appr, excerpt={"lines": ["A short line"]})
+    check("card: intake card carries the Book block + hash",
+          "Book shots" in ic_card and h[:12] in ic_card, ic_card)
+    ic_plain = IC.render_card(None)
+    check("card: plain intake card has no Book block",
+          "Book shots" not in ic_plain, ic_plain)
+    check("card: intake card keeps 6 questions in / 6 out",
+          ic_card.count("Question") == 6 and ic_plain.count("Question") == 6,
+          (ic_card.count("Question"), ic_plain.count("Question")))
+    check("card: CLOSING_LINE is present in both cards",
+          IC.CLOSING_LINE in ic_card and IC.CLOSING_LINE in ic_plain, "")
 
 def main():
     if not hasattr(BS, "check_pages"):
@@ -283,14 +422,23 @@ def main():
     test_printed_vs_white()
     test_plan_hash_gate()
     test_excerpt_never_reaches_a_video_model()
+    test_prompt_never_carries_excerpt_words()
+    test_intake_excerpt_fail_closed()
+    test_card_block_carries_plan_hash()
     print("-" * 60)
     if FAILS:
         print("%d checks failed:" % len(FAILS))
         for name in FAILS:
             print("  FAILED: %s" % name)
         return 1
-    print("ALL PASS: printed pages, plan hash, excerpt boundary (FU-U11 D1).")
+    print("ALL PASS: printed pages, plan hash, card block, excerpt seam (FU-U11 D1).")
     return 0
+
+# ---- pytest no-silent-pass guard (check() records, never raises) ------------
+def test_no_failed_checks():
+    """pytest entry: raise if any check() failed, so a bare pytest run cannot
+    report green on a red suite (check() only records into FAILS)."""
+    assert not FAILS, "failed checks: %s" % FAILS
 
 if __name__ == "__main__":
     sys.exit(main())
