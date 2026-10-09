@@ -24,6 +24,14 @@ frontmatter `version:` field).
 
 - New `delivery_variants/caption_srt.py`: a finished run exports its caption file into the delivery folder as `10 - Captions.srt` (slot `FILE_NUMBER`, one constant to renumber), built from the measured caption cues by `captions_burn.build_srt` — the same builder the caption burn uses, so the exported file and the burned captions cannot drift. No measured cues is a refusal receipt and NO file (F18: no clock is ever invented); the text is parsed back before it is written, so what lands is valid SRT by construction. `check_captions_srt` / `python3 scripts/core/delivery_variants/caption_srt.py check <dir>` fails a missing, empty or broken file (exit 5). `delivery_variants` exports `export_captions_srt` / `check_captions_srt` / `parse_srt` / `srt_file_name`. Test: `scripts/core/delivery_variants/test_caption_srt_del10.py` (22 tests over fixture `fixtures/caption_srt_del10.json`: generic sample sheet, measured word timings, golden SRT bytes; structure re-checked by the test's own parser). Docs: `references/stage-runbook.md` + the QC.md checklist. Version: onboarding `skill-version.txt` + SKILL.md frontmatter v2.9.13 -> v2.9.14 (G3 gates a skill-content change on that bump); the 999 copy bumps its own VERSION train 2.7.38 -> 2.7.39 with its SKILL.md frontmatter (its CI has no such gate, but its parity-contract re-sync procedure requires the bump).
 
+## v2.9.14 - 2026-10-09 - DEL-12 welcome sheet + the canonical delivery package list
+
+- New `scripts/core/delivery_package/`: `package_items.py` holds `PACKAGE_ITEMS` / `PACKAGE_FILES` -- the canonical numbered file-name list for all 12 package items (01..12, 20 files), the single shared constant the client-facing page and the delivery gate both read.
+- `welcome_sheet.py` renders that constant into the one-page client WELCOME SHEET PDF: title, gold rule, every file with its number badge and one sentence on what it is for. Stdlib PDF 1.4 writer (base-14 Helvetica, no third-party library, no network), deterministic bytes, 13 pt body type, hard 12 pt floor.
+- `delivery_checklist` re-exports the constant and gains `missing_package_files(delivery_dir)`, so the gate reads ONE list instead of keeping a second copy beside the printed page.
+- New `scripts/core/delivery_package/test_welcome_sheet_del12.py` (11 tests): one page, all 20 names and 12 numbers present, no type below 12 pt, no client/model/tool name, no price or income claim, byte-identical rebuild, checklist shares the same object.
+
+
 ## v2.9.13 - 2026-10-09 - Batch MGB023 follow-up 2 (no more silent ads)
 
 - Delivery audio gate on EVERY path that hands the client a video: the final assembler (already), the 60 and 90 second clip cutdowns (`clip_cutdown.run_clips`, a refused clip is deleted), the batch zip (captioned ad and clean master) and the delivery checklist. Each one calls `delivery_audio.check_delivery_audio()` and fails closed.

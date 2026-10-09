@@ -87,6 +87,38 @@ if str(_CORE) not in sys.path:
     sys.path.insert(0, str(_CORE))
 import kie_dispatch.model_lock as model_lock  # noqa: E402  (F16)
 
+# DEL-12: the canonical numbered file-name list of all 12 package items lives
+# in the sibling delivery_package package (byte-identical in both
+# distributions). Re-exported here so the delivery gate reads ONE list and
+# never keeps a second copy beside the client-facing welcome sheet.
+from delivery_package.package_items import (  # noqa: E402  (DEL-12)
+    PACKAGE_FILES,
+    PACKAGE_ITEM_COUNT,
+    PACKAGE_ITEMS,
+    WELCOME_SHEET_FILE,
+)
+
+
+def missing_package_files(delivery_dir):
+    """Package files absent from a delivery folder, in canonical order.
+
+    The DEL-12 contract the hard gate builds on: empty tuple means every one
+    of the 12 items is present and non-empty. Never raises for a missing
+    folder -- an unreadable folder is reported as every file missing.
+    """
+    root = Path(delivery_dir)
+    out = []
+    for name in PACKAGE_FILES:
+        target = root / name
+        try:
+            ok = target.is_file() and target.stat().st_size > 0
+        except OSError:
+            ok = False
+        if not ok:
+            out.append(name)
+    return tuple(out)
+
+
 TOOL_NAME = "delivery_checklist"
 TOOL_VERSION = "1.4.0"
 SCHEMA_VERSION = "1.0.0"          # final_assembler receipt schema
