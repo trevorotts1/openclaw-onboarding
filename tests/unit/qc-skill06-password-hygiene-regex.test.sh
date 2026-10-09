@@ -43,7 +43,7 @@ if [ -z "$LINE" ]; then echo "  FAIL: assert line not found in $QC"; exit 1; fi
 echo "  locked line: $(echo "$LINE" | cut -c1-100)..."
 echo ""
 
-TMP="$(mktemp -d -t w2bpw)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/w2bpw.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 
 # Real assert() taken verbatim from the qc script under test (brace-matched).
 ASSERT_FN="$(python3 - "$QC" <<'PYEOF'

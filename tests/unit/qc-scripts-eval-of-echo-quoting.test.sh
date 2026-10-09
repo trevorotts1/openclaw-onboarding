@@ -56,7 +56,7 @@ run_site() {
   unset "$var"
 }
 
-ASSERT_FILE="$(mktemp -t w2assert)"; trap 'rm -f "$ASSERT_FILE"' EXIT
+ASSERT_FILE="$(mktemp "${TMPDIR:-/tmp}/w2assert.XXXXXX")"; trap 'rm -f "$ASSERT_FILE"' EXIT
 
 # ── Locked site: 36-ghl-mcp-setup /health ────────────────────────────────────
 QC36="$REPO_ROOT/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
