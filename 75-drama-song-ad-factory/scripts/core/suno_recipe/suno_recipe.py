@@ -166,8 +166,10 @@ def cue_for(delivery, tag, style_id=None):
     vocab = model_block()["cue_vocabulary"].get(delivery) or {}
     key = str(tag).lower().split()[0]
     over = (music_block(style_id).get("cue_overrides") or {}) if style_id else {}
+    # FU-RNBFLOW-SONG: a section with no cue of its own falls back to the
+    # STYLE's verse cue first, so an upbeat style never inherits "slow".
     return (over.get("%s:%s" % (delivery, key)) or vocab.get(key)
-            or vocab.get("verse") or "")
+            or over.get("%s:verse" % delivery) or vocab.get("verse") or "")
 
 
 def syllables(line):
@@ -788,7 +790,12 @@ def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
         return
     if style_id not in suno_style_ids():
         raise RecipeError("UNKNOWN_STYLE", repr(style_id))
-    errs = check_style_text(style_text_)
+    # FU-RNBFLOW-SONG: the style's own contract (real sung lyrics, rap tagged
+    # as rap on the beat, plain spoken outro). No length -> "UNMEASURED:
+    # length_s", a refusal, never a skipped check.
+    from song_contract import song_contract as _SC
+    errs = _SC.check_sheet(lyrics_text, style_id, length_s, style_text_)["reasons"]
+    errs += check_style_text(style_text_)
     errs += check_lyric_sheet(parse_lyrics(lyrics_text), client_text or "", length_s,
                               style_id=style_id)
     if errs:

@@ -22,7 +22,7 @@
   "cue_vocabulary": {
     "sung":   {"vocalise": "wordless, full melodic voice, two very long held notes", "verse": "melodic, rhymed, slow long held notes", "hook": "full melody, sustained notes, slow long held notes", "product": "melodic, warm, clear diction on the name", "bridge": "half-time, stripped back, sustained", "build": "melodic, rising, tempo lifting"},
     "spoken": {"intro": "close dry voice, plain speech, no melody", "outro": "calm close voice, plain speech, no melody"},
-    "rap":    {"verse": "tight rhythmic rap, conversational flow, clear diction", "verse_low": "low-register conversational rap, clear diction"}
+    "rap":    {"verse": "rhythmic rap on the beat, tight metered flow, clear diction", "verse_low": "low-register rhythmic rap on the beat, clear diction"}
   },
   "lyric_line_rules": [
     "sung lines 5-6 syllables aimed, 8 at most (suno_recipe.MAX_SUNG_LINE_SYLLABLES)",
