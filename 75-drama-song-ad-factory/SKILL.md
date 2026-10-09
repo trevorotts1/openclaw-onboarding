@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.8
+version: v2.9.9
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -505,7 +505,7 @@ with `python3 scripts/core/intake_preflight/factory.py character --client-dir
 <client data folder> save --name <name> --description <text> --image <file>
 [--image ...] --voice-notes <text>`. The library lives inside that client's own
 data folder (`character-library/<name>/`), never shared between clients. Later
-intake cards list saved characters under "Use a saved character?" (`character
+intake cards open with a SAVED CHARACTER question when the client has saved characters ("You have saved characters from past ads. Do you want to use one of them in this ad, or make a brand-new character?", option 1 = make a new character, RECOMMENDED, then one "Use <Name>" option per saved character; the recap reads "Character: new" or "Character: <Name> (saved)") (`character
 --client-dir <dir> card`; `factory.py card --client-dir <dir>` where the
 intake card exists). `character --client-dir <dir> use --name <name>` prints
 the brief fields (name, description, reference images, voice notes) to reuse.

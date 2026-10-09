@@ -6,6 +6,10 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.9 - 2026-10-09 - FU-SAVED-CHARACTER-QUESTION
+
+- The saved-character intake question is now a full question ("You have saved characters from past ads. Do you want to use one of them in this ad, or make a brand-new character?") with numbered options, "Make a new character" first and RECOMMENDED, then "Use <Name> - <description>" for each saved character. The recap reads "Character: new" / "Character: <Name> (saved)". Same condition (only when saved characters exist) and same effect of each answer. Test: `character_library/test_saved_character_question.py`.
+
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 
 - FU-PARITY: shared files aligned with 999 (v2.7.28 test fixes, delivery_checklist blank lines).

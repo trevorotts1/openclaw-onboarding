@@ -140,7 +140,8 @@ def render_recap(answers, questions=None):
     qs = questions or QUESTIONS
     lines = ["Here is what you picked:"]
     for i, (q, a) in enumerate(zip(qs, answers), 1):
-        lines.append("%d. %s: %s" % (i, q["label"].title(), a["text"]))
+        lines.append("%d. %s" % (i, q["recap"][a["n"] - 1] if "recap" in q
+                                 else "%s: %s" % (q["label"].title(), a["text"])))
     lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
     return "\n".join(lines)
 
@@ -276,7 +277,7 @@ def _with_saved_character(client_dir):
     if not q:
         return QUESTIONS
     q = dict(q, why="A saved character keeps the same face across your ads.",
-             reason="you can still pick a new character if you prefer.")
+             reason="it gives this ad a fresh look, and you can pick a saved character instead any time.")
     return [q] + QUESTIONS
 
 
@@ -294,7 +295,7 @@ def main(argv=None):
                     help="a client reply, in order (repeat the flag)")
     ap.add_argument("--client-dir", default="",
                     help="client data folder; when it holds saved characters the "
-                         "card opens with 'Use a saved character?' (I6)")
+                         "card opens with the saved-character question (I6)")
     a = ap.parse_args(argv)
     qs = _with_saved_character(a.client_dir)
     if a.step:
