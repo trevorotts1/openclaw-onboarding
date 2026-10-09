@@ -266,6 +266,147 @@ def openclaw_send_argv(target, text):
             "--target", str(target), "--message", text]
 
 
+# --- FU-U4: the fit STOP card (registry-only options, plan 2.3) ----------------
+
+FEWER_WORDS_ID = "fewer_words"
+
+
+def _client_words(packet_lines):
+    """[(line_id, word_count)] for the client's own lines, in order."""
+    import protected_names as PN
+    out = []
+    for n, ln in enumerate(packet_lines or [], 1):
+        lid = (ln.get("id") or ln.get("line_id")) if isinstance(ln, dict) else None
+        text = ln.get("text", "") if isinstance(ln, dict) else str(ln)
+        out.append((lid or "line %d" % n, len(PN._tokens(text))))
+    return out
+
+
+def _fit_row(style_id, length_s, words):
+    """One style's numbers for the client's words at length_s. Rap styles may
+    carry the words as spoken (intro/outro) plus rap; the others only as spoken
+    in [Intro]/[Outro] (suno recipe rule 1)."""
+    import length_formula as LF
+    import words_fit as WF
+    from music_styles import music_styles as MS
+    plan = LF.plan(length_s, style_id=style_id)
+    cap_spoken = plan["words"]["spoken"]
+    cap_rap = plan["words"].get("rap", 0)
+    rap_style = "rap" in MS.style(style_id)["deliveries"]
+    spoken = min(words, cap_spoken) if rap_style else words
+    rap = words - spoken if rap_style else 0
+    planned_s = WF.planned_seconds(0, spoken, rap, rates=WF.rates_for(style_id))
+    cap = cap_spoken + cap_rap
+    return {"style_id": style_id, "label": MS.style(style_id)["label"],
+            "length_s": length_s, "client_words": words, "capacity_words": cap,
+            "split": {"sung": 0, "spoken": spoken, "rap": rap},
+            "planned_s": round(planned_s, 1),
+            "fits": words <= cap and planned_s <= length_s}
+
+
+def assert_registry_options(card):
+    """Refuse any card option whose id is not in the registries: lengths in
+    music_styles.OFFERED_LENGTHS_S, styles in music_styles.style_ids(), voices
+    in voice_velvet_echo, and the one words_fit fewer_words option."""
+    import words_fit as WF
+    from music_styles import music_styles as MS
+    from voice_velvet_echo import velvet_voiceover as VV
+    opts = card.get("options") or {}
+    ok = {"longer_ad": set(MS.OFFERED_LENGTHS_S), "music_style": set(MS.style_ids()),
+          "voice": {VV.ALL_SUNO_ID, VV.VELVET_ID}}
+    for kind, allowed in ok.items():
+        for o in opts.get(kind, []):
+            if o.get("id") not in allowed:
+                raise ValueError("FIT_CARD_OPTION_NOT_IN_REGISTRY %s option %r; allowed %s"
+                                 % (kind, o.get("id"), sorted(allowed, key=str)))
+    fw = opts.get(FEWER_WORDS_ID)
+    if fw is not None and fw.get("id") not in WF.preflight(60, 0, 9999)["options"]:
+        raise ValueError("FIT_CARD_OPTION_NOT_IN_REGISTRY fewer_words id %r" % (fw.get("id"),))
+    return card
+
+
+def fit_card(brief, packet_lines):
+    """The STOP card for a client who brought their own lines: for each real
+    music style, the numbers at the client's length; options only from the
+    registries; notices for what the skill will not make. Free: no spend.
+    outcome "ok" when the chosen style (brief.music, default Soul Ballad) fits,
+    else "waiting" (exit 2). Nothing is cut: fewer_words names exact line ids
+    for the client to approve."""
+    from intake_preflight import intake as INT
+    from music_styles import music_styles as MS
+    from voice_velvet_echo import velvet_voiceover as VV
+    import words_fit as WF
+    brief = brief or {}
+    packet_lines = brief.get("packet_lines") if packet_lines is None else packet_lines
+    fields, _ = INT.normalize(brief)
+    length_s = fields["target_length_s"]
+    per_line = _client_words(packet_lines)
+    words = sum(n for _, n in per_line)
+    rows = [_fit_row(sid, length_s, words) for sid in MS.style_ids()]
+    chosen = MS._style_key(fields["music"])
+    crow = next(r for r in rows if r["style_id"] == chosen)
+    longer = []
+    for L in MS.OFFERED_LENGTHS_S:
+        if L > length_s:
+            fits = [r["style_id"] for r in (_fit_row(sid, L, words) for sid in MS.style_ids())
+                    if r["fits"]]
+            longer.append({"id": L, "fits_styles": fits})
+    kept, cut = 0, []
+    for lid, n in per_line:                       # keep from the top; the tail is named
+        if kept + n <= crow["capacity_words"]:
+            kept += n
+        else:
+            cut.append(lid)
+    card = {
+        "outcome": "ok" if crow["fits"] else "waiting",
+        "reason_code": "FIT_OK" if crow["fits"] else "CLIENT_LINES_DO_NOT_FIT",
+        "length_s": length_s, "chosen_style": chosen, "client_words": words,
+        "rows": rows,
+        "options": {
+            "longer_ad": longer,
+            "music_style": [{"id": r["style_id"], "fits": r["fits"]} for r in rows],
+            "voice": [{"id": VV.ALL_SUNO_ID, "default": True}, {"id": VV.VELVET_ID}],
+            FEWER_WORDS_ID: {"id": FEWER_WORDS_ID, "cut_line_ids": cut,
+                             "cut_words": words - kept, "needs_client_approval": True},
+        },
+        "notices": INT.notices(brief, packet_lines),
+    }
+    assert_registry_options(card)
+    card["text"] = _render_fit(card)
+    return card
+
+
+def _render_fit(card):
+    from music_styles import music_styles as MS
+    L = card["length_s"]
+    out = ["Your lines are %d words. Here is how each music style handles them at %d seconds:"
+           % (card["client_words"], L)]
+    for r in card["rows"]:
+        out.append("- %s: room for %d words at the planned share, all your words need %.1f seconds (%d spoken, %d rap) - %s"
+                   % (r["label"], r["capacity_words"], r["planned_s"], r["split"]["spoken"],
+                      r["split"]["rap"], "fits" if r["fits"] else "does not fit"))
+    if card["outcome"] == "ok":
+        return "\n".join(out + ["Everything fits. Nothing is cut."])
+    o = card["options"]
+    out += ["", "Nothing is cut until you approve it. Your options:"]
+    n = 1
+    for x in o["longer_ad"]:
+        out.append("%d. A %d second ad - %s" % (n, x["id"], (
+            "fits in " + ", ".join(MS.style(s)["label"] for s in x["fits_styles"]))
+            if x["fits_styles"] else "does not fit any style"))
+        n += 1
+    out.append("%d. A different music style (see the lines above)" % n)
+    n += 1
+    out.append("%d. Voice: All Suno (default) or Velvet Voiceover" % n)
+    n += 1
+    fw = o[FEWER_WORDS_ID]
+    out.append("%d. Fewer words - these exact lines would be cut, and you approve the list: %s"
+               % (n, ", ".join(fw["cut_line_ids"]) or "none"))
+    for nt in card["notices"]:
+        out.append("Notice: " + nt["text"])
+    return "\n".join(out)
+
+
 def _with_saved_character(client_dir):
     """QUESTIONS, with the saved-character question first when the client has
     saved characters (Part I, I6); otherwise the plain six."""
