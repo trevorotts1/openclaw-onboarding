@@ -172,8 +172,11 @@ The four rules (recipe v2, replaces G12):
    text, and the style says the full band keeps playing under the spoken lines.
 2. Sung lines are short (5-6 syllables aimed, 8 at most), rhymed, with
    hyphen-held vowels, after a wordless sung vocalise.
-3. The first hook comes after the vocalise, never at 0 s; the hook is the
-   client's own words, repeated by length (`core/sung_hook`).
+3. The hook is the payoff, never the opener: it comes after the build-up
+   (a verse, plus a pre-chorus or build where the style and length plan
+   have one), measured at or after the story beat where its words become
+   true; the hook is the client's own words, repeated by
+   length (`core/sung_hook`, `core/sung_hook/hook_placement.py`).
 4. Each take's singing is measured, not taken from its labels.
 
 Word budget, section plan, hook repeats, spoken placement, instrumental breaks
@@ -255,8 +258,58 @@ delivered length in seconds (chosen length minus 2).
 |-----------|------|------|------|-------|-------|-------|-------|
 | Hook sung | 2    | 3    | 4    | 5     | 8     | 12    | 12    |
 
-First hook by 15% of runtime, last hook near the end (about 90%) before the
-call to action, the rest evenly spaced. Build the sheet with
+Hook placement (FU-HOOK-PLACEMENT, Trevor 2026-10-09: "THE HOOK HAS TO MAKE
+SENSE AND BE PLACED CORRECTLY"): the hook is the payoff, never the opener.
+Before the first hook the sheet carries the style's build-up: a verse, plus
+a pre-chorus/build when the style's section plan has one and the length plan
+has pre-choruses (not at 60 s). Story sense: the story plan names the beat
+of the U16 arc (`length_formula.STORY_ARC_U16`) where the hook's words
+become true, `true_at_beat` (never the opening beat). Pass it to
+`music_director.build_generate_request(..., true_at_beat=...)`; the director
+emits the sheet's hook_plan (`hook_placement.plan_for`) and carries it as
+`_hook_plan`, and `song_dispatch.run_takes` moves it into the judge's plan
+(never sent to KIE). The gate MEASURES where every hook block sits (the
+words before it at the style's own rates, as a share of the sheet, mapped
+onto the arc, whose beats after the opening one span the runtime evenly)
+and fails a first hook that sits before `true_at_beat`, whatever beats a
+plan claims (150 s, first hook about a quarter in, true at the turn:
+FAIL). The hook count is `hook_placement.hook_target`: the table above,
+reduced to what fits in the runtime after that beat starts (148 s true at
+the turn: 3). The returned take is measured the same way: a first hook
+sung before the beat's start second fails.
+
+hook_plan JSON shape (what `prepare`, `build_request`, `guard_request`,
+`check_payload` and `judge_take` read):
+
+```json
+{"true_at_beat": "the_turn"}
+```
+
+`plan_for` adds `"beats"`, one MEASURED beat per hook block in sheet order,
+as a receipt (`{"true_at_beat": "the_turn", "beats": ["the_turn",
+"the_rise"]}`); the gate never reads it. Beats: `the_world`,
+`villain_arrives`, `pain_deepens`, `lowest_point`, `the_turn`, `the_rise`,
+`call_to_action`.
+
+No gate switches itself off: a missing style, length, sheet, `hook_plan` or
+`true_at_beat` is a FAIL reading `UNMEASURED: <field>`. A sheet with sung or
+rap sections sent with no `style_id` is refused `UNMEASURED: style_id`; a built
+payload with no `music_style` is `UNMEASURED: music_style`; a `true_at_beat`
+that is not a beat, or is the opening beat, fails the sheet and the returned
+take alike. The golden sheets name the beat where their hook ("You can rest
+and still rise") pays off: `the_turn`, when the book arrives, and
+`lowest_point` at 60 s, where two hooks cannot fit after the turn starts; each
+carries `hook_target` hooks and fails if its first hook is moved up. The
+director's words-fit check holds the sung share to the style's own floor
+(`words_fit.style_sung_target_pct`, the song contract's rule), and its
+spelling check reads a held vowel ("re-est", "lo-ook") as its word. A chorus that carries the hook also
+carries at least one other real lyric line (the golden sheets do). After
+Suno and before any picture or video spend, `song_dispatch` always reads
+Suno's returned section headers and word times: an added hook block, a hook
+moved earlier, or a first hook inside the build-up window
+(`hook_placement.min_first_hook_s`, from the length plan: about 13 s at
+60 s, 28 s at 150 s with a pre-chorus) fails the take. The Suno style text says to sing the sections in order
+and never open with the hook. Last hook near the end before the call to action. Build the sheet with
 `core/sung_hook.build_lyric_sheet`. After a take is chosen, count the hook
 occurrences that were actually sung (Suno timestamps plus the singing
 detector): count met = accept, one short = accept with a flag, two or more

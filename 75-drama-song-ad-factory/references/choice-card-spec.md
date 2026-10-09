@@ -547,8 +547,11 @@ The four rules (recipe v2, replaces G12):
    text, and the style says the full band keeps playing under the spoken lines.
 2. Sung lines are short (5-6 syllables aimed, 8 at most), rhymed, with
    hyphen-held vowels, after a wordless sung vocalise.
-3. The first hook comes after the vocalise, never at 0 s; the hook is the
-   client's own words, repeated by length (`core/sung_hook`).
+3. The hook is the payoff, never the opener: it comes after the build-up
+   (a verse, plus a pre-chorus or build where the style and length plan
+   have one), measured at or after the story beat where its words become
+   true; the hook is the client's own words, repeated by
+   length (`core/sung_hook`, `core/sung_hook/hook_placement.py`).
 4. Each take's singing is measured, not taken from its labels.
 
 Word budget, section plan, hook repeats, spoken placement, instrumental breaks

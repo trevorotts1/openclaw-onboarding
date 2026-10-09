@@ -12,7 +12,11 @@ The rules (verbatim in SKILL.md):
      under the spoken lines.
   2. Sung lines are short (5-6 syllables aimed, 8 at most), rhymed, with
      hyphen-held vowels; a wordless sung vocalise leads in.
-  3. The first hook comes after the vocalise, never at 0 s; the hook is
+  3. The hook is the payoff, never the opener (FU-HOOK-PLACEMENT, Trevor
+     2026-10-09): it comes after the build-up the style's own structure
+     calls for (a verse, plus a pre-chorus/build where the style and the
+     length plan have one), the first hook measured at or after the story
+     beat where its words become true. The hook is
      built from the client's own words and repeated by length.
   4. Each take's singing is measured, not taken from its labels.
 Style text is 1000 characters or less. Negative tags never include
@@ -36,6 +40,7 @@ import prompt_limits as _PL     # noqa: E402
 import prompt_templates as _PT  # noqa: E402
 import spoken_share as _SS      # noqa: E402
 import sung_hook as _SH         # noqa: E402
+from sung_hook import hook_placement as _HP   # noqa: E402
 
 TOOL_NAME = "suno_recipe"
 TOOL_VERSION = "2.0.0"
@@ -43,7 +48,7 @@ TOOL_VERSION = "2.0.0"
 RULES = (
     "Spoken tags only in [Intro] and [Outro]; spoken named once in the style text; the full band keeps playing under it.",
     "Sung lines are short, rhymed, with hyphen-held vowels, after a wordless sung vocalise.",
-    "The first hook comes after the vocalise, never at 0 s; the hook is the client's own words.",
+    "The hook is the payoff, never the opener: it comes after the build-up (a verse, plus a pre-chorus where the style has one), measured at or after the story beat where its words become true; the hook is the client's own words.",
     "Each take's singing is measured, not taken from its labels.",
 )
 
@@ -472,7 +477,7 @@ def _norm_char(name):
 
 
 def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
-                      style_id=None):
+                      style_id=None, hook_plan=None):
     """Rules 1-3 on the sheet. Returns a list of errors (empty = pass).
 
     With length_s (delivered seconds) the I8 hook count and the length-formula
@@ -522,15 +527,16 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
     if not hooks:
         return errs + ["no repeated sung hook (same sung lines at least %d times)" % MIN_HOOK_REPEATS]
     client = set(_words(client_text or ""))
+    # No gate switches itself off: no client text = the own-words rule is
+    # UNMEASURED (a refusal); the hook count and structure run regardless.
     if not client:
-        # No brief at hand: the "client's own words" rule is unverifiable here
-        # (check_payload measures a finished payload), so it is not claimed.
-        pass
+        errs.append("UNMEASURED: client_text (the hook must be the client's own words)")
     elif not any(h and set(h) <= client for h in hooks):
         errs.append("repeated hook is not built from the client's own words")
-    elif length_s is not None:
+    if length_s is not None:
         best = max(hooks, key=keys.count)
-        errs += _SH.check_sheet_count(sheet, best, length_s)
+        errs += _SH.check_sheet_count(sheet, best, length_s,
+                                      _HP.hook_target(length_s, hook_plan))
     if length_s is not None:
         p = _LF.plan(length_s + _LF.END_EARLY_S, spoken_share_pct, style_id=style_id)
         total = sheet_words(sheet)
@@ -667,9 +673,13 @@ def style_text(style_id, sheet=None, vocal_gender="f"):
                  for p in block["style_parts"]]
         # The clean-ending clause is ending_qc's, appended the way ending_qc
         # appends it (comma, no double period). It is here so the measured
-        # style counts equal the design's (623/699/707) and so the final
+        # style counts equal the design's (623/699/707, 733/809/817 with the
+        # FU-HOOK-PLACEMENT order clause) and so the final
         # payload is the same whether or not with_clean_ending has run.
         text = " ".join(parts).rstrip(".") + ", " + _EQ.STYLE_ENDING + "."
+        # FU-HOOK-PLACEMENT rule 5: the section order is the sheet's, and the
+        # song never opens with the hook (Suno added a hook at 13.6 s in v2).
+        text = "%s %s." % (text, _HP.PROMPT_CLAUSE)
         # G1 delivery map: the map sentence must name the sheet's deliveries.
         text = _MS.assert_delivery_map(sid, text, _sheet_deliveries(sheet, sid))
         if len(text) > SUNO_STYLE_FIELD_MAX:
@@ -721,7 +731,7 @@ def check_negatives(neg, style_id=None):
 
 
 def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
-            vocal_gender="f", delivered_s=None):
+            vocal_gender="f", delivered_s=None, hook_plan=None):
     """THE gate every Suno style goes through. Returns style + lyrics text.
 
     Exempt (voiceover) -> {"exempt": True}. Unknown id -> fail closed.
@@ -733,11 +743,16 @@ def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
         raise RecipeError("UNKNOWN_STYLE", "%r is not a Suno style and not "
                           "exempt; add it to music_styles" % (style_id,))
     errs = check_lyric_sheet(sheet, client_text, length_s, spoken_share_pct,
-                             style_id=style_id)
+                             style_id=style_id, hook_plan=hook_plan)
     errs += check_no_voice_lines(render_lyrics(sheet, style_id))
     d = delivered_s if delivered_s is not None else length_s
+    # FU-HOOK-PLACEMENT rule 1, always on (no length = UNMEASURED: length_s)
+    errs += _HP.check_buildup(sheet, style_id, d)
     if d is not None:
         errs += check_product_share(sheet, d)
+    # FU-HOOK-PLACEMENT rules 2-3, always on: the first hook MEASURED at or
+    # after its story beat (no hook_plan = UNMEASURED: hook_plan)
+    errs += _HP.check_story(sheet, hook_plan, d, style_id)
     if errs:
         raise RecipeError("LYRICS_REJECTED", "; ".join(errs))
     return {"exempt": False, "style": style_text(style_id, sheet, vocal_gender),
@@ -746,11 +761,11 @@ def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
 
 
 def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f",
-                  spoken_share_pct=None, delivered_s=None):
+                  spoken_share_pct=None, delivered_s=None, hook_plan=None):
     """KIE generate-music input for one ad (snake_case). ``length_s`` is the
     DELIVERED length (chosen - 2). Raises RecipeError on any rule break."""
     out = prepare(style_id, sheet, client_text, length_s, spoken_share_pct,
-                  vocal_gender, delivered_s)
+                  vocal_gender, delivered_s, hook_plan)
     if out.get("exempt"):
         raise RecipeError("EXEMPT", "voiceover style has no Suno request")
     req = kie_params()
@@ -764,7 +779,7 @@ def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f
 
 
 def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
-                  length_s=None, cast_genders=None):
+                  length_s=None, cast_genders=None, hook_plan=None):
     """Seam for music_director.build_generate_request. Raises RecipeError.
 
     With style_id: the full recipe is enforced (exempt id passes untouched).
@@ -785,6 +800,20 @@ def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
                for i in suno_style_ids()):
             raise RecipeError("RECIPE_BYPASSED", "Suno style used without "
                               "the song recipe; pass style_id and client_text")
+        # No gate switches itself off: without the style, the song contract,
+        # hook placement and the recipe cannot be measured, so a sheet that
+        # carries sung or rap sections is refused, never waved through.
+        # Any non-empty lyrics are refused: Suno sings untagged text too. Only
+        # an empty / instrumental-only request (no voiced words) passes.
+        try:
+            voiced = any(s["delivery"] or s["lines"] for s in parse_lyrics(lyrics_text))
+        except RecipeError:   # lyric lines under a bracket naming no delivery: Suno sings them
+            voiced = True
+        voiced = voiced or any(ln.strip() and not ln.strip().startswith("[")
+                               for ln in str(lyrics_text or "").splitlines())
+        if voiced:
+            raise RecipeError("UNMEASURED", "UNMEASURED: style_id (the request carries lyrics; "
+                              "the song contract, hook placement and recipe need the style)")
         return
     if is_exempt(style_id):
         return
@@ -797,7 +826,9 @@ def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
     errs = _SC.check_sheet(lyrics_text, style_id, length_s, style_text_)["reasons"]
     errs += check_style_text(style_text_)
     errs += check_lyric_sheet(parse_lyrics(lyrics_text), client_text or "", length_s,
-                              style_id=style_id)
+                              style_id=style_id, hook_plan=hook_plan)
+    errs += _HP.check_buildup(lyrics_text, style_id, length_s)   # FU-HOOK-PLACEMENT rule 1
+    errs += _HP.check_story(lyrics_text, hook_plan, length_s, style_id)   # rules 2-3, always on
     if errs:
         raise RecipeError("RECIPE_BYPASSED", "; ".join(errs))
 
@@ -833,13 +864,17 @@ def check_payload(payload, client_text=None, vocal_gender=None):
     if len(neg) > 1000:
         errs.append("negative_tags is %d chars, cap 1000" % len(neg))
     sid = payload.get("music_style")
-    if sid and not is_exempt(sid):
+    if not sid:   # no gate switches itself off: no style, nothing below is measured
+        return errs + ["UNMEASURED: music_style"]
+    if not is_exempt(sid):
         errs += check_negatives(neg, sid)
         errs += check_lyric_sheet(sheets, client_text or "", None, None, style_id=sid)
+        errs += _HP.check_buildup(sheets, sid, D)   # FU-HOOK-PLACEMENT rule 1, always on
+        errs += _HP.check_story(sheets, payload.get("hook_plan"), D, sid)   # rules 2-3
         if vocal_gender is not None and "{gender}" in style:
             errs.append("a {gender} placeholder reached the payload")
     if D:
-        want = _SH.hook_count(D)
+        want = _HP.hook_target(D, payload.get("hook_plan"))
         if hooks != want:
             errs.append("hook count %d, the %g s delivered length needs %d" % (hooks, D, want))
         errs += check_product_share(sheets, D)
