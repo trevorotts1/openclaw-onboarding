@@ -536,6 +536,25 @@ if [ -f "$HASH_SCRIPT" ]; then
     _fail "A6-BEHAVIORAL: gate did NOT detect a missing skill in destination"
   fi
 
+  # Install-time note (install-status.txt) must NOT change the DEST digest
+  # (writes are keyless-box install notes by 48-/59- installers, absent from
+  # SRC) -- and a REAL content change must still fail the gate.
+  cp -R "$_A6_SRC/01-skill-a" "$_A6_DEST/01-skill-a"   # restore deleted skill
+  echo "KIECREDIT: note" > "$_A6_DEST/01-skill-a/install-status.txt"
+  _A6_RESULT_INSTALL_STATUS=$(_a6_gate "$_A6_SRC" "$_A6_DEST")
+  if [ "$_A6_RESULT_INSTALL_STATUS" = "1" ]; then
+    _pass "A6-BEHAVIORAL: DEST-only install-status.txt — gate PASSES (install note excluded)"
+  else
+    _fail "A6-BEHAVIORAL: install-status.txt diverged the digest — A3 false-fail returns"
+  fi
+  echo "CORRUPTED alpha content" > "$_A6_DEST/01-skill-a/SKILL.md"
+  _A6_RESULT_STILL=$(_a6_gate "$_A6_SRC" "$_A6_DEST")
+  if [ "$_A6_RESULT_STILL" = "0" ]; then
+    _pass "A6-BEHAVIORAL: real content drift beside install-status.txt still FAILS the gate"
+  else
+    _fail "A6-BEHAVIORAL: exclusion weakened the gate — real drift went undetected"
+  fi
+
   rm -rf "$_A6_SRC" "$_A6_DEST"
 else
   _fail "A6-BEHAVIORAL: skill-content-hash.sh not found"

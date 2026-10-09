@@ -22,7 +22,7 @@ assert "Skill 12 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/12-openrouter-setup
 assert "OPENROUTER_API_KEY set"  "[ -n \"$OPENROUTER_API_KEY\" ]"
 assert "Key starts with sk-or-"  "[[ \"$OPENROUTER_API_KEY\" == sk-or-* ]]"
 KEY_TEST=$(curl -sS -m 10 -H "Authorization: Bearer $OPENROUTER_API_KEY" "https://openrouter.ai/api/v1/auth/key" 2>/dev/null)
-assert "Token validates" "echo \"$KEY_TEST\" | grep -qE '\"data\"|\"label\"|\"limit\"'"
+assert "Token validates" "echo \"\$KEY_TEST\" | grep -qE '\"data\"|\"label\"|\"limit\"'"
 warn_only "OpenRouter listed in openclaw.json providers" "command -v openclaw && python3 -c \"import json; print('openrouter' in json.load(open('$HOME/.openclaw/openclaw.json')).get('models',{}).get('providers',{}))\" 2>/dev/null | grep -qi true"
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"

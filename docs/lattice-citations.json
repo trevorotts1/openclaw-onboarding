@@ -43,7 +43,7 @@
       "citations": [
         {
           "file": "35-social-media-planner/CHANGELOG.md",
-          "line": 185,
+          "line": 189,
           "must_contain": "funnel_matcher.py --match"
         }
       ]
@@ -111,7 +111,7 @@
       "citations": [
         {
           "file": "06-ghl-install-pages/SKILL.md",
-          "line": 94,
+          "line": 105,
           "must_contain": "Full-Funnel Pipeline Integration (Skill 44 seam)"
         }
       ]
