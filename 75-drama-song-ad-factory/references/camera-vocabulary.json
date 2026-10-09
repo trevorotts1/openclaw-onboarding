@@ -1,0 +1,1598 @@
+{
+  "meta": {
+    "generated": "2026-10-09",
+    "method": "Perplexity API, model sonar-pro (standard search, not deep research), 18 queries; Kling camera list verified on kling.ai; Veo primary pages could not be rendered so Veo claims are secondary-sourced; prompt_phrase and ai_risk are planner judgement synthesised from the cited vendor guides and have not been tested by generating video.",
+    "risk_levels": "low = reliable, medium = works with care, high = frequently fails"
+  },
+  "angles": [
+    {
+      "id": "eye_level",
+      "name": "Eye level",
+      "what_it_is": "Camera at the subject's eye height, looking straight on.",
+      "emotion": "Neutral, natural, equal footing with the character.",
+      "use_when": "Ordinary dialogue, exposition, realistic drama, product demos needing credibility.",
+      "prompt_phrase": "eye-level shot, camera at the subject's eye height",
+      "ai_risk": {
+        "level": "low",
+        "note": "Safest default; reliable in every model."
+      },
+      "sources": [
+        "https://ithaca-studio.com/2018/10/28/the-camera-in-film-camera-angles/",
+        "https://en.wikipedia.org/wiki/Camera_angle",
+        "https://www.oxford.co.za/download_files/schools/7_16_A_glossary_of_film_terminology.pdf"
+      ]
+    },
+    {
+      "id": "low_angle",
+      "name": "Low angle",
+      "what_it_is": "Camera below the eye line, looking up.",
+      "emotion": "Power, confidence, menace, aspiration.",
+      "use_when": "Hero entrances, villains, leaders, aspirational brand moments.",
+      "prompt_phrase": "low-angle shot looking up at the subject",
+      "ai_risk": {
+        "level": "low",
+        "note": "Works as a framing cue in Veo and Kling guides; very low angles can stretch limbs and faces."
+      },
+      "sources": [
+        "https://ithaca-studio.com/2018/10/28/the-camera-in-film-camera-angles/",
+        "https://en.wikipedia.org/wiki/Camera_angle",
+        "https://www.oxford.co.za/download_files/schools/7_16_A_glossary_of_film_terminology.pdf",
+        "https://kling.ai/quickstart/text-to-video-prompt-guide",
+        "https://runway.com/resources/ai-camera-prompts"
+      ]
+    },
+    {
+      "id": "high_angle",
+      "name": "High angle",
+      "what_it_is": "Camera above the subject, looking down.",
+      "emotion": "Small, exposed, trapped, vulnerable.",
+      "use_when": "Loss of control, being cornered, a character alone in a big space.",
+      "prompt_phrase": "high-angle shot looking down at the subject",
+      "ai_risk": {
+        "level": "low",
+        "note": "Reliable framing cue."
+      },
+      "sources": [
+        "https://ithaca-studio.com/2018/10/28/the-camera-in-film-camera-angles/",
+        "https://en.wikipedia.org/wiki/Camera_angle",
+        "https://www.oxford.co.za/download_files/schools/7_16_A_glossary_of_film_terminology.pdf",
+        "https://kling.ai/quickstart/text-to-video-prompt-guide"
+      ]
+    },
+    {
+      "id": "birds_eye",
+      "name": "Bird's-eye / overhead",
+      "what_it_is": "Camera very high, looking straight or nearly straight down.",
+      "emotion": "Detachment, omniscience, pattern, vulnerability.",
+      "use_when": "Choreography, geography, food or product flat-lays, isolation.",
+      "prompt_phrase": "overhead top-down shot looking straight down",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Top-down framing is understood, but perspective on people can look flattened or limbs odd; keep subjects simple."
+      },
+      "sources": [
+        "https://www.filmmakersacademy.com/glossary/aerial-shot/",
+        "https://www.oxford.co.za/download_files/schools/7_16_A_glossary_of_film_terminology.pdf",
+        "https://www.studiobinder.com/blog/ultimate-guide-to-camera-shots/",
+        "https://runway.com/resources/ai-camera-prompts"
+      ]
+    },
+    {
+      "id": "worms_eye",
+      "name": "Worm's-eye",
+      "what_it_is": "Camera at ground level, looking sharply upward.",
+      "emotion": "Awe, intimidation, towering scale.",
+      "use_when": "Buildings, giants, monsters, a sudden sense of enormity.",
+      "prompt_phrase": "worm's-eye view from ground level looking steeply up",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Extreme perspective distorts bodies; the term is less common in guides, so pair with 'camera on the ground, looking up'."
+      },
+      "sources": [
+        "https://ithaca-studio.com/2018/10/28/the-camera-in-film-camera-angles/",
+        "https://en.wikipedia.org/wiki/Camera_angle"
+      ]
+    },
+    {
+      "id": "dutch",
+      "name": "Dutch / canted",
+      "what_it_is": "Camera tilted so the horizon runs diagonal.",
+      "emotion": "Unease, instability, disorientation, madness.",
+      "use_when": "Panic, intoxication, danger, reality breaking down. Use sparingly.",
+      "prompt_phrase": "dutch angle, camera tilted so the horizon is diagonal",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Model may tilt the whole scene inconsistently or drift back to level mid-clip; keep the clip short and static."
+      },
+      "sources": [
+        "https://en.wikipedia.org/wiki/Camera_angle",
+        "https://rnlkwc.ac.in/pdf/study-material/english/SEC2_Techniques_Part2.pdf"
+      ]
+    },
+    {
+      "id": "ots",
+      "name": "Over-the-shoulder",
+      "what_it_is": "Camera behind one character, their shoulder and head in the foreground, looking at another.",
+      "emotion": "Involvement, conversational tension, shared viewpoint.",
+      "use_when": "Dialogue, confrontation, negotiation, shot-reverse-shot coverage.",
+      "prompt_phrase": "over-the-shoulder shot from behind her left shoulder, facing him",
+      "ai_risk": {
+        "level": "high",
+        "note": "Models often drop the foreground shoulder, merge the two heads, or flip who faces whom. Generate from a reference still."
+      },
+      "sources": [
+        "https://www.oxford.co.za/download_files/schools/7_16_A_glossary_of_film_terminology.pdf",
+        "https://www.studiobinder.com/blog/ultimate-guide-to-camera-shots/"
+      ]
+    },
+    {
+      "id": "pov",
+      "name": "POV",
+      "what_it_is": "Camera shows exactly what a character sees.",
+      "emotion": "Identification, immediacy, suspense, restricted knowledge.",
+      "use_when": "Searching, stalking, reading a message, looking through binoculars.",
+      "prompt_phrase": "first-person point-of-view shot, seen through the character's eyes",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Works when hands or the object are all that appear; showing the viewer's own body adds hand errors."
+      },
+      "sources": [
+        "https://en.wikipedia.org/wiki/Point-of-view_shot",
+        "https://www.studiobinder.com/blog/ultimate-guide-to-camera-shots/"
+      ]
+    },
+    {
+      "id": "aerial",
+      "name": "Aerial / drone",
+      "what_it_is": "Camera airborne, travelling above a scene.",
+      "emotion": "Scale, freedom, awe, geography, isolation.",
+      "use_when": "Establishing a city or landscape, connecting locations, following a vehicle.",
+      "prompt_phrase": "aerial drone shot high above, slowly moving forward",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Landscape scale is a model strength, but fast forward flight warps terrain and buildings; keep it slow."
+      },
+      "sources": [
+        "https://www.filmmakersacademy.com/glossary/aerial-shot/",
+        "https://morphic.com/ai-glossary/drone-shot",
+        "https://www.studiobinder.com/blog/ultimate-guide-to-camera-shots/"
+      ]
+    }
+  ],
+  "shot_types": [
+    {
+      "id": "extreme_wide",
+      "name": "Extreme wide / establishing",
+      "what_it_is": "Subject tiny in a vast environment; shows the whole location.",
+      "emotion": "Grandeur, isolation, vulnerability, unfamiliarity.",
+      "use_when": "Opening a scene, changing location, showing scale.",
+      "prompt_phrase": "extreme wide establishing shot, tiny figure in a vast landscape",
+      "ai_risk": {
+        "level": "low",
+        "note": "Models handle environments well; faces at this size are soft, so avoid needing identity here."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/shot-size/extreme-wide-shot/",
+        "https://www.adobe.com/africa/creativecloud/video/production/cinematography/camera-shots-and-angles.html"
+      ]
+    },
+    {
+      "id": "wide",
+      "name": "Wide",
+      "what_it_is": "Full subject with substantial surroundings.",
+      "emotion": "Orientation, openness, exposure.",
+      "use_when": "Scene geography, entrances, blocking, movement through space.",
+      "prompt_phrase": "wide shot showing the full room and the characters within it",
+      "ai_risk": {
+        "level": "low",
+        "note": "Small faces can drift between frames; keep action simple."
+      },
+      "sources": [
+        "https://www.studiobinder.com/blog/ultimate-guide-to-camera-shots/",
+        "https://www.adobe.com/in/creativecloud/video/production/cinematography/camera-shots-and-angles.html"
+      ]
+    },
+    {
+      "id": "full",
+      "name": "Full shot",
+      "what_it_is": "Entire body head to toe, little spare space.",
+      "emotion": "Physical presence, clarity of posture and costume.",
+      "use_when": "Walking, dancing, fighting, costume reveals.",
+      "prompt_phrase": "full-body shot, head to toe in frame",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Feet and legs are a common failure point (sliding, extra limbs)."
+      },
+      "sources": [
+        "https://www.studiobinder.com/blog/ultimate-guide-to-camera-shots/",
+        "https://learnaboutfilm.com/film-language/picture/shotsize/"
+      ]
+    },
+    {
+      "id": "cowboy",
+      "name": "Cowboy / medium wide",
+      "what_it_is": "Subject framed from about mid-thigh up.",
+      "emotion": "Readiness, tension, confrontation.",
+      "use_when": "Standoffs, entrances, scenes needing both hands and face.",
+      "prompt_phrase": "cowboy shot, framed from mid-thigh up",
+      "ai_risk": {
+        "level": "low",
+        "note": "Term 'cowboy shot' is understood; if not, say 'framed from the thighs up'."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/shot-size/cowboy-shot/",
+        "https://www.studiobinder.com/blog/ultimate-guide-to-camera-shots/"
+      ]
+    },
+    {
+      "id": "medium",
+      "name": "Medium",
+      "what_it_is": "Waist up.",
+      "emotion": "Neutral, conversational; balances face and body.",
+      "use_when": "Standard dialogue, interviews, gestures.",
+      "prompt_phrase": "medium shot, framed from the waist up",
+      "ai_risk": {
+        "level": "low",
+        "note": "Most reliable human framing."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/shot-size/medium-shot/",
+        "https://www.studiobinder.com/blog/ultimate-guide-to-camera-shots/"
+      ]
+    },
+    {
+      "id": "mcu",
+      "name": "Medium close-up",
+      "what_it_is": "Chest or shoulders up.",
+      "emotion": "More personal, attentive.",
+      "use_when": "Intimate dialogue, interviews, reactions.",
+      "prompt_phrase": "medium close-up, framed from the chest up",
+      "ai_risk": {
+        "level": "low",
+        "note": "Reliable; face detail good."
+      },
+      "sources": [
+        "https://www.adobe.com/africa/creativecloud/video/production/cinematography/camera-shots-and-angles.html",
+        "https://www.studiobinder.com/blog/ultimate-guide-to-camera-shots/"
+      ]
+    },
+    {
+      "id": "cu",
+      "name": "Close-up",
+      "what_it_is": "Face or key object fills the frame.",
+      "emotion": "Intimacy, intensity, scrutiny.",
+      "use_when": "Decisions, grief, fear, emotional turns; product hero.",
+      "prompt_phrase": "close-up on the face, shallow depth of field",
+      "ai_risk": {
+        "level": "low",
+        "note": "Best identity fidelity, which is why AI over-produces it; plan it as the exception."
+      },
+      "sources": [
+        "https://www.adobe.com/africa/creativecloud/video/production/cinematography/camera-shots-and-angles.html",
+        "https://learnaboutfilm.com/film-language/picture/shotsize/"
+      ]
+    },
+    {
+      "id": "ecu",
+      "name": "Extreme close-up",
+      "what_it_is": "Isolated small detail: eyes, lips, hand, key.",
+      "emotion": "Tension, obsession, claustrophobia, emphasis.",
+      "use_when": "Micro-expressions, clues, a trigger pull. Rare.",
+      "prompt_phrase": "extreme close-up on her eyes",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Eyes and teeth can deform; hands in close-up add finger errors."
+      },
+      "sources": [
+        "https://www.adobe.com/africa/creativecloud/video/production/cinematography/camera-shots-and-angles.html"
+      ]
+    },
+    {
+      "id": "insert",
+      "name": "Insert / detail",
+      "what_it_is": "Brief close-up of an object or action cut into a scene.",
+      "emotion": "Emphasis, curiosity, suspense.",
+      "use_when": "Letter, ring, phone screen, hands on a tool.",
+      "prompt_phrase": "insert shot of a hand placing the key on the table, macro detail",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Readable text on objects will garble; generate screens and labels in post."
+      },
+      "sources": [
+        "https://courses.cs.washington.edu/courses/cse456/14su/resources/Basic%20Cinematography%20for%20Animation.pdf",
+        "https://ptgmedia.pearsoncmg.com/images/chap05_0321238338/elementLinks/chap05_0321238338.pdf"
+      ]
+    },
+    {
+      "id": "two_shot",
+      "name": "Two-shot",
+      "what_it_is": "Two characters in one frame.",
+      "emotion": "Connection, conflict, intimacy, distance.",
+      "use_when": "Dialogue where the relationship matters.",
+      "prompt_phrase": "two-shot, both characters in frame, medium distance",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Two faces drift or merge across a clip; keep both still and facing."
+      },
+      "sources": [
+        "https://www.adobe.com/in/creativecloud/video/production/cinematography/camera-shots-and-angles.html",
+        "https://www.westga.edu/academics/university-college/writing/glossary_of_film_terms.php"
+      ]
+    },
+    {
+      "id": "group",
+      "name": "Group shot",
+      "what_it_is": "Three or more people framed together.",
+      "emotion": "Community, pressure, unity, exclusion.",
+      "use_when": "Meetings, families, parties, crowds.",
+      "prompt_phrase": "group shot, five people around a table, wide medium framing",
+      "ai_risk": {
+        "level": "high",
+        "note": "Identity and count drift; faces beyond two or three degrade quickly."
+      },
+      "sources": [
+        "https://www.adobe.com/in/creativecloud/video/production/cinematography/camera-shots-and-angles.html",
+        "https://www.westga.edu/academics/university-college/writing/glossary_of_film_terms.php"
+      ]
+    },
+    {
+      "id": "master",
+      "name": "Master shot",
+      "what_it_is": "Wide shot covering the whole scene's action.",
+      "emotion": "Clarity, stability, geography.",
+      "use_when": "Start of a scene and every return-to-orientation moment.",
+      "prompt_phrase": "master shot, wide static view of the whole scene",
+      "ai_risk": {
+        "level": "low",
+        "note": "Simple, static wide; good AI target."
+      },
+      "sources": [
+        "https://www.adobe.com/in/creativecloud/video/production/cinematography/camera-shots-and-angles.html",
+        "https://courses.cs.washington.edu/courses/cse456/14su/resources/Basic%20Cinematography%20for%20Animation.pdf",
+        "https://ptgmedia.pearsoncmg.com/images/chap05_0321238338/elementLinks/chap05_0321238338.pdf"
+      ]
+    },
+    {
+      "id": "cutaway",
+      "name": "Cutaway",
+      "what_it_is": "Shot of something else related to the scene.",
+      "emotion": "Context, suspense, pause, humor.",
+      "use_when": "Show what a character notices, bridge edits, hide a continuity issue.",
+      "prompt_phrase": "cutaway to the clock on the wall, static",
+      "ai_risk": {
+        "level": "low",
+        "note": "Easy; no character identity needed."
+      },
+      "sources": [
+        "https://www.adobe.com/in/creativecloud/video/production/cinematography/camera-shots-and-angles.html",
+        "https://ptgmedia.pearsoncmg.com/images/chap05_0321238338/elementLinks/chap05_0321238338.pdf"
+      ]
+    },
+    {
+      "id": "reaction",
+      "name": "Reaction shot",
+      "what_it_is": "Character responding to what was said or seen.",
+      "emotion": "Shared surprise, fear, amusement, grief.",
+      "use_when": "After news, a joke, a threat, a revelation.",
+      "prompt_phrase": "reaction shot, close-up of her face as she realizes, subtle change of expression",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Expression changes can look uncanny; ask for one small change."
+      },
+      "sources": [
+        "https://courses.cs.washington.edu/courses/cse456/14su/resources/Basic%20Cinematography%20for%20Animation.pdf",
+        "https://www.westga.edu/academics/university-college/writing/glossary_of_film_terms.php"
+      ]
+    },
+    {
+      "id": "reverse",
+      "name": "Reverse / shot-reverse-shot",
+      "what_it_is": "Opposite viewpoint; alternating shots of two people facing each other.",
+      "emotion": "Conversational rhythm, tension.",
+      "use_when": "Dialogue, arguments, interviews.",
+      "prompt_phrase": "reverse angle from the other character's side, matching eyeline",
+      "ai_risk": {
+        "level": "high",
+        "note": "Model has no memory of the first clip; the room and the person must be re-specified identically."
+      },
+      "sources": [
+        "https://www.adobe.com/creativecloud/video/production/cinematography/camera-shots-and-angles/reverse-shot.html",
+        "https://www.westga.edu/academics/university-college/writing/glossary_of_film_terms.php",
+        "https://www.adobe.com/in/creativecloud/video/production/cinematography/camera-shots-and-angles.html"
+      ]
+    }
+  ],
+  "moves": [
+    {
+      "id": "static",
+      "name": "Static / locked off",
+      "what_it_is": "Camera fixed on a tripod.",
+      "emotion": "Stability, observation, restraint.",
+      "use_when": "Performance, tense dialogue, any shot where fidelity matters most.",
+      "prompt_phrase": "static camera, locked-off shot, no camera movement",
+      "ai_risk": {
+        "level": "low",
+        "note": "Most stable output; default for the majority of shots."
+      },
+      "sources": [
+        "https://www.premiumbeat.com/blog/cinematography-manual-the-ultimate-guide-to-becoming-a-director-of-photography/",
+        "https://www.studiobinder.com/camera-shots/camera-movements/",
+        "https://kling.ai/blog/kling-ai-camera-control-video-guide"
+      ],
+      "minimax_tag": "[Static shot]",
+      "test_per_model": true
+    },
+    {
+      "id": "zoom_in",
+      "name": "Zoom in",
+      "what_it_is": "Lens focal length increases; camera stays put.",
+      "emotion": "Attention, scrutiny, emphasis; fast zoom feels TV-like.",
+      "use_when": "Isolate a detail without entering the space.",
+      "prompt_phrase": "slow zoom in on the subject",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Often confused with push-in; say 'zoom' only if you want flat optical magnification."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/camera-movements/zoom-shot/",
+        "https://www.premiumbeat.com/blog/cinematography-manual-the-ultimate-guide-to-becoming-a-director-of-photography/"
+      ],
+      "minimax_tag": "[Zoom in]",
+      "test_per_model": true
+    },
+    {
+      "id": "zoom_out",
+      "name": "Zoom out",
+      "what_it_is": "Lens focal length decreases; camera stays put.",
+      "emotion": "Revelation, exposure, isolation.",
+      "use_when": "Reveal that a character is alone or surrounded.",
+      "prompt_phrase": "slow zoom out revealing the surroundings",
+      "ai_risk": {
+        "level": "medium",
+        "note": "New background must be invented; keep slow."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/camera-movements/zoom-shot/",
+        "https://www.premiumbeat.com/blog/cinematography-manual-the-ultimate-guide-to-becoming-a-director-of-photography/"
+      ],
+      "minimax_tag": "[Zoom out]",
+      "test_per_model": true
+    },
+    {
+      "id": "dolly_in",
+      "name": "Dolly in",
+      "what_it_is": "Camera physically moves toward the subject on a dolly.",
+      "emotion": "Involvement, intimacy, realisation, threat.",
+      "use_when": "Character understands something; rising tension.",
+      "prompt_phrase": "slow dolly in toward the subject",
+      "ai_risk": {
+        "level": "low",
+        "note": "One of the best-supported moves; Kling guide says plain 'camera slowly moves closer' may work better than the word dolly."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/camera-movements/",
+        "https://www.premiumbeat.com/blog/cinematography-manual-the-ultimate-guide-to-becoming-a-director-of-photography/",
+        "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/video-gen-prompt-guide",
+        "https://aiofm.info/en/guides/kling-ai-prompts"
+      ],
+      "minimax_tag": "[Push in]",
+      "test_per_model": true
+    },
+    {
+      "id": "dolly_out",
+      "name": "Dolly out",
+      "what_it_is": "Camera physically moves away from the subject.",
+      "emotion": "Withdrawal, loneliness, context revealed.",
+      "use_when": "Pull away after bad news; reveal the larger room.",
+      "prompt_phrase": "slow dolly out, pulling back from the subject",
+      "ai_risk": {
+        "level": "low",
+        "note": "Revealed background is invented; keep slow."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/camera-movements/",
+        "https://www.premiumbeat.com/blog/cinematography-manual-the-ultimate-guide-to-becoming-a-director-of-photography/"
+      ],
+      "minimax_tag": "[Pull out]",
+      "test_per_model": true
+    },
+    {
+      "id": "push_in",
+      "name": "Push-in",
+      "what_it_is": "Deliberate advance toward a subject (usually a dolly in; also slider or gimbal).",
+      "emotion": "Growing emphasis, menace, concentration.",
+      "use_when": "Internal turning point; information becomes important.",
+      "prompt_phrase": "gentle push-in toward the subject's face",
+      "ai_risk": {
+        "level": "low",
+        "note": "Preferred term across Kling and MiniMax docs; treated like dolly in by Veo guides."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/camera-movements/",
+        "https://kling.ai/blog/kling-ai-camera-control-video-guide",
+        "https://platform.minimax.io/docs/api-reference/video-generation-fl2v"
+      ],
+      "minimax_tag": "[Push in]",
+      "test_per_model": true
+    },
+    {
+      "id": "pull_out",
+      "name": "Pull-out",
+      "what_it_is": "Camera moves backward away from the subject.",
+      "emotion": "Distancing, defeat, diminishing the character.",
+      "use_when": "Leave a character small in a big space.",
+      "prompt_phrase": "slow pull-out, camera retreats from the subject",
+      "ai_risk": {
+        "level": "low",
+        "note": "Same as dolly out."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/camera-movements/",
+        "https://platform.minimax.io/docs/api-reference/video-generation-fl2v"
+      ],
+      "minimax_tag": "[Pull out]",
+      "test_per_model": true
+    },
+    {
+      "id": "tracking",
+      "name": "Tracking / follow",
+      "what_it_is": "Camera travels with a moving subject at similar distance.",
+      "emotion": "Immersion, momentum, participation.",
+      "use_when": "Walk-and-talk, runner, a journey in real time.",
+      "prompt_phrase": "smooth tracking shot following the subject from behind",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Best for slow or medium subject speed; running or fast turns cause leg and background warping."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/camera-movements/",
+        "https://www.studiobinder.com/blog/ultimate-guide-to-camera-shots/",
+        "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/video-gen-prompt-guide",
+        "https://platform.minimax.io/docs/api-reference/video-generation-fl2v"
+      ],
+      "minimax_tag": "[Tracking shot]",
+      "test_per_model": true
+    },
+    {
+      "id": "truck",
+      "name": "Truck (lateral)",
+      "what_it_is": "Camera moves sideways, parallel to the subject.",
+      "emotion": "Kinetic discovery, moving through a space.",
+      "use_when": "Reveal items along a wall; walk beside a character.",
+      "prompt_phrase": "camera trucks left, sideways move, parallax in the foreground",
+      "ai_risk": {
+        "level": "low",
+        "note": "Lateral parallax is well supported; MiniMax has an explicit tag."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/camera-movements/",
+        "https://platform.minimax.io/docs/api-reference/video-generation-fl2v"
+      ],
+      "minimax_tag": "[Truck left] / [Truck right]",
+      "test_per_model": true
+    },
+    {
+      "id": "pan",
+      "name": "Pan",
+      "what_it_is": "Camera rotates horizontally from a fixed point.",
+      "emotion": "Redirected attention, anticipation, revelation.",
+      "use_when": "Survey a space; follow action; link two subjects.",
+      "prompt_phrase": "slow pan from left to right",
+      "ai_risk": {
+        "level": "low",
+        "note": "Slow pans are reliable."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/camera-movements/",
+        "https://filmlifestyle.com/camera-movement-types/",
+        "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/video-gen-prompt-guide"
+      ],
+      "minimax_tag": "[Pan left] / [Pan right]",
+      "test_per_model": true
+    },
+    {
+      "id": "tilt",
+      "name": "Tilt",
+      "what_it_is": "Camera rotates vertically from a fixed point.",
+      "emotion": "Discovery, scale, power, vulnerability.",
+      "use_when": "Feet to skyline; reveal height or status.",
+      "prompt_phrase": "slow tilt up from the street to the top of the building",
+      "ai_risk": {
+        "level": "low",
+        "note": "Reliable when slow."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/camera-movements/",
+        "https://filmlifestyle.com/camera-movement-types/"
+      ],
+      "minimax_tag": "[Tilt up] / [Tilt down]",
+      "test_per_model": true
+    },
+    {
+      "id": "whip_pan",
+      "name": "Whip pan",
+      "what_it_is": "Very fast pan with heavy motion blur.",
+      "emotion": "Urgency, surprise, comic snap.",
+      "use_when": "Transition between two shots or two places.",
+      "prompt_phrase": "(do not use in one clip; build as two clips joined by a blur transition)",
+      "ai_risk": {
+        "level": "high",
+        "note": "Smears, geometry collapse, subject vanishing. Fake it in the edit."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/camera-movements/whip-pan-shot/",
+        "https://www.versely.studio/blog/why-ai-video-artifacts-happen-fixes"
+      ],
+      "test_per_model": true
+    },
+    {
+      "id": "sweeping_pan",
+      "name": "Panoramic / sweeping pan",
+      "what_it_is": "Wide, slow horizontal scan across a landscape or room.",
+      "emotion": "Space, orientation, grandeur.",
+      "use_when": "Establishing geography.",
+      "prompt_phrase": "slow panoramic pan across the landscape",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Long pans invent a lot of new scene; keep under about 90 degrees."
+      },
+      "sources": [
+        "https://casn.berkeley.edu/wp-content/uploads/resource_files/CameraMovementterms.pdf",
+        "https://filmlifestyle.com/camera-movement-types/",
+        "https://www.nfi.edu/camera-movements/"
+      ],
+      "test_per_model": true
+    },
+    {
+      "id": "crane",
+      "name": "Crane / jib up or down",
+      "what_it_is": "Camera rises or descends, often with a diagonal sweep.",
+      "emotion": "Grandeur, release, shift from intimate to expansive.",
+      "use_when": "Reveal a crowd or landscape; end a scene by lifting away.",
+      "prompt_phrase": "crane up, rising slowly to reveal the whole scene",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Supported by Veo guides; the revealed area is invented, keep it simple."
+      },
+      "sources": [
+        "https://filmlifestyle.com/camera-movement-types/",
+        "https://casn.berkeley.edu/wp-content/uploads/resource_files/CameraMovementterms.pdf",
+        "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/video-gen-prompt-guide"
+      ],
+      "minimax_tag": "[Pedestal up] / [Pedestal down]",
+      "test_per_model": true
+    },
+    {
+      "id": "handheld",
+      "name": "Handheld",
+      "what_it_is": "Operator-carried camera with small irregular shake.",
+      "emotion": "Immediacy, unease, documentary realism.",
+      "use_when": "Chases, emergencies, intimate or chaotic scenes.",
+      "prompt_phrase": "subtle handheld camera, slight natural shake",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Too much shake blurs identity; say 'subtle'."
+      },
+      "sources": [
+        "https://fiveable.me/film-aesthetics/unit-4/types-camera-movements-effects/study-guide/haE1JK283omOYWsn",
+        "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/video-gen-prompt-guide"
+      ],
+      "minimax_tag": "[Shake]",
+      "test_per_model": true
+    },
+    {
+      "id": "steadicam",
+      "name": "Steadicam",
+      "what_it_is": "Body-stabilised camera: floating, level walking move.",
+      "emotion": "Immersive, controlled, flowing.",
+      "use_when": "Follow through corridors, crowds, stairs.",
+      "prompt_phrase": "smooth steadicam follow shot, floating stabilised motion",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Treat as tracking; long corridors accumulate errors."
+      },
+      "sources": [
+        "https://filmlifestyle.com/camera-movement-types/",
+        "https://www.nfi.edu/camera-movements/"
+      ],
+      "minimax_tag": "[Tracking shot]",
+      "test_per_model": true
+    },
+    {
+      "id": "orbit",
+      "name": "Orbit / arc",
+      "what_it_is": "Camera circles around the subject.",
+      "emotion": "Romance, tension, importance; disorientation.",
+      "use_when": "Hero product, kiss, confrontation, pivotal beat.",
+      "prompt_phrase": "slow half-orbit around the subject, counterclockwise",
+      "ai_risk": {
+        "level": "high",
+        "note": "Needs consistent 3D from changing angles; use a half-orbit at most, simple subject, clear background."
+      },
+      "sources": [
+        "https://filmlifestyle.com/camera-movement-types/",
+        "https://www.nfi.edu/camera-movements/",
+        "https://www.versely.studio/blog/why-ai-video-artifacts-happen-fixes",
+        "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/video-gen-prompt-guide"
+      ],
+      "test_per_model": true
+    },
+    {
+      "id": "dolly_zoom",
+      "name": "Dolly zoom (vertigo)",
+      "what_it_is": "Camera moves one way while lens zooms the opposite way; subject size constant, background stretches or squeezes.",
+      "emotion": "Dread, vertigo, reality shifting.",
+      "use_when": "Realisation or shock. Once per piece at most.",
+      "prompt_phrase": "dolly zoom vertigo effect, background stretching behind a steady subject",
+      "ai_risk": {
+        "level": "high",
+        "note": "Model often renders a plain zoom or push; unreliable."
+      },
+      "sources": [
+        "https://www.studiobinder.com/camera-shots/camera-movements/dolly-zoom-shot/",
+        "https://en.wikipedia.org/wiki/Dolly_zoom"
+      ],
+      "test_per_model": true
+    },
+    {
+      "id": "rack_focus",
+      "name": "Rack focus",
+      "what_it_is": "Focus shifts between depth planes mid-shot.",
+      "emotion": "Realisation, attention transfer, suspense.",
+      "use_when": "Background clue becomes important; look from A to B.",
+      "prompt_phrase": "rack focus from the foreground object to the face in the background",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Often yields a crossfade of blur instead of a clean shift; keep depth separation obvious."
+      },
+      "sources": [
+        "https://filmlifestyle.com/camera-movement-types/",
+        "https://www.nfi.edu/camera-movements/"
+      ],
+      "test_per_model": true
+    },
+    {
+      "id": "reveal",
+      "name": "Reveal",
+      "what_it_is": "Move or composition change that uncovers hidden information.",
+      "emotion": "Curiosity, surprise, delayed understanding.",
+      "use_when": "Show what was hidden: tilt up, pull back, pan past a foreground object.",
+      "prompt_phrase": "slow pull-back to reveal the vast scene",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Combine with a single move only (pull back or tilt)."
+      },
+      "sources": [
+        "https://filmlifestyle.com/camera-movement-types/"
+      ],
+      "test_per_model": true
+    },
+    {
+      "id": "slow_mo",
+      "name": "Slow motion",
+      "what_it_is": "Action played slower than real time.",
+      "emotion": "Heightened, lyrical, tragic, powerful.",
+      "use_when": "Impact, falls, athletic moves, memory.",
+      "prompt_phrase": "slow motion, high frame rate look",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Models vary; phrase as 'slow motion' and keep action simple."
+      },
+      "sources": [
+        "https://filmlifestyle.com/camera-movement-types/",
+        "https://fiveable.me/film-aesthetics/unit-4/types-camera-movements-effects/study-guide/haE1JK283omOYWsn"
+      ],
+      "test_per_model": true
+    },
+    {
+      "id": "time_lapse",
+      "name": "Time-lapse",
+      "what_it_is": "Frames far apart played fast.",
+      "emotion": "Passing time, transformation.",
+      "use_when": "Sunrise, traffic, construction, seasons.",
+      "prompt_phrase": "time-lapse of clouds moving across the sky",
+      "ai_risk": {
+        "level": "low",
+        "note": "Environment-only works well; with people, bodies jitter."
+      },
+      "sources": [
+        "https://filmlifestyle.com/camera-movement-types/"
+      ],
+      "test_per_model": true
+    },
+    {
+      "id": "drone_fly",
+      "name": "Drone fly-over",
+      "what_it_is": "Aerial camera travelling over a place.",
+      "emotion": "Freedom, awe, geography, spectacle.",
+      "use_when": "Open a story; connect places.",
+      "prompt_phrase": "slow aerial drone fly-over, forward motion over the landscape",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Fast flight warps terrain; keep slow."
+      },
+      "sources": [
+        "https://morphic.com/ai-glossary/drone-shot",
+        "https://www.filmmakersacademy.com/glossary/aerial-shot/",
+        "https://getimg.ai/blog/7-camera-movements-that-make-ai-video-look-cinematic"
+      ],
+      "test_per_model": true
+    },
+    {
+      "id": "pedestal",
+      "name": "Pedestal up/down",
+      "what_it_is": "Camera rises or lowers vertically, no tilt.",
+      "emotion": "Gentle reveal, rising dignity.",
+      "use_when": "Vertical reveal in an interior.",
+      "prompt_phrase": "camera pedestals up smoothly, no tilt",
+      "ai_risk": {
+        "level": "low",
+        "note": "MiniMax has a native tag; others use 'camera rises'."
+      },
+      "sources": [
+        "https://platform.minimax.io/docs/api-reference/video-generation-fl2v",
+        "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/video-gen-prompt-guide"
+      ],
+      "minimax_tag": "[Pedestal up] / [Pedestal down]",
+      "test_per_model": true
+    },
+    {
+      "id": "sig_dolly_in",
+      "name": "Dolly in",
+      "what_it_is": "Signature dolly: camera physically pushes toward the subject on a dolly track, so the foreground slides past and the background grows (real parallax, not lens magnification).",
+      "emotion": "Involvement, intimacy, dawning realisation, encroaching threat.",
+      "use_when": "Open a scene on the subject; a character understands something; tension rises before a turn.",
+      "prompt_phrase": "slow dolly in toward the subject, camera physically moving closer, parallax in the foreground",
+      "ai_risk": {
+        "level": "low",
+        "note": "Reliable. Keep to one slow push. Faces can morph as the camera closes and scale can drift on the approach, so stop before a tight close-up. Kling may prefer the plain words 'camera slowly moves closer' over the word dolly. One camera move per clip only; do not stack a pan or zoom onto the same clip."
+      },
+      "preset": {
+        "label": "OPEN_DOLLY_IN",
+        "drop_at": "scene_start",
+        "prompt": "slow dolly in toward the subject, camera physically moving closer, parallax in the foreground, one camera move only"
+      },
+      "test_per_model": true,
+      "minimax_tag": "[Push in]",
+      "signature_family": "dolly"
+    },
+    {
+      "id": "sig_dolly_out",
+      "name": "Dolly out",
+      "what_it_is": "Signature dolly: camera physically pulls back from the subject along a dolly track, opening up the surrounding space (parallax reveals what was off-frame).",
+      "emotion": "Withdrawal, loneliness, scale, context revealed after a beat.",
+      "use_when": "Pull away after bad news; close a scene by leaving the subject; reveal the larger room.",
+      "prompt_phrase": "slow dolly out, camera physically pulling back from the subject, room revealed around them",
+      "ai_risk": {
+        "level": "low",
+        "note": "The newly revealed background is invented and can morph as it appears; distance errors skew scale while pulling back. Keep it slow and the environment simple. One camera move per clip only."
+      },
+      "preset": {
+        "label": "CLOSE_DOLLY_OUT",
+        "drop_at": "scene_end",
+        "prompt": "slow dolly out, camera physically pulling back from the subject, simple room revealed, one camera move only"
+      },
+      "test_per_model": true,
+      "minimax_tag": "[Pull out]",
+      "signature_family": "dolly"
+    },
+    {
+      "id": "sig_dolly_and_track",
+      "name": "Dolly and track",
+      "what_it_is": "Signature dolly: camera rides a dolly alongside or behind a moving subject, holding distance while the background slides past (a travelling two-in-one that still counts as a single camera move).",
+      "emotion": "Momentum, journey, being carried along with the subject.",
+      "use_when": "A walk-and-talk or a character moving through a space during an opening or a transition.",
+      "prompt_phrase": "camera on a dolly tracking alongside the walking subject, smooth steady move, background sliding past",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Best at slow or medium subject speed; running or sharp turns morph legs and smear the background, and distance errors skew scale. Keep the single move steady; one camera move per clip only."
+      },
+      "preset": {
+        "label": "TRANSITION_DOLLY_TRACK",
+        "drop_at": "scene_transition",
+        "prompt": "camera on a dolly tracking alongside the walking subject, smooth steady move, one camera move only"
+      },
+      "test_per_model": true,
+      "minimax_tag": "[Tracking shot]",
+      "signature_family": "dolly"
+    },
+    {
+      "id": "sig_dolly_zoom",
+      "name": "Dolly zoom",
+      "what_it_is": "Signature dolly (vertigo): camera dollies one way while the lens zooms the opposite way, holding the subject at constant size while the background stretches or squeezes. The dolly changes parallax; only the zoom changes the lens.",
+      "emotion": "Dread, vertigo, the floor dropping out, reality shifting under a character.",
+      "use_when": "A single realisation or shock beat. Once per piece at most, never on dialogue.",
+      "prompt_phrase": "dolly zoom vertigo effect, camera dollying in while the lens zooms out, background stretching behind a steady subject",
+      "ai_risk": {
+        "level": "high",
+        "note": "Models frequently collapse this into a plain zoom or a plain push; subject scale can also drift or morph when the two axes fight. Unreliable. The dolly-vs-zoom split is exactly what breaks here, so test per model before relying on it. One camera move per clip only; never a fast one."
+      },
+      "preset": {
+        "label": "BEAT_DOLLY_ZOOM",
+        "drop_at": "reveal",
+        "prompt": "dolly zoom vertigo effect, camera dollying in while the lens zooms out, background stretching behind a steady subject, slow, one camera move only"
+      },
+      "test_per_model": true,
+      "signature_family": "dolly"
+    },
+    {
+      "id": "sig_lateral_truck",
+      "name": "Lateral truck",
+      "what_it_is": "Signature dolly: camera trucks sideways on a dolly, parallel to the subject, sliding past foreground objects so parallax reads as depth.",
+      "emotion": "Kinetic discovery, moving through a space, items unveiling left to right.",
+      "use_when": "Reveal products along a wall or table; travel beside a walking character in an opening or transition.",
+      "prompt_phrase": "camera trucks left sideways on a dolly, sliding past the subject, strong parallax in the foreground",
+      "ai_risk": {
+        "level": "low",
+        "note": "Lateral parallax is well supported. Foreground objects can morph at the frame edge and lateral distance errors skew scale. Keep one direction and one speed; pick left or right, not both. One camera move per clip only."
+      },
+      "preset": {
+        "label": "TRANSITION_LATERAL_TRUCK",
+        "drop_at": "scene_transition",
+        "prompt": "camera trucks left sideways on a dolly, sliding past the subject, one camera move only"
+      },
+      "test_per_model": true,
+      "minimax_tag": "[Truck left] / [Truck right]",
+      "signature_family": "dolly"
+    },
+    {
+      "id": "sig_drone_fly_in",
+      "name": "Drone fly-in",
+      "what_it_is": "Signature drone: aerial camera flies in over the landscape toward the subject or location, dropping scale from vast to intimate in one continuous move.",
+      "emotion": "Arrival, spectacle, welcome, the world opening up for the story.",
+      "use_when": "Open the whole video or open a scene on a sweeping aerial approach.",
+      "prompt_phrase": "sweeping drone fly-in, aerial camera flying forward over the landscape toward the subject",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Fast flight warps terrain and smears the ground; keep it slow and the landscape simple. The subject can morph at close range and scale can drift on the approach, so end the move before reaching a face. One camera move per clip only."
+      },
+      "preset": {
+        "label": "OPEN_DRONE_FLY_IN",
+        "drop_at": "video_start",
+        "prompt": "sweeping drone fly-in, slow aerial camera flying forward over a simple landscape toward the subject, one camera move only"
+      },
+      "test_per_model": true,
+      "signature_family": "drone"
+    },
+    {
+      "id": "sig_aerial_reveal",
+      "name": "Aerial reveal",
+      "what_it_is": "Signature drone: aerial camera rises or crests to uncover a hidden location, crowd or scale that was blocked from the low view.",
+      "emotion": "Awe, geography, 'how big this really is'.",
+      "use_when": "Reveal a place, a crowd or the true scale at a scene transition or a key turn.",
+      "prompt_phrase": "aerial drone reveal, camera rising to uncover the vast location below",
+      "ai_risk": {
+        "level": "medium",
+        "note": "The uncovered area is invented, so keep it simple and keep the rise slow to limit terrain morphing. One camera move per clip only Watch for scale errors."
+      },
+      "preset": {
+        "label": "TRANSITION_AERIAL_REVEAL",
+        "drop_at": "scene_transition",
+        "prompt": "aerial drone reveal, slow camera rise uncovering a simple vast location, one camera move only"
+      },
+      "test_per_model": true,
+      "signature_family": "drone"
+    },
+    {
+      "id": "sig_drone_ascend",
+      "name": "Ascending drone",
+      "what_it_is": "Signature drone: camera climbs straight up on a drone, lifting from subject height to a high aerial, trading intimacy for geography.",
+      "emotion": "Release, grandeur, leaving the small problem for the big picture.",
+      "use_when": "Close a scene by lifting away; hand off from an intimate beat to a wide world.",
+      "prompt_phrase": "drone ascending straight up, camera rising from the subject to a high aerial view",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Scale errors as the subject shrinks fast; the ground can morph. Keep the climb slow and steady. One camera move per clip only."
+      },
+      "preset": {
+        "label": "CLOSE_DRONE_ASCEND",
+        "drop_at": "scene_end",
+        "prompt": "drone ascending straight up, slow steady climb from the subject to a high aerial, one camera move only"
+      },
+      "test_per_model": true,
+      "signature_family": "drone"
+    },
+    {
+      "id": "sig_drone_descend",
+      "name": "Descending drone",
+      "what_it_is": "Signature drone: camera drops from a high aerial down toward the subject, narrowing the world onto one person or place.",
+      "emotion": "Focus closing in, destiny, the net tightening, arrival.",
+      "use_when": "Open a scene by dropping onto the subject; set up a confrontation.",
+      "prompt_phrase": "drone descending from a high aerial down toward the subject, slow controlled drop",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Subject can morph and scale can drift as the camera closes. Keep the descent slow and stop before the face. One camera move per clip only."
+      },
+      "preset": {
+        "label": "OPEN_DRONE_DESCEND",
+        "drop_at": "scene_start",
+        "prompt": "drone descending from a high aerial down toward the subject, slow controlled drop, one camera move only"
+      },
+      "test_per_model": true,
+      "signature_family": "drone"
+    },
+    {
+      "id": "sig_drone_orbit",
+      "name": "Drone orbit",
+      "what_it_is": "Signature drone: aerial camera arcs around the subject, circling to show it from shifting angles against the landscape.",
+      "emotion": "Importance, hero status, romance, rising tension.",
+      "use_when": "Hero product, a kiss, a pivotal reveal. Half an orbit at most.",
+      "prompt_phrase": "slow aerial drone orbit, camera arcing around the subject in a half circle",
+      "ai_risk": {
+        "level": "high",
+        "note": "Changing angles demand consistent 3D and often morph the subject or warp the horizon. Use a half orbit at most, a simple subject and a clear background. Fast orbits fail outright; build whip-fast spins as an edit transition, never a single generated move. One camera move per clip only Watch for scale errors."
+      },
+      "preset": {
+        "label": "REVEAL_DRONE_ORBIT",
+        "drop_at": "reveal",
+        "prompt": "slow aerial drone orbit, camera arcing around the subject in a half circle, simple subject, one camera move only"
+      },
+      "test_per_model": true,
+      "signature_family": "drone"
+    },
+    {
+      "id": "sig_drone_fly_over",
+      "name": "Drone fly-over",
+      "what_it_is": "Signature drone: aerial camera travels over a place at height, sweeping the landscape without locking onto one subject.",
+      "emotion": "Freedom, awe, geography, spectacle, connective tissue between places.",
+      "use_when": "Open a story or bridge two locations in a transition.",
+      "prompt_phrase": "slow aerial drone fly-over, camera travelling forward over the landscape at height",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Fast flight warps terrain; keep it slow. One camera move per clip only Watch for subject or terrain morphing and scale errors."
+      },
+      "preset": {
+        "label": "OPEN_DRONE_FLY_OVER",
+        "drop_at": "video_start",
+        "prompt": "slow aerial drone fly-over, camera travelling forward over a simple landscape, one camera move only"
+      },
+      "test_per_model": true,
+      "signature_family": "drone"
+    },
+    {
+      "id": "sig_drone_pull_back_reveal",
+      "name": "Drone pull-back reveal",
+      "what_it_is": "Signature drone: camera pulls back and up away from the subject on a drone, so the subject shrinks as the surrounding world floods into frame.",
+      "emotion": "Perspective, smallness, hope or isolation depending on the beat.",
+      "use_when": "Close the video or a scene by pulling back from the subject to the wider world.",
+      "prompt_phrase": "drone pull-back reveal, camera pulling back and up away from the subject, the wider world opening around them",
+      "ai_risk": {
+        "level": "medium",
+        "note": "The world that floods in is invented; scale can error as the subject shrinks. Keep it slow and simple. One camera move per clip only Watch for subject or terrain morphing."
+      },
+      "preset": {
+        "label": "CLOSE_DRONE_PULL_BACK_REVEAL",
+        "drop_at": "scene_end",
+        "prompt": "drone pull-back reveal, slow camera pulling back and up away from the subject, simple world opening around them, one camera move only"
+      },
+      "test_per_model": true,
+      "signature_family": "drone"
+    },
+    {
+      "id": "sig_drone_push_in",
+      "name": "Drone push-in",
+      "what_it_is": "Signature drone: camera starts on a wide establishing aerial and pushes in down toward the subject, carrying the whole scale of the world into one person or product.",
+      "emotion": "Significance, 'this one thing matters inside all of this', focus and importance.",
+      "use_when": "Open a scene or the whole video from a wide establishing view and drive down onto the subject.",
+      "prompt_phrase": "drone push-in from a wide establishing aerial down to the subject, slow descent and approach",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Scale errors and subject morphing as the camera closes on a face or product. Keep the push slow and stop short of the face. One camera move per clip only."
+      },
+      "preset": {
+        "label": "OPEN_DRONE_PUSH_IN",
+        "drop_at": "video_start",
+        "prompt": "drone push-in from a wide establishing aerial down to the subject, slow descent and approach, one camera move only"
+      },
+      "test_per_model": true,
+      "signature_family": "drone"
+    }
+  ],
+  "lenses": [
+    {
+      "id": "14mm",
+      "name": "14mm ultra-wide",
+      "what_it_is": "About 104 degrees horizontal on full frame. Strong edge stretch and foreground exaggeration.",
+      "emotion": "Scale, energy, unease.",
+      "use_when": "Extreme establishing, tight interiors, stylised action.",
+      "prompt_phrase": "shot on a 14mm ultra-wide lens, strong perspective",
+      "ai_risk": {
+        "level": "high",
+        "note": "Edge distortion is exaggerated by the model; faces near edges stretch."
+      },
+      "sources": [
+        "https://flashboards.yaroflasher.com/learn/lenses-and-focus/focal-length/",
+        "https://floniks.com/learn/cinematography/lens-and-focal-length-guide",
+        "https://shuttermuse.com/calculate-field-of-view-camera-lens/"
+      ],
+      "fov_deg": 104
+    },
+    {
+      "id": "24mm",
+      "name": "24mm wide",
+      "what_it_is": "About 74 degrees. Expansive but more controlled; environmental portraits.",
+      "emotion": "Presence in a place; handheld realism.",
+      "use_when": "Establishing, action coverage, dialogue in tight spaces.",
+      "prompt_phrase": "shot on a 24mm wide-angle lens",
+      "ai_risk": {
+        "level": "low",
+        "note": "Good for environments."
+      },
+      "sources": [
+        "https://flashboards.yaroflasher.com/learn/lenses-and-focus/focal-length/",
+        "https://floniks.com/learn/cinematography/lens-and-focal-length-guide",
+        "https://shuttermuse.com/calculate-field-of-view-camera-lens/"
+      ],
+      "fov_deg": 74
+    },
+    {
+      "id": "35mm",
+      "name": "35mm",
+      "what_it_is": "About 54 degrees. Natural, subject in context.",
+      "emotion": "Naturalistic, documentary.",
+      "use_when": "Walk-and-talks, two-shots, general narrative.",
+      "prompt_phrase": "shot on a 35mm lens, natural perspective",
+      "ai_risk": {
+        "level": "low",
+        "note": "The best single default for AI 'cinematic' wide-medium."
+      },
+      "sources": [
+        "https://flashboards.yaroflasher.com/learn/lenses-and-focus/focal-length/",
+        "https://floniks.com/learn/cinematography/lens-and-focal-length-guide",
+        "https://shuttermuse.com/calculate-field-of-view-camera-lens/"
+      ],
+      "fov_deg": 54
+    },
+    {
+      "id": "50mm",
+      "name": "50mm normal",
+      "what_it_is": "About 40 degrees. Neutral perspective close to human vision.",
+      "emotion": "Neutral, honest.",
+      "use_when": "General dialogue, mediums.",
+      "prompt_phrase": "shot on a 50mm lens",
+      "ai_risk": {
+        "level": "low",
+        "note": "Safe."
+      },
+      "sources": [
+        "https://flashboards.yaroflasher.com/learn/lenses-and-focus/focal-length/",
+        "https://floniks.com/learn/cinematography/lens-and-focal-length-guide",
+        "https://shuttermuse.com/calculate-field-of-view-camera-lens/"
+      ],
+      "fov_deg": 40
+    },
+    {
+      "id": "85mm",
+      "name": "85mm short tele",
+      "what_it_is": "About 24 degrees. Flattering compression, easy shallow focus.",
+      "emotion": "Intimate, isolating.",
+      "use_when": "Portraits, close-ups, interviews.",
+      "prompt_phrase": "shot on an 85mm lens, shallow depth of field, background compressed",
+      "ai_risk": {
+        "level": "low",
+        "note": "Strong, widely used in prompts for beautiful portraits."
+      },
+      "sources": [
+        "https://flashboards.yaroflasher.com/learn/lenses-and-focus/focal-length/",
+        "https://floniks.com/learn/cinematography/lens-and-focal-length-guide",
+        "https://shuttermuse.com/calculate-field-of-view-camera-lens/"
+      ],
+      "fov_deg": 24
+    },
+    {
+      "id": "135mm",
+      "name": "135mm tele",
+      "what_it_is": "About 15 degrees. Strong background compression.",
+      "emotion": "Voyeuristic, detached.",
+      "use_when": "Tight close-ups, distant candid shots.",
+      "prompt_phrase": "shot on a 135mm telephoto lens, compressed background",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Model approximates; effect is mostly blur plus tight framing."
+      },
+      "sources": [
+        "https://flashboards.yaroflasher.com/learn/lenses-and-focus/focal-length/",
+        "https://floniks.com/learn/cinematography/lens-and-focal-length-guide",
+        "https://shuttermuse.com/calculate-field-of-view-camera-lens/"
+      ],
+      "fov_deg": 15
+    },
+    {
+      "id": "200mm",
+      "name": "200mm long tele",
+      "what_it_is": "About 10 degrees. Strongest compression of the set.",
+      "emotion": "Surveillance, isolation.",
+      "use_when": "Distant action, compressed landscapes.",
+      "prompt_phrase": "shot on a 200mm telephoto lens, extreme compression",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Same as 135mm."
+      },
+      "sources": [
+        "https://flashboards.yaroflasher.com/learn/lenses-and-focus/focal-length/",
+        "https://floniks.com/learn/cinematography/lens-and-focal-length-guide",
+        "https://shuttermuse.com/calculate-field-of-view-camera-lens/"
+      ],
+      "fov_deg": 10
+    }
+  ],
+  "apertures": [
+    {
+      "id": "f1_4",
+      "name": "f/1.4",
+      "what_it_is": "Extremely shallow focus, very soft background.",
+      "emotion": "Intimate, dreamy.",
+      "use_when": "Low light, isolating a face.",
+      "prompt_phrase": "shot at f/1.4, very shallow depth of field, creamy background blur",
+      "ai_risk": {
+        "level": "medium",
+        "note": "F-stop numbers act as style cues, not literal optics; 'shallow depth of field' is the more reliable phrase."
+      },
+      "sources": [
+        "https://ifilmthings.com/what-is-aperture/",
+        "https://fiveable.me/advanced-cinematography/unit-5/aperture-f-stops/study-guide/qp70quhLkH0lfbvI",
+        "https://sony-cinematography.com/articles/how-lens-choice-affects-focus/"
+      ]
+    },
+    {
+      "id": "f2_8",
+      "name": "f/2.8",
+      "what_it_is": "Shallow focus, slightly more depth.",
+      "emotion": "Subject isolation.",
+      "use_when": "Dialogue, portraits.",
+      "prompt_phrase": "shot at f/2.8, shallow depth of field",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Same note."
+      },
+      "sources": [
+        "https://ifilmthings.com/what-is-aperture/",
+        "https://fiveable.me/advanced-cinematography/unit-5/aperture-f-stops/study-guide/qp70quhLkH0lfbvI"
+      ]
+    },
+    {
+      "id": "f4",
+      "name": "f/4",
+      "what_it_is": "Moderately shallow.",
+      "emotion": "Subject dominant, still readable.",
+      "use_when": "Interviews, character scenes.",
+      "prompt_phrase": "shot at f/4, moderate depth of field",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Same note."
+      },
+      "sources": [
+        "https://ifilmthings.com/what-is-aperture/",
+        "https://www.photopills.com/articles/depth-of-field-guide"
+      ]
+    },
+    {
+      "id": "f5_6",
+      "name": "f/5.6",
+      "what_it_is": "Middle ground.",
+      "emotion": "Balanced.",
+      "use_when": "Group shots, general coverage.",
+      "prompt_phrase": "shot at f/5.6, balanced depth of field",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Same note."
+      },
+      "sources": [
+        "https://ifilmthings.com/what-is-aperture/",
+        "https://www.canon-europe.com/pro/infobank/aperture/"
+      ]
+    },
+    {
+      "id": "f8",
+      "name": "f/8",
+      "what_it_is": "Deeper focus; foreground and background hold together.",
+      "emotion": "Clarity, documentary.",
+      "use_when": "Day exteriors, establishing shots.",
+      "prompt_phrase": "shot at f/8, deep focus, sharp throughout",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Use 'deep focus, everything sharp'."
+      },
+      "sources": [
+        "https://ifilmthings.com/what-is-aperture/",
+        "https://www.canon-europe.com/pro/infobank/aperture/"
+      ]
+    },
+    {
+      "id": "f11",
+      "name": "f/11",
+      "what_it_is": "Very deep focus.",
+      "emotion": "Environmental detail.",
+      "use_when": "Bright landscapes, architecture.",
+      "prompt_phrase": "shot at f/11, deep focus landscape, sharp foreground to horizon",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Same note."
+      },
+      "sources": [
+        "https://ifilmthings.com/what-is-aperture/",
+        "https://www.canon-europe.com/pro/infobank/aperture/"
+      ]
+    },
+    {
+      "id": "f16",
+      "name": "f/16",
+      "what_it_is": "Deepest practical focus; diffraction softness can start.",
+      "emotion": "Maximum sharpness.",
+      "use_when": "Landscapes, architecture.",
+      "prompt_phrase": "shot at f/16, deep focus, everything sharp",
+      "ai_risk": {
+        "level": "medium",
+        "note": "Same note."
+      },
+      "sources": [
+        "https://www.canon-europe.com/pro/infobank/aperture/"
+      ]
+    }
+  ],
+  "lens_looks": [
+    {
+      "id": "anamorphic",
+      "name": "Anamorphic",
+      "what_it_is": "Lens that squeezes the image; widescreen 2.39:1 with oval bokeh and horizontal flares.",
+      "emotion": "Epic, film-like.",
+      "use_when": "Cinematic establishing and hero shots.",
+      "prompt_phrase": "anamorphic lens, 2.39:1 widescreen, oval bokeh, horizontal blue lens flare",
+      "ai_risk": {
+        "level": "low",
+        "note": "Style cue; Runway guidance explicitly encourages it; do not combine with a conflicting aspect ratio."
+      },
+      "sources": [
+        "https://www.sfu.ca/media-lab/cycle/cycle3/3b-concepts.html",
+        "https://runway.com/resources/ai-camera-prompts"
+      ]
+    },
+    {
+      "id": "flare",
+      "name": "Lens flare",
+      "what_it_is": "Streaks or ghosting when bright light hits the lens.",
+      "emotion": "Warmth, drama, nostalgia.",
+      "use_when": "Backlit sunsets, car lights, stylised scenes.",
+      "prompt_phrase": "subtle lens flare from the setting sun behind the subject",
+      "ai_risk": {
+        "level": "low",
+        "note": "Easy; overuse hides detail."
+      },
+      "sources": [
+        "https://www.sfu.ca/media-lab/cycle/cycle3/3b-concepts.html"
+      ]
+    },
+    {
+      "id": "bokeh",
+      "name": "Bokeh",
+      "what_it_is": "Quality of out-of-focus highlights; strongest at wide apertures.",
+      "emotion": "Dreamy depth.",
+      "use_when": "City lights behind a portrait.",
+      "prompt_phrase": "shallow depth of field with soft round bokeh in the background",
+      "ai_risk": {
+        "level": "low",
+        "note": "Reliable."
+      },
+      "sources": [
+        "https://www.sfu.ca/media-lab/cycle/cycle3/3b-concepts.html",
+        "https://www.photopills.com/articles/depth-of-field-guide"
+      ]
+    }
+  ],
+  "grammar": [
+    {
+      "rule": "180-degree rule",
+      "what": "Keep the camera on one side of the line between two subjects so left-right positions stay constant across cuts.",
+      "if_broken": "Characters appear to swap sides; confusion.",
+      "sources": [
+        "https://en.wikipedia.org/wiki/180-degree_rule",
+        "https://www.studiobinder.com/blog/what-is-the-180-degree-rule-film/",
+        "https://www.adobe.com/au/creativecloud/video/discover/what-is-the-180-degree-rule.html",
+        "https://pure.hud.ac.uk/ws/files/16045791/Kachkovski_17_180Rule_OA.pdf"
+      ],
+      "prompt_tip": "Per scene, fix 'A on the left facing right, B on the right facing left' and repeat that text in every prompt."
+    },
+    {
+      "rule": "Eyelines",
+      "what": "A character's look direction should match between shots so the glance seems to land on the other person.",
+      "if_broken": "Characters seem to look past each other.",
+      "sources": [
+        "https://www.cadrage.app/the-180-degree-rule-in-filmmaking/",
+        "https://www.adobe.com/creativecloud/video/hub/ideas/what-is-continuity-editing-in-film.html"
+      ],
+      "prompt_tip": "State 'looking toward the right of frame' in A's prompt and 'looking toward the left of frame' in B's."
+    },
+    {
+      "rule": "Screen direction",
+      "what": "Keep movement in a consistent left-to-right or right-to-left direction across cuts.",
+      "if_broken": "Motion feels reversed.",
+      "sources": [
+        "https://www.adobe.com/creativecloud/video/hub/ideas/what-is-continuity-editing-in-film.html",
+        "https://en.wikipedia.org/wiki/180-degree_rule"
+      ],
+      "prompt_tip": "Write 'walking left to right' in every shot of the same journey."
+    },
+    {
+      "rule": "Matching action",
+      "what": "Cut during a movement so the next shot continues it.",
+      "if_broken": "Action jumps or repeats.",
+      "sources": [
+        "https://www.studiobinder.com/blog/what-is-the-180-degree-rule-film/"
+      ],
+      "prompt_tip": "Start the next clip at the same pose the previous ended on; use the last frame as the start image."
+    },
+    {
+      "rule": "Shot-reverse-shot for dialogue",
+      "what": "Alternate between two opposing views of the speakers, respecting the 180-degree line.",
+      "if_broken": "Speakers seem not to face each other.",
+      "sources": [
+        "https://www.cadrage.app/the-180-degree-rule-in-filmmaking/",
+        "https://www.westga.edu/academics/university-college/writing/glossary_of_film_terms.php",
+        "https://www.adobe.com/creativecloud/video/production/cinematography/camera-shots-and-angles/reverse-shot.html"
+      ],
+      "prompt_tip": "Use over-the-shoulder pairs with mirrored framing and same lens."
+    },
+    {
+      "rule": "Master, then coverage",
+      "what": "Shoot the scene wide first, then closer shots to cut between.",
+      "if_broken": "No geography, no way to hide errors.",
+      "sources": [
+        "https://pure.hud.ac.uk/ws/files/16045791/Kachkovski_17_180Rule_OA.pdf"
+      ],
+      "prompt_tip": "Generate the master first; every later shot reuses its location and wardrobe text."
+    },
+    {
+      "rule": "Establishing shot at scene start",
+      "what": "Open each scene with a wide shot that places the audience.",
+      "if_broken": "Abrupt, disorienting cuts.",
+      "sources": [
+        "https://pure.hud.ac.uk/ws/files/16045791/Kachkovski_17_180Rule_OA.pdf",
+        "https://www.adobe.com/creativecloud/video/hub/ideas/what-is-continuity-editing-in-film.html"
+      ],
+      "prompt_tip": "First shot of every scene is an extreme wide or wide."
+    },
+    {
+      "rule": "Rule of thirds",
+      "what": "Place the subject on grid lines or intersections.",
+      "if_broken": "Static, centred, less dynamic.",
+      "sources": [
+        "https://www.adobe.com/in/creativecloud/video/production/cinematography.html",
+        "https://www.cadrage.app/shot-composition-framing/",
+        "https://motionarray.com/learn/filmmaking/shot-composition-framing-rules/"
+      ],
+      "prompt_tip": "Say 'subject on the left third of the frame'."
+    },
+    {
+      "rule": "Headroom",
+      "what": "Space above the head; too little cramps, too much shrinks.",
+      "if_broken": "Cramped or lost subject.",
+      "sources": [
+        "https://motionarray.com/learn/filmmaking/shot-composition-framing-rules/"
+      ],
+      "prompt_tip": "Say 'comfortable headroom'."
+    },
+    {
+      "rule": "Lead / nose room",
+      "what": "Space in front of a gaze or movement.",
+      "if_broken": "Confinement, unease.",
+      "sources": [
+        "https://www.cadrage.app/shot-composition-framing/",
+        "https://kling.ai/blog/cinematography-techniques"
+      ],
+      "prompt_tip": "Say 'space in front of her, looking into the frame'."
+    },
+    {
+      "rule": "Leading lines",
+      "what": "Roads, walls, shadows pointing to the subject.",
+      "if_broken": "Weak focus.",
+      "sources": [
+        "https://www.adobe.com/in/creativecloud/video/production/cinematography.html",
+        "https://www.cadrage.app/shot-composition-framing/"
+      ],
+      "prompt_tip": "Say 'converging road leads the eye to the subject'."
+    },
+    {
+      "rule": "Depth layers",
+      "what": "Foreground, midground, background elements.",
+      "if_broken": "Flat image.",
+      "sources": [
+        "https://kling.ai/blog/cinematography-techniques",
+        "https://www.cadrage.app/shot-composition-framing/"
+      ],
+      "prompt_tip": "Say 'foreground branches out of focus, subject in midground, mountains in background'."
+    },
+    {
+      "rule": "Frame within a frame",
+      "what": "Subject seen through a doorway or window.",
+      "if_broken": "Less intimate.",
+      "sources": [
+        "https://www.cadrage.app/shot-composition-framing/"
+      ],
+      "prompt_tip": "Say 'seen through a doorway, framed by the door'."
+    }
+  ],
+  "pacing": [
+    {
+      "format": "60 s ad",
+      "distinct_setups": "12-25",
+      "edited_shots": "20-35",
+      "wide_medium_close_pct": "25/35/40",
+      "cuts_per_minute": "20-40",
+      "avg_shot_length": "1.5-3 s",
+      "angle_families": "5-8"
+    },
+    {
+      "format": "2 min short",
+      "distinct_setups": "10-25",
+      "edited_shots": "12-25 (16-36 cuts)",
+      "wide_medium_close_pct": "30/40/30",
+      "cuts_per_minute": "8-18",
+      "avg_shot_length": "3.3-7.5 s",
+      "angle_families": "4-7"
+    },
+    {
+      "format": "3 min music video",
+      "distinct_setups": "20-50",
+      "edited_shots": "60-180",
+      "wide_medium_close_pct": "25/35/40 (dance: more wide)",
+      "cuts_per_minute": "20-60",
+      "avg_shot_length": "1-3 s",
+      "angle_families": "7-12"
+    },
+    {
+      "format": "10 min short film",
+      "distinct_setups": "25-60",
+      "edited_shots": "60-150",
+      "wide_medium_close_pct": "30/45/25",
+      "cuts_per_minute": "6-15",
+      "avg_shot_length": "4-10 s",
+      "angle_families": "5-9"
+    }
+  ],
+  "top_rules": [
+    "Open every scene with an establishing wide or extreme wide; never open on a close-up.",
+    "Cap close-ups and extreme close-ups at 30 percent of shots (25 percent for drama); make medium the largest share.",
+    "One camera move per clip, one subject action per clip, 4-6 seconds each.",
+    "Default to static or slow push-in; promote to tracking, pan, tilt or crane only for a stated reason.",
+    "Never request whip pans, fast orbits or dolly zoom in a single clip; build whip pans as an edit transition.",
+    "Never place two consecutive shots at the same size; jump at least two steps (wide to medium close-up, medium to wide).",
+    "Alternate angle family every two to three shots: eye level baseline, low for power, high for vulnerability, overhead for geography.",
+    "Every dialogue scene gets a master or two-shot, then over-the-shoulder pairs, then one close-up at the emotional peak only.",
+    "Lock the 180-degree line, screen direction and left-right positions in text and repeat them in every prompt of the scene.",
+    "Put shot size first in the prompt, then angle, then the single move with speed, then subject, lens look, lighting.",
+    "Keep hands, text and logos large or off-screen; add text and logos in post.",
+    "Give each shot a job (orient, move, emphasise, react, release) and end sequences on a wide pull-back or reveal."
+  ],
+  "move_distinction": {
+    "dolly": "A dolly move physically moves the camera through space, so foreground and background shift against one another and the shot gains real parallax and depth.",
+    "zoom": "A zoom only changes the lens focal length; the camera stays put, so there is no parallax and the background optically compresses toward the subject.",
+    "why_it_matters": "Models routinely collapse the two. Ask for a dolly when you want parallax, depth and 'entering the space'. Ask for a zoom when you want flat optical magnification without the camera moving. The dolly zoom is the deliberate combination of both and is the hardest of the three to generate reliably.",
+    "test_per_model": "Kling and Veo guidance disagree on how each model separates a dolly from a zoom and how reliably it honours the distinction, so every dolly-versus-zoom move is marked test_per_model true and must be verified per model before it is trusted in a shot list."
+  },
+  "signature_families": {
+    "dolly": [
+      "sig_dolly_in",
+      "sig_dolly_out",
+      "sig_dolly_and_track",
+      "sig_dolly_zoom",
+      "sig_lateral_truck"
+    ],
+    "drone": [
+      "sig_drone_fly_in",
+      "sig_aerial_reveal",
+      "sig_drone_ascend",
+      "sig_drone_descend",
+      "sig_drone_orbit",
+      "sig_drone_fly_over",
+      "sig_drone_pull_back_reveal",
+      "sig_drone_push_in"
+    ],
+    "note": "Signature moves the planner may drop at the start of a scene or the whole video. Each carries a preset. Every move is test_per_model because Kling and Veo sources disagree."
+  },
+  "provenance": {
+    "base": "operator research camera-vocabulary.json (2026-10-09)",
+    "extended_by": "PKG-07-U1 DEL-16 signature dolly + drone families",
+    "all_research_entries_preserved": true,
+    "runtime_read_path": "references/camera-vocabulary.json (shipped, self-contained; never reads an operator path at run time)"
+  }
+}

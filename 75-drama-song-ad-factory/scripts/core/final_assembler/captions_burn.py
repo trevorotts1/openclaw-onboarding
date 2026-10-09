@@ -49,6 +49,10 @@ FONT_COLOUR = "#000000"
 #: Boxes keep the text clear of the frame edge on both orientations.
 EDGE_MARGIN_PX = 24
 
+#: One line at a time has to be readable on a phone: the box text is this
+#: share of the frame height (a 1920-tall frame -> 86 px).
+FONT_RATIO = 0.045
+
 #: Refusal codes (fail-closed, never a silent pass).
 BAD_INPUT = "OVERLAY_BAD_INPUT"
 NO_LINES = "OVERLAY_NO_LINES"
@@ -105,6 +109,7 @@ def caption_style(width_px, height_px, orientation=None, enabled=True):
             "orientation": orientation,
             "height_px": h,
             "width_px": w,
+            "font_size_px": max(18, int(round(h * FONT_RATIO))),
             "bottom_margin_px": bottom + EDGE_MARGIN_PX,
             "edge_margin_px": EDGE_MARGIN_PX,
             "one_line_at_a_time": True}
@@ -168,17 +173,21 @@ def build_srt(cues, fps=DEFAULT_FPS):
 
 def build_plan(lines, provenance=None, cues=None, height_px=1920,
                width_px=1080, orientation=None, fps=DEFAULT_FPS,
-               srt_path=None):
+               srt_path=None, enabled=True):
     """The burn plan: style + one line at a time + optional SRT, all as data.
 
     Nothing here executes. The render pass reads ``plan``/``argv``; the SRT
     is written only when the caller passes ``srt_path``.
+
+    ``enabled=False`` is the caption-free variant of the SAME plan (DEL-05's
+    clean master): same lines, same words, same geometry, style off.
     """
     clean = _valid_lines(lines)
     if clean is None:
         raise ValueError("%s: lines must be a non-empty list of strings"
                          % NO_LINES)
-    style = caption_style(width_px, height_px, orientation=orientation)
+    style = caption_style(width_px, height_px, orientation=orientation,
+                          enabled=enabled)
     plan = {"tool": TOOL_NAME, "tool_version": TOOL_VERSION,
             "entry": ENTRY, "hook": EXCERPT_OVERLAY_HOOK,
             "lines": list(clean), "line_count": len(clean),
@@ -211,12 +220,13 @@ def build_plan(lines, provenance=None, cues=None, height_px=1920,
 
 def overlay_excerpt(lines, provenance=None, cues=None, height_px=1920,
                      width_px=1080, orientation=None, fps=DEFAULT_FPS,
-                     srt_path=None):
+                     srt_path=None, enabled=True):
     """U11's entry point: plan the excerpt overlay burn, return its receipt.
 
     Called as ``overlay_excerpt(lines, provenance=...)`` by the U11 seam
     (``assembler.excerpt_overlay_stage``). Never raises on seam input: bad
-    input comes back as a refusal receipt with ``ok`` False.
+    input comes back as a refusal receipt with ``ok`` False. ``enabled=False``
+    plans the same words with the captions off (the clean delivered cut).
     """
     clean = _valid_lines(lines)
     if clean is None:
@@ -228,7 +238,7 @@ def overlay_excerpt(lines, provenance=None, cues=None, height_px=1920,
     plan, why = build_plan(clean, provenance=provenance, cues=cues,
                            height_px=height_px, width_px=width_px,
                            orientation=orientation, fps=fps,
-                           srt_path=srt_path)
+                           srt_path=srt_path, enabled=enabled)
     receipt = {"ok": why is None,
                "hook": EXCERPT_OVERLAY_HOOK, "entry": ENTRY,
                "tool": TOOL_NAME, "tool_version": TOOL_VERSION,

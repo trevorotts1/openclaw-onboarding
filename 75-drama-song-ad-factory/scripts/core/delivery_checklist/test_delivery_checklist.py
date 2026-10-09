@@ -38,6 +38,19 @@ import delivery_checklist.delivery_checklist as dc  # noqa: E402
 
 import qc_gate                                 # noqa: E402  (shared gate)
 
+# DEL-13: Q12 answers from the delivery FOLDER, so the fixture builds one
+# complete 12-item folder once and every case above reuses it.
+import shutil
+import delivery_package.contract as package_contract  # noqa: E402
+
+_PKG_TMP = Path(tempfile.mkdtemp(prefix="del13-checklist-"))
+_PKG_FOLDER = _PKG_TMP / "delivery"
+package_contract.write_reference_package(_PKG_FOLDER)
+
+
+def tearDownModule():
+    shutil.rmtree(_PKG_TMP, ignore_errors=True)
+
 RUN = "g7-run"
 STAGE = "final"
 REVIEWER = {"identity": "delivery_checklist/1.0.0",
@@ -123,6 +136,8 @@ def full_answered_receipt():
             {"name": "first_sung", "measured": 21.0, "target": 15.0,
              "flag": "FLAG first_sung 21 vs 15 (6 off, over 5)"},
         ]},
+        "PACKAGE_COMPLETE": {"delivery_folder": str(_PKG_FOLDER),
+                             "source": "delivery_package.verify_folder"},
     }
 
 
@@ -178,7 +193,7 @@ class G7DoneWhen(unittest.TestCase):
         self.assertTrue(res["pass"], res["detail"])
         self.assertEqual(res["repair_scope"], [])
         self.assertEqual(res["reason_code"], "CHECKLIST_ALL_MEASURED_PASS")
-        self.assertEqual(len(res["answers"]), 11)
+        self.assertEqual(len(res["answers"]), 12)
         self.assertTrue(all(a["answer"] == "yes"
                             for a in res["answers"].values()))
 
@@ -196,6 +211,7 @@ class G7DoneWhen(unittest.TestCase):
             ("FIRST_SUNG", {"singing_early": True}),
             ("PICTURES_MATCH", {"pictures_ok": "yes"}),
             ("GOALS_BAND", {"all_within": "yes"}),
+            ("PACKAGE_COMPLETE", {"package_ok": True}),
         ):
             receipt = full_answered_receipt()
             receipt[q] = bare
@@ -625,7 +641,15 @@ class G7DoneWhen(unittest.TestCase):
                        "JUDGED BY TREVOR'S BAND?",
                        'A "yes" without a measurement counts as "no"'):
             self.assertIn(marker, text)
-        self.assertEqual(len(dc.QUESTIONS), 11)
+        # 11 human checklist questions in the verbatim document, plus Q12
+        # PACKAGE_COMPLETE (DEL-13): the delivery-folder contract, enforced
+        # from code (core/delivery_package), not from the prose checklist.
+        self.assertEqual(len(dc.QUESTIONS), 12)
+        self.assertEqual(dc.QUESTIONS[-1], "PACKAGE_COMPLETE")
+        for human in ("SUNG", "ON_TARGET", "WORDS", "FACES", "VOICE_MUSIC",
+                      "MODELS", "HONEST_RECEIPT", "LIP_SYNC", "FIRST_SUNG",
+                      "PICTURES_MATCH", "GOALS_BAND"):
+            self.assertIn(human, dc.QUESTIONS)
 
     # ---- CLI round trip (temp home, no operator paths) ---------------------
     def test_cli_round_trip(self):
@@ -669,6 +693,95 @@ class G7DoneWhen(unittest.TestCase):
             rec = json.loads(Path(qp).read_text(encoding="utf-8"))
             err = qc_gate.validate_record(rec)
             self.assertIsNone(err, err)
+
+
+class PackageFolderGate(unittest.TestCase):
+    """DEL-13: the run FAILS when any of the 12 package items is missing."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="del13-q12-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def folder(self, name="delivery"):
+        return package_contract.write_reference_package(self.tmp / name)
+
+    def receipt(self, folder):
+        r = full_answered_receipt()
+        r["PACKAGE_COMPLETE"] = {"delivery_folder": str(folder),
+                                 "source": "delivery_package.verify_folder"}
+        return r
+
+    def test_complete_delivery_folder_passes_q12(self):
+        res = dc.evaluate(self.receipt(self.folder()))
+        self.assertTrue(res["pass"], res["detail"])
+        self.assertEqual(res["repair_scope"], [])
+        self.assertEqual(res["evidence"]["items_present"], 12)
+        self.assertEqual(res["evidence"]["items_expected"], 12)
+        self.assertEqual(res["evidence"]["missing_items"], [])
+
+    def test_every_missing_package_item_fails_the_run(self):
+        for item in package_contract.PACKAGE_ITEMS:
+            folder = self.folder("d-" + item.key)
+            first = folder / item.files[0]
+            if first.is_dir():
+                shutil.rmtree(first)
+            else:
+                first.unlink()
+            res = dc.evaluate(self.receipt(folder))
+            self.assertFalse(res["pass"], item.key)
+            self.assertEqual(res["repair_scope"], ["PACKAGE_COMPLETE"],
+                             item.key)
+            self.assertIn(dc.CHECKLIST_PACKAGE_INCOMPLETE, res["reason_code"])
+            self.assertIn(item.key, res["detail"], item.key)
+            self.assertIn(item.key, res["evidence"]["missing_items"])
+
+    def test_only_the_package_question_is_in_repair_scope(self):
+        folder = self.folder()
+        (folder / "07-ready-to-post-kit.pdf").unlink()
+        res = dc.evaluate(self.receipt(folder))
+        self.assertEqual(res["repair_scope"], ["PACKAGE_COMPLETE"])
+        self.assertTrue(all(a["answer"] == "yes"
+                            for q, a in res["answers"].items()
+                            if q != "PACKAGE_COMPLETE"))
+
+    def test_empty_file_is_not_a_delivered_item(self):
+        folder = self.folder()
+        (folder / "09-lyric-sheet.pdf").write_bytes(b"")
+        res = dc.evaluate(self.receipt(folder))
+        self.assertFalse(res["pass"])
+        self.assertIn("lyric_sheet", res["evidence"]["missing_items"])
+
+    def test_missing_delivery_folder_fails_closed(self):
+        res = dc.evaluate(self.receipt(self.tmp / "absent"))
+        self.assertFalse(res["pass"])
+        self.assertEqual(res["repair_scope"], ["PACKAGE_COMPLETE"])
+        self.assertIn(dc.CHECKLIST_PACKAGE_INCOMPLETE, res["reason_code"])
+
+    def test_answer_without_a_folder_path_counts_as_no(self):
+        r = full_answered_receipt()
+        r["PACKAGE_COMPLETE"] = {"package_ok": True}
+        res = dc.evaluate(r)
+        self.assertFalse(res["pass"])
+        self.assertEqual(res["repair_scope"], ["PACKAGE_COMPLETE"])
+        self.assertEqual(res["answers"]["PACKAGE_COMPLETE"]["answer"], "no")
+        self.assertIn(dc.REASON_CODES["NO_MEASUREMENT"],
+                      res["reason_code"])
+
+    def test_a_receipt_with_no_q12_answer_fails(self):
+        r = full_answered_receipt()
+        del r["PACKAGE_COMPLETE"]
+        res = dc.evaluate(r)
+        self.assertFalse(res["pass"])
+        self.assertEqual(res["repair_scope"], ["PACKAGE_COMPLETE"])
+        self.assertIn(dc.REASON_CODES["ANSWER_MISSING"], res["reason_code"])
+
+    def test_folder_is_relative_to_the_receipt_run_root(self):
+        folder = self.folder()
+        r = self.receipt(folder)
+        r["PACKAGE_COMPLETE"]["delivery_folder"] = "delivery"
+        r["run_root"] = str(self.tmp)
+        res = dc.evaluate(r)
+        self.assertTrue(res["pass"], res["detail"])
 
 
 if __name__ == "__main__":

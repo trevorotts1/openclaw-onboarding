@@ -124,6 +124,24 @@ it advances. Standard library only; no credential value is ever printed.
 - [ ] Song files (H14): a delivery folder holds `<ad>.mp3` (320 kbps) and `<ad>.wav` (plus
       `<ad>-instrumental.*` if one exists), all listed in `delivery-receipt.json` and `README.md`;
       `python3 scripts/core/delivery_variants/song_files.py check <dir> <ad>` exits 0, and exits 5 when any song file is missing.
+- [ ] Caption file (DEL-10): the delivery folder holds `10 - Captions.srt`, built from the measured
+      caption cues (`caption_timing.captions` -> `delivery_variants.export_captions_srt`); no measured
+      cues writes no file (no clock is ever invented). `python3 scripts/core/delivery_variants/caption_srt.py
+      check <delivery dir>` exits 0, and exits 5 when the file is missing or not valid SRT.
+      Run: `python3 scripts/core/delivery_variants/test_caption_srt_del10.py`.
+
+- [ ] Package items (DEL-13, REQUIRED): the delivery folder carries all 12 numbered package items of
+      `scripts/core/delivery_package` (three audio versions plus note, character bible plus image bible,
+      script, storyboard, clean and captioned video, 60 and 90 second clips, ready-to-post kit, cover
+      thumbnail, lyric sheet, SRT, character images, welcome sheet), each one opening: `delivery_checklist`
+      Q12 `PACKAGE_COMPLETE` fails the run and names every missing item.
+
+- [ ] Three audio versions (DEL-01): the same delivery folder holds `01 - Full Song.mp3`,
+      `02 - Instrumental.mp3` and `03 - Voice Only.mp3` (320 kbps each, from the run's own mix,
+      instrumental and vocal stem) plus `00 - About These Audio Files.txt`, the short plain-English
+      note on how the three differ; all listed in `delivery-receipt.json` and `README.md`;
+      `python3 scripts/core/delivery_variants/song_files.py check-versions <dir>` exits 0, and exits 5
+      when a version or the note is missing. A missing source is a refusal, never a two-version delivery.
 - [ ] Song mp3 in the deliverable (FU-U14, REQUIRED): the ad folder holds `<Author> - <Title> - Song.mp3`
       (320 kbps, the exact song used, full length; the wav too when one exists) beside the captioned and
       clean-master mp4s. `delivery_checklist.check_song_mp3(<ad_dir>, <ad_audio>, <Title>, <Author>)` returns
@@ -134,6 +152,14 @@ it advances. Standard library only; no credential value is ever printed.
       `batch_zip.build_batch_zip(client, ads, out)` — one folder per author with the captioned ad, the clean
       master and the song mp3 (exactly three files per ad) plus a README listing every file, duration,
       resolution and banner link. A missing file is a `BatchZipError`.
+- [ ] Storyboard grid PDF (DEL-04, REQUIRED): the delivery folder holds `04-storyboard.pdf` — every approved
+      scene picture in a grid with its shot number and timecode, the lyric line it plays over and what
+      happens, in song order. `storyboard_grid.deliver(<run dir>, <delivery folder>)` reads
+      `storyboard/gate.json` and refuses `STORYBOARD_NOT_APPROVED` without it; a missing still or an
+      incomplete card passes through `storyboard_director.approval_package`'s own refusal. Every drawn size
+      is >= 12 pt and the text carries no model or tool name, dollar amount or income promise
+      (`storyboard_grid.forbidden_text`, `CLIENT_TEXT_FORBIDDEN`).
+      Run: `python3 scripts/core/storyboard_grid/test_storyboard_grid.py`.
 - [ ] Spend ledger: `init_run --ceiling` recorded; `reserve` before
       dispatch; duplicate `reserve` exits 5 `BAD_TRANSITION`;
       `can_spend` past ceiling exits 5 `BUDGET_EXCEEDED`; `park_run` exits 4
@@ -311,3 +337,16 @@ TODO (U3, U9): refresh the band bullet and the caption bullet below when FU-U3 (
 - **Captions at the end: UNMEASURED on main.** Reading the burned text back off the frames (FU-U9) is not built. Report delivery caption text as checked against the approved sheet only.
 - **Book campaigns.** The shots stage requires a PASS `book_orientation` record (`BOOK_MIRRORED`, `BOOK_COVER_NOT_FRONT`, `BOOK_SPINE_WRONG_SIDE`, `BOOK_WRONG_DIRECTION`, `BOOK_NO_MOTION`; UNAVAILABLE never advances; the checker must pass its calibration pair). `BOOK_SHOT_NOT_CONTRACTED` for a book video job with no start frame from the cover file. FU-U11 (open branch) adds `BOOK_BLANK_PAGES` and `BOOK_PLAN_NOT_APPROVED`; refresh this line when it lands.
 - **Per-style spoken bands.** FU-U3 (open pull request) judges R&B Flow against its planned share and counts music-only time as neither sung nor spoken; Soul Ballad and Soul Rise stay at 22.5 / 77.5. The 5/10 band and the 6 s sung stretch do not change.
+
+## No blur fill (DEL-14)
+
+Blur fill is never used. Full height comes from crop-in of the source frame
+only: uniform scale to cover nine-by-sixteen, then a centred crop on the
+lip-sync subject. QC refuses the deliverable when the height came from a fill
+— an edge-sampled or gaussian-blurred backdrop, a blurred mask, a duplicated
+blurred strip, a letterbox bar or a stretched picture. The refused shot is
+redone by the crop-in re-lip-sync path and re-checked; a filled frame is never
+waived through, and a PASS record for the no_blur_fill check that names a
+blur fill is refused as FILL_CLAIM_MEASURED. Proof lives in the canonical
+build tree's `tests/test_no_blur_fill/`: a blur-fill render fails red, the
+crop-in render passes, and the refusal gates fire.

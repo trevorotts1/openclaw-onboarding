@@ -57,6 +57,8 @@ DEFAULT_MUSIC_MODEL = "ai-music-api/generate"       # one Suno generation
 LENGTH_SECONDS = {
     "60 seconds": 60,
     "90 seconds": 90,
+    "2 minutes": 120,        # F15 menu; also keeps the unpriced storyboard
+                             # line honest: 2 minutes -> 24 pictures
     "3 minutes": 180,
     "5 minutes": 300,
     "10-minute long version": 600,
@@ -215,6 +217,7 @@ def render(card, price_fn, state_store=None, run_id=None):
                      "(added $%.2f for the reference pictures, included in the total)"
                      % ("Images:", plan["reference_images"], plan["keyframe_images"],
                         plan["reference_set_usd"]))
+    _append_storyboard_line(lines, envelope if priced_ok else None, card)
     if priced_ok and total is not None:
         extra = song_extra or 0.0           # the two extra songs carry the 20% allowance too
         retake = ok_card["retake_allowance_usd"] + extra * RETAKE_RATE
@@ -248,6 +251,36 @@ def _book_block(card):
                     "could not be loaded, so its rows cannot be shown."]
     notes = list((card or {}).get("card_notes") or [])
     return [""] + BS.plan_card_block(plan, notes)
+
+
+def _append_storyboard_line(lines, envelope, card):
+    """DEL-15 (choice-card-spec 3.12): state the storyboard picture count.
+
+    The count is calculator arithmetic, not a price, so it renders whether or
+    not Skill 74 answered: the priced envelope when available, otherwise the
+    same shipped calculator the extension bridges to. No rate is printed next
+    to the count - every price still comes from Skill 74 (section 4).
+    """
+    priced = ((envelope or {}).get("card") or {})
+    pictures = priced.get("storyboard_pictures")
+    cap = priced.get("storyboard_picture_cap")
+    shots = priced.get("shots_per_shape")
+    if pictures is None:
+        try:
+            calc = base_bridge.load_calculator(base_bridge.find_calculator())
+            seconds = LENGTH_SECONDS.get(str(card.get("length") or "60 seconds"), 60)
+            pictures = calc.shot_count(seconds)
+            cap = calc.storyboard_cap()
+        except Exception:
+            return  # a missing calculator already fails the card closed
+    if not pictures:
+        return
+    if shots:
+        tail = "separate from the %s video shots above" % shots
+    else:
+        tail = "separate from the video shot count"
+    lines.append("  %-12s %s storyboard pictures (cap %s from configuration; %s)"
+                 % ("Storyboard:", pictures, cap if cap is not None else "?", tail))
 
 
 def _load_shipped_catalog():

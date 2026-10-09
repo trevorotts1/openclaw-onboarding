@@ -6,6 +6,16 @@ mastered mix as MP3 320 kbps + WAV named after the ad, plus the instrumental
 (same two formats) when one exists. The receipt (delivery-receipt.json) and
 README.md list them; check_song_files() is the QC gate and fails closed.
 Stdlib + ffmpeg/ffprobe only.
+
+DEL-01 (complete client delivery package): the delivery folder also ships
+THREE clearly-labelled audio versions -- the full song, the instrumental
+and the voice-only stem -- each a numbered MP3, plus a short plain-English
+note file that explains how the three differ. All three are EXISTING
+pipeline output (the finished mix, the instrumental when the run made one,
+the vocal stem saved for every take); nothing is re-synthesised here.
+build_audio_versions() encodes them and writes the note; check_audio_versions()
+is the QC gate and fails closed -- a missing source or file is a refusal,
+never a two-version delivery dressed up as three.
 """
 from __future__ import annotations
 
@@ -30,6 +40,59 @@ RECEIPT_NAME = "delivery-receipt.json"
 README_NAME = "README.md"
 _BEGIN, _END = "<!-- song-files:begin -->", "<!-- song-files:end -->"
 PASS, FAIL, UNAVAILABLE = "PASS", "FAIL", "UNAVAILABLE"
+
+# ── DEL-01: three clearly-labelled audio versions + a plain-English note ─────
+# Every delivery folder ships the song three ways. The three are EXISTING
+# pipeline output, never re-synthesised here: the finished mix, the
+# instrumental the run already made, and the vocal stem saved for every take
+# (song_dispatch saves stem + timestamps for every take; vocal separation
+# hands back vocals AND instrumental together). One table drives the file
+# labels, the note prose and the QC expectations, so they cannot drift.
+DELIVERY_VERSIONS = (
+    ("01", "Full Song",
+     "the complete song, with the music and the singing together, exactly as "
+     "it plays in your video"),
+    ("02", "Instrumental",
+     "the same music with no singing on it, for use as background music on "
+     "its own"),
+    ("03", "Voice Only",
+     "just the singing, with no music behind it, for use on its own"),
+)
+VERSION_NOTE_NAME = "00 - About These Audio Files.txt"
+VERSIONS_CHECK_NAME = "audio_versions"
+_V_BEGIN, _V_END = "<!-- audio-versions:begin -->", "<!-- audio-versions:end -->"
+
+
+def version_file_name(number, label, ext="mp3"):
+    """The numbered name the client sees: ``01 - Full Song.mp3``."""
+    n = re.sub(r"[^\w\- ]+", "", label).strip() or "Audio"
+    return "%s - %s.%s" % (number, n, ext)
+
+
+def expected_version_files():
+    """[(number, label, filename)] for the three delivery versions."""
+    return [(num, label, version_file_name(num, label))
+            for num, label, _desc in DELIVERY_VERSIONS]
+
+
+def version_note_text():
+    """The plain-English note: what each version is, in client words.
+
+    Built from DELIVERY_VERSIONS so the note, the file labels and the QC
+    expectations always agree. No model names, no tool names, no prices, no
+    income promises -- only what each file is and when to use it.
+    """
+    lines = ["About the three audio files in this folder", "=" * 44, "",
+             "You are getting the same song three ways. Here is what each "
+             "one is:", ""]
+    for num, label, desc in DELIVERY_VERSIONS:
+        lines.append("%s - %s" % (num, label))
+        lines.append("This is %s." % desc)
+        lines.append("")
+    lines.append("All three are the same recording and the same length, just "
+                 "with different parts of it kept in. They are high-quality "
+                 "MP3 files you can use straight away.")
+    return "\n".join(lines) + "\n"
 
 
 def safe_name(ad_name):
@@ -130,14 +193,136 @@ def check_song_files(delivery_dir, ad_name, ffprobe="ffprobe"):
     return (PASS, "song files present, listed in receipt and README")
 
 
+def build_audio_versions(mix_path, delivery_dir, instrumental_path,
+                         vocal_stem_path, ffmpeg="ffmpeg", ffprobe="ffprobe"):
+    """Encode the three labelled audio versions into delivery_dir (DEL-01).
+
+    ``mix_path`` is the finished mix, ``instrumental_path`` the instrumental
+    the run already made, ``vocal_stem_path`` the vocal stem saved for every
+    take. All three are EXISTING pipeline output -- nothing is re-synthesised
+    here. Every source is required: a delivery that ships two versions
+    dressed up as three is a refusal, never a quiet pass. Returns the receipt
+    rows (one per encoded file). Raises ValueError on a missing/empty source.
+    """
+    srcs = {"01": mix_path, "02": instrumental_path, "03": vocal_stem_path}
+    for num, label, _d in DELIVERY_VERSIONS:
+        src = srcs.get(num)
+        if not src or not str(src).strip():
+            raise ValueError("no %s source for audio version %s (%s); the "
+                             "three versions are existing pipeline output, "
+                             "never re-synthesised" % (label, num, label))
+        if not Path(src).is_file() or Path(src).stat().st_size == 0:
+            raise ValueError("audio version %s (%s) source missing or empty: "
+                             "%s" % (num, label, src))
+    out = Path(delivery_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for num, label, fname in expected_version_files():
+        dst = out / fname
+        _LG.run_ffmpeg([ffmpeg, "-y", "-v", "error", "-i", str(srcs[num]),
+                        "-vn", "-c:a", "libmp3lame", "-b:a", "%dk" % MP3_KBPS,
+                        str(dst)], "audio-version-encode", check=True)
+        rows.append({"kind": "audio-version", "number": num, "label": label,
+                     "file": fname, "format": "mp3",
+                     "sha256": sha256_file(dst), **_probe(dst, ffprobe)})
+    note = out / VERSION_NOTE_NAME
+    note.write_text(version_note_text(), encoding="utf-8")
+    rows.append({"kind": "audio-version-note", "number": "00",
+                 "label": "About These Audio Files", "file": VERSION_NOTE_NAME,
+                 "format": "txt", "sha256": sha256_file(note),
+                 "bytes": note.stat().st_size})
+    return rows
+
+
+def write_version_docs(delivery_dir, rows):
+    """List the three versions in delivery-receipt.json and README.md (merge,
+    never clobber other receipt/README content)."""
+    d = Path(delivery_dir)
+    rp = d / RECEIPT_NAME
+    receipt = json.loads(rp.read_text(encoding="utf-8")) if rp.is_file() else {}
+    receipt["audio_versions"] = rows
+    rp.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+                  encoding="utf-8")
+    lines = [_V_BEGIN, "## Three audio versions", "",
+             "The same song, three ways -- see `%s` for what each one is:"
+             % VERSION_NOTE_NAME, ""]
+    for r in rows:
+        if r.get("kind") != "audio-version":
+            continue
+        lines.append("- `%s` - %s (%s, %s)" % (
+            r["file"], r["label"],
+            "MP3 320 kbps" if r["format"] == "mp3" else r["format"],
+            "%s s" % ("%.1f" % r["duration_s"]) if r.get("duration_s") else "n/a"))
+    lines.append("- `%s` - the note explaining how they differ"
+                 % VERSION_NOTE_NAME)
+    lines.append(_V_END)
+    block = "\n".join(lines) + "\n"
+    rd = d / README_NAME
+    text = rd.read_text(encoding="utf-8") if rd.is_file() else "# Delivery\n\n"
+    if _V_BEGIN in text and _V_END in text:
+        text = re.sub(re.escape(_V_BEGIN) + r".*?" + re.escape(_V_END) + r"\n?",
+                      lambda _m: block, text, flags=re.S)
+    else:
+        text = text.rstrip("\n") + "\n\n" + block
+    rd.write_text(text, encoding="utf-8")
+
+
+def check_audio_versions(delivery_dir, ffprobe="ffprobe"):
+    """QC (DEL-01): (PASS|FAIL|UNAVAILABLE, detail). All three MP3s and the
+    note must exist, be listed in the receipt and README, and probe cleanly.
+    Fail closed -- a two-version delivery is never a pass."""
+    d = Path(delivery_dir)
+    try:
+        receipt = json.loads((d / RECEIPT_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return (FAIL, "%s missing or unreadable; cannot list audio versions"
+                % RECEIPT_NAME)
+    listed = {r.get("file") for r in receipt.get("audio_versions") or []}
+    readme = (d / README_NAME).read_text(encoding="utf-8") \
+        if (d / README_NAME).is_file() else ""
+    if not (d / VERSION_NOTE_NAME).is_file():
+        return (FAIL, "delivery missing the note file %s" % VERSION_NOTE_NAME)
+    if VERSION_NOTE_NAME not in listed:
+        return (FAIL, "%s not listed in %s" % (VERSION_NOTE_NAME, RECEIPT_NAME))
+    if VERSION_NOTE_NAME not in readme:
+        return (FAIL, "%s not listed in %s" % (VERSION_NOTE_NAME, README_NAME))
+    for num, label, fname in expected_version_files():
+        p = d / fname
+        if not p.is_file() or p.stat().st_size == 0:
+            return (FAIL, "delivery missing audio version %s (%s): %s"
+                    % (num, label, fname))
+        if fname not in listed:
+            return (FAIL, "%s not listed in %s" % (fname, RECEIPT_NAME))
+        if fname not in readme:
+            return (FAIL, "%s not listed in %s" % (fname, README_NAME))
+        try:
+            info = _probe(p, ffprobe)
+        except (OSError, subprocess.CalledProcessError, ValueError):
+            return (UNAVAILABLE, "ffprobe could not read %s" % fname)
+        if info["duration_s"] <= 0:
+            return (FAIL, "%s has no audio duration" % fname)
+        if info["bit_rate"] < MP3_KBPS * 1000 * 0.98:
+            return (FAIL, "%s is %d bps, below %d kbps"
+                    % (fname, info["bit_rate"], MP3_KBPS))
+    return (PASS, "three audio versions and the note present, listed in "
+            "receipt and README")
+
+
 def _cli(argv=None):
     a = argv if argv is not None else sys.argv[1:]
-    if len(a) != 3 or a[0] != "check":
-        print("usage: song_files.py check <delivery_dir> <ad_name>")
-        return 1
-    verdict, detail = check_song_files(a[1], a[2])
-    print(json.dumps({"check": CHECK_NAME, "verdict": verdict, "detail": detail}))
-    return 0 if verdict == PASS else 5
+    if len(a) == 3 and a[0] == "check":
+        verdict, detail = check_song_files(a[1], a[2])
+        print(json.dumps({"check": CHECK_NAME, "verdict": verdict,
+                          "detail": detail}))
+        return 0 if verdict == PASS else 5
+    if len(a) == 2 and a[0] == "check-versions":
+        verdict, detail = check_audio_versions(a[1])
+        print(json.dumps({"check": VERSIONS_CHECK_NAME, "verdict": verdict,
+                          "detail": detail}))
+        return 0 if verdict == PASS else 5
+    print("usage: song_files.py check <delivery_dir> <ad_name> | "
+          "check-versions <delivery_dir>")
+    return 1
 
 
 if __name__ == "__main__":

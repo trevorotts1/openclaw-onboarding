@@ -1,0 +1,44 @@
+{
+  "sheet": [
+    "The kettle sings before the sun does",
+    "Two cups, one quiet morning",
+    "Pour it slow and let the day arrive"
+  ],
+  "timing": {
+    "source": "suno-timestamped-lyrics",
+    "words": [
+      {"word": "the", "start": 0.0, "end": 0.35},
+      {"word": "kettle", "start": 0.4, "end": 0.75},
+      {"word": "sings", "start": 0.8, "end": 1.15},
+      {"word": "before", "start": 1.2, "end": 1.55},
+      {"word": "the", "start": 1.6, "end": 1.95},
+      {"word": "sun", "start": 2.0, "end": 2.35},
+      {"word": "does", "start": 2.4, "end": 2.75},
+      {"word": "two", "start": 2.8, "end": 3.15},
+      {"word": "cups", "start": 3.2, "end": 3.55},
+      {"word": "one", "start": 3.6, "end": 3.95},
+      {"word": "quiet", "start": 4.0, "end": 4.35},
+      {"word": "morning", "start": 4.4, "end": 4.75},
+      {"word": "pour", "start": 4.8, "end": 5.15},
+      {"word": "it", "start": 5.2, "end": 5.55},
+      {"word": "slow", "start": 5.6, "end": 5.95},
+      {"word": "and", "start": 6.0, "end": 6.35},
+      {"word": "let", "start": 6.4, "end": 6.75},
+      {"word": "the", "start": 6.8, "end": 7.15},
+      {"word": "day", "start": 7.2, "end": 7.55},
+      {"word": "arrive", "start": 7.6, "end": 7.95}
+    ]
+  },
+  "expected_cues": [
+    {"text": "The kettle sings before the sun does", "start": 0.0, "end": 2.75},
+    {"text": "Two cups, one quiet morning", "start": 2.8, "end": 4.75},
+    {"text": "Pour it slow and let the day arrive", "start": 4.8, "end": 7.95}
+  ],
+  "golden": {
+    "cues": [
+      {"text": "Line one", "start": 0.0, "end": 1.5},
+      {"text": "Line two", "start": 1.5, "end": 3.0}
+    ],
+    "srt": "1\n00:00:00,000 --> 00:00:01,500\nLine one\n\n2\n00:00:01,500 --> 00:00:03,000\nLine two\n"
+  }
+}

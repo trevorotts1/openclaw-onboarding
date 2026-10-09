@@ -192,6 +192,45 @@ the per-second models, 8-second clips for Veo, 10-second clips for Gemini.
 | Kling 3.0 (kling-3.0/video; std=720p, pro=1080p) | 720p $0.07/s | 1080p $0.09/s | 15 s (3-15) | Yes, both |
 | Seedance 2.0 Mini (bytedance/seedance-2-mini) | 720p $0.041/s | 1080p not offered (480p/720p only) | 15 s (4-15) | Yes, both |
 
+### Storyboard pictures (two cents each)
+
+New (DEL-15, owner order 2026-10-09). The storyboard draws its own pictures
+before any video is made. That picture count is separate from - and larger
+than - the video shot count in the tables above; the two are never
+conflated.
+
+| Ad length | Storyboard pictures per shape |
+|---|---|
+| 60 seconds | 8 |
+| 2 minutes | 24 |
+| 3 minutes | 36 |
+| 5 minutes | 60 |
+| 10 minutes | 120 (at the cap) |
+
+The rule: 8 pictures at 60 seconds, 24 at 2 minutes, then about one picture
+every five seconds of runtime, capped at **120 pictures** for any ad. The
+cap is a configuration value, never hard-coded in the calculator
+(`core/catalog_calculator.shot_count`). 90 seconds falls between the two
+anchors, so the card shows the calculator's own count for that length
+instead of a number copied from this snapshot.
+
+| Item | Price | Count rule |
+|---|---|---|
+| Storyboard picture | **$0.02 each** (two cents) | per picture, capped at 120 |
+
+| Ad length | Pictures per shape | One shape | Both shapes |
+|---|---|---|---|
+| 60 seconds | 8 | $0.16 | $0.32 |
+| 2 minutes | 24 | $0.48 | $0.96 |
+| 3 minutes | 36 | $0.72 | $1.44 |
+| 5 minutes | 60 | $1.20 | $2.40 |
+| 10 minutes | 120 (at the cap) | $2.40 | $4.80 |
+
+"Both shapes" doubles the pictures: each shape is framed natively and gets
+its own still. The live card still reads Skill 74 `price --model
+google/imagen4-fast --units <n>`; this table is the snapshot that explains
+it, not an authority.
+
 ## 3. Lip-sync close-ups
 
 Lip-sync runs on 6 to 8 short clips of 4 to 6 seconds per 60 s ad, 30 to 40
@@ -301,6 +340,9 @@ total before approval. Books and authors are never mixed.
   docs.kie.ai/suno-api (2026-10-07) states V6, V6_MINI and V6_WILD accept
   duration 10-360 s; V4_5 and V5 up to 8 min.
 - Keyframes: google/imagen4-fast = 4 credits ($0.02) per image.
+- Storyboard pictures: the same google/imagen4-fast image at two cents each
+  (storyboard picture table above); count and 120-picture cap from
+  `core/catalog_calculator` (DEL-15).
 
 ### Assumptions
 

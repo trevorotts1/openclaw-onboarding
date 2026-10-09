@@ -1,0 +1,6 @@
+{
+  "_unit": "DEL-15 (owner order 2026-10-09 13:35 item 3; 13:40 addenda cap confirmed)",
+  "storyboard_picture_cap": 120,
+  "_rule": "The storyboard draws its own pictures before any video is made: 8 pictures at 60 s, 24 at 2 minutes, then about one more picture per 5 s of runtime, capped at storyboard_picture_cap. This count is separate from - and larger than - the video shot count (catalog_calculator.video_shot_count); the two are never conflated.",
+  "_authority": "The cap lives HERE, in configuration. catalog_calculator.shot_count reads it on every call and never hard-codes a picture maximum."
+}

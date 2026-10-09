@@ -54,8 +54,12 @@ def name_question(character_name):
 
 
 def save_character(client_dir, name, description, reference_images,
-                   voice_notes="", overwrite=False):
+                   voice_notes="", overwrite=False, *, background="", ethnicity=""):
     """Copy the reference images into the library and write character.json.
+
+    ``background`` and ``ethnicity`` are the character bible fields (DEL-02):
+    keyword-only, so every existing positional call keeps its meaning. An older
+    record simply has neither key and reads back as "".
 
     Refuses (LibraryError): empty name/description, no reference image, a
     missing or non-image file, or a name already saved (unless overwrite).
@@ -86,6 +90,8 @@ def save_character(client_dir, name, description, reference_images,
     rec = {"schema": SCHEMA, "name": str(name).strip(), "slug": slug,
            "description": str(description).strip(),
            "voice_notes": str(voice_notes or "").strip(),
+           "background": str(background or "").strip(),
+           "ethnicity": str(ethnicity or "").strip(),
            "reference_images": rel}
     with open(os.path.join(tmp, "character.json"), "w", encoding="utf-8") as f:
         json.dump(rec, f, indent=2, sort_keys=True)
@@ -140,9 +146,15 @@ def saved_character_question(client_dir):
 
 
 def brief_fields(record):
-    """Brief fields that carry a saved character into a new ad."""
+    """Brief fields that carry a saved character into a new ad.
+
+    The two bible fields (DEL-02) come too, so a saved character whose
+    background and ethnicity were answered once never asks again.
+    """
     return {"character_name": record["name"],
             "character_description": record["description"],
+            "character_background": record.get("background", ""),
+            "character_ethnicity": record.get("ethnicity", ""),
             "character_reference_images": record["reference_paths"],
             "character_voice_notes": record["voice_notes"]}
 
@@ -159,6 +171,9 @@ def main(argv=None):
     s.add_argument("--description", required=True)
     s.add_argument("--image", action="append", default=[])
     s.add_argument("--voice-notes", default="")
+    s.add_argument("--background", default="",
+                   help="Where they are from and what life was like before this story.")
+    s.add_argument("--ethnicity", default="", help="Their ethnicity and how they look.")
     s.add_argument("--overwrite", action="store_true")
     sub.add_parser("list")
     u = sub.add_parser("use", help="Print the brief fields for a saved character.")
@@ -172,7 +187,8 @@ def main(argv=None):
             print(name_question(a.character))
         elif a.cmd == "save":
             r = save_character(a.client_dir, a.name, a.description, a.image,
-                               a.voice_notes, a.overwrite)
+                               a.voice_notes, a.overwrite,
+                               background=a.background, ethnicity=a.ethnicity)
             print(json.dumps({"saved": r["name"], "slug": r["slug"]}))
         elif a.cmd == "list":
             print(json.dumps([c["name"] for c in list_characters(a.client_dir)]))
