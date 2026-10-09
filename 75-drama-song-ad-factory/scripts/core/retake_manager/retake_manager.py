@@ -5,6 +5,12 @@ Directive sections 24.5 (enforced handoffs, bounded work, targeted repair)
 + 18 rule 6 + 17.8 (acceptance profile repair caps + verdict values).
 Stdlib only. No network, no secrets.
 
+F1/F2 note (owner order 2026-10-08): for the Suno soundtrack, retakes are
+WHOLE-TRACK only in F1 mode -- one full-track re-generation per failed take,
+never a slice, a patch, or a spoken-take redo. ``core/audio_c3/soundtrack.py``
+refuses anything else (``PARTIAL_SUNO_JOB``), and the dispatcher refuses such
+a job at intake before any ledger row.
+
 Contract:
 - Every repair gets its own attempt ID and refers to the failed
   artifact/check. Retry limits persist across restarts: the caller passes the
