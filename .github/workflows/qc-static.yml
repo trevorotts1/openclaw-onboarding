@@ -3020,7 +3020,7 @@ jobs:
           # loop re-discovers test_*.py, so the next wave's tests join
           # without edits).
           # numpy so the singing-detector suite really runs (it skips itself without it)
-          python3 -m pip install --quiet numpy
+          python3 -m pip install --quiet numpy opencv-python-headless
           # ffmpeg so the singing-detector suites can decode their mp3 fixtures
           command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; }
           tests_rc=0
