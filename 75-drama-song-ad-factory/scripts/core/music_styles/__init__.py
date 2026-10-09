@@ -14,6 +14,8 @@ Voice gender is not decided here: that is core/audio_c3 (V2B-AUDIO-U1).
 from .music_styles import (
     DELIVERIES,
     FIRST_SUNG_TARGET_PCT,
+    LENGTH_ALIASES,
+    OFFERED_LENGTHS_S,
     SCHEMA_VERSION,
     SPOKEN_SHARE_MAX,
     SPOKEN_SHARE_MIN,
@@ -54,6 +56,8 @@ from .music_styles import (
 __all__ = [
     "DELIVERIES",
     "FIRST_SUNG_TARGET_PCT",
+    "LENGTH_ALIASES",
+    "OFFERED_LENGTHS_S",
     "SCHEMA_VERSION",
     "SPOKEN_SHARE_MAX",
     "SPOKEN_SHARE_MIN",
