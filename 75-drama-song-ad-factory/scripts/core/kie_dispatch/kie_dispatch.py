@@ -954,6 +954,13 @@ def prompt_cap_rows(model, request):
                               "cap_source": e.source,
                               "cap_status": e.status}}, [])
 
+try:
+    import script_approval as _SA                         # sibling core/ pkg
+except ImportError as _e:
+    if "script_approval" not in str(_e):
+        raise
+    _SA = None
+
 # ---- F6: no animation before storyboard approval -------------------------
 try:
     import storyboard_director as _SD                     # sibling core/ pkg
@@ -1004,6 +1011,22 @@ def _song_pick_refusal(model, run_dir):
     except Exception as exc:  # noqa: BLE001 - a gate that cannot run never opens
         return {"reason_code": "SONG_GATE_BROKEN", "detail": "song gate failed: %r." % (exc,),
                 "next_action": "Fix the song-choices gate before any paid job."}
+
+
+def check_script_approval_gate(model, request, save_dir=None):
+    """SCRIPT APPROVAL: a music job for a run whose client asked to approve the
+    script first refuses until the script is approved. Others untouched."""
+    req = request if isinstance(request, dict) else {}
+    if _modality(model) != "music" or _SA is None:
+        return None
+    inp = req.get("input") if isinstance(req.get("input"), dict) else {}
+    # The record rides the request, else it is found in the run folder (request
+    # run_dir, or the save dir and its parent): nobody has to pass it by hand.
+    rec = req.get("script_approval")
+    if rec is None:
+        rec = _SA.record_near(req.get("run_dir"), save_dir)
+    return _SA.check_script_approval(rec,
+                                     req.get("lyrics") or inp.get("lyrics") or "")
 
 
 def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
@@ -1162,6 +1185,13 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         song_hold["detail"] + " " + song_hold["next_action"],
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id, evidence={"generated": False})
+    # SCRIPT APPROVAL: no song generation before the client approves the script.
+    sa_refusal = check_script_approval_gate(model, request, save_dir)
+    if sa_refusal:
+        return envelope("dispatch", "rejected", sa_refusal["reason_code"],
+                        sa_refusal["detail"], run_id=run_id,
+                        logical_key=logical_key, attempt_id=attempt_id,
+                        evidence={"generated": False})
     # U15b: an H3 prompt must be assembled and receipted (PROMPT_NOT_TEMPLATED)
     # and the FINAL payload must be re-measured against its cap, both BEFORE
     # any ledger row or paid call. Nothing reserved, nothing sent.

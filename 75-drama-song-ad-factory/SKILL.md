@@ -86,6 +86,29 @@ silently.
   receipt's `warnings` list. Code: `scripts/core/loud_failure.py`; proof:
   `tests/test_loud_failure.py`.
 
+## Script approval before the song (card question SCRIPT APPROVAL)
+
+The last card question asks: "Do you want to read and approve the script - your
+story and the song lyrics - before the song is made?" (1 Yes, show me first,
+RECOMMENDED; 2 No, just make it). Stage order with Yes:
+`creative-strategy` (story) -> `script-lyrics` (lyric sheet) -> **script
+approval** -> `music` (song) -> ... Once the story and lyric sheet pass their
+checks, the runner does it by itself: `factory.py next --run-dir $RUN [--target <chat id>]`,
+when `music` would be next and the card answer is Yes (`$RUN/card-answers.json`, the `answers` list of
+`intake_card.conversation`; the script in `$RUN/creative/script.json`: title, story, sheet, lyrics), runs
+`script_approval.stage.run_stage`: checks the story and lyric sheet, calls `request_approval`, sends the script
+(title, story a few lines per act, full lyrics with section labels) through the client-delivery path
+(`openclaw message send` to `--target`; no `--target` = the messages come back in `data.messages` for the chat),
+records the run as waiting (`creative/script-approval.json`, `sent: true`) and answers `waiting` (exit 2) with no
+music command. The client's reply goes to `factory.py script-reply --run-dir $RUN --reply "<their words>"`:
+"approve" -> `handle_reply` records it and the next `next` hands out `music`; anything else is an edit: apply it
+to `creative/script.json`, run `script-reply` again, it re-checks and re-sends. Resume (`next` again) stays
+waiting and never re-sends a script that was delivered. No song generation, no Suno or music spend, until
+approval; approval is bound to the exact lyrics, and `kie_dispatch.dispatch` (music jobs) and
+`song_dispatch.run_takes` (`run_dir=`) read the record from the run folder themselves (`SCRIPT_NOT_APPROVED`
+when missing or stale). No: nothing changes. Code and tests: `scripts/core/script_approval/`
+(`stage.py`, `test_script_wiring.py`).
+
 ## Start here: the enforced flow
 
 ```text

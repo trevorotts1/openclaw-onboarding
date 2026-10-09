@@ -101,6 +101,7 @@ Built by `intake_card.conversation(replies)` (stateless: replay the replies so
 far), exposed as `factory.py card --step --reply ...`. Same code in claude-nine
 and OpenClaw. Test: `choice_card/intake_card/test_intake_step_i7.py`.
 
+<<<<<<< HEAD
 ## 2.3 Intro message (FU-INTRO-MESSAGE)
 
 The run opens with the intro, then the questions. The intro is sent ONCE, as
@@ -128,6 +129,24 @@ prints the intro on the first call and records `intro_shown` in that file;
 the next call prints question 1. A run state that already shows `intro_shown`
 never prints it again. Without `--run-state-file` the card is unchanged.
 Test: `choice_card/intake_card/test_intro_message.py`.
+=======
+## 2.1a SCRIPT APPROVAL (the last card question)
+
+Appended after STORYBOARD APPROVAL (the card's last question; the total
+count is computed, never typed):
+
+```
+Question N of M - SCRIPT APPROVAL
+Do you want to read and approve the script - your story and the song lyrics - before the song is made?
+1. Yes, show me first - Nothing is generated until you say go. (RECOMMENDED)
+2. No, just make it - I start as soon as the card is approved.
+```
+
+It appears in the recap and changes by number like every other line. On Yes
+the run sends the script after the story and lyric sheet pass their checks and
+pauses before the song (`script_approval/script_approval.py`; gate
+`check_script_approval`, refusal `SCRIPT_NOT_APPROVED`). On No: no change.
+>>>>>>> pr/1780
 
 ## 2.1 Intake question card layout (Part H9, normative)
 

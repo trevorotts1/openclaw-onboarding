@@ -155,6 +155,11 @@ def _questions():
          "options": [("Yes, send me 3 versions to choose from", "Three labelled songs; nothing else starts until you pick, and two extra songs are added to the price."),
                      ("No, just make it", "I make one song and keep going.")],
          "recommended": 0},
+        {"id": "script", "why": "The script is cheap to fix now and costly to fix after the song is made.", "reason": "you read the story and the lyrics before any money is spent on the song.", "label": "SCRIPT APPROVAL",
+         "ask": "Do you want to read and approve the script - your story and the song lyrics - before the song is made?",
+         "options": [("Yes, show me first", "Nothing is generated until you say go."),
+                     ("No, just make it", "I start as soon as the card is approved.")],
+         "recommended": 0},
     ]
 
 
@@ -320,6 +325,8 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
             _ar.record_card_answer(run_dir, answers, qs, target)
             from song_choices import song_choices as _sc   # noqa: PLC0415
             _sc.record_card_answer(run_dir, answers, target)
+            from script_approval import card_answers       # noqa: PLC0415
+            card_answers.write(run_dir, answers, qs)
         msg = "Locked in. I am starting now."
     elif fix is not None:
         msg = note + render_step(fix + 1, qs)

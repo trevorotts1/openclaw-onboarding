@@ -34,6 +34,7 @@ if _CORE not in sys.path:
 
 import load_governor as _LG   # noqa: E402
 import song_contract as _SC  # noqa: E402
+import script_approval as _SA   # noqa: E402
 import spoken_share as _SS   # noqa: E402
 import suno_recipe as _R     # noqa: E402
 import sung_hook as _SH      # noqa: E402
@@ -263,7 +264,7 @@ def _finish(g):
 
 def run_takes(request, plan, generate, measure, save, script_words, hook_text,
               spoken_range_pct=None, cap_cents=SPEND_CAP_CENTS, cost_cents=GEN_COST_CENTS,
-              kie=_LG.kie_request, style_id=None):
+              kie=_LG.kie_request, style_id=None, script_approval=None, run_dir=None):
     """Generate until a take passes or the cap is spent.
 
     generate(request) -> list of takes (2 per generation, each with audio ids);
@@ -271,8 +272,16 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     must store the vocal stem and timestamps (called for EVERY take, even
     failures). Every generation goes through the load governor (``kie``): a NEW
     request draws from the 20-per-10-s bucket and a 429 is resubmitted.
+    ``script_approval`` is the run's script-approval record; left out, it is read from ``run_dir`` (or request["run_dir"]):
+    required and not approved for these lyrics = refused before any generation.
     Returns {delivered, verdict, receipts, spent_cents}.
     """
+    # SCRIPT APPROVAL: a client who asked to approve the script first gets no generation until they do.
+    if script_approval is None:       # found in the run folder; nobody passes it by hand
+        script_approval = _SA.record_near(run_dir, request.get("run_dir"))
+    refusal = _SA.check_script_approval(script_approval, request.get("lyrics"))
+    if refusal:
+        raise DispatchError("%s: %s" % (refusal["reason_code"], refusal["detail"]))
     # G9 (FU-U6, plan E.2 default): the request carries the planned time plus the
     # >=15 percent Suno headroom; the master is still trimmed to L-2 by
     # master_length, so "whole tracks only" is judged against that headroom
