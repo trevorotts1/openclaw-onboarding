@@ -385,6 +385,11 @@ def test_kie_dispatch_refuses_uncontracted_book_job():
     cv2.imwrite(other_frame, FX["images"]["back_frame"])
 
     base = {"request_kind": "video", "shot_kind": "book"}
+    # U11: every frame-rule case carries an approved, matching plan hash so
+    # it isolates the frame rule (the plan rule has its own cases below).
+    plan_hash = BS.plan_sha256({"pages": "texture"})
+    base = dict(base, book_plan_sha256=plan_hash,
+                approved_book_plan_sha256=plan_hash)
     r = KD.book_shot_refusal("kling-3.0/video", base)
     check("a book video job with no start frame is refused",
           r is not None and r["reason_code"] == "BOOK_SHOT_NOT_CONTRACTED",
@@ -410,20 +415,42 @@ def test_kie_dispatch_refuses_uncontracted_book_job():
     check("a non-book shot is never refused by this gate",
           KD.book_shot_refusal("kling-3.0/video", dict(base, shot_kind="people"))
           is None)
-    # The plan hash side is DORMANT until U11 writes the field: a book job
-    # with no hash field at all still passes on the start-frame rule alone.
-    check("the plan-hash check stays dormant when the field is absent",
-          KD.book_shot_refusal("kling-3.0/video",
-                               dict(base, book_start_frame=frame_with_cover,
-                                    book_cover_path=cover)) is None)
-    # ...and it activates the moment the field exists and disagrees.
+    # U11 ACTIVATED the plan-hash requirement: a book job with no plan hash
+    # at all is now refused BOOK_PLAN_NOT_APPROVED (a producer writes the
+    # field now: book_shot.plan_sha256).
+    plan_hash = BS.plan_sha256({"pages": "texture"})
+    no_hash = KD.book_shot_refusal(
+        "kling-3.0/video",
+        {"request_kind": "video", "shot_kind": "book",
+         "book_start_frame": frame_with_cover, "book_cover_path": cover})
+    check("a book job with no plan hash is refused BOOK_PLAN_NOT_APPROVED",
+          no_hash is not None
+          and no_hash["reason_code"] == "BOOK_PLAN_NOT_APPROVED", no_hash)
+    # A carried hash with no approval is refused too.
+    unapproved = KD.book_shot_refusal(
+        "kling-3.0/video",
+        {"request_kind": "video", "shot_kind": "book",
+         "book_plan_sha256": plan_hash,
+         "book_start_frame": frame_with_cover, "book_cover_path": cover})
+    check("a carried plan hash with no approval is refused",
+          unapproved is not None
+          and unapproved["reason_code"] == "BOOK_PLAN_NOT_APPROVED", unapproved)
+    # ...and a mismatched hash is refused.
     bad = KD.book_shot_refusal(
         "kling-3.0/video",
         dict(base, book_plan_sha256="deadbeef",
              approved_book_plan_sha256="cafe", book_start_frame=frame_with_cover,
              book_cover_path=cover))
-    check("a mismatched plan hash refuses once the field exists",
-          bad is not None and "book_plan_sha256" in bad["detail"], bad)
+    check("a mismatched plan hash refuses",
+          bad is not None and bad["reason_code"] == "BOOK_PLAN_NOT_APPROVED"
+          and "book_plan_sha256" in bad["detail"], bad)
+    # An approved, matching plan passes (with the start-frame rule holding).
+    approved_ok = KD.book_shot_refusal(
+        "kling-3.0/video",
+        dict(base, book_plan_sha256=plan_hash,
+             approved_book_plan_sha256=plan_hash,
+             book_start_frame=frame_with_cover, book_cover_path=cover))
+    check("an approved, matching plan passes", approved_ok is None, approved_ok)
 
 def test_qc_gate_requires_book_orientation():
     """A book campaign's shots stage requires a book_orientation record."""
