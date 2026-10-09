@@ -6,6 +6,11 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
+
+- FU-PARITY: shared files aligned with 999 (v2.7.28 test fixes, delivery_checklist blank lines).
+- sfx-f4: the U15 fail-first guards no longer call sys.exit at module level, so one failing guard cannot raise INTERNALERROR across the whole test tree.
+
 ## v2.9.7 - 2026-10-09 - load-governor test no longer sleeps
 
 - `test_load_governor.py` resets the poll limiter after the fake-clock poll checks. They left it near 1003 s, so the later real-clock polls slept until the machine had been up that long (about 464 s on a fresh CI runner). No check was weakened.

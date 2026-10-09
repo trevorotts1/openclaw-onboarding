@@ -1,3 +1,7 @@
+## [v26.4.20]  -  2026-10-09  -  Batch MGB018: skill 75 parity and test hygiene, batch-prep CI (skill 75 v2.9.8)
+
+Released as one batch. Units: #1756 FU-PARITY skill 75 parity with the 999 copy (v2.7.28 test fixes, delivery_checklist blank lines); #1765 sfx-f4 no module-level sys.exit on the U15 fail-first guards (one bad import no longer takes down the whole test tree); and #1763 batch-prep.sh stops mechanical red reruns and CI concurrency never cancels main. Skill 75 v2.9.8. Paired Command Center: v7.6.112.
+
 ## [v26.4.19]  -  2026-10-09  -  Batch MGB017: faster QC static (skill 75 v2.9.7)
 
 Released as one batch. Unit: #1754 qc-static prune and parallelise (dead and duplicate steps removed, skill 75 empty-HOME suite run in parallel; measured 1,034 s down to 444 s), the load-governor test no longer sleeps on a fresh runner, and the path-leak step now fails when its script fails. Skill 75 v2.9.7. Paired Command Center: v7.6.112.
