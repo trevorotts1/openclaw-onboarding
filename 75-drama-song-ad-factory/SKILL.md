@@ -520,8 +520,9 @@ SOP named above.
 - **Video model question.** Four models (MiniMax H3 RECOMMENDED, Seedance 2.5,
   Seedance 2.0 Mini, Google Veo 3.1), each with its price for the length the
   client chose. One rates table (`core/choice_card/video_models/
-  video_model_rates.json`), the card's formula, +20% redo allowance; the pick
-  is locked for dispatch and each model has a tested KIE request.
+  video_model_rates.json`) and one price function shared by the question and
+  the final card; the pick is stored in run state, shown on the card and
+  submitted by dispatch with that model's provider id and resolution.
 
 - **Intake.** Quick mode by default (one sentence), Concept mode for a
   client with their own story. At most three questions total, and ONE choice

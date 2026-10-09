@@ -9,9 +9,11 @@ frontmatter `version:` field).
 ## v2.9.9 - 2026-10-09 - FU-VIDEO-MODEL-CHOICES: four video models, each with a price for your chosen length
 
 - The VIDEO MODEL intake question now lists four models with H3 first and RECOMMENDED: MiniMax H3, Seedance 2.5, Seedance 2.0 Mini, Google Veo 3.1. Each line carries one plain descriptor and "about $X" for the length the client already chose (same formula as the card: video + one keyframe per shot + one song, +20% redo allowance). The recap reads `Video model: Seedance 2.5 - about $68.40`. Seedance is ByteDance's video model (Seedream is image only). Seedance 2.0 Fast is not offered (clip range unconfirmed, not on the price menu); Mini is the lite tier.
-- One rates table with source URL and date: `scripts/core/choice_card/video_models/video_model_rates.json`. `video_models.build_request` builds the exact Skill 74 request per model; `video_models.lock_choice` writes the F14 lock.
+- One price for the question and the final card: `card_render.price_envelope` prices the chosen model from the rates table at the resolution the factory renders (H3 768P, Seedance 2.5 720p, Mini 720p, Veo 3.1 Fast 720p), with keyframes, character reference pictures, the song and the 20% redo allowance; the question quotes that exact total. Skill 74 `price` (highest tier) is unchanged for other skills.
+- The client's pick is stored in run state at intake (`intake_card.conversation(..., state_store, run_id)`), read by the card's Video model row and by `kie_dispatch`, which submits that model's provider id and resolution (`video_models.request_for_run`, `apply_locked_choice`).
+- One rates table with source URL and date: `scripts/core/choice_card/video_models/video_model_rates.json`.
 - `prompt_limits.MARKET_ALIASES`: the market id `veo-3-1` is held to the dedicated `veo3_fast` catalog entry; before this, a Veo 3.1 dispatch refused `PROMPT_LIMIT_NO_CATALOG`.
-- New test `scripts/core/choice_card/video_models/test_video_models.py` (11 checks, payload tests run through `kie_dispatch.dispatch` with a fake Skill 74; zero paid calls).
+- New test `scripts/core/choice_card/video_models/test_video_models.py` (13 checks: question = card total for 4 models x 60 s / 3 min, pick -> card row and payload, payload tests run through `kie_dispatch.dispatch` with a fake Skill 74; zero paid calls).
 
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 

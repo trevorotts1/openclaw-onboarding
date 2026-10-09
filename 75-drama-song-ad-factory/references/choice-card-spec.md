@@ -278,26 +278,30 @@ first and marked RECOMMENDED:
 Question 4 of 6 - VIDEO MODEL
 Which video model should make your shots? Prices are for your 3-minute ad,
 with the song, pictures and a 20% redo allowance.
-1. MiniMax H3 - great quality, best value - about $9.00 (RECOMMENDED)
-2. Seedance 2.5 - premium detail and motion - about $68.40
-3. Seedance 2.0 Mini - quicker and cheaper - about $9.22
-4. Google Veo 3.1 - top-tier realism - about $8.90
+1. MiniMax H3 - great quality, best value - about $9.17 (RECOMMENDED)
+2. Seedance 2.5 - premium detail and motion - about $68.57
+3. Seedance 2.0 Mini - quicker and cheaper - about $9.38
+4. Google Veo 3.1 - top-tier realism - about $9.07
 ```
 
 Seedance is ByteDance's VIDEO model (Seedream is its image model and cannot
 make shots). The four models, provider ids and rates live in ONE table,
 `scripts/core/choice_card/video_models/video_model_rates.json` (from
-the KIE live model list, checked 2026-10-09). The figure shown is
-the card's own formula: video (seconds x rate, or clips x clip price for
-Veo) + one keyframe ($0.02) per shot + one song ($0.06), then +20% redo
-allowance, each rounded half-up to the cent, one shape (9:16). Character
-reference pictures are not known at this question and are not in it; the
-final card still reads Skill 74 `price` live and is the figure of record.
-The recap line reads `Video model: Seedance 2.5 - about $68.40`. The pick is
-written to the F14 video-model lock (`video_models.lock_choice`) and
-`video_models.build_request` builds the exact Skill 74 request each model
-sends (Seedance: `generate_audio` off; Veo 3.1: top-level `veo-3-1`, tier
-`veo3_fast` inside `input`).
+the KIE live model list, checked 2026-10-09), each at the resolution the
+factory really renders: H3 768P, Seedance 2.5 720p, Seedance 2.0 Mini 720p,
+Google Veo 3.1 Fast 720p (per 8-second clip). The figure shown comes from the
+SAME function as the final card (`card_render.price_envelope`): video + one
+keyframe per shot + the character reference pictures + the song, then the
+20% redo allowance, so the number in the question is the number on the card
+(for the standard 9:16 ad with one main character; more characters or both
+shapes re-price on the card with the same function). Skill 74 `price` returns
+the highest listed tier, so the chosen model's video line is priced from the
+table instead; Skill 74's own behaviour for other skills is unchanged.
+The recap line reads `Video model: Seedance 2.5 - about $68.57` (3-minute ad). The
+pick is written to run state (the F14 video-model lock) when the client
+answers; the card's Video model row reads it there, and dispatch reads it too
+and submits that model's provider id and resolution (Seedance: `generate_audio`
+off; Veo 3.1: top-level `veo-3-1`, tier `veo3_fast` inside `input`).
 
 Seedance 2.0 Fast is not offered: its 4-15 s clip range is unconfirmed and it
 is not on the price menu; Mini is the "lite" tier on the menu.

@@ -105,13 +105,15 @@ def _questions():
 def _model_question(length_label):
     """VIDEO MODEL: four models, each priced for the client's chosen length."""
     from choice_card.video_models import video_models as VM
+    from catalog_calculator import card_render as CR
     sec = VM.length_seconds(length_label)
+    cost = {m["n"]: "$%.2f" % CR.quote(m["n"], length_label) for m in VM.MODELS}
     return {"id": "model", "why": "The video model sets how good the shots look and what they cost.",
             "reason": "it gives the best balance of quality and price.", "label": "VIDEO MODEL",
             "ask": "Which video model should make your shots? Prices are for your %s ad, "
                    "with the song, pictures and a 20%% redo allowance." % VM.length_phrase(sec),
-            "options": [(m["name"], "%s - about %s" % (m["blurb"], VM.label(m, sec))) for m in VM.MODELS],
-            "values": [VM.label(m, sec) for m in VM.MODELS],
+            "options": [(m["name"], "%s - about %s" % (m["blurb"], cost[m["n"]])) for m in VM.MODELS],
+            "values": [cost[m["n"]] for m in VM.MODELS],
             "recommended": next(i for i, m in enumerate(VM.MODELS) if m["recommended"])}
 
 
@@ -181,10 +183,12 @@ def _parse(reply, q):
     return {"n": n, "text": opts[n - 1][0], "value": None}
 
 
-def conversation(replies, questions=None):
+def conversation(replies, questions=None, state_store=None, run_id=None):
     """Replay the client's replies from the start; return the state and the ONE
     message to send next. Stateless, so claude-nine and OpenClaw can both call
-    it with the replies so far. state: answers, done, message."""
+    it with the replies so far. state: answers, done, message, video_model.
+    With state_store + run_id, the client's video model is written to run state
+    (the F14 lock) as soon as it is answered; the card and dispatch read it there."""
     qs = questions or QUESTIONS
     answers, fix, note, done = [], None, "", False
     for r in replies:
@@ -211,6 +215,10 @@ def conversation(replies, questions=None):
             else:
                 note = "Sorry, I did not catch that. "
     qs = _priced(qs, answers)
+    model_n = next((a["n"] for q, a in zip(qs, answers) if q["id"] == "model"), None)
+    if model_n and state_store and run_id:
+        from choice_card.video_models import video_models as VM
+        VM.lock_choice(state_store, run_id, model_n)
     if done:
         msg = "Locked in. I am starting now."
     elif fix is not None:
@@ -219,7 +227,7 @@ def conversation(replies, questions=None):
         msg = note + render_step(len(answers) + 1, qs)
     else:
         msg = note + render_recap(answers, qs)
-    return {"answers": answers, "done": done, "message": msg}
+    return {"answers": answers, "done": done, "message": msg, "video_model": model_n}
 
 
 def render_card(questions=None):

@@ -17,6 +17,7 @@ from choice_card.video_models import video_models as VM  # noqa: E402
 import kie_dispatch as D  # noqa: E402
 import kie_dispatch.model_lock as ML  # noqa: E402
 import spend_ledger as L  # noqa: E402
+from catalog_calculator import card_render as CR  # noqa: E402
 
 NAMES = ["MiniMax H3", "Seedance 2.5", "Seedance 2.0 Mini", "Google Veo 3.1"]
 
@@ -25,22 +26,46 @@ def _model_turn(length_reply):
     return IC.conversation([length_reply, "1", "1"])["message"]
 
 
+def _fake74(model, units):
+    """Skill 74 stand-in. Video is deliberately priced at the HIGHEST tier (the
+    real `price` behaviour) so a card that leaked it would not match the question."""
+    if model.startswith("google/imagen"):
+        return {"state": "ok", "data": {"credits_estimate": 4.0 * units, "unit": "per-image"}}
+    if model.startswith("ai-music-api"):
+        return {"state": "ok", "data": {"credits_estimate": 12.0, "unit": "per-job"}}
+    return {"state": "ok", "data": {"credits_estimate": 999.0 * units, "unit": "per-second"}}
+
+
 def _half_up(num, den):
     return (2 * num + den) // (2 * den)
 
 
 def _expect(rate, per_clip, shot_s, seconds):
-    """Independent restatement of the card formula, in whole cents."""
+    """Independent restatement of the card, in whole cents: video + (7 character
+    reference pictures + 1 keyframe per shot) at 2c + song 6c, then +20% half-up."""
     shots = -(-seconds // shot_s)
     mills = round(rate * 1000) * (shots if per_clip else seconds)
-    total = _half_up(mills, 10) + 2 * shots + 6      # keyframe 2c each, song 6c
-    redo = _half_up(total * 20, 100)                 # 20%, half-up to the cent
-    return total + redo
+    total = _half_up(mills, 10) + 2 * (shots + 7) + 6
+    return total + _half_up(total * 20, 100)
 
 
 EXPECT = {  # (rate, per_clip, shot_s) -> the four models in order
     "MiniMax H3": (0.04, False, 15), "Seedance 2.5": (0.315, False, 15),
     "Seedance 2.0 Mini": (0.041, False, 15), "Google Veo 3.1": (0.30, True, 8)}
+LENGTHS = (("1", 60, "60 seconds"), ("3", 180, "3 minutes"))
+
+
+def _card_total(n, label, price_fn, **kw):
+    """The final card's spending line: the number after the last '=' on Total."""
+    text, ok = CR.render({"length": label, "video_model": n}, price_fn, **kw)
+    assert ok, text
+    return text, next(l for l in text.split("\n") if "Total:" in l).rsplit("= $", 1)[1]
+
+
+def _question_price(reply, name):
+    msg = _model_turn(reply)
+    line = next(l for l in msg.split("\n") if l[3:].startswith(name + " - "))
+    return line.split("about $")[1].split(" ")[0]
 
 
 def test_four_options_in_order_h3_first_and_recommended():
@@ -54,33 +79,36 @@ def test_four_options_in_order_h3_first_and_recommended():
     assert "Prices are for your 60-second ad" in msg
 
 
-def test_prices_equal_the_formula_for_60s_and_3min():
-    for reply, secs, phrase in (("1", 60, "60-second"), ("3", 180, "3-minute")):
-        msg = _model_turn(reply)
-        assert "Prices are for your %s ad" % phrase in msg, msg
-        for name in NAMES:
+def test_question_price_equals_final_card_total_all_models_60s_and_3min():
+    for reply, secs, label in LENGTHS:
+        for n, name in enumerate(NAMES, 1):
+            q = _question_price(reply, name)
+            _text, card = _card_total(n, label, _fake74)
+            assert q == card, (name, label, q, card)
             cents = _expect(*EXPECT[name], secs)
-            want = "%s - " % name
-            line = next(l for l in msg.split("\n") if l[3:].startswith(want))
-            assert "about $%d.%02d" % (cents // 100, cents % 100) in line, (line, cents)
+            assert q == "%d.%02d" % (cents // 100, cents % 100), (name, label, q, cents)
 
 
-def test_known_totals_match_price_menu_snapshot():
-    # price-menu.md one-shape totals (+20% of the total) for H3: 60s $2.54, 3min $7.50
-    assert str(VM.price(VM.model_for(1), 60)["total"]) == "2.54"
-    assert str(VM.price(VM.model_for(1), 180)["total"]) == "7.50"
-    assert str(VM.price(VM.model_for(4), 180)["total"]) == "7.42"   # 23 clips
+def test_question_price_equals_card_with_real_skill_74_registry_prices():
+    pf = CR.price_fn_default()
+    if pf is None:
+        return  # no Skill 74 beside this skill: nothing to compare
+    for reply, _secs, label in LENGTHS:
+        for n, name in enumerate(NAMES, 1):
+            assert _question_price(reply, name) == _card_total(n, label, pf)[1], (name, label)
 
 
 def test_recap_line_is_plain_and_priced():
     msg = IC.conversation(["3", "1", "1", "2", "1", "1"])["message"]
-    assert "4. Video model: Seedance 2.5 - about $68.40" in msg, msg
+    cents = _expect(*EXPECT["Seedance 2.5"], 180)
+    assert "4. Video model: Seedance 2.5 - about $%d.%02d" % (cents // 100, cents % 100) in msg, msg
 
 
 def test_changing_length_reprices_the_recap():
     # six answers (60 s, Seedance 2.5), recap, change line 1, pick 3 minutes
     msg = IC.conversation(["1", "1", "1", "2", "1", "1", "1", "3"])["message"]
-    assert "4. Video model: Seedance 2.5 - about $68.40" in msg, msg
+    cents = _expect(*EXPECT["Seedance 2.5"], 180)
+    assert "4. Video model: Seedance 2.5 - about $%d.%02d" % (cents // 100, cents % 100) in msg, msg
 
 
 # ---- payload tests: lock -> dispatch -> the request Skill 74 would submit ----
@@ -125,8 +153,8 @@ def _dispatch_choice(n, first_frame=None):
     tmp = tempfile.mkdtemp(prefix="vm-")
     state, ledger = os.path.join(tmp, "state.db"), os.path.join(tmp, "spend.db")
     L.init_run(ledger, "run-vm", 10000)
-    VM.lock_choice(state, "run-vm", n)
-    req = VM.build_request(m, "A woman sings at a kitchen window. " * 6, 8, "9:16", first_frame)
+    IC.conversation(["1", "1", "1", str(n)], state_store=state, run_id="run-vm")   # the client answers; run state is written
+    req = VM.request_for_run(state, "run-vm", "A woman sings at a kitchen window. " * 6, 8, "9:16", first_frame)
     req["storyboard"] = {"shots": [{"shot_id": "s1", "status": "storyboard_approved"}],
                          "review": {"outcome": "pass", "reason_code": "storyboard-accepted"}}
     req["card_receipt"] = {"answers": {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
@@ -191,6 +219,29 @@ def test_unsupported_durations_refused_before_any_call():
         except ValueError:
             continue
         raise AssertionError("duration %s accepted for choice %s" % (d, n))
+
+
+def test_client_pick_reaches_card_row_and_dispatch_payload_for_every_model():
+    want = {1: ("minimax-h3/image-to-video", "768P", "MiniMax H3 768P (RECOMMENDED)"),
+            2: ("bytedance/seedance-2-5", "720p", "Seedance 2.5 720p"),
+            3: ("bytedance/seedance-2-mini", "720p", "Seedance 2.0 Mini 720p"),
+            4: ("veo-3-1", "720p", "Google Veo 3.1 720p")}
+    for n, (kie, res, row) in want.items():
+        env, sub = _dispatch_choice(n)
+        assert env["outcome"] == "ok" and sub["model"] == kie and sub["input"]["resolution"] == res, (n, env, sub)
+        tmp = tempfile.mkdtemp(prefix="vm-")
+        state = os.path.join(tmp, "state.db")
+        IC.conversation(["1", "1", "1", str(n)], state_store=state, run_id="r")
+        text, _ok = CR.render({"length": "60 seconds"}, _fake74, state_store=state, run_id="r")   # no card field: run state decides
+        assert "Video model: %s" % row in " ".join(text.split()), text
+
+
+def test_dispatch_stamps_the_chosen_resolution_over_a_wrong_one():
+    tmp = tempfile.mkdtemp(prefix="vm-")
+    state = os.path.join(tmp, "state.db")
+    IC.conversation(["1", "1", "1", "2"], state_store=state, run_id="r")
+    req = {"model": "bytedance/seedance-2-5", "input": {"prompt": "x", "duration": 8, "resolution": "1080p"}}
+    assert VM.apply_locked_choice(req, ML.read_locked_model(state, "r"))["input"]["resolution"] == "720p"
 
 
 def test_a_run_locked_to_one_model_refuses_another():
