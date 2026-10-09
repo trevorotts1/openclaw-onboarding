@@ -3030,7 +3030,7 @@ jobs:
             if [ -n "$(find "$empty_home" -mindepth 1 | head -1)" ]; then
               echo "mktemp -d returned a non-empty home: $empty_home"; exit 1
             fi
-            if ! (HOME="$empty_home" python3 "$t"); then
+            if ! (HOME="$empty_home" python3 "$t" </dev/null); then
               echo "✗ empty-home FAIL: $t"; tests_rc=1
             fi
             rmdir --ignore-fail-on-non-empty -p "$empty_home" 2>/dev/null || true
