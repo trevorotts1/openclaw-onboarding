@@ -6,6 +6,10 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.17 - 2026-10-09 - PKG-11: one delivery package naming scheme, produce_delivery on all 12 producers, e2e runs
+
+- The delivery package now has ONE naming scheme, `NN - Label.ext`. `scripts/core/delivery_package/contract.py` is the single source of the 12 items; `package_items.py` derives its list from it; every one of the 12 producers exports `produce_delivery(run_dir, item)`; `test_delivery_package_e2e` runs (no skip) and carries a negative control. This closes the naming gap flagged in the v27.1.0 batch (the Q12 PACKAGE_COMPLETE hard gate failed a real delivery folder). Shared `scripts/core/` stays byte-identical with the 999-setup copy (v2.7.40).
+
 ## v2.9.16 - 2026-10-09 - operator wording scrub
 
 - Wording scrub, behavior identical: the two-strike unlock line says operator-only (no personal name) in the SKILL.md gate block, the `two_strike.py` policy docstring, the `two_strike_skills_map.json` source field and the two-strike README.
