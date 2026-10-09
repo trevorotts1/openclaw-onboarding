@@ -40,7 +40,6 @@ if str(_HERE) not in sys.path:
 
 import delivery_checklist.delivery_checklist as dc   # noqa: E402
 import batch_zip.batch_zip as bz                      # noqa: E402
-from delivery_fixture import make_video              # noqa: E402
 
 RATE = 8000
 AUTHOR = "Kiesett Parker"
@@ -148,16 +147,16 @@ class SongMp3DoneWhen(unittest.TestCase):
                 cap = adir / ("%s - Ad (captioned).mp4" % title)
                 master = adir / ("%s - Ad (clean master).mp4" % title)
                 song = adir / (dc.safe_song_name(author, title) + ".mp3")
-                song.write_bytes(b"\x00" * 16)
-                make_video(cap)
-                make_video(master)
+                for p in (cap, master, song):
+                    p.write_bytes(b"\x00" * 16)
                 ads.append({"author": author, "title": title,
                             "ad_dir": adir, "captioned": cap,
                             "clean_master": master, "song_mp3": song,
                             "duration_s": 60.0, "resolution": "1080x1920",
                             "banner": BANNER})
             out = root / "batch.zip"
-            res = bz.build_batch_zip("Black CEO", ads, out)
+            res = bz.build_batch_zip("Black CEO", ads, out,
+                                    audio_gate=lambda p: {"ok": True})
             self.assertTrue(out.is_file())
             with zipfile.ZipFile(out) as z:
                 names = z.namelist()

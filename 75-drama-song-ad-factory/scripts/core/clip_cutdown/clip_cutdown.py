@@ -32,8 +32,8 @@ import sys
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
-from delivery_audio import AUDIO_OUT_ARGS, FASTSTART_ARGS, check_delivery_audio  # noqa: E402
 from master_length import master_max_s  # noqa: E402
+import delivery_audio  # noqa: E402
 from sung_hook import sung_hook as _SH  # noqa: E402
 
 TOOL_NAME = "clip_cutdown"
@@ -110,12 +110,18 @@ def build_argv(master, plan, out_dir, ffmpeg="ffmpeg"):
             "-t", "%.3f" % d,
             "-vf", "fade=t=out:st=%.3f:d=%.2f" % (fo, FADE_S),
             "-af", "afade=t=out:st=%.3f:d=%.2f" % (fo, FADE_S),
-            "-c:v", "libx264", *AUDIO_OUT_ARGS, *FASTSTART_ARGS,
+            "-c:v", "libx264", *delivery_audio.AUDIO_OUT_ARGS,
+            *delivery_audio.FASTSTART_ARGS,
             os.path.join(out_dir, plan["name"] + ".mp4")]
 
 
-def run_clips(master, plans, out_dir, runner=subprocess.run, ffmpeg="ffmpeg"):
-    """Cut every planned clip; returns the output paths. runner is injectable."""
+def run_clips(master, plans, out_dir, runner=subprocess.run, ffmpeg="ffmpeg",
+              audio_gate=None):
+    """Cut every planned clip; returns the output paths. runner is injectable.
+
+    Each clip must pass the delivery audio gate (AAC-LC 48 kHz, faststart)
+    or it is deleted and the run fails closed (audio_gate: tests only).
+    """
     os.makedirs(out_dir, exist_ok=True)
     paths = []
     for p in plans:
@@ -123,11 +129,12 @@ def run_clips(master, plans, out_dir, runner=subprocess.run, ffmpeg="ffmpeg"):
         r = runner(argv, capture_output=True, text=True)
         if getattr(r, "returncode", 0) != 0:
             raise ClipCutdownError("CLIP_FFMPEG_FAILED: %s" % p["name"])
-        g = check_delivery_audio(argv[-1])      # fail closed: never hand over a silent clip
-        if not g["ok"]:
+        try:
+            delivery_audio.require_delivery_audio(argv[-1], audio_gate)
+        except delivery_audio.DeliveryAudioRefused as exc:
             if os.path.exists(argv[-1]):
                 os.remove(argv[-1])
-            raise ClipCutdownError("%s: %s: %s" % (g["reason_code"], p["name"], g["reason"]))
+            raise ClipCutdownError("CLIP_AUDIO_REFUSED: %s" % exc)
         paths.append(argv[-1])
     return paths
 

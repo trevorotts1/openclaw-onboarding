@@ -8,6 +8,7 @@ audio is not AAC or is silent. Stdlib only; shells to ffprobe/ffmpeg.
 """
 import json
 import re
+import struct
 import subprocess
 import sys
 
@@ -17,44 +18,42 @@ FASTSTART_ARGS = ["-movflags", "+faststart"]
 SILENT_DB = -50.0
 BAD_CODEC = "DELIVERY_AUDIO_NOT_AAC"
 SILENT = "DELIVERY_AUDIO_SILENT"
+BAD_RATE = "DELIVERY_AUDIO_NOT_48K"
+NO_FASTSTART = "DELIVERY_NOT_FASTSTART"
 NO_AUDIO = "DELIVERY_AUDIO_MISSING"
 UNREADABLE = "DELIVERY_AUDIO_UNREADABLE"
-BAD_PROFILE = "DELIVERY_AUDIO_NOT_LC"
-BAD_RATE = "DELIVERY_AUDIO_NOT_48K"
-NO_FASTSTART = "DELIVERY_NO_FASTSTART"
-
-
-def _faststart(path):
-    """True when the top-level moov box comes before mdat (stdlib box walk)."""
-    try:
-        with open(path, "rb") as f:
-            while True:
-                h = f.read(8)
-                if len(h) < 8:
-                    return False
-                size, kind = int.from_bytes(h[:4], "big"), h[4:8]
-                if kind == b"moov":
-                    return True
-                if kind == b"mdat":
-                    return False
-                if size == 1:
-                    size = int.from_bytes(f.read(8), "big")
-                    f.seek(size - 16, 1)
-                elif size == 0:
-                    return False
-                else:
-                    f.seek(size - 8, 1)
-    except OSError:
-        return False
 
 
 def _res(ok, code, reason, **kw):
     return dict(ok=ok, reason_code=code, reason=reason, **kw)
 
 
+def _faststart(path):
+    """True when the MP4 moov atom comes before mdat (top-level box walk)."""
+    try:
+        with open(path, "rb") as fh:
+            while True:
+                head = fh.read(8)
+                if len(head) < 8:
+                    return False
+                size, kind = struct.unpack(">I4s", head)
+                if kind == b"moov":
+                    return True
+                if kind == b"mdat":
+                    return False
+                if size == 1:
+                    size = struct.unpack(">Q", fh.read(8))[0]
+                    fh.seek(size - 16, 1)
+                elif size < 8:
+                    return False
+                else:
+                    fh.seek(size - 8, 1)
+    except (OSError, struct.error):
+        return False
+
+
 def check_delivery_audio(path, ffprobe="ffprobe", ffmpeg="ffmpeg"):
-    """{ok, reason_code, reason, codec, mean_db}; ok only for non-silent
-    AAC-LC at 48 kHz in an MP4 whose moov atom precedes mdat (faststart)."""
+    """{ok, reason_code, reason, codec, mean_db}; ok only for non-silent AAC."""
     try:
         p = subprocess.run(
             [ffprobe, "-v", "error", "-select_streams", "a", "-show_entries",
@@ -71,12 +70,13 @@ def check_delivery_audio(path, ffprobe="ffprobe", ffmpeg="ffmpeg"):
     if codec != "aac":
         return _res(False, BAD_CODEC, "audio codec is %r, must be aac "
                     "(QuickTime plays MP3-in-MP4 silent)" % codec, codec=codec)
-    if streams[0].get("profile") != "LC":
-        return _res(False, BAD_PROFILE, "aac profile is %r, must be LC"
-                    % streams[0].get("profile"), codec=codec)
-    if str(streams[0].get("sample_rate")) != "48000":
+    s = streams[0]
+    if s.get("profile") != "LC":
+        return _res(False, BAD_CODEC, "aac profile is %r, must be AAC-LC"
+                    % s.get("profile"), codec=codec)
+    if str(s.get("sample_rate")) != "48000":
         return _res(False, BAD_RATE, "audio sample rate is %r, must be 48000"
-                    % streams[0].get("sample_rate"), codec=codec)
+                    % s.get("sample_rate"), codec=codec)
     if not _faststart(path):
         return _res(False, NO_FASTSTART, "moov atom is not before mdat "
                     "(re-mux with -movflags +faststart)", codec=codec)
@@ -94,8 +94,28 @@ def check_delivery_audio(path, ffprobe="ffprobe", ffmpeg="ffmpeg"):
     if mean < SILENT_DB:
         return _res(False, SILENT, "decoded audio is silent (mean %s dB < %g "
                     "dB)" % (m.group(1), SILENT_DB), codec=codec, mean_db=mean)
-    return _res(True, "DELIVERY_AUDIO_OK", "aac, mean %.1f dB" % mean,
+    return _res(True, "DELIVERY_AUDIO_OK", "aac-lc 48 kHz faststart, mean %.1f dB" % mean,
                 codec=codec, mean_db=mean)
+
+
+class DeliveryAudioRefused(Exception):
+    """A delivered file failed the AAC-LC 48 kHz faststart gate."""
+
+    def __init__(self, path, result):
+        super().__init__("%s: %s: %s" % (result["reason_code"], path,
+                                         result["reason"]))
+        self.path, self.result, self.code = path, result, result["reason_code"]
+
+
+def require_delivery_audio(path, gate=None):
+    """Fail closed: return the gate result or raise DeliveryAudioRefused.
+
+    gate: injectable stand-in for check_delivery_audio (tests only).
+    """
+    result = (gate or check_delivery_audio)(path)
+    if not result["ok"]:
+        raise DeliveryAudioRefused(path, result)
+    return result
 
 
 if __name__ == "__main__":

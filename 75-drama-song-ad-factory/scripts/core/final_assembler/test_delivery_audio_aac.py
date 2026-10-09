@@ -42,8 +42,8 @@ def _mk(path, acodec, src):
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
                     "color=c=black:s=64x64:d=1:r=10", "-f", "lavfi", "-i", src,
                     "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                    "-c:a", acodec, "-ar", "48000", "-strict", "-2",
-                    "-movflags", "+faststart", path], check=True)
+                    *(DA.AUDIO_OUT_ARGS if acodec == "aac" else ["-c:a", acodec]),
+                    *DA.FASTSTART_ARGS, "-strict", "-2", path], check=True)
 
 
 @unittest.skipUnless(HAVE, "ffmpeg not installed")

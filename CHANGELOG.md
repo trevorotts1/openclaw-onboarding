@@ -1,3 +1,7 @@
+## [v27.0.1]  -  2026-10-09  -  AAC delivery gate on every delivered video + card sync (skill 75 v2.9.13)
+
+Released as one batch. Units: FU-DELIVERY-GATE-PATHS the AAC delivery check (check_delivery_audio) now runs on every path that delivers a video: final assembler, clip cutdown, batch zip and delivery checklist; clip cutdown uses the shared AAC audio and faststart arguments; new test_delivery_gate_paths.py. Card sync with the 999 copy (v2.7.38). Paired Command Center: v7.6.112.
+
 ## [v27.0.0]  -  2026-10-09  -  Major release: skill 75 (drama song ad factory) complete
 
 v27.0.0: major release marking skill 75 (drama song ad factory) complete: all 22 units, intake card, approvals, client guide v2, AAC delivery audio.

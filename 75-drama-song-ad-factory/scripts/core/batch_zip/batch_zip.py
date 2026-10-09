@@ -5,8 +5,7 @@ build_batch_zip() writes one zip per client: one folder per author holding
 the captioned ad, the clean master and the song mp3 (exactly those three
 files), plus a README.md listing every file with its duration, resolution
 and banner link. Missing file = BatchZipError, fail closed.
-Both videos pass delivery_audio.check_delivery_audio() (AAC-LC 48 kHz,
-faststart) or the zip is refused. stdlib + ffprobe/ffmpeg, no network.
+stdlib only, no network, no ffmpeg (the caller supplies the numbers).
 """
 from __future__ import annotations
 
@@ -19,7 +18,7 @@ from pathlib import Path
 _CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
-from delivery_audio import check_delivery_audio  # noqa: E402
+import delivery_audio  # noqa: E402
 
 TOOL_NAME = "batch_zip"
 TOOL_VERSION = "1.0.0"
@@ -57,7 +56,7 @@ def folder_name(author, title, seen):
     return name
 
 
-def _ad_paths(ad):
+def _ad_paths(ad, audio_gate=None):
     """The three delivered files of one ad, fail closed on anything missing."""
     pairs = (("captioned", ad.get("captioned")),
              ("clean master", ad.get("clean_master")),
@@ -73,18 +72,18 @@ def _ad_paths(ad):
             raise BatchZipError("AD_INCOMPLETE",
                                 "%s missing the %s (%s)"
                                 % (ad.get("title", "?"), label, path))
-        if label != "song mp3":     # both videos: AAC-LC 48 kHz faststart or refuse
-            g = check_delivery_audio(path)
-            if not g["ok"]:
-                raise BatchZipError(g["reason_code"], "%s %s: %s"
-                                    % (ad.get("title", "?"), label, g["reason"]))
+        if label != "song mp3":      # both mp4s are delivered video
+            try:
+                delivery_audio.require_delivery_audio(path, audio_gate)
+            except delivery_audio.DeliveryAudioRefused as exc:
+                raise BatchZipError("DELIVERY_AUDIO_REFUSED", str(exc))
         out.append((label, path))
     if len(out) != PER_AD_FILES:
         raise BatchZipError("AD_INCOMPLETE", "one ad must carry 3 files")
     return out
 
 
-def build_batch_zip(client, ads, out_path):
+def build_batch_zip(client, ads, out_path, audio_gate=None):
     """One client zip: a folder per ad (3 files) + README (banner + numbers).
 
     ads: [{"author", "title", "captioned", "clean_master", "song_mp3",
@@ -96,7 +95,7 @@ def build_batch_zip(client, ads, out_path):
     rows, seen = [], set()
     for ad in ads:
         folder = folder_name(ad.get("author", ""), ad.get("title", ""), seen)
-        rows.append((folder, ad, _ad_paths(ad)))
+        rows.append((folder, ad, _ad_paths(ad, audio_gate)))
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     readme = _readme(client, rows)
