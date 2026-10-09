@@ -85,7 +85,7 @@ previous selections kept.
 
 The intake is a conversation, not a form. One message per turn:
 
-1. `Question 3 of 6 - VIDEO STYLE`, then a one-sentence reason the question
+1. `Question 3 of 7 - VIDEO STYLE`, then a one-sentence reason the question
    matters, then the question.
 2. Options as a numbered list, one per line, each with a short plain
    description; the RECOMMENDED option is marked and followed by "I recommend
@@ -131,12 +131,12 @@ Test: `choice_card/intake_card/test_intro_message.py`.
 
 ## 2.1 Intake question card layout (Part H9, normative)
 
-The six intake questions (length, music style, video style, video model,
-spend limit, storyboard approval) are built by
+The seven intake questions (length, music style, video style, video model,
+spend limit, storyboard approval, song approval) are built by
 `scripts/core/choice_card/intake_card/intake_card.py` and nowhere else. Never
 write them free hand and never carry them as one JSON string.
 
-- Each question is its own block: `Question 1 of 6 - LENGTH`, then the plain
+- Each question is its own block: `Question 1 of 7 - LENGTH`, then the plain
   question, then one numbered option per line (`1. 60 seconds - one short
   sentence. (RECOMMENDED)`). A blank line separates questions. The last line
   is the "how to answer" line.
@@ -215,6 +215,42 @@ the client approves. A client edit to one shot regenerates only that shot's
 still and re-sends only that shot. Built by
 `scripts/core/storyboard_director/approval_package.py`; a shot with an
 incomplete card or no still file blocks the approval message. The live run sends it with `factory.py storyboard` (see stage-runbook.md, Wiring).
+
+## 2.4 Song approval (FU-SONG-APPROVAL, normative)
+
+Question 7 of 7, label `SONG APPROVAL`, built by `intake_card.py` like the
+storyboard question (the saved-character question, when shown, makes it 8 of 8):
+
+```text
+Question 7 of 7 - SONG APPROVAL
+Do you want to hear and pick the song before any video is made?
+1. Yes, send me 3 versions to choose from - ... (RECOMMENDED)
+2. No, just make it - I make one song and keep going.
+```
+
+- It appears in the recap ("7. Song Approval: ...") and the recap's "number of
+  a line to change it" reopens it.
+- **Yes:** the song stage generates three versions of the same lyric sheet IN
+  PARALLEL inside the chosen music style, three arrangement variants from the
+  data table `scripts/core/song_choices/variants.json` (for R&B Flow: Polished
+  Modern, Warm Live Band, Cinematic Strings). Every version must pass the
+  song checks (`song_dispatch.judge_take`: lyrics, hook placement, voice rules)
+  before it is offered; a failed version is regenerated once, then reported
+  and left out.
+- **Labels:** one folder `SONG-CHOICES/` in the client's delivery folder with
+  `1 - <LABEL> (<one-line description>).mp3`, `2 - ...`, `3 - ...`, each file's
+  embedded title tag set to the same label (`ffmpeg -c copy -metadata
+  title=...`), and `README.txt` (one line per file: label, length,
+  description). The client message lists the three by number and label and says
+  "Reply 1, 2 or 3 to pick your song."
+- **Gate:** no picture timing, image, video or lip-sync spend until the pick is
+  recorded (`song_choices.record_pick`); the picked file becomes the song for
+  the rest of the run (`<run>/music/picked-song.mp3`). A missing, unreadable or
+  changed pick blocks (`SONG_PICK_MISSING`, from `factory.py next` and
+  `kie_dispatch`) and never defaults.
+- **No:** exactly as before. One song, no wait.
+- **Price:** with Yes the card adds two extra song generations to the total and
+  shows them on a `Song picks:` row (`card_render`, `song_choices: true`).
 
 ## 3. Field rules
 
@@ -569,6 +605,8 @@ Sketch to Life / Velvet pair is refused there too), `core/smp/saturday_prompt`.
 4. If a live rate cannot be read, the card says the price is unavailable and
    does not start paid work.
 5. On resume the card shows only what changed, plus the next stage.
+6. With SONG APPROVAL = Yes the total includes the two extra song generations
+   (section 2.4).
 
 ## 5. Skill 74 mode gate
 

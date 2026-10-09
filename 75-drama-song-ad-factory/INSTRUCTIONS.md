@@ -220,7 +220,7 @@ message (none about money; the card asks it once), and the options are presented
 pre-selected, so a client can approve with a single click. On resume the
 card shows only what changed.
 
-**Asking the six intake questions (H9).** Build them with
+**Asking the seven intake questions (H9).** Build them with
 `python3 scripts/core/intake_preflight/factory.py card` (Claude Code chat:
 show stdout as is; Telegram: `--format openclaw-json --target <chat id>`,
 run each argv without a shell). Never type them free hand or send them as one

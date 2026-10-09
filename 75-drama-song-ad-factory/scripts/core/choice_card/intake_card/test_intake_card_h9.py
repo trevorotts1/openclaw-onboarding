@@ -23,16 +23,16 @@ def _blocks(text):
     return text.split("\n\n")
 
 
-def test_six_questions_each_own_block():
-    assert N == 6
+def test_seven_questions_each_own_block():
+    assert N == 7
     blocks = _blocks(CARD)
-    assert len(blocks) == N + 1                       # six questions + closing
+    assert len(blocks) == N + 1                       # seven questions + closing
     for i, b in enumerate(blocks[:N], 1):
         first = b.split("\n")[0]
         assert first.startswith("Question %d of %d - " % (i, N)), first
     labels = [b.split("\n")[0].split(" - ")[1] for b in blocks[:N]]
     assert labels == ["LENGTH", "MUSIC STYLE", "VIDEO STYLE", "VIDEO MODEL",
-                      "BUDGET", "STORYBOARD APPROVAL"]
+                      "BUDGET", "STORYBOARD APPROVAL", "SONG APPROVAL"]
 
 
 def test_each_option_on_its_own_numbered_line_recommended_marked():
@@ -52,7 +52,7 @@ def test_each_option_on_its_own_numbered_line_recommended_marked():
 
 def test_closing_line_last():
     assert _blocks(CARD)[-1] == IC._closing(IC.QUESTIONS)
-    assert CARD.startswith("Question 1 of 6")
+    assert CARD.startswith("Question 1 of 7")
 
 
 def test_no_markup_that_a_sender_could_strip():
