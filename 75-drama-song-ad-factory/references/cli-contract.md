@@ -52,10 +52,11 @@ python3 scripts/core/intake_preflight/factory.py intake \
 Verified live on this box (2026-10-06, packaged copy):
 
 - thin brief `{"offer": "demo offer"}` -> `outcome=waiting`,
-  `reason_code=missing-essentials`, exit 2, exactly three questions
-  (`audience_action`, `spending_authority`, `placement` — placement
-  substitutes into a leftover slot; the essentials are offer, audience +
-  action, spending authority).
+  `reason_code=missing-essentials`, exit 2, up to three story questions
+  (`audience_action`, `website` when the ad sends people to one, `placement` —
+  placement substitutes into a leftover slot; the essentials are offer,
+  audience + action). Money is never a story question: the choice card asks it
+  once, with the real price.
 - `data.summary` carries a sha256 digest (first 16 hex); `auth_status` is
   `missing` / `expired` / `out-of-scope` / `bound`.
 - brief text is never authorization; instruction-override patterns ->

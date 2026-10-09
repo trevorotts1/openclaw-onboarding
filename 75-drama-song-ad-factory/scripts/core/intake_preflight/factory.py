@@ -90,6 +90,20 @@ def _load(path):
         return json.load(f)
 
 
+def limit_from(doc):
+    """Dollars (str) from a brief or intake summary/envelope, or None. Minor units,
+    USD only (or no currency named); anything else is left for the client to type."""
+    if not isinstance(doc, dict):
+        return None
+    doc = ((doc.get("data") or {}).get("summary") or doc.get("summary") or doc)
+    ceil = doc.get("generation_ceiling") or {}
+    minor = doc.get("budget_minor", doc.get("budget_amount_minor", ceil.get("amount_minor")))
+    cur = str(doc.get("budget_currency") or doc.get("currency") or ceil.get("currency") or "usd").lower()
+    if not isinstance(minor, int) or isinstance(minor, bool) or minor <= 0 or cur != "usd":
+        return None
+    return "%d.%02d" % divmod(minor, 100)
+
+
 def cmd_intake(a):
     brief = _load(a.brief_file) if a.brief_file else json.loads(a.brief or "{}")
     settings = _load(a.settings_file) if a.settings_file else {}
@@ -302,6 +316,12 @@ def main(argv=None):
                    help="Client data folder; adds the saved-character question when it has saved characters (I6).")
     c.add_argument("--run-state-file", default="",
                    help="with --step and no replies: first call sends the one-time intro, next call question 1")
+    c.add_argument("--price", default=None, help="card total in dollars, shown in the spend question")
+    c.add_argument("--limit", default=None, help="spend limit in dollars; overrides the one found in the brief or summary")
+    c.add_argument("--brief", default=None, help="Brief as JSON string; its budget_minor becomes spend option 1.")
+    c.add_argument("--brief-file", default=None, help="Brief JSON file (or the planner's); same.")
+    c.add_argument("--summary-file", default=None,
+                   help="intake output (envelope or summary) JSON; its generation_ceiling becomes spend option 1.")
     c.add_argument("--step", action="store_true",
                    help="one question per message (I7): print only the next message")
     c.add_argument("--reply", action="append", default=[],
@@ -309,7 +329,6 @@ def main(argv=None):
     c.add_argument("--fit", action="store_true",
                    help="FU-U4: the fit STOP card for the client's own lines "
                         "(--brief-file, --packet-file); exit 2 when they do not fit")
-    c.add_argument("--brief-file", default=None)
     c.add_argument("--packet-file", default=None,
                    help="JSON list of client lines {id, speaker, text, scene}")
     ch = sub.add_parser("character", help="Per-client character library: ask / save / "
@@ -338,8 +357,17 @@ def main(argv=None):
             card = _card.fit_card(brief, packet)
             sys.stdout.write(card["text"] + "\n")
             return EXIT[card["outcome"]]
+        limit, from_brief = a.limit, False
+        for doc in ((_load(a.summary_file) if a.summary_file else None),
+                    (_load(a.brief_file) if a.brief_file else json.loads(a.brief) if a.brief else None)):
+            if not limit:
+                limit = limit_from(doc)
+                from_brief = bool(limit)
         return _card.main(["--format", a.format, "--target", a.target]
                           + (["--client-dir", a.client_dir] if a.client_dir else [])
+                          + (["--price", a.price] if a.price else [])
+                          + (["--limit", limit] if limit else [])
+                          + (["--limit-from-brief"] if limit and from_brief else [])
                           + (["--step"] if a.step else [])
                           + (["--run-state-file", a.run_state_file] if a.run_state_file else [])
                           + [x for r in a.reply for x in ("--reply", r)])

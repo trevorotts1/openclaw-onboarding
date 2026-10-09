@@ -18,6 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from choice_card.intake_card import intake_card as IC  # noqa: E402
 
 N = len(IC.QUESTIONS)
+#: five picks, then an explicit dollar amount for the spend question (no amount = no spend)
+OK = ["1"] * 4 + ["$25"] + ["1"] * (N - 5)
 
 
 def _transcript(replies):
@@ -26,25 +28,28 @@ def _transcript(replies):
 
 
 def test_transcript_one_question_per_turn_with_options_and_recommendation():
-    turns = _transcript(["1"] * N)
+    turns = _transcript(OK)
     for i, t in enumerate(turns[:N], 1):
         assert t.count("Question ") == 1 and t.startswith("Question %d of %d - " % (i, N)), t
         lines = t.split("\n")
         assert lines[1].endswith(".") and lines[2] == ""              # one-sentence why
         opts = [l for l in lines if re.match(r"^\d+\. ", l)]
         assert len(opts) == len(IC.QUESTIONS[i - 1]["options"])
+        if IC.QUESTIONS[i - 1]["recommended"] is None:                # unpriced spend: no recommendation
+            assert not any(IC.REC in l for l in opts) and t.endswith("like $25.")
+            continue
         assert sum(IC.REC in l for l in opts) == 1                    # one RECOMMENDED
         assert re.search(r"I recommend option \d+ \(.+\) because .+\.", t)
         assert t.endswith('say "recommended".')
 
 
 def test_recap_then_yes_finishes():
-    turns = _transcript(["1"] * N)
+    turns = _transcript(OK)
     recap = turns[N]
     assert recap.startswith("Here is what you picked:") and "Question " not in recap
     assert len([l for l in recap.split("\n") if re.match(r"^\d+\. ", l)]) == N
-    assert not IC.conversation(["1"] * N)["done"]
-    done = IC.conversation(["1"] * N + ["yes"])
+    assert not IC.conversation(OK)["done"]
+    done = IC.conversation(OK + ["yes"])
     assert done["done"] and done["message"].startswith("Locked in")
 
 
@@ -57,7 +62,7 @@ def test_recommended_bad_answer_and_spend_amount():
 
 
 def test_change_one_line_returns_to_recap():
-    base = ["1"] * N
+    base = OK
     st = IC.conversation(base + ["3"])                 # change line 3
     assert st["message"].startswith("Question 3 of")
     st = IC.conversation(base + ["3", "2"])
