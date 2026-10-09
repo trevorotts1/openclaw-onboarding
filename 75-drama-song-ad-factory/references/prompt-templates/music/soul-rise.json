@@ -1,0 +1,20 @@
+{
+  "style_id": "soul-rise",
+  "label": "Soul Rise",
+  "deliveries": [
+    "spoken",
+    "sung"
+  ],
+  "style_parts": [
+    "soul with a two-part arc, brooding 62-68 bpm opening lifting to an upbeat 100-112 bpm groove at the turn, warm piano and round bass foundation, percussion thickening as it lifts, triumphant horn stabs and claps from the turnaround, hopeful minor-to-major resolution, close dry upfront vocal, single continuous take.",
+    "{gender} lead, sung melody with long held open vowels, rising in register after the turn.",
+    "The lead SPEAKS the lines tagged Spoken in a plain natural voice over the music, and SINGS the lines tagged Sung with long held notes.",
+    "Only the short intro and the final outro are spoken; the full band keeps playing continuously under them."
+  ],
+  "ending_clause_added_by_ending_qc": ", natural resolved ending, final chord rings out and fades",
+  "negative_tags": "rap, rapping, choir, reverb, echo, band dropout, acapella sections, talk-singing, monotone delivery",
+  "rap_allowed": false,
+  "turn_rule": "A [Build (sung): melodic, rising, tempo lifting] section sits right before the Product passage (beat 7 mentor -> beat 8 product). Every hook after the Build is cued 'upbeat groove, full voice'.",
+  "skeleton_rule": "Intro (spoken) -> Vocalise -> slow verses and hooks through the pain -> Build -> Product passage at the lift -> upbeat hooks and verses -> Outro (spoken CTA) -> [End].",
+  "cue_overrides": {}
+}

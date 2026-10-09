@@ -1,0 +1,31 @@
+{
+  "shot_type": "product-book",
+  "purpose": "Product reveal or book shot (beat 8 product intro, demonstration, CTA support). Book campaigns use the U10 orientation contract and the U11 printed-page block.",
+  "camera_default": "[Static shot]; a slow [Push in] is the only allowed move",
+  "camera_allowed": [
+    "[Static shot]",
+    "[Push in]"
+  ],
+  "required_spec": [
+    "subject",
+    "composition",
+    "action.start",
+    "action.end",
+    "product_record",
+    "beats"
+  ],
+  "required_blocks_when_book": [
+    "book",
+    "pages (when the book is open)"
+  ],
+  "first_frame_rule": "The first frame is made FROM the client's cover/product file (composited or image-to-image), never a cover the model invents (U10 contract rule 7).",
+  "text_rule": "No readable title is asked of the video model; the cover lettering comes from the first frame and must stay unchanged; exact words are overlaid in post and read back by OCR (U9).",
+  "negatives": [
+    "no back cover",
+    "no blank pages",
+    "no duplicated covers or extra books",
+    "no book rotation over fifteen degrees",
+    "no invented product text"
+  ],
+  "beats_pattern": "hands enter -> contact and the one motion (open / lift / turn one page) -> settle and hold on the product"
+}

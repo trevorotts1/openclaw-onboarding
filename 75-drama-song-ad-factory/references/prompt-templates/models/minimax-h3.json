@@ -1,0 +1,188 @@
+{
+  "model_block": "minimax-h3",
+  "applies_to": [
+    "minimax-h3/image-to-video",
+    "minimax-h3/text-to-video",
+    "minimax-h3/reference-to-video"
+  ],
+  "default_for": "choice card decision 5: MiniMax H3 768P",
+  "request_shape": {
+    "duration_s": "clamp(ceil(shot_seconds + 1.0), 4, 15): one second of trim handle; catalog window 4-15 s, default 6",
+    "resolution": "768P (card default) or 2K",
+    "first_frame_url": "the approved keyframe for this shot (image-to-video). H3 takes ONE image: first_frame_url OR last_frame_url (67 catalog max_reference_images 1).",
+    "audio": "none: the clip is silent, the Suno master is the soundtrack (video_router 16.2 default)"
+  },
+  "sections": [
+    {
+      "id": "header",
+      "lead": "Shot",
+      "min": 120,
+      "max": 260,
+      "source": "spec: shot_id, shot_type, duration_s, aspect, beat, one-line intent"
+    },
+    {
+      "id": "subject",
+      "lead": "Subject and composition",
+      "min": 550,
+      "max": 1000,
+      "source": "spec.subject + spec.composition: who, where in frame, pose, setting, foreground/midground/background layers"
+    },
+    {
+      "id": "action",
+      "lead": "Action",
+      "min": 450,
+      "max": 950,
+      "source": "spec.action: ONE main action, explicit START state (= first frame), explicit END state, direction in screen terms"
+    },
+    {
+      "id": "reference",
+      "lead": "Reference frame",
+      "min": 200,
+      "max": 320,
+      "source": "fixed fragment REFERENCE_FRAME"
+    },
+    {
+      "id": "camera",
+      "lead": "Camera",
+      "min": 110,
+      "max": 500,
+      "source": "spec.camera: one bracket group (1 main move, at most 3 combined) + the same move in plain words"
+    },
+    {
+      "id": "lens_light",
+      "lead": "Lens, framing and light",
+      "min": 350,
+      "max": 800,
+      "source": "spec.lens_light: focal length, framing, focus target, key/fill/rim direction and motivation, photographic treatment"
+    },
+    {
+      "id": "continuity",
+      "lead": "Continuity and identity lock",
+      "min": 400,
+      "max": 950,
+      "source": "character DNA records (character_continuity) + wardrobe for this scene + first-frame match"
+    },
+    {
+      "id": "look",
+      "lead": "Look",
+      "min": 700,
+      "max": 1150,
+      "source": "mode block (modes/*.json h3_block) + look palette override"
+    },
+    {
+      "id": "book",
+      "lead": "Book orientation",
+      "min": 0,
+      "max": 900,
+      "source": "BOOK_CLOSED always when spec.book is set; BOOK_OPEN_MOTION added when spec.book == 'open' (U10 contract wording)",
+      "conditional": "spec.book"
+    },
+    {
+      "id": "pages",
+      "lead": "Printed pages",
+      "min": 0,
+      "max": 450,
+      "source": "fixed fragment PRINTED_PAGES when spec.pages == 'texture' (U11)",
+      "conditional": "spec.pages"
+    },
+    {
+      "id": "physics",
+      "lead": "Motion physics",
+      "min": 300,
+      "max": 700,
+      "source": "spec.motion_physics: weight, contact, cloth, hair, breath, blink cadence, object behaviour"
+    },
+    {
+      "id": "beats",
+      "lead": "Timing inside the clip",
+      "min": 300,
+      "max": 750,
+      "source": "spec.beats: 3-5 time-stamped beats that add up to duration_s"
+    },
+    {
+      "id": "policy",
+      "lead": "Sound and text",
+      "min": 200,
+      "max": 360,
+      "source": "fixed fragment SOUND_AND_TEXT"
+    },
+    {
+      "id": "negatives",
+      "lead": "Avoid",
+      "min": 220,
+      "max": 600,
+      "source": "BASE_NEGATIVES + shot_type negatives + spec.negatives_extra; at most 16 items, highest priority first"
+    }
+  ],
+  "fragments": {
+    "REFERENCE_FRAME": "Screen-left and screen-right are always from the camera's point of view: screen-left is the left edge of the frame and screen-right is the right edge. Words like her right hand or her left shoulder name the character's own body side. Toward the camera means toward the lens; away means deeper into the set.",
+    "SOUND_AND_TEXT": "The clip is silent: no dialogue, music or sound effects, because the song is added in the edit. No captions, subtitles, logos, watermarks or readable signs are generated; any surface that would carry writing shows soft, unreadable texture, because exact words are added in post-production.",
+    "PRINTED_PAGES": "Every visible page is filled with dense, realistic printed text: small black serif type in even lines and paragraph blocks, consistent margins and page numbers. There are no blank pages and no large empty white areas. The text stays upright and not mirrored, and it is unreadable at this distance.",
+    "BASE_NEGATIVES": [
+      "no scene cut, jump cut or fade inside the clip",
+      "no morphing of one face into another",
+      "no extra people beyond those named",
+      "no extra, missing or fused fingers",
+      "no warped hands or face",
+      "no flicker or strobing",
+      "no camera shake",
+      "no sudden exposure or colour shift",
+      "no mirrored or reversed objects or lettering",
+      "no text, captions or watermark"
+    ],
+    "BOOK_CLOSED": "The hardcover book shows its front cover to the camera, upright. The spine is on the left edge of the book as seen in frame and the fore-edge is on the right. The cover matches the first frame exactly: same art, same title and author lettering, reading left to right, never mirrored, and the back cover is never shown. The book never rotates more than fifteen degrees.",
+    "BOOK_OPEN_MOTION": "To open, the right edge of the front cover lifts first and the cover swings leftward around the spine, so the book opens from right to left as the viewer sees it and comes to rest open with both pages facing the camera. Page turns: one page at a time lifts from the right-hand stack, arcs leftward and settles on the left-hand stack, slowly and evenly."
+  },
+  "camera_vocabulary": {
+    "bracket_commands": [
+      "[Static shot]",
+      "[Push in]",
+      "[Pull out]",
+      "[Pan left]",
+      "[Pan right]",
+      "[Truck left]",
+      "[Truck right]",
+      "[Pedestal up]",
+      "[Pedestal down]",
+      "[Tilt up]",
+      "[Tilt down]",
+      "[Zoom in]",
+      "[Zoom out]",
+      "[Tracking shot]",
+      "[Shake]"
+    ],
+    "status": "Bracket syntax is documented for Hailuo 02/2.3 image-to-video (platform.minimax.io, file 17). For H3 it is UNVERIFIED, so every bracket is followed by the same move in plain words.",
+    "rules": [
+      "exactly one bracket group per prompt",
+      "one main move; at most 3 moves combined inside the bracket, comma separated",
+      "[Shake] is never used (it fights the identity lock and the 'no camera shake' negative)",
+      "book, product-close and text-surface shots use [Static shot] or a slow [Push in] only",
+      "the camera move is described separately from the subject's motion, with its own direction and speed"
+    ]
+  },
+  "expand_priority": [
+    "beats: split the longest beat into two, each with what visibly changes",
+    "subject: name the background layer and two set-dressing objects that belong to this location (from the location record)",
+    "physics: name the materials that move in this shot (cloth, hair, paper, liquid, steam) and how",
+    "lens_light: state the key light's source, side and colour temperature, and where the shadow falls",
+    "action: describe the body's path between start and end (weight shift, hands, gaze)",
+    "continuity: add the prop states that must persist (what is in the hands, what is on the table)"
+  ],
+  "expand_rule": "Expansion only adds NEW facts about this shot from the shot spec, the location record, the character record or the beat. It never repeats a sentence, never restates a block, never adds bare adjective lists. If the spec has no more facts and the prompt is still under the floor, the assembler refuses with H3_THIN_SPEC naming the empty slots, and the planner must supply them.",
+  "trim_priority": [
+    "beats (merge adjacent beats)",
+    "subject background detail",
+    "lens_light adjectives",
+    "physics secondary materials",
+    "look palette sentence"
+  ],
+  "never_trim": [
+    "action start and end",
+    "reference",
+    "camera",
+    "continuity identity sentence",
+    "book",
+    "pages",
+    "negatives (first 10 items)"
+  ]
+}

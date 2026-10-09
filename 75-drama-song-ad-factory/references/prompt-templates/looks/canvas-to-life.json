@@ -1,0 +1,45 @@
+{
+  "look_id": "canvas-to-life",
+  "label": "Canvas to Life",
+  "modes": [
+    "painted-2d",
+    "realism",
+    "golden-realism"
+  ],
+  "beat_mode": {
+    "comedy": "painted-2d",
+    "setup": "painted-2d",
+    "everyday": "painted-2d",
+    "doubt": "painted-2d",
+    "transition": "painted-2d",
+    "pain": "realism",
+    "shock": "realism",
+    "humiliation": "realism",
+    "numbness": "realism",
+    "anger": "realism",
+    "exhaustion": "realism",
+    "fear": "realism",
+    "turn": "realism",
+    "revelation": "realism",
+    "transformation": "golden-realism",
+    "payoff": "golden-realism"
+  },
+  "switch": {
+    "match_on": [
+      "pose",
+      "framing"
+    ],
+    "dissolve_s": [
+      0.3,
+      0.4
+    ],
+    "hold_min_s": 3.0,
+    "no_flicker": true,
+    "identity_lock": "required on every prompt"
+  },
+  "lipsync_modes": [
+    "realism"
+  ],
+  "finale": "golden-realism when the story earns it (not required; canvas_to_life_bible)",
+  "source": "style_bibles/canvas_to_life/canvas_to_life_bible.py"
+}

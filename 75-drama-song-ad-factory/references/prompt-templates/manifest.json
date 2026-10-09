@@ -1,0 +1,42 @@
+{
+  "schema_version": "blackceo.prompt-templates/v1",
+  "template_version": "0.1.0-draft",
+  "status": "DRAFT for build lanes (U15a-U15i). Not shipped. Port to references/prompt-templates/ in both repos, byte-identical.",
+  "layer_order": ["model", "look", "mode", "shot_type", "length_class", "music_style", "shot_spec"],
+  "rule": "A payload is assembled ONLY from these layers plus the per-shot facts the shot planner writes. Nothing is pasted by hand. Every assembled payload gets a prompt receipt (sha256 + template_version + section char map); kie_dispatch refuses a paid job whose prompt has no matching receipt (PROMPT_NOT_TEMPLATED).",
+  "caps": {
+    "_source_rule": "Runtime reads 67-kie-video/models.json and 68-kie-audio/models.json first; this table only fills what the catalogs lack and is the fallback. A cap marked UNVERIFIED guards at that number and prints its status in the receipt.",
+    "minimax-h3/text-to-video":      {"prompt": {"max": 7000, "status": "VERIFIED", "source": "67 catalog 2026-08-26; platform.minimax.io video-generation-v2-create (file 19)"}},
+    "minimax-h3/image-to-video":     {"prompt": {"max": 7000, "status": "VERIFIED", "source": "67 catalog 2026-08-26; file 19"}},
+    "minimax-h3/reference-to-video": {"prompt": {"max": 7000, "status": "VERIFIED", "source": "67 catalog 2026-08-26; file 19"}},
+    "kling-3.0-omni/image-to-video": {"prompt": {"max": 3072, "recommended": 2500, "status": "VERIFIED", "source": "67 catalog; file 17"}},
+    "kling-3.0-omni/text-to-video":  {"prompt": {"max": 3072, "recommended": 2500, "status": "VERIFIED", "source": "67 catalog; file 17"}},
+    "kling-3.0/video":               {"prompt": {"max": 2500, "status": "UNVERIFIED", "source": "67 catalog says NOT_PUBLISHED; guard at the Kling 2,500 general limit (file 17 update notice)"}},
+    "kling/v2-5-turbo-image-to-video-pro": {"prompt": {"max": 2500, "status": "VERIFIED", "source": "67 catalog"}},
+    "kling/ai-avatar-standard":      {"prompt": {"max": 2500, "status": "UNVERIFIED", "source": "Kling Avatar API guidance (file 17); KIE wrapper publishes no figure; not in the 67 catalog", "floor": null, "field_kind": "ceiling_only_short"}},
+    "suno-generate:V6": {
+      "lyrics":       {"max": 5000, "status": "VERIFIED", "source": "68 catalog lyrics_max_chars; file 17", "field_kind": "verbatim"},
+      "style":        {"max": 1000, "status": "VERIFIED", "source": "68 catalog custom_style_max_chars.V6; file 17", "field_kind": "ceiling_only", "measured_after": "ending_qc.with_clean_ending()"},
+      "title":        {"max": 80,   "status": "VERIFIED", "source": "68 catalog title_max_chars (generate)", "field_kind": "ceiling_only"},
+      "negative_tags":{"max": 1000, "status": "UNVERIFIED", "source": "file 17 citing docs.kie.ai generate-music; not in the 68 catalog for generate", "field_kind": "ceiling_only"}
+    },
+    "suno-extend:V6": {
+      "prompt": {"max": 5000, "status": "VERIFIED", "source": "68 catalog suno-extend prompt_max_chars", "field_kind": "verbatim"},
+      "title":  {"max": 100,  "status": "VERIFIED", "source": "68 catalog suno-extend title_max_chars.V6"}
+    }
+  },
+  "bands": {
+    "minimax-h3/*": {"floor": 5000, "target_min": 5000, "target_max": 6800, "hard_max": 7000, "owner": "Trevor 2026-10-08", "below_floor": "FLAG_AND_EXPAND", "above_target": "TRIM", "above_hard_max": "REFUSE"},
+    "kling-3.0-omni/*": {"floor": 1800, "target_min": 1800, "target_max": 2500, "hard_max": 3072, "owner": "design default from Kling's 2,500 recommendation (file 17); Trevor may change", "below_floor": "FLAG_AND_EXPAND", "above_target": "TRIM", "above_hard_max": "REFUSE"},
+    "kling-3.0/video": {"floor": 1800, "target_min": 1800, "target_max": 2400, "hard_max": 2500, "owner": "design default", "below_floor": "FLAG_AND_EXPAND", "above_target": "TRIM", "above_hard_max": "REFUSE"},
+    "kling/v2-5-turbo-image-to-video-pro": {"floor": 1800, "target_min": 1800, "target_max": 2400, "hard_max": 2500, "owner": "design default"},
+    "kling/ai-avatar-standard": {"floor": null, "target_max": 400, "hard_max": 2500, "sentences": [1, 3], "owner": "file 17 (1-3 sentences) + lip_gate.kling_prompt", "above_target": "REFUSE"},
+    "suno-generate:V6/style": {"floor": null, "target_max": 700, "hard_max": 1000, "note": "ceiling only: file 09 says the best take used a 286-character style; never pad the style"}
+  },
+  "quality_rules": {
+    "max_duplicate_sentence_chars": 40,
+    "max_repeated_8gram_ratio": 0.04,
+    "banned_phrases_any_model": ["Restated for emphasis", "[compiled:", "[STYLE]", "[/STYLE]", "[SHOT:", "[MOTION]"],
+    "h3_bracket_rule": "Square brackets are reserved for camera commands in H3 prompts. Exactly one bracket group, 1-3 moves inside it. Section lead-ins are plain words with a colon."
+  }
+}
