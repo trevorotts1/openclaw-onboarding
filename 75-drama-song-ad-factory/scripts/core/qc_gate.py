@@ -14,6 +14,10 @@ Decides whether a stage may advance on its QC verdict records. Fail-closed:
 - a PASS record asserting a sung/first-sung share names the G3 detector
   (SUNG_CLAIM_UNMEASURED otherwise): sung shares are measured by
   core/singing_detector, never computed from section labels.
+- a PASS record for the no_blur_fill check never asserts a blur fill
+  (FILL_CLAIM_MEASURED otherwise): full height comes from crop-in of the
+  source frame only, never from a blurred, letterboxed or stretched fill
+  (DEL-14; the claim is evidence text, see fill_claim).
 
 Stateless: keeps no DB, sets no stage state. Repair budgets live in
 spend_ledger; the gate only names the failed checks (targeted repair, 17.7:
@@ -73,6 +77,11 @@ CHECKS = frozenset({
     # DEL-05: the delivery folder ships the video twice (captioned + clean);
     # every delivered video has to clear delivery_audio before it is listed.
     "video_delivery",
+
+    # DEL-14: the no-blur-fill check carries the render-path record. Its
+    # PASS must come from a crop-in render attempt, never from a fill; see
+    # fill_claim.
+    "no_blur_fill",
 })
 # 17.8 critical categories (identity, lyrics, offer, claim, product_label,
 # CTA) ride on these checks: lyrics carries the critical-word coverage,
@@ -146,6 +155,45 @@ def sung_claim_measured(summary):
         return False
     flat = "".join(ch for ch in summary.lower() if ch.isalnum())
     return "singingdetector" in flat
+
+
+# DEL-14 (Trevor order 2026-10-09): blur fill is never used. Full height is
+# reached by crop-in of the source frame only. This gate cannot render or
+# inspect pixels (stdlib only), so it refuses the CLAIM in evidence text the
+# same way G3 refuses an unmeasured sung claim: a PASS record for the
+# no_blur_fill check whose evidence names a blur fill can never pass.
+# ponytail: negation-aware string matching on evidence.summary (qc-schema
+# v1.0.0 evidence allows summary+refs only); move to a schema evidence key
+# (e.g. fill_method) when qc-schema names one.
+FILL_CLAIM_DETECTOR = "fill_claim"
+_FILL_TOKEN = (
+    r"(?:blur[-_\s]?fill|blurfill"
+    r"|blur(?:red)?\s+(?:fill|backdrop|background|mask|strip|edge|band)"
+    r"|fill(?:ed)?\s+with\s+a\s+blur|gaussian[-_\s]?fill"
+    r"|gblur|boxblur|avgblur|smartblur|alphamerge)")
+#: a negator up to 40 chars ahead of the token (and coordinated tokens after
+#: it: "never a blur fill or blurred mask") documents the refusal, it is not
+#: a fill claim. The span stops at sentence punctuation so "no letterbox;
+#: gblur sigma=30" still claims.
+_FILL_NEGATED = re.compile(
+    r"\b(?:no|not|never|without|zero|free\s+of|absent|lacks?"
+    r"|avoid(?:s|ed)?)\b[^.!?\n;]{0,40}?"
+    r"(?:\s+(?:or\s+|and\s+|nor\s+)?" + _FILL_TOKEN + r")+",
+    re.I)
+#: the same refusal spelled the other way round: "blur fill is never used".
+_FILL_REPEALED = re.compile(
+    _FILL_TOKEN + r"[^.!?\n;]{0,24}\s+(?:is\s+|are\s+|was\s+|were\s+|be\s+)?"
+    r"(?:never|not|no\b|none\b|without|absent)", re.I)
+_FILL_CLAIM = re.compile(_FILL_TOKEN, re.I)
+
+
+def fill_claim(summary):
+    """True when evidence text asserts a blur fill / blurred mask backdrop."""
+    if not isinstance(summary, str):
+        return False
+    text = _FILL_NEGATED.sub(" ", summary)
+    text = _FILL_REPEALED.sub(" ", text)
+    return bool(_FILL_CLAIM.search(text))
 
 
 # U15h (design 8.9): at final QC every paid prompt in the spend ledger must
@@ -369,6 +417,15 @@ def evaluate(run_id, stage, records, makers, required,
             fail(rec["check_id"], "SUNG_CLAIM_UNMEASURED",
                  "sung claim carries no singing_detector provenance: %s"
                  % rec["evidence"]["summary"][:160])
+        # DEL-14: the no_blur_fill record's PASS must never assert a blur
+        # fill; the summary carries the render attempt's method, so a blur
+        # fill claim on a PASS is a contradiction the gate refuses outright.
+        if rec["verdict"] == "PASS" \
+                and rec["check"] == "no_blur_fill" \
+                and fill_claim(rec["evidence"]["summary"]):
+            fail(rec["check_id"], "FILL_CLAIM_MEASURED",
+                 "no_blur_fill PASS asserts a blur fill; full height is "
+                 "crop-in only: %s" % rec["evidence"]["summary"][:160])
         by_check.setdefault(rec["check"], []).append(rec)
 
     for check in required:
@@ -398,6 +455,9 @@ def evaluate(run_id, stage, records, makers, required,
                 "failures": [], "repair_scope": [],
                 "critical_failures": []}
     codes = {f["code"] for f in failures}
+    # FILL_CLAIM_MEASURED (DEL-14) joins SUNG_CLAIM_UNMEASURED as structural:
+    # the same record can never pass, so repair means a new crop-in render,
+    # not a re-aggregation of this one.
     structural = codes - {"CHECK_FAIL", "MASTER_TOO_LONG"}
     gate = "BLOCKED" if structural else "FAIL"
     # repair_scope names records to repair (17.7 targeted repair); bare
