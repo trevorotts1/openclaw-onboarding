@@ -77,12 +77,12 @@ def _musics():
 
 def _questions():
     return [
-        {"id": "length", "why": "Length decides the story size and the price.", "reason": "the standard length for ads, and it fits stories, reels and ads.", "label": "LENGTH", "ask": "How long should the ad be?",
+        {"id": "length", "why": "Length decides the story size and the price.", "reason": "the standard length for ads, and it fits stories, reels and ads.", "label": "LENGTH", "ask": "How long do you want your ad to be? The longer ads also come with short clips you can post on social media.",
          "options": [("60 seconds", "The standard ad length."),
                      ("90 seconds", "Room for a fuller story."),
-                     ("3 minutes", "A short film."),
-                     ("5 minutes", "A long story, with automatic 60 and 90 second clips."),
-                     ("10-minute long version", "The full-length cut, with automatic clips.")],
+                     ("3 minutes + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."),
+                     ("5 minutes + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip."),
+                     ("10 minutes (the long version) + 60s and 90s clips", "Plus a 60-second clip and a 90-second clip.")],
          "recommended": 0},
         {"id": "music", "why": "The song carries the feeling of the whole ad.", "reason": "it is the style that tests best for emotional stories.", "label": "MUSIC STYLE", "ask": "What should the song sound like?",
          "options": _musics(), "recommended": 0},

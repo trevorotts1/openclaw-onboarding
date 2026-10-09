@@ -59,9 +59,9 @@ def test_no_markup_that_a_sender_could_strip():
 def test_messages_under_limit_and_split_between_questions():
     one = IC.render_messages()
     assert len(one) == 1 and one[0] == CARD
-    small = IC.render_messages(limit=400)
+    small = IC.render_messages(limit=500)
     assert len(small) > 1
-    assert all(len(m) <= 400 for m in small)
+    assert all(len(m) <= 500 for m in small)
     assert "\n\n".join(small) == CARD         # only blank-line seams were cut
     for m in small:                       # never starts a message mid-question
         assert m.startswith("Question") or m == IC.CLOSING_LINE
@@ -72,7 +72,7 @@ def test_messages_under_limit_and_split_between_questions():
 
 
 def test_telegram_payload_keeps_newlines():
-    for m in IC.render_messages(limit=400):
+    for m in IC.render_messages(limit=500):
         body = json.loads(json.dumps(IC.telegram_payload("123", m)))
         assert body["text"] == m and body["text"].count("\n") == m.count("\n")
         assert "parse_mode" not in body and len(body["text"]) <= 4096
