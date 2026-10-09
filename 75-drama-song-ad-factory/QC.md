@@ -21,6 +21,39 @@ Check on every run:
 - The rise is earned: pain gets real screen time, the turn names the product
   as the key, the rise is never rushed.
 
+## Prompt templates, bands and the prompt_compliance gate (U15i)
+
+The docs and the code must agree on what a paid prompt is. This section is the
+QC side of the template system (design file 20, section 8); the data and the
+assembler are in `references/prompt-templates/` and
+`scripts/core/prompt_templates/prompt_templates.py`.
+
+- **MiniMax H3 band (Trevor, 2026-10-08): 5,000-6,800 characters**, hard max
+  7,000. Under 5,000 = FLAG `H3_BELOW_FLOOR` then expand from the spec's own
+  facts (never padding), and `H3_THIN_SPEC` when the spec has no facts left;
+  over 6,800 = TRIM in the documented priority order; over 7,000 = REFUSE
+  `H3_OVER_HARD_MAX` before any spend. `prompt_templates.check()` returns the
+  band verdict; nothing is ever truncated.
+- **Prompt receipt.** Every assembled payload returns a receipt
+  (`prompt_sha256`, the template version, the per-section character map, the
+  band verdict and the caps with their status). A paid job whose prompt hash
+  has no matching receipt, or whose receipt says REFUSE or TRIM, is refused
+  `PROMPT_NOT_TEMPLATED` by `kie_dispatch` before the ledger. This is the same
+  pattern as `LIPSYNC_PICTURE_NOT_GATED`.
+- **`prompt_compliance` is REQUIRED at final QC.** `qc_gate` builds one row per
+  paid ledger job matched to its receipt (`prompt_compliance_rows` /
+  `prompt_compliance_record`) and the final gate refuses a stage when the
+  record is missing: a paid prompt with no receipt never passes.
+- **One length table.** `references/prompt-templates/length-classes.json` is
+  the only table; `prompt_templates.length_class(L)` raises
+  `PROMPT_LENGTH_CLASS_DRIFT` naming each drifted field, so a stale table can
+  never be read silently. The card's 3.1 list equals that table's keys.
+- **No padding, by checker.** No repeated sentence of 40 characters or more,
+  at most 4% repeated 8-word runs, and none of the banned phrases
+  (`Restated for emphasis`, in-prompt `[compiled:`, `[STYLE]`, `[/STYLE]`,
+  `[SHOT:`, `[MOTION]`). Square brackets are reserved for the camera command:
+  exactly one bracket group, 1-3 moves.
+
 ## 1. Purpose
 Enables the agent to produce a complete drama-song ad (twelve-stage sung
 direct-response story -> storyboard -> clip generation -> assembly ->
