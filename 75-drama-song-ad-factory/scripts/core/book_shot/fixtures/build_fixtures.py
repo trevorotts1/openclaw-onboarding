@@ -74,6 +74,34 @@ def leaf_frames(cv2, np, direction="left", count=8, w=FRAME_W, h=FRAME_H):
         frames.append(f)
     return frames
 
+def open_book_frames(cv2, np, printed=True, count=6, w=FRAME_W, h=FRAME_H):
+    """FU-U11 page fixtures: an OPEN book, printed pages or blank pages.
+
+    printed=True   two page regions filled with dense printed text lines
+    printed=False  the same two regions blank white (the FAIL control)
+
+    Same geometry in both (gutter, page edges, shading), so the ONLY thing
+    that differs between the pair is ink: a page check that cannot sort these
+    two is broken, and calibrate_pages() refuses on that evidence.
+    """
+    frames = []
+    for i in range(count):
+        f = np.full((h, w, 3), 235, np.uint8)
+        cv2.rectangle(f, (30, 40), (w - 30, h - 40), (250, 250, 250), -1)
+        f[:, int(w * 0.5) - 1:int(w * 0.5) + 1] = (150, 150, 150)   # gutter
+        for x0, y0, x1, y1 in ((0.10, 0.25, 0.47, 0.75), (0.53, 0.25, 0.90, 0.75)):
+            px0, py0 = int(x0 * w), int(y0 * h)
+            px1, py1 = int(x1 * w), int(y1 * h)
+            if printed:
+                rows = 9
+                for r in range(rows):
+                    y = py0 + int((py1 - py0) * (r + 0.5) / rows)
+                    span = (px1 - px0) - (2 * (12 if r == rows - 1 else 0))
+                    cv2.rectangle(f, (px0, y), (px0 + span, y + 3),
+                                  (25, 25, 25), -1)
+        frames.append(f)
+    return frames
+
 def write_pngs(tmpdir, cv2, images):
     out = {}
     for name, img in images.items():
