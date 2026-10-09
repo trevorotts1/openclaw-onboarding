@@ -59,6 +59,13 @@ the client sees the story's villain before approving: the villain may be a
 person or not a person, and the count is the villain's OWN shots. Source:
 FU-U16 story doctrine, Trevor order 2026-10-08.
 
+**Book shots block (FU-U11, open branch `unit/FU-U11`; refresh when it lands).**
+For a book campaign both card faces append, under the Price row, a Book shots
+approval block: a plain contract line, the exact prompts with character counts,
+the page mode, the camera, the checks and the two-attempt cap. It holds
+approvals and notices only; it never adds a choice, and a paid book video job
+runs only against the plan hash the client approved.
+
 Directive 24.3 note (owner order 2026-10-08): the card is one step with
 four picks, so the three-question cap applies to the story questions only.
 
@@ -106,6 +113,19 @@ write them free hand and never carry them as one JSON string.
   `--format telegram-json` body is the exact Bot API `sendMessage` payload.
 - The intake `question_message` uses the same layout (`format_questions`).
 
+## 2.3 Options on the card come from the registry (fit card)
+
+Every option the card shows is read from code, never typed into the card:
+lengths from `music_styles.OFFERED_LENGTHS_S`, music styles from
+`music_styles` style ids, voices from the voice registry, video models from
+Skill 74. NOT built on main (FU-U4, no branch yet): the **fit card**, which
+would show, per music style, whether the client's lyrics fit the chosen length
+(one row per style with the numbers) and would list the notices (sound
+effects, echo voice, length not offered, frame rate). Until it lands, the fit
+check runs inside `words_fit.preflight_sheet` and `suno_recipe.check_lyric_sheet`
+and refuses with a plain reason; the card does not preview it. Do not describe
+a fit card to a client.
+
 ## 3. Field rules
 
 ### 3.1 Length
@@ -124,6 +144,10 @@ shot planner (`shot_planner.class_check`), the lip-sync budget
 `prompt_templates.length_class(L)` raises `PROMPT_LENGTH_CLASS_DRIFT` naming
 each drifted field rather than let a stale number be read. The card shows the
 six values above, in that order and no others.
+
+Offered lengths (seconds): 60, 90, 120, 180, 300, 600. A test
+(`scripts/core/prompt_templates/test_docs_u12.py`) fails if this line differs
+from `music_styles.OFFERED_LENGTHS_S`.
 
 Each length is its own song and timing map, never a cut-down of a longer one.
 Shot count is computed from the chosen model's maximum shot length; it is
@@ -287,7 +311,13 @@ and retakes reuse them.
   the author, the cover image (used as the product image), the buy link, who
   the book is for, and the pain or transformation it delivers - still inside
   the three-question cap. The mentor/turning point of the story is the book;
-  the call to action is to get the book.
+  the call to action is to get the book. Intake also records the book's
+  `language` (default `en`, left-to-right; folded into the offer sentence) and
+  measures the cover's aspect from the file; it never invents one.
+  A book clip is accepted only with a PASS `book_orientation` record (cover is
+  the front, not mirrored, page turn in the right direction), and book shots
+  carry no camera move. See SKILL.md "Book campaigns". The Book shots approval
+  block on the card is the FU-U11 open branch.
 
 ### 3.10 Batch mode
 
