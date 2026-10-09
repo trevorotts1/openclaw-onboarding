@@ -13,7 +13,10 @@ try:                                   # pytest imports the lip_gate PACKAGE fir
     from lip_gate import lip_gate as L                # noqa: E402
 except ImportError:                    # while a script run gets the module file
     import lip_gate as L                              # noqa: E402
-import catalog_calculator as C                        # noqa: E402
+try:                                   # pytest imports the catalog_calculator PACKAGE,
+    from catalog_calculator import catalog_calculator as C  # noqa: E402
+except ImportError:                    # script run gets the module file
+    import catalog_calculator as C                        # noqa: E402
 
 # 1. the plan carries one lip-sync close-up per character
 plan = C.image_plan(4, ("9:16",), ["Ana", "Ben"], "m")
