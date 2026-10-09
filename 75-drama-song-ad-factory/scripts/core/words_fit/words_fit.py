@@ -299,45 +299,20 @@ def preflight(chosen_length_s, sung_words, spoken_words, rap_words=0.0,
 def parse_sheet_words(sheet_text):
     """Count lyric words per delivery from a tagged Suno sheet.
 
-    Recognises ``[Sung ...]``, ``[Spoken ...]``, ``[Rap ...]`` tags (G2
-    grammar, delivery named in every tag). Bare ``[Verse]``/``[Chorus]``
-    words count as sung (the sheet's intent when tags are incomplete);
-    ``[Instrumental]`` and non-lyric lines (blank) contribute nothing.
-    Returns (sung, spoken, rap) integer word counts.
+    FU-U1: THE grammar lives in suno_recipe.parse_lyrics/parse_tag; this is a
+    thin delegate so the words-fit gate and the recipe gate measure the SAME
+    sheet. Both bracket dialects parse ([Name (sung|spoken|rap): note] and the
+    G2 [Sung|Spoken|Rap - ...] form). ``[Instrumental]`` contributes nothing.
+    A lyric line under a tag that names no delivery raises RecipeError
+    (UNTAGGED_LYRIC_LINES) -- it is never dropped quietly. Returns
+    (sung, spoken, rap) integer word counts.
     """
     if not isinstance(sheet_text, str) or not sheet_text.strip():
         raise WordsFitError("BAD_INPUT", "sheet_text must be a non-empty string")
-    sung = spoken = rap = 0
-    current = "sung"          # default for untagged / bare section tags
-    for raw in sheet_text.splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        if line.startswith("[") and line.endswith("]"):
-            body = line[1:-1].strip().lower()
-            if body.startswith("instrumental") or body.startswith("break"):
-                current = None
-                continue
-            if body.startswith("spoken"):
-                current = "spoken"
-            elif body.startswith("rap"):
-                current = "rap"
-            elif body.startswith("sung") or body.startswith("verse") \
-                    or body.startswith("chorus") or body.startswith("hook") \
-                    or body.startswith("bridge"):
-                current = "sung"
-            # unknown tag: keep previous delivery
-            continue
-        if current is None:
-            continue
-        n = len(line.split())
-        if current == "sung":
-            sung += n
-        elif current == "spoken":
-            spoken += n
-        else:
-            rap += n
-    return sung, spoken, rap
+    from suno_recipe.suno_recipe import parse_lyrics, sheet_words
+    sheet = parse_lyrics(sheet_text)
+    return (sheet_words(sheet, "sung"), sheet_words(sheet, "spoken"),
+            sheet_words(sheet, "rap"))
 
 
 def preflight_sheet(chosen_length_s, sheet_text, sung_target_pct=None,
