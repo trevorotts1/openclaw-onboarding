@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import ending_qc
 import music_qc
+import prompt_limits
 import suno_recipe
 import spend_ledger as L
 import protected_names
@@ -166,6 +167,11 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
         req["input"]["duration"] = duration
     elif fit is not None:  # G9: plan + >=15% Suno headroom when length was carded
         req["input"]["duration"] = words_fit.max_suno_duration(fit["plan_s"])
+    # FU-U6 (plan E.2): the FINAL payload, measured after every mutation
+    # (with_clean_ending appends the ending to the style ABOVE). Over a cap,
+    # prompt_limits raises PROMPT_OVER_CAP naming field, chars, cap, source and
+    # status; nothing is ever truncated.
+    prompt_limits.check_request(GENERATE_CATALOG_ID, req)
     return req
 
 
