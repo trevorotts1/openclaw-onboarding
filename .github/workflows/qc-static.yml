@@ -70,12 +70,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          fail=0
-          for f in $(find shared-utils 22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint -type f -name '*.py'); do
-            python3 -c "import ast; ast.parse(open('$f').read())" || { echo "  ✗ syntax: $f"; fail=1; }
-          done
-          [ $fail -eq 0 ] && echo "✓ Python syntax OK across all skill scripts"
-          exit $fail
+          # One interpreter parses every file (was one python3 process per file,
+          # ~730 processes); same ast.parse(open(f).read()) check, every failure listed.
+          find shared-utils 22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint \
+              -type f -name '*.py' -print0 | python3 -c '
+          import ast, sys
+          files = [f for f in sys.stdin.buffer.read().decode().split("\0") if f]
+          bad = 0
+          for f in files:
+              try:
+                  ast.parse(open(f).read())
+              except Exception as e:
+                  print("  ✗ syntax: %s (%s)" % (f, e)); bad = 1
+          if not bad:
+              print("✓ Python syntax OK across all skill scripts (%d files)" % len(files))
+          sys.exit(bad)'
 
       - name: DEFAULT_WEIGHTS sums to 1.0
         shell: python {0}
@@ -211,24 +220,6 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-playbook-doc.test.sh
           echo "✓ qc-playbook-doc per-playbook human-facing doc gate fixtures pass"
 
-      - name: Skill 38 client reference sheet copy-paste artifacts
-        shell: bash
-        run: |
-          set -uo pipefail
-          # Machine-enforce that the generated CLIENT REFERENCE SHEET always
-          # carries the two copy-paste artifacts a client cannot proceed without:
-          # the Authorization Bearer token and the GHL Custom Webhook RAW BODY as a
-          # real ```json fenced code block (plus the hook URL). On a live client
-          # (Teresa) the generated sheet had NO bearer token and NO copyable JSON —
-          # nothing to paste into GHL's Build-with-AI — which stranded the client.
-          # qc-reference-sheet.sh drives 21-generate-client-reference-sheet.sh in a
-          # sandbox (no openclaw on PATH → offline Layer-3 markdown) and FAILS if the
-          # rendered sheet lacks "Bearer", a ```json fence, or the hook URL, so a
-          # template/script regression that drops them fails the build. BASH (with an
-          # inline grep core), so it respects the .py claude-/anthropic ban.
-          bash 38-conversational-ai-system/scripts/qc-reference-sheet.sh
-          echo "✓ Skill 38 client reference sheet carries the bearer token + copyable GHL Raw Body JSON + hook URL"
-
       - name: Skill 38 reference sheet is bulletproof (Quick Start + tag-first + post-build verify)
         shell: bash
         run: |
@@ -254,6 +245,9 @@ jobs:
           # MUST paste the values and create the tags by hand. This drives the
           # generator offline (Layer-3 markdown) and FAILs if any of the above is
           # missing. BASH (grep/awk core) — respects the .py claude-/anthropic ban.
+          # --require-manual-fill only ADDS markers on top of the base set (Bearer,
+          # ```json fence, hook URL), so this one run also covers the former
+          # "client reference sheet copy-paste artifacts" step.
           bash 38-conversational-ai-system/scripts/qc-reference-sheet.sh --require-manual-fill
           echo "✓ Skill 38 reference sheet is bulletproof: 🚀 Quick Start + explanation, separate Authorization key/value blocks, tag-first, manual-fill, post-build verification"
 
@@ -1236,17 +1230,6 @@ jobs:
           bash scripts/test-workspace-departments-built.sh
           echo "✓ AF-WORKSPACE-SHELL gate: shell/partial/template FAIL, full PASS"
 
-      - name: AF-WORKSPACE-SHELL — overall onboarding gate blocks on a shell workspace
-        shell: bash
-        run: |
-          set -uo pipefail
-          # Lockstep guard: lib-onboarding-state.sh oc_overall_goal_check MUST
-          # refuse to report "done" when the workspace departments are shells,
-          # even with a hand-seeded buildCompletedAt + closeoutStatus=done. The
-          # watchdog test exercises exactly this (T8 full-passes, T8b shell-blocks).
-          bash scripts/test-watchdog-loop.sh
-          echo "✓ overall onboarding gate requires a materialized workspace (T8b)"
-
       - name: Skill 23 PRD-2.15 interview experience (T1-T13 fixture tests)
         shell: bash
         run: |
@@ -1801,15 +1784,8 @@ jobs:
           done
           echo "✓ All PRD 1.11 artefacts present"
 
-          # 2. Python files parse without error
-          for f in \
-            shared-utils/fleet_refresh_runner.py \
-            shared-utils/cc_compat.py \
-            shared-utils/resolve_injected_core_files.py; do
-            python3 -c "import ast; ast.parse(open('$f').read())" \
-              || { echo "✗ $f has syntax errors"; exit 1; }
-          done
-          echo "✓ PRD 1.11 Python files syntax OK"
+          # 2. Python syntax of the shared-utils/*.py artefacts is covered by the
+          #    "Python syntax (shared-utils + Skill 22/23 scripts)" step.
 
           # 3. Bash scripts syntax check
           bash -n scripts/fleet-refresh.sh \
@@ -1818,17 +1794,9 @@ jobs:
             || { echo "✗ test-fleet-refresh.sh has bash syntax errors"; exit 1; }
           echo "✓ PRD 1.11 bash scripts syntax OK"
 
-          # 4. cc-compat.json is valid JSON, satisfies schema, and onboardingVersion == /version
-          python3 shared-utils/cc_compat.py --self-test cc-compat.json \
-            || { echo "✗ cc-compat.json validation failed"; exit 1; }
-          REPO_VER=$(head -1 version | tr -d '[:space:]')
-          CC_VER=$(python3 -c "import json; print(json.load(open('cc-compat.json'))['onboardingVersion'])")
-          if [ "$CC_VER" != "$REPO_VER" ]; then
-            echo "✗ cc-compat.json onboardingVersion ($CC_VER) != /version ($REPO_VER)"
-            echo "Fix: update cc-compat.json onboardingVersion when bumping the repo version."
-            exit 1
-          fi
-          echo "✓ cc-compat.json schema valid; onboardingVersion=$CC_VER matches /version"
+          # 4. cc-compat.json --self-test + onboardingVersion == /version is enforced by
+          #    the required "Verify all version markers agree" job (version-consistency.yml,
+          #    same push/pull_request events).
 
           echo "✓ PRD 1.11 fleet-refresh artefacts pass all checks"
 
@@ -2244,8 +2212,10 @@ jobs:
         run: |
           set -uo pipefail
           chmod +x scripts/watchdog-onboarding-loop.sh scripts/loop-registry.sh scripts/test-watchdog-loop.sh
+          # Also the AF-WORKSPACE-SHELL lockstep guard: T8 full-passes and T8b
+          # proves oc_overall_goal_check refuses "done" on a shell workspace.
           bash scripts/test-watchdog-loop.sh
-          echo "✓ PRD-2.13 watchdog loop fixture tests all pass"
+          echo "✓ PRD-2.13 watchdog loop fixture tests all pass (incl. AF-WORKSPACE-SHELL T8/T8b)"
 
       - name: "PRD-2.13: lib-onboarding-state.sh bash syntax (watchdog + loop-registry)"
         shell: bash
@@ -2652,17 +2622,17 @@ jobs:
           # indentation issues in YAML" pitfall this file used to warn about
           # elsewhere, and it is not worth re-fighting per-runner quoting/embedding
           # fragility for.
-          while IFS= read -r f; do
+          # Same per-file call and rc mapping, run across all cores (~1,240 files).
+          git ls-files -z -- '*.json' | xargs -0 -r -n 1 -P "$(nproc)" bash -c '
             rc=0
-            python3 scripts/qc-check-whatsapp-json.py "$f" 2>/dev/null || rc=$?
+            python3 scripts/qc-check-whatsapp-json.py "$1" 2>/dev/null || rc=$?
             if [ "$rc" -eq 1 ]; then
-              echo "✗ $f: plugins.entries.whatsapp.enabled is true (fleet ban violation)"
-              fail=1
+              echo "✗ $1: plugins.entries.whatsapp.enabled is true (fleet ban violation)"
+              exit 1
             elif [ "$rc" -ne 0 ]; then
-              echo "✗ $f: unreadable or malformed non-empty JSON — failing closed (cannot verify fleet ban compliance)"
-              fail=1
-            fi
-          done < <(git ls-files -- '*.json' 2>/dev/null || find . -not -path './.git/*' -name '*.json')
+              echo "✗ $1: unreadable or malformed non-empty JSON — failing closed (cannot verify fleet ban compliance)"
+              exit 1
+            fi' _ || fail=1
 
           # 2. .env files: no uncommented WHATSAPP_NUMBER=
           while IFS= read -r f; do
@@ -3021,23 +2991,48 @@ jobs:
           # without edits).
           # numpy so the singing-detector suite really runs (it skips itself without it)
           python3 -m pip install --quiet numpy opencv-python-headless
-          # ffmpeg so the singing-detector suites can decode their mp3 fixtures
-          command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; }
-          # tesseract so the book-orientation suite (FU-U10) can read the cover title
-          command -v tesseract >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr; }
-          tests_rc=0
-          empty_home=""
-          while IFS= read -r t; do
+          # ffmpeg so the singing-detector suites can decode their mp3 fixtures;
+          # tesseract so the book-orientation suite (FU-U10) can read the cover title.
+          # One apt-get update for both.
+          pkgs=""
+          command -v ffmpeg >/dev/null || pkgs="$pkgs ffmpeg"
+          command -v tesseract >/dev/null || pkgs="$pkgs tesseract-ocr"
+          [ -z "$pkgs" ] || { sudo apt-get update -qq && sudo apt-get install -y -qq $pkgs; }
+          # Each file still runs alone: its own python3 process, its own fresh
+          # empty HOME, stdin </dev/null. Files run in parallel across the
+          # runner's cores; each file's output is buffered to its own log and
+          # printed in sorted order, so the log reads exactly like a serial run.
+          mapfile -t tests < <(find 75-drama-song-ad-factory/scripts/core -type f -name 'test_*.py' -not -path '*/__pycache__/*' | sort)
+          [ "${#tests[@]}" -gt 0 ] || { echo "✗ no skill 75 test files found"; exit 1; }
+          logs="$(mktemp -d)"
+          export logs
+          printf '%s\0' "${tests[@]}" | xargs -0 -n 1 -P "$(nproc)" bash -c '
+            t="$1"; key="$(printf %s "$t" | tr / _)"
             empty_home="$(mktemp -d)"
             if [ -n "$(find "$empty_home" -mindepth 1 | head -1)" ]; then
-              echo "mktemp -d returned a non-empty home: $empty_home"; exit 1
+              echo "mktemp -d returned a non-empty home: $empty_home" >"$logs/$key.out"
+              echo 1 >"$logs/$key.rc"; exit 1
             fi
-            if ! (HOME="$empty_home" python3 "$t" </dev/null); then
-              echo "✗ empty-home FAIL: $t"; tests_rc=1
-            fi
+            rc=0
+            HOME="$empty_home" python3 "$t" </dev/null >"$logs/$key.out" 2>&1 || rc=$?
+            echo "$rc" >"$logs/$key.rc"
             rmdir --ignore-fail-on-non-empty -p "$empty_home" 2>/dev/null || true
-          done < <(find 75-drama-song-ad-factory/scripts/core -type f -name 'test_*.py' -not -path '*/__pycache__/*' | sort)
-          [ "$tests_rc" -eq 0 ] || exit 1
+            exit 0' _ || true   # a file with no recorded exit code is counted as failed below
+          failed=()
+          for t in "${tests[@]}"; do
+            key="$(printf %s "$t" | tr / _)"
+            echo "── $t"
+            cat "$logs/$key.out" 2>/dev/null || true
+            rc="$(cat "$logs/$key.rc" 2>/dev/null || echo missing)"
+            if [ "$rc" != 0 ]; then
+              echo "✗ empty-home FAIL: $t (exit $rc)"; failed+=("$t")
+            fi
+          done
+          echo "Skill 75 empty-home: ${#tests[@]} files, $(( ${#tests[@]} - ${#failed[@]} )) passed, ${#failed[@]} failed"
+          if [ "${#failed[@]}" -gt 0 ]; then
+            printf '✗ empty-home FAIL: %s\n' "${failed[@]}"
+            exit 1
+          fi
           echo "✓ Skill 75 scripts/core test suites pass with a fresh empty HOME"
 
       # Unit TESTHYG-75: the per-file loop above cannot see a suite that dies
