@@ -8,7 +8,10 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "extensions"))
-import catalog_calculator as C                       # noqa: E402
+try:                                   # pytest imports the catalog_calculator PACKAGE,
+    from catalog_calculator import catalog_calculator as C   # noqa: E402
+except ImportError:                    # script run gets the module file
+    import catalog_calculator as C                       # noqa: E402
 import _fixtures as F                                # noqa: E402
 
 SUN = "gpt-image-2-5-sunburst"
