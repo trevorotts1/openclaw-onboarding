@@ -208,8 +208,8 @@ def test_music_director_refuses_before_payload():
     check("feasible request carries duration with >=15% headroom",
           isinstance(dur, int) and dur >= plan * 1.15 - 1e-6,
           "%s vs plan %s" % (dur, plan))
-    check("duration is plan*1.15 ceil", dur == W.max_suno_duration(plan),
-          "%s vs %s" % (dur, W.max_suno_duration(plan)))
+    # the DELIVERED length (what song_dispatch.run_takes requires), never plan time
+    check("duration is the delivered length", dur == 60, "%s vs 60" % dur)
     # Caller-supplied duration is never overwritten.
     req2 = MD.build_generate_request(short, "soul ballad style", "t",
                                      length_s=60, duration=72,

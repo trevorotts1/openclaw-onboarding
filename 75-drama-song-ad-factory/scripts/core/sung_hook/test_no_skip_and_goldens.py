@@ -16,6 +16,11 @@ invalid input, and every golden sheet goes through the real director.
       opening beats), carries hook_target(D, plan) hooks, and FAILS when its
       first hook is moved up to right after the build-up.
 
+Round 4: (1) no client_text still runs the hook count/structure and refuses
+the own-words rule as UNMEASURED; (2) no style_id refuses any non-empty
+lyrics, tagged or not; (3) every golden goes director -> run_takes with the
+delivered length as the Suno duration.
+
 Dual-mode: python3 core/sung_hook/test_no_skip_and_goldens.py, or pytest.
 stdlib only; no network, no spend.
 """
@@ -75,12 +80,16 @@ class MissingStyleIsRefused(unittest.TestCase):
             MD.build_generate_request(v1, style, "T", protected=(
                 "Chanel", "Girl I Got You Masterclass", "GirlIGotYouEvent.com"))
         self.assertIn("UNMEASURED: style_id", str(cm.exception))
-        # free text with no sections at all is still the caller's (legacy)
-        self.assertIsNone(R.guard_request("warm soul", "la la la", None))
+        # round 4: untagged lyrics with no style are refused too; only an
+        # empty / instrumental-only request passes
+        with self.assertRaises(R.RecipeError) as cm:
+            R.guard_request("warm soul", "la la la", None)
+        self.assertIn("UNMEASURED: style_id", str(cm.exception))
+        self.assertIsNone(R.guard_request("warm soul", "", None))
 
     def test_b_payload_with_no_music_style(self):
-        name, g, _, _ = _goldens()[0]
-        self.assertEqual(R.check_payload(g), [], name)
+        name, g, _, client = _goldens()[0]
+        self.assertEqual(R.check_payload(g, client), [], name)
         bare = {k: v for k, v in g.items() if k != "music_style"}
         self.assertIn("UNMEASURED: music_style", R.check_payload(bare))
         # a hook moved to the very first block is not waved through either
@@ -166,6 +175,65 @@ class GoldenSheets(unittest.TestCase):
                                             true_at_beat=g["hook_plan"]["true_at_beat"])
             self.assertEqual(req["_hook_plan"]["true_at_beat"], g["hook_plan"]["true_at_beat"], name)
             self.assertNotIn("_hook_plan", req["input"], name)
+
+
+def _director_to_dispatch(text, style, title, sid, client, D, beat):
+    """Director request -> song_dispatch.run_takes with a mocked generator.
+    Returns the request the generator received (raises on any refusal)."""
+    from song_dispatch import song_dispatch as SD
+    req = MD.build_generate_request(text, style, title, style_id=sid, client_text=client,
+                                    length_s=D, true_at_beat=beat)
+    seen = []
+    SD.run_takes(dict(req["input"], _hook_plan=req["_hook_plan"]),
+                 {"delivered_s": D, "style_id": sid}, lambda rq: seen.append(rq) or [],
+                 lambda t: {}, lambda t, r: None, client, client,
+                 cap_cents=6, cost_cents=6, kie=lambda fn, *a, **k: fn(), style_id=sid)
+    return seen[0]
+
+
+class Round4NoSkip(unittest.TestCase):
+    """Round-4 checker points: no gate switches itself off, and the director's
+    request is the delivered length run_takes requires."""
+
+    def test_1_no_client_text_still_counts_hooks_and_refuses_own_words(self):
+        for name, g, text, client in _goldens():
+            blocks = text.split("\n\n")
+            kinds = [HP.kind_of(R.parse_lyrics(b)[0]) if R.parse_lyrics(b) else "other"
+                     for b in blocks]
+            if kinds.count("hook") < 3:
+                continue              # dropping one would leave no repeated hook
+            last = len(kinds) - 1 - kinds[::-1].index("hook")
+            short = R.parse_lyrics("\n\n".join(b for i, b in enumerate(blocks) if i != last))
+            errs = R.check_lyric_sheet(short, None, g["delivered_s"],
+                                       style_id=g["music_style"], hook_plan=g["hook_plan"])
+            self.assertIn("UNMEASURED: client_text (the hook must be the client's own words)",
+                          errs, name)
+            self.assertTrue(any(e.startswith("hook appears") for e in errs), (name, errs))
+            # the full sheet with its client words is clean
+            self.assertEqual(R.check_lyric_sheet(R.parse_lyrics(text), client, g["delivered_s"],
+                                                 style_id=g["music_style"],
+                                                 hook_plan=g["hook_plan"]), [], name)
+
+    def test_2_no_style_id_refuses_untagged_lyrics(self):
+        bare = "\n".join(ln for ln in _read(V1_SHEET).splitlines()
+                         if not ln.strip().startswith("["))
+        for lyrics in (bare, "la la la", "Girl, I got you.\n\n[Instrumental]"):
+            with self.assertRaises(R.RecipeError) as cm:
+                R.guard_request("warm soul", lyrics, None)
+            self.assertIn("UNMEASURED: style_id", str(cm.exception))
+            with self.assertRaises(R.RecipeError):
+                MD.build_generate_request(lyrics, "warm soul", "T", protected=(
+                    "Chanel", "Girl I Got You Masterclass", "GirlIGotYouEvent.com"))
+        for empty in ("", "   \n", "[Instrumental]"):
+            self.assertIsNone(R.guard_request("warm soul", empty, None), repr(empty))
+
+    def test_3_every_golden_goes_director_to_dispatch(self):
+        for name, g, text, client in _goldens():
+            D = g["delivered_s"]
+            sent = _director_to_dispatch(text, g["style"], g["title"], g["music_style"],
+                                         client, D, g["hook_plan"]["true_at_beat"])
+            self.assertEqual(sent["duration"], D, name)
+            self.assertNotIn("_hook_plan", sent, name)
 
 
 if __name__ == "__main__":

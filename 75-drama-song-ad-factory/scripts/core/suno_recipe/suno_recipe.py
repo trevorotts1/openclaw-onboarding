@@ -525,13 +525,13 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
     if not hooks:
         return errs + ["no repeated sung hook (same sung lines at least %d times)" % MIN_HOOK_REPEATS]
     client = set(_words(client_text or ""))
+    # No gate switches itself off: no client text = the own-words rule is
+    # UNMEASURED (a refusal); the hook count and structure run regardless.
     if not client:
-        # No brief at hand: the "client's own words" rule is unverifiable here
-        # (check_payload measures a finished payload), so it is not claimed.
-        pass
+        errs.append("UNMEASURED: client_text (the hook must be the client's own words)")
     elif not any(h and set(h) <= client for h in hooks):
         errs.append("repeated hook is not built from the client's own words")
-    elif length_s is not None:
+    if length_s is not None:
         best = max(hooks, key=keys.count)
         errs += _SH.check_sheet_count(sheet, best, length_s,
                                       _HP.hook_target(length_s, hook_plan))
@@ -801,14 +801,17 @@ def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
         # No gate switches itself off: without the style, the song contract,
         # hook placement and the recipe cannot be measured, so a sheet that
         # carries sung or rap sections is refused, never waved through.
+        # Any non-empty lyrics are refused: Suno sings untagged text too. Only
+        # an empty / instrumental-only request (no voiced words) passes.
         try:
-            voiced = any(s["delivery"] in ("sung", "rap") for s in parse_lyrics(lyrics_text))
+            voiced = any(s["delivery"] or s["lines"] for s in parse_lyrics(lyrics_text))
         except RecipeError:   # lyric lines under a bracket naming no delivery: Suno sings them
             voiced = True
+        voiced = voiced or any(ln.strip() and not ln.strip().startswith("[")
+                               for ln in str(lyrics_text or "").splitlines())
         if voiced:
-            raise RecipeError("UNMEASURED", "UNMEASURED: style_id (the sheet carries sung or "
-                              "rap sections; the song contract, hook placement and recipe "
-                              "need the style)")
+            raise RecipeError("UNMEASURED", "UNMEASURED: style_id (the request carries lyrics; "
+                              "the song contract, hook placement and recipe need the style)")
         return
     if is_exempt(style_id):
         return

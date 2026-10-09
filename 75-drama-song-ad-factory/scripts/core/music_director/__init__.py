@@ -129,8 +129,10 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     BEFORE any payload is built (and before the recipe guard, so the three
     options always reach the person). Infeasible raises
     ``words_fit.WordsFitError`` carrying longer ad / lower sung target /
-    fewer words. A feasible plan stamps ``input.duration`` with planned
-    time + 15% headroom unless the caller already set ``duration``.
+    fewer words. A feasible plan stamps ``input.duration`` with the
+    DELIVERED length (``length_s``, the card minus the END_EARLY_S tail),
+    the number song_dispatch.run_takes requires, unless the caller already
+    set ``duration``.
 
     FU-HOOK-PLACEMENT: ``true_at_beat`` (the story beat where the hook's
     words become true, from the story plan) makes the director emit the
@@ -189,8 +191,11 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
         req["input"]["vocal_gender"] = vocal_gender
     if duration is not None:
         req["input"]["duration"] = duration
-    elif fit is not None:  # G9: plan + >=15% Suno headroom when length was carded
-        req["input"]["duration"] = words_fit.max_suno_duration(fit["plan_s"])
+    elif fit is not None:
+        # The DELIVERED length (card - END_EARLY_S tail; ``length_s`` here),
+        # which song_dispatch.run_takes requires ("whole tracks only"). The
+        # words-fit check above stays on planned vocal time.
+        req["input"]["duration"] = length_s
     # FU-U6 (plan E.2): the FINAL payload, measured after every mutation
     # (with_clean_ending appends the ending to the style ABOVE). Over a cap,
     # prompt_limits raises PROMPT_OVER_CAP naming field, chars, cap, source and

@@ -115,7 +115,8 @@ def test_final_style_over_1001_refused_after_the_ending():
     style = ("female lead, dry close vocal, slow tempo, " + ("warm analog strings, " * 60))[:1000].rstrip(", ")
     req = {"model": "suno-generate", "input": {"custom_mode": True, "model": "V6",
            "style": style + ENDING, "title": "T", "lyrics": "line", "negative_tags": "choir"}}
-    ok, got = refused(MD.build_generate_request, "line", style, "T")
+    ok, got = refused(MD.build_generate_request, "line", style, "T",
+                       style_id="velvet_voiceover")  # no style + lyrics = UNMEASURED
     check("the FINAL style (ending appended) is refused through build_generate_request",
           ok and got.field == "style" and got.chars == len(style) + len(ENDING), got)
     check("style refusal names the style field, its chars, cap 1,000",

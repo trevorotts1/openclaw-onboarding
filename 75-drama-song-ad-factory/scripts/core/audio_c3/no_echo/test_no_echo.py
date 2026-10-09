@@ -296,7 +296,7 @@ class RealSongBuilderTests(unittest.TestCase):
 
     def test_real_song_builder_output_carries_the_rule_after_the_stamp(self):
         raw = self.md.build_generate_request("la la la", "warm soul ballad",
-                                             "T")
+                                             "T", style_id="velvet_voiceover")
         self.assertIn("input", raw)
         before = M.check(raw)
         self.assertEqual(before["outcome"], "rejected",
@@ -311,7 +311,8 @@ class RealSongBuilderTests(unittest.TestCase):
         self.assertEqual(M.check(req)["outcome"], "ok", M.check(req))
 
     def test_real_song_builder_output_refuses_a_banned_spoken_style(self):
-        raw = self.md.build_generate_request("la la la", "ballad", "T")
+        raw = self.md.build_generate_request("la la la", "ballad", "T",
+                                             style_id="velvet_voiceover")
         for word in M.SPOKEN_BANNED_STYLE_WORDS:
             res = M.song_request(raw, spoken_style="%s host intro" % word)
             self.assertEqual(res["outcome"], "rejected",
@@ -323,7 +324,8 @@ class RealSongBuilderTests(unittest.TestCase):
             self.assertIsNone(res["request"], "a refused payload was built")
 
     def test_real_song_builder_output_is_not_mutated(self):
-        raw = self.md.build_generate_request("la la la", "ballad", "T")
+        raw = self.md.build_generate_request("la la la", "ballad", "T",
+                                             style_id="velvet_voiceover")
         before = json.dumps(raw, sort_keys=True)
         M.song_request(raw)
         self.assertEqual(json.dumps(raw, sort_keys=True), before)

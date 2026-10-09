@@ -173,7 +173,10 @@ def test_c_golden_payloads_pass():
     for f in GOLDENS:
         name = os.path.basename(f)
         payload = json.loads(open(f, encoding="utf-8").read())
-        errs = R.check_payload(payload)
+        text = "\n\n".join(seg["lyrics"] for seg in payload["segments"])
+        chorus = next(" ".join(s["lines"]) for s in R.parse_lyrics(text)
+                      if s["tag"].lower().startswith("hook"))   # the client's own words
+        errs = R.check_payload(payload, chorus)
         check("c1 %s passes every U15d rule" % name, not errs, errs)
         hooks = sum(1 for seg in payload["segments"]
                     for ln in (seg.get("lyrics") or "").splitlines()
