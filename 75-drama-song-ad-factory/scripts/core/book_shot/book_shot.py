@@ -537,10 +537,9 @@ def dumps(d):
 #: The excerpt cap (U11): the client supplies at most three lines, verbatim.
 EXCERPT_MAX_LINES = 3
 
-#: The ONE burn artifact in this codebase. It belongs to U9 (gated behind U8)
-#: and is NOT in this tree; U11 must never add a second burn module, an OCR
-#: helper or a frame-text reader.
-U9_CAPTIONS_BURN_MODULE = "scripts/core/final_assembler/captions_burn.py"
+#: FU-U11: the ONE named hook U9 owns. This module never burns a caption and
+#: never reads frame text; it names the artifact and hands over data.
+EXCERPT_OVERLAY_HOOK = "final_assembler.captions_burn.overlay_excerpt"
 
 #: Grayscale below this counts as ink when measuring a page region.
 PAGE_INK_DARK = 128
@@ -729,28 +728,15 @@ def excerpt_overlay(lines, page=1):
     """The client's excerpt as DATA ONLY, for U9's burn artifact.
 
     Never a prompt: this dict is not part of any video-model request, and
-    nothing here reads text out of a frame (that is U9's captions_burn.py
-    side, deferred). Lines stay the client's words, verbatim and in order.
+    nothing here reads text out of a frame. Lines stay the client's words,
+    verbatim and in order. ``hook`` names U9's entry point -- the ONE named
+    hook in this codebase; the call itself lives in
+    ``final_assembler.assembler.excerpt_overlay_stage``.
     """
     clean = [str(l).strip() for l in (lines or ())
              if isinstance(l, str) and str(l).strip()]
     return {"kind": "book-excerpt-overlay", "schema_version": SCHEMA_VERSION,
             "lines": clean[:EXCERPT_MAX_LINES], "page": int(page or 1),
-            "burn_module": U9_CAPTIONS_BURN_MODULE, "burn_status": "deferred",
-            "reason_code": BOOK_EXCERPT_OVERLAY_DEFERRED,
+            "hook": EXCERPT_OVERLAY_HOOK, "to_video_model": False,
             "note": "data only: never part of any video-model prompt; burning "
-                    "it into frames belongs to the U9 artifact named in "
-                    "burn_module, which has not landed yet."}
-
-def burn_excerpt_overlay(overlay, frames=None):
-    """The ONE deferred burn call site in this codebase.
-
-    The burn itself belongs to U9's scripts/core/final_assembler/
-    captions_burn.py, which is NOT in this tree (U9 is gated behind U8), so
-    this placeholder REFUSES instead of becoming a second burn module. When
-    U9 lands, wire its entry function here and delete this guard.
-    """
-    return _verdict("UNAVAILABLE", BOOK_EXCERPT_OVERLAY_DEFERRED,
-                    {"overlay": overlay},
-                    "deferred: %s has not landed (U9). The excerpt stays data "
-                    "until it does." % U9_CAPTIONS_BURN_MODULE)
+                    "it into frames belongs to U9's captions_burn.overlay_excerpt."}
