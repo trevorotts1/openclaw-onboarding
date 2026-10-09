@@ -277,3 +277,122 @@ def verify_soundtrack(receipt):
         else:
             errs.append("AUDIO_JOBS_INVALID:not a list")
     return errs
+
+# ------------------------------------------------- F2 whole-track intake ---
+
+#: F2 reason code (manual Part F item F2, High): a run in F1 mode that asks
+#: for a partial Suno job is refused. Only two shapes ever pass -- the ONE
+#: full-track generation itself, or ONE whole-track retake of a failed take.
+PARTIAL_SUNO_JOB = "PARTIAL_SUNO_JOB"
+
+#: The only job kinds F1 mode accepts at intake. Anything else (a per-line
+#: slice, a patch of one spoken take, a second bed, an unlabelled row) is a
+#: partial Suno job.
+FULL_TRACK_KIND = "full-track"
+WHOLE_TRACK_RETAKE_KIND = "whole-track-retake"
+
+def _job_row(job):
+    """The job as a dict, or None when malformed. JSON string rows parse."""
+    if isinstance(job, dict):
+        return job
+    if isinstance(job, str):
+        try:
+            parsed = json.loads(job)
+        except ValueError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    return None
+
+def refuse_partial_suno_job(run_receipt, job):
+    """Refuse a partial Suno job in F1 mode. [] = allowed, else [reason, ...].
+
+    ``run_receipt`` is the run's receipt carrying a ``soundtrack`` block --
+    the recorded stamp (``record_soundtrack`` output) or the run's own
+    generated F1 request (``generate_soundtrack_request`` stamps the same
+    block, minus the generation id until one is submitted). ``mode`` must be
+    ``TRACK_MODE``; anything else (no block, another mode) refuses, fail
+    closed. ``job`` is the job-intake row: a dict (or JSON-object string)
+    with ``kind`` and the retake links when it is a retake. Only two shapes
+    pass:
+
+      * ``kind == "full-track"`` -- the ONE Suno generation itself. Its own
+        ``generation_id`` does not exist yet at intake; if one is carried it
+        must be non-empty.
+      * ``kind == "whole-track-retake"`` -- one whole-track retake of a
+        FAILED take: ``retake_of`` must name a take, match the run's
+        recorded primary generation id, and the run must not already carry
+        a succeeded retake or this same retake.
+
+    Anything else -- a slice, a spoken-take patch, a second bed, an
+    unlabelled or malformed row -- refuses ``PARTIAL_SUNO_JOB``.
+    """
+    row = _job_row(job)
+    if row is None:
+        return ["%s:job is not a job object" % PARTIAL_SUNO_JOB]
+
+    block = (run_receipt or {}).get("soundtrack") \
+        if isinstance(run_receipt, dict) else None
+    if not isinstance(block, dict):
+        return ["%s:run has no soundtrack record; F1 mode unproven"
+                % PARTIAL_SUNO_JOB]
+    if block.get("mode") != TRACK_MODE:
+        return ["%s:run soundtrack mode %r is not %r"
+                % (PARTIAL_SUNO_JOB, block.get("mode"), TRACK_MODE)]
+
+    kind = row.get("kind")
+    if kind == FULL_TRACK_KIND:
+        gid = row.get("generation_id")
+        if gid is not None and (not isinstance(gid, str) or not gid.strip()):
+            return ["%s:full-track job carries an empty generation_id"
+                    % PARTIAL_SUNO_JOB]
+        return []
+    if kind == WHOLE_TRACK_RETAKE_KIND:
+        gid = row.get("generation_id")
+        if gid is not None and (not isinstance(gid, str) or not gid.strip()):
+            return ["%s:retake job carries an empty generation_id"
+                    % PARTIAL_SUNO_JOB]
+        primary = block.get("primary_generation_id")
+        if not isinstance(primary, str) or not primary.strip():
+            return ["%s:run records no primary generation id; a whole-track "
+                    "retake must replace a failed take" % PARTIAL_SUNO_JOB]
+        retake_of = row.get("retake_of")
+        if not isinstance(retake_of, str) or not retake_of.strip():
+            return ["%s:whole-track retake must name retake_of (the failed "
+                    "take it replaces)" % PARTIAL_SUNO_JOB]
+        if retake_of != primary:
+            return ["%s:retake_of %r is not this run's primary generation id"
+                    % (PARTIAL_SUNO_JOB, retake_of)]
+        prior = block.get("retakes") if isinstance(block.get("retakes"),
+                                                   list) else []
+        for recorded in prior:
+            if not isinstance(recorded, dict):
+                continue
+            if gid is not None and recorded.get("generation_id") == gid:
+                return ["%s:retake %s already recorded; a take is retaken once"
+                        % (PARTIAL_SUNO_JOB, gid)]
+            if str(recorded.get("reason", "")).strip().lower() == "succeeded":
+                return ["%s:a retake of this track already succeeded; retakes "
+                        "replace a failed take only" % PARTIAL_SUNO_JOB]
+        return []
+    label = kind if isinstance(kind, str) and kind.strip() else "unlabelled"
+    return ["%s:job kind %r is neither a full-track generation nor one "
+            "whole-track retake (retakes are whole-track only in F1 mode)"
+            % (PARTIAL_SUNO_JOB, label)]
+
+def job_intake(run_receipt, jobs):
+    """F2 intake seam: split the dispatcher's Suno jobs into legal shapes.
+
+    Called where the dispatcher reads a run's job list, before any submit.
+    Returns ``(allowed, refused)``: each refused row is the job dict plus
+    ``intake_errors`` (the ``PARTIAL_SUNO_JOB`` reasons). Non-dict rows are
+    refused, never a crash -- the reason rides on a fresh row.
+    """
+    allowed, refused = [], []
+    for job in (jobs or []):
+        errs = refuse_partial_suno_job(run_receipt, job)
+        if errs:
+            row = job if isinstance(job, dict) else {"job": job}
+            refused.append(dict(row, intake_errors=errs))
+        else:
+            allowed.append(job)
+    return allowed, refused

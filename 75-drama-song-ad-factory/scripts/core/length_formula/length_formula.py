@@ -119,6 +119,114 @@ def extend_plan(delivered_s):
     return segs
 
 
+# ---------------------------------------------------------------------------
+# FU-U13: story-arc rule + product-connection target (Trevor order 2026-10-08).
+# Story arc: struggle -> what changed -> the product is why -> get the
+# product. The product is named and connected inside the lyrics AND on
+# screen (cover, title, link) -- never only as an end card. The 10-15% band
+# below is a TARGET, never a hard cap: inside is PASS, outside is FLAG with
+# the measured seconds and percent, never a blocker by itself.
+PRODUCT_TARGET_LO_PCT = 10.0
+PRODUCT_TARGET_HI_PCT = 15.0
+PRODUCT_TARGET_MID_PCT = 12.5        # planner's aim when nothing measured yet
+SHOT_DEFAULT_S = 3.0                 # a tagged shot with no stated duration
+ARC_STAGES = ("struggle", "what_changed", "product_is_why", "get_product")
+END_CARD_TAGS = ("end_card", "endcard", "cta_card")
+
+
+def _tagged(obj, tag):
+    if not isinstance(obj, dict):
+        return False
+    v = obj.get(tag)
+    if v is True:
+        return True
+    tags = obj.get("tags") or ()
+    if isinstance(tags, str):
+        tags = (tags,)
+    return tag in tags
+
+
+def _obj_seconds(obj, fallback):
+    for k in ("seconds", "duration_s", "duration"):
+        v = obj.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+            return float(v)
+    words = len(str(obj.get("text", "")).split())
+    return words / SUNG_WPS if words else fallback
+
+
+def plan_product_connection(plan, shots=None, lyric_lines=None):
+    """FU-U13 planner: seconds and share of the run connecting story to product.
+
+    Counts lyric lines tagged product (per-line tags from the lyric sheet) plus
+    shots tagged product (each shot's own seconds), against the plan's
+    delivered runtime. With no tagged material yet, plans the target seconds
+    at PRODUCT_TARGET_MID_PCT.
+
+    Returns seconds, percent, a PASS/FLAG verdict against the 10-15% band
+    (FLAG is never a blocker), the arc check, and the spoken-word / struggle
+    requirements check. Stdlib only; pure; no network, no spend.
+    """
+    runtime_s = float(plan.get("delivered_s") or plan.get("chosen_length_s") or 0.0)
+    if runtime_s <= 0:
+        raise LengthError("plan carries no delivered_s/chosen_length_s")
+    shots = list(shots or [])
+    lines = list(lyric_lines or [])
+
+    shot_s = sum(_obj_seconds(s, SHOT_DEFAULT_S) for s in shots
+                 if _tagged(s, "product"))
+    line_s = sum(_obj_seconds(l, SHOT_DEFAULT_S) for l in lines
+                 if _tagged(l, "product"))
+    measured = bool(shots or lines)
+    seconds = round(shot_s + line_s, 1) if measured \
+        else round(runtime_s * PRODUCT_TARGET_MID_PCT / 100.0, 1)
+    percent = round(seconds / runtime_s * 100.0, 1)
+    in_band = PRODUCT_TARGET_LO_PCT <= percent <= PRODUCT_TARGET_HI_PCT
+
+    product_shots = [s for s in shots if _tagged(s, "product")] if measured else []
+    end_card_only = bool(product_shots) and all(
+        any(_tagged(s, t) for t in END_CARD_TAGS) for s in product_shots)
+    product_lines = [l for l in lines if _tagged(l, "product")] if measured else []
+    on_screen = any(not any(_tagged(s, t) for t in END_CARD_TAGS)
+                    for s in product_shots)
+
+    spoken_parts = [l for l in lines if _tagged(l, "spoken")]
+    struggle_shots = [s for s in shots
+                      if _tagged(s, "struggle") and _tagged(s, "motion")]
+    missing = []
+    if measured and not spoken_parts:
+        missing.append("spoken_word_parts")
+    if measured and not struggle_shots:
+        missing.append("struggle_motion_shots")
+    if end_card_only:
+        missing.append("product_on_screen_only_on_end_card")
+    if measured and not product_lines:
+        missing.append("product_not_in_lyrics")
+
+    verdict = "PASS" if in_band and not missing else "FLAG"
+    return {
+        "arc": list(ARC_STAGES),
+        "arc_rule": ("struggle -> what changed -> the product is why -> "
+                     "get the product; the product is named in the lyrics "
+                     "and on screen, never only on an end card"),
+        "runtime_s": runtime_s,
+        "product_seconds": seconds,
+        "product_percent": percent,
+        "target_lo_pct": PRODUCT_TARGET_LO_PCT,
+        "target_hi_pct": PRODUCT_TARGET_HI_PCT,
+        "in_target": in_band,
+        "verdict": verdict,
+        "blocking": False,          # target is a target: FLAG never blocks
+        "measured": measured,
+        "requirements": {"spoken_word_parts": len(spoken_parts),
+                         "struggle_motion_shots": len(struggle_shots),
+                         "product_lyric_lines": len(product_lines),
+                         "product_on_screen": on_screen or not measured},
+        "missing": missing,
+        "source": "FU-U13 product-connection target (10-15% of runtime)",
+    }
+
+
 def plan(chosen_length_s, spoken_share_pct=None):
     """The full plan for one ad. ``spoken_share_pct`` is the ad's own setting
     (default 20-25 -> 22.5; BSW passes (15, 20))."""
@@ -154,6 +262,8 @@ def plan(chosen_length_s, spoken_share_pct=None):
                       if D > MAX_GEN_S else None,
         "source": "Perplexity length formula 2026-10-08, calibrated to measured BSW 58 s passes",
     }
+    # FU-U13: the plan carries its product-connection target seconds too.
+    out["product_connection"] = plan_product_connection(out)
     if planned_share + 1.0 < out["spoken_share_pct_requested"]:
         out["note"] = ("spoken block caps bind: set this ad's spoken target to %.1f%%"
                        % planned_share)

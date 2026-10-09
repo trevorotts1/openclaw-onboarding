@@ -19,6 +19,15 @@ from __future__ import annotations
 import os
 import sys
 
+# pytest-collectable: this is a self-running suite (CI runs the file
+# directly); when pytest imports it for collection, skip -- its module
+# body runs checks and exits, which used to raise INTERNALERROR /
+# collection errors.
+if "pytest" in sys.modules:  # imported by pytest for collection
+    import pytest as _pytest
+    _pytest.skip("self-running suite: run `python3 test_receipt_evidence_g5.py`",
+                 allow_module_level=True)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
 if CORE not in sys.path:

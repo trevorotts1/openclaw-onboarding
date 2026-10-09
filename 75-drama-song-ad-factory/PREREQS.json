@@ -152,6 +152,15 @@
       "check": {"note": "assets/face_landmarker.task (or LIPSYNC_FACE_MODEL) with sha256 64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff."},
       "severity": "optional",
       "satisfy": "The picture gate looks for assets/face_landmarker.task (or the path in LIPSYNC_FACE_MODEL) and refuses every lip-sync job without the pinned file. From the skill folder run: python3 scripts/core/lip_sync/lip_gate/install_face_model.py (downloads Google's official float16 model from storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task, verifies the pinned sha256, places it). Re-running with a good file is a no-op. Re-run after every skill update."
+    },
+    {
+      "id": "numpy-optional",
+      "type": "manual",
+      "label": "numpy for the singing detector (measured vocal share)",
+      "check": { "note": "core/singing_detector measures sung vs spoken share from the vocal stem with the Appendix A recipe (Trevor order 1150 amend, review G2) and needs numpy; its suites skip themselves without it, so CI installs numpy so the suites really run." },
+      "severity": "optional",
+      "when": "singing-detector",
+      "satisfy": "pip install numpy (needed to run the singing detector and its tests; the rest of the control layer stays standard library only)."
     }
   ]
 }

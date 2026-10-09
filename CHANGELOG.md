@@ -1,3 +1,7 @@
+## [v26.4.15]  -  2026-10-09  -  Batch MGB009: four Skill 75 units (drama song ad factory v2.9.3)
+
+Released as one batch. Units: #1709 W-G-003-amend singing detector aligned to Appendix A; #1710 W-G-008 parallel minute-lanes for drama song ads 120 s and up; #1712 W-F-U2 whole-track retakes only (PARTIAL_SUNO_JOB intake gate + live dispatch seam); and #1714 FU-U13 story arc rule + product-connection target (10-15 percent). Skill 75 v2.9.3. Paired Command Center: v7.6.112.
+
 ## [v26.4.14]  -  2026-10-09  -  Batch MGB008: two Skill 75 units (drama song ad factory v2.9.1)
 
 Released as one batch. Units: #1705 W-G-007-amend the delivery checklist consumes the amended receipt fields; and #1706 W-G-002-amend delivery-named tag grammar in lyric_structure (review G4/G5). Skill 75 v2.9.1. Paired Command Center: v7.6.112.

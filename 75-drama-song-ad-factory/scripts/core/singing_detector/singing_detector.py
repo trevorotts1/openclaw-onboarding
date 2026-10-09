@@ -38,12 +38,31 @@ reused as the one guard; a DSP run needs no model GB, so it checks with the
 probe only and refuses when the machine cannot be measured). Every decode is
 ffmpeg to s16le mono 16 kHz via subprocess -- one process per stem.
 
+AMENDED (Trevor order 1150 part G amend, review item G2 = Appendix A of
+the Suno singing root-cause review, 2026-10-08, doc 04):
+the take series and the four receipt shares are measured by Appendix A's
+own recipe -- score = voiced_per_s + held_per_s over a 4 s window centred
+on t; a voiced second is sung (or rapped) when score >= A_SCORE_MIN (0.80);
+single-second breath holes are bridged; a take has REAL singing only with
+one sung stretch of >= MIN_REAL_SINGING_STRETCH_S (6 s). The pcr/quant/
+steady rule above stays as the window-level classifier for the existing
+controls; the Appendix A series decides the take verdict and the shares.
+The recipe is the separated VOCAL stem only -- require_vocal_stem() refuses
+an instrumental by name or explicit kind (instrumentals read as sung).
+
 API:
   detect_track(stem_path)      -> per-second sung votes, sung_pct_of_runtime,
-                                  sung_pct_of_voiced, confidence, method
-  share_for_stem(stem_path)    -> the share dict receipts print (G5):
-                                  {"sung_share","sung_pct","confidence",
-                                   "method","detector","detector_version"}
+                                  sung_pct_of_voiced, confidence, method,
+                                  Appendix A series (shares, stretches,
+                                  take_verdict REAL_SINGING/NO_SINGING)
+  share_for_stem(stem_path)    -> the four-way record receipts print (G5):
+                                  {"sung_share","spoken_share","rap_share",
+                                   "no_voice_share" (sum 1), "confidence",
+                                   "method","detector","detector_version",
+                                   "runtime_s", "share_source":"measured"}
+                                  (+ append the take verdict fields)
+  split_metered(record, s)     -> re-tag measured metered seconds as rap
+  require_vocal_stem(path)     -> refuse an instrumental stem
   score_window(stem, a, b)     -> one window, for line-level QC
   calibrate(fixtures)          -> control scores + >= 90% classification
 
@@ -64,10 +83,12 @@ if _gcore not in _gsys.path:
 import load_governor as _LG  # noqa: E402
 
 TOOL_NAME = "singing_detector"
-TOOL_VERSION = "2.0.0"
+TOOL_VERSION = "2.1.0"
 METHOD = "pitch-stability+voicing+note-alignment"
 SCHEMA_VERSION = "blackceo.singing-detector/v1"
-SOURCE = "Trevor order 2026-10-08 11:35 Part G G3"
+SOURCE = ("Trevor order 2026-10-08 11:35 Part G G3; amended by "
+          "TREVOR-ORDER-1150-partG-amend.md (review item G2: "
+          "Appendix A recipe, take verdict, instrumental refusal)")
 
 SR = 16000
 #: Thresholds from calibration (see module docstring); ONE place, tests pin.
@@ -98,6 +119,24 @@ SHORT_PCR_MIN = 0.85
 HOP_S = 1.0
 #: Voiced-frame floor for one window to score at all (20/100 ms).
 MIN_VOICED_FRAMES = 20
+
+# ---- Appendix A (TREVOR-ORDER-1150-partG-amend, review item G2) ------------
+#: Appendix A recipe, the DECIDING rule for the take series and the shares:
+#:   score = voiced_per_s + held_per_s over a 4 s window centred on t;
+#:   held = frames inside steady stretches of >= 150 ms where every frame
+#:   stays within 0.5 semitone of the stretch's running median.
+#: A voiced second is sung (or rapped) when score >= A_SCORE_MIN.
+A_SCORE_MIN = 0.80
+A_WINDOW_BACK_S = 1.5      # 4 s window centred on t: [t-1.5, t+2.5]
+A_WINDOW_FWD_S = 2.5
+A_HELD_TOL = 0.5           # semitones inside one held stretch
+A_HELD_MIN_FRAMES = 15     # 150 ms at the 10 ms hop
+A_VOICED_FRAME_FRAC = 0.3  # a second is voiced when >= 30% of frames are loud
+#: Take-level verdict (Appendix A step 7): real singing needs ONE sung
+#: stretch this long. Same number as spoken_share's NO_REAL_SINGING_STRETCH_S.
+MIN_REAL_SINGING_STRETCH_S = 6
+VERDICT_REAL_SINGING = "REAL_SINGING"
+VERDICT_NO_SINGING = "NO_SINGING"
 
 # ---- Part D load guard: audio DSP runs only when the machine admits -------
 
@@ -301,6 +340,200 @@ def score_window(st, a, b, fps=100.0):
     return z
 
 
+def _runs(mask):
+    """[(i, j), ...] over every True run of a bool array (half-open)."""
+    out, i, n = [], 0, len(mask)
+    while i < n:
+        if not mask[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and mask[j + 1]:
+            j += 1
+        out.append((i, j + 1))
+        i = j + 1
+    return out
+
+
+def yin_semitones_a(x, thr=0.15, sr=SR, hop=160, win=800,
+                     fmin=70.0, fmax=900.0):
+    """Appendix A's YIN front-end, verbatim (10 ms hop, 50 ms window,
+    70-900 Hz, dip threshold 0.15 with a best-dip accept up to 0.35,
+    parabolic refinement). Returns (semitones re 55 Hz with NaN unvoiced,
+    rms per frame). The Appendix A series must run on THIS track: the
+    module's own f0_track uses a finer interior gate and shorter window,
+    and its series drifts off the published numbers (O3a 3 s vs 6 s)."""
+    n = (len(x) - win) // hop
+    tmin, tmax = int(sr / fmax), int(sr / fmin)
+    st = np.full(max(n, 0), np.nan)
+    rms = np.zeros(max(n, 0))
+    for c0 in range(0, n, 4000):
+        idx = np.arange(c0, min(n, c0 + 4000))
+        fr = np.stack([x[i * hop:i * hop + win] for i in idx]).astype(np.float64)
+        fr -= fr.mean(1, keepdims=True)
+        rms[idx] = np.sqrt((fr ** 2).mean(1))
+        ac = np.fft.irfft(np.abs(np.fft.rfft(fr, 2048, axis=1)) ** 2,
+                          2048, axis=1)[:, :tmax + 2]
+        eh = np.concatenate([np.zeros((len(idx), 1)), np.cumsum(fr ** 2, 1)], 1)
+        t = np.arange(tmax + 2)
+        d = eh[:, win - t] + (eh[:, -1:] - eh[:, t]) - 2 * ac
+        d[:, 0] = 0
+        cm = np.ones_like(d)
+        cm[:, 1:] = d[:, 1:] / np.maximum(
+            np.cumsum(d[:, 1:], 1) / np.arange(1, d.shape[1]), 1e-12)
+        for j, i in enumerate(idx):
+            row = cm[j, tmin:tmax]
+            b = np.where(row < thr)[0]
+            if len(b):
+                k = b[0]
+                while k + 1 < len(row) and row[k + 1] < row[k]:
+                    k += 1
+            else:
+                k = int(row.argmin())
+                if row[k] > 0.35:
+                    continue
+            k += tmin
+            y0, y1, y2 = cm[j, k - 1], cm[j, k], cm[j, k + 1]
+            dd = y0 - 2 * y1 + y2
+            st[i] = 12 * np.log2(
+                sr / (k + (0.5 * (y0 - y2) / dd if dd else 0)) / 55.0)
+    return st, rms
+
+
+def held_frames(seg):
+    """Appendix A step 4 held count: frames inside steady stretches of at
+    least A_HELD_MIN_FRAMES (150 ms) where every frame stays within
+    A_HELD_TOL (0.5 semitone) of the stretch's running median. Octave
+    jumps inside a voiced run are folded by 12 semitones toward the run
+    median first (step 3). NaN frames close a run (unvoiced)."""
+    seg = seg.copy()
+    held = 0
+    voiced = ~np.isnan(seg)
+    for p, q in _runs(voiced):
+        run = seg[p:q]
+        m = np.median(run)
+        run[run - m > 9] -= 12
+        run[m - run > 9] += 12
+        k = 0
+        while k < len(run):
+            e, vals = k, [run[k]]
+            while e + 1 < len(run) and abs(run[e + 1] - np.median(vals)) <= A_HELD_TOL:
+                e += 1
+                vals.append(run[e])
+            if e - k + 1 >= A_HELD_MIN_FRAMES:
+                held += e - k + 1
+            k = e + 1
+    return held
+
+
+def appendix_a_score(st, a, b, fps=100.0):
+    """Appendix A score for [a, b): voiced_per_s + held_per_s.
+
+    voiced_per_s = voiced frames / ALL frames in the window (seconds carry
+    silence: a window of half voice can not reach 1.0 by voicing alone).
+    held_per_s = held frames (held_frames) / all frames in the window.
+    """
+    seg = st[int(a * fps):int(b * fps)]
+    total = len(seg)
+    if total <= 0:
+        return 0.0
+    voiced = int((~np.isnan(seg)).sum())
+    return (voiced + held_frames(seg)) / float(total)
+
+
+def appendix_a_sung_seconds(st, rms, n, hop_s=HOP_S):
+    """Per-second Appendix A series -> (sung, voiced) bool arrays.
+
+    The loudness gate is Appendix A's own (step 2): a frame is loud when
+    its RMS is at least 6% of the 95th-percentile RMS (about -24 dB). A
+    second is VOICED when at least A_VOICED_FRAME_FRAC (30%) of its frames
+    are loud. A voiced second is SUNG when its 4 s window score >=
+    A_SCORE_MIN. Single-second holes between two sung seconds are bridged
+    (breaths, step 6).
+    """
+    if len(rms):
+        gate = max(float(np.percentile(rms, 95)) * 0.06, 1e-4)
+    else:
+        gate = 1e-4
+    # Appendix A applies ITS gate to ITS OWN pitch track (step 2); the
+    # caller passes yin_semitones_a()'s st/rms so the numbers reproduce.
+    st_a = st.copy()
+    st_a[rms < gate] = np.nan
+    voiced = np.array([(rms[i * 100:(i + 1) * 100] >= gate).mean()
+                       >= A_VOICED_FRAME_FRAC for i in range(n)])
+    sung = np.zeros(n, bool)
+    for i in range(n):
+        if voiced[i] and appendix_a_score(
+                st_a, max(0.0, i - A_WINDOW_BACK_S),
+                min(float(n), i + A_WINDOW_FWD_S)) >= A_SCORE_MIN:
+            sung[i] = True
+    for i in range(1, n - 1):  # breaths
+        if not sung[i] and sung[i - 1] and sung[i + 1]:
+            sung[i] = True
+    return sung, voiced
+
+
+def sung_stretches(sung):
+    """[[start_s, end_s], ...] from a per-second bool series."""
+    return [[int(p), int(q)] for p, q in _runs(sung)]
+
+
+def take_verdict(longest_stretch_s,
+                 minimum_s=MIN_REAL_SINGING_STRETCH_S):
+    """Appendix A step 7: REAL_SINGING only with one sung stretch >= 6 s."""
+    ok = float(longest_stretch_s) + 1e-9 >= float(minimum_s)
+    return VERDICT_REAL_SINGING if ok else VERDICT_NO_SINGING
+
+
+_INSTRUMENTAL_MARKERS = ("instrumental", "no-vocal", "no_vocal", "karaoke")
+
+
+class InstrumentalRefused(RuntimeError):
+    """Raised when the stem handed in is (or names) an instrumental.
+
+    Appendix A 5.1: the recipe is the separated VOCAL stem only -- piano
+    and keys read as sung on instrumental stems (Chapter 5 instrumentals
+    scored 53-83% "sung"). This refusal is fail-closed: an unknown or
+    explicitly non-vocal stem kind never measures.
+    """
+
+    def __init__(self, code, message):
+        super().__init__("%s: %s" % (code, message))
+        self.code = code
+
+
+_VOCAL_KINDS = ("vocal", "vocals", "vocal-stem", "vocal_stem", "lead-vocal",
+                "lead_vocal", "lead-vocal-stem", "lead_vocal_stem")
+
+
+def require_vocal_stem(stem_path, stem_kind=None):
+    """Refuse an instrumental stem (Appendix A 5.1, the 'refuse if handed
+    the instrumental' requirement).
+
+    Two signals, both fail-closed: an explicit ``stem_kind`` that is not a
+    vocal-stem kind raises INSTRUMENTAL_REFUSED, and a file name carrying
+    an instrumental marker raises the same. None/unknown kinds pass only
+    when the NAME is clean -- the caller knows which Suno separate-vocals
+    file it downloaded (the `_0` vocal file).
+    """
+    if stem_kind is not None:
+        kind = str(stem_kind).strip().lower()
+        if kind and kind not in _VOCAL_KINDS:
+            raise InstrumentalRefused(
+                "INSTRUMENTAL_REFUSED",
+                "stem kind %r is not a vocal stem; Appendix A measures the "
+                "separated vocal stem only (instrumentals read as sung)"
+                % (stem_kind,))
+    name = str(stem_path).lower()
+    for marker in _INSTRUMENTAL_MARKERS:
+        if marker in name:
+            raise InstrumentalRefused(
+                "INSTRUMENTAL_REFUSED",
+                "stem path names an instrumental (%r); Appendix A measures "
+                "the separated vocal stem only" % (marker,))
+    return True
+
+
 def _confidence(votes, cover, voiced):
     """Detector confidence 0..1 for one track: separation margin x coverage.
 
@@ -362,6 +595,18 @@ def detect_track(stem_path, win=WINDOW_S, hop=HOP_S, ffmpeg="ffmpeg"):
         sung = sung | ((v4 == c4) & (c4 > 0) & voiced)
     sung_s = int(sung.sum())
     voiced_s = int(voiced.sum())
+    # ---- Appendix A series (the take verdict + the four receipt shares) ----
+    st_a, rms_a = yin_semitones_a(x)
+    a_sung, a_voiced = appendix_a_sung_seconds(st_a, rms_a, n)
+    a_sung_s = int(a_sung.sum())
+    a_voiced_s = int(a_voiced.sum())
+    stretches = sung_stretches(a_sung)
+    longest = max([q - p for p, q in stretches], default=0)
+    # four measured runtime shares (Appendix A step 8). Rap is metered
+    # time; nothing here re-tags by lyric, so metred-from-tags is added by
+    # the caller parsing 'rap' lines -- the residual is sung.
+    no_voice_s = n - a_voiced_s
+    a_spoken_s = a_voiced_s - a_sung_s
     return {
         "runtime_s": round(dur, 1),
         "sung_s": sung_s,
@@ -377,19 +622,60 @@ def detect_track(stem_path, win=WINDOW_S, hop=HOP_S, ffmpeg="ffmpeg"):
         "schema_version": SCHEMA_VERSION,
         "source": SOURCE,
         "sung_seconds": [int(i) for i in np.where(sung)[0]],
+        # ---- Appendix A (order 1150 amend, review G2) ----
+        "appendix_a_sung_s": a_sung_s,
+        "appendix_a_voiced_s": a_voiced_s,
+        "appendix_a_sung_share": round(a_sung_s / max(n, 1), 6),
+        "appendix_a_spoken_share": round(a_spoken_s / max(n, 1), 6),
+        "appendix_a_rap_share": 0.0,
+        "appendix_a_no_voice_share": round(no_voice_s / max(n, 1), 6),
+        "appendix_a_no_voice_s": int(no_voice_s),
+        "appendix_a_sung_pct": round(100.0 * a_sung_s / max(n, 1), 1),
+        "appendix_a_sung_pct_of_voiced": round(
+            100.0 * a_sung_s / max(a_voiced_s, 1), 1),
+        "sung_seconds_indexes": [int(i) for i in np.where(a_sung)[0]],
+        "sung_stretches": stretches,
+        "longest_sung_stretch_s": int(longest),
+        "real_singing": take_verdict(longest) == VERDICT_REAL_SINGING,
+        "take_verdict": take_verdict(longest),
     }
 
 
 @_LG.heavy("singing-detector")
-def share_for_stem(stem_path, ffmpeg="ffmpeg"):
-    """The record receipts print (G5): MEASURED sung share + confidence +
-    method name. `labelled time` may never appear here -- this function has
-    no lyric/label input at all, which is the whole point."""
+def share_for_stem(stem_path, ffmpeg="ffmpeg", stem_kind=None):
+    """The record receipts print (G5): the MEASURED four-way share record.
+
+    Amended (order 1150 part G amend, review G2/G8): the record carries the
+    FOUR runtime shares from the Appendix A series -- sung, spoken, rap,
+    no-voice -- which add up to 1, plus the detector name/version,
+    confidence and runtime, so ``receipt_evidence.measured_share()``
+    accepts it and the receipt can print measured seconds as well as
+    percent. `labelled time` may never appear here -- this function has no
+    lyric/label input at all, which is the whole point.
+
+    Rap is 0.0 here: metered seconds are split onto rap by lyric tags
+    AFTER measuring (Appendix A step 8 -- tags may only split metered time,
+    they never assert singing), so the detector reports the residual as
+    sung. The caller re-tags with ``split_metered(record, rap_seconds)``.
+
+    Refuses an instrumental stem by name or explicit ``stem_kind``
+    (Appendix A 5.1).
+    """
+    require_vocal_stem(stem_path, stem_kind=stem_kind)
     r = detect_track(stem_path, ffmpeg=ffmpeg)
     return {
-        "sung_share": r["sung_share"],
-        "sung_pct": r["sung_pct_of_runtime"],
-        "sung_pct_of_voiced": r["sung_pct_of_voiced"],
+        "sung_share": r["appendix_a_sung_share"],
+        "spoken_share": r["appendix_a_spoken_share"],
+        "rap_share": r["appendix_a_rap_share"],
+        "no_voice_share": r["appendix_a_no_voice_share"],
+        "sung_pct": r["appendix_a_sung_pct"],
+        "sung_pct_of_voiced": r["appendix_a_sung_pct_of_voiced"],
+        "spoken_pct": round(100.0 * r["appendix_a_spoken_share"], 1),
+        "no_voice_pct": round(100.0 * r["appendix_a_no_voice_share"], 1),
+        "sung_s": r["appendix_a_sung_s"],
+        "spoken_s": r["appendix_a_voiced_s"] - r["appendix_a_sung_s"],
+        "rap_s": 0,
+        "no_voice_s": r["appendix_a_no_voice_s"],
         "confidence": r["confidence"],
         "method": r["method"],
         "detector": r["detector"],
@@ -397,17 +683,55 @@ def share_for_stem(stem_path, ffmpeg="ffmpeg"):
         "schema_version": r["schema_version"],
         "share_source": "measured",
         "runtime_s": r["runtime_s"],
-        "sung_s": r["sung_s"],
-        "voiced_s": r["voiced_s"],
+        "voiced_s": r["appendix_a_voiced_s"],
+        "take_verdict": r["take_verdict"],
+        "longest_sung_stretch_s": r["longest_sung_stretch_s"],
+        "sung_stretches": r["sung_stretches"],
     }
+
+
+def split_metered(record, rap_seconds):
+    """Re-tag measured metered seconds as RAP (Appendix A step 8).
+
+    Tags split METERED time between sung and rap; they never assert
+    singing. ``rap_seconds`` is the metered time inside lines tagged rap
+    (already measured sung-or-rap). Returns a copy of the record with the
+    four shares still summing to 1.
+    """
+    rec = dict(record)
+    rap_s = float(rap_seconds)
+    sung_s = float(rec["sung_s"])
+    if rap_s < 0 or rap_s > sung_s + 1e-6:
+        raise ValueError("rap_seconds %.3f outside 0..%s" % (rap_s, sung_s))
+    sung_s -= rap_s
+    spoken_s = float(rec["spoken_s"])
+    no_voice_s = float(rec["no_voice_s"])
+    total = sung_s + spoken_s + rap_s + no_voice_s
+    if total <= 0:
+        raise ValueError("record carries no seconds to re-tag")
+    for name, secs in (("sung", sung_s), ("spoken", spoken_s),
+                       ("rap", rap_s), ("no_voice", no_voice_s)):
+        rec["%s_s" % name] = round(secs, 3)
+        rec["%s_share" % name] = round(secs / total, 6)
+        rec["%s_pct" % name] = round(100.0 * secs / total, 1)
+    return rec
 
 
 @_LG.heavy("singing-detector")
 def score_stem_window(stem_path, a, b, ffmpeg="ffmpeg"):
-    """Line-level QC: one window of one stem."""
+    """Line-level QC: one window of one stem.
+
+    Carries BOTH rules: the pcr/quant/steady window classifier, and the
+    Appendix A score for the same window (voiced_per_s + held_per_s,
+    sung when >= A_SCORE_MIN) -- line-level output per the amend order.
+    """
     x = decode_stem(stem_path, ffmpeg=ffmpeg)
     st, _rms, _gate = f0_track(x)
-    return score_window(st, a, b)
+    out = score_window(st, a, b)
+    a_score = appendix_a_score(st, a, b)
+    out["appendix_a_score"] = round(a_score, 3)
+    out["appendix_a_sung"] = bool(a_score >= A_SCORE_MIN)
+    return out
 
 
 # ---- calibration harness ---------------------------------------------------
@@ -457,9 +781,26 @@ def calibrate(fixtures):
 
 
 __all__ = [
+    "A_HELD_MIN_FRAMES",
+    "A_HELD_TOL",
+    "A_SCORE_MIN",
+    "A_VOICED_FRAME_FRAC",
+    "A_WINDOW_BACK_S",
+    "A_WINDOW_FWD_S",
     "HOP_S",
+    "InstrumentalRefused",
     "LoadGuardError",
     "METHOD",
+    "MIN_REAL_SINGING_STRETCH_S",
+    "VERDICT_NO_SINGING",
+    "VERDICT_REAL_SINGING",
+    "appendix_a_score",
+    "appendix_a_sung_seconds",
+    "held_frames",
+    "require_vocal_stem",
+    "split_metered",
+    "sung_stretches",
+    "take_verdict",
     "MIN_NOTES_PER_SECOND",
     "MIN_NOTES_PER_WINDOW",
     "MIN_VOICED_FRAMES",

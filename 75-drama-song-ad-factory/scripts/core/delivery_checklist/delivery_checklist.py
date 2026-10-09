@@ -106,6 +106,15 @@ LIPSYNC_KEPT = "KEPT_BEST_OF_2"
 LIPSYNC_MAX_JOBS = 2
 #: Q9: first real singing (vocal stem) target, share of runtime (H6).
 FIRST_SUNG_TARGET_PCT = 15.0
+
+#: FU-U13 product-connection row: 10-15% of runtime connecting story to
+#: product. A TARGET, never a hard cap: outside the band is FLAG with the
+#: measured seconds and percent -- this row never joins repair_scope and
+#: never blocks the gate by itself. The planner computes these (Q12 in the
+#: runbook); this checker MEASURES them from the delivered shots/lyrics.
+PRODUCT_TARGET_LO_PCT = 10.0
+PRODUCT_TARGET_HI_PCT = 15.0
+PRODUCT_ROW = "PRODUCT_CONNECTION"
 #: Q10: no slow-motion above this speed-down factor (H5).
 MAX_SLOWDOWN = 1.15
 
@@ -1056,6 +1065,77 @@ def _q11_goals(receipt, ans, codes, details):
 
 
 # ----------------------------------------------------------------- evaluate
+# ---------------------------------------------------------- FU-U13 (product)
+_PC_WPS = 1.07                      # sung words per second (length_formula)
+_PC_SHOT_S = 3.0                    # a tagged shot with no stated duration
+_PC_END_CARD = ("end_card", "endcard", "cta_card")
+
+
+def _pc_tagged(obj, tag):
+    if not isinstance(obj, dict):
+        return False
+    if obj.get(tag) is True:
+        return True
+    tags = obj.get("tags") or ()
+    if isinstance(tags, str):
+        tags = (tags,)
+    return tag in tags
+
+
+def _pc_seconds(obj, fallback):
+    for k in ("seconds", "duration_s", "duration"):
+        v = obj.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+            return float(v)
+    words = len(str(obj.get("text", "")).split())
+    return words / _PC_WPS if words else fallback
+
+
+def measure_product_connection(shots, lyrics, runtime_s):
+    """FU-U13: measure the product-connection seconds from the delivered run.
+
+    Totals the seconds of shots tagged product plus lyric lines tagged
+    product, against the measured runtime. 10-15% is a TARGET: inside is
+    PASS, outside is FLAG carrying the measured seconds and percent, and it
+    is NEVER a blocker by itself. A run whose product appears only on an end
+    card is flagged (the product must be named in the lyrics and on screen).
+    """
+    def _num(v):
+        return float(v) if isinstance(v, (int, float)) \
+            and not isinstance(v, bool) and v > 0 else None
+
+    rt = _num(runtime_s)
+    if rt is None:
+        return {"verdict": "UNAVAILABLE",
+                "measurement": "UNMEASURED: no runtime_s for the run",
+                "seconds": None, "percent": None, "blocking": False}
+    shots = [s for s in (shots or []) if isinstance(s, dict)]
+    lines = [l for l in (lyrics or []) if isinstance(l, dict)]
+    product_shots = [s for s in shots if _pc_tagged(s, "product")]
+    product_lines = [l for l in lines if _pc_tagged(l, "product")]
+    seconds = round(sum(_pc_seconds(o, _PC_SHOT_S)
+                        for o in product_shots + product_lines), 1)
+    percent = round(seconds / rt * 100.0, 1)
+    in_band = PRODUCT_TARGET_LO_PCT <= percent <= PRODUCT_TARGET_HI_PCT
+    end_card_only = bool(product_shots) and all(
+        any(_pc_tagged(s, t) for t in _PC_END_CARD) for s in product_shots)
+    verdict = "PASS" if in_band and not end_card_only else "FLAG"
+    why = []
+    if not in_band:
+        why.append("%.1f%% of %.1fs runtime outside the %.0f-%.0f%% target"
+                   % (percent, rt, PRODUCT_TARGET_LO_PCT,
+                      PRODUCT_TARGET_HI_PCT))
+    if end_card_only:
+        why.append("product appears only on an end card; name it in the "
+                   "lyrics and on screen (cover, title, link)")
+    return {"verdict": verdict, "seconds": seconds, "percent": percent,
+            "runtime_s": rt, "in_target": in_band,
+            "end_card_only": end_card_only, "blocking": False,
+            "measurement": ("product connection %.1fs = %.1f%% of runtime "
+                            "(%s%s)" % (seconds, percent, verdict,
+                                        "; " + "; ".join(why) if why else ""))}
+
+
 def evaluate(receipt):
     """Answer the 11 questions from the delivery receipt.
 
@@ -1122,6 +1202,13 @@ def evaluate(receipt):
                           "measurement": "; ".join(qcodes) or
                                          "UNMEASURED: no measurement"}
             failing.append(q)
+    # FU-U13: the product-connection row is reported, never enforced. The
+    # check finds no measurement -> UNAVAILABLE, which is neither pass nor
+    # fail here: the row carries no weight in repair_scope by construction.
+    pc = measure_product_connection(receipt.get("shots"),
+                                    receipt.get("lyrics"),
+                                    receipt.get("runtime_s"))
+    details[PRODUCT_ROW] = pc
     if codes:
         return {"pass": False,
                 "answers": answers,
@@ -1224,6 +1311,13 @@ def to_qc_record(result, run_id, stage, reviewer, check_id=None,
     # the summary, each as yes/no plus the measurement that proves it
     lines = ["%s=%s(%s)" % (q, a["answer"], a["measurement"][:80])
              for q, a in sorted(answers.items())]
+    # FU-U13: the product-connection measurement rides the same summary so
+    # the receipt/checklist output reports it every run (measured, flagged
+    # when outside the 10-15% target, never a blocker).
+    pc = (result.get("evidence") or {}).get(PRODUCT_ROW)
+    if isinstance(pc, dict):
+        lines.append("%s=%s(%s)" % (PRODUCT_ROW, pc.get("verdict", "?"),
+                                    str(pc.get("measurement", ""))[:120]))
     passed = bool(result["pass"])
     summary = ("delivery checklist %s: %d/%d measured%s | %s"
                % ("pass" if passed else "FAIL",

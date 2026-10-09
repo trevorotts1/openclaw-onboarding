@@ -22,7 +22,20 @@ Run each command from this skill's root (`75-drama-song-ad-factory/`). Substitut
 | final-qc | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage final-qc --records "$RUN/qc/records.json" --makers "$RUN/qc/makers.json" --required <required-checks>` | Approved final-QC verdict records on the rendered master (independent reviewer, UNAVAILABLE never passes). |
 | delivery | `python3 scripts/core/qc_gate.py evaluate --run "$RUN_ID" --stage delivery --records "$RUN/qc/records.json" --makers "$RUN/qc/makers.json" --required <required-checks>` | Delivery gate record over the final package (master + `delivery_variants` plan + receipts); board event follows via `cc_sync` (import-only). |
 
+Story arc rule (FU-U13): every ad's story runs struggle -> what changed -> the
+product is why -> get the product. The product is named and connected inside
+the lyrics AND on screen (cover, title, link), never only on an end card. The
+script-lyrics stage plans the spoken-word parts and the struggle motion shots
+from the source material; the plan carries `product_connection` (seconds and
+percent of runtime). The aim is 10-15% of runtime connecting story to product
+-- a TARGET, not a hard cap: the planner computes it, the final-qc delivery
+checklist measures it (row `PRODUCT_CONNECTION` in `delivery_checklist`), and
+outside the band is a FLAG with the measured seconds and percent, never a
+blocker by itself. The choice card shows the planned seconds and percent.
+
 Song files (H14): before the delivery gate, build the audio-only deliverables with `delivery_variants.build_song_files(mix, $DELIVERY, <ad name>, instrumental)` then `write_song_docs($DELIVERY, rows)` (MP3 320 kbps + WAV named after the ad, plus the instrumental pair if one exists; both listed in `delivery-receipt.json` and `README.md`). Gate it with a `song_files` QC record (`python3 scripts/core/delivery_variants/song_files.py check $DELIVERY <ad name>`, exit 5 = a song file is missing); include `song_files` in the delivery `--required` list.
+
+Parallel minute-lanes (W-G-008): a song under 120 s runs the table above unchanged (one lane). At 120 s and up, `scripts/core/lane_planner.py` cuts the shot list into N = ceil(L / 60) lanes of about 60 s, every cut on a shot boundary (`plan_lanes(shots, song_length_s)`); shared steps (song + song checker, plan/shot list, character, close-up picture gate) run once before the split, the per-lane stages above (`image-keyframes`, `video-generation`, lip-sync) then run in every lane at the same time, and the fan-in (one edit, one independent checker, one repair) runs once after. ONE `SharedGovernor` paces all lanes: at most 20 new generation requests per 10 s in total, per-lane share floor(18 / N), 429s resubmitted through `load_governor.kie_request`; heavy ffmpeg stays at most 2 at once across all lanes (`heavy_slot`). `classify_tag(db, run_id, tag)` polls a ledger-known tag and reuses a finished file, so a re-run never pays twice; all lanes plan against the ONE run's ledger.
 
 Note: `music`, `image-keyframes` and `video-generation` share one command shape (the
 Skill 74 `kie_dispatch` route); only the model id, request file and logical key differ.

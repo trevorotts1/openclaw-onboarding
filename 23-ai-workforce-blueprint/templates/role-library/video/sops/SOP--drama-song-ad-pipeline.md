@@ -7,7 +7,7 @@
 **Support roles:** `video-editor`, `storyboard-pre-production-specialist`, `qc-specialist-video`
 **Reports to:** Head of Video Production
 **Skill:** 75-drama-song-ad-factory (both distributions; one canonical methodology, two runtime adapters)
-**Last updated:** 2026-10-07 (owner BUILD-OUT order; decision log 29-34)
+**Last updated:** 2026-10-08 (W-G-008 minute-lanes; owner BUILD-OUT order; decision log 29-34)
 
 > **Cost profile:** Every paid call goes through Skill 74 only, on the client's own key, with a recorded ceiling first. Operator keys are never used for client work. Skill 74 in shadow mode stops the pipeline before the choice card's approval.
 
@@ -163,7 +163,20 @@ model maximum.
 5. Flag the lip-sync lines: the pain peak, the product line, the call to
    action, and the chorus hook once at its strongest - three to four lines,
    about 15 to 20 seconds, listed on the approval card.
-6. **Speaker contract (plan 6.6):** the person visible while a line plays
+6. **Story arc rule and product-connection target (FU-U13, owner order
+   2026-10-08):** every ad's story runs struggle -> what changed -> the
+   product is why -> get the product. Name the product and connect it to
+   the story inside the lyrics AND on screen (cover, title, link) - never
+   only on an end card. Plan the spoken-word parts (inside the spoken band)
+   and the motion shots showing the character's struggle, taken from the
+   source material. Plan how much of the runtime connects the story to the
+   product: aim for 10-15% (`length_formula.plan_product_connection` puts
+   the planned seconds and percent on the plan; the lyric sheet carries a
+   per-line `product` tag). This is a TARGET, not a hard cap - the delivery
+   checklist measures the delivered run (`measure_product_connection`,
+   row `PRODUCT_CONNECTION`) and reports the seconds and percent: inside
+   the band is PASS, outside is a FLAG, never a blocker by itself.
+7. **Speaker contract (plan 6.6):** the person visible while a line plays
    must be the one speaking it, or the voice's source device. Narrator,
    phone, voicemail and laptop voices are allowed as voice-over but are
    **never lip-synced onto a person**.
@@ -252,6 +265,22 @@ without an identity lock.
 5. Assemble with FFmpeg: song as master timeline, shots cut to the timing
    map, captions on by default (one line at a time, white rounded box, kept
    above the bottom 20% in 9:16).
+6. **Parallel minute-lanes (ads 120 s and up, W-G-008).** A song under 120 s
+   keeps ONE lane, exactly as before. At 120 s and up, `lane_planner.plan_lanes`
+   cuts the shot list into N = ceil(L / 60) lanes of about 60 s, every cut on a
+   shot boundary (a shot is never split). Shared steps run ONCE before the
+   split (song + song checker, plan/shot list, character, close-up picture
+   gate); each lane then makes its own stills, motion clips and lip-sync
+   segments AT THE SAME TIME, on the same character, through the picture gate,
+   at most 2 lip-sync jobs per segment then the best take, with mouth strips.
+   ONE `SharedGovernor` paces every lane: at most 20 NEW generation requests
+   per 10 s in total, per-lane share floor(18 / N), every submit through
+   `load_governor.kie_request` (a 429 is resubmitted, never dropped); heavy
+   ffmpeg jobs stay at most 2 at once across all lanes through
+   `heavy_slot`. Ledger-known tags are polled, never resubmitted, and finished
+   files are reused. Then ONCE over the whole ad: one edit over the full song,
+   one independent checker (hard audio-length rule, captions = lyrics, face
+   through the call to action) and one repair.
 
 **Outputs:** Shots, lip-synced close-ups, assembled cut, captions, SRT.
 **Hand to:** DS-8.
