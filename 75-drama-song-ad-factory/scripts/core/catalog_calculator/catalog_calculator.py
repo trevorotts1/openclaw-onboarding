@@ -22,6 +22,7 @@ Stdlib only. No version-1 imports. No network: the Skill 74 call is injected.
 import argparse
 import json
 import math
+import os
 import sys
 
 UNIT_NAME = "catalog-calculator"
@@ -79,12 +80,73 @@ def image_plan(shots, shapes, characters, image_model):
             "total_images": len(refs) + len(keys)}
 
 
-def shot_count(length_seconds, max_shot_seconds):
-    """Shots per shape: ceil(length / model max shot). Plan 6.1: shot count
-    comes from the chosen model's max shot length, never fixed per length."""
+def video_shot_count(length_seconds, max_shot_seconds):
+    """Video shots per shape: ceil(length / model max shot). Plan 6.1: shot
+    count comes from the chosen model's max shot length, never fixed per
+    length. This is the VIDEO shot count - the storyboard draws more
+    pictures than this, from shot_count() below; the two never mix."""
     if max_shot_seconds <= 0:
         raise ValueError("max_shot_seconds must be > 0")
     return -(-int(length_seconds) // int(max_shot_seconds))
+
+
+# Storyboard pictures (DEL-15, owner order 2026-10-09). The storyboard draws
+# its own pictures before any video is made. That count is a separate and
+# LARGER budget than the video shot count: eight pictures at sixty seconds,
+# twenty-four at two minutes, then about one more picture for every five
+# seconds of runtime. The two counts are never conflated or added together.
+#
+# The cap is data, not code: it lives in storyboard-config.json next to this
+# module and is read on every call, never hard-coded here (DEL-15 addenda).
+
+STORYBOARD_CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "storyboard-config.json")
+
+
+def storyboard_cap():
+    """The storyboard picture cap, read from configuration (fail closed).
+
+    A missing or malformed config raises instead of falling back to a
+    hard-coded number the owner never chose."""
+    try:
+        with open(STORYBOARD_CONFIG, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        raise ValueError("STORYBOARD_CAP_UNAVAILABLE: %s: %s" % (STORYBOARD_CONFIG, e))
+    cap = data.get("storyboard_picture_cap") if isinstance(data, dict) else None
+    if not isinstance(cap, int) or isinstance(cap, bool) or cap <= 0:
+        raise ValueError("STORYBOARD_CAP_INVALID: %r" % (cap,))
+    return cap
+
+
+def shot_count(length_seconds, cap=None):
+    """Storyboard picture count (DEL-15): the storyboard's own budget.
+
+    Eight pictures at sixty seconds, twenty-four at two minutes, then about
+    one more picture for every five seconds of runtime, capped at the
+    configured maximum (storyboard-config.json, read by storyboard_cap()).
+
+    This is NOT the video shot count: video clips come from the chosen
+    model's max shot length (video_shot_count), and the two are never
+    conflated. Storyboard pictures are always at least as many as the video
+    shots they will be cut from, for every length and every approved model.
+
+    ``cap`` overrides the configured maximum (tests, one-off runs); the
+    default path always reads configuration."""
+    if not isinstance(length_seconds, (int, float)) or isinstance(length_seconds, bool) \
+            or length_seconds <= 0:
+        raise ValueError("length_seconds must be > 0")
+    if length_seconds <= 60:
+        pictures = math.ceil(length_seconds * 8 / 60.0)
+    elif length_seconds <= 120:
+        pictures = math.ceil(8 + (length_seconds - 60) * 16 / 60.0)
+    else:
+        pictures = math.ceil(length_seconds / 5.0)
+    if cap is None:
+        cap = storyboard_cap()
+    if not isinstance(cap, int) or isinstance(cap, bool) or cap <= 0:
+        raise ValueError("STORYBOARD_CAP_INVALID: %r" % (cap,))
+    return min(int(pictures), int(cap))
 
 
 def credits_to_usd(credits):
@@ -266,7 +328,8 @@ def _build_card(norm, entry, lines, is_default):
     total_credits = round(sum(lines[k]["credits"] for k in ("video", "music", "image")), 4)
     total_usd = credits_to_usd(total_credits)
     retake_usd = math.floor(total_usd * 0.20 * 100 + 0.5) / 100.0  # plan 4.1: +20% retake
-    shots = shot_count(norm["length_seconds"], entry.get("max_shot_seconds"))
+    shots = video_shot_count(norm["length_seconds"], entry.get("max_shot_seconds"))
+    cap_pictures = storyboard_cap()  # one config read; cap is data, not code
     items = []
     for comp in ("video", "music", "image"):
         li = dict(lines[comp])
@@ -280,6 +343,10 @@ def _build_card(norm, entry, lines, is_default):
         "resolution": entry.get("resolution"),
         "is_default": is_default,
         "shots_per_shape": shots,
+        # DEL-15: the storyboard's own, larger budget (configuration cap).
+        # Separate from shots_per_shape; the two are never conflated.
+        "storyboard_pictures": shot_count(norm["length_seconds"], cap=cap_pictures),
+        "storyboard_picture_cap": cap_pictures,
         "line_items": items,
         "price_credits": total_credits,
         "price_usd": total_usd,
@@ -293,7 +360,7 @@ def _price_card_for(norm, entry, music_line, skill74):
     """Price one video entry's full card (music already priced).
     -> (card|None, reason, detail)"""
     shapes = norm["shapes"]
-    shots = shot_count(norm["length_seconds"], entry["max_shot_seconds"])
+    shots = video_shot_count(norm["length_seconds"], entry["max_shot_seconds"])
     jobs = shots * norm["shape_count"]
     plan = image_plan(shots, shapes, norm["main_characters"], norm["image_model"])
     image_units = plan["total_images"]  # reference sets + one keyframe per shot per shape
