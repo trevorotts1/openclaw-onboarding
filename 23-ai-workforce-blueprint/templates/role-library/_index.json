@@ -10754,9 +10754,9 @@
       "slug": "SOP--drama-song-ad-pipeline",
       "dept": "video",
       "path": "templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md",
-      "content_sha": "sha256:220bfcf47f64c433e73abff198e3b8e1e9c09e8bd44d74ea116f06a10d6cbc25",
-      "content_version": "1.0.1",
-      "content_hashed_at": "2026-10-08T15:28:00.787819+00:00"
+      "content_sha": "sha256:83eb1c88a8e768562d2cd246d381bb0bb13a22fa015f9eb17f65b7c23c886c3b",
+      "content_version": "1.0.2",
+      "content_hashed_at": "2026-10-09T01:27:47.508101+00:00"
     },
     {
       "slug": "SOP--movie-producer-cross-role-handoff",
