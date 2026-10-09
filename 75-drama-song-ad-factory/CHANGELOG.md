@@ -518,6 +518,9 @@ the sheet. Fixed at the source.
 
 ## [Unreleased] - 2026-10-07 - v2 BUILD-OUT packaged into this copy
 
+### Fixed
+- FU-U1: `test_tag_grammar_u1.py` is now pytest-clean. `test_b_lyric_gate_counts_rap_in_the_budget` took the sheet as a required argument, so under pytest it ran standalone with no sheet and errored `fixture 'sheet' not found`. It now defaults to `None` and builds the sheet from the fixture itself; a parse failure still fails the check loudly (never a skip). Script mode is unchanged.
+
 Regenerated `scripts/core/` from the canonical build core — 120 files, tree sha256 `351575f76825de6df4bfd2c7520dcc9ed06631e5f3a040a5f246149fabe735e7` (both copies byte-identical).
 
 Packaging unit `BO-PKG2-U2` regenerated `scripts/core/` from the canonical
