@@ -77,6 +77,71 @@ except Exception:  # noqa: BLE001 - gate stays fail-closed without the module
 #: non-None. Run state is read from ``request["card_receipt"]`` (the
 #: recorded receipt block from style_defaults.card_gate.answered_stamped)
 #: or from ``request["run_state"]["card_receipt"]``.
+def _onscreen_strings(request):
+    """U8: every on-screen string a paid job would print, from the request.
+
+    The shot plan carries them as ``on_screen_text`` (a string, a list of
+    strings, or ``[{"text": ...}]``) on the request itself or under the
+    request's ``shot`` block. Other fields the plan already gates for
+    spelling (lyrics, end card) are read the same way so one receipt covers
+    the whole job.
+    """
+    req = request if isinstance(request, dict) else {}
+    out = []
+
+    def collect(value):
+        if isinstance(value, str):
+            if value.strip():
+                out.append(value)
+        elif isinstance(value, dict):
+            collect(value.get("text"))
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                collect(item)
+
+    for source in (req, req.get("shot"), req.get("shot_plan"),
+                   req.get("generation")):
+        if isinstance(source, dict):
+            collect(source.get("on_screen_text"))
+    return out
+
+
+def onscreen_text_refusal(model, request):
+    """U8 ONSCREEN_TEXT_NOT_CHECKED: a paid job may not print a string
+    nobody checked. Fail-closed -- an unchecked keyframe/video whose request
+    carries on-screen text is refused before the ledger, and a request with
+    no on-screen text at all passes untouched.
+
+    The receipt is the exact strings that were checked, in
+    ``onscreen_text_checked`` (string or list, request-level or beside the
+    shot). A string on the job that is not in the receipt refuses -- a
+    receipt for a different string is not a receipt for this one.
+    """
+    texts = _onscreen_strings(request)
+    if not texts:
+        return None
+    req = request if isinstance(request, dict) else {}
+    checked = []
+    for source in (req, req.get("shot"), req.get("shot_plan")):
+        if isinstance(source, dict):
+            value = source.get("onscreen_text_checked")
+            if isinstance(value, str):
+                checked.append(value)
+            elif isinstance(value, (list, tuple)):
+                checked.extend(x.get("text", "") if isinstance(x, dict) else str(x)
+                               for x in value)
+    checked = {c.strip() for c in checked if isinstance(c, str) and c.strip()}
+    missing = [t for t in texts if t.strip() not in checked]
+    if not missing:
+        return None
+    return ("on-screen text %r is not in the checked receipt for this job "
+            "(%s); spell-check it and record it in "
+            "`onscreen_text_checked` before any paid job -- exact copy is "
+            "never left to the model"
+            % (missing[0], "no strings checked" if not checked
+               else "%d checked" % len(checked)))
+
+
 def _loud(kind, code, detail):
     """Named, visible failure/warning that reaches the receipt (loud_failure.py)."""
     import os as _os, sys as _sys
@@ -795,6 +860,12 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
     if book is not None:
         return envelope("dispatch", "rejected", book["reason_code"],
                         book["detail"] + " " + book["next_action"],
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id, evidence={"generated": False})
+    onscreen = onscreen_text_refusal(model, request)
+    if onscreen is not None:                # U8: no paid job prints an unchecked string
+        return envelope("dispatch", "rejected", "ONSCREEN_TEXT_NOT_CHECKED",
+                        onscreen + " Nothing was reserved and nothing was sent.",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id, evidence={"generated": False})
     if not model:
