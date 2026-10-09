@@ -716,3 +716,28 @@ def prompt_spec_for(shot, contract, look_plan):
         spec["match_pose"] = look_plan["match_pose"]
     shot["prompt_spec"] = spec
     return spec
+
+
+# ---------------------------------------------------------------------------
+# U15h: cross-check against the class table (design 6; never a second formula).
+
+def class_check(delivered_s):
+    """This module's generation count equals the class row's shots_total.
+
+    Cross-check only -- ``plan_generation_count`` stays THE shot sizing; the
+    class table is the shared reader (``prompt_templates.length_class``).
+    [] when they agree; the reasons name each drifted field otherwise.
+    """
+    try:
+        from prompt_templates import prompt_templates as _PT
+    except ImportError:                        # template layer not installed
+        return []
+    D = float(delivered_s)
+    L = int(D) + 2                             # chosen length: D = L - 2
+    try:
+        row = _PT.length_class(L)
+    except _PT.PromptTemplateError as e:
+        return ["length_class(%d): %s" % (L, e)]
+    mine = {"delivered_s": D, "shots_total": plan_generation_count(D)}
+    return ["%s class=%r ceil(D/4)=%r" % (f, row.get(f), v)
+            for f, v in sorted(mine.items()) if row.get(f) != v]

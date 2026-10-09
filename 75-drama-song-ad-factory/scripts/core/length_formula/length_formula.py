@@ -275,3 +275,43 @@ def plan(chosen_length_s, spoken_share_pct=None):
         out["note"] = ("spoken block caps bind: set this ad's spoken target to %.1f%%"
                        % planned_share)
     return out
+
+# ---------------------------------------------------------------------------
+# U15h: cross-check against the class table (design 6; never a second formula).
+
+def class_check(chosen_length_s):
+    """This module's plan equals the class row for L. [] when they agree.
+
+    Cross-check only -- ``plan()`` stays THE plan; the class table is the
+    shared reader (``prompt_templates.length_class``). Returns the reasons
+    naming each drifted field, so a table that describes a different song
+    than the code computes can never be read silently.
+    """
+    try:
+        from prompt_templates import prompt_templates as _PT
+    except ImportError:                        # template layer not installed
+        return []
+    L = int(chosen_length_s)
+    try:
+        row = _PT.length_class(L)
+    except _PT.PromptTemplateError as e:
+        return ["length_class(%d): %s" % (L, e)]
+    p = plan(L)
+    ext = p.get("extend") or []
+    mine = {"delivered_s": L - END_EARLY_S, "bracket": p["bracket"],
+            "hooks": p["hook_repeats"],
+            "song_words": {k: p["words"][k] for k in
+                           ("total", "spoken", "sung", "opener_max")},
+            "sections": dict(p["sections"]),
+            "instrumental_breaks": {"count": p["instrumental"]["breaks"],
+                                    "seconds_each": p["instrumental"]["seconds_each"]},
+            "spoken_share_planned_pct": p["spoken_share_pct_planned"],
+            "suno_generations": ("1 base" if not ext
+                                 else "1 base + %d extends" % len(ext))}
+    return ["%s class=%r plan=%r" % (f, row.get(f), v)
+            for f, v in sorted(mine.items()) if row.get(f) != v]
+
+
+if __name__ == "__main__":  # python3 length_formula.py <chosen_s>
+    import json
+    print(json.dumps(plan(float(sys.argv[1])), indent=2))
