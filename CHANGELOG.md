@@ -1,3 +1,7 @@
+## [v26.4.22]  -  2026-10-09  -  Batch MGB020: seven Skill 75 units, clearer intake questions (skill 75 v2.9.10)
+
+Released as one batch. Units: #1756 FU-PARITY skill 75 parity with the 999 copy (last commit); #1755 U12 docs and SOP in lockstep with the code; #1757 FU-U4 client lines are a contract, the STOP card lists only real options; #1770 FU-SAVED-CHARACTER-QUESTION saved characters asked as a clear numbered question; #1773 FU-AUDIENCE-QUESTION clearer who-is-it-for question; #1774 FU-LENGTH-CLIPS clearer length question, 3 minutes now comes with 60s and 90s clips; #1779 FU-INTRO-MESSAGE every run opens with a short intro of what the factory makes. Skill 75 v2.9.10. Paired Command Center: v7.6.112.
+
 ## [v26.4.21]  -  2026-10-09  -  Batch MGB019: skill 75 captions-final burn port and cast docstring (skill 75 v2.9.9)
 
 Released as one batch. Units: #1766 FU-U9 captions-final: port captions_burn.overlay_excerpt, the one excerpt burn site (new captions_burn.py with test); #1764 cast-sweep: voice_casting coworker docstring matches the 2026-10-08 recast.
