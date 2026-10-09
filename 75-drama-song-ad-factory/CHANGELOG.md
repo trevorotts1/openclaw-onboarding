@@ -6,6 +6,12 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.9 - 2026-10-09 - FU-INTRO-MESSAGE
+
+- Every new interactive run opens with a short one-time intro of what the factory makes, sent as its own message before question 1 (`factory.py card --step --run-state-file`); never on resume, recap, batch or CLI-only paths.
+
+---
+
 ## v2.9.8 - 2026-10-09 - Batch MGB018 roll-up
 
 - FU-PARITY: shared files aligned with 999 (v2.7.28 test fixes, delivery_checklist blank lines).
