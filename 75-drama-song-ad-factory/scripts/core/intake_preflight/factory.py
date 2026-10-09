@@ -300,6 +300,8 @@ def main(argv=None):
     c.add_argument("--target", default="", help="Telegram chat id")
     c.add_argument("--client-dir", default="",
                    help="Client data folder; adds the saved-character question when it has saved characters (I6).")
+    c.add_argument("--run-state-file", default="",
+                   help="with --step and no replies: first call sends the one-time intro, next call question 1")
     c.add_argument("--step", action="store_true",
                    help="one question per message (I7): print only the next message")
     c.add_argument("--reply", action="append", default=[],
@@ -339,6 +341,7 @@ def main(argv=None):
         return _card.main(["--format", a.format, "--target", a.target]
                           + (["--client-dir", a.client_dir] if a.client_dir else [])
                           + (["--step"] if a.step else [])
+                          + (["--run-state-file", a.run_state_file] if a.run_state_file else [])
                           + [x for r in a.reply for x in ("--reply", r)])
     if a.cmd == "intake":
         env = cmd_intake(a)

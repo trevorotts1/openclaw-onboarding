@@ -583,7 +583,10 @@ distributions. Field-level rules live in `references/choice-card-spec.md`;
 human price snapshot in `references/price-menu.md`; stage order and QC in the
 SOP named above.
 
-- **Intake.** Quick mode by default (one sentence), Concept mode for a
+- **Intake.** The run opens with the intro, then the questions: send
+  `factory.py card --step --run-state-file <run-state.json>` first (it prints the
+  one-time intro, `references/choice-card-spec.md` section 2.3), then call it
+  again for question 1. Quick mode by default (one sentence), Concept mode for a
   client with their own story. At most three questions total, and ONE choice
   card with every default pre-selected, so a client can approve with one
   click.

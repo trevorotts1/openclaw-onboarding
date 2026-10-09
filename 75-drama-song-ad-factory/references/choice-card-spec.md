@@ -104,6 +104,34 @@ Built by `intake_card.conversation(replies)` (stateless: replay the replies so
 far), exposed as `factory.py card --step --reply ...`. Same code in claude-nine
 and OpenClaw. Test: `choice_card/intake_card/test_intake_step_i7.py`.
 
+## 2.3 Intro message (FU-INTRO-MESSAGE)
+
+The run opens with the intro, then the questions. The intro is sent ONCE, as
+its own message, at the start of a new interactive run, right before the first
+question. Exact text (one constant: `scripts/core/choice_card/intake_card/intro.py`):
+
+> Turn your offer into a video dramatization with music that people actually feel.
+>
+> Answer a few quick questions, and we handle the rest:
+> - Write the story and script, with the song lyrics woven in
+> - Create your characters (or bring back ones you've saved)
+> - Compose an original song in the music style you choose
+> - Create every image and build the storyboard, shot by shot
+> - Make the video shots and lip-sync the singers
+> - Edit it all together with captions and your call to action
+>
+> You approve the script, pick your favorite of 3 song versions, and sign off on the storyboard before any video is made. Longer videos also come with 60- and 90-second clips for social media.
+>
+> Let's start - just a few quick questions.
+
+Rules: never repeated on later replies, resume or recap; never shown by the
+batch, weekly-planner or CLI-only paths (they never message a client).
+`factory.py card --step --run-state-file <run-state.json>` with no replies
+prints the intro on the first call and records `intro_shown` in that file;
+the next call prints question 1. A run state that already shows `intro_shown`
+never prints it again. Without `--run-state-file` the card is unchanged.
+Test: `choice_card/intake_card/test_intro_message.py`.
+
 ## 2.1 Intake question card layout (Part H9, normative)
 
 The six intake questions (length, music style, video style, video model,
