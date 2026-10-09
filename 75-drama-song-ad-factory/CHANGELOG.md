@@ -6,6 +6,10 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.7 - 2026-10-09 - load-governor test no longer sleeps
+
+- `test_load_governor.py` resets the poll limiter after the fake-clock poll checks. They left it near 1003 s, so the later real-clock polls slept until the machine had been up that long (about 464 s on a fresh CI runner). No check was weakened.
+
 ## v2.9.6 - 2026-10-09 - Batch MGB015 roll-up
 
 One version for the MGB015 units: FU-U2 (style-aware length plan), FU-U8 (captions caught early), FU-U15i (docs in lockstep with the prompt). FU-U2 x the scaled CTA cap: a rap style keeps the fixed OUTRO_MAX_WORDS cap and the unspent allowance becomes the rap budget (matches 999 v2.7.29).

@@ -206,9 +206,11 @@ except LG.KieRateLimitError as e:
 # polls never consume generation tokens (real bucket in a fresh shared dir)
 os.environ["DSAF_GOVERNOR_DIR"] = tempfile.mkdtemp(dir=TMP)
 LG.load_governor._poll_last[0] = 0.0
+os.environ[LG.load_governor.POLL_ENV] = "0"   # this block checks tokens, not pacing (pacing is checked below); no real 1 s waits
 LG.kie_request(lambda: (0, "{}"), "wait", sleep=lambda s: None)
 for _ in range(30):
     LG.kie_request(lambda: (0, "{}"), "poll", sleep=lambda s: None)
+os.environ.pop(LG.load_governor.POLL_ENV, None)
 check("polls do not consume generation tokens",
       not os.path.exists(os.path.join(os.environ["DSAF_GOVERNOR_DIR"], "kie-rate")))
 LG.kie_request(lambda: (0, "{}"), "submit", generation=True)
@@ -223,6 +225,8 @@ check("polls paced at 1 per second by default", len(pn) == 3 and all(abs(x - 1.0
 pn.clear()
 LG.kie_poll_acquire(interval_s=0.25, sleep=lambda x: (pn.append(x), pc.sleep(x)), clock=mono)
 check("poll interval is configurable", pn and abs(pn[0] - 0.25) < 1e-6, pn)
+# the fake clock above left _poll_last near 1003 s; reset it or later real-clock polls sleep until monotonic() catches up (~464 s on a fresh CI runner)
+LG.load_governor._poll_last[0] = 0.0
 # dispatch: only submit is a generation request; a persistent 429 is never "submitted"
 import kie_dispatch.kie_dispatch as KD  # noqa: E402
 check("only submit-style commands are generation", KD.GENERATION_CMDS >= {"submit"} and

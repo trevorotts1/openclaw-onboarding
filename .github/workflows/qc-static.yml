@@ -2983,7 +2983,7 @@ jobs:
           # run time to prove the ban bites, so they are exempt by design —
           # the same class of exemption the no-personal-data gates give to
           # .md evidence docs that cite scan paths.
-          bash 75-drama-song-ad-factory/scripts/qc-operator-path-leak.sh
+          bash 75-drama-song-ad-factory/scripts/qc-operator-path-leak.sh || { echo "::error::qc-operator-path-leak.sh failed (rc=$?)"; exit 1; }
           echo "✓ No operator/build-workspace path stored in skill 75 scripts/core (B6 static check)"
           # Layer 1: real suites under an empty HOME, the exact per-file
           # invocation each test docstring documents (self-maintaining: the
