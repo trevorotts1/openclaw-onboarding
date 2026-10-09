@@ -6,6 +6,13 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.14 - 2026-10-09 - FU-DEL-13 delivery folder contract (Q12 gate)
+
+- `scripts/core/delivery_package/`: the client delivery folder contract -- 12 numbered package items, exact file names, and what "opens" means per kind (PDF header, SRT cue block, non-empty media, image directory). `packaging.package_run(run_dir, out_dir)` is the one packaging call: it discovers each item's `produce_delivery()` component, writes the canonical numbered files, and verifies the folder. Fail closed: `COMPONENT_MISSING` (naming every item still owed, before any write), `COMPONENT_FAILED`, `PACKAGE_INCOMPLETE`.
+- `delivery_checklist` gains Q12 `PACKAGE_COMPLETE` (`CHECKLIST_PACKAGE_INCOMPLETE`): the receipt names the delivery folder and Q12 reads it -- all 12 items present and opening, one missing item fails the run and is named. The gate is hard; the 11 human checklist questions are unchanged.
+- New `test_delivery_package_e2e.py`: one fixture run through the packaging entry point. While a sibling DEL-01..DEL-12 producer is not in the branch base it SKIPs with the full list of items still owed (never a fabricated green); a raising producer or a folder that does not verify still fails. `QC.md` records the package-items line.
+- Shared core byte-identical to the 999 copy (2.7.39).
+
 ## v2.9.13 - 2026-10-09 - Batch MGB023 follow-up 2 (no more silent ads)
 
 - Delivery audio gate on EVERY path that hands the client a video: the final assembler (already), the 60 and 90 second clip cutdowns (`clip_cutdown.run_clips`, a refused clip is deleted), the batch zip (captioned ad and clean master) and the delivery checklist. Each one calls `delivery_audio.check_delivery_audio()` and fails closed.
