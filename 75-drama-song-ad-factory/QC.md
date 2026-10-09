@@ -124,6 +124,11 @@ it advances. Standard library only; no credential value is ever printed.
 - [ ] Song files (H14): a delivery folder holds `<ad>.mp3` (320 kbps) and `<ad>.wav` (plus
       `<ad>-instrumental.*` if one exists), all listed in `delivery-receipt.json` and `README.md`;
       `python3 scripts/core/delivery_variants/song_files.py check <dir> <ad>` exits 0, and exits 5 when any song file is missing.
+- [ ] Package items (DEL-13, REQUIRED): the delivery folder carries all 12 numbered package items of
+      `scripts/core/delivery_package` (three audio versions plus note, character bible plus image bible,
+      script, storyboard, clean and captioned video, 60 and 90 second clips, ready-to-post kit, cover
+      thumbnail, lyric sheet, SRT, character images, welcome sheet), each one opening: `delivery_checklist`
+      Q12 `PACKAGE_COMPLETE` fails the run and names every missing item.
 - [ ] Song mp3 in the deliverable (FU-U14, REQUIRED): the ad folder holds `<Author> - <Title> - Song.mp3`
       (320 kbps, the exact song used, full length; the wav too when one exists) beside the captioned and
       clean-master mp4s. `delivery_checklist.check_song_mp3(<ad_dir>, <ad_audio>, <Title>, <Author>)` returns
