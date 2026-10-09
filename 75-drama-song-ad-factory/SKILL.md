@@ -742,6 +742,31 @@ recorded with `song_choices.py pick`.
 
 Client-facing question guide with examples and prep: `references/CLIENT-GUIDE.md`.
 
+## Script PDF in the delivery folder (DEL-03)
+
+The approved script ships as a printed page in the delivery folder, built at
+the end of the run from the SAME approved content the client signed off on:
+`python3 scripts/core/script_pdf/script_pdf.py run --run-dir $RUN
+--delivery-dir $DELIVERY`. It reads `creative/script.json` and the
+`creative/script-approval.json` record, so a run whose approval does not
+cover the lyrics on disk is refused (`SCRIPT_PDF_NOT_APPROVED`,
+`SCRIPT_PDF_STALE_REVISION`) instead of printing the wrong revision, and a
+run that never asked for script approval prints nothing.
+
+The file is `03 - SCRIPT.pdf`, numbered to its slot in the delivery package.
+Its sha256 lands in `delivery-receipt.json` under `script_pdf` and the file
+is listed in `README.md` between its own markers -- both merged into what is
+already there, never clobbered. QC: `script_pdf.py check $DELIVERY`
+(exit 5 = missing, unbound, or below the type floor).
+
+The drawing lives in `scripts/core/delivery_docs/pdf_writer.py`: standard
+library only, base-14 fonts, bright white page, and nothing set below 12 pt
+(the floor is raised in code, not asked for). Content rules fail closed
+before a byte is written -- no money figure, no income promise, no model,
+tool or platform name -- and a section label (THE STORY, THE SONG LYRICS, a
+bracketed song tag) is never treated as song copy when those rules look for
+offenders.
+
 ## Version 2 production options (owner BUILD-OUT 2026-10-07)
 
 Everything in this section is shared doctrine: identical in both
