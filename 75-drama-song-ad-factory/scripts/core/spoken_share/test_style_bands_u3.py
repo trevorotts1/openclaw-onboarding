@@ -192,8 +192,16 @@ def test_b_rnb_judge_not_fail_by_construction():
                       None, "rnb-flow")
     band_gates = ("spoken_share", "rap_share", "sung_of_voice")
     bad = [g for g in band_gates if j["gates"][g]["verdict"] == "FAIL"]
+    # The sheet-dependent gates (FU-RNBFLOW-SONG song_contract, FU-HOOK-PLACEMENT
+    # hook_placement) need the approved sheet text and hook_plan, which this band
+    # fixture does not carry: they must fail CLOSED as UNMEASURED, and nothing
+    # else may fail. Their own tests cover them with a real sheet.
+    sheet_gates = ("song_contract", "hook_placement")
+    check("(b) without a sheet the song-contract and hook-placement gates fail closed (UNMEASURED)",
+          all("UNMEASURED" in j["gates"][g]["detail"] for g in sheet_gates)
+          and set(j["failed"]) <= set(sheet_gates), repr(j["failed"]))
     check("(b) the R&B Flow judge is not FAIL when the take matches its "
-          "approved plan", j["verdict"] != "FAIL" and not bad,
+          "approved plan", not [g for g in j["failed"] if g not in sheet_gates] and not bad,
           "verdict=%s failed=%s band=%s" % (j["verdict"], j["failed"],
                                             {g: j["gates"][g] for g in band_gates}))
     check("(b) spoken_share judged against the approved plan's planned share "

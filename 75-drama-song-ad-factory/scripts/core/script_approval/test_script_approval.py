@@ -34,8 +34,8 @@ LYRICS = "\n".join(l for s in SHEET for l in s["lines"])
 CLIENT = "I am not small. I never was. One seed of truth made me strong. She Found Power in the Climb."
 RSHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
           {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
-          {"tag": "Hook 1", "delivery": "sung", "lines": HOOK},
           {"tag": "Verse", "delivery": "sung", "lines": ["One seed of truth made me stro-o-ong,"]},
+          {"tag": "Hook 1", "delivery": "sung", "lines": HOOK},
           {"tag": "Hook 2", "delivery": "sung", "lines": HOOK},
           {"tag": "Hook 3", "delivery": "sung", "lines": HOOK},
           {"tag": "Outro", "delivery": "spoken",
@@ -80,7 +80,7 @@ def test_script_message_shape():
 
 def _req_and_plan():
     plan = LF.plan(60, (15, 20))
-    return R.build_request("soul-ballad", RSHEET, CLIENT, "T", 58), plan
+    return R.build_request("soul-ballad", RSHEET, CLIENT, "T", 58, hook_plan={"true_at_beat": "the_world"}), plan
 
 
 def _run(rec, calls):

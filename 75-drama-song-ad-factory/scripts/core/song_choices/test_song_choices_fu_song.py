@@ -24,10 +24,20 @@ import kie_dispatch.kie_dispatch as KD                          # noqa: E402
 import factory as F                                             # noqa: E402
 
 N = len(IC.QUESTIONS)
+IDS = [q["id"] for q in IC.QUESTIONS]
+SONG_N = IDS.index("song") + 1
+
+
+def ANS(song="1", upto=None):
+    """Replies for every card question in order (AI models, length ... script): the
+    spend question takes a dollar amount, SONG APPROVAL takes ``song``, the rest take 1."""
+    r = ["$25" if i == "spend" else song if i == "song" else "1" for i in IDS]
+    return r if upto is None else r[:upto]
 CLIENT = "I am not small. I never was. One seed of truth made me strong. She Found Power in the Climb."
 HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
 SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
          {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
+         {"tag": "Verse", "delivery": "sung", "lines": ["And I rise above the pa-a-ain,", "Through the dark I walk alo-o-one,"]},
          {"tag": "Hook 1", "delivery": "sung", "lines": HOOK},
          {"tag": "Verse", "delivery": "sung", "lines": ["One seed of truth made me stro-o-ong,"]},
          {"tag": "Hook 2", "delivery": "sung", "lines": HOOK},
@@ -46,6 +56,17 @@ GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 2, "source": "mea
         "tail_rms_dbfs": -30.0, "first_sung_s": 2.5}
 
 
+def _suno_words(lyrics):
+    """Aligned words the way Suno returns them: each section header rides inline on
+    the section's first word (FU-HOOK-PLACEMENT reads them), one second apart."""
+    out = []
+    for block in lyrics.split("\n\n"):
+        head, *lines = block.split("\n")
+        toks = " ".join(lines).split() or [""]
+        out += [{"word": (head + "\n" + t + " ") if k == 0 else t + " "} for k, t in enumerate(toks)]
+    return [dict(w, startS=3 + i, endS=3.5 + i) for i, w in enumerate(out)]
+
+
 def _mp3(path, hz):
     subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=%d:duration=1" % hz, path],
                    check=True, capture_output=True)
@@ -59,7 +80,7 @@ def _tag(path):
 
 def _pipeline(tmp, bad_first=(), bad_always=()):
     """Run the Yes path with a fake generator. Returns (results, calls, barrier_ok)."""
-    reqs = SC.build_requests("rnb-flow", SHEET, CLIENT, "T", 58)
+    reqs = SC.build_requests("rnb-flow", SHEET, CLIENT, "T", 58, hook_plan={"true_at_beat": "the_world"})
     calls, seen, lock = {}, set(), threading.Lock()
     barrier = threading.Barrier(3, timeout=10)
 
@@ -74,7 +95,7 @@ def _pipeline(tmp, bad_first=(), bad_always=()):
         src = os.path.join(tmp, "%s-%d.mp3" % (v["id"], k))
         _mp3(src, 300 + 100 * len(calls))
         bad = v["id"] in bad_always or (v["id"] in bad_first and k == 1)
-        t = dict(GOOD, audio_path=src)
+        t = dict(GOOD, audio_path=src, aligned_words=_suno_words(rq["lyrics"]))
         if bad:
             t["detector"] = "singcheck v1"
         return [t]
@@ -86,30 +107,30 @@ def _pipeline(tmp, bad_first=(), bad_always=()):
 
 def test_card_has_song_approval_after_storyboard():
     labels = [q["label"] for q in IC.QUESTIONS]
-    assert N == 7 and labels[-2:] == ["STORYBOARD APPROVAL", "SONG APPROVAL"], labels
-    block = IC.render_card().split("\n\n")[6].split("\n")
-    assert block[0] == "Question 7 of 7 - SONG APPROVAL"
+    assert N == 9 and labels[-3:] == ["STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"], labels
+    block = IC.render_card().split("\n\n")[SONG_N - 1].split("\n")
+    assert block[0] == "Question %d of %d - SONG APPROVAL" % (SONG_N, N)
     assert block[1] == "Do you want to hear and pick the song before any video is made?"
     assert block[2].startswith("1. Yes, send me 3 versions to choose from - ") and IC.REC in block[2]
     assert block[3].startswith("2. No, just make it - ") and IC.REC not in block[3]
-    step = IC.conversation(["1"] * 6)["message"]
-    assert step.startswith("Question 7 of 7 - SONG APPROVAL") and 'say "recommended".' in step
-    assert IC.conversation(["1"] * 6 + ["recommended"])["answers"][6]["n"] == 1
+    step = IC.conversation(ANS(upto=SONG_N - 1))["message"]
+    assert step.startswith("Question %d of %d - SONG APPROVAL" % (SONG_N, N)) and 'say "recommended".' in step
+    assert IC.conversation(ANS(upto=SONG_N - 1) + ["recommended"])["answers"][SONG_N - 1]["n"] == 1
 
 
 def test_recap_lists_it_and_line_change_works():
-    st = IC.conversation(["1"] * 7)
-    assert "7. Song Approval: Yes, send me 3 versions to choose from" in st["message"]
+    st = IC.conversation(ANS())
+    assert "%d. Song Approval: Yes, send me 3 versions to choose from" % SONG_N in st["message"]
     assert IC.song_required(st["answers"]) is True
-    fix = IC.conversation(["1"] * 7 + ["7"])
-    assert fix["message"].startswith("Question 7 of 7 - SONG APPROVAL")
-    no = IC.conversation(["1"] * 7 + ["7", "2"])
-    assert IC.song_required(no["answers"]) is False and "7. Song Approval: No, just make it" in no["message"]
+    fix = IC.conversation(ANS() + [str(SONG_N)])
+    assert fix["message"].startswith("Question %d of %d - SONG APPROVAL" % (SONG_N, N))
+    no = IC.conversation(ANS() + [str(SONG_N), "2"])
+    assert IC.song_required(no["answers"]) is False and "%d. Song Approval: No, just make it" % SONG_N in no["message"]
 
 
 def test_three_distinct_variants_per_style_all_pass_the_request_check():
     for style in ("rnb-flow", "soul-ballad", "soul-rise"):
-        reqs = SC.build_requests(style, SHEET, CLIENT, "T", 58)
+        reqs = SC.build_requests(style, SHEET, CLIENT, "T", 58, hook_plan={"true_at_beat": "the_world"})
         assert len({rq["style"] for _, rq in reqs}) == 3 and len({v["label"] for v, _ in reqs}) == 3
         assert len({rq["lyrics"] for _, rq in reqs}) == 1        # same lyric sheet
         for v, rq in reqs:

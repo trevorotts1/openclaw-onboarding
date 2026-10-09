@@ -194,9 +194,11 @@ def _model_question(length_label):
 
 def _priced(qs, answers):
     """Swap in the VIDEO MODEL question priced for the length already answered."""
-    if not answers or qs[0]["id"] != "length":
+    ids = [q["id"] for q in qs]
+    if "length" not in ids or len(answers) <= ids.index("length"):
         return qs
-    return [_model_question(answers[0]["text"]) if q["id"] == "model" else q for q in qs]
+    length_text = answers[ids.index("length")]["text"]       # AI MODELS (and the saved character) may come first
+    return [_model_question(length_text) if q["id"] == "model" else q for q in qs]
 
 
 QUESTIONS = _questions()
@@ -261,10 +263,10 @@ def render_recap(answers, questions=None):
     qs = _priced(questions or QUESTIONS, answers)
     lines = ["Here is what you picked:"]
     for i, (q, a) in enumerate(zip(qs, answers), 1):
-        if "recap" in q:
+        if "recap" in q and a.get("n"):
             lines.append("%d. %s" % (i, q["recap"][a["n"] - 1]))
             continue
-        price = (" - about " + q["values"][a["n"] - 1]) if q["id"] == "model" else ""
+        price = (" - about " + q["values"][a["n"] - 1]) if q["id"] == "model" and a.get("n") else ""
         lines.append("%d. %s: %s%s" % (i, q["label"].title().replace("Model", "model"), a["text"], price))
     lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
     return "\n".join(lines)
@@ -294,7 +296,8 @@ def _parse(reply, q):
         return {"n": len(opts), "text": "up to " + _usd(t), "value": t.lstrip("$"), "id": q["id"]}
     else:
         return None
-    value = q.get("values", {}).get(n)
+    _v = q.get("values")
+    value = _v.get(n) if isinstance(_v, dict) else None
     if q["id"] == "spend" and value is None:      # "A different maximum" with no amount, or a
         return None                               # bare "yes": no amount = no spend
     return {"n": n, "text": "up to " + _usd(value) if q["id"] == "spend" else opts[n - 1][0], "value": value, "id": q["id"]}

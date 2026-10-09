@@ -128,7 +128,7 @@ def QUESTION_TEXT():
 
 def test_recap_line_exact():
     recap = IC.conversation(["1"] * N, _qs(18.5, 25))["message"]
-    assert "5. Budget: up to $25.00\n" in recap and "Spend" not in recap, recap
+    assert "6. Budget: up to $25.00\n" in recap and "Spend" not in recap, recap
 
 
 def _factory(*args):

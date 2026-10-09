@@ -375,7 +375,7 @@ def _cases(TMP):
           q_with == q_without and q_with == len(IC.QUESTIONS),
           (q_with, q_without, len(IC.QUESTIONS)))
     check("card: the closing answer line is unchanged",
-          IC.CLOSING_LINE in with_b and IC.CLOSING_LINE in without_b,
+          IC._closing(IC.QUESTIONS) in with_b and IC._closing(IC.QUESTIONS) in without_b,
           "")
 
     # -------------------------------------- the U9 hook call site ----------

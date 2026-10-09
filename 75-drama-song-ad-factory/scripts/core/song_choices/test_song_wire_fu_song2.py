@@ -18,8 +18,9 @@ from choice_card.intake_card import intake_card as IC           # noqa: E402
 from song_choices import song_choices as SC                     # noqa: E402
 import factory as F                                             # noqa: E402
 
-YES = ["1"] * 7 + ["yes"]                 # all recommended; SONG APPROVAL = Yes
-NO = ["1"] * 6 + ["2", "yes"]             # SONG APPROVAL = No
+YES = T.ANS("1") + ["yes"]                # all recommended; SONG APPROVAL = Yes
+NO = T.ANS("2") + ["yes"]                 # SONG APPROVAL = No
+SN = str(T.SONG_N)
 
 
 def _gate(run):
@@ -36,7 +37,7 @@ def test_yes_card_to_gate_closed_until_pick_then_open():
     with tempfile.TemporaryDirectory() as tmp:
         run = T._stage_run(tmp)
         assert _gate(run) == "open"                                  # nothing recorded yet
-        IC.conversation(["1"] * 7, run_dir=run)                      # recap shown, not confirmed
+        IC.conversation(T.ANS("1"), run_dir=run)                      # recap shown, not confirmed
         assert SC._state(run) is None and _gate(run) == "open"
         st = IC.conversation(YES, run_dir=run)
         assert st["done"] and SC._state(run)["required"] is True
@@ -59,9 +60,9 @@ def test_recap_change_updates_the_recorded_answer():
         run = T._stage_run(tmp)
         IC.conversation(NO, run_dir=run)
         assert _gate(run) == "open"
-        IC.conversation(["1"] * 6 + ["2", "7", "1", "yes"], run_dir=run)   # changed 7 to Yes
+        IC.conversation(T.ANS("2") + [SN, "1", "yes"], run_dir=run)   # changed the song line to Yes
         assert SC._state(run)["required"] is True and _gate(run) == "SONG_PICK_MISSING"
-        IC.conversation(["1"] * 7 + ["7", "2", "yes"], run_dir=run)         # and back to No
+        IC.conversation(T.ANS("1") + [SN, "2", "yes"], run_dir=run)         # and back to No
         assert SC._state(run)["required"] is False and _gate(run) == "open"
 
 

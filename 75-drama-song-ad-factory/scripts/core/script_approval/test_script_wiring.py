@@ -145,14 +145,14 @@ def test_run_takes_finds_the_record_from_run_dir():
     hook = ["I am not sma-a-all", "I ne-ever wa-a-as"]
     sheet = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
              {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
-             {"tag": "Hook 1", "delivery": "sung", "lines": hook},
              {"tag": "Verse", "delivery": "sung", "lines": ["One seed of truth made me stro-o-ong,"]},
+             {"tag": "Hook 1", "delivery": "sung", "lines": hook},
              {"tag": "Hook 2", "delivery": "sung", "lines": hook},
              {"tag": "Hook 3", "delivery": "sung", "lines": hook},
              {"tag": "Outro", "delivery": "spoken",
               "lines": ["She Found Power in the Climb. Get the book. Link below."]}]
     req = R.build_request("soul-ballad", sheet, "I am not small. I never was. One seed of truth made me strong. "
-                          "She Found Power in the Climb.", "T", 58)
+                          "She Found Power in the Climb.", "T", 58, hook_plan={"true_at_beat": "the_world"})
     calls = []
     try:
         SD.run_takes(req, LF.plan(60, (15, 20)), lambda rq: calls.append(1) or [], lambda t: {},

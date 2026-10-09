@@ -23,10 +23,10 @@ def _blocks(text):
     return text.split("\n\n")
 
 
-def test_seven_questions_each_own_block():
-    assert N == 7
+def test_nine_questions_each_own_block():
+    assert N == 9
     blocks = _blocks(CARD)
-    assert len(blocks) == N + 1                       # seven questions + closing
+    assert len(blocks) == N + 1                       # nine questions + closing
     for i, b in enumerate(blocks[:N], 1):
         first = b.split("\n")[0]
         assert first.startswith("Question %d of %d - " % (i, N)), first

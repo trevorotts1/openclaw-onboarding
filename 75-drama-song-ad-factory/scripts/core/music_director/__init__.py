@@ -168,8 +168,8 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
         raise ValueError("; ".join(misspelled))
     if hook_plan is None and true_at_beat is not None:
         hook_plan = hook_placement.plan_for(lyrics_text, length_s, true_at_beat, style_id)
-    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s,
-                              hook_plan=hook_plan)  # recipe v2 + I8 + hook placement
+    # The client's own lines are a contract: a sheet that drops one is refused
+    # naming the line before the recipe guard asks about style or hook placement.
     if packet_lines is not None and (protected or any(
             isinstance(x, dict) for x in packet_lines)):
         # H7 (supersedes the F7 whole-text match, which forbids any sung
@@ -183,6 +183,8 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
         errors = words_match.validate_words_match(lyrics_text, packet_lines)
         if errors:
             raise ValueError("; ".join(errors))
+    suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s,
+                              hook_plan=hook_plan)  # recipe v2 + I8 + hook placement
     if not instrumental:  # I5: ask for a real ending (outro + resolved chord)
         lyrics_text, style_text = ending_qc.with_clean_ending(lyrics_text, style_text)
     ver = _checked_version(version)

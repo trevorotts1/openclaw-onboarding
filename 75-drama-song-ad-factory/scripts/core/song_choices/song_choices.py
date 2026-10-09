@@ -39,7 +39,7 @@ if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
 from song_dispatch import song_dispatch as _SD   # noqa: E402
-from suno_recipe import suno_recipe as _R         # noqa: E402
+import suno_recipe as _R                          # noqa: E402  (same form as song_dispatch: works with the package or the bare module on sys.path)
 
 TOOL_NAME = "song_choices"
 DIRNAME = "SONG-CHOICES"
@@ -78,9 +78,16 @@ def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="
     for v in variants_for(style_id):
         req = _R.build_request(style_id, sheet, client_text, title, length_s, vocal_gender, **kw)
         req = dict(req, style=req["style"].rstrip() + " " + v["clause"].rstrip(".") + ".")
-        errs = _SD.validate_request(req, style_id, client_text)
+        errs = _SD.validate_request(req, style_id, client_text, length_s)   # 1758: delivered_s required
         if errs:
             raise ChoiceError("variant %s request refused before spend: %s" % (v["id"], "; ".join(errs)))
+        # The judge needs the style and the hook plan (FU-RNBFLOW-SONG song_contract,
+        # FU-HOOK-PLACEMENT hook_placement): ride them on the request; run_takes
+        # moves _hook_plan into the plan, generate_choices turns _style_id into style_id,
+        # and neither reaches KIE.
+        req = dict(req, _style_id=style_id)
+        if kw.get("hook_plan") is not None:
+            req["_hook_plan"] = kw["hook_plan"]
         out.append((v, req))
     return out
 
@@ -93,10 +100,13 @@ def generate_choices(requests, plan, generate, measure, save, script_words, hook
     Returns [{n, variant, status PASS|FLAG|FAILED, take, attempts, receipts}]."""
     def one(n, v, req):
         receipts, got = [], None
+        opts = dict(kw)
+        opts.setdefault("style_id", req.get("_style_id"))
+        req = {k: x for k, x in req.items() if k != "_style_id"}
         for attempt in (1, 2):
             r = _SD.run_takes(req, plan, lambda rq: generate(v, rq), measure,
                               lambda t, rc: save(v, t, rc), script_words, hook_text,
-                              spoken_range_pct, cap_cents=_SD.GEN_COST_CENTS, **kw)
+                              spoken_range_pct, cap_cents=_SD.GEN_COST_CENTS, **opts)
             receipts += r["receipts"]
             if r["verdict"] != "FAIL":
                 got = r

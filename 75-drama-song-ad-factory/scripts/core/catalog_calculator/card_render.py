@@ -86,7 +86,11 @@ def default_choice(card, model=None):
     calculator's ``choice`` + shipped fixtures, so a card renders with real
     prices without any operator path or catalog sync state.
     """
-    length = LENGTH_SECONDS.get(str(card.get("length") or "60 seconds"), 60)
+    label = str(card.get("length") or "60 seconds")
+    try:    # the intake option text ("3 minutes + 60s and 90s clips") is not a LENGTH_SECONDS key
+        length = LENGTH_SECONDS.get(label) or VM.length_seconds(label)
+    except ValueError:
+        length = 60
     shape = str(card.get("shape") or "9:16")
     shapes = ("9:16", "16:9") if shape == "both" else (shape if shape in
                                                        ("9:16", "16:9") else "9:16",)
@@ -212,10 +216,11 @@ def render(card, price_fn, state_store=None, run_id=None):
                      % ("Images:", plan["reference_images"], plan["keyframe_images"],
                         plan["reference_set_usd"]))
     if priced_ok and total is not None:
-        retake = ok_card["retake_allowance_usd"]
+        extra = song_extra or 0.0           # the two extra songs carry the 20% allowance too
+        retake = ok_card["retake_allowance_usd"] + extra * RETAKE_RATE
         lines.append("")
         lines.append("  %-12s $%.2f + $%.2f retake allowance (20%%) = $%.2f"
-                     % ("Total:", total, retake, ok_card["spending_limit_usd"]))
+                     % ("Total:", total, retake, ok_card["spending_limit_usd"] + extra * (1 + RETAKE_RATE)))
     else:
         lines.append("")
         lines.append("  %-12s Price unavailable -- media generation pricing is "

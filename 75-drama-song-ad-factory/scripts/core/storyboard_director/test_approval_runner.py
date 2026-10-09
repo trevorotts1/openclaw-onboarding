@@ -180,8 +180,9 @@ def card_then_run(storyboard_reply):
     """Real intake card, answered end to end, then the runner on the same run dir."""
     from choice_card.intake_card import intake_card as IC
     run, w = make_run(None), World()
-    replies = ["recommended"] * (len(IC.QUESTIONS) - 1) + [storyboard_reply, "yes"]
-    st = IC.conversation(replies, IC.QUESTIONS, run, "555")
+    ids = [q["id"] for q in IC.QUESTIONS]
+    replies = ["$25" if i == "spend" else storyboard_reply if i == "storyboard" else "1" for i in ids] + ["yes"]
+    st = IC.conversation(replies, IC.QUESTIONS, run_dir=run, target="555")
     check("card done (%s)" % storyboard_reply, st["done"])
     return run, w, AR.run(run, w.send)
 
