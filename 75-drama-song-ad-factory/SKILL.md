@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.13
+version: v2.9.14
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -741,6 +741,31 @@ in order 1, 2, 3) before any later stage; the client's reply 1, 2 or 3 is
 recorded with `song_choices.py pick`.
 
 Client-facing question guide with examples and prep: `references/CLIENT-GUIDE.md`.
+
+## Script PDF in the delivery folder (DEL-03)
+
+The approved script ships as a printed page in the delivery folder, built at
+the end of the run from the SAME approved content the client signed off on:
+`python3 scripts/core/script_pdf/script_pdf.py run --run-dir $RUN
+--delivery-dir $DELIVERY`. It reads `creative/script.json` and the
+`creative/script-approval.json` record, so a run whose approval does not
+cover the lyrics on disk is refused (`SCRIPT_PDF_NOT_APPROVED`,
+`SCRIPT_PDF_STALE_REVISION`) instead of printing the wrong revision, and a
+run that never asked for script approval prints nothing.
+
+The file is `03 - SCRIPT.pdf`, numbered to its slot in the delivery package.
+Its sha256 lands in `delivery-receipt.json` under `script_pdf` and the file
+is listed in `README.md` between its own markers -- both merged into what is
+already there, never clobbered. QC: `script_pdf.py check $DELIVERY`
+(exit 5 = missing, unbound, or below the type floor).
+
+The drawing lives in `scripts/core/delivery_docs/pdf_writer.py`: standard
+library only, base-14 fonts, bright white page, and nothing set below 12 pt
+(the floor is raised in code, not asked for). Content rules fail closed
+before a byte is written -- no money figure, no income promise, no model,
+tool or platform name -- and a section label (THE STORY, THE SONG LYRICS, a
+bracketed song tag) is never treated as song copy when those rules look for
+offenders.
 
 ## Version 2 production options (owner BUILD-OUT 2026-10-07)
 
