@@ -33,3 +33,17 @@ def pytest_collectstart(collector):
                 del sys.modules[name]
         except (OSError, ValueError):
             pass
+
+
+import pytest
+
+
+@pytest.fixture
+def tmp():
+    """The script-style suites (test_frame_text_f9.py) take a temp DIRECTORY
+    path as their first argument; a plain `python3 <test>.py` run passes one
+    from main(). Under pytest the name is read as a fixture request, so hand
+    back a fresh empty directory path -- same contract, pytest-shaped."""
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="w75-tmp-") as d:
+        yield d

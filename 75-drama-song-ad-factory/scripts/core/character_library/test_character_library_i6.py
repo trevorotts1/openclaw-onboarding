@@ -8,7 +8,10 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import character_library as CL  # noqa: E402
+try:                                   # pytest imports the character_library
+    from character_library import character_library as CL  # noqa: E402
+except ImportError:                    # PACKAGE (dir has __init__.py) first;
+    import character_library as CL     # a script run gets the module file
 
 
 class RoundTrip(unittest.TestCase):
