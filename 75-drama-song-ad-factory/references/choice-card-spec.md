@@ -117,6 +117,14 @@ none, 60 seconds. A brief pre-fills the RECOMMENDED picks but never skips
 the card (F15): the card still shows and the answers still record before
 ANY paid job.
 
+That list is `references/prompt-templates/length-classes.json`, keyed
+`60, 90, 120, 180, 300, 600`, and it is the ONE length table: the card, the
+shot planner (`shot_planner.class_check`), the lip-sync budget
+(`lipsync_clips.class_check`) and `length_formula.class_check` all read it, and
+`prompt_templates.length_class(L)` raises `PROMPT_LENGTH_CLASS_DRIFT` naming
+each drifted field rather than let a stale number be read. The card shows the
+six values above, in that order and no others.
+
 Each length is its own song and timing map, never a cut-down of a longer one.
 Shot count is computed from the chosen model's maximum shot length; it is
 never hard-coded per length. Suno V6 produces 10-360 seconds in one
@@ -136,6 +144,15 @@ Offered: **9:16, 16:9, or both** (decision 2). Default 9:16.
 ### 3.3 Style (five looks)
 
 Decision 29, plan 6.11:
+
+Each row picks its render modes from `references/prompt-templates/looks/`:
+`lifelike-3d.json`, `2d-hand-painted.json`, `sketch-to-life.json`,
+`canvas-to-life.json`, `canvas-to-3d.json`. A look file names the modes it
+uses, its beat-to-mode map, its switch rules and the modes that may be
+lip-synced. The mode text itself exists once, in
+`references/prompt-templates/modes/`; the style-bible modules keep the plans
+and rules, and the template system owns the prompt text (design 2.4).
+
 
 | Value on the card | Look |
 |---|---|
