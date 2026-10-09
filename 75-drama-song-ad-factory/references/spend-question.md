@@ -19,7 +19,11 @@ When the brief or the weekly planner (`smp/initial_questions`) already gave a
 limit, it is option 1 ("Your limit: $X - from your brief") and the card price
 is option 2; the client still confirms by replying. `<card price>` is the
 card's total with the 20% allowance (`spending_limit_usd`); pass it as
-`factory.py card --step --price <usd> [--limit <usd>]`. Spending authority is
+`factory.py card --step --price <usd>`. The limit is picked up on its own from
+`--brief`, `--brief-file` or `--summary-file` (`budget_minor` or the summary's
+`generation_ceiling`, US dollars only); `--limit <usd>` overrides it. With no
+price and no limit, no option is marked recommended, the closing line does not
+offer "all recommended", and the question asks for a dollar amount plainly. Spending authority is
 never defaulted: no reply, or a reply that is not an option or a dollar amount,
 records nothing and nothing is spent. The recap repeats the chosen limit.
 

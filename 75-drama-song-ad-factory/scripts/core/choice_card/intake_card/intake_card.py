@@ -41,7 +41,15 @@ CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
                 'like "1, 1, 1, 1, 1, 1". Say "all recommended" to take every '
                 'RECOMMENDED choice.')
 
+SHORT_CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
+                      'like "1, 1, 1, 1, 1, 1". For the SPEND LIMIT, reply with a dollar amount.')
+
 REC = "(RECOMMENDED)"
+
+
+def _closing(qs):
+    """'all recommended' is offered only when every question has a recommended option."""
+    return CLOSING_LINE if all(q.get("recommended") is not None for q in qs) else SHORT_CLOSING_LINE
 
 #: (label, question, [(option, one short sentence)], recommended option index)
 #: Looks and music come from the choice-card modules so the menu cannot drift.
@@ -95,8 +103,11 @@ def spend_question(price=None, limit=None):
             "reason": ("it is the limit you already gave in your brief." if limit is not None else
                        "it covers the whole price, with room to redo shots." if price is not None else
                        "you choose the number."),
-            "label": "SPEND LIMIT", "ask": "How much are you OK spending on this ad?",
-            "options": opts, "values": vals, "recommended": 0}
+            "label": "SPEND LIMIT",
+            "ask": ("How much are you OK spending on this ad?" if opts[:-1] else
+                    "How much are you OK spending on this ad? Reply with a dollar amount, like $25."),
+            # no price and no limit: nothing to recommend, the client types an amount
+            "options": opts, "values": vals, "recommended": 0 if opts[:-1] else None}
 
 
 def _questions():
@@ -151,6 +162,9 @@ def render_step(i, questions=None):
         mark = (" " + REC) if n - 1 == q.get("recommended") else ""
         lines.append("%d. %s - %s%s" % (n, opt, sentence, mark))
     r = q.get("recommended", 0)
+    if r is None:
+        lines += ["", "Reply with a dollar amount, like $25."]
+        return "\n".join(lines)
     lines += ["", "I recommend option %d (%s) because %s" % (r + 1, q["options"][r][0], q["reason"]),
               "Reply with a number, or say \"recommended\"."]
     return "\n".join(lines)
@@ -173,6 +187,8 @@ def _parse(reply, q):
     t = (reply or "").strip().lower()
     opts = q["options"]
     if t in ("recommended", "recommend", "rec") or (t in _YES and len(opts) > 0):
+        if q.get("recommended") is None:
+            return None
         n = q.get("recommended", 0) + 1
     elif t.isdigit() and 1 <= int(t) <= len(opts):
         n = int(t)
@@ -228,7 +244,7 @@ def conversation(replies, questions=None):
 def render_card(questions=None):
     """The whole card as one string: blank line between questions, closing line."""
     qs = questions or QUESTIONS
-    return "\n\n".join(_blocks(qs) + [CLOSING_LINE])
+    return "\n\n".join(_blocks(qs) + [_closing(qs)])
 
 
 def format_questions(texts):
@@ -262,7 +278,7 @@ def render_messages(questions=None, limit=TELEGRAM_LIMIT):
     """The card as a list of messages, each <= limit chars, split only between
     questions (one message per question when they do not all fit)."""
     parts = []
-    for b in _blocks(questions or QUESTIONS) + [CLOSING_LINE]:
+    for b in _blocks(questions or QUESTIONS) + [_closing(questions or QUESTIONS)]:
         parts.extend(_split_long(b, limit) if len(b) > limit else [b])
     msgs, cur = [], ""
     for p in parts:

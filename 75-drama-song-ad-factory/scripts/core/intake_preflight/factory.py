@@ -90,6 +90,20 @@ def _load(path):
         return json.load(f)
 
 
+def limit_from(doc):
+    """Dollars (str) from a brief or intake summary/envelope, or None. Minor units,
+    USD only (or no currency named); anything else is left for the client to type."""
+    if not isinstance(doc, dict):
+        return None
+    doc = ((doc.get("data") or {}).get("summary") or doc.get("summary") or doc)
+    ceil = doc.get("generation_ceiling") or {}
+    minor = doc.get("budget_minor", doc.get("budget_amount_minor", ceil.get("amount_minor")))
+    cur = str(doc.get("budget_currency") or doc.get("currency") or ceil.get("currency") or "usd").lower()
+    if not isinstance(minor, int) or isinstance(minor, bool) or minor <= 0 or cur != "usd":
+        return None
+    return "%d.%02d" % divmod(minor, 100)
+
+
 def cmd_intake(a):
     brief = _load(a.brief_file) if a.brief_file else json.loads(a.brief or "{}")
     settings = _load(a.settings_file) if a.settings_file else {}
@@ -301,7 +315,11 @@ def main(argv=None):
     c.add_argument("--client-dir", default="",
                    help="Client data folder; adds 'Use a saved character?' when it has saved characters (I6).")
     c.add_argument("--price", default=None, help="card total in dollars, shown in the spend question")
-    c.add_argument("--limit", default=None, help="spend limit the brief already gave, in dollars")
+    c.add_argument("--limit", default=None, help="spend limit in dollars; overrides the one found in the brief or summary")
+    c.add_argument("--brief", default=None, help="Brief as JSON string; its budget_minor becomes spend option 1.")
+    c.add_argument("--brief-file", default=None, help="Brief JSON file (or the planner's); same.")
+    c.add_argument("--summary-file", default=None,
+                   help="intake output (envelope or summary) JSON; its generation_ceiling becomes spend option 1.")
     c.add_argument("--step", action="store_true",
                    help="one question per message (I7): print only the next message")
     c.add_argument("--reply", action="append", default=[],
@@ -326,10 +344,14 @@ def main(argv=None):
         if core not in sys.path:
             sys.path.insert(0, core)
         from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
+        limit = a.limit
+        for doc in ((_load(a.summary_file) if a.summary_file else None),
+                    (_load(a.brief_file) if a.brief_file else json.loads(a.brief) if a.brief else None)):
+            limit = limit or limit_from(doc)
         return _card.main(["--format", a.format, "--target", a.target]
                           + (["--client-dir", a.client_dir] if a.client_dir else [])
                           + (["--price", a.price] if a.price else [])
-                          + (["--limit", a.limit] if a.limit else [])
+                          + (["--limit", limit] if limit else [])
                           + (["--step"] if a.step else [])
                           + [x for r in a.reply for x in ("--reply", r)])
     if a.cmd == "intake":

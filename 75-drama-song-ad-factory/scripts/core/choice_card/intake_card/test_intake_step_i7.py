@@ -35,6 +35,9 @@ def test_transcript_one_question_per_turn_with_options_and_recommendation():
         assert lines[1].endswith(".") and lines[2] == ""              # one-sentence why
         opts = [l for l in lines if re.match(r"^\d+\. ", l)]
         assert len(opts) == len(IC.QUESTIONS[i - 1]["options"])
+        if IC.QUESTIONS[i - 1]["recommended"] is None:                # unpriced spend: no recommendation
+            assert not any(IC.REC in l for l in opts) and t.endswith("like $25.")
+            continue
         assert sum(IC.REC in l for l in opts) == 1                    # one RECOMMENDED
         assert re.search(r"I recommend option \d+ \(.+\) because .+\.", t)
         assert t.endswith('say "recommended".')

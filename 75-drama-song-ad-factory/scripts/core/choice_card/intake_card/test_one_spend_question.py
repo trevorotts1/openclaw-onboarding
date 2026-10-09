@@ -90,6 +90,46 @@ def test_recap_shows_the_limit():
     assert "Spend Limit: $18.50" in recap, recap
 
 
+def test_no_price_no_limit_recommends_nothing_and_asks_for_a_dollar_amount():
+    qs = _qs()
+    q = qs[SPEND_AT]
+    assert q["recommended"] is None
+    msg = IC.render_step(SPEND_AT + 1, qs)
+    assert "RECOMMENDED" not in msg and "I recommend" not in msg and "dollar amount" in msg, msg
+    card = IC.render_card(qs)
+    assert "all recommended" not in card, card
+    assert "all recommended" not in " ".join(IC.render_messages(qs))
+    # the other questions still show their recommended mark; with a price, the shortcut returns
+    assert "(RECOMMENDED)" in card and "all recommended" in IC.render_card(_qs(18.5))
+    for r in ("recommended", "yes", "1"):
+        assert len(IC.conversation(BEFORE + [r], qs)["answers"]) == SPEND_AT, r
+
+
+def _factory(*args):
+    f = os.path.join(CORE, "intake_preflight", "factory.py")
+    return subprocess.run([sys.executable, f, "card", "--step"] + list(args)
+                          + [x for r in BEFORE for x in ("--reply", r)],
+                          capture_output=True, text=True).stdout
+
+
+def test_factory_card_picks_up_brief_limit_without_flag():
+    import json, tempfile
+    out = _factory("--price", "18.5", "--brief", json.dumps({"budget_minor": 4000}))
+    assert "1. Your limit: $40.00 - from your brief" in out and "2. $18.50 - the price shown above" in out, out
+    with tempfile.TemporaryDirectory() as d:
+        sf = os.path.join(d, "summary.json")
+        json.dump({"data": {"summary": {"generation_ceiling": {"amount_minor": 2550, "currency": "usd"}}}},
+                  open(sf, "w"))
+        assert "1. Your limit: $25.50 - from your brief" in _factory("--summary-file", sf)
+        bf = os.path.join(d, "brief.json")
+        json.dump({"budget_minor": 4000}, open(bf, "w"))
+        assert "1. Your limit: $40.00" in _factory("--brief-file", bf)
+    # --limit overrides; credits or no amount leave the client to type one
+    assert "Your limit: $10.00" in _factory("--limit", "10", "--brief", '{"budget_minor": 4000}')
+    assert "Your limit" not in _factory("--brief", '{"budget_minor": 4000, "budget_currency": "credits"}')
+    assert "Your limit" not in _factory("--brief", "{}")
+
+
 def test_cli_passes_price_and_limit():
     s = os.path.join(HERE, "intake_card.py")
     out = subprocess.run([sys.executable, s, "--step", "--price", "18.5", "--limit", "25"]

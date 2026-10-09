@@ -41,14 +41,17 @@ def test_each_option_on_its_own_numbered_line_recommended_marked():
         opts = lines[2:]
         assert len(opts) == len(q["options"])
         for n, line in enumerate(opts, 1):
-            assert re.match(r"^%d\. .+ - .+[.)]$" % n, line), line
+            assert re.match(r"^%d\. .+ - .+(?:[.)]|\d)$" % n, line), line
             assert "\n" not in line
+        if q["recommended"] is None:        # unpriced SPEND LIMIT: nothing to recommend
+            assert not any(IC.REC in l for l in opts)
+            continue
         assert sum(IC.REC in l for l in opts) == 1
         assert IC.REC in opts[q["recommended"]]
 
 
 def test_closing_line_last():
-    assert _blocks(CARD)[-1] == IC.CLOSING_LINE
+    assert _blocks(CARD)[-1] == IC._closing(IC.QUESTIONS)
     assert CARD.startswith("Question 1 of 6")
 
 
