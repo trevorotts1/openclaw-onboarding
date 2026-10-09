@@ -1180,8 +1180,6 @@ def measure_product_connection(shots, lyrics, runtime_s):
             "measurement": ("product connection %.1fs = %.1f%% of runtime "
                             "(%s%s)" % (seconds, percent, verdict,
                                         "; " + "; ".join(why) if why else ""))}
-
-
 def measure_villain_doctrine(shots, lines, runtime_s, villain=None):
     """FU-U16: measure the villain, pain and rise from the delivered run.
 
@@ -1250,6 +1248,8 @@ def measure_villain_doctrine(shots, lines, runtime_s, villain=None):
                                         len(villain_shots), villain_seconds,
                                         rise_seconds, verdict,
                                         "; " + "; ".join(why) if why else ""))}
+
+
 
 def evaluate(receipt):
     """Answer the 11 questions from the delivery receipt.

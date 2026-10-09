@@ -110,10 +110,13 @@ def disp(label, model, input_body, lock=None):
     if lock:
         ML.lock_run_model(state_db, "run-u7", lock)
     fake = Fake74(BASE_SCRIPT)
-    body = dict(input_body)
-    req = {"model": "m", "input": body, "card_receipt": STAMPED_CARD}
-    if "prompt_receipt" in body:                       # U15b: top-level request key
-        req["prompt_receipt"] = body.pop("prompt_receipt")
+    # U15b (merged with U7 in v2.7.28): an H3 job dispatches only with a PASS
+    # prompt receipt for the exact prompt bytes; the cap gate runs before it.
+    import hashlib
+    sha = hashlib.sha256(str(input_body.get("prompt", "")).encode("utf-8")).hexdigest()
+    req = {"model": "m", "input": dict(input_body), "card_receipt": STAMPED_CARD,
+           "prompt_receipt": {"prompt_sha256": sha,
+                              "check": {"verdict": "PASS", "reasons": []}}}
     env = MODULE.dispatch(
         model=model, request=req, save_dir=tmp, ledger_db=db,
         run_id="run-u7", logical_key=label, attempt_id="att-1",
@@ -152,14 +155,6 @@ def refused(label, model, input_body, cap, status, lock=None):
     return ev
 
 
-def _pass_receipt(text):
-    """U15b: an H3 prompt must carry a receipt for its exact bytes. These cap
-    tests are about the U7 cap measurement, so the receipt is a synthetic PASS."""
-    import hashlib
-    return {"prompt_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
-            "check": {"verdict": "PASS"}}
-
-
 # ---- 1. MiniMax H3: 7,001 refused, 7,000 runs ------------------------------
 def test_h3_cap():
     ev = refused("h3-over", "minimax-h3/text-to-video",
@@ -168,8 +163,7 @@ def test_h3_cap():
           "7000" in (ev.get("cap_source") or "") or ev.get("cap") == 7000, str(ev))
 
     env, fake, _, _ = disp("h3-at", "minimax-h3/text-to-video",
-                           {"prompt": "x" * 7000,
-                            "prompt_receipt": _pass_receipt("x" * 7000)},
+                           {"prompt": "x" * 7000},
                            lock=ML.DEFAULT_VIDEO_MODEL)
     check("h3: prompt of exactly 7,000 still dispatches",
           env["outcome"] == "ok", str(env))
@@ -180,8 +174,7 @@ def test_h3_cap():
           and row["chars"] == 7000, str(caps))
 
     env, _, _, _ = disp("h3-short", "minimax-h3/text-to-video",
-                        {"prompt": "p" * 200,
-                         "prompt_receipt": _pass_receipt("p" * 200)},
+                        {"prompt": "p" * 200},
                         lock=ML.DEFAULT_VIDEO_MODEL)
     check("h3: a 200-char prompt is NOT padded to the 67 house floor 5000",
           env["outcome"] == "ok", str(env))

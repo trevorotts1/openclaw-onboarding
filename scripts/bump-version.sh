@@ -96,12 +96,18 @@
 #   ./scripts/bump-version.sh v10.6.2 --tag    # also create a git tag
 #   ./scripts/bump-version.sh v10.6.2 --tag --push   # also push the tag
 #   ./scripts/bump-version.sh --check          # exit 1 if drift; print state
+#   ./scripts/bump-version.sh --prep           # batch bookkeeping only (scripts/batch-prep.sh)
+#
+# Every bump ALSO runs scripts/batch-prep.sh (skill-version.txt bumps for changed
+# skills [G3], role-library/SOP hash re-stamp, local fast guards) so the first CI
+# run is not lost to mechanical red. Set BATCH_PREP=0 to skip.
 #
 # Works for both Mac and VPS platforms in the unified repo (paths are the same).
 set -euo pipefail
 
 # ─── Locate the repo root ────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "${1:-}" = "--prep" ]; then exec bash "$SCRIPT_DIR/batch-prep.sh"; fi
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 if [ ! -f "$REPO_ROOT/version" ] || [ ! -f "$REPO_ROOT/install.sh" ]; then
   echo "ERROR: $REPO_ROOT does not look like an OpenClaw repo (missing /version or /install.sh)" >&2
@@ -829,6 +835,12 @@ fi
 
 echo ""
 echo "All $BUMP_CHECKED_MARKERS version markers agree at $TARGET"
+
+# Mechanical batch bookkeeping (G3 skill bumps, hash re-stamp, local fast guards).
+if [ "${BATCH_PREP:-1}" != 0 ] && [ -f "$SCRIPT_DIR/batch-prep.sh" ]; then
+  echo ""
+  bash "$SCRIPT_DIR/batch-prep.sh"
+fi
 
 # ─── Optional: tag + push ───────────────────────────────────────────────────
 if [ "${2:-}" = "--tag" ] || [ "${3:-}" = "--tag" ]; then

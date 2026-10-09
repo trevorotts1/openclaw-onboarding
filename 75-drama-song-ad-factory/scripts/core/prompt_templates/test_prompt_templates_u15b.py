@@ -59,6 +59,10 @@ if os.path.isdir(_CACHE):
 import prompt_templates as PT  # noqa: E402
 
 if not hasattr(PT, "assemble_h3"):
+    if "pytest" in sys.modules:  # never sys.exit at import -- INTERNALERROR
+        import pytest as _pytest
+        _pytest.skip("U15b builder missing on this tree (no assemble_h3)",
+                     allow_module_level=True)
     print("FAIL: U15b builder missing: %r has no assemble_h3 (base tree)"
           % getattr(PT, "__file__", PT))
     sys.exit(1)

@@ -168,6 +168,33 @@ this rule, which only concerns fix PRs.
 
 ---
 
+## Batch Prep — stop the mechanical red reruns
+
+Before pushing a batch (or any PR that touches skills or the role library), run:
+
+```
+scripts/bump-version.sh --prep        # same as scripts/batch-prep.sh
+```
+
+`bump-version.sh vX.Y.Z` runs it automatically after a bump (set `BATCH_PREP=0` to
+skip). It is idempotent — a second run changes nothing. It does, so CI does not
+fail and cost a second full cycle:
+
+1. **G3** — every changed skill dir whose `skill-version.txt` was not bumped vs
+   `origin/main` gets a patch bump; the `SKILL.md` frontmatter `version:` is kept
+   equal to it and the file keeps its trailing newline.
+2. **Library hash re-stamp** — runs `register-library-additions.py --apply`,
+   `hash-content-manifest.py` and `hash-universal-sops-manifest.py` only when their
+   `--check` fails (QC static repo-consistency and fast-guards `library-lockstep`).
+3. **Finish** — `bump-version.sh --check`, then the local `library-lockstep`,
+   `skill-frontmatter-version-guard`, `skill-version-newline-guard` and
+   `kie-prompt-enforcer-guard` scripts. Commit what it changed with the batch.
+
+It does not edit CHANGELOG entries (no guard requires a per-skill one). Self-test:
+`bash scripts/test-batch-prep.sh`.
+
+---
+
 ## Rules for AI Agents Working on This Repo
 
 1. **Always work in isolated /tmp clones.** Never modify ~/clawd directly for repo work.
