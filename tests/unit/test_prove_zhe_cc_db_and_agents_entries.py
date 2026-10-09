@@ -293,9 +293,48 @@ def test_rescue_rangers_folder_is_stray_not_required(pz, tmp_path):
     assert a["stray_template_folders"] == ["rescue-rangers"]
 
 
-def test_no_chosen_list_keeps_every_folder_required(pz, tmp_path):
+def test_no_chosen_list_never_promotes_a_folder_scan(pz, tmp_path):
+    # W2 fix: with no resolvable chosen list NOTHING from the folder scan is a
+    # hard requirement — every folder is stray/WARN with a NAMED source.
+    # Previously every on-disk folder was promoted to a hard requirement
+    # (stray=[]), the chronic phase=7z phantom-FAIL class.
     root = _full_box(pz, tmp_path, extra_dirs=("launch-operations",))
     os.remove(os.path.join(root, "workspace", "departments.json"))
-    _, a, _ = _prove(pz, root)
-    assert a["required_source"] == "folder-scan (no chosen list)"
-    assert a["files_without_agent"] == ["launch-operations"]
+    _, a, c = _prove(pz, root)
+    assert a["required_source"] == "no chosen list (folder scan is not the requirement)"
+    assert "launch-operations" in a["stray_template_folders"]
+    assert a["required_departments"] == []
+    assert a["files_without_agent"] == []
+    assert a["pass"], a["detail"]
+
+def test_resolver_requires_departments_json_not_just_the_folder(pz, tmp_path):
+    # The fall-through that caused the phantom mode: <ws>/departments/ existed
+    # without <ws>/departments.json, and the resolver returned it as a company
+    # dir anyway. It must resolve ONLY a company dir that carries the artifact.
+    root = _full_box(pz, tmp_path)
+    ws = os.path.join(root, "workspace")
+    with open(os.path.join(ws, "departments.json")) as f:
+        artifact = f.read()
+    os.remove(os.path.join(ws, "departments.json"))
+    fs = pz.LocalFS(root)
+    assert pz._resolve_company_dirs(fs, ws, root) == (None, None)
+    with open(os.path.join(ws, "departments.json"), "w") as f:
+        f.write(artifact)
+    assert pz._resolve_company_dirs(fs, ws, root) == (ws, os.path.join(ws, "departments"))
+
+def test_zhc_candidate_without_the_artifact_falls_through(pz, tmp_path):
+    # A zero-human-company/<co>/ tree with departments/ but no departments.json
+    # must NOT win candidate 1 — it has no chosen artifact and would strand the
+    # prover without a chosen list.
+    root = _full_box(pz, tmp_path)
+    ws = os.path.join(root, "workspace")
+    with open(os.path.join(ws, "departments.json")) as f:
+        artifact = f.read()
+    os.remove(os.path.join(ws, "departments.json"))
+    co = os.path.join(ws, "zero-human-company", "co")
+    os.makedirs(os.path.join(co, "departments"))
+    fs = pz.LocalFS(root)
+    assert pz._resolve_company_dirs(fs, ws, root) == (None, None)
+    with open(os.path.join(co, "departments.json"), "w") as f:
+        f.write(artifact)
+    assert pz._resolve_company_dirs(fs, ws, root) == (co, os.path.join(co, "departments"))

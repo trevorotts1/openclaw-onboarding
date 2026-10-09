@@ -289,7 +289,7 @@ else
   assert "Tier 2 server supervised (pm2 ghl-community-mcp, or systemd ghl-mcp fallback)" "{ command -v pm2 >/dev/null 2>&1 && pm2 jlist 2>/dev/null | grep -q 'ghl-community-mcp'; } || systemctl is-active ghl-mcp 2>/dev/null | grep -q '^active$'"
 fi
 T2_HEALTH=$(curl -sS -m 5 "$URL/health" 2>/dev/null)
-assert "Tier 2 /health responds healthy" "echo \"$T2_HEALTH\" | grep -q '\"status\":\"healthy\"'"
+assert "Tier 2 /health responds healthy" "echo \"\$T2_HEALTH\" | grep -q '\"status\":\"healthy\"'"
 
 # ── LIVENESS (v21.5.0) — /health is served by express BEFORE the MCP transport
 # is wired, so a stale/deaf dist returns {"status":"healthy"} while every agent
@@ -326,7 +326,7 @@ assert "Tier 2 smoke tool ${S36_SMOKE_TOOL} is present in the ${S36_PROFILE} pro
   "curl -sS -m 8 \"$URL/tools\" 2>/dev/null | grep -q \"$S36_SMOKE_TOOL\""
 T2_CALL=$(curl -sS -m 10 -X POST "$URL/execute" -H "Content-Type: application/json" \
   -d "{\"name\":\"${S36_SMOKE_TOOL}\",\"arguments\":{}}" 2>/dev/null)
-assert "Tier 2 ${S36_SMOKE_TOOL} returns real data" "echo \"$T2_CALL\" | grep -qE '\"success\":\\s*true|\"result\"|\"content\"'"
+assert "Tier 2 ${S36_SMOKE_TOOL} returns real data" "echo \"\$T2_CALL\" | grep -qE '\"success\":\\s*true|\"result\"|\"content\"'"
 
 echo ""
 echo "── Section E: Core .md files wired ──"
