@@ -16,6 +16,7 @@ Run the test: python3 scripts/core/prompt_templates/test_prompt_templates_u15.py
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
@@ -820,6 +821,158 @@ def has_receipt(prompt_sha256, receipts):
             return True
     return False
 
+# ---------------------------------------------------------------------------
+# U15h: the length-class table -- ONE table the card, the planner and QC read.
+
+#: The six card lengths (design 6). The table keys are these strings.
+LENGTH_CLASSES_S = (60, 90, 120, 180, 300, 600)
+
+#: W-G-008 minute-lanes (PR #96/#1710, merged to main 2026-10-09). U15h hook:
+#: lane_planner.py is NOT on this base branch (unit/FU-U15b predates the
+#: merge), so the constants below mirror lane_planner's own (LANE_MIN_SONG_S
+#: 120, LANE_TARGET_S 60, KIE_PER_WINDOW 20, KIE_LANE_SHARE_NUM 18). When the
+#: branch carries lane_planner.py, length_class_code() imports it and the
+#: table becomes provably equal to the lane module itself; until then the
+#: fallback formula is the same arithmetic, and PT.lane_source() says which
+#: answered.
+LANE_MIN_SONG_S = 120.0
+LANE_TARGET_S = 60.0
+KIE_PER_WINDOW = 20
+KIE_LANE_SHARE_NUM = 18
+
+def lane_source():
+    """"lane_planner" when W-G-008's module is on this tree, else "hook"."""
+    import importlib.util
+    return ("lane_planner" if importlib.util.find_spec("lane_planner")
+            else "hook")
+
+def _lanes(L):
+    """(lanes, per-lane NEW KIE requests per 10 s) for one chosen length."""
+    import importlib.util
+    if importlib.util.find_spec("lane_planner") is not None:
+        import lane_planner as _LP                      # W-G-008's own module
+        n = _LP.lane_count(L)
+        return n, _LP.lane_share(n)
+    n = 1 if L < LANE_MIN_SONG_S else int(math.ceil(L / LANE_TARGET_S))
+    return n, (KIE_PER_WINDOW if n <= 1 else max(1, KIE_LANE_SHARE_NUM // n))
+
+def length_class_code(L):
+    """The class row COMPUTED from the code -- never a second formula.
+
+    Reads length_formula.plan (song rows), lipsync_clips.budget (clip counts
+    and seconds), shot_planner.plan_generation_count (ceil(D/4) shots), the
+    H3 remainder (shots minus lip-sync), the lanes (lane_planner when it is
+    on the tree, else its formula via _lanes) and the product band (10-15%
+    of D, U13). The table in references/prompt-templates/length-classes.json
+    must equal this for every card length.
+    """
+    import length_formula as _LF
+    import lipsync_clips as _LC
+    if CORE_DIR not in sys.path:
+        sys.path.insert(0, CORE_DIR)
+    from shot_planner import shot_planner as _SP
+    L = int(L)
+    D = L - 2                                            # END_EARLY_S master rule
+    p = _LF.plan(L)
+    b = _LC.budget(D)
+    shots = _SP.plan_generation_count(D)
+    lanes, share = _lanes(L)
+    ext = p.get("extend") or []
+    return {
+        "chosen_s": L, "delivered_s": D, "bracket": p["bracket"],
+        "shots_total": shots,
+        "lipsync_clips": [b["min_clips"], b["max_clips"]],
+        "lipsync_seconds": [round(b["total_min_s"], 1),
+                            round(b["total_max_s"], 1)],
+        "h3_shots": [shots - b["max_clips"], shots - b["min_clips"]],
+        "h3_seconds": [round(D - b["total_max_s"], 1),
+                       round(D - b["total_min_s"], 1)],
+        "lanes": lanes, "kie_new_requests_per_lane_per_10s": share,
+        "hooks": p["hook_repeats"],
+        "song_words": {k: p["words"][k] for k in
+                       ("total", "spoken", "sung", "opener_max")},
+        "sections": dict(p["sections"]),
+        "instrumental_breaks": {"count": p["instrumental"]["breaks"],
+                                "seconds_each": p["instrumental"]["seconds_each"]},
+        "spoken_share_planned_pct": p["spoken_share_pct_planned"],
+        "product_seconds": [round(0.10 * D, 1), round(0.15 * D, 1)],
+        "suno_generations": ("1 base" if not ext
+                             else "1 base + %d extends" % len(ext)),
+    }
+
+#: Every field of the class row the table must equal the code on.
+CLASS_FIELDS = ("delivered_s", "shots_total", "lipsync_clips",
+                "lipsync_seconds", "h3_shots", "h3_seconds", "lanes",
+                "kie_new_requests_per_lane_per_10s", "hooks", "song_words",
+                "sections", "instrumental_breaks", "spoken_share_planned_pct",
+                "product_seconds", "suno_generations")
+
+def length_class(L, root=None):
+    """The one table row for a chosen length, proved equal to the code.
+
+    Returns the table row unchanged when every CLASS_FIELDS value equals
+    length_class_code(L); raises PROMPT_LENGTH_CLASS_DRIFT naming each
+    drifted field otherwise. This is the single reader the card, the planner
+    and QC use: a stale table can never be read silently.
+    """
+    L = int(L)
+    table = (load("length_classes", root=root).get("classes") or {})
+    row = table.get(str(L))
+    if not isinstance(row, dict):
+        raise PromptTemplateError("PROMPT_LENGTH_CLASS_UNKNOWN",
+                                  "no class %d in length-classes.json" % L)
+    code = length_class_code(L)
+    drift = {f: {"table": row.get(f), "code": code[f]} for f in CLASS_FIELDS
+             if row.get(f) != code[f]}
+    if drift:
+        raise PromptTemplateError(
+            "PROMPT_LENGTH_CLASS_DRIFT",
+            "length-classes.json class %d disagrees with the code: %s"
+            % (L, "; ".join("%s table=%r code=%r" % (f, d["table"], d["code"])
+                            for f, d in sorted(drift.items()))))
+    return row
+
+def product_seconds_bounds(L):
+    """The (floor, cap) of the product passage's seconds for one length."""
+    D = int(L) - 2
+    return (round(0.10 * D, 1), round(0.15 * D, 1))
+
+def check_product_seconds(shots, chosen_length_s):
+    """[] when the shot plan's product seconds fall in 10-15% of D (U13).
+
+    The product shots are the ones the planner marked with a product
+    visibility (shot_planner.PRODUCT_SHOT_VISIBILITY). Returns the reasons
+    naming the measured seconds and the band otherwise. Cross-check only:
+    the band itself lives in the class row (length_class_code), never here.
+    ponytail: no stage calls this yet; wire it into the storyboard review
+    when U13's card block lands.
+    """
+    if not isinstance(shots, list):
+        raise PromptTemplateError("BAD_SHOTS", "shots must be a list")
+    D = int(chosen_length_s) - 2
+    if D <= 0:
+        raise PromptTemplateError("BAD_LENGTH", "chosen length must exceed 2 s")
+    if CORE_DIR not in sys.path:
+        sys.path.insert(0, CORE_DIR)
+    from shot_planner import shot_planner as _SP
+    lo, hi = product_seconds_bounds(chosen_length_s)
+    seconds = 0.0
+    for s in shots:
+        if not isinstance(s, dict) \
+                or s.get("product_visibility") not in _SP.PRODUCT_SHOT_VISIBILITY:
+            continue
+        start, end = s.get("song_start"), s.get("song_end")
+        if isinstance(start, (int, float)) and isinstance(end, (int, float)) \
+                and end > start:
+            seconds += float(end) - float(start)
+        elif isinstance(s.get("dur"), (int, float)) and s["dur"] > 0:
+            seconds += float(s["dur"])
+    seconds = round(seconds, 1)
+    if lo <= seconds <= hi:
+        return []
+    return ["product seconds %.1f outside %g-%g s (10-15%% of the %d s "
+            "delivered length)" % (seconds, lo, hi, D)]
+
 __all__ = ["TOOL_NAME", "TOOL_VERSION", "MODES", "LOOKS", "SHOT_TYPES",
            "CORE_DIR", "SKILL_ROOT", "TEMPLATES_DIR", "PromptTemplateError",
            "templates_dir", "catalog_path", "load", "caps",
@@ -828,4 +981,8 @@ __all__ = ["TOOL_NAME", "TOOL_VERSION", "MODES", "LOOKS", "SHOT_TYPES",
            "assemble_kling_avatar", "check_kling_avatar",
            "VILLAIN_SHOT_TYPE_NAME", "band", "assemble_h3", "check", "expand",
            "receipt", "has_receipt", "assemble_kling_video", "check_kling",
-           "kling_section_limits", "band_cap"]
+           "kling_section_limits", "band_cap",
+           "LENGTH_CLASSES_S", "CLASS_FIELDS", "LANE_MIN_SONG_S",
+           "LANE_TARGET_S", "KIE_PER_WINDOW", "KIE_LANE_SHARE_NUM",
+           "lane_source", "length_class_code", "length_class",
+           "product_seconds_bounds", "check_product_seconds"]

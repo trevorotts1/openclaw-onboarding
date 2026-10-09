@@ -53,6 +53,9 @@ CHECKS = frozenset({
     # requires one PASS record per book clip from the CALIBRATED book_shot
     # checker (scripts/core/book_shot/).
     "book_orientation",
+    # U15h (design 8.9): every paid prompt in the spend ledger carries a
+    # matching receipt; final QC requires one row per ledger job.
+    "prompt_compliance",
 })
 # 17.8 critical categories (identity, lyrics, offer, claim, product_label,
 # CTA) ride on these checks: lyrics carries the critical-word coverage,
@@ -103,6 +106,77 @@ def sung_claim_measured(summary):
     flat = "".join(ch for ch in summary.lower() if ch.isalnum())
     return "singingdetector" in flat
 
+
+# U15h (design 8.9): at final QC every paid prompt in the spend ledger must
+# carry the prompt receipt that was minted when the prompt was assembled
+# (prompt_templates.receipt -> kie_dispatch PROMPT_NOT_TEMPLATED). One row
+# per ledger job; a job with no receipt (or a REFUSE/TRIM receipt) is not
+# compliance. The rows are data the checker built; this module only decides
+# whether the record for check "prompt_compliance" exists and passed.
+PROMPT_COMPLIANCE_CHECK = "prompt_compliance"
+PROMPT_COMPLIANCE_OK_VERDICTS = frozenset({"PASS", "FLAG"})
+
+def prompt_compliance_rows(ledger_jobs, receipts):
+    """One row per ledger job, matched to its receipt. -> (rows, bad).
+
+    A receipt matches a job when they share logical_key + attempt_id, or
+    (when the receipt carries neither) request_digest, or the job's own
+    prompt_sha256. A receipt whose check verdict is REFUSE/TRIM/FAIL never
+    counts. ``bad`` names every job without a compliant receipt.
+    """
+    jobs = [j for j in (ledger_jobs or []) if isinstance(j, dict)]
+    recs = [r for r in (receipts or []) if isinstance(r, dict)]
+    rows, bad = [], []
+    for job in jobs:
+        lk, at = job.get("logical_key"), job.get("attempt_id")
+        digest, sha = job.get("request_digest"), job.get("prompt_sha256")
+        match = None
+        for r in recs:
+            if r.get("logical_key") is not None or r.get("attempt_id") is not None:
+                hit = (r.get("logical_key") == lk and r.get("attempt_id") == at)
+            elif r.get("request_digest") is not None:
+                hit = (r.get("request_digest") == digest)
+            elif r.get("prompt_sha256") is not None and sha is not None:
+                hit = (r.get("prompt_sha256") == sha)
+            else:
+                hit = False
+            if hit:
+                match = r
+                break
+        verdict = None
+        if isinstance(match, dict):
+            chk = match.get("check")
+            verdict = ((chk.get("verdict") if isinstance(chk, dict) else None)
+                       or match.get("verdict"))
+        ok = (verdict is not None
+              and str(verdict).upper() in PROMPT_COMPLIANCE_OK_VERDICTS)
+        rows.append({"logical_key": lk, "attempt_id": at,
+                     "prompt_sha256": (sha or (match or {}).get("prompt_sha256")),
+                     "matched": bool(match), "verdict": verdict, "ok": ok})
+        if not ok:
+            if match is None:
+                bad.append("%s/%s: no prompt receipt" % (lk, at))
+            else:
+                bad.append("%s/%s: receipt verdict %s" % (lk, at, verdict))
+    return rows, bad
+
+def prompt_compliance_record(rows, bad, reviewer, run_id, stage):
+    """qc-schema 1.0.0 record (check=prompt_compliance) for core/qc_gate.py.
+
+    PASS when every row matched a compliant receipt; FAIL naming each
+    unmatched job otherwise. The reviewer must be independent of the maker
+    (the gate enforces that too, 17.6).
+    """
+    summary = ("every paid prompt carries a matching prompt receipt (%d rows)"
+               % len(rows)) if not bad else \
+        "; ".join(bad[:8]) + ("" if len(bad) <= 8 else " (+%d more)" % (len(bad) - 8))
+    return {"schema_version": "1.0.0", "check_id": "prompt-compliance",
+            "run_id": run_id, "stage": stage, "check": PROMPT_COMPLIANCE_CHECK,
+            "verdict": "PASS" if not bad else "FAIL",
+            "evidence": {"summary": summary,
+                         "refs": ["prompt_templates.receipt"]},
+            "reason_code": "PROMPT_COMPLIANT" if not bad else "PROMPT_NO_RECEIPT",
+            "checker_version": "1.0.0", "reviewer": reviewer}
 
 def validate_record(rec):
     """Schema-shape check mirroring qc-schema.json. Returns error string or None."""
@@ -169,12 +243,17 @@ def required_checks(stage, required, campaign_type=None):
 def evaluate(run_id, stage, records, makers, required,
              critical=CRITICAL_CHECKS, profile_version=None,
              expected_profile_version=None, expected_checker_version=None,
-             master=None, campaign_type=None):
+             master=None, campaign_type=None, ledger_jobs=None):
     """Gate decision. Returns dict with gate/reason_code/failures/repair_scope.
 
     I4: when "final_edit" is required, master={"chosen_length_s", "measured_s"}
     is mandatory and a master longer than chosen length minus 2 s fails
     (MASTER_TOO_LONG); a missing/unmeasured master never passes.
+
+    U15h: when ``ledger_jobs`` is a non-empty list (the run's paid jobs),
+    the final-QC gate REQUIRES ``prompt_compliance``: the caller must pass a
+    prompt_compliance record built from prompt_compliance_rows()/record().
+    A final QC with a ledger job and no compliant record never passes.
 
     makers maps check_id -> maker identity (from artifact provenance).
     gate is PASS (advance), FAIL (targeted repair allowed) or BLOCKED
@@ -182,6 +261,9 @@ def evaluate(run_id, stage, records, makers, required,
     """
     failures = []
     required = required_checks(stage, required, campaign_type)
+    required = list(required)
+    if ledger_jobs and PROMPT_COMPLIANCE_CHECK not in required:
+        required.append(PROMPT_COMPLIANCE_CHECK)
 
     def fail(check_id, code, detail, is_critical=False):
         failures.append({"check_id": check_id, "code": code,
@@ -333,7 +415,9 @@ def cmd_evaluate(ns):
                        master=({"chosen_length_s": ns.chosen_length_s,
                                 "measured_s": ns.master_s}
                                if ns.chosen_length_s is not None else None),
-                       campaign_type=ns.campaign_type or None)
+                       campaign_type=ns.campaign_type or None,
+                       ledger_jobs=(_load_json(ns.ledger_jobs)
+                                    if ns.ledger_jobs else None))
     except GateError as e:
         return envelope("evaluate", "error", e.code, str(e),
                         run_id=ns.run, stage=ns.stage), EXIT["error"]
@@ -381,6 +465,9 @@ def _cli(argv=None):
                    help="campaign type; 'book' requires book_orientation at shots")
     a.add_argument("--expect-profile", default=None)
     a.add_argument("--expect-checker", default=None)
+    a.add_argument("--ledger-jobs", default="",
+                   help="U15h: JSON array of paid ledger jobs; a non-empty "
+                        "list requires the prompt_compliance record at final QC")
     ns = p.parse_args(argv)
     out, rc = cmd_evaluate(ns)
     print(json.dumps(out, indent=2))
