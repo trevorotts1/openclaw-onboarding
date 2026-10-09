@@ -32,6 +32,19 @@ from .variants import (
     expected_dimensions,
     safe_area,
 )
+# DEL-08 after its two reuse targets (song_files naming, manifests hash).
+from .cover_image import (
+    DEFAULT_HEIGHT,
+    DEFAULT_WIDTH,
+    CoverImageError,
+    build_cover,
+    build_cover_argv,
+    check_cover_image,
+    cover_file_name,
+    select_frame,
+    title_of,
+    write_cover_docs,
+)
 
 SCHEMA_VERSION = "1.0.0"
 TOOL_VERSION = "1.0.0"
@@ -58,4 +71,14 @@ __all__ = [
     "build_variant_plan",
     "expected_dimensions",
     "safe_area",
+    "DEFAULT_HEIGHT",
+    "DEFAULT_WIDTH",
+    "CoverImageError",
+    "build_cover",
+    "build_cover_argv",
+    "check_cover_image",
+    "cover_file_name",
+    "select_frame",
+    "title_of",
+    "write_cover_docs",
 ]
