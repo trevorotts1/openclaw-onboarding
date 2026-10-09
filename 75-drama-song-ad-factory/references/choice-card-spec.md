@@ -85,7 +85,7 @@ previous selections kept.
 
 The intake is a conversation, not a form. One message per turn:
 
-1. `Question 3 of 7 - VIDEO STYLE`, then a one-sentence reason the question
+1. `Question 3 of 9 - VIDEO STYLE`, then a one-sentence reason the question
    matters, then the question.
 2. Options as a numbered list, one per line, each with a short plain
    description; the RECOMMENDED option is marked and followed by "I recommend

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""intake_card: the seven intake questions as a card a client can read (H9).
+"""intake_card: the intake questions (nine; ten with a saved character) as a card a client can read (H9).
 
 Trevor 2026-10-08: the questions arrived "smashed together, no spaces, nothing
 on different lines". Cause: nothing built the card -- the agent wrote it free
@@ -7,7 +7,7 @@ hand, the JSON envelope carried it as one escaped string, and the only joiner
 (``"\\n".join``) gave no blank line between questions. This module is the one
 place the text is built, with a fixed layout:
 
-    Question 1 of 7 - LENGTH
+    Question 1 of 9 - LENGTH
     How long should the ad be?
     1. 60 seconds - one sentence. (RECOMMENDED)
     2. 90 seconds - one sentence.
@@ -37,19 +37,19 @@ if _CORE not in sys.path:
 #: Telegram's hard limit is 4096 characters per message; stay under it.
 TELEGRAM_LIMIT = 4000
 
-CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
-                'like "1, 1, 1, 1, 1, 1, 1". Say "all recommended" to take every '
-                'RECOMMENDED choice.')
+_CLOSING_FMT = ('How to answer: reply with one number per question, in order, '
+                'like "{ex}". Say "all recommended" to take every RECOMMENDED choice.')
 
-SHORT_CLOSING_LINE = ('How to answer: reply with one number per question, in order, '
-                      'like "1, 1, 1, 1, 1, 1, 1". For the BUDGET, reply with a dollar amount.')
+_SHORT_CLOSING_FMT = ('How to answer: reply with one number per question, in order, '
+                      'like "{ex}". For the BUDGET, reply with a dollar amount.')
 
 REC = "(RECOMMENDED)"
 
 
 def _closing(qs):
     """'all recommended' is offered only when every question has a recommended option."""
-    return CLOSING_LINE if all(q.get("recommended") is not None for q in qs) else SHORT_CLOSING_LINE
+    fmt = _CLOSING_FMT if all(q.get("recommended") is not None for q in qs) else _SHORT_CLOSING_FMT
+    return fmt.format(ex=", ".join(["1"] * len(qs)))
 
 #: (label, question, [(option, one short sentence)], recommended option index)
 #: Looks and music come from the choice-card modules so the menu cannot drift.
@@ -202,6 +202,8 @@ def _priced(qs, answers):
 
 
 QUESTIONS = _questions()
+CLOSING_LINE = _CLOSING_FMT.format(ex=", ".join(["1"] * len(QUESTIONS)))
+SHORT_CLOSING_LINE = _SHORT_CLOSING_FMT.format(ex=", ".join(["1"] * len(QUESTIONS)))
 
 
 #: Shown once, before the first question, when the client has no saved characters.
@@ -608,7 +610,7 @@ def _render_fit(card):
 def _with_saved_character(client_dir):
     """QUESTIONS, with the saved-character question first when the client has
     saved characters (Part I, I6). With a client folder but no saved characters
-    the plain seven open with one short line (``NO_SAVED_LINE``). No folder: plain nine."""
+    the plain nine open with one short line (``NO_SAVED_LINE``). No folder: plain nine."""
     if not client_dir:
         return QUESTIONS
     from character_library import character_library as CL
@@ -625,7 +627,7 @@ except ImportError:                                # run as a plain script
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Print the seven-question intake card.")
+    ap = argparse.ArgumentParser(description="Print the intake card (nine questions, ten with a saved character).")
     ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json"),
                     default="text",
                     help="text: raw card for the Claude Code chat. "
