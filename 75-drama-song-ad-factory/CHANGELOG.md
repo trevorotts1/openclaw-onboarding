@@ -6,15 +6,6 @@ frontmatter `version:` field).
 
 ---
 
-## v2.9.2 - 2026-10-09 - FU-U14: the song mp3 is part of the deliverable
-
-Trevor: "make an update so that the mp3 is a part of the deliverable ... update the repo with the latest understanding I just taught you".
-- **Every delivered ad folder carries the song.** Beside the captioned and clean-master mp4s: the FINAL SONG as `<Author> - <Title> - Song.mp3` (320 kbps, the exact song used, full length) plus the wav when one exists, so clients can release the songs as an album.
-- **New REQUIRED battery item.** `delivery_checklist.check_song_mp3(ad_dir, ad_audio_path, title, author)` -> rows `SONG_MP3_FILE` / `SONG_MP3_DURATION` / `SONG_MP3_CORRELATION`: file present, duration matches the ad's audio within 0.1 s, cross-correlation >= 0.95 with the ad's audio (normalized correlation of downsampled mono envelopes, stdlib math). Missing or mismatched = FAIL, fail closed. `delivery_battery()` returns the rows with `pass` / `reason_code` / `repair_scope`. wav is measured with the stdlib wave module, mp3 through ffprobe/ffmpeg when present.
-- **Batch zip.** `scripts/core/batch_zip/batch_zip.py build_batch_zip(client, ads, out_path)`: one zip per client, one folder per author holding the captioned ad, the clean master and the song mp3 (exactly three files per ad), plus a README listing every file, duration, resolution and banner link. A missing file is a `BatchZipError`.
-- **Docs:** SKILL.md (deliverables), `references/choice-card-spec.md` (the card lists "song mp3 included"), `references/stage-runbook.md`, QC.md, and the ONBOARDING-ONLY SOP `23-ai-workforce-blueprint/templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md` (DS-10 steps 1 and 5).
-- Tests: `scripts/core/delivery_checklist/test_song_mp3_u14.py` (stdlib WAV fixtures, no ffmpeg, no network).
-
 ## v2.9.1 - 2026-10-09 - Batch MGB008: W-G-007-amend, W-G-002-amend
 
 - Delivery checklist consumes the amended receipt fields (W-G-007-amend); kept-take tags merged with the calibrated verdict gate.
