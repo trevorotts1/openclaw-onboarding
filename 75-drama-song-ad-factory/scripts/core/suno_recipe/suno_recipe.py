@@ -56,8 +56,20 @@ SUNO_STYLE_FIELD_MAX = 1000          # Suno style field character limit
 MIN_HOOK_REPEATS = 2
 MAX_SUNG_LINE_SYLLABLES = 8
 BAND_WORDING = "the full band keeps playing continuously under them"
-STYLE_LEAD = ("female lead, sung melody with long held open vowels, dry close vocal, "
-              "slow tempo, natural resolved ending, final chord rings out and fades")
+#: Per style (plan 2.A3): R&B Flow is a rap style, so the ballad lead (slow
+#: tempo, long held open vowels) is wrong for it. Voice gender words come
+#: from vocal_gender, never hard-coded -- "female" is gone from here.
+STYLE_LEAD = {
+    "soul-ballad": "sung melody with long held open vowels, dry close vocal, "
+                   "slow tempo, natural resolved ending, final chord rings out and fades",
+    "rnb-flow": "dry close vocal, rhythmic flow over the beat, natural resolved ending, "
+                "final chord rings out and fades",
+    "soul-rise": "sung melody with long held open vowels, dry close vocal, "
+                 "slow start lifting into an upbeat groove, natural resolved ending, "
+                 "final chord rings out and fades",
+}
+#: Back-compat default (the original ballad lead, minus the gender word).
+STYLE_LEAD_DEFAULT = STYLE_LEAD["soul-ballad"]
 #: Negative tags (research 09 + 10 + Trevor's dry rule). NEVER "spoken word".
 NEGATIVE_TAGS = ("rap", "rapping", "choir", "reverb", "echo", "band dropout",
                  "acapella sections", "talk-singing", "monotone delivery")
@@ -103,13 +115,15 @@ def suno_style_ids():
 SUNG_DIRECTION = {"vocalise": "wordless, full melodic voice, two very long held notes",
                   "hook": "full melody, slow long held notes"}
 SPOKEN_DIRECTION = "close dry voice, plain speech, no melody"
+RAP_DIRECTION = "close dry voice, rhythmic metered flow over the beat"
 
 
 def _tag(sec):
     d = sec["delivery"]
     note = (SPOKEN_DIRECTION if d == "spoken" else
+            RAP_DIRECTION if d == "rap" else
             SUNG_DIRECTION.get(sec["tag"].lower().split()[0],
-                               "soulful female vocal, melodic, rhymed, slow long held notes"))
+                               "soulful lead vocal, melodic, rhymed, slow long held notes"))
     return "[%s (%s): %s]" % (sec["tag"], d, note)
 
 
@@ -118,21 +132,100 @@ def render_lyrics(sheet):
     return "\n\n".join(_tag(s) + "\n" + "\n".join(s["lines"]) for s in sheet) + "\n\n[End]"
 
 
-_TAG_RE = re.compile(r"^\[([^\]]*?)\s*\((sung|spoken)\)(?::[^\]]*)?\]\s*$", re.I)
+# ---- FU-U1: THE one tag grammar ------------------------------------------
+# Plan 18-OPUS-SKILL75-FUTURE-PLAN 2.A (A1/A2): one parser owns the tag
+# grammar so every gate measures the same sheet. Delivery words, matched at
+# a word boundary on a punctuation-normalized tag, so "trap beat" is never
+# read as rap and "spoken-word" still counts. The earliest delivery word in
+# the tag wins; ties go rap -> spoken -> sung. Both bracket dialects parse
+# here: [Name (sung|spoken|rap): note] and [Sung|Spoken|Rap - ...].
+_DELIVERY_WORDS = (
+    ("rap", ("rap", "raps", "rapped", "rapping")),
+    ("spoken", ("spoken", "speak", "speaks", "speaking", "talk", "talks",
+                "narrate", "narrated")),
+    ("sung", ("sung", "sing", "sings", "singing")),
+)
+DELIVERIES = ("sung", "spoken", "rap")
+INSTRUMENTAL = "instrumental"
+_BRACKET_RE = re.compile(r"^\[([^\]]*)\]\s*$")
+#: The recipe's own dialect: [Name (sung|spoken|rap): note]. The tag kept is
+#: Name, so render_lyrics -> parse_lyrics round-trips.
+_NAMED_TAG_RE = re.compile(r"^(.*?)\s*\((sung|spoken|rap)\)(?::[^\]]*)?$", re.I)
+
+
+def parse_tag(tag):
+    """The delivery a tag names: "sung" / "spoken" / "rap" / "instrumental",
+    or None for a tag that names no delivery ([Verse], [End]).
+
+    THE one parser (FU-U1): suno_recipe.parse_lyrics, words_fit.parse_sheet_words,
+    music_styles.sheet_deliveries and lyric_writer.lyric_structure.delivery_of_tag
+    all read tags through here, so no gate measures a different sheet.
+    """
+    raw = str(tag or "").strip()
+    if raw.startswith("[") and raw.endswith("]") and len(raw) > 2:
+        raw = raw[1:-1]
+    norm = re.sub(r"[^a-z0-9]+", " ", raw.lower()).strip()
+    if not norm:
+        return None
+    if re.search(r"\binstrumental\b", norm) or norm == "inst":
+        return INSTRUMENTAL
+    best = None
+    for rank, (delivery, words) in enumerate(_DELIVERY_WORDS):
+        for word in words:
+            m = re.search(r"\b%s\b" % word, norm)
+            if m is not None and (best is None or (m.start(), rank) < best[:2]):
+                best = (m.start(), rank, delivery)
+    return best[2] if best else None
+
+
+#: FU-U1: the name every other module reads this grammar by. words_fit,
+#: music_styles and lyric_writer resolve a tag's delivery through here, so no
+#: gate measures a different sheet.
+delivery_of_tag = parse_tag
 
 
 def parse_lyrics(text):
-    """Inverse of render_lyrics. Untagged text yields an empty sheet."""
-    sheet, cur = [], None
+    """Inverse of render_lyrics. Untagged text yields an empty sheet.
+
+    FU-U1: a lyric line under a bracket the grammar cannot classify raises
+    RecipeError(UNTAGGED_LYRIC_LINES) naming the lines -- never cur = None,
+    which silently threw away every [Rap Verse ... (rap)] line. An
+    [Instrumental] block carries no lyrics by definition. Both bracket
+    dialects parse: [Name (sung|spoken|rap): note] keeps Name as the tag,
+    [Sung|Spoken|Rap - ...] keeps the bracket text.
+    """
+    sheet, cur, lost = [], None, []
     for ln in str(text).splitlines():
-        m = _TAG_RE.match(ln.strip())
-        if m:
-            cur = {"tag": m.group(1).strip(), "delivery": m.group(2).lower(), "lines": []}
-            sheet.append(cur)
-        elif ln.strip().startswith("["):
-            cur = None
-        elif cur is not None and ln.strip():
-            cur["lines"].append(ln.strip())
+        s = ln.strip()
+        if not s:
+            continue
+        if s.startswith("["):
+            m = _BRACKET_RE.match(s)
+            if m is not None:
+                inner = m.group(1).strip()
+                named = _NAMED_TAG_RE.match(inner)
+                if named is not None:
+                    cur = {"tag": named.group(1).strip(),
+                           "delivery": named.group(2).lower(), "lines": []}
+                    sheet.append(cur)
+                    continue
+                d = parse_tag(inner)
+                if d in DELIVERIES:
+                    cur = {"tag": inner, "delivery": d, "lines": []}
+                    sheet.append(cur)
+                else:
+                    # instrumental: wordless; anything else: refuse if lyrics follow
+                    cur = None if d == INSTRUMENTAL else "lost"
+                continue
+        if isinstance(cur, dict):
+            cur["lines"].append(s)
+        elif cur == "lost":
+            lost.append(s)
+        # cur is None: text before any tag -- untagged sheet, still empty
+    if lost:
+        raise RecipeError("UNTAGGED_LYRIC_LINES",
+                          "lyric text sits under a tag with no delivery (name it "
+                          "sung|spoken|rap): %s" % "; ".join(repr(x) for x in lost[:8]))
     return sheet
 
 
@@ -141,20 +234,28 @@ def sheet_words(sheet, delivery=None):
                if delivery in (None, s["delivery"]) for l in s["lines"])
 
 
-def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None):
+def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
+                      style_id=None):
     """Rules 1-3 on the sheet. Returns a list of errors (empty = pass).
 
     With length_s (delivered seconds) the I8 hook count and the length-formula
-    word budget are enforced too.
+    word budget are enforced too. FU-U1: rap sections are counted in the total
+    budget and allowed only when style_id is in RAP_STYLE_IDS -- a rap section
+    in Soul Ballad / Soul Rise (or with no style named, fail closed) is refused.
     """
     errs = []
     if not sheet:
-        return ["no tagged sections: every section must be (sung) or (spoken)"]
+        return ["no tagged sections: every section must be (sung), (spoken) or (rap)"]
     for s in sheet:
-        if s.get("delivery") not in ("sung", "spoken") or not s.get("lines"):
-            errs.append("section %r needs delivery sung|spoken and lines" % s.get("tag"))
+        if s.get("delivery") not in DELIVERIES or not s.get("lines"):
+            errs.append("section %r needs delivery sung|spoken|rap and lines" % s.get("tag"))
     if errs:
         return errs
+    rap = [s for s in sheet if s["delivery"] == "rap"]
+    if rap and style_id not in RAP_STYLE_IDS:
+        errs.append("rap sections need the rap style %s (got style_id=%r): %s"
+                    % (sorted(RAP_STYLE_IDS), style_id,
+                       ", ".join(repr(s["tag"]) for s in rap[:4])))
     for s in sheet:
         head = s["tag"].lower().split()[0]
         if s["delivery"] == "spoken" and head not in ("intro", "outro"):
@@ -204,10 +305,32 @@ def negative_tags(style_id=None):
     return ", ".join(tags)
 
 
-def style_text(style_id, sheet=None):
-    """Suno style field: base prompt, the sung lead, ONE spoken mention, band wording."""
-    text = "%s, %s. Only the short intro and the final outro are spoken; %s." % (
-        _MS.style_prompt(style_id), STYLE_LEAD, BAND_WORDING)
+#: Gender word from the caller's vocal_gender; no hard-coded "female".
+_GENDER_WORDS = {"f": "female", "m": "male"}
+
+
+def _style_lead(style_id, vocal_gender=None):
+    """The lead wording for one style (plan 2.A3): per style, and gendered
+    from vocal_gender. Unknown style -> the ballad lead; no gender word ->
+    "lead"."""
+    lead = STYLE_LEAD.get(style_id, STYLE_LEAD_DEFAULT)
+    gender = _GENDER_WORDS.get(str(vocal_gender or "").lower())
+    return ("%s lead, %s" % (gender, lead)) if gender else ("lead, %s" % lead)
+
+
+def style_text(style_id, sheet=None, vocal_gender=None):
+    """Suno style field: base prompt, the per-style lead, ONE spoken mention,
+    band wording. FU-U1: the lead is per style (R&B Flow gets no "slow tempo,
+    long held open vowels") and the gender word comes from vocal_gender; the
+    "Only the short intro and the final outro are spoken" claim is dropped
+    when the sheet carries rap sections."""
+    rap = any(s.get("delivery") == "rap" for s in (sheet or []))
+    spoken_claim = ("Spoken lines stay in the intro and the outro"
+                    if rap else
+                    "Only the short intro and the final outro are spoken")
+    text = "%s, %s. %s; %s." % (_MS.style_prompt(style_id),
+                                _style_lead(style_id, vocal_gender),
+                                spoken_claim, BAND_WORDING)
     if len(text) > SUNO_STYLE_FIELD_MAX:
         raise RecipeError("STYLE_TOO_LONG", "%d chars, limit %d" % (len(text), SUNO_STYLE_FIELD_MAX))
     return text
@@ -241,7 +364,8 @@ def check_negatives(neg, style_id=None):
     return errs
 
 
-def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None):
+def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
+            vocal_gender="f"):
     """THE gate every Suno style goes through. Returns style + lyrics text.
 
     Exempt (voiceover) -> {"exempt": True}. Unknown id -> fail closed.
@@ -251,10 +375,11 @@ def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None):
     if style_id not in suno_style_ids():
         raise RecipeError("UNKNOWN_STYLE", "%r is not a Suno style and not "
                           "exempt; add it to music_styles" % (style_id,))
-    errs = check_lyric_sheet(sheet, client_text, length_s, spoken_share_pct)
+    errs = check_lyric_sheet(sheet, client_text, length_s, spoken_share_pct,
+                             style_id=style_id)
     if errs:
         raise RecipeError("LYRICS_REJECTED", "; ".join(errs))
-    return {"exempt": False, "style": style_text(style_id, sheet),
+    return {"exempt": False, "style": style_text(style_id, sheet, vocal_gender),
             "lyrics": render_lyrics(sheet), "negative_tags": negative_tags(style_id)}
 
 
@@ -262,7 +387,8 @@ def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f
                   spoken_share_pct=None):
     """KIE generate-music input for one ad (snake_case). ``length_s`` is the
     DELIVERED length (chosen - 2). Raises RecipeError on any rule break."""
-    out = prepare(style_id, sheet, client_text, length_s, spoken_share_pct)
+    out = prepare(style_id, sheet, client_text, length_s, spoken_share_pct,
+                  vocal_gender=vocal_gender)
     if out.get("exempt"):
         raise RecipeError("EXEMPT", "voiceover style has no Suno request")
     req = dict(KIE_PARAMS)
@@ -291,7 +417,8 @@ def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
     if style_id not in suno_style_ids():
         raise RecipeError("UNKNOWN_STYLE", repr(style_id))
     errs = check_style_text(style_text_)
-    errs += check_lyric_sheet(parse_lyrics(lyrics_text), client_text or "", length_s)
+    errs += check_lyric_sheet(parse_lyrics(lyrics_text), client_text or "", length_s,
+                              style_id=style_id)
     if errs:
         raise RecipeError("RECIPE_BYPASSED", "; ".join(errs))
 
