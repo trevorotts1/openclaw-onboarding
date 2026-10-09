@@ -419,16 +419,60 @@ def _kling_scale(text, scale):
     return _kling_cut(text, int(round(len(text) * scale)))
 
 #: Section ids the band trim may shorten, worst first. The fixed fragments
-#: (reference, policy, negatives) and the identity/action facts stay whole:
-#: they are what the clip is graded against, and a trimmed negative list lets
-#: a defect back in. ``look`` is last because its text is already the short
-#: form.
+#: (reference, policy, negatives, book, pages) and the identity/action facts
+#: stay whole: they are what the clip is graded against, and a trimmed
+#: negative list (or a half-cut book contract, U15g) lets a defect back in.
+#: ``look`` is last because its text is already the short form.
 _KLING_TRIM_ORDER = ("beats", "subject", "lens_light", "physics", "header",
-                     "continuity", "pages", "book", "look")
+                     "continuity", "look")
 #: Section ids restored, best first, when the scaled prompt fell under the
 #: floor: the facts that carry the shot, restored from the H3 text.
 _KLING_RESTORE_ORDER = ("beats", "subject", "lens_light", "physics", "header",
                         "continuity")
+
+#: The book states a spec may declare (U15g). Any other value is refused: a
+#: half-named book block must never silently drop the contract wording.
+BOOK_STATES = ("closed", "open")
+
+def book_fragments(spec, st, frag, root=None):
+    """The book/pages sections for this spec -- the ONE wording home (U15g).
+
+    The wording is only ever read from minimax-h3.json's ``BOOK_CLOSED``,
+    ``BOOK_OPEN_MOTION`` and ``PRINTED_PAGES`` fragments. A shot type that
+    declares ``required_blocks_when_book`` (product-book) demands the block:
+    a spec that does not carry it, or carries a book value the assembler does
+    not know, is refused ``BOOK_FRAGMENTS_REQUIRED`` instead of assembling a
+    book prompt with no contract in it. An open book also needs the
+    printed-pages block (the shot type's own declaration).
+
+    Returns {section_id: text}; both assemblers ``.update()`` it.
+    """
+    declared = st.get("required_blocks_when_book") or []
+    value = spec.get("book")
+    if declared and value not in BOOK_STATES:
+        raise PromptTemplateError(
+            "BOOK_FRAGMENTS_REQUIRED",
+            "%s declares %s and the spec carries book=%r: supply the book "
+            "block (closed or open) with the fragment wording"
+            % (spec.get("shot_type"), ", ".join(declared), value))
+    if value is not None and value not in BOOK_STATES:
+        raise PromptTemplateError(
+            "BOOK_FRAGMENTS_REQUIRED",
+            "book=%r is not one of %s; the wording never guesses"
+            % (value, "/".join(BOOK_STATES)))
+    if value == "open" and any("pages" in b for b in declared) \
+            and spec.get("pages") != "texture":
+        raise PromptTemplateError(
+            "BOOK_FRAGMENTS_REQUIRED",
+            "an open book needs the printed-pages block (pages=%r), the "
+            "shot type declares it" % (spec.get("pages"),))
+    out = {}
+    if value in BOOK_STATES:
+        out["book"] = frag["BOOK_CLOSED"] + (
+            " " + frag["BOOK_OPEN_MOTION"] if value == "open" else "")
+    if spec.get("pages") == "texture":
+        out["pages"] = frag["PRINTED_PAGES"]
+    return out
 
 def _kling_join(sec, order, leads):
     """The assembled prompt body; ``total()`` below mirrors this exactly."""
@@ -494,11 +538,7 @@ def assemble_kling_video(spec, characters, root=None):
            ch["do_not_change"], spec["visible_emotion"]))
     look = _kling_look_block(spec, root=root)
     full["look"] = look if look else _look_block(spec, root=root)
-    if spec.get("book"):
-        full["book"] = frag["BOOK_CLOSED"] + (
-            " " + frag["BOOK_OPEN_MOTION"] if spec["book"] == "open" else "")
-    if spec.get("pages") == "texture":
-        full["pages"] = frag["PRINTED_PAGES"]
+    full.update(book_fragments(spec, st, frag, root=root))
     full["physics"] = spec["motion_physics"]
     full["beats"] = " ".join("%s: %s" % (t, d) for t, d in spec["beats"])
     full["policy"] = frag["SOUND_AND_TEXT"]
@@ -513,9 +553,12 @@ def assemble_kling_video(spec, characters, root=None):
     def body_len(sec):
         return len(_kling_join(sec, order, leads))
 
-    sec = {k: _kling_scale(v, scale) for k, v in full.items()}
+    # book/pages are fixed contract fragments (never_trim): unscaled, uncut.
+    fixed = ("book", "pages")
+    sec = {k: (v if k in fixed else _kling_scale(v, scale))
+           for k, v in full.items()}
     # Over the band: shorten, worst first, but never the fixed fragments.
-    sec = {k: (v if k not in lim or lim[k]["max"] <= 0 else
+    sec = {k: (v if k in fixed or k not in lim or lim[k]["max"] <= 0 else
                _kling_cut(v, lim[k]["max"])) for k, v in sec.items()}
     b = band(spec["model"], root=root)
     target_max = b["target_max"]
@@ -679,11 +722,7 @@ def assemble_h3(spec, characters, root=None):
         % (ch["identity"], ch["wardrobe"][spec["wardrobe"]],
            ch["do_not_change"], spec["visible_emotion"]))
     sec["look"] = _look_block(spec, root=root)
-    if spec.get("book"):
-        sec["book"] = frag["BOOK_CLOSED"] + (
-            " " + frag["BOOK_OPEN_MOTION"] if spec["book"] == "open" else "")
-    if spec.get("pages") == "texture":
-        sec["pages"] = frag["PRINTED_PAGES"]
+    sec.update(book_fragments(spec, st, frag, root=root))
     sec["physics"] = spec["motion_physics"]
     sec["beats"] = " ".join("%s: %s" % (t, d) for t, d in spec["beats"])
     sec["policy"] = frag["SOUND_AND_TEXT"]

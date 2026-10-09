@@ -10,6 +10,9 @@ frontmatter `version:` field).
 
 - FU-PARITY: shared files aligned with 999 (v2.7.28 test fixes, delivery_checklist blank lines).
 - sfx-f4: the U15 fail-first guards no longer call sys.exit at module level, so one failing guard cannot raise INTERNALERROR across the whole test tree.
+- `prompt_templates.book_fragments(spec, st, frag)` is the ONE wording home for a book prompt: it reads `BOOK_CLOSED`, `BOOK_OPEN_MOTION` and `PRINTED_PAGES` from `models/minimax-h3.json` and returns the `book`/`pages` sections both assemblers (`assemble_h3`, `assemble_kling_video`) `.update()`. A shot type that declares `required_blocks_when_book` (product-book) now REFUSES `BOOK_FRAGMENTS_REQUIRED` when the spec does not carry the block, when `book=` is a value the assembler does not know (`closed`/`open` only) or when an open book has no `pages: texture` block — previously such a spec assembled with NO contract wording and PASSed the band. Non-book shot types are untouched.
+- Kling no longer scales or trims the fixed `book`/`pages` fragments (`section_scale` 0.38 and `_KLING_TRIM_ORDER` cut the U10 contract sentences in half; design `never_trim` lists `book` and `pages`). The fragments now arrive whole on the Kling path.
+- New test `scripts/core/prompt_templates/test_prompt_book_fragments_u15g.py` (26 checks; the (a) refusal checks fail on the base tree).
 
 ## v2.9.7 - 2026-10-09 - load-governor test no longer sleeps
 
