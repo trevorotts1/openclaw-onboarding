@@ -351,12 +351,11 @@ def _skill74_book_price(adapter):
     import math as _math
 
     def price(book, fields):
-        choice = _card_renderer()[0].default_choice(fields)
         catalog = _shipped_catalog()
         if catalog is None:
             raise BatchError("PRICE_UNAVAILABLE",
                              "no shipped model catalog to price against")
-        env = adapter_for_env(choice, catalog, adapter)
+        env, _m = _card_renderer()[0].price_envelope(fields, adapter, catalog=catalog)
         card = env.get("card") if env.get("state") == "ok" else None
         if not card or not _math.isfinite(card.get("price_usd", 0)):
             raise BatchError("PRICE_UNAVAILABLE",

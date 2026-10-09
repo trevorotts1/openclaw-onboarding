@@ -143,10 +143,7 @@ def _questions():
          "options": _musics(), "recommended": 0},
         {"id": "look", "why": "The look is what viewers see in every shot.", "reason": "it gives the most real, cinematic result.", "label": "VIDEO STYLE", "ask": "How should your video look? Tap a link to watch a sample.",
          "options": _looks(), "links": _look_links(), "recommended": 0},
-        {"id": "model", "why": "The video model sets how good the shots look and what they cost.", "reason": "it gives the best balance of quality and price.", "label": "VIDEO MODEL", "ask": "Which video model should make the shots?",
-         "options": [("MiniMax H3, 768P", "Best balance of quality and price."),
-                     ("Show me every model and its price", "I will list them, then you pick.")],
-         "recommended": 0},
+        _model_question("60 seconds"),
         spend_question(),
         {"id": "storyboard", "why": "The storyboard is cheap to fix now and costly to fix after video is made.", "reason": "you see every scene before any money is spent on video.", "label": "STORYBOARD APPROVAL",
          "ask": "Do you want to approve the storyboard before any video is made?",
@@ -154,6 +151,28 @@ def _questions():
                      ("No, just make it", "I start as soon as the card is approved.")],
          "recommended": 0},
     ]
+
+
+def _model_question(length_label):
+    """VIDEO MODEL: four models, each priced for the client's chosen length."""
+    from choice_card.video_models import video_models as VM
+    from catalog_calculator import card_render as CR
+    sec = VM.length_seconds(length_label)
+    cost = {m["n"]: "$%.2f" % CR.quote(m["n"], length_label) for m in VM.MODELS}
+    return {"id": "model", "why": "The video model sets how good the shots look and what they cost.",
+            "reason": "it gives the best balance of quality and price.", "label": "VIDEO MODEL",
+            "ask": "Which video model should make your shots? Prices are for your %s ad, "
+                   "with the song, pictures and a 20%% redo allowance." % VM.length_phrase(sec),
+            "options": [(m["name"], "%s - about %s" % (m["blurb"], cost[m["n"]])) for m in VM.MODELS],
+            "values": [cost[m["n"]] for m in VM.MODELS],
+            "recommended": next(i for i, m in enumerate(VM.MODELS) if m["recommended"])}
+
+
+def _priced(qs, answers):
+    """Swap in the VIDEO MODEL question priced for the length already answered."""
+    if not answers or qs[0]["id"] != "length":
+        return qs
+    return [_model_question(answers[0]["text"]) if q["id"] == "model" else q for q in qs]
 
 
 QUESTIONS = _questions()
@@ -210,11 +229,14 @@ def render_step(i, questions=None):
 
 
 def render_recap(answers, questions=None):
-    qs = questions or QUESTIONS
+    qs = _priced(questions or QUESTIONS, answers)
     lines = ["Here is what you picked:"]
     for i, (q, a) in enumerate(zip(qs, answers), 1):
-        lines.append("%d. %s" % (i, q["recap"][a["n"] - 1] if "recap" in q
-                                 else "%s: %s" % (q["label"].title(), a["text"])))
+        if "recap" in q:
+            lines.append("%d. %s" % (i, q["recap"][a["n"] - 1]))
+            continue
+        price = (" - about " + q["values"][a["n"] - 1]) if q["id"] == "model" else ""
+        lines.append("%d. %s: %s%s" % (i, q["label"].title().replace("Model", "model"), a["text"], price))
     lines += ["", 'Reply "yes" to start, or the number of a line to change it.']
     return "\n".join(lines)
 
@@ -242,14 +264,17 @@ def _parse(reply, q):
     return {"n": n, "text": "up to " + _usd(value) if q["id"] == "spend" else opts[n - 1][0], "value": value}
 
 
-def conversation(replies, questions=None):
+def conversation(replies, questions=None, state_store=None, run_id=None):
     """Replay the client's replies from the start; return the state and the ONE
     message to send next. Stateless, so claude-nine and OpenClaw can both call
-    it with the replies so far. state: answers, done, message."""
+    it with the replies so far. state: answers, done, message, video_model.
+    With state_store + run_id, the client's video model is written to run state
+    (the F14 lock) as soon as it is answered; the card and dispatch read it there."""
     qs = questions or QUESTIONS
     answers, fix, note, done = [], None, "", False
     for r in replies:
         note = ""
+        qs = _priced(qs, answers)
         if len(answers) < len(qs) and fix is None:
             a = _parse(r, qs[len(answers)])
             if a:
@@ -270,6 +295,11 @@ def conversation(replies, questions=None):
                 fix = int(t) - 1
             else:
                 note = "Sorry, I did not catch that. "
+    qs = _priced(qs, answers)
+    model_n = next((a["n"] for q, a in zip(qs, answers) if q["id"] == "model"), None)
+    if model_n and state_store and run_id:
+        from choice_card.video_models import video_models as VM
+        VM.lock_choice(state_store, run_id, model_n)
     if done:
         msg = "Locked in. I am starting now."
     elif fix is not None:
@@ -280,7 +310,7 @@ def conversation(replies, questions=None):
             msg = qs[0]["preface"] + "\n\n" + msg
     else:
         msg = note + render_recap(answers, qs)
-    return {"answers": answers, "done": done, "message": msg}
+    return {"answers": answers, "done": done, "message": msg, "video_model": model_n}
 
 
 def render_card(questions=None, book_plan=None, notes=()):

@@ -50,13 +50,10 @@ Your drama song ad
                 the product (10-15% target, never a cap; measured at delivery)
   Voice:        All Suno (default) / Velvet Voiceover (Google voiceover with
                 the song underneath, no echo effect; not with Sketch to Life)
-  Clips:        (5 and 10 minutes only) automatic 60- or 90-second clips
-                for ads and Reels
-
-                the song underneath, no echo effect)
   Clips:        (3, 5 and 10 minutes) automatic 60-second and 90-second
                 clips to post on social media, included in the price
-  Video model:  MiniMax H3, 768P  (RECOMMENDED)   [see all models and prices]
+  Video model:  MiniMax H3 (RECOMMENDED) / Seedance 2.5 / Seedance 2.0 Mini /
+                Google Veo 3.1, each with its price for the chosen length
   Villain:      <name>, shown in N shots    (FU-U16; from the story plan)
   Price:        computed by Skill 74 `price`   (+ the 20% retake allowance)
   Includes:     all video shots, the song (song mp3 included), one image per shot
@@ -438,10 +435,44 @@ Decision 32, plan 6.13.
 ### 3.8 Video model
 
 Default **MiniMax H3 at 768P** (decision 5). No choice means MiniMax H3, and
-the card says so. `[see all models and prices]` opens the full chart from the
-price menu, sorted cheapest first, for the selected length, showing one-shape
-and both-shapes prices and the retake allowance. Seedance 2.5 at 1080p is
-marked PREMIUM with its price shown plainly.
+the card says so.
+
+**The intake question (FU-VIDEO-MODEL-CHOICES, 2026-10-09).** After the
+client picks a length, the video model question lists four models, each with
+its price for THAT length, one plain descriptor each (about 8 words), and H3
+first and marked RECOMMENDED:
+
+```
+Question 4 of 6 - VIDEO MODEL
+Which video model should make your shots? Prices are for your 3-minute ad,
+with the song, pictures and a 20% redo allowance.
+1. MiniMax H3 - great quality, best value - about $9.17 (RECOMMENDED)
+2. Seedance 2.5 - premium detail and motion - about $68.57
+3. Seedance 2.0 Mini - quicker and cheaper - about $9.38
+4. Google Veo 3.1 - top-tier realism - about $9.07
+```
+
+Seedance is ByteDance's VIDEO model (Seedream is its image model and cannot
+make shots). The four models, provider ids and rates live in ONE table,
+`scripts/core/choice_card/video_models/video_model_rates.json` (from
+the KIE live model list, checked 2026-10-09), each at the resolution the
+factory really renders: H3 768P, Seedance 2.5 720p, Seedance 2.0 Mini 720p,
+Google Veo 3.1 Fast 720p (per 8-second clip). The figure shown comes from the
+SAME function as the final card (`card_render.price_envelope`): video + one
+keyframe per shot + the character reference pictures + the song, then the
+20% redo allowance, so the number in the question is the number on the card
+(for the standard 9:16 ad with one main character; more characters or both
+shapes re-price on the card with the same function). Skill 74 `price` returns
+the highest listed tier, so the chosen model's video line is priced from the
+table instead; Skill 74's own behaviour for other skills is unchanged.
+The recap line reads `Video model: Seedance 2.5 - about $68.57` (3-minute ad). The
+pick is written to run state (the F14 video-model lock) when the client
+answers; the card's Video model row reads it there, and dispatch reads it too
+and submits that model's provider id and resolution (Seedance: `generate_audio`
+off; Veo 3.1: top-level `veo-3-1`, tier `veo3_fast` inside `input`).
+
+Seedance 2.0 Fast is not offered: its 4-15 s clip range is unconfirmed and it
+is not on the price menu; Mini is the "lite" tier on the menu.
 
 If MiniMax H3 is unavailable, the factory says so and offers the next
 cheapest APPROVED model that fits, with its price. It never switches models

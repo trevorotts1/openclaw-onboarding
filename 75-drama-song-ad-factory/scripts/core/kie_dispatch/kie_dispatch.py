@@ -1055,6 +1055,8 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                 "dispatch an un-locked video job",
                 run_id=run_id, logical_key=logical_key,
                 attempt_id=attempt_id)
+        from choice_card.video_models import video_models as _VM  # client's pick -> resolution/tier
+        request = _VM.apply_locked_choice(request, locked)
         if not ML.matches_family(model, locked):
             return envelope(
                 "dispatch", "rejected", "VIDEO_MODEL_MISMATCH",
