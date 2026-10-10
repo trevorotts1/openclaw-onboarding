@@ -6,6 +6,15 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.17 - 2026-10-10 - PKG-11 attempt 3: one delivery package naming scheme, real producers pass the 12-item gate
+
+Released with onboarding v27.1.1 (follow-up to the v27.1.0 batch; closes the delivery package naming gap flagged there).
+
+- ONE naming scheme, `NN - Label.ext`, defined in `scripts/core/delivery_package/contract.py`. All 12 producers' deliver paths (audio versions, character bible, script PDF, storyboard grid, video captioned and clean, 60 and 90 second clips, ready-to-post kit, cover image, lyric sheet, caption file, character images, welcome sheet) emit the `contract.PACKAGE_ITEMS` names. Attempt 2 failed because only 5 of 12 did and the adapters wrote fixture bytes.
+- `produce_delivery` adapters call each producer's real deliver path (no fixture bytes).
+- `test_delivery_package_e2e` runs the REAL producers into a folder and passes `contract.verify_folder` for all 12 items, plus a negative control.
+- Includes the operator-only wording scrub (see v2.9.16).
+
 ## v2.9.16 - 2026-10-09 - operator wording scrub
 
 - Wording scrub, behavior identical: the two-strike unlock line says operator-only (no personal name) in the SKILL.md gate block, the `two_strike.py` policy docstring, the `two_strike_skills_map.json` source field and the two-strike README.
