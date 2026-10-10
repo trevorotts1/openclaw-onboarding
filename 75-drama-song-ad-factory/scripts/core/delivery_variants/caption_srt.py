@@ -205,5 +205,28 @@ def _cli(argv=None):
     return 1
 
 
+
+def produce_delivery(run_dir, item):
+    """DEL-13 packaging adapter: the REAL DEL-10 deliver path (the .srt).
+
+    Builds the cues exactly as the pipeline does -- the run's approved sheet
+    timed by the run's own measured word timings
+    (``music/word-timings.json`` via ``caption_timing.captions``) -- and
+    hands them to ``export_captions_srt``. No measured timing is a refusal
+    (RunInputError), never an invented clock and never fixture SRT text:
+    ``contract.produce_item`` is test-only and no deliver path imports it.
+    Signature: produce_delivery(run_dir, item) -> list[Path].
+    """
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    cues = RI.measured_cues(run_dir)
+    receipt = export_captions_srt(str(out), cues)
+    if not (isinstance(receipt, dict) and receipt.get("ok")):
+        raise RI.RunInputError("caption export refused (%s): %s"
+                               % ((receipt or {}).get("reason_code") or "?",
+                                  (receipt or {}).get("detail") or "?"))
+    return RI.stage(item, out)
+
+
 if __name__ == "__main__":
     raise SystemExit(_cli())

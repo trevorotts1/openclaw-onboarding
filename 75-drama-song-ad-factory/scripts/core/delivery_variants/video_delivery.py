@@ -2,8 +2,8 @@
 
 One delivery folder per client run holds two clearly numbered files:
 
-    1 - <Ad> - Ad (captioned).mp4
-    2 - <Ad> - Ad (clean, no captions).mp4
+    05 - Video Captioned.mp4
+    05 - Video Clean.mp4
 
 Both are produced at the END OF THE RUN through
 ``final_assembler/captions_burn`` -- the one caption site this skill has. The
@@ -54,8 +54,13 @@ README_NAME = "README.md"
 _BEGIN, _END = "<!-- video-delivery:begin -->", "<!-- video-delivery:end -->"
 PASS, FAIL, UNAVAILABLE = "PASS", "FAIL", "UNAVAILABLE"
 
-#: The two delivered files, in the order the client opens the folder.
-CAPTIONED_N, CLEAN_N = 1, 2
+#: The two delivered files, in the order the client opens the folder. Their
+#: DELIVERY NAMES are the ONE naming scheme, taken verbatim from the DEL-13
+#: contract (``NN - Label.ext``); both files share item number 05.
+from delivery_package.contract import ITEMS_BY_KEY as _ITEMS  # noqa: E402
+
+_VIDEO = _ITEMS["video"]
+CAPTIONED_N, CLEAN_N = _VIDEO.number, _VIDEO.number
 KINDS = ("captioned", "clean_master")
 
 RENDER_TIMEOUT_S = 900
@@ -77,13 +82,21 @@ def safe_name(ad_name):
 
 
 def captioned_name(ad_name):
-    """Numbered, unmistakable: the version with the captions on it."""
-    return "%d - %s - Ad (captioned).mp4" % (CAPTIONED_N, safe_name(ad_name))
+    """Numbered, unmistakable: the version with the captions on it.
+
+    The name is the ONE naming scheme, taken verbatim from the DEL-13 contract
+    (``NN - Label.ext``). ``ad_name`` is still validated (an empty ad name is
+    a refusal) but no longer baked into the file name: one delivery folder is
+    one ad, so the contract's canonical name is already unambiguous.
+    """
+    safe_name(ad_name)
+    return _VIDEO.files[0]
 
 
 def clean_name(ad_name):
     """Numbered, unmistakable: the same cut with no captions at all."""
-    return "%d - %s - Ad (clean, no captions).mp4" % (CLEAN_N, safe_name(ad_name))
+    safe_name(ad_name)
+    return _VIDEO.files[1]
 
 
 def _argv(args, ffmpeg="ffmpeg"):
@@ -356,6 +369,35 @@ def _cli(argv=None):
     print(json.dumps({"check": CHECK_NAME, "verdict": verdict,
                       "detail": detail}))
     return 0 if verdict == PASS else 5
+
+
+
+def produce_delivery(run_dir, item):
+    """DEL-13 packaging adapter: the REAL DEL-05 deliver path (two cuts).
+
+    Reads the run's rendered master (``edit/ad.mp4``), the approved sheet's
+    own lines and the run's measured word timings
+    (``music/word-timings.json``), then calls
+    ``build_video_delivery`` + ``write_video_docs`` -- the same call the
+    stage runbook documents: captioned burn + clean master through
+    captions_burn, every cut through the delivery audio gate. The ffmpeg is
+    MEASURED to carry the ``subtitles`` filter (env override, PATH, then the
+    bundled build) and a box with none refuses instead of faking a file.
+    Fixture bytes are never written: ``contract.produce_item`` is test-only
+    and no deliver path imports it. Signature: produce_delivery(run_dir,
+    item) -> list[Path].
+    """
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    master = RI.as_run(run_dir) / "edit" / "ad.mp4"
+    lines = RI.approved_lines(run_dir)
+    cues = RI.measured_cues(run_dir)
+    ffmpeg = RI.ffmpeg_with("subtitles", "DSAF_BURN_FFMPEG")
+    result = build_video_delivery(master, str(out), RI.ad_title(run_dir),
+                                  lines, cues=cues, provenance="measured",
+                                  ffmpeg=ffmpeg)
+    write_video_docs(str(out), result["rows"])
+    return RI.stage(item, out)
 
 
 if __name__ == "__main__":

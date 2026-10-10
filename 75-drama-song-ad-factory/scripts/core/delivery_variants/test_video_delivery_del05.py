@@ -91,13 +91,12 @@ def _mk_mp3(path):
 class Names(unittest.TestCase):
     def test_the_two_files_are_numbered_and_unmistakable(self):
         cap, clean = vd.captioned_name(AD), vd.clean_name(AD)
-        self.assertEqual(cap, "1 - Sample-Story - Ad (captioned).mp4")
-        self.assertEqual(clean, "2 - Sample-Story - Ad (clean, no captions).mp4")
+        self.assertEqual(cap, "05 - Video Captioned.mp4")
+        self.assertEqual(clean, "05 - Video Clean.mp4")
         self.assertNotEqual(cap, clean)
-        self.assertTrue(cap.startswith("1 - ") and clean.startswith("2 - "))
-        self.assertIn("captioned", cap)
-        self.assertIn("clean", clean)
-        self.assertIn("no captions", clean)
+        self.assertTrue(cap.startswith("05 - ") and clean.startswith("05 - "))
+        self.assertIn("Captioned", cap)
+        self.assertIn("Clean", clean)
         self.assertTrue(cap.endswith(".mp4") and clean.endswith(".mp4"))
 
     def test_a_blank_ad_name_is_refused(self):
@@ -174,9 +173,8 @@ class DeliverThePair(unittest.TestCase):
     def test_two_numbered_files_land_and_both_pass_the_real_gate(self):
         res = self.build()
         cap, clean = Path(res["captioned"]), Path(res["clean_master"])
-        self.assertEqual(cap.name, "1 - Sample-Story - Ad (captioned).mp4")
-        self.assertEqual(clean.name,
-                         "2 - Sample-Story - Ad (clean, no captions).mp4")
+        self.assertEqual(cap.name, "05 - Video Captioned.mp4")
+        self.assertEqual(clean.name, "05 - Video Clean.mp4")
         self.assertEqual(sorted(p.name for p in self.d.glob("*.mp4")),
                          sorted([cap.name, clean.name]))
 
@@ -297,9 +295,9 @@ class DeliverThePair(unittest.TestCase):
         self.assertEqual(result["files"], 3)
         names = [n for n in _zip_names(out) if n != "README.md"]
         self.assertIn("Sample-Author_Sample-Story/"
-                      "1 - Sample-Story - Ad (captioned).mp4", names)
+                      "05 - Video Captioned.mp4", names)
         self.assertIn("Sample-Author_Sample-Story/"
-                      "2 - Sample-Story - Ad (clean, no captions).mp4", names)
+                      "05 - Video Clean.mp4", names)
 
 
 def _zip_names(path):

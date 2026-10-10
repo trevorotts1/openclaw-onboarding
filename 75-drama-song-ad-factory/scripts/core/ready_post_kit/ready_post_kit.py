@@ -1107,5 +1107,25 @@ def main(argv=None):
     return 0
 
 
+
+def produce_delivery(run_dir, item):
+    """DEL-13 packaging adapter: the REAL DEL-07 deliver path (the kit).
+
+    Calls ``prepare`` + ``write_kit`` -- the same entry the CLI runs: the
+    run's brief, card answers, approved script and storyboard gate, plus the
+    delivery folder the earlier items have already built (receipt and
+    README), audited and rendered to the numbered PDF and its JSON. Every
+    refusal (no link, no receipt, a measured no) comes through unchanged.
+    Fixture bytes are never written: ``contract.produce_item`` is test-only
+    and no deliver path imports it. Signature: produce_delivery(run_dir,
+    item) -> list[Path].
+    """
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    kit = prepare(str(run_dir), str(out))
+    write_kit(kit, str(out))
+    return RI.stage(item, out)
+
+
 if __name__ == "__main__":
     sys.exit(main())

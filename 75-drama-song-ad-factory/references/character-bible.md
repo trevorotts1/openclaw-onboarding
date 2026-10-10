@@ -81,7 +81,7 @@ binary, no third-party package, so the suite runs under an empty home.
 # What is still missing from this character?
 python3 scripts/core/character_bible/character_bible.py questions --brief brief.json
 
-# Write the bible into the run's delivery folder (02-character-bible.pdf)
+# Write the bible into the run's delivery folder (02 - Character Bible.pdf)
 python3 scripts/core/character_bible/character_bible.py render \
     --brief brief.json --delivery /path/to/run/delivery \
     --image /path/to/reference-images
@@ -89,8 +89,12 @@ python3 scripts/core/character_bible/character_bible.py render \
 
 ## Delivery file
 
-One delivery folder per client run, numbered so every unit owns its own slot:
+One delivery folder per client run, numbered so every unit owns its own slot.
+Item 02 is BOTH files: the bible itself and the reference pictures as
+separate files beside it (the same pictures the layout used, written by the
+one `write_delivery` deliver path -- no reference picture, no item):
 
 ```
-02-character-bible.pdf
+02 - Character Bible.pdf
+02 - Character Bible Images/
 ```

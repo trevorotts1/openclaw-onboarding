@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.2.7 - 2026-10-09 - operator wording scrub
+
+- Wording scrub, behavior identical: the two-strike gate block in SKILL.md says the unlock is operator-only (no personal name).
+
 ## 1.2.5 - 2026-10-06
 
 - `verify.sh`: the prompt validator sanity fixture failed under the 1.2.4 KIE rule-12 gate — `tests/fixtures/prompt_good.txt` is 6,795 characters, below the 16,000 hard floor of the GPT Image 2.5 Sunburst band. verify.sh now grows the fixture into the band with `tests/fit_prompt.py` (the same helper `tests/run_tests.py` uses, matching the 999-setup copy of this skill) before running the sanity check; a fit failure is reported as its own line. `--runtime-max 19000` dropped — accepted and ignored since 1.2.4.

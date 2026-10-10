@@ -3,7 +3,7 @@
 
 One module, one policy, every wired skill. Stdlib only.
 
-Policy (Trevor order 2026-10-09 13:35 item 5):
+Policy (operator order 2026-10-09 13:35 item 5):
   * The strike counter lives OUTSIDE every skill folder. Nothing under a
     skill directory is ever used as state, so a client cannot read, edit or
     reset a counter by poking at the skill they are trying to unpack.

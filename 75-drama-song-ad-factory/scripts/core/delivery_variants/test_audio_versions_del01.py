@@ -45,10 +45,10 @@ class AudioVersions(unittest.TestCase):
         rows = self.build()
         files = sorted(r["file"] for r in rows)
         self.assertEqual(files, [
-            "00 - About These Audio Files.txt",
+            "01 - About These Audio Files.txt",
             "01 - Full Song.mp3",
-            "02 - Instrumental.mp3",
-            "03 - Voice Only.mp3"])
+            "01 - Instrumental.mp3",
+            "01 - Voice Only.mp3"])
         for r in rows:
             self.assertTrue((self.d / r["file"]).is_file())
 
@@ -67,11 +67,13 @@ class AudioVersions(unittest.TestCase):
         self.assertIn("same song three ways", note)
 
     def test_labels_and_note_cannot_drift(self):
-        # One table drives labels, note and QC expectations.
+        # One table drives labels, note and QC expectations. Every file of
+        # this package item carries the ITEM number (01), never a second
+        # numbering of its own -- the contract owns the names.
         text = sf.version_note_text()
-        for num, label, _d in sf.DELIVERY_VERSIONS:
-            self.assertIn("%s - %s" % (num, label), text)
-            self.assertIn(sf.version_file_name(num, label), [
+        for _key, label, _d in sf.DELIVERY_VERSIONS:
+            self.assertIn("%s - %s" % (sf.ITEM_NUMBER, label), text)
+            self.assertIn(sf.version_file_name(sf.ITEM_NUMBER, label), [
                 f for _n, _l, f in sf.expected_version_files()])
 
     def test_missing_source_refuses_never_two_versions(self):
@@ -89,10 +91,10 @@ class AudioVersions(unittest.TestCase):
 
     def test_missing_version_file_fails_qc(self):
         self.build()
-        (self.d / "02 - Instrumental.mp3").unlink()
+        (self.d / "01 - Instrumental.mp3").unlink()
         v, why = sf.check_audio_versions(self.d)
         self.assertEqual(v, "FAIL")
-        self.assertIn("02 - Instrumental.mp3", why)
+        self.assertIn("01 - Instrumental.mp3", why)
 
     def test_missing_note_fails_qc(self):
         self.build()
@@ -137,9 +139,14 @@ class AudioVersions(unittest.TestCase):
         rec = json.loads((self.d / sf.RECEIPT_NAME).read_text())
         kinds = {r["kind"] for r in rec["audio_versions"]}
         self.assertEqual(kinds, {"audio-version", "audio-version-note"})
-        nums = sorted(r["number"] for r in rec["audio_versions"]
-                      if r["kind"] == "audio-version")
-        self.assertEqual(nums, ["01", "02", "03"])
+        # every file of this package item carries the ITEM number; the three
+        # are told apart by label (and the internal source key), never by a
+        # second numbering of their own.
+        versions = [r for r in rec["audio_versions"]
+                    if r["kind"] == "audio-version"]
+        self.assertEqual({r["number"] for r in versions}, {sf.ITEM_NUMBER})
+        self.assertEqual(sorted(r["source"] for r in versions),
+                         ["instrumental", "mix", "vocal"])
 
     def test_qc_gate_knows_the_check(self):
         self.assertIn("audio_versions", qc_gate.CHECKS)

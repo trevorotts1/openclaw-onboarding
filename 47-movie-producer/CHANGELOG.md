@@ -1,5 +1,9 @@
 # Changelog — Skill 47 (Movie Producer / Automated Video Production)
 
+## v15.1.7 - 2026-10-09 - operator wording scrub
+
+- Wording scrub, behavior identical: the two-strike gate block in SKILL.md says the unlock is operator-only (no personal name).
+
 ## v15.1.4 - 2026-10-08 - INF002
 
 - Re-embedded the Skill 74 client in `kie_image.py` (its header names Skill 74 v1.1.4, which now reads its QC version from `skill-version.txt`). No adapter behavior change.

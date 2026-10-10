@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import re
 import sys
 
@@ -443,6 +444,22 @@ def main(argv=None):
     sys.stdout.write("\n")
     return 0
 
+
+
+
+def produce_delivery(run_dir, item):
+    """DEL-13 packaging adapter: the REAL DEL-09 deliver path (lyric sheet).
+
+    Calls ``write_delivery(run_dir, delivery_dir)`` -- the same entry the
+    CLI runs: it loads the run's approved ``creative/script.json`` and lays
+    every word of the song out under the numbered name. Fixture bytes are
+    never written: ``contract.produce_item`` is test-only and no deliver
+    path imports it. Signature: produce_delivery(run_dir, item) -> list[Path].
+    """
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    write_delivery(str(run_dir), str(out))
+    return RI.stage(item, out)
 
 if __name__ == "__main__":
     sys.exit(main())

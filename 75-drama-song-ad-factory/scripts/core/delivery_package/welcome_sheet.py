@@ -262,6 +262,23 @@ def _cli(argv=None):
     return 0
 
 
+
+def produce_delivery(run_dir, item):
+    """DEL-13 packaging adapter: the REAL DEL-12 deliver path (this sheet).
+
+    Calls ``build_welcome_sheet`` on the run's delivery folder under item
+    12's canonical name -- the same entry the CLI runs. This page carries no
+    client data and reads nothing out of the run beyond where to land.
+    Fixture bytes are never written: ``contract.produce_item`` is test-only
+    and no deliver path imports it. Signature: produce_delivery(run_dir,
+    item) -> list[Path].
+    """
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    build_welcome_sheet(str(out / item.files[0]))
+    return RI.stage(item, out)
+
+
 if __name__ == "__main__":
     import sys
     sys.exit(_cli())

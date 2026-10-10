@@ -6,10 +6,17 @@ file names it must ship. Both distributions carry this file byte for byte
 (scripts/core/delivery_package/ in the onboarding skill and in the runtime
 twin), so the two run the same contract.
 
+ONE naming scheme, used by every producer and by both halves of the package
+(``contract`` here and ``package_items``, the client-facing map): every file
+carries its two-digit item number, a space, a dash, a space, a human label and
+its real extension -- ``01 - Full Song.mp3``, ``10 - Captions.srt``. A
+producer writes that exact name; the packaging call copies it verbatim; the
+folder gate opens it. No producer invents a second scheme.
+
 The run FAILS when the folder misses any item -- delivery_checklist Q12
 (PACKAGE_COMPLETE) reads this contract and names every missing item in
-repair_scope, and packaging.packaging.package_run refuses to hand over a
-folder that does not verify.
+repair_scope, and packaging.package_run refuses to hand over a folder that
+does not verify.
 
 An item opens only when it opens:
   pdf   -- a real PDF header (%PDF-), never a renamed text file;
@@ -30,7 +37,7 @@ import shutil
 from pathlib import Path
 from collections import namedtuple
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 #: one package item: key, its 1-based number, the DEL unit that produces it,
 #: the human label, the canonical file names, one kind per file, and the
@@ -46,60 +53,68 @@ _SRT_TIMING = re.compile(
     r"^\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}", re.M)
 _SRT_INDEX = re.compile(r"^\d+\s*$", re.M)
 
+#: Canonical bytes for the TEST FIXTURE helper ``produce_item`` (and the
+#: reference package built from it) only. No deliver path writes these:
+#: every real producer reads its own inputs out of the run and ships its own
+#: output (see ``delivery_package.run_inputs`` for where those inputs live).
+PDF_BYTES = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
+SRT_TEXT = ("1\n00:00:00,000 --> 00:00:02,000\nfixture caption line\n\n"
+            "2\n00:00:02,000 --> 00:00:04,000\nsecond fixture line\n")
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"fixture-image" * 4
+MEDIA_BYTES = b"fixture-media-bytes" * 16
+NOTE_BYTES = b"# Audio versions note\n\nThree audio versions of one cut.\n"
+
 PACKAGE_ITEMS = (
     Item("audio_versions", 1, "DEL-01", "THREE AUDIO VERSIONS plus note",
-         ("01-audio-main.mp3", "01-audio-main.wav",
-          "01-audio-instrumental.mp3", "01-audio-note.md"),
+         ("01 - Full Song.mp3", "01 - Instrumental.mp3",
+          "01 - Voice Only.mp3", "01 - About These Audio Files.txt"),
          ("media", "media", "media", "text"),
-         ("delivery_variants.three_audio", "audio_versions",
-          "delivery_variants.song_files")),
+         ("delivery_variants.song_files",)),
     Item("character_bible", 2, "DEL-02", "CHARACTER BIBLE PDF with image bible",
-         ("02-character-bible.pdf", "02-character-bible-images"),
+         ("02 - Character Bible.pdf", "02 - Character Bible Images"),
          ("pdf", "images"),
-         ("character_bible", "character_library.character_library",
-          "character_library")),
+         ("character_bible.character_bible",)),
     Item("script_pdf", 3, "DEL-03", "SCRIPT PDF",
-         ("03-script.pdf",),
+         ("03 - SCRIPT.pdf",),
          ("pdf",),
-         ("script_approval.script_approval", "script_pdf")),
+         ("script_pdf.script_pdf",)),
     Item("storyboard_pdf", 4, "DEL-04", "STORYBOARD PDF",
-         ("04-storyboard.pdf",),
+         ("04 - Storyboard.pdf",),
          ("pdf",),
-         ("storyboard_pdf", "storyboard_director.storyboard_director")),
+         ("storyboard_grid.storyboard_grid",)),
     Item("video", 5, "DEL-05", "VIDEO clean and captioned",
-         ("05-video-clean.mp4", "05-video-captioned.mp4"),
+         ("05 - Video Captioned.mp4", "05 - Video Clean.mp4"),
          ("media", "media"),
-         ("captions_burn.captions_burn", "captions_burn", "video_delivery")),
+         ("delivery_variants.video_delivery",)),
     Item("clips", 6, "DEL-06", "60 and 90 SECOND CLIPS",
-         ("06-clip-60s.mp4", "06-clip-90s.mp4"),
+         ("06 - Clip 60s.mp4", "06 - Clip 90s.mp4"),
          ("media", "media"),
-         ("clip_cutdown.clip_cutdown", "clip_cutdown")),
+         ("delivery_clips.delivery_clips",)),
     Item("ready_to_post_kit", 7, "DEL-07", "READY-TO-POST KIT PDF",
-         ("07-ready-to-post-kit.pdf",),
+         ("07 - Ready-to-Post Kit.pdf",),
          ("pdf",),
-         ("batch_zip.batch_zip", "ready_to_post_kit")),
+         ("ready_post_kit.ready_post_kit",)),
     Item("cover_thumbnail", 8, "DEL-08", "COVER THUMBNAIL",
-         ("08-cover-thumbnail.png",),
+         ("08 - Cover Thumbnail.png",),
          ("media",),
-         ("cover_thumbnail",)),
+         ("delivery_variants.cover_image",)),
     Item("lyric_sheet", 9, "DEL-09", "LYRIC SHEET PDF",
-         ("09-lyric-sheet.pdf",),
+         ("09 - Lyric Sheet.pdf",),
          ("pdf",),
-         ("lyric_sheet", "sung_hook.sung_hook")),
+         ("lyric_sheet.lyric_sheet",)),
     Item("captions_srt", 10, "DEL-10", "SRT CAPTION FILE",
-         ("10-captions.srt",),
+         ("10 - Captions.srt",),
          ("srt",),
-         ("srt_export", "captions_burn.captions_burn", "caption_timing")),
+         ("delivery_variants.caption_srt",)),
     Item("character_images", 11, "DEL-11",
          "CHARACTER IMAGES as separate full-resolution files",
-         ("11-character-images",),
+         ("11 - Character Images",),
          ("images",),
-         ("character_library.character_library", "character_library",
-          "character_images")),
+         ("character_images.character_images",)),
     Item("welcome_sheet", 12, "DEL-12", "WELCOME SHEET PDF",
-         ("12-welcome-sheet.pdf",),
+         ("12 - Welcome Sheet.pdf",),
          ("pdf",),
-         ("welcome_sheet",)),
+         ("delivery_package.welcome_sheet",)),
 )
 
 ITEMS_BY_KEY = {item.key: item for item in PACKAGE_ITEMS}
@@ -177,37 +192,53 @@ def verify_folder(folder):
     return report
 
 
+def produce_item(item, out_dir):
+    """TEST FIXTURE HELPER ONLY: write one item's canonical names with bytes
+    that open under this contract. No deliver path may import or call it.
+
+    This is the reference-package helper tests use to build a folder with no
+    run behind it (PDF header, SRT cue block, non-empty media, image file,
+    non-empty note). It never reads a run and never ships to a client: the
+    twelve ``produce_delivery`` adapters read their own inputs out of the run
+    (``delivery_package.run_inputs``) and call their producer's real deliver
+    path instead. The packaging e2e runs all twelve with THIS function
+    replaced by a raiser, so an adapter that reached for it would fail the
+    suite rather than pass vacuously.
+    """
+    root = Path(out_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    written = []
+    for name, kind in zip(item.files, item.kinds):
+        target = root / name
+        if kind.startswith("images"):
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "01.png").write_bytes(PNG_BYTES)
+            written.append(target)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if kind == "pdf":
+            target.write_bytes(PDF_BYTES)
+        elif kind == "srt":
+            target.write_text(SRT_TEXT, encoding="utf-8")
+        elif kind == "text":
+            target.write_bytes(NOTE_BYTES)
+        else:
+            target.write_bytes(MEDIA_BYTES)
+        written.append(target)
+    return written
+
+
 def write_reference_package(folder):
     """Write a complete, generic 12-item folder for tests. Not a deliverable.
 
-    Fixture only: placeholder bytes that open under this contract (PDF header,
-    SRT cue block, non-empty media, image files). No client name, no model
-    name, no absolute path.
+    Fixture only (``produce_item`` bytes that open under this contract): no
+    client name, no model name, no absolute path. The packaging e2e never
+    uses this -- it runs the twelve real producers on a real run folder.
     """
     root = Path(folder)
     root.mkdir(parents=True, exist_ok=True)
-    pdf = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
-    srt = ("1\n00:00:00,000 --> 00:00:02,000\nfixture caption line\n\n"
-           "2\n00:00:02,000 --> 00:00:04,000\nsecond fixture line\n")
-    png = b"\x89PNG\r\n\x1a\n" + b"fixture-image" * 4
-    media = b"fixture-media-bytes" * 16
-    note = b"# Audio versions note\n\nThree audio versions of one cut.\n"
     for item in PACKAGE_ITEMS:
-        for name, kind in zip(item.files, item.kinds):
-            target = root / name
-            if kind.startswith("images"):
-                target.mkdir(parents=True, exist_ok=True)
-                (target / "01.png").write_bytes(png)
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if kind == "pdf":
-                target.write_bytes(pdf)
-            elif kind == "srt":
-                target.write_text(srt, encoding="utf-8")
-            elif kind == "text":
-                target.write_bytes(note)
-            else:
-                target.write_bytes(media)
+        produce_item(item, root)
     return root
 
 
@@ -226,6 +257,9 @@ def copy_item_sources(item, sources, out_dir):
         dest = Path(out_dir) / name
         if not src.exists():
             raise ValueError("%s source missing: %s" % (item.key, src.name))
+        if dest.exists() and src.resolve() == dest.resolve():
+            written.append(dest)        # packaging in place: already there
+            continue
         if dest.is_dir():
             shutil.rmtree(dest)
         if src.is_dir():
