@@ -6,6 +6,17 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.19 - 2026-10-10 - U2: the Drama Studio service foundation at mini-app/service
+
+The planned studio home (joint plan section 5.4) gets its service side: per-client
+keys and pairing codes, the inbox entry, direct uploads, retention, isolation, the
+option field and the real-wait line, and an approved lifecycle with one operator
+record per client per day. Service only — U3 owns the pages, U4 the deploy files,
+U12 the pairing/admin pages. Reuses the existing worker/media pattern; no new
+framework, scheduler or dashboard.
+
+Checks: 22 service tests exit 0; the boundary prover passes 9 cases exit 0.
+
 ## v2.9.18 - 2026-10-10 - PKG-11 attempt 4: twelve REAL `produce_delivery` paths, real-run e2e, no fixture bytes
 
 Released with onboarding v27.1.1 (same follow-up batch; attempt 3 only claimed the one naming scheme).
