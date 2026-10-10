@@ -7,9 +7,9 @@ description: >
   dedicated /api/v1/generate family), supported audio processing operations,
   and speech-to-text CAPABILITY DETECTION (ADVERTISED_NOT_YET_VERIFIED — no
   endpoint, dispatch_enabled false).
-version: v2.3.0
+version: v2.3.1
 metadata:
-  version: "2.3.0"
+  version: "2.3.1"
   priority: HIGH
 ---
 
@@ -138,9 +138,13 @@ model exists, and still refuses dispatch.
   result URLs) when Skill 46 KIE Callback Relay or equivalent is available.
 - Polling fallback (generic Market TTS): `GET /api/v1/jobs/recordInfo?taskId=...`
   with initial delay 2-3s then stepped backoff; respect 429; never hammer.
-- Suno: get music details every 30 seconds (sounds page guidance). Task-detail
-  record path is UNVERIFIED — the official get-task-detail/query-task-detail
-  doc URLs return HTTP 404 (W0-02 contract §2/§4).
+- Suno: get music details every 30 seconds (sounds page guidance). Vendor note
+  (KIE's official kie-models text, 2026-10-09): newer Suno tasks sent through
+  the generic `createTask` envelope are polled with the normal `recordInfo`
+  call, with tracks at `response.data[].audio_url` (and text/analysis tasks at
+  `response.resultObject`). This is vendor text, not a live test; the legacy
+  `/api/v1/generate` family's record path stays UNVERIFIED (the official
+  get-task-detail/query-task-detail doc URLs return HTTP 404).
 - A 200 on create = accepted, not complete.
 - Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
 

@@ -1,5 +1,10 @@
 # Changelog - kie-image
 
+## [2.2.2] - 2026-10-09 - fix: key-variable sentence names KIE_API_KEY from the official docs
+
+- `SKILL.md` prerequisites: the sentence "KIE docs use the literal `YOUR_API_KEY` placeholder — nothing documents the env var" was wrong as of 2026-10-09. KIE's own overview page names the variable `KIE_API_KEY` (`export KIE_API_KEY=your_key`). The sentence now says so and cites docs.kie.ai/ai-agent/overview with the date.
+- No behavior change. Version roll to v2.2.2 (`SKILL.md`, `skill-version.txt`).
+
 ## [2.2.1] - 2026-10-06 - fix: `validate_prompt.py` calls the shared rule 12 enforcer
 
 - `validate_prompt.py` no longer carries its own band math or Skill 74 bridge call: KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, enforced by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`). The gate keeps no band of its own. The models.json cap (live_schema_cap_chars, vendor_hard_cap_chars, owner_observed_cap_chars) is the policy-owner fallback. `adapter_bridge.prompt_budget` is removed (`latest_family` and `validate` stay). Self-test: 30 of 30.

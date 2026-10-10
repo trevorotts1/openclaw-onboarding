@@ -4,6 +4,17 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.2.0] - 2026-10-09 - feat: KIE official agent docs absorbed; rule 14; retention fix; report-only QC
+
+- New `references/kie-official-agent-docs-digest.md`: names every source URL (the nine docs.kie.ai/ai-agent pages), the fetch date 2026-10-09, and both vendor archive sha256 fingerprints (kie-models f6247b73..., kie-chat-agents f1cbf185...); carries the absorbed rules table, the plain-English troubleshooting table, the never-on-client-machines list, and a recognition-only reference for how coding agents connect to KIE.
+- `references/kie-common-rules.md`: new rule 14 (never install the vendor skills; never offer KIE as a chat provider for a coding agent; report, do not remove). Rule 8 gains the kie.ai/logs line. Rule 6 gains the 402 top-up line (kie.ai/pricing). The Sources line names the nine ai-agent addresses.
+- `INSTRUCTIONS.md`: the stale "deleted after 3 days" upload line corrected to 24 hours (official kie-models text). ERROR CODES gains the kie.ai/logs line.
+- `CORE_UPDATES.md` TOOLS block and `wire.sh` TOOLS_BODY: one never-line each (skill 74 is the only paid door; never install vendor skills; never point a coding agent at api.kie.ai/anthropic) plus the kie.ai/logs and 402 lines. **Existing boxes must re-run `bash wire.sh`** (idempotent, replace-in-place) to pick up the new TOOLS block.
+- `qc-kie-setup.sh`: two report-only box findings added (vendor skill folders under the four skills roots; settings.json env with ANTHROPIC_BASE_URL containing api.kie.ai). They print and never mutate; positive controls live in the unit tests. Also checks the digest file is present.
+- Version roll to v7.2.0 (`SKILL.md`, `skill-version.txt`).
+
+---
+
 ## [v7.1.1] - 2026-10-06 - QC reads every credential store
 
 - `qc-kie-setup.sh` finds KIE_API_KEY in secrets/.env, .env and openclaw.json env.vars (lib-shared `oc_fill_from_env_stores`).

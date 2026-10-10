@@ -21,6 +21,7 @@ A model or schema moves from DISCOVERED or UNKNOWN-DRIFT to a decision only thro
 - The Presentations department keeps its own canonical render path. Skill 74 is never placed in or imported from a deck run directory.
 - KIE is not registered in provider_adapters.py (chat only).
 - The vendor package (kie-models, kie-chat-agents) is instruction text. It is never a runtime dependency and never installed on client boxes. Only vendor_skill_probe.sh installs it, into a throwaway HOME, on a probe box.
+- KIE as a chat provider for coding agents (`kie-chat-agents`, `ANTHROPIC_BASE_URL=https://api.kie.ai/anthropic`) is out of scope. Skill 74 never writes settings files (proved by tests/test_no_chat_agent_mutation.py). This skill stays the one paid door for KIE media calls; chat billing is not this skill's business.
 
 ## Rollout
 

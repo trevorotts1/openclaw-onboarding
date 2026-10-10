@@ -5,6 +5,9 @@ instead of restating these rules. If another file disagrees with this one, this 
 (except where rule 1 gives a higher authority). Fix the other file.
 
 Sources: https://docs.kie.ai (market, rate-limit, task-detail, file-upload, common API pages),
+the nine official agent pages under https://docs.kie.ai/ai-agent/ (overview, install-kie-models,
+what-can-do, install-kie-chat-agents, claude-code, codex-cli, grok-build, troubleshooting,
+changelog; fetched 2026-10-09, digested in `references/kie-official-agent-docs-digest.md`),
 live endpoint probes on 2026-10-05, and AGENTS.md section N43.
 
 Note: `kie_live_adapter.py` (commands `price`, `preflight`, `validate`, `prompt-budget`, `latest-family`, and
@@ -70,7 +73,8 @@ across generations.) The older house band of 9,000 to 19,000 is superseded by ru
 ## 6. Credit preflight
 
 Required balance = price (rule 7) x 1.30. A skill may enforce a stricter documented absolute
-minimum. Read balance only through `/api/v1/chat/credit`.
+minimum. Read balance only through `/api/v1/chat/credit`. Not enough credits arrives as code 402
+in the reply body; top up at https://kie.ai/pricing.
 
 ## 7. Price authority
 
@@ -83,8 +87,9 @@ table. Any price table elsewhere in the repo is a dated snapshot and not authori
 
 Download and persist results immediately. KIE documents 14 days for generated media, but its
 task-detail page says result URLs typically expire after 24 hours, so never rely on 14 days.
-Uploads are deleted after 24 hours (one docs section says 3 days; honor `expiresAt` when
-returned). Links from download-url last 20 minutes. Task records last 2 months.
+Uploads are deleted after 24 hours (the official kie-models text says 24 hours; honor `expiresAt`
+when returned). Links from download-url last 20 minutes. Task records last 2 months. Every KIE
+call shows up on https://kie.ai/logs; that is the first place to look when a job fails.
 
 ## 9. Keys
 
@@ -150,3 +155,20 @@ automatically.
 - Every automatic switch writes a receipt and is reported to the operator. If the new model fails
   dispatch or validation, fall back to the previous default for that job and record the fallback.
 - The legacy `gpt-image-2` ratios and substitutions in rule 11 (N43) still apply until the owner rules on the new generation's ratios.
+
+## 14. Vendor agent skills and KIE as a chat provider (owner order 2026-10-09)
+
+- Never install KIE's vendor agent skills (`npx skills add https://kie.ai`) on a client box, an
+  OpenClaw box or a 999 machine. It is a second paid door that skips skill 74's price check,
+  credit preflight, spend ledger and approval card, and the skills CLI copies it into every agent
+  folder it detects. Only `74-kie-live-adapter/scripts/vendor_skill_probe.sh` may unpack it, into
+  a throwaway HOME, on a probe box.
+- Never offer KIE as a chat provider for a coding agent (do not set
+  `ANTHROPIC_BASE_URL=https://api.kie.ai/anthropic`, and never write KIE keys into any
+  `settings.json`). Coding sessions would bill the same KIE credits outside skill 74's preflight,
+  and a settings-file value beats the launcher's shell variables, so it would silently pull
+  claude-nine off 9Router.
+- Skill 74 is the only paid door for KIE media calls.
+- If either forbidden setup is found on a machine, report it. Never remove or edit it without an
+  operator order.
+- Digest of the official agent docs: `references/kie-official-agent-docs-digest.md`.

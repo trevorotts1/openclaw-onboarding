@@ -4,6 +4,13 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.3.1] - 2026-10-09 - vendor note: createTask Suno tasks poll through recordInfo
+
+- `SKILL.md` async completion: added the vendor note from KIE's official kie-models text (2026-10-09) that newer Suno tasks sent through the generic createTask envelope are polled with the normal `recordInfo` call, with tracks at `response.data[].audio_url` and text/analysis tasks at `response.resultObject`. Marked as vendor text, not a live test. The legacy `/api/v1/generate` family's record path stays UNVERIFIED.
+- No behavior change. Version roll to v2.3.1 (`SKILL.md`, `skill-version.txt`).
+
+---
+
 ## [v2.2.0] - 2026-10-06 - feat: Suno reconciled to the current KIE envelope (W0-02 contract)
 
 - LAYERED routes (directive §9.2 hard gate; `planning/provider-contracts.md` §§1-4): CURRENT `POST /api/v1/jobs/createTask` with top-level model `ai-music-api/*` (generate, extend, upload-and-extend-audio, generate-persona, sounds; version at `input.model`, default V6) is authoritative for new work. LEGACY dedicated `/api/v1/generate` family stays valid for V4..V5_5 (live-marked Discontinued — validator warns, never drops). ONLY `ai-music-api/*` rides createTask; any other model on createTask is still exit 2.

@@ -1,5 +1,18 @@
 # Changelog - Skill 74 KIE Live Adapter
 
+## [1.1.6] - 2026-10-09 - KIE official agent docs absorbed; research row 18 closed; mode-file text corrected
+
+- Research receipt row 18 closed: `https://docs.kie.ai/ai-agent/troubleshooting.md` loads (2026-10-09). The official table (401, key missing, failed task, not enough credits, link expired) is digested at `07-kie-setup/references/kie-official-agent-docs-digest.md`.
+- 2026-10-09 re-check line: both vendor archive digests still match the 2026-10-05 approval (kie-models f6247b73..., kie-chat-agents f1cbf185...).
+- `references/integration-policy.md`: KIE as a chat provider for coding agents (`kie-chat-agents`) is out of scope; skill 74 never writes settings files.
+- `SKILL.md` Modes text corrected to the real mode-file lookup order the code uses: `$OC_CONFIG`, `/data/.openclaw`, `${CLAUDE_CONFIG_DIR:-~/.claude}`, `~/.openclaw`. The code was already right (H7 + M8); the text was behind.
+- `PREREQS.json` key entry corrected: the official variable is `KIE_API_KEY` (docs.kie.ai/ai-agent/overview); OpenClaw stores it in `~/.openclaw/secrets/.env` (Mac) or `/data/.openclaw/secrets/.env` (VPS); Claude Code machines read the live environment variable.
+- No code change. Version roll to v1.1.6 (`SKILL.md`, `skill-version.txt`).
+
+## [1.1.5] - 2026-10-09 - G3 gate bump (batch MGB010)
+
+- `skill-version.txt` rolled v1.1.4 -> v1.1.5 by the batch MGB010 CI fix (skill 47 embedded KIE client regenerated from this skill's source). No behavior change in this skill; the CHANGELOG entry was missing until now.
+
 ## [1.1.4] - 2026-10-08 - INF002
 
 - Install QC reads the version from skill-version.txt instead of a hardcoded v1.1.2 that failed on every box after a bump (INF002 D).
