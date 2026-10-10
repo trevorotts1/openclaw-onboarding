@@ -90,9 +90,12 @@ Each line is a never-rule with one line of why:
   skips skill 74's price check, credit preflight, spend ledger and approval card,
   and it copies into every agent folder the skills CLI detects (about 55 folders
   on a typical box).
-- Never set `ANTHROPIC_BASE_URL=https://api.kie.ai/anthropic` or write KIE keys
-  into any `settings.json`. A settings-file value beats the shell, so it would
-  silently pull claude-nine off 9Router and bill coding sessions to KIE credits.
+- Never write an `ANTHROPIC_*` key (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`) or a
+  KIE base URL (`ANTHROPIC_BASE_URL=https://api.kie.ai/anthropic`) into `settings.json`.
+  The one settings.json write allowed here is `env.KIE_API_KEY`, the variable name
+  KIE's own docs prescribe (docs.kie.ai/ai-agent/overview, 2026-10-09). A settings-file
+  value beats the shell, so an Anthropic-lane entry would silently pull claude-nine
+  off 9Router and bill coding sessions to KIE credits.
 - Never offer KIE as a chat provider for a coding agent. Coding sessions draw on
   the same KIE credits as media jobs, outside skill 74's preflight, and KIE
   serves only Anthropic-protocol chat ids.
