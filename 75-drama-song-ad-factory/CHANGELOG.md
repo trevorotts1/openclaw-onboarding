@@ -6,6 +6,15 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.19 - 2026-10-10 - U4 studio mini-app deploy files: dry-run plus zone guard (files only, no deployment)
+
+Unit branch `unit/U4-U1-studio-deploy` (PR #1815). Files only -- this change performs no deployment and touches no live zone.
+
+- New `mini-app/deploy/` bundle for the Drama Studio mini-app: `deploy.sh` (resolve -> zone guard -> bucket -> 45-day retention -> two secrets -> Worker deploy, with `--dry-run` and `--self-test`), `deploy.manifest.json` (the deploy contract: worker name, route host, bucket, retention, the two secret NAMES and the intended zone) and `DEPLOY.md`.
+- The zone guard is a hard, non-disableable gate: a target zone whose name is not the manifest's intended zone, or whose id equals the known foreign-zone landmine, is refused before any Cloudflare call. `--dry-run` validates and plans every step with no `wrangler` invocation and no API call.
+- No real Cloudflare id, token or secret value is committed: the wrangler config keeps `<PLACEHOLDER>` ids, `deploy.sh` resolves them into a throwaway temp config at deploy time, and the token and the two secret values are read from the environment only. The real deploy stays a separate, later, operator-authorized step.
+- `skill-version.txt` and the SKILL.md frontmatter land at v2.9.19 together (G3 gate: skill content changed, so the skill's own version marker must change with it; the frontmatter/skill-version drift guard requires the two to agree).
+
 ## v2.9.18 - 2026-10-10 - PKG-11 attempt 4: twelve REAL `produce_delivery` paths, real-run e2e, no fixture bytes
 
 Released with onboarding v27.1.1 (same follow-up batch; attempt 3 only claimed the one naming scheme).
