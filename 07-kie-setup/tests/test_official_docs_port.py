@@ -16,7 +16,8 @@ Six checks, no skips, standard library only:
      env.KIE_API_KEY exception passes, the digest hashes still equal
      74-kie-live-adapter/vendor-approval.json archiveDigests, and
      74-kie-live-adapter/PREREQS.json still parses and names
-     `env.KIE_API_KEY`.
+     `env.KIE_API_KEY` — with negative fixtures proving that a capitalized
+     plant and a backticked plant both trip.
 
 Run:  python3 07-kie-setup/tests/test_official_docs_port.py
   or: python3 -m unittest discover -s 07-kie-setup/tests -p 'test_*.py'
@@ -148,7 +149,9 @@ def md_units(text):
         cur.append(line.strip())
     if cur:
         units.append(" ".join(cur))
-    return units
+    # flat() drops markdown backticks and the whitespace around them, so
+    # OLD_BLANKET's \s* can cross the ` of a document's own `settings.json`
+    return [flat(u) for u in units]
 
 def sentences(unit):
     return [s.strip() for s in re.split(r"(?<=[.!?])\s+", unit) if s.strip()]
@@ -168,6 +171,7 @@ def settings_allowance_hits(units):
     allowed write, so every ANTHROPIC sentence must stay a never-rule."""
     hits = []
     for unit in units:
+        unit = flat(unit)  # JSON strings bypass md_units: collapse here too
         if ENV_ANTHROPIC.search(unit):
             hits.append("settings key path env.ANTHROPIC_*: " + unit[:160])
         if OLD_BLANKET.search(unit):
@@ -181,6 +185,22 @@ def settings_allowance_hits(units):
                     SETTINGS_TARGET.search(sent) and WRITE_VERB.search(sent)):
                 hits.append(sent[:200])
     return hits
+
+
+def old_phrase_hit(text):
+    """Guard (a): the old blanket phrase, any case, backticks collapsed.
+
+    A capitalized "Never write KIE keys into any settings.json." must trip
+    just as the lower-case original did.
+    """
+    return OLD_PHRASE.casefold() in flat(text).casefold()
+
+
+def settings_hits(rules_text, digest_text, prereqs_text):
+    """Guard (b): settings.json allowance hits across the three sources."""
+    units = md_units(rules_text) + md_units(digest_text)
+    units += json_strings(json.loads(prereqs_text))
+    return settings_allowance_hits(units)
 
 
 class TestDigest(unittest.TestCase):
@@ -338,16 +358,14 @@ class TestSettingsJsonKeyPolicy(unittest.TestCase):
         for name, text in (("kie-common-rules.md", self.rules),
                            ("kie-official-agent-docs-digest.md", self.digest),
                            ("74-kie-live-adapter/PREREQS.json", self.prereqs)):
-            self.assertNotIn(OLD_PHRASE, flat(text),
+            self.assertFalse(old_phrase_hit(text),
                              "%s still carries the old blanket phrase: %r"
                              % (name, OLD_PHRASE))
 
     def test_b_anthropic_settings_allowance_trips(self):
         """(b) a planted ANTHROPIC_BASE_URL / api.kie.ai/anthropic
         settings.json allowance trips FAIL."""
-        units = md_units(self.rules) + md_units(self.digest)
-        units += json_strings(json.loads(self.prereqs))
-        hits = settings_allowance_hits(units)
+        hits = settings_hits(self.rules, self.digest, self.prereqs)
         self.assertEqual(hits, [],
                          "settings.json allowance for ANTHROPIC_* keys or a "
                          "KIE base URL: %s" % hits)
@@ -398,6 +416,39 @@ class TestSettingsJsonKeyPolicy(unittest.TestCase):
         self.assertIn("env.KIE_API_KEY", entry.get("satisfy", ""),
                       "satisfy text must name the env.KIE_API_KEY settings "
                       "location")
+
+    def _assert_plant_trips(self, sentence):
+        """Negative fixture core: `sentence` planted into all three guarded
+        sources must trip guard (a) AND guard (b)."""
+        rules = self.rules + "\n- " + sentence + "\n"
+        digest = self.digest + "\n- " + sentence + "\n"
+        prereqs = json.loads(self.prereqs)
+        entry = next((p for p in prereqs["prerequisites"]
+                      if p.get("id") == "kie-api-key"),
+                     prereqs["prerequisites"][0])
+        entry["satisfy"] = str(entry.get("satisfy") or "") + " " + sentence
+        prereqs = json.dumps(prereqs)
+        for name, text in (("kie-common-rules.md", rules),
+                           ("kie-official-agent-docs-digest.md", digest),
+                           ("74-kie-live-adapter/PREREQS.json", prereqs)):
+            self.assertTrue(old_phrase_hit(text),
+                            "%s plant %r evaded the old-phrase guard (a)"
+                            % (name, sentence))
+        hits = settings_hits(rules, digest, prereqs)
+        self.assertTrue(hits,
+                        "plant %r evaded the settings.json allowance "
+                        "guard (b): %s" % (sentence, hits))
+
+    def test_f_capitalized_plant_trips(self):
+        """negative fixture: a capitalized-only evasive plant trips."""
+        self._assert_plant_trips(
+            "Never write KIE keys into any settings.json.")
+
+    def test_g_backticked_plant_trips(self):
+        """negative fixture: the documents' own backticked bullet style
+        (`settings.json`), capitalized, trips both guards."""
+        self._assert_plant_trips(
+            "Never write KIE keys into any `settings.json`.")
 
 def json_env(env):
     return json.dumps({"env": env})
