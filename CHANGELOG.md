@@ -1,8 +1,10 @@
+## [v27.1.2]  -  2026-10-10  -  Batch KIE: settings.json rule 14 with digest env.KIE_API_KEY exception (KIE-U0 follow-up), 24-hour KIE upload retention text and widened docs-port scan test (PRs #1810, #1811)
+
+Released as one batch on top of v27.1.1. Folds the two independently judge-PASSed KIE unit branches into main: PR #1811 (branch kie-f1, head 8378b8b2ef2cef295d078a320c5a0496ab8dda9e) adds settings.json rule 14 plus the digest env.KIE_API_KEY exception to 07-kie-setup/references/kie-common-rules.md and kie-official-agent-docs-digest.md, names env.KIE_API_KEY in 74-kie-live-adapter/PREREQS.json, and adds TestSettingsJsonKeyPolicy (casefold the phrase check, collapse backticks) with its seven negative fixtures a-g; PR #1810 (branch kie-f2, head ef96e6d3407820865dac86331f4600e427f59dde) corrects the KIE upload retention text from 3 days to 24 hours, widens the docs-port scan test to every text file, and rebuilds kie-setup.skill. Both unit PRs #1810 and #1811 stay OPEN for the record — this batch PR carries their content. It ships on top of KIE-U0 (the KIE official agent docs port already on main at f8491492632a9884922b7dcc0c8fce4579be4704), with skill 07 v7.2.1, skill 74 v1.1.7, skill 66 v2.2.2 and skill 68 v2.3.1. Boxes: re-run core updates after pulling this release with `bash wire.sh`. Paired Command Center: v7.6.112.
+
 ## [v27.1.1]  -  2026-10-10  -  Follow-up batch PKG: delivery package naming fix (PKG-11 attempt 4, one 'NN - Label.ext' scheme; twelve real produce_delivery paths, real-run e2e) and operator-only wording scrub (skills 47, 53, 54, 71, 75) (skill 75 v2.9.18)
 
 Released as one follow-up batch to v27.1.0. PKG-11 attempt 3 claimed the single naming scheme and dropped fixture bytes, but did not prove every adapter's real deliver path; attempt 4 rewires all twelve produce_delivery adapters onto each producer's real path (via delivery_package/run_inputs.py), measures the ffmpeg used for captions/cover title, and ships a non-empty real-run e2e with a negative control. Operator-only wording scrub stands as shipped in v2.9.16. Paired 999-setup skill 75 v2.7.41 on its own train (PR #169).
-
-## [v27.1.1]  -  2026-10-10  -  KIE official agent docs port: 07 digest + rule 14, retention 24h, report-only QC; skills 74/66/68 doc fixes
 
 ## [v27.1.0]  -  2026-10-09  -  Batch PKG: complete 12-item delivery package, no blur fill, storyboard picture budget, camera vocabulary, two-strike gate (skill 75 v2.9.15)
 

@@ -1,5 +1,10 @@
 # Changelog - Skill 74 KIE Live Adapter
 
+## [1.1.7] - 2026-10-10 - PREREQS names the one allowed settings.json write (env.KIE_API_KEY)
+
+- `PREREQS.json` `kie-api-key` satisfy text: on Claude Code the only settings.json write allowed is `env.KIE_API_KEY` — never an `ANTHROPIC_*` key and never a KIE base URL (`07-kie-setup/references/kie-common-rules.md` rule 14). Presence check only; the value is never printed.
+- Version roll to v1.1.7 (`SKILL.md`, `skill-version.txt`) — PREREQS.json and the shared skill 07 docs-port tests changed.
+
 ## [1.1.6] - 2026-10-09 - KIE official agent docs absorbed; research row 18 closed; mode-file text corrected
 
 - Research receipt row 18 closed: `https://docs.kie.ai/ai-agent/troubleshooting.md` loads (2026-10-09). The official table (401, key missing, failed task, not enough credits, link expired) is digested at `07-kie-setup/references/kie-official-agent-docs-digest.md`.
