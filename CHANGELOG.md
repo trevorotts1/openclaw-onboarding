@@ -1,4 +1,6 @@
-## [v27.1.1]  -  2026-10-10  -  Follow-up batch PKG: delivery package naming fix (PKG-11 attempt 3, one 'NN - Label.ext' scheme from contract.py in all 12 producers) and operator-only wording scrub (skills 47, 53, 54, 71, 75) (skill 75 v2.9.17)
+## [v27.1.1]  -  2026-10-10  -  Follow-up batch PKG: delivery package naming fix (PKG-11 attempt 4, one 'NN - Label.ext' scheme; twelve real produce_delivery paths, real-run e2e) and operator-only wording scrub (skills 47, 53, 54, 71, 75) (skill 75 v2.9.18)
+
+Released as one follow-up batch to v27.1.0. PKG-11 attempt 3 claimed the single naming scheme and dropped fixture bytes, but did not prove every adapter's real deliver path; attempt 4 rewires all twelve produce_delivery adapters onto each producer's real path (via delivery_package/run_inputs.py), measures the ffmpeg used for captions/cover title, and ships a non-empty real-run e2e with a negative control. Operator-only wording scrub stands as shipped in v2.9.16. Paired 999-setup skill 75 v2.7.41 on its own train (PR #169).
 
 ## [v27.1.0]  -  2026-10-09  -  Batch PKG: complete 12-item delivery package, no blur fill, storyboard picture budget, camera vocabulary, two-strike gate (skill 75 v2.9.15)
 
