@@ -21,7 +21,7 @@ no model or tool name, no dollar amount, no income promise anywhere in the
 document.
 
 One delivery folder per client run, clear numbered file name:
-``<delivery folder>/04-storyboard.pdf`` (``DELIVERY_NAME``).
+``<delivery folder>/04 - Storyboard.pdf`` (``DELIVERY_NAME``).
 
 Standard library only, no network, no spend, no absolute operator path.
 Run: python3 scripts/core/storyboard_grid/test_storyboard_grid.py
@@ -46,9 +46,12 @@ import storyboard_director.approval_package as AP  # noqa: E402
 TOOL_NAME = "storyboard_grid"
 TOOL_VERSION = "1.0.0"
 
-#: Numbered deliverable name inside the run's delivery folder (DEL package
-#: numbering; DEL-12 owns the canonical list of numbers).
-DELIVERY_NAME = "04-storyboard.pdf"
+#: Numbered deliverable name inside the run's delivery folder. The name is the
+#: ONE naming scheme, taken verbatim from the DEL-13 contract (``NN -
+#: Label.ext``) -- never reformatted here, so the two cannot drift.
+from delivery_package.contract import ITEMS_BY_KEY as _ITEMS  # noqa: E402
+
+DELIVERY_NAME = _ITEMS["storyboard_pdf"].files[0]
 
 DOC_TITLE_FALLBACK = "Your Video Storyboard"
 SUBTITLE = "Every scene in order, with the line it plays over and what happens."

@@ -21,8 +21,9 @@ package never invents a picture to fill a slot. The whole plan is computed
 BEFORE anything is written, so a failed run leaves the delivery folder
 untouched.
 
-Delivery names are numbered into slot 11 of the package (DEL-12 owns the
-canonical numbered list): ``11-character-<slug>-<view>.<ext>``.
+Delivery names are numbered into slot 11 of the package (DEL-13 owns the
+canonical numbered list): every picture lands inside the item's own
+directory, ``11 - Character Images/<slug>-<view>.<ext>``.
 
 Fail closed: no characters, a record without a name, an unknown extension, a
 missing source file or a duplicate slug raises ``CharacterImagesError``
@@ -53,9 +54,14 @@ SCHEMA = "blackceo.delivery-character-images/v1"
 #: The four views the package ships per character, in delivery order.
 VIEWS = ("close-up", "side-profile", "three-quarter", "full-standing")
 
-#: Numbered slot of this item in the delivery folder; DEL-12 owns the
-#: canonical numbered list for all 12 package items.
-FILE_PREFIX = "11-character"
+#: Numbered slot of this item in the delivery folder. The DEL-13 contract
+#: owns this item as ONE directory (``NN - Label.ext``); every delivered
+#: picture lands inside it, never flat in the delivery folder's root.
+from delivery_package.contract import ITEMS_BY_KEY as _ITEMS  # noqa: E402
+
+_IMAGES_ITEM = _ITEMS["character_images"]
+#: The directory every delivered picture is copied into.
+DELIVERY_DIR_NAME = _IMAGES_ITEM.files[0]
 
 #: Name-words that say "this reference IS that view" (each entry: the set of
 #: whole filename words required, all of them). Whole words only.
@@ -184,7 +190,7 @@ def plan_copies(records):
                     "BAD_IMAGE",
                     "%s %s must be a picture (png, jpg, webp): %s"
                     % (name or slug, view, src))
-            filename = "%s-%s-%s%s" % (FILE_PREFIX, slug, view, ext)
+            filename = "%s-%s%s" % (slug, view, ext)
             if filename in seen:
                 raise CharacterImagesError(
                     "DUPLICATE_SLUG",
@@ -197,18 +203,24 @@ def plan_copies(records):
 
 
 def copy_character_images(delivery_dir, records):
-    """Copy every planned picture into ``delivery_dir`` at full resolution.
+    """Copy every planned picture into the item's delivery directory.
+
+    ``delivery_dir`` is the run's delivery folder; the pictures land in the
+    ONE directory the DEL-13 contract owns for this item (``NN - Label.ext``),
+    never flat in the folder's root, so the folder contract opens them.
 
     Returns the receipt: one row per delivered file with the source's own
     bytes count (a copy, never a re-encode) and the source file's name.
     """
     plan = plan_copies(records)
-    os.makedirs(delivery_dir, exist_ok=True)
+    target_dir = os.path.join(delivery_dir, DELIVERY_DIR_NAME)
+    os.makedirs(target_dir, exist_ok=True)
     copied = []
     for item in plan:
-        dest = os.path.join(delivery_dir, item["filename"])
+        dest = os.path.join(target_dir, item["filename"])
         shutil.copyfile(item["source"], dest)
         row = dict(item)
+        row["path"] = os.path.join(DELIVERY_DIR_NAME, item["filename"])
         row["source"] = os.path.basename(item["source"])
         row["bytes"] = os.path.getsize(dest)
         copied.append(row)

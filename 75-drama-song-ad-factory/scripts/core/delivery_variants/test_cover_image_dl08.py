@@ -123,16 +123,18 @@ class CoverImage(unittest.TestCase):
     def test_default_dimensions_are_the_sensible_1280x720(self):
         self.assertEqual((ci.DEFAULT_WIDTH, ci.DEFAULT_HEIGHT), (1280, 720))
 
-    def test_cover_file_name_reuses_the_song_file_safe_name(self):
+    def test_cover_file_name_is_the_contract_canonical_name(self):
+        # ONE naming scheme: the DEL-13 contract owns this item's name.
         self.assertEqual(ci.cover_file_name("Kiesett Ad"),
-                         sf.safe_name("Kiesett Ad") + "-cover.png")
-        self.assertEqual(ci.cover_file_name("Kiesett Ad"), "Kiesett-Ad-cover.png")
+                         "08 - Cover Thumbnail.png")
+        self.assertEqual(ci.cover_file_name("Another Ad"),
+                         "08 - Cover Thumbnail.png")
 
     def test_build_writes_exactly_one_image_and_it_measures_1280x720(self):
         row = self.build()
         self.d.mkdir(parents=True, exist_ok=True)
         images = [p.name for p in self.d.iterdir() if p.suffix == ".png"]
-        self.assertEqual(images, ["Kiesett-Ad-cover.png"])
+        self.assertEqual(images, ["08 - Cover Thumbnail.png"])
         w, h = ci.png_size(self.d / row["file"])
         self.assertEqual((w, h), (1280, 720))
         self.assertEqual((row["width"], row["height"]), (1280, 720))
@@ -277,11 +279,13 @@ class CoverImage(unittest.TestCase):
         text = (self.d / "README.md").read_text()
         self.assertIn("keep me", text)
         self.assertEqual(text.count("cover-image:begin"), 1)
-        self.assertIn("Kiesett-Ad-cover.png", text)
+        self.assertIn("08 - Cover Thumbnail.png", text)
         receipt = json.loads((self.d / "delivery-receipt.json").read_text())
-        self.assertEqual(receipt["cover_image"]["file"], "Kiesett-Ad-cover.png")
+        self.assertEqual(receipt["cover_image"]["file"],
+                         "08 - Cover Thumbnail.png")
         self.assertEqual(list(p.name for p in self.d.iterdir()
-                              if p.suffix == ".png"), ["Kiesett-Ad-cover.png"])
+                              if p.suffix == ".png"),
+                         ["08 - Cover Thumbnail.png"])
 
     # ------------------------------------------------------------------- QC ---
     def test_check_passes_on_a_built_cover(self):

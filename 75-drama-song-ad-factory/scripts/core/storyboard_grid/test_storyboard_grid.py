@@ -173,7 +173,7 @@ def test_deliver_writes_one_numbered_pdf():
     path = SG.deliver(run, folder)
     check("named deliverable lands in the run's delivery folder",
           path == os.path.join(folder, SG.DELIVERY_NAME), path)
-    check("numbered file name", os.path.basename(path) == "04-storyboard.pdf",
+    check("numbered file name", os.path.basename(path) == "04 - Storyboard.pdf",
           path)
     blob = open(path, "rb").read()
     check("is a PDF", blob.startswith(b"%PDF-1.4"), blob[:8])

@@ -36,7 +36,11 @@ from character_bible import pdf_writer as PW  # noqa: E402
 MIN_FONT_PT = PW.MIN_FONT_PT
 
 #: One delivery folder per client run; this unit owns the second numbered file.
-DELIVERY_PDF_NAME = "02-character-bible.pdf"
+#: The name is the ONE naming scheme, taken verbatim from the DEL-13 contract
+#: (``NN - Label.ext``) -- never reformatted here, so the two cannot drift.
+from delivery_package.contract import ITEMS_BY_KEY as _ITEMS  # noqa: E402
+
+DELIVERY_PDF_NAME = _ITEMS["character_bible"].files[0]
 
 #: The four reference angles, in the order they are laid out.
 IMAGE_VIEWS = ("close-up", "side-profile", "three-quarter", "full-standing")

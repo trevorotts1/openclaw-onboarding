@@ -17,6 +17,7 @@ Run: python3 delivery_package/test_delivery_package_e2e.py
 """
 from __future__ import annotations
 
+import importlib
 import shutil
 import sys
 import tempfile
@@ -107,6 +108,75 @@ class DeliveryPackageEndToEnd(unittest.TestCase):
                 "%s has no cue timing line" % path.name)
             self.assertRegex(text, r"(?m)^\d+\s*$",
                              "%s has no cue index line" % path.name)
+
+
+class DeliveryNamesAgree(unittest.TestCase):
+    """ONE scheme: every producer's native delivery name IS the contract's.
+
+    The packaging adapters stage canonical names, but a real run also writes
+    through each producer's own path (its CLI / deliver() entry). Those two
+    paths must name a file the same way, or a real delivery folder fails the
+    Q12 gate that the packaging test just proved green. This is the drift
+    guard: it pins each producer's constant to the contract, so a rename in
+    one place cannot land without the other.
+    """
+
+    def _module(self, dotted):
+        return importlib.import_module(dotted)
+
+    def test_single_file_items_use_the_contract_name(self):
+        # producers whose item is exactly one file, named by a module constant
+        for key, attr, dotted in (
+                ("character_bible", "DELIVERY_PDF_NAME",
+                 "character_bible.character_bible"),
+                ("storyboard_pdf", "DELIVERY_NAME",
+                 "storyboard_grid.storyboard_grid"),
+                ("ready_to_post_kit", "PDF_NAME",
+                 "ready_post_kit.ready_post_kit"),
+                ("lyric_sheet", "FILE_NAME", "lyric_sheet.lyric_sheet"),
+                ("welcome_sheet", "WELCOME_SHEET_FILE",
+                 "delivery_package.package_items")):
+            with self.subTest(item=key, module=dotted):
+                expected = C.ITEMS_BY_KEY[key].files[0]
+                self.assertEqual(getattr(self._module(dotted), attr),
+                                 expected)
+
+    def test_multi_file_items_use_the_contract_names(self):
+        # audio versions: every file shares the ITEM number, told apart by
+        # label -- never a second numbering of their own.
+        from delivery_variants import song_files as sf
+        audio = C.ITEMS_BY_KEY["audio_versions"]
+        self.assertEqual(sf.VERSION_NOTE_NAME, audio.files[3])
+        self.assertEqual([name for _k, _l, name in sf.expected_version_files()],
+                         list(audio.files[:3]))
+        for name in sf.expected_version_files():
+            self.assertTrue(name[2].startswith(sf.ITEM_NUMBER + " - "))
+
+        # the two videos and the two clips share their item number too.
+        from delivery_variants import video_delivery as vd
+        video = C.ITEMS_BY_KEY["video"]
+        self.assertEqual(vd.captioned_name("Any Ad"), video.files[0])
+        self.assertEqual(vd.clean_name("Any Ad"), video.files[1])
+
+        from delivery_clips import delivery_clips as dc
+        clips = C.ITEMS_BY_KEY["clips"]
+        self.assertEqual(dc.clip_file_name(60), clips.files[0])
+        self.assertEqual(dc.clip_file_name(90), clips.files[1])
+
+    def test_directory_items_deliver_into_the_contract_directory(self):
+        from delivery_variants import cover_image as ci
+        self.assertEqual(ci.cover_file_name("Any Ad"),
+                         C.ITEMS_BY_KEY["cover_thumbnail"].files[0])
+        from character_images import character_images as cimg
+        self.assertEqual(cimg.DELIVERY_DIR_NAME,
+                         C.ITEMS_BY_KEY["character_images"].files[0])
+
+    def test_caption_and_script_names_are_the_contract_names(self):
+        from delivery_variants import caption_srt as cs
+        self.assertEqual(cs.srt_file_name(),
+                         C.ITEMS_BY_KEY["captions_srt"].files[0])
+        from script_pdf import script_pdf as sp
+        self.assertEqual(sp.PDF_NAME, C.ITEMS_BY_KEY["script_pdf"].files[0])
 
 
 if __name__ == "__main__":

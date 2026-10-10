@@ -113,11 +113,9 @@ class Base(unittest.TestCase):
 
 class FileNames(Base):
     def test_numbered_names(self):
-        self.assertEqual(clip_file_name(60), "%d - 60-second clip.mp4"
-                         % CLIP_ITEM)
-        self.assertEqual(clip_file_name(90), "%d - 90-second clip.mp4"
-                         % CLIP_ITEM)
-        # one item number, two files: "6 - 60..." sorts before "6 - 90..."
+        self.assertEqual(clip_file_name(60), "06 - Clip 60s.mp4")
+        self.assertEqual(clip_file_name(90), "06 - Clip 90s.mp4")
+        # one item number, two files: "06 - Clip 60s" sorts first
         self.assertLess(clip_file_name(60), clip_file_name(90))
         self.assertEqual(CLIP_ITEM, 6)
 
@@ -130,8 +128,8 @@ class Deliver(Base):
     def test_two_numbered_clips_land_in_the_folder(self):
         rows = self.build()
         self.assertEqual([r["file"] for r in rows], [
-            "%d - 60-second clip.mp4" % CLIP_ITEM,
-            "%d - 90-second clip.mp4" % CLIP_ITEM])
+            "06 - Clip 60s.mp4",
+            "06 - Clip 90s.mp4"])
         for r in rows:
             p = self.delivery / r["file"]
             self.assertTrue(p.is_file() and p.stat().st_size > 0, p)
@@ -247,7 +245,7 @@ class Check(Base):
         (self.delivery / clip_file_name(90)).unlink()
         verdict, detail = check_clips(str(self.delivery), 180)
         self.assertEqual(verdict, "FAIL")
-        self.assertIn("90-second clip", detail)
+        self.assertIn("06 - Clip 90s.mp4", detail)
 
     def test_unlisted_clip_fails(self):
         self.build()

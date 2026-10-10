@@ -19,8 +19,8 @@ Reuse only (nothing new is invented here):
 
 File names (clear, numbered, one folder per client run)::
 
-    6 - 60-second clip.mp4
-    6 - 90-second clip.mp4
+    06 - Clip 60s.mp4
+    06 - Clip 90s.mp4
 
 Both files carry ``CLIP_ITEM`` (6): item 6 of the delivery package IS the
 clips, and two files share the item's slot the way song_choices' three
@@ -55,8 +55,15 @@ from clip_cutdown import clips_for, plan_clips, run_clips  # noqa: E402
 
 TOOL_NAME = "delivery_clips"
 
-#: the delivery folder slot these two files share (DEL-13 owns the full list)
-CLIP_ITEM = 6
+#: the delivery folder slot these two files share. The DELIVERY NAMES are the
+#: ONE naming scheme, taken verbatim from the DEL-13 contract (``NN -
+#: Label.ext``) -- both clips share item number 06, told apart by label.
+from delivery_package.contract import ITEMS_BY_KEY as _ITEMS  # noqa: E402
+
+_CLIPS = _ITEMS["clips"]
+CLIP_ITEM = _CLIPS.number
+#: seconds -> the contract's canonical file name for that clip.
+_CLIP_FILES = {60: _CLIPS.files[0], 90: _CLIPS.files[1]}
 
 #: receipt key + README markers, mirroring delivery_variants.song_files
 RECEIPT_NAME = "delivery-receipt.json"
@@ -72,10 +79,14 @@ class DeliveryClipsError(ValueError):
 
 
 def clip_file_name(seconds):
-    """One clear numbered delivery file name: ``6 - 60-second clip.mp4``."""
-    if seconds not in (60, 90):
+    """One clear numbered delivery file name: ``06 - Clip 60s.mp4``.
+
+    The name is the contract's canonical file for that clip length; an
+    unknown length is a refusal, never a freshly invented name.
+    """
+    if seconds not in _CLIP_FILES:
         raise DeliveryClipsError("CLIP_UNKNOWN_LENGTH: %r" % (seconds,))
-    return "%d - %d-second clip.mp4" % (CLIP_ITEM, seconds)
+    return _CLIP_FILES[seconds]
 
 
 def deliver_clips(timeline, chosen_length_s, master, delivery_dir,
