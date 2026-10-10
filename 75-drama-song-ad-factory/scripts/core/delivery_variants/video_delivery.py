@@ -373,17 +373,31 @@ def _cli(argv=None):
 
 
 def produce_delivery(run_dir, item):
-    """DEL-13 packaging adapter: stage this item's canonical files.
+    """DEL-13 packaging adapter: the REAL DEL-05 deliver path (two cuts).
 
-    The one naming scheme lives in delivery_package.contract (``NN - Label.ext``
-    per item number). This adapter stages the item's files under those exact
-    canonical names via contract.produce_item, so the packaging call copies
-    them verbatim and the folder gate opens them unchanged. Signature is the
-    packaging contract: produce_delivery(run_dir, item) -> list[Path].
+    Reads the run's rendered master (``edit/ad.mp4``), the approved sheet's
+    own lines and the run's measured word timings
+    (``music/word-timings.json``), then calls
+    ``build_video_delivery`` + ``write_video_docs`` -- the same call the
+    stage runbook documents: captioned burn + clean master through
+    captions_burn, every cut through the delivery audio gate. The ffmpeg is
+    MEASURED to carry the ``subtitles`` filter (env override, PATH, then the
+    bundled build) and a box with none refuses instead of faking a file.
+    Fixture bytes are never written: ``contract.produce_item`` is test-only
+    and no deliver path imports it. Signature: produce_delivery(run_dir,
+    item) -> list[Path].
     """
-    from delivery_package.contract import produce_item
-    staging = Path(run_dir) / "_package" / item.key
-    return produce_item(item, staging)
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    master = RI.as_run(run_dir) / "edit" / "ad.mp4"
+    lines = RI.approved_lines(run_dir)
+    cues = RI.measured_cues(run_dir)
+    ffmpeg = RI.ffmpeg_with("subtitles", "DSAF_BURN_FFMPEG")
+    result = build_video_delivery(master, str(out), RI.ad_title(run_dir),
+                                  lines, cues=cues, provenance="measured",
+                                  ffmpeg=ffmpeg)
+    write_video_docs(str(out), result["rows"])
+    return RI.stage(item, out)
 
 
 if __name__ == "__main__":

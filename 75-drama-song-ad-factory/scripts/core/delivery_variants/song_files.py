@@ -358,17 +358,25 @@ def _cli(argv=None):
 
 
 def produce_delivery(run_dir, item):
-    """DEL-13 packaging adapter: stage this item's canonical files.
+    """DEL-13 packaging adapter: the REAL DEL-01 deliver path (three versions).
 
-    The one naming scheme lives in delivery_package.contract (``NN - Label.ext``
-    per item number). This adapter stages the item's files under those exact
-    canonical names via contract.produce_item, so the packaging call copies
-    them verbatim and the folder gate opens them unchanged. Signature is the
-    packaging contract: produce_delivery(run_dir, item) -> list[Path].
+    Reads the run's own ``music/mix.mp3`` (or ``music/picked-song.mp3``),
+    ``music/instrumental.mp3`` and ``music/vocal-stem.mp3`` -- existing
+    pipeline output, never re-synthesised here -- encodes the three labelled
+    versions into the run's delivery folder through
+    ``build_audio_versions`` + ``write_version_docs`` (the same call the
+    stage runbook documents), then hands the contract's files back.
+    Fixture bytes are never written: ``contract.produce_item`` is test-only
+    and no deliver path imports it. Signature: produce_delivery(run_dir,
+    item) -> list[Path].
     """
-    from delivery_package.contract import produce_item
-    staging = Path(run_dir) / "_package" / item.key
-    return produce_item(item, staging)
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    src = RI.audio_sources(run_dir)
+    rows = build_audio_versions(str(src["mix"]), str(out),
+                                str(src["instrumental"]), str(src["vocal"]))
+    write_version_docs(str(out), rows)
+    return RI.stage(item, out)
 
 
 if __name__ == "__main__":

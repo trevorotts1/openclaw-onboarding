@@ -207,17 +207,25 @@ def _cli(argv=None):
 
 
 def produce_delivery(run_dir, item):
-    """DEL-13 packaging adapter: stage this item's canonical files.
+    """DEL-13 packaging adapter: the REAL DEL-10 deliver path (the .srt).
 
-    The one naming scheme lives in delivery_package.contract (``NN - Label.ext``
-    per item number). This adapter stages the item's files under those exact
-    canonical names via contract.produce_item, so the packaging call copies
-    them verbatim and the folder gate opens them unchanged. Signature is the
-    packaging contract: produce_delivery(run_dir, item) -> list[Path].
+    Builds the cues exactly as the pipeline does -- the run's approved sheet
+    timed by the run's own measured word timings
+    (``music/word-timings.json`` via ``caption_timing.captions``) -- and
+    hands them to ``export_captions_srt``. No measured timing is a refusal
+    (RunInputError), never an invented clock and never fixture SRT text:
+    ``contract.produce_item`` is test-only and no deliver path imports it.
+    Signature: produce_delivery(run_dir, item) -> list[Path].
     """
-    from delivery_package.contract import produce_item
-    staging = Path(run_dir) / "_package" / item.key
-    return produce_item(item, staging)
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    cues = RI.measured_cues(run_dir)
+    receipt = export_captions_srt(str(out), cues)
+    if not (isinstance(receipt, dict) and receipt.get("ok")):
+        raise RI.RunInputError("caption export refused (%s): %s"
+                               % ((receipt or {}).get("reason_code") or "?",
+                                  (receipt or {}).get("detail") or "?"))
+    return RI.stage(item, out)
 
 
 if __name__ == "__main__":

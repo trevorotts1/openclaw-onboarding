@@ -568,17 +568,25 @@ def _cli(argv=None):
 
 
 def produce_delivery(run_dir, item):
-    """DEL-13 packaging adapter: stage this item's canonical files.
+    """DEL-13 packaging adapter: the REAL DEL-08 deliver path (the cover).
 
-    The one naming scheme lives in delivery_package.contract (``NN - Label.ext``
-    per item number). This adapter stages the item's files under those exact
-    canonical names via contract.produce_item, so the packaging call copies
-    them verbatim and the folder gate opens them unchanged. Signature is the
-    packaging contract: produce_delivery(run_dir, item) -> list[Path].
+    Reads the run's approved storyboard stills, the storyboard approval and
+    the approved title, then calls ``build_cover`` + ``write_cover_docs`` --
+    the same entry the CLI runs: one frame selected from the run's own frame
+    selection, the title burned on through ``drawtext`` (the ffmpeg is
+    MEASURED to carry the filter: env override, PATH, then the bundled
+    build; a box with none refuses instead of shipping a titleless cover).
+    Fixture bytes are never written: ``contract.produce_item`` is test-only
+    and no deliver path imports it. Signature: produce_delivery(run_dir,
+    item) -> list[Path].
     """
-    from delivery_package.contract import produce_item
-    staging = Path(run_dir) / "_package" / item.key
-    return produce_item(item, staging)
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    title = RI.ad_title(run_dir)
+    ffmpeg = RI.ffmpeg_with("drawtext", "COVER_IMAGE_FFMPEG")
+    row = build_cover(str(run_dir), str(out), title, ffmpeg=ffmpeg)
+    write_cover_docs(str(out), row)
+    return RI.stage(item, out)
 
 
 if __name__ == "__main__":

@@ -251,17 +251,24 @@ def main(argv=None):
 
 
 def produce_delivery(run_dir, item):
-    """DEL-13 packaging adapter: stage this item's canonical files.
+    """DEL-13 packaging adapter: the REAL DEL-06 deliver path (60/90 clips).
 
-    The one naming scheme lives in delivery_package.contract (``NN - Label.ext``
-    per item number). This adapter stages the item's files under those exact
-    canonical names via contract.produce_item, so the packaging call copies
-    them verbatim and the folder gate opens them unchanged. Signature is the
-    packaging contract: produce_delivery(run_dir, item) -> list[Path].
+    Reads the run's ``edit/timeline.json``, the rendered master
+    (``edit/ad.mp4``) and the chosen ad length (card answer, else the brief),
+    then calls ``deliver_clips`` -- the same entry the CLI runs: whole-line
+    windows from ``clip_cutdown.plan_clips``, cut through
+    ``clip_cutdown.run_clips``, every clip through the delivery audio gate
+    and listed in the receipt and README. Fixture bytes are never written:
+    ``contract.produce_item`` is test-only and no deliver path imports it.
+    Signature: produce_delivery(run_dir, item) -> list[Path].
     """
-    from delivery_package.contract import produce_item
-    staging = Path(run_dir) / "_package" / item.key
-    return produce_item(item, staging)
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    timeline = RI.load_json(run_dir, os.path.join("edit", "timeline.json"))
+    length = RI.chosen_length_s(run_dir)
+    master = RI.as_run(run_dir) / "edit" / "ad.mp4"
+    deliver_clips(timeline, length, str(master), str(out))
+    return RI.stage(item, out)
 
 
 if __name__ == "__main__":

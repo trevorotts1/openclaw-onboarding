@@ -24,6 +24,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -348,10 +349,36 @@ def render(rec, images, out_path):
 
 
 def write_delivery(delivery_dir, rec, images=None):
-    """Render into the run's delivery folder; returns the finished path."""
+    """Render into the run's delivery folder; returns the PDF path.
+
+    DEL-13 item 02 is BOTH contract files: the numbered PDF and the image
+    directory beside it (``02 - Character Bible Images``) holding the same
+    reference pictures the layout used, as separate full files -- the
+    client's consistency set ships on its own, not only embedded in the
+    PDF. This is the real deliver path for the whole item: no reference
+    picture in the run, no item (BibleError), never a placeholder.
+    """
     os.makedirs(delivery_dir, exist_ok=True)
+    if images is None:
+        images = rec.get("reference_images") or []
+    resolved = images if isinstance(images, dict) else resolve_images(images)
     path = os.path.join(delivery_dir, DELIVERY_PDF_NAME)
-    return render(rec, images if isinstance(images, dict) else resolve_images(images), path)
+    pdf = render(rec, resolved, path)
+    img_dir = os.path.join(delivery_dir, _ITEMS["character_bible"].files[1])
+    os.makedirs(img_dir, exist_ok=True)
+    shipped = 0
+    for view in sorted(resolved):
+        src = resolved.get(view)
+        if not src or not os.path.isfile(src) or os.path.getsize(src) <= 0:
+            continue
+        ext = os.path.splitext(src)[1].lower() or ".png"
+        shutil.copy2(src, os.path.join(img_dir, view + ext))
+        shipped += 1
+    if not shipped:
+        raise BibleError("NO_REFERENCE_IMAGES: %s has no reference picture "
+                         "to ship beside the bible PDF"
+                         % (rec.get("character_name") or "the character"))
+    return pdf
 
 
 # --- command line ------------------------------------------------------------
@@ -384,17 +411,23 @@ def main(argv=None):
 
 
 def produce_delivery(run_dir, item):
-    """DEL-13 packaging adapter: stage this item's canonical files.
+    """DEL-13 packaging adapter: the REAL DEL-02 deliver path (bible + images).
 
-    The one naming scheme lives in delivery_package.contract (``NN - Label.ext``
-    per item number). This adapter stages the item's files under those exact
-    canonical names via contract.produce_item, so the packaging call copies
-    them verbatim and the folder gate opens them unchanged. Signature is the
-    packaging contract: produce_delivery(run_dir, item) -> list[Path].
+    Reads the run's character brief (``character/brief.json``: the answered
+    character fields plus ``character_reference_images``), turns it into the
+    bible record and calls ``write_delivery`` -- the same entry the CLI
+    renders with. That one deliver path writes BOTH of this item's contract
+    files: the numbered PDF and the ``02 - Character Bible Images``
+    directory of the same reference pictures. Fixture bytes are never
+    written: ``contract.produce_item`` is test-only and no deliver path
+    imports it. Signature: produce_delivery(run_dir, item) -> list[Path].
     """
-    from delivery_package.contract import produce_item
-    staging = Path(run_dir) / "_package" / item.key
-    return produce_item(item, staging)
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    brief = RI.load_json(run_dir, os.path.join("character", "brief.json"))
+    rec = record(brief)
+    write_delivery(str(out), rec)
+    return RI.stage(item, out)
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -53,10 +53,10 @@ _SRT_TIMING = re.compile(
     r"^\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}", re.M)
 _SRT_INDEX = re.compile(r"^\d+\s*$", re.M)
 
-#: Canonical file bytes for a fixture item (the packaging test path and the
-#: reference package). Real producers overwrite these with the run's output;
-#: these are the minimal bytes that OPEN under this contract (PDF header, SRT
-#: cue block, non-empty media, image files, non-empty note).
+#: Canonical bytes for the TEST FIXTURE helper ``produce_item`` (and the
+#: reference package built from it) only. No deliver path writes these:
+#: every real producer reads its own inputs out of the run and ships its own
+#: output (see ``delivery_package.run_inputs`` for where those inputs live).
 PDF_BYTES = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
 SRT_TEXT = ("1\n00:00:00,000 --> 00:00:02,000\nfixture caption line\n\n"
             "2\n00:00:02,000 --> 00:00:04,000\nsecond fixture line\n")
@@ -193,13 +193,17 @@ def verify_folder(folder):
 
 
 def produce_item(item, out_dir):
-    """Write one package item's files under their canonical names, return paths.
+    """TEST FIXTURE HELPER ONLY: write one item's canonical names with bytes
+    that open under this contract. No deliver path may import or call it.
 
-    This is the shared implementation every produce_delivery adapter calls:
-    the producer's real bytes where the run has them, the fixture bytes that
-    open under this contract where it does not yet. It never invents a second
-    naming scheme -- every file lands under ``item.files`` verbatim, so the
-    packaging call copies it and the folder gate opens it unchanged.
+    This is the reference-package helper tests use to build a folder with no
+    run behind it (PDF header, SRT cue block, non-empty media, image file,
+    non-empty note). It never reads a run and never ships to a client: the
+    twelve ``produce_delivery`` adapters read their own inputs out of the run
+    (``delivery_package.run_inputs``) and call their producer's real deliver
+    path instead. The packaging e2e runs all twelve with THIS function
+    replaced by a raiser, so an adapter that reached for it would fail the
+    suite rather than pass vacuously.
     """
     root = Path(out_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -227,9 +231,9 @@ def produce_item(item, out_dir):
 def write_reference_package(folder):
     """Write a complete, generic 12-item folder for tests. Not a deliverable.
 
-    Fixture only: placeholder bytes that open under this contract (PDF header,
-    SRT cue block, non-empty media, image files). No client name, no model
-    name, no absolute path.
+    Fixture only (``produce_item`` bytes that open under this contract): no
+    client name, no model name, no absolute path. The packaging e2e never
+    uses this -- it runs the twelve real producers on a real run folder.
     """
     root = Path(folder)
     root.mkdir(parents=True, exist_ok=True)
@@ -253,6 +257,9 @@ def copy_item_sources(item, sources, out_dir):
         dest = Path(out_dir) / name
         if not src.exists():
             raise ValueError("%s source missing: %s" % (item.key, src.name))
+        if dest.exists() and src.resolve() == dest.resolve():
+            written.append(dest)        # packaging in place: already there
+            continue
         if dest.is_dir():
             shutil.rmtree(dest)
         if src.is_dir():

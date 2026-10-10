@@ -272,17 +272,24 @@ def main(argv=None):
 
 
 def produce_delivery(run_dir, item):
-    """DEL-13 packaging adapter: stage this item's canonical files.
+    """DEL-13 packaging adapter: the REAL DEL-11 deliver path (the pictures).
 
-    The one naming scheme lives in delivery_package.contract (``NN - Label.ext``
-    per item number). This adapter stages the item's files under those exact
-    canonical names via contract.produce_item, so the packaging call copies
-    them verbatim and the folder gate opens them unchanged. Signature is the
-    packaging contract: produce_delivery(run_dir, item) -> list[Path].
+    Reads the run's character records (``character/records.json``: the
+    character_library records, each with its four approved views) and calls
+    ``copy_character_images`` -- the same entry the CLI runs: every view
+    copied byte for byte into the ONE directory the contract owns for this
+    item, a missing view refusing by name before a byte moves. Fixture bytes
+    are never written: ``contract.produce_item`` is test-only and no deliver
+    path imports it. Signature: produce_delivery(run_dir, item) -> list[Path].
     """
-    from delivery_package.contract import produce_item
-    staging = Path(run_dir) / "_package" / item.key
-    return produce_item(item, staging)
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    records = RI.load_json(run_dir, os.path.join("character", "records.json"))
+    if not isinstance(records, list):
+        raise RI.RunInputError("character/records.json must be a list of "
+                               "character records")
+    copy_character_images(str(out), records)
+    return RI.stage(item, out)
 
 if __name__ == "__main__":
     sys.exit(main())

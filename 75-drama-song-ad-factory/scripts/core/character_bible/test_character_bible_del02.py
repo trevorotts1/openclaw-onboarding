@@ -207,10 +207,21 @@ class PdfIsBrightReadableAndSafe(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(cls.t, ignore_errors=True)
 
-    def test_one_delivery_folder_one_numbered_file(self):
-        names = sorted(os.listdir(os.path.dirname(self.out)))
-        self.assertEqual(names, ["02 - Character Bible.pdf"])
+    def test_one_delivery_folder_the_pdf_and_its_picture_directory(self):
+        # DEL-13 item 02 is BOTH contract files: the numbered PDF and the
+        # image directory beside it, holding the same reference pictures.
+        folder = os.path.dirname(self.out)
+        names = sorted(os.listdir(folder))
+        self.assertEqual(names, sorted(["02 - Character Bible.pdf",
+                                        "02 - Character Bible Images"]))
         self.assertEqual(CB.DELIVERY_PDF_NAME, "02 - Character Bible.pdf")
+        pictures = sorted(os.listdir(
+            os.path.join(folder, "02 - Character Bible Images")))
+        self.assertEqual(pictures, sorted(
+            view + ".png" for view in CB.IMAGE_VIEWS))
+        for name in pictures:
+            path = os.path.join(folder, "02 - Character Bible Images", name)
+            self.assertGreater(os.path.getsize(path), 0, name)
 
     def test_a_valid_pdf_of_two_pages(self):
         self.assertTrue(self.blob.startswith(b"%PDF-1.4"), self.blob[:8])

@@ -473,17 +473,24 @@ def _cli(argv=None):
 
 
 def produce_delivery(run_dir, item):
-    """DEL-13 packaging adapter: stage this item's canonical files.
+    """DEL-13 packaging adapter: the REAL DEL-03 deliver path (approved script).
 
-    The one naming scheme lives in delivery_package.contract (``NN - Label.ext``
-    per item number). This adapter stages the item's files under those exact
-    canonical names via contract.produce_item, so the packaging call copies
-    them verbatim and the folder gate opens them unchanged. Signature is the
-    packaging contract: produce_delivery(run_dir, item) -> list[Path].
+    Calls ``render(run_dir, delivery_dir)`` -- the same entry the CLI runs:
+    it loads ``creative/script.json`` under its
+    ``creative/script-approval.json`` record (fail-closed on a missing,
+    pending or stale approval), lays the approved script out, writes the
+    numbered PDF and binds it in the receipt and README. Fixture bytes are
+    never written: ``contract.produce_item`` is test-only and no deliver
+    path imports it. Signature: produce_delivery(run_dir, item) -> list[Path].
     """
-    from delivery_package.contract import produce_item
-    staging = Path(run_dir) / "_package" / item.key
-    return produce_item(item, staging)
+    from delivery_package import run_inputs as RI
+    out = RI.delivery_dir(run_dir)
+    result = render(str(run_dir), str(out))
+    if not (isinstance(result, dict) and result.get("ok")):
+        raise RI.RunInputError("script deliver refused (%s): %s"
+                               % ((result or {}).get("reason_code") or "?",
+                                  (result or {}).get("detail") or "?"))
+    return RI.stage(item, out)
 
 if __name__ == "__main__":
     sys.exit(_cli())
