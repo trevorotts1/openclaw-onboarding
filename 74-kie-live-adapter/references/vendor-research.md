@@ -21,9 +21,11 @@ Dated 2026-10-05. Verified live by the orchestrator against api.kie.ai unless no
 | 15 | Dead endpoints: /api/v1/account/balance, /api/v1/user/credits, /api/v1/jobs/create, /api/v1/veo/task | live probe, each 404 | VERIFIED dead |
 | 16 | Auth is Authorization: Bearer; a header named apikey returns 401 | live probe | VERIFIED |
 | 17 | Vendor kie-models is instruction-only (no scripts) | install inspection; tree hash 3871a627...09ac | VERIFIED |
-| 18 | KIE troubleshooting page content | page did not render | UNRESOLVED |
+| 18 | KIE troubleshooting page content | https://docs.kie.ai/ai-agent/troubleshooting.md loads; table covers 401, key missing, PowerShell curl, jq missing, failed task, not enough credits, link expired | VERIFIED 2026-10-09 (page loads; row closed) |
 | 19 | Live free-call and one-paid-job smoke from this build | KIE_API_KEY NOT-SET in the build environment | PENDING (not run; see QC.md) |
 | 20 | Vendor drift probe | scripts/vendor_skill_probe.sh run once | VERIFIED: MATCH on 2026-10-05 |
+
+2026-10-09 re-check: both archive digests match the approval (kie-models f6247b73..., kie-chat-agents f1cbf185...). The official agent pages were re-fetched the same day and digested at `07-kie-setup/references/kie-official-agent-docs-digest.md`.
 
 Live smoke outputs: none recorded (PENDING). When run, append the printed lines of `bash scripts/live_smoke.sh --paid` here (they never contain key material).
 

@@ -295,7 +295,7 @@ Upload via URL:
   Send a publicly accessible URL and KIE.ai will download the file.
 
 Important notes about uploads:
-- Uploaded files are temporary. They are automatically deleted after 3 days.
+- Uploaded files are temporary. They are automatically deleted after 24 hours.
 - Maximum recommended file size: 100 MB
 - Supported formats: JPEG, PNG, WebP for images; MP4, MOV for videos
 
@@ -351,6 +351,9 @@ each one means:
 |      | asked for. Try a different prompt.                   |
 | 505  | Feature disabled. This feature is not currently      |
 |      | available.                                           |
+
+When a job fails for any reason, open https://kie.ai/logs. Every KIE call shows
+up there with its task and error. That is the first place to look.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 USING WEBHOOKS (ADVANCED)

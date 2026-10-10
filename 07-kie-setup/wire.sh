@@ -112,6 +112,8 @@ TOOLS_BODY="## KIE.ai API
 - Models: consult per-modality registries in 66-kie-image, 67-kie-video, 68-kie-audio (catalog changes frequently)
 - Rate limits: 20 requests per 10s per account, 100+ concurrent tasks
 - Generated media: KIE documents 14 days, but result URLs typically expire after 24 hours; download/persist immediately
+- KIE: skill 74 is the only paid door. Never install KIE's vendor agent skills or point a coding agent at api.kie.ai/anthropic.
+- Failed jobs show on kie.ai/logs. Not enough credits is code 402; top up at kie.ai/pricing.
 - Full reference: $REF_DEST"
 
 MEMORY_BODY="## KIE.ai API Setup — installed

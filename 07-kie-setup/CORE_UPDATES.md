@@ -48,6 +48,8 @@ Add:
 - Models: consult per-modality registries in 66-kie-image, 67-kie-video, 68-kie-audio (catalog updates frequently)
 - Pricing: Credit-based (historical $0.005/credit; live price via GET /api/v1/models pricingDesc or `kie_live_adapter.py price`)
 - Status states: waiting, queuing, generating, success, fail (HTTP 200 = accepted, not complete)
+- KIE: skill 74 is the only paid door. Never install KIE's vendor agent skills or point a coding agent at api.kie.ai/anthropic.
+- Failed jobs show on kie.ai/logs. Not enough credits is code 402; top up at kie.ai/pricing.
 - Full reference: [MASTER_FILES_FOLDER]/07-kie-setup/kie-setup-full.md
 ```
 

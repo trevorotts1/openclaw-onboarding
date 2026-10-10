@@ -12,7 +12,7 @@ description: >
   it observes and records drift but never dispatches a paid job. Submit never
   chooses or changes a model. Infrastructure skill for skills 66, 67 and 68;
   not a client-facing feature.
-version: v1.1.5
+version: v1.1.6
 priority: MEDIUM
 ---
 
@@ -61,7 +61,7 @@ Descriptive prompt fields (image prompt, video prompt, music style) use 95 to 10
 
 ## Modes
 
-Set `KIE_LIVE_ADAPTER_MODE` to `off`, `shadow` or `active`. If the variable is unset the adapter reads the first word of `$OC_CONFIG/kie-live-adapter-mode.conf` (default `~/.openclaw`), the same one-word store style as `decision-engine-mode.conf`. If neither is set the mode is `shadow`.
+Set `KIE_LIVE_ADAPTER_MODE` to `off`, `shadow` or `active`. If the variable is unset the adapter reads the first word of `kie-live-adapter-mode.conf` (one-word store style, same as `decision-engine-mode.conf`) from the first of these locations that has the file: `$OC_CONFIG` (its parent when it names openclaw.json), `/data/.openclaw` (Docker/VPS OpenClaw home), `${CLAUDE_CONFIG_DIR:-~/.claude}` (Claude Code machines), then `~/.openclaw` (plain OpenClaw default). If no location has the file the mode is `shadow`.
 
 | Mode | What happens |
 |---|---|

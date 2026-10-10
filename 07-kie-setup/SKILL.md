@@ -4,9 +4,9 @@ description: >
   Complete setup, credential management, and API router reference for KIE.ai, a
   unified API platform for generating images, videos, and audio through one API
   key and consistent async job conventions.
-version: v7.1.1
+version: v7.2.0
 metadata:
-  version: "7.1.0"
+  version: "7.2.0"
   priority: CRITICAL
 ---
 
@@ -66,8 +66,9 @@ When dispatching media generation requests, use this routing architecture:
 ## Common Rules and Skill 74
 
 - **`references/kie-common-rules.md` is the single source of truth** for KIE authority order, endpoints, rate limits, polling, prompt caps, credit preflight, prices, retention, keys, model ids, the image pin and the prompt budget. Read it before this skill's other files; where another file disagrees with it, the common rules win.
+- **`references/kie-official-agent-docs-digest.md` is the digest of KIE's official agent docs** (the nine docs.kie.ai/ai-agent pages fetched 2026-10-09, with the vendor archive fingerprints). It records what was absorbed, the plain-English troubleshooting table, and the never-rules for vendor skills and chat-provider setups.
 - **Skill 74 (`74-kie-live-adapter`) is the mechanics layer**, a dependency declared in `PREREQS.json` (optional: Skill 74 itself requires this skill first, and the modality skills fall back to static tables and curl when it is absent). Skills 66, 67 and 68 keep the policy (which model, which limits); they run `kie_live_adapter.py validate` (live schema, registry fallback) and `preflight` (balance must cover price x 1.30) before `submit --mode active`, then their own QC. Production batches pass `--callback-url` of the Skill 46 relay.
-- Adapter health is part of this skill's QC: `qc-kie-setup.sh` checks the adapter is present and that `health --json` runs, hermetically (no network, placeholder key); set `KIE_QC_OFFLINE=1` to skip the live credit probe too.
+- Adapter health is part of this skill's QC: `qc-kie-setup.sh` checks the adapter is present and that `health --json` runs, hermetically (no network, placeholder key); set `KIE_QC_OFFLINE=1` to skip the live credit probe too. The same QC prints report-only findings for vendor skill folders and KIE chat-provider settings; it never mutates a box.
 
 ## Files in This Folder (Reading Order)
 
@@ -80,6 +81,7 @@ When dispatching media generation requests, use this routing architecture:
 
 ## Critical Things to Know
 
+- **Never install KIE's vendor agent skills** (`npx skills add https://kie.ai`); skill 74 is the one paid door. Never offer KIE as a chat provider for a coding agent (`api.kie.ai/anthropic`). See common rules rule 14.
 - **NEVER use OpenAI's endpoint format** (`/v1/images/generations`) for KIE. KIE has its own endpoint structure.
 - **All tasks are asynchronous.** A 200 response on task creation means the job was queued/accepted, NOT that it is finished.
 - **Rate limits:** Maximum 20 new tasks per 10 seconds per account. Maximum 10 status queries per second per API key. Obey HTTP 429 with backoff.

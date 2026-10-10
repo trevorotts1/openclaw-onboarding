@@ -47,7 +47,51 @@ if [ -n "$ADAPTER" ]; then
   warn_only "Skill 74 health --json runs and names the adapter (hermetic, no network)" "printf '%s' \"\$HJ\" | python3 -c 'import json,sys; assert json.load(sys.stdin)[\"adapter\"]==\"74-kie-live-adapter\"'"
 fi
 warn_only "common rules file present (references/kie-common-rules.md)" "[ -f \"$SKILL_DIR/references/kie-common-rules.md\" ]"
+warn_only "official agent docs digest present (references/kie-official-agent-docs-digest.md)" "[ -f \"$SKILL_DIR/references/kie-official-agent-docs-digest.md\" ]"
 warn_only "TOOLS.md references kie.ai" "grep -qi 'kie' \"$WORKSPACE/TOOLS.md\" 2>/dev/null"
+
+# ── Report-only box findings (never mutate) ─────────────────────────────────
+# Rule 14 (kie-common-rules.md, 2026-10-09): the vendor skills are never
+# installed on a box, and no coding agent is pointed at api.kie.ai/anthropic.
+# These two checks only PRINT what they find. They delete nothing, edit
+# nothing, and never fail the QC. An operator acts on the report.
+echo ""
+echo "── Report-only box findings (nothing is changed) ──"
+FOUND_HITS=0
+# (a) Vendor skill folders, if present
+for d in "$HOME/.openclaw/skills" "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.claude-nine/skills"; do
+  for s in kie-models kie-chat-agents; do
+    if [ -d "$d/$s" ]; then
+      yellow "  ⚠ FINDING: vendor skill folder present: $d/$s (never install npx skills add https://kie.ai; report, do not remove)"
+      FOUND_HITS=$((FOUND_HITS+1))
+    fi
+  done
+done
+# (b) settings.json env pointing a coding agent at KIE, if present
+for f in "$HOME/.claude/settings.json" "$HOME/.claude-nine/settings.json"; do
+  if [ -f "$f" ] && command -v python3 >/dev/null 2>&1; then
+    HIT="$(SETTINGS_FILE="$f" python3 - <<'PY' 2>/dev/null || true
+import json, os
+try:
+    cfg = json.load(open(os.environ["SETTINGS_FILE"]))
+    env = cfg.get("env") or {}
+    base = str(env.get("ANTHROPIC_BASE_URL") or "")
+    if "api.kie.ai" in base:
+        print(os.environ["SETTINGS_FILE"])
+except Exception:
+    pass
+PY
+)"
+    if [ -n "$HIT" ]; then
+      yellow "  ⚠ FINDING: settings env points at KIE: $HIT (ANTHROPIC_BASE_URL contains api.kie.ai; report, do not edit)"
+      FOUND_HITS=$((FOUND_HITS+1))
+    fi
+  fi
+done
+if [ "$FOUND_HITS" -eq 0 ]; then
+  green "  ✓ no vendor skill folders, no KIE chat-provider settings (report-only scan clean)"
+fi
+
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
 [ $FAIL -gt 0 ] && { red "Skill 07 QC FAILED"; exit 1; } || { green "Skill 07 QC PASS"; exit 0; }

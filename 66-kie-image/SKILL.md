@@ -7,9 +7,9 @@ description: >
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
-version: v2.2.1
+version: v2.2.2
 metadata:
-  version: "2.2.1"
+  version: "2.2.2"
   priority: HIGH
 ---
 
@@ -121,9 +121,10 @@ chars to CUT), 80-95% warns. Unknown limit: UNKNOWN, no floor. Verbatim content
 ## Prerequisites
 
 - TYP (Skill 01) and Back Yourself Up (Skill 02) first — see PREREQS.json.
-- `KIE_API_KEY` present in the box's secrets (env var NAME per repo
-  convention; KIE docs use the literal `YOUR_API_KEY` placeholder — nothing
-  documents the env var). Verify SET, never print the value. See INSTALL.md.
+- `KIE_API_KEY` present in the box's secrets (the environment variable
+  `KIE_API_KEY` is the official name, named by KIE's own docs at
+  docs.kie.ai/ai-agent/overview, 2026-10-09). Verify SET, never print the
+  value. See INSTALL.md.
 - `curl` available for verification and dispatch.
 
 ## Files in This Folder (Reading Order)

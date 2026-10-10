@@ -23,7 +23,7 @@
       "label": "KIE API Key (presence only)",
       "check": { "envVar": "KIE_API_KEY" },
       "severity": "required",
-      "satisfy": "KIE_API_KEY must be SET in ~/.openclaw/secrets/.env (Mac) or /data/.openclaw/secrets/.env (VPS), chmod 600. Check presence only and never print the value. If absent, ask the operator to provision it; do not mint a new key."
+      "satisfy": "KIE_API_KEY is the official variable name (docs.kie.ai/ai-agent/overview, 2026-10-09). OpenClaw: set it in ~/.openclaw/secrets/.env (Mac) or /data/.openclaw/secrets/.env (VPS), chmod 600. Claude Code: the KIE_API_KEY environment variable (the adapter reads the live environment first). Check presence only and never print the value. If absent, ask the operator to provision it; do not mint a new key."
     }
   ]
 }
