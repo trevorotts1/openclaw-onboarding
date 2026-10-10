@@ -6,6 +6,15 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.19 - 2026-10-11 - U1: the studio-json export (question / price / example) from the intake card
+
+- `intake_card.py` gains `--format studio-json`: the Drama Studio renders one screen per intake question, and this export hands it exactly what a screen shows — the question text, the price line (when that screen carries one) and a "See a great answer" example read from the client guide (`references/CLIENT-GUIDE.md`, the first `**Great answer:**` line under the matching `## STEP n:` heading). New `studio_json` / `studio_questions` build every screen from the SAME question list the card asks, so the card and the studio cannot disagree about a question or a price; the envelope is `{"format": "studio-json", "version": 0, "question_count", "questions"}` and each option carries its number, label, one sentence, its own price and whether it is the recommended pick.
+- The two price surfaces read ONE sentence: new `_model_price_line(length_label)` is the single place the "Prices are for your <length> ad, with the song, pictures and a 20% redo allowance." line is built, and both the card's `ask` and the studio export's `price` read it. `spend_question` now carries the BUDGET screen's price line (`price` key: `$x` when a price is known, `up to $x` when only a limit is, `None` when neither), and `_model_question` carries its own price line beside the ask.
+- Fail closed: a screen with no question text, no example, or no options raises `StudioExportError` (a named `field=` and `id=` on stderr) and the CLI exits 1 — never a json file the studio would render half-empty (`STUDIO_JSON_FIELD_MISSING`, `STUDIO_JSON_GUIDE_UNREADABLE`).
+- New `test_studio_json_u1.py` (129 lines, 8 tests over the shared `python3 core/choice_card/intake_card/test_studio_json_u1.py` runner): every screen carries its question, price and example and the option keys are exactly `{n, text, detail, price, recommended}`; the model screen carries the live four model prices and the found example; the budget screen shows the card total when given; the CLI writes the export and exits 0; and three negative controls prove a missing question text or example refuses loudly with a real non-zero process exit and no degraded file on stdout. `__init__.py` re-exports `studio_json`, `studio_questions` and `StudioExportError`.
+- Proof: `python3 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_studio_json_u1.py` runs 8 tests green.
+- Version: `skill-version.txt` and the SKILL.md frontmatter land at v2.9.19 in this commit (G3 gate); the 999-setup twin takes its own train.
+
 ## v2.9.18 - 2026-10-10 - PKG-11 attempt 4: twelve REAL `produce_delivery` paths, real-run e2e, no fixture bytes
 
 Released with onboarding v27.1.1 (same follow-up batch; attempt 3 only claimed the one naming scheme).
