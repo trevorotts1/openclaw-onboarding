@@ -264,7 +264,7 @@ Expected response:
 Step 3: Now you can use that downloadUrl as a reference image in your
 generation requests (in the "image_input" or "image_urls" fields).
 
-Remember: Uploaded files are automatically deleted after 3 days.
+Remember: Uploaded files are automatically deleted after 24 hours.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EXAMPLE 8: UPLOAD AN IMAGE VIA URL
