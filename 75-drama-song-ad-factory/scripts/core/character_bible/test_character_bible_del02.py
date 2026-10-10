@@ -209,8 +209,8 @@ class PdfIsBrightReadableAndSafe(unittest.TestCase):
 
     def test_one_delivery_folder_one_numbered_file(self):
         names = sorted(os.listdir(os.path.dirname(self.out)))
-        self.assertEqual(names, ["02-character-bible.pdf"])
-        self.assertEqual(CB.DELIVERY_PDF_NAME, "02-character-bible.pdf")
+        self.assertEqual(names, ["02 - Character Bible.pdf"])
+        self.assertEqual(CB.DELIVERY_PDF_NAME, "02 - Character Bible.pdf")
 
     def test_a_valid_pdf_of_two_pages(self):
         self.assertTrue(self.blob.startswith(b"%PDF-1.4"), self.blob[:8])

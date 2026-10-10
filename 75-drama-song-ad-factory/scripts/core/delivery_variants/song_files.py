@@ -48,31 +48,60 @@ PASS, FAIL, UNAVAILABLE = "PASS", "FAIL", "UNAVAILABLE"
 # (song_dispatch saves stem + timestamps for every take; vocal separation
 # hands back vocals AND instrumental together). One table drives the file
 # labels, the note prose and the QC expectations, so they cannot drift.
+#
+# The DELIVERY NAME of every file below is the ONE naming scheme, taken
+# verbatim from ``delivery_package.contract.PACKAGE_ITEMS`` (``NN - Label.ext``
+# per package-item number). All four files of this item carry the same item
+# number -- ``01`` -- and are told apart by their label, never by a second
+# numbering of their own. The first field of each row is this unit's internal
+# SOURCE key; it is not a number the client ever sees.
+from delivery_package.contract import ITEMS_BY_KEY as _ITEMS  # noqa: E402
+
+_AUDIO = _ITEMS["audio_versions"]
+
+#: Package-item number of every file this unit delivers (the number the
+#: client sees). Owned by the DEL-13 contract; never reformatted here.
+ITEM_NUMBER = "%02d" % _AUDIO.number
+
 DELIVERY_VERSIONS = (
-    ("01", "Full Song",
+    ("mix", "Full Song",
      "the complete song, with the music and the singing together, exactly as "
      "it plays in your video"),
-    ("02", "Instrumental",
+    ("instrumental", "Instrumental",
      "the same music with no singing on it, for use as background music on "
      "its own"),
-    ("03", "Voice Only",
+    ("vocal", "Voice Only",
      "just the singing, with no music behind it, for use on its own"),
 )
-VERSION_NOTE_NAME = "00 - About These Audio Files.txt"
+VERSION_NOTE_NAME = _AUDIO.files[3]
 VERSIONS_CHECK_NAME = "audio_versions"
 _V_BEGIN, _V_END = "<!-- audio-versions:begin -->", "<!-- audio-versions:end -->"
 
 
 def version_file_name(number, label, ext="mp3"):
-    """The numbered name the client sees: ``01 - Full Song.mp3``."""
+    """The numbered name the client sees: ``01 - Full Song.mp3``.
+
+    ``number`` is the package-item number this file belongs to (``01`` for
+    every file of item 1). The name is built to match the contract's canonical
+    file for that label; a label the contract does not carry is refused rather
+    than quietly renamed.
+    """
     n = re.sub(r"[^\w\- ]+", "", label).strip() or "Audio"
-    return "%s - %s.%s" % (number, n, ext)
+    built = "%s - %s.%s" % (number, n, ext)
+    if built not in set(_AUDIO.files[:3]):
+        raise ValueError("no contract file for audio version label %r "
+                         "(built %r)" % (label, built))
+    return built
 
 
 def expected_version_files():
-    """[(number, label, filename)] for the three delivery versions."""
-    return [(num, label, version_file_name(num, label))
-            for num, label, _desc in DELIVERY_VERSIONS]
+    """[(source_key, label, filename)] for the three delivery versions.
+
+    The filename is the contract's canonical name for that label; the key is
+    this unit's internal source key (``mix`` / ``instrumental`` / ``vocal``).
+    """
+    return [(key, label, version_file_name(ITEM_NUMBER, label))
+            for key, label, _desc in DELIVERY_VERSIONS]
 
 
 def version_note_text():
@@ -85,8 +114,8 @@ def version_note_text():
     lines = ["About the three audio files in this folder", "=" * 44, "",
              "You are getting the same song three ways. Here is what each "
              "one is:", ""]
-    for num, label, desc in DELIVERY_VERSIONS:
-        lines.append("%s - %s" % (num, label))
+    for _key, label, desc in DELIVERY_VERSIONS:
+        lines.append("%s - %s" % (ITEM_NUMBER, label))
         lines.append("This is %s." % desc)
         lines.append("")
     lines.append("All three are the same recording and the same length, just "
@@ -204,30 +233,32 @@ def build_audio_versions(mix_path, delivery_dir, instrumental_path,
     dressed up as three is a refusal, never a quiet pass. Returns the receipt
     rows (one per encoded file). Raises ValueError on a missing/empty source.
     """
-    srcs = {"01": mix_path, "02": instrumental_path, "03": vocal_stem_path}
-    for num, label, _d in DELIVERY_VERSIONS:
-        src = srcs.get(num)
+    srcs = {"mix": mix_path, "instrumental": instrumental_path,
+            "vocal": vocal_stem_path}
+    for key, label, _d in DELIVERY_VERSIONS:
+        src = srcs.get(key)
         if not src or not str(src).strip():
-            raise ValueError("no %s source for audio version %s (%s); the "
+            raise ValueError("no %s source for audio version %s; the "
                              "three versions are existing pipeline output, "
-                             "never re-synthesised" % (label, num, label))
+                             "never re-synthesised" % (label, label))
         if not Path(src).is_file() or Path(src).stat().st_size == 0:
-            raise ValueError("audio version %s (%s) source missing or empty: "
-                             "%s" % (num, label, src))
+            raise ValueError("audio version %s source missing or empty: "
+                             "%s" % (label, src))
     out = Path(delivery_dir)
     out.mkdir(parents=True, exist_ok=True)
     rows = []
-    for num, label, fname in expected_version_files():
+    for key, label, fname in expected_version_files():
         dst = out / fname
-        _LG.run_ffmpeg([ffmpeg, "-y", "-v", "error", "-i", str(srcs[num]),
+        _LG.run_ffmpeg([ffmpeg, "-y", "-v", "error", "-i", str(srcs[key]),
                         "-vn", "-c:a", "libmp3lame", "-b:a", "%dk" % MP3_KBPS,
                         str(dst)], "audio-version-encode", check=True)
-        rows.append({"kind": "audio-version", "number": num, "label": label,
-                     "file": fname, "format": "mp3",
+        rows.append({"kind": "audio-version", "number": ITEM_NUMBER,
+                     "source": key, "label": label, "file": fname,
+                     "format": "mp3",
                      "sha256": sha256_file(dst), **_probe(dst, ffprobe)})
     note = out / VERSION_NOTE_NAME
     note.write_text(version_note_text(), encoding="utf-8")
-    rows.append({"kind": "audio-version-note", "number": "00",
+    rows.append({"kind": "audio-version-note", "number": ITEM_NUMBER,
                  "label": "About These Audio Files", "file": VERSION_NOTE_NAME,
                  "format": "txt", "sha256": sha256_file(note),
                  "bytes": note.stat().st_size})
@@ -323,6 +354,21 @@ def _cli(argv=None):
     print("usage: song_files.py check <delivery_dir> <ad_name> | "
           "check-versions <delivery_dir>")
     return 1
+
+
+
+def produce_delivery(run_dir, item):
+    """DEL-13 packaging adapter: stage this item's canonical files.
+
+    The one naming scheme lives in delivery_package.contract (``NN - Label.ext``
+    per item number). This adapter stages the item's files under those exact
+    canonical names via contract.produce_item, so the packaging call copies
+    them verbatim and the folder gate opens them unchanged. Signature is the
+    packaging contract: produce_delivery(run_dir, item) -> list[Path].
+    """
+    from delivery_package.contract import produce_item
+    staging = Path(run_dir) / "_package" / item.key
+    return produce_item(item, staging)
 
 
 if __name__ == "__main__":

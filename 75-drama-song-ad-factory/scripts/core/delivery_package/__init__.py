@@ -29,6 +29,7 @@ from .contract import (  # noqa: F401  (DEL-13)
     CONTRACT_VERSION,
     ITEMS_BY_KEY,
     PACKAGE_ITEMS as CONTRACT_ITEMS,
+    produce_item,
     verify_folder,
     write_reference_package,
 )
@@ -50,6 +51,7 @@ __all__ = [
     "CONTRACT_VERSION",
     "CONTRACT_ITEMS",
     "ITEMS_BY_KEY",
+    "produce_item",
     "verify_folder",
     "write_reference_package",
     "PackageError",

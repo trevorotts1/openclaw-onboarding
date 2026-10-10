@@ -19,7 +19,7 @@ made, so it costs nothing and invents nothing:
     uses -- scale/crop to the cover size, one title-safe band, the title
     on it.
 
-Exactly ONE image lands in the delivery folder (``<safe ad name>-cover.png``,
+Exactly ONE image lands in the delivery folder (``08 - Cover Thumbnail.png``,
 named with the reuse of ``song_files.safe_name``). ``write_cover_docs`` merges
 it into ``delivery-receipt.json`` and ``README.md`` the way the song files do
 (markers, never clobbering other content) and ``check_cover_image`` is the
@@ -119,9 +119,23 @@ def safe_component(ad_name):
     return safe_name(ad_name)
 
 
+#: The ONE image this unit delivers; its name is the ONE naming scheme, taken
+#: verbatim from the DEL-13 contract (``NN - Label.ext``).
+from delivery_package.contract import ITEMS_BY_KEY as _ITEMS  # noqa: E402
+
+_COVER = _ITEMS["cover_thumbnail"]
+
+
 def cover_file_name(ad_name):
-    """The ONE image file this unit writes into the delivery folder."""
-    return "%s-cover.png" % safe_component(ad_name)
+    """The ONE image file this unit writes into the delivery folder.
+
+    The name is the ONE naming scheme, taken verbatim from the DEL-13
+    contract (``NN - Label.ext``). ``ad_name`` is still validated (an empty
+    ad name is a refusal) but no longer baked into the file name: one
+    delivery folder is one ad, so the canonical name is already unambiguous.
+    """
+    safe_component(ad_name)
+    return _COVER.files[0]
 
 
 # --------------------------------------------------------------- selection ---
@@ -550,6 +564,21 @@ def _cli(argv=None):
           "[--ffmpeg BIN]\n"
           "       cover_image.py check <delivery_dir> <ad_name>")
     return 1
+
+
+
+def produce_delivery(run_dir, item):
+    """DEL-13 packaging adapter: stage this item's canonical files.
+
+    The one naming scheme lives in delivery_package.contract (``NN - Label.ext``
+    per item number). This adapter stages the item's files under those exact
+    canonical names via contract.produce_item, so the packaging call copies
+    them verbatim and the folder gate opens them unchanged. Signature is the
+    packaging contract: produce_delivery(run_dir, item) -> list[Path].
+    """
+    from delivery_package.contract import produce_item
+    staging = Path(run_dir) / "_package" / item.key
+    return produce_item(item, staging)
 
 
 if __name__ == "__main__":

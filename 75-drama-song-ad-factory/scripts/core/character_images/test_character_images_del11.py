@@ -76,6 +76,11 @@ class CharacterImagesDel11(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
+    @property
+    def item_dir(self):
+        """The ONE directory the DEL-13 contract owns for this item."""
+        return os.path.join(self.delivery, CI.DELIVERY_DIR_NAME)
+
     def _saved(self, name, files):
         paths = [make_pic(os.path.join(self.src, n), n.encode())
                  for n in files]
@@ -89,15 +94,18 @@ class CharacterImagesDel11(unittest.TestCase):
                                        "three-quarter.png",
                                        "full-standing.png"])
         rows = CI.copy_character_images(self.delivery, [rec])
-        names = sorted(os.listdir(self.delivery))
+        # every picture lands in the item's own delivery directory, never
+        # flat in the folder's root -- the folder contract opens the dir.
+        self.assertEqual(os.listdir(self.delivery), [CI.DELIVERY_DIR_NAME])
+        names = sorted(os.listdir(self.item_dir))
         self.assertEqual(names, [
-            "11-character-hero-one-close-up.png",
-            "11-character-hero-one-full-standing.png",
-            "11-character-hero-one-side-profile.png",
-            "11-character-hero-one-three-quarter.png"])
+            "hero-one-close-up.png",
+            "hero-one-full-standing.png",
+            "hero-one-side-profile.png",
+            "hero-one-three-quarter.png"])
         # every delivered file is the approved picture, byte for byte
         for row in rows:
-            dest = os.path.join(self.delivery, row["filename"])
+            dest = os.path.join(self.item_dir, row["filename"])
             with open(dest, "rb") as f:
                 got = f.read()
             src = next(p for p in rec["reference_paths"]
@@ -114,17 +122,17 @@ class CharacterImagesDel11(unittest.TestCase):
         self.assertEqual(rows[0]["character"], "Hero One")
         # four separate files, not one bundle
         self.assertEqual(len(names), 4)
-        self.assertEqual(len({read_bytes(os.path.join(self.delivery, n))
+        self.assertEqual(len({read_bytes(os.path.join(self.item_dir, n))
                               for n in names}), 4)   # four distinct pictures
         # every delivered file still OPENS as a picture (a copy of a valid
         # PNG is a valid PNG; a re-encode that broke it would fail here)
         for n in names:
-            blob = read_bytes(os.path.join(self.delivery, n))
+            blob = read_bytes(os.path.join(self.item_dir, n))
             self.assertTrue(blob.startswith(PNG_MAGIC), n)
             self.assertTrue(blob.endswith(_chunk(b"IEND", b"")), n)
         if shutil.which("sips"):                     # macOS opener, when present
             r = subprocess.run(["sips", "-g", "pixelWidth",
-                                os.path.join(self.delivery, names[0])],
+                                os.path.join(self.item_dir, names[0])],
                                capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("pixelWidth: 32", r.stdout)
@@ -137,9 +145,10 @@ class CharacterImagesDel11(unittest.TestCase):
                                      "three-quarter.png", "full-standing.png"])
         rows = CI.copy_character_images(self.delivery, [a, b])
         self.assertEqual(len(rows), 8)
-        self.assertEqual(len(os.listdir(self.delivery)), 8)
+        self.assertEqual(len(os.listdir(self.item_dir)), 8)
         self.assertEqual(
-            sum(1 for n in os.listdir(self.delivery) if n.startswith("11-character-hero-two-")),
+            sum(1 for n in os.listdir(self.item_dir)
+                if n.startswith("hero-two-")),
             4)
 
     # ---------------------------------------------------------------- 3
@@ -186,7 +195,7 @@ class CharacterImagesDel11(unittest.TestCase):
         rows = CI.copy_character_images(self.delivery, [rec])
         self.assertEqual([r["view"] for r in rows], list(VIEWS))
         for row in rows:
-            with open(os.path.join(self.delivery, row["filename"]), "rb") as f:
+            with open(os.path.join(self.item_dir, row["filename"]), "rb") as f:
                 got = f.read()
             with open(pics[row["view"]], "rb") as f:
                 self.assertEqual(got, f.read())
@@ -260,7 +269,7 @@ class CharacterImagesDel11(unittest.TestCase):
         out = json.loads(r.stdout)
         self.assertEqual(out["count"], 4)
         self.assertEqual(out["schema"], CI.SCHEMA)
-        self.assertEqual(len(os.listdir(self.delivery)), 4)
+        self.assertEqual(len(os.listdir(self.item_dir)), 4)
 
         # bad input: a records file that is not a list
         with open(records, "w", encoding="utf-8") as f:
@@ -301,7 +310,7 @@ class CharacterImagesDel11(unittest.TestCase):
         second = CI.copy_character_images(self.delivery, [rec])
         self.assertEqual([r["filename"] for r in first],
                          [r["filename"] for r in second])
-        self.assertEqual(sorted(os.listdir(self.delivery)),
+        self.assertEqual(sorted(os.listdir(self.item_dir)),
                          sorted(r["filename"] for r in second))
 
 

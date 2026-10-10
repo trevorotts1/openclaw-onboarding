@@ -60,7 +60,7 @@ class PackageListTest(unittest.TestCase):
     def test_every_file_is_unique_and_carries_its_item_number(self):
         flat = []
         for item in pi.PACKAGE_ITEMS:
-            prefix = "%02d-" % item["number"]
+            prefix = "%02d - " % item["number"]
             self.assertTrue(item["files"], "item %d has no file" % item["number"])
             for name in item["files"]:
                 self.assertTrue(name.startswith(prefix),
@@ -71,7 +71,7 @@ class PackageListTest(unittest.TestCase):
         self.assertEqual(len(set(flat)), len(flat))
 
     def test_welcome_sheet_is_item_twelve(self):
-        self.assertEqual(pi.WELCOME_SHEET_FILE, "12-welcome-sheet.pdf")
+        self.assertEqual(pi.WELCOME_SHEET_FILE, "12 - Welcome Sheet.pdf")
         self.assertEqual(pi.files_for(12), (pi.WELCOME_SHEET_FILE,))
         self.assertEqual(pi.files_for(99), ())
         self.assertEqual(pi.DELIVERY_FOLDER, "delivery")
@@ -160,10 +160,11 @@ class DeliveryChecklistConsumesConstantTest(unittest.TestCase):
             for name in pi.PACKAGE_FILES:
                 (root / name).write_bytes(b"x")
             self.assertEqual(dc.missing_package_files(root), ())
-            (root / "05-video-clean.mp4").write_bytes(b"")   # empty = missing
-            (root / "10-captions.srt").unlink()
+            (root / "05 - Video Clean.mp4").write_bytes(b"")   # empty = missing
+            (root / "10 - Captions.srt").unlink()
             missing = dc.missing_package_files(root)
-            self.assertEqual(missing, ("05-video-clean.mp4", "10-captions.srt"))
+            self.assertEqual(missing,
+                             ("05 - Video Clean.mp4", "10 - Captions.srt"))
             self.assertEqual(dc.missing_package_files(root / "no-such-dir"),
                              pi.PACKAGE_FILES)
 

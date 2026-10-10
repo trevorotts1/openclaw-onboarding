@@ -205,5 +205,20 @@ def _cli(argv=None):
     return 1
 
 
+
+def produce_delivery(run_dir, item):
+    """DEL-13 packaging adapter: stage this item's canonical files.
+
+    The one naming scheme lives in delivery_package.contract (``NN - Label.ext``
+    per item number). This adapter stages the item's files under those exact
+    canonical names via contract.produce_item, so the packaging call copies
+    them verbatim and the folder gate opens them unchanged. Signature is the
+    packaging contract: produce_delivery(run_dir, item) -> list[Path].
+    """
+    from delivery_package.contract import produce_item
+    staging = Path(run_dir) / "_package" / item.key
+    return produce_item(item, staging)
+
+
 if __name__ == "__main__":
     raise SystemExit(_cli())
