@@ -1,5 +1,16 @@
 # Changelog - Skill 74 KIE Live Adapter
 
+## [1.1.8] - 2026-10-10 - setup-kie-live-adapter.sh: byte-minimal env.KIE_API_KEY insert, no backup
+
+- New `setup-kie-live-adapter.sh`: installs THIS CLIENT'S OWN `env.KIE_API_KEY` into each Claude config root's `settings.json`. Owner order 2026-10-10.
+  - Inserts exactly one key, `env.KIE_API_KEY`. Never an `ANTHROPIC_*` key, never another key, never a base URL (`07-kie-setup/references/kie-common-rules.md` rule 14).
+  - Byte-minimal in-place edit: the writer scans the document for byte offsets only and inserts one line, so every pre-existing line keeps its bytes, key order, indentation and trailing-newline style. Dropping the inserted line restores the input byte for byte — the script asserts that before it writes.
+  - No backup file of any kind: no `settings.json.bak-kie-*`, no `.bak`, no `.orig`. The write goes through a same-directory temp file that is renamed away and removed on any failure.
+  - The key value is never printed to stdout, stderr or any log (SET/NOT SET only) and travels by environment, never by argv. The result is `chmod 600`.
+  - The api.kie.ai base URL is printed as copyable text and is never written into `settings.json`.
+- New `tests/test_setup_kie_live_adapter.py` (11 tests, hermetic): a reformat plant trips `test_b_pre_existing_lines_stay_byte_identical` (rc 1), a `.bak*` plant trips `test_c_no_backup_file_of_any_kind` (rc 1), the clean edit passes (rc 0).
+- Version roll to v1.1.8 (`SKILL.md`, `skill-version.txt`) — the skill 07 docs-port version pin moved with it.
+
 ## [1.1.7] - 2026-10-10 - PREREQS names the one allowed settings.json write (env.KIE_API_KEY)
 
 - `PREREQS.json` `kie-api-key` satisfy text: on Claude Code the only settings.json write allowed is `env.KIE_API_KEY` — never an `ANTHROPIC_*` key and never a KIE base URL (`07-kie-setup/references/kie-common-rules.md` rule 14). Presence check only; the value is never printed.
