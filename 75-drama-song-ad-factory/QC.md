@@ -137,8 +137,8 @@ it advances. Standard library only; no credential value is ever printed.
       Q12 `PACKAGE_COMPLETE` fails the run and names every missing item.
 
 - [ ] Three audio versions (DEL-01): the same delivery folder holds `01 - Full Song.mp3`,
-      `02 - Instrumental.mp3` and `03 - Voice Only.mp3` (320 kbps each, from the run's own mix,
-      instrumental and vocal stem) plus `00 - About These Audio Files.txt`, the short plain-English
+      `01 - Instrumental.mp3` and `01 - Voice Only.mp3` (320 kbps each, from the run's own mix,
+      instrumental and vocal stem) plus `01 - About These Audio Files.txt`, the short plain-English
       note on how the three differ; all listed in `delivery-receipt.json` and `README.md`;
       `python3 scripts/core/delivery_variants/song_files.py check-versions <dir>` exits 0, and exits 5
       when a version or the note is missing. A missing source is a refusal, never a two-version delivery.
@@ -152,7 +152,7 @@ it advances. Standard library only; no credential value is ever printed.
       `batch_zip.build_batch_zip(client, ads, out)` — one folder per author with the captioned ad, the clean
       master and the song mp3 (exactly three files per ad) plus a README listing every file, duration,
       resolution and banner link. A missing file is a `BatchZipError`.
-- [ ] Storyboard grid PDF (DEL-04, REQUIRED): the delivery folder holds `04-storyboard.pdf` — every approved
+- [ ] Storyboard grid PDF (DEL-04, REQUIRED): the delivery folder holds `04 - Storyboard.pdf` — every approved
       scene picture in a grid with its shot number and timecode, the lyric line it plays over and what
       happens, in song order. `storyboard_grid.deliver(<run dir>, <delivery folder>)` reads
       `storyboard/gate.json` and refuses `STORYBOARD_NOT_APPROVED` without it; a missing still or an

@@ -503,7 +503,7 @@ Decision 32, plan 6.13.
   `build_argv` / `run_clips` cut it with a short fade-out; the captions are
   re-timed by `captions_offset_s`.
 - `core/delivery_clips` puts both clips in the client's delivery folder with
-  clear numbered names (`6 - 60-second clip.mp4`, `6 - 90-second clip.mp4`,
+  clear numbered names (`06 - Clip 60s.mp4`, `06 - Clip 90s.mp4`,
   item 6), runs `delivery_audio.check_delivery_audio()` on every delivered
   file after the rename, and merges the rows into `delivery-receipt.json` and
   `README.md` (merge, never clobber). `check_clips` fails closed (a promised
