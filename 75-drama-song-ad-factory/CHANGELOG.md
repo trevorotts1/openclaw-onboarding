@@ -6,6 +6,15 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.19 - 2026-10-10 - U4-U1: Drama Studio mini-app deploy files, dry-run path and a hard zone guard (files only, no deploy)
+
+- New `mini-app/deploy/` (three deploy-side files): `deploy.sh`, `deploy.manifest.json` and `DEPLOY.md`. U2 owns `worker/` (the service) and U3 owns `pages/` (the UI); this unit owns `deploy/` only and ships no worker, no page and no deployment. Nothing is deployed by this commit: no `wrangler` call, no Cloudflare mutation, no bucket creation, no secret creation, no token use.
+- `deploy.sh` reuses the Book Writer deploy pattern (`53-book-writer/mini-app/deploy`). Real Cloudflare ids stay `<PLACEHOLDER>` in `worker/wrangler.toml`; the script resolves them into a THROWAWAY config in `$TMPDIR` (deleted on exit) passed to `npx wrangler --config`, so no real id ever lands in git. Token and secret VALUES are env-only (`CLOUDFLARE_DRAMA_STUDIO_API_TOKEN`, forwarded per call to wrangler's native `CLOUDFLARE_API_TOKEN`; secret values piped to wrangler stdin) and no value is ever printed.
+- HARD ZONE GUARD, cannot be disabled: G1 the target zone NAME must equal the manifest's intended zone (`zerohumanworkforce.com`); G2 the target zone id must not equal the known FOREIGN zone id (the `businessaftersixty.com` landmine); G3 when an intended account is pinned (`STUDIO_INTENDED_ACCOUNT_ID`) the target account id must equal it; G4 a live run must resolve a real zone id AND account id — an empty "not found" is a FAIL, never a pass.
+- `--dry-run` validates and plans every step with no wrangler and no API call, and is honest: unresolved ids report as unresolved and never as a pass; the guard still fails hard on a wrong zone.
+- `--self-test` is the offline proof (no token, no network): it demonstrates the guard refusing a wrong zone name, a foreign zone id and a wrong account (each a non-zero exit with the guard message), that an intended-zone `--dry-run` plans and the guard passes, and that `--dry-run` is PLAN-only and never fabricates a PASS. `bash 75-drama-song-ad-factory/mini-app/deploy/deploy.sh --self-test` exits 0 with `U4 deploy self-test: PASS`.
+- Version markers: `skill-version.txt` and the `SKILL.md` frontmatter `version:` land at v2.9.19 in this same commit, bundled with the real content (G3 gates a skill-content change on that bump, and the frontmatter is checked against `skill-version.txt`). The real deploy is a separate, later, Trevor-authorized step.
+
 ## v2.9.18 - 2026-10-10 - PKG-11 attempt 4: twelve REAL `produce_delivery` paths, real-run e2e, no fixture bytes
 
 Released with onboarding v27.1.1 (same follow-up batch; attempt 3 only claimed the one naming scheme).
