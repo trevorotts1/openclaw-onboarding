@@ -6,6 +6,19 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.19 - 2026-10-10 - Mini-app Studio UI (version 0): five pages, eight options, QR, accessibility floor, real-download proof
+
+Unit U3-U1. New client-facing Studio UI under `mini-app/ui/` (no service behaviour — the service is U2's).
+
+- Five pages — Start, Your eight answers, The recap, Your approvals, Your premiere — in `studio.js` + `index.html`, with a skip link, progress bar, section nav, focusable `<main>`, polite live region and `<noscript>` fallback.
+- The eight options (offer, audience, star, length, music, look, quality, budget) as native radio groups with real labels; the numbered recap card; the "Looks good — start my video" confirmation state; and a per-approval "Looks good" state (script, song 1-of-3, storyboard) that stays on the page once taken.
+- `qr.js`: a dependency-free QR generator (byte mode, EC level M, versions 1..10), inline SVG, no CDN. The QR is `role="img"` with an accessible name and the same link is written out in plain text underneath as the real alternative.
+- `download.js` is the one place that decides a delivery link is an ACTUAL download: HTTP 200 on the exact tapped URL, `Content-Disposition: attachment`, positive `Content-Length`, that many bytes arriving, and a binary `Content-Type`. A 3xx is refused outright (redirects are never followed) — a share link that bounces to a landing page is not a download and the button stays disabled with the reason shown.
+- `api-client.js` states the whole U2 service boundary as nine named entrypoints (`getSession`, `saveAnswer`, `getOptions`, `listInbox`, `postInbox`, `requestUpload`, `advance`, `getDelivery`, `verifyDeliveryLink`) and implements none of it; until U2 lands the page boots, draws every screen and says in words that nothing can be saved yet.
+- Accessibility asserted by `checks/a11y-check.mjs` (32 rules, light and dark): WCAG contrast computed from the real stylesheet tokens with every text pair clearing 4.5:1, a real `<label>` and `id` for every input, focus order = source order (no positive `tabindex`), a page change moving focus to the new page heading, a visible `:focus-visible` ring, every state announced in a polite live region and no state carried by motion or colour alone, and a `prefers-reduced-motion` guard. Not covered and said so in the same words: a real browser and a screen reader.
+- Proof: `cd 75-drama-song-ad-factory/mini-app/ui && bash checks/run-all.sh` runs four checks — `ui-contract.mjs` (the version-0 surface exists and imports cleanly), `a11y-check.mjs`, `qr-roundtrip.mjs` (the QR decoded by an independent decoder), and `download-bytes-check.mjs` (real bytes with the redirect-only negative control) — exit 0 = all pass, 2 = a check failed.
+- Version: `skill-version.txt` and the `SKILL.md` frontmatter land at v2.9.19 in this commit (G3 gate).
+
 ## v2.9.18 - 2026-10-10 - PKG-11 attempt 4: twelve REAL `produce_delivery` paths, real-run e2e, no fixture bytes
 
 Released with onboarding v27.1.1 (same follow-up batch; attempt 3 only claimed the one naming scheme).
