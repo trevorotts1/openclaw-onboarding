@@ -4,6 +4,17 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.2.1] - 2026-10-10 - settings.json rule 14 sharpened (env.KIE_API_KEY exception), 24-hour retention text, policy fixtures a-g
+
+- `references/kie-common-rules.md` rule 14 rewritten: no `ANTHROPIC_*` key (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`) and no KIE base URL (`ANTHROPIC_BASE_URL=https://api.kie.ai/anthropic`) may be written into `settings.json`; the one settings.json write the rule allows is `env.KIE_API_KEY`, the variable name KIE's own docs prescribe (docs.kie.ai/ai-agent/overview, 2026-10-09).
+- `references/kie-official-agent-docs-digest.md`: the matching never-line carries the same `env.KIE_API_KEY` exception.
+- Retention wording: `EXAMPLES.md` and `kie-setup-full.md` now say uploaded files are deleted after 24 hours; the stale longer-window claim is gone.
+- `tests/test_official_docs_port.py`: new `TestSettingsJsonKeyPolicy` with negative fixtures a-g (old phrase trips, ANTHROPIC settings allowance trips, clean text passes, digest fingerprints still equal the vendor archiveDigests, PREREQS parses and names `env.KIE_API_KEY`, a capitalized-only plant trips, the documents' own backticked bullet style trips); the clean-tree retention scan is widened to every text file in the skill.
+- `kie-setup.skill` rebuilt from the fixed files.
+- Version roll to v7.2.1 (`SKILL.md`, `skill-version.txt`).
+
+---
+
 ## [v7.2.0] - 2026-10-09 - feat: KIE official agent docs absorbed; rule 14; retention fix; report-only QC
 
 - New `references/kie-official-agent-docs-digest.md`: names every source URL (the nine docs.kie.ai/ai-agent pages), the fetch date 2026-10-09, and both vendor archive sha256 fingerprints (kie-models f6247b73..., kie-chat-agents f1cbf185...); carries the absorbed rules table, the plain-English troubleshooting table, the never-on-client-machines list, and a recognition-only reference for how coding agents connect to KIE.
