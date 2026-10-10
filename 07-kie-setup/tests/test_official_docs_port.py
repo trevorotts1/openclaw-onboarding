@@ -7,7 +7,10 @@ Six checks, no skips, standard library only:
   2. kie-common-rules.md carries rule 14 (vendor skills and KIE as a chat
      provider are both never), the kie.ai/logs line and the 402 top-up line,
      and the TOOLS never-line is present in CORE_UPDATES.md and wire.sh;
-  3. 07 INSTRUCTIONS.md no longer claims the three-days upload retention;
+  3. EVERY text file under 07-kie-setup (not only INSTRUCTIONS.md) is scanned
+     for a 3-day / three-day / 72-hour retention claim; a planted bad line in
+     a temp copy is detected (FAIL), and the shipped kie-setup.skill zip is
+     clean too;
   4. version strings and CHANGELOG entries exist for skills 07, 74, 66, 68;
   5. qc-kie-setup.sh is report-only: run against a temp box it leaves the box
      byte-identical, and its two planted findings print without mutating;
@@ -31,6 +34,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.abspath(os.path.join(HERE, ".."))
@@ -104,6 +108,69 @@ SKILL_VERSIONS = {
 def read(path):
     with open(path, encoding="utf-8") as fh:
         return fh.read()
+
+
+# --- widened retention scan: every text file under 07-kie-setup -------------
+# Unit KIE-U0 only checked INSTRUCTIONS.md; unit KIEX-F2 checks the whole
+# folder, so a stale 3-day claim cannot hide in EXAMPLES.md, kie-setup-full.md
+# or any later file.  The shipped .skill zip is a binary bundle: it gets its
+# own zipfile check below rather than a text scan.
+
+TEXT_EXTS = {".md", ".txt", ".py", ".sh", ".json", ".yml", ".yaml", ".cfg",
+             ".ini", ".csv", ".html", ".css", ".js", ".ts"}
+SELF_NAME = os.path.basename(__file__)
+
+# 3 days / 3-day / 3 day / three days / three-day / 72 hours / 72-hour / 72hrs
+CLAIM_RE = re.compile(
+    r"(?i)\b(?:"
+    r"3[ -]?days?"          # 3 days, 3-day, 3 day
+    r"|three[ -]?days?"     # three days, three-day
+    r"|72[ -]?(?:hours?|hrs?)"  # 72 hours, 72-hour, 72hrs
+    r")\b")
+
+# Only a retention-shaped line is a claim: the words that would appear in one.
+# A bare "3 days" in unrelated prose is not a retention claim.
+RETENTION_RE = re.compile(
+    r"(?i)\b(?:delet\w*|retention|retain\w*|expire[sd]?|expiration"
+    r"|temporary|upload\w*|valid\w*|auto\b|purge\w*|ttl)\b")
+
+# A line that says it is quoting/removing the old wrong figure is history,
+# not a live claim (e.g. 07 CHANGELOG: the stale "deleted after 3 days" line
+# corrected to 24 hours).  Without this the clean tree would fail.
+HISTORY_RE = re.compile(
+    r"(?i)\b(?:stale|corrected|no longer|previously|outdated|superseded"
+    r"|historic(?:al)?|quoted|misstat\w*|was fixed|before this)\b")
+
+
+def iter_text_files(root):
+    """Every text file under root except this test file and binaries."""
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames.sort()
+        for name in sorted(filenames):
+            if name == SELF_NAME:
+                continue
+            ext = os.path.splitext(name)[1].lower()
+            if ext and ext not in TEXT_EXTS:
+                continue
+            yield os.path.join(dirpath, name)
+
+
+def find_retention_claims(root):
+    """List 'relpath:line: text' for every live 3-day retention claim."""
+    hits = []
+    for full in iter_text_files(root):
+        rel = os.path.relpath(full, root)
+        try:
+            text = read(full)
+        except (UnicodeDecodeError, OSError):
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if not CLAIM_RE.search(line):
+                continue
+            if not RETENTION_RE.search(line) or HISTORY_RE.search(line):
+                continue
+            hits.append("%s:%d: %s" % (rel, lineno, line.strip()))
+    return hits
 
 
 def tree_digest(root):
@@ -261,16 +328,85 @@ class TestCommonRules(unittest.TestCase):
         self.assertIn(never, read(WIRE), "wire.sh missing TOOLS never-line")
 
 
-class TestInstructionsRetention(unittest.TestCase):
-    """3. INSTRUCTIONS.md no longer carries the three-days upload claim."""
+class TestNoRetentionClaimAnywhere(unittest.TestCase):
+    """3. every text file under 07-kie-setup is free of a 3-day claim."""
 
-    def test_no_three_days_upload_claim(self):
-        text = read(INSTRUCTIONS)
-        self.assertNotIn("deleted after 3 days", text)
-        self.assertNotRegex(text, r"(?i)uploaded files[^\n]*3 days")
+    def test_clean_tree_has_no_three_day_claim(self):
+        hits = find_retention_claims(SKILL_DIR)
+        self.assertEqual(hits, [],
+                         "3-day retention claims still present:\n  %s"
+                         % "\n  ".join(hits))
 
-    def test_24_hours_claim_present(self):
+    def test_planted_bad_line_in_temp_copy_is_caught(self):
+        """Copy the tree, plant one bad line, assert the scan FAILS on it."""
+        tmp = tempfile.mkdtemp(prefix="kie-f2-plant-")
+        try:
+            copy = os.path.join(tmp, "07-kie-setup")
+            shutil.copytree(SKILL_DIR, copy)
+            victim = os.path.join(copy, "EXAMPLES.md")
+            with open(victim, "a", encoding="utf-8") as fh:
+                fh.write("\nRemember: Uploaded files are automatically "
+                         "deleted after 3 days.\n")
+            hits = find_retention_claims(copy)
+            self.assertTrue(hits, "planted 3-day claim was NOT detected")
+            self.assertTrue(
+                any(h.startswith("EXAMPLES.md:") for h in hits),
+                "planted hit not attributed to EXAMPLES.md: %s" % hits)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_planted_three_day_and_72_hour_variants_are_caught(self):
+        """three-day and 72 hour wordings are caught too, not just '3 days'."""
+        tmp = tempfile.mkdtemp(prefix="kie-f2-plant2-")
+        try:
+            copy = os.path.join(tmp, "07-kie-setup")
+            shutil.copytree(SKILL_DIR, copy)
+            for name, line in (
+                    ("INSTRUCTIONS.md",
+                     "Uploaded files are deleted after three days."),
+                    ("references/kie-common-rules.md",
+                     "Upload retention: 72 hours before purge."),
+            ):
+                with open(os.path.join(copy, name), "a",
+                          encoding="utf-8") as fh:
+                    fh.write("\n" + line + "\n")
+            hits = find_retention_claims(copy)
+            self.assertTrue(hits, "planted variants were NOT detected")
+            joined = "\n".join(hits)
+            self.assertIn("INSTRUCTIONS.md", joined)
+            self.assertIn("references/kie-common-rules.md", joined)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_instructions_still_has_the_24_hours_wording(self):
         self.assertIn("deleted after 24 hours", read(INSTRUCTIONS))
+
+    def test_shipped_skill_zip_has_no_three_day_claim(self):
+        """The shipped .skill bundle is rebuilt from the fixed files."""
+        path = os.path.join(SKILL_DIR, "kie-setup.skill")
+        self.assertTrue(os.path.exists(path),
+                        "kie-setup.skill missing (retire it only with proof)")
+        with zipfile.ZipFile(path) as zf:
+            names = zf.namelist()
+            self.assertIn("EXAMPLES.md", names)
+            # positive control first: the instrument must find a known string
+            joined = "".join(
+                zf.read(n).decode("utf-8", "replace") for n in names)
+            self.assertIn("kieai.redpandaai.co", joined,
+                          "zip read control failed")
+            # then the real assertion: zero retention claims inside
+            hits = []
+            for n in names:
+                text = zf.read(n).decode("utf-8", "replace")
+                for lineno, line in enumerate(text.splitlines(), 1):
+                    if (CLAIM_RE.search(line)
+                            and RETENTION_RE.search(line)
+                            and not HISTORY_RE.search(line)):
+                        hits.append("%s:%d: %s" % (n, lineno, line.strip()))
+            self.assertEqual(hits, [], "3-day claim inside kie-setup.skill:\n  %s"
+                             % "\n  ".join(hits))
+
+
 
 
 class TestVersionsAndChangelogs(unittest.TestCase):

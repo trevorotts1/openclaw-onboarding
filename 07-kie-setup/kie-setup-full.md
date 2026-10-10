@@ -232,8 +232,8 @@ From Task Detail endpoint:
 
 Maximum query rate: 10 requests per second per API key.
 Recommended polling interval: 2 to 5 seconds between polls.
-File upload APIs (temporary files, 3 day retention)
-Uploaded files are temporary and auto deleted after 3 days.
+File upload APIs (temporary files, 24-hour retention)
+Uploaded files are temporary and auto deleted after 24 hours.
 Base64 upload
 Endpoint
 
