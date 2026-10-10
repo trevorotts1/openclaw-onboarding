@@ -163,11 +163,14 @@ automatically.
   credit preflight, spend ledger and approval card, and the skills CLI copies it into every agent
   folder it detects. Only `74-kie-live-adapter/scripts/vendor_skill_probe.sh` may unpack it, into
   a throwaway HOME, on a probe box.
-- Never offer KIE as a chat provider for a coding agent (do not set
-  `ANTHROPIC_BASE_URL=https://api.kie.ai/anthropic`, and never write KIE keys into any
-  `settings.json`). Coding sessions would bill the same KIE credits outside skill 74's preflight,
-  and a settings-file value beats the launcher's shell variables, so it would silently pull
-  claude-nine off 9Router.
+- Never offer KIE as a chat provider for a coding agent. Never write an `ANTHROPIC_*`
+  key (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`) or a KIE base URL
+  (`ANTHROPIC_BASE_URL=https://api.kie.ai/anthropic`) into `settings.json`. The one
+  settings.json write this rule allows is `env.KIE_API_KEY`, the variable name KIE's
+  own docs prescribe (docs.kie.ai/ai-agent/overview, 2026-10-09). Coding sessions
+  would bill the same KIE credits outside skill 74's preflight, and a settings-file
+  value beats the launcher's shell variables, so an Anthropic-lane entry would
+  silently pull claude-nine off 9Router.
 - Skill 74 is the only paid door for KIE media calls.
 - If either forbidden setup is found on a machine, report it. Never remove or edit it without an
   operator order.

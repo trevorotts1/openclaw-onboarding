@@ -1,6 +1,6 @@
 """Runnable checks for the KIE official agent docs port (unit KIE-U0).
 
-Five checks, no skips, standard library only:
+Six checks, no skips, standard library only:
 
   1. the digest names every source URL, the fetch date 2026-10-09 and both
      vendor archive fingerprints;
@@ -10,12 +10,19 @@ Five checks, no skips, standard library only:
   3. 07 INSTRUCTIONS.md no longer claims the three-days upload retention;
   4. version strings and CHANGELOG entries exist for skills 07, 74, 66, 68;
   5. qc-kie-setup.sh is report-only: run against a temp box it leaves the box
-     byte-identical, and its two planted findings print without mutating.
+     byte-identical, and its two planted findings print without mutating;
+  6. the settings.json rule (unit KIEX-F1): the old blanket phrase trips,
+     any ANTHROPIC_* / KIE-base-URL settings.json allowance trips, the clean
+     env.KIE_API_KEY exception passes, the digest hashes still equal
+     74-kie-live-adapter/vendor-approval.json archiveDigests, and
+     74-kie-live-adapter/PREREQS.json still parses and names
+     `env.KIE_API_KEY`.
 
 Run:  python3 07-kie-setup/tests/test_official_docs_port.py
   or: python3 -m unittest discover -s 07-kie-setup/tests -p 'test_*.py'
 """
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -34,6 +41,38 @@ INSTRUCTIONS = os.path.join(SKILL_DIR, "INSTRUCTIONS.md")
 CORE_UPDATES = os.path.join(SKILL_DIR, "CORE_UPDATES.md")
 WIRE = os.path.join(SKILL_DIR, "wire.sh")
 QC = os.path.join(SKILL_DIR, "qc-kie-setup.sh")
+PREREQS_74 = os.path.join(REPO, "74-kie-live-adapter", "PREREQS.json")
+APPROVAL_74 = os.path.join(REPO, "74-kie-live-adapter", "vendor-approval.json")
+
+# the phrase this unit replaced: a blanket ban that would also forbid the one
+# settings.json write the policy allows (env.KIE_API_KEY)
+OLD_PHRASE = "never write KIE keys into any settings.json"
+
+# what must never be written into settings.json
+ANTHROPIC_TERM = re.compile(
+    r"ANTHROPIC_|api\.kie\.ai/anthropic|KIE base URL", re.I)
+# language that turns a mention into an allowance
+PERMISSION = re.compile(
+    r"\b(allow(?:ed|s|ing)?|may|might|can|could|okay|ok to|fine|acceptable|"
+    r"permitted|approved|feel free|go ahead|recommended|should|instead|"
+    r"is allowed|are allowed)\b", re.I)
+NEGATION = re.compile(
+    r"\b(never|not|no|don'?t|does not|doesn'?t|do not|forbid(?:s|den|ding)?|"
+    r"avoid|refus(?:e|es|ed|ing)|must not|banned?|out of scope|"
+    r"report[- ]only|neither|nor)\b", re.I)
+WRITE_VERB = re.compile(
+    r"\b(write|writes|writing|set|sets|setting|add|adds|adding|put|puts|"
+    r"putting|store|stores|storing|configure|configures|point|points|"
+    r"pointing|entry|entries)\b", re.I)
+SETTINGS_TARGET = re.compile(r"settings\.json|settings file|settings-file", re.I)
+ENV_ANTHROPIC = re.compile(r"env\.ANTHROPIC", re.I)
+# the digest's recognition-reference sentence: what the *vendor package* does,
+# described so it can be spotted and reported, never advice for our machines
+VENDOR_DESCRIBE = re.compile(
+    r"(?i)the vendor\s+`?[\w.-]+`?\s+skill\s+writes")
+# the blanket ban this unit replaced (case-insensitive, whitespace-insensitive)
+OLD_BLANKET = re.compile(
+    r"(?i)write\s+kie\s+keys\s+into\s+(?:any\s+)?\s*settings\.json")
 
 SOURCE_URLS = [
     "https://docs.kie.ai/ai-agent/overview.md",
@@ -80,6 +119,68 @@ def tree_digest(root):
                 rel, os.stat(full).st_mode & 0o777,
                 hashlib.sha256(blob).hexdigest()))
     return "\n".join(rows)
+
+def flat(text):
+    """Collapse markdown backticks and wrapped lines to one comparison form."""
+    return re.sub(r"[`\s]+", " ", text)
+
+def md_units(text):
+    """One unit per markdown list item (bullet + its wrapped continuation).
+
+    A wrapped bullet becomes one line, so a never-rule at the top of the bullet
+    negates the whole bullet and a planted positive sentence in a fresh bullet
+    is judged on its own.
+    """
+    units, cur = [], []
+    for line in text.splitlines():
+        if re.match(r"^\s*-\s", line) or not line.strip():
+            if cur:
+                units.append(" ".join(cur))
+                cur = []
+            if re.match(r"^\s*-\s", line):
+                cur = [re.sub(r"^\s*-\s+", "", line)]
+            continue
+        if re.match(r"^\s*#", line):
+            if cur:
+                units.append(" ".join(cur))
+                cur = []
+            continue
+        cur.append(line.strip())
+    if cur:
+        units.append(" ".join(cur))
+    return units
+
+def sentences(unit):
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+", unit) if s.strip()]
+
+def json_strings(obj):
+    if isinstance(obj, str):
+        return [obj]
+    if isinstance(obj, dict):
+        return [s for v in obj.values() for s in json_strings(v)]
+    if isinstance(obj, list):
+        return [s for v in obj for s in json_strings(v)]
+    return []
+
+def settings_allowance_hits(units):
+    """Sentences that bless writing ANTHROPIC_* keys or a KIE base URL
+    into settings.json. The clean text names env.KIE_API_KEY as the single
+    allowed write, so every ANTHROPIC sentence must stay a never-rule."""
+    hits = []
+    for unit in units:
+        if ENV_ANTHROPIC.search(unit):
+            hits.append("settings key path env.ANTHROPIC_*: " + unit[:160])
+        if OLD_BLANKET.search(unit):
+            hits.append("blanket KIE-keys ban: " + unit[:160])
+        for sent in sentences(unit):
+            if not ANTHROPIC_TERM.search(sent):
+                continue
+            if NEGATION.search(sent) or VENDOR_DESCRIBE.search(sent):
+                continue
+            if PERMISSION.search(sent) or (
+                    SETTINGS_TARGET.search(sent) and WRITE_VERB.search(sent)):
+                hits.append(sent[:200])
+    return hits
 
 
 class TestDigest(unittest.TestCase):
@@ -223,8 +324,82 @@ class TestQcReportOnly(unittest.TestCase):
             shutil.rmtree(home, ignore_errors=True)
 
 
+class TestSettingsJsonKeyPolicy(unittest.TestCase):
+    """6. settings.json: ANTHROPIC_* and the KIE base URL never,
+    `env.KIE_API_KEY` the single allowed write, hashes and PREREQS intact."""
+
+    def setUp(self):
+        self.rules = read(RULES)
+        self.digest = read(DIGEST)
+        self.prereqs = read(PREREQS_74)
+
+    def test_a_old_phrase_trips(self):
+        """(a) the planted old phrase never-write-KIE-keys trips FAIL."""
+        for name, text in (("kie-common-rules.md", self.rules),
+                           ("kie-official-agent-docs-digest.md", self.digest),
+                           ("74-kie-live-adapter/PREREQS.json", self.prereqs)):
+            self.assertNotIn(OLD_PHRASE, flat(text),
+                             "%s still carries the old blanket phrase: %r"
+                             % (name, OLD_PHRASE))
+
+    def test_b_anthropic_settings_allowance_trips(self):
+        """(b) a planted ANTHROPIC_BASE_URL / api.kie.ai/anthropic
+        settings.json allowance trips FAIL."""
+        units = md_units(self.rules) + md_units(self.digest)
+        units += json_strings(json.loads(self.prereqs))
+        hits = settings_allowance_hits(units)
+        self.assertEqual(hits, [],
+                         "settings.json allowance for ANTHROPIC_* keys or a "
+                         "KIE base URL: %s" % hits)
+
+    def test_c_clean_new_text_passes(self):
+        """(c) the clean new meaning is present in all three places."""
+        for name, text in (("kie-common-rules.md", self.rules),
+                           ("kie-official-agent-docs-digest.md", self.digest),
+                           ("74-kie-live-adapter/PREREQS.json", self.prereqs)):
+            body = flat(text)
+            self.assertIn("env.KIE_API_KEY", body,
+                          "%s missing the env.KIE_API_KEY settings location" % name)
+            self.assertRegex(body, r"(?i)never[^\n]{0,120}ANTHROPIC_",
+                             "%s missing the never-write-ANTHROPIC rule" % name)
+        # the exception is stated as an exception, not a second ban
+        for name, text in (("kie-common-rules.md", self.rules),
+                           ("kie-official-agent-docs-digest.md", self.digest)):
+            allowed = [u for u in md_units(text)
+                       if "env.KIE_API_KEY" in u
+                       and re.search(r"(?i)allow|exception|only", u)]
+            self.assertTrue(allowed,
+                            "%s has no allowed-write sentence for "
+                            "env.KIE_API_KEY" % name)
+
+    def test_d_digest_hashes_match_vendor_approval(self):
+        """(d) digest fingerprints still equal vendor-approval archiveDigests."""
+        approval = json.loads(read(APPROVAL_74))
+        digests = approval["archiveDigests"]
+        self.assertTrue(digests, "vendor-approval.json has no archiveDigests")
+        for name, tagged in sorted(digests.items()):
+            sha = tagged.split(":", 1)[-1]
+            self.assertRegex(
+                self.digest, r"\| `%s\.tar\.gz` \| `%s` \|"
+                % (re.escape(name), sha),
+                "digest hash for %s no longer equals vendor-approval "
+                "archiveDigests" % name)
+
+    def test_e_prereqs_parses(self):
+        """(e) PREREQS.json still parses and names env.KIE_API_KEY."""
+        data = json.loads(self.prereqs)
+        self.assertIsInstance(data, dict)
+        self.assertIn("prerequisites", data)
+        key_entries = [p for p in data["prerequisites"]
+                       if p.get("id") == "kie-api-key"]
+        self.assertEqual(len(key_entries), 1, "kie-api-key prerequisite missing")
+        entry = key_entries[0]
+        self.assertEqual(entry.get("check", {}).get("envVar"), "KIE_API_KEY")
+        self.assertIn("env.KIE_API_KEY", entry.get("satisfy", ""),
+                      "satisfy text must name the env.KIE_API_KEY settings "
+                      "location")
+
 def json_env(env):
-    import json
     return json.dumps({"env": env})
 
 
