@@ -7,7 +7,7 @@ description: >
   dedicated /api/v1/generate family), supported audio processing operations,
   and speech-to-text CAPABILITY DETECTION (ADVERTISED_NOT_YET_VERIFIED — no
   endpoint, dispatch_enabled false).
-version: v2.3.1
+version: v2.3.2
 metadata:
   version: "2.3.1"
   priority: HIGH

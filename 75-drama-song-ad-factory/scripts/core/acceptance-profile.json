@@ -12,6 +12,18 @@
   "verdict_rules": {"aggregate_may_not_erase_critical": ["identity", "lyrics", "offer", "claim", "product_label", "cta"], "cta_unavailable_cannot_pass": true, "threshold_changes_require_documented_decision": true, "unavailable_values": ["PASS", "FAIL", "UNAVAILABLE"]},
   "ww_wave": {
     "note": "Rules added by the WW-PREVENT-RECURRENCE wave (Unit U1, arc-revision-battery). Stored ONCE here; every gate reads this file rather than re-deriving a threshold. All values are NEW ACCEPTANCE CHOICES, not calibrated measurements.",
+    "pace_change": {
+      "note": "WW-23 D3 (2026-10-11). PROPOSED values -- new acceptance choices, never a measured limit and never a number Trevor set. The problem window needs this onset-rate reduction AND this energy drop; the solution must return the onset rate within this share AND the energy within this ABSOLUTE band in BOTH directions (a 24 dB overshoot is not a return). Two DISTINCT seams -- the drop boundary and the return boundary -- are mandatory; a missing seam or a reused boundary refuses before generation. music_qc/pace_change.py reads these; the literals there are the fallback only.",
+      "proposed": true,
+      "problem_onset_reduction": 0.30,
+      "problem_energy_drop_db": 3.0,
+      "solution_onset_return_tol": 0.20,
+      "solution_onset_return_range_pct": [80, 120],
+      "solution_energy_return_db": 3.0,
+      "solution_energy_return_is_symmetric": true,
+      "mandatory_seams": 2,
+      "two_approved_semantic_anchors": ["drop", "return"]
+    },
     "performed_manifest": {"beat_count": 12, "one_source": true, "beat_to_timing_count": 8, "source_method_stage_count": 15, "note": "A performed-beat manifest is generated from ONE source for all twelve canonical beats with the lines that must be heard IN ORDER, the delivery, the hook placement and the pace cues. The fifteen-stage source method and the eight coarse timing stages are preserved as explicit NAMED mappings and are never relabelled as one another."},
     "creative_fingerprint": {"components": ["lines", "delivery", "beat_map", "hook", "pace"], "stored_with_take": true, "never_retroactively_binds": true, "note": "Stored with the take and compared against the fingerprinted revision actually submitted; a mismatch refuses the take. An edited later sheet never re-binds an existing take."},
     "overlap": {"initial_attempts": 3, "distinct_identity_fields": ["variant_id", "attempt_id", "task_id"], "min_overlap_us": 1000000, "compare": "integer_microseconds_no_rounding", "missing_evidence": "UNAVAILABLE", "malformed_or_reversed_or_duplicated_or_digest_mismatched": "FAIL", "scope": "CONCURRENCY_EVIDENCE", "note": "Three DISTINCT initial identities are required; duplicate or identical receipts FAIL. 0.999 s (999999 us) FAILS. Local clocks are never admissible and are never backfilled."},

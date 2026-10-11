@@ -46,7 +46,7 @@ def _req():
 
 def _plan(**kw):
     req = _req()
-    return dict(LF.plan(60, (15, 20)), sheet_text=req["lyrics"], style_id="soul-ballad",
+    return dict(LF.plan(60, (15, 20)), sheet_text=req["input"]["lyrics"], style_id="soul-ballad",
                 hook_plan=HOOK_PLAN, **kw)
 
 
@@ -61,7 +61,7 @@ def _suno_words(lyrics):
 
 def _good_take(**over):
     words = [dict(w, startS=3 + i * 1.0, endS=3.5 + i * 1.0)
-             for i, w in enumerate(_suno_words(_req()["lyrics"]))]
+             for i, w in enumerate(_suno_words(_req()["input"]["lyrics"]))]
     take = {"segments": [{"delivery": "spoken", "start": 0, "end": 2, "source": "measured"},
                          {"delivery": "sung", "start": 2.5, "end": 45, "source": "measured"},
                          {"delivery": "spoken", "start": 45, "end": 54, "source": "measured"}],
@@ -94,7 +94,7 @@ def test_ww08_a_declared_story_revision_with_a_late_plot_line_fails():
     and the take is never delivered (this passed the old 15%-of-D rule)."""
     plan = _plan(story_revision="rev-1")
     take = _good_take(aligned_words=[dict(w, startS=30 + i, endS=30.5 + i)
-                                     for i, w in enumerate(_suno_words(_req()["lyrics"]))])
+                                     for i, w in enumerate(_suno_words(_req()["input"]["lyrics"]))])
     rc = _judge(take, plan)
     assert rc["gates"]["story"]["verdict"] == "FAIL", rc["gates"]["story"]
     assert rc["verdict"] != "PASS"
@@ -245,7 +245,7 @@ def test_ww07_the_payload_carries_the_drop_and_return_after_the_ending():
     pace = {"drop": "half-time drop, thin drums", "return": "turn and rise back to the groove"}
     req = R.build_request("rnb-flow", SHEET[:1] + SHEET[1:], CLIENT, "T", 58,
                           hook_plan=HOOK_PLAN, delivered_s=58, pace_plan=pace)
-    style = req["style"]
+    style = req["input"]["style"]
     assert "half-time" in style and "thin" in style and "rise back" in style
     # AFTER the ending and the hook-placement order clause
     assert style.index("half-time") > style.index(R._EQ.STYLE_ENDING)
@@ -257,7 +257,7 @@ def test_ww07_the_payload_carries_the_drop_and_return_after_the_ending():
 
 def test_ww07_the_assembled_variant_styles_all_carry_the_pace_clause_last():
     """WW-07: what SHIPS is the assembled three-variant provider style, so the
-    drop and the return are asserted on ``request["style"]`` from
+    drop and the return are asserted on ``request["input"]["style"]`` from
     song_choices.build_requests -- never on the recipe's style_text alone. On
     every variant the pace clause must come AFTER the ending clause and AFTER
     that variant's own ARRANGEMENT clause."""
@@ -266,7 +266,7 @@ def test_ww07_the_assembled_variant_styles_all_carry_the_pace_clause_last():
                             hook_plan=HOOK_PLAN, pace_plan=pace)
     assert len(reqs) == 3 and len({v["id"] for v, _ in reqs}) == 3
     for v, rq in reqs:
-        style = rq["style"]
+        style = rq["input"]["style"]
         clause = v["clause"].rstrip(".")
         assert "half-time" in style and "rise back" in style, (v["id"], style)
         assert style.index("half-time") > style.index(R._EQ.STYLE_ENDING), v["id"]
@@ -281,7 +281,7 @@ def test_ww07_the_assembled_variant_styles_all_carry_the_pace_clause_last():
 
 def test_ww07_no_pace_plan_means_no_clause_and_an_over_cap_append_raises():
     plain = R.build_request("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN)
-    assert "half-time" not in plain["style"]
+    assert "half-time" not in plain["input"]["style"]
     assert "_pace_plan" not in plain
     # an over-cap append raises STYLE_TOO_LONG rather than truncating
     huge = {"drop": "x" * R.SUNO_STYLE_FIELD_MAX, "return": "y" * 200}
@@ -359,7 +359,8 @@ def test_ww09_empty_production_defaults_are_refused():
         req = _req()
         json.dump({"style_id": "soul-ballad", "client_text": CLIENT, "title": "T",
                    "length_s": 58, "hook_plan": HOOK_PLAN,
-                   "input": {"lyrics": req["lyrics"], "duration": 58, "vocal_gender": "f"}},
+                   "input": {"lyrics": req["input"]["lyrics"], "duration": 58,
+                             "vocal_gender": "f"}},
                   open(p, "w"))
         a = _NS(run_dir=tmp, request=p)
         for kw in ({}, {"measure": lambda t: {}}, {"save": lambda v, t, r: None}):

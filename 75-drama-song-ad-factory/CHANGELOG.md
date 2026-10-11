@@ -6,6 +6,89 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.30 - 2026-10-11 - WWB combined branch B: WW-22 ordered approved-story-line matching, WW-23 both musical transitions, WW-24 measured-only evidence provenance
+
+ONE real-content commit whose parent is the live head of `unit/WW30-U2`
+(`c6dc6e9d41`, read at build time), joining the three parallel builders'
+patches (WWB-U22, WWB-U23, WWB-U24) into a single coherent change. This branch
+is skill-75 only: the repository root `/version` and root `CHANGELOG.md` are
+unchanged (the same shape #1858 used). WW-28 is NOT on this branch -- per
+`WW-ROUND3-FIX-PLAN.md` line 100 it depends on WW-27 (combined branch C, above
+this branch) and its patch is carried forward to `wave3/carry/WW-28.patch`.
+
+- WW-22 (ordered approved-story-line matching): `normalize_approved_words`
+  keeps repeats and refuses a set; `ordered_match` matches the approved words
+  against the observed words IN ORDER, replacing the multiset; `ordered_run_match`
+  is the ONE contiguous-run matcher `first_plot_line_s` now reads through; and
+  `text_coverage_gate` matches in order. `song_contract.check_sheet` carries the
+  exact approved opening line into the request/evidence context. `up\n\n` stays
+  lexical.
+- WW-23 (both musical transitions): two approved semantic anchors (drop, return)
+  and two distinct seam timestamps (`boundary_s`, `return_boundary_s`); the
+  return-energy check is SYMMETRIC; D3 judges BOTH seams; the pre-generation gate
+  `check_pace_plan` / `check_pace_style` / `pace_provider_leak` blocks a missing
+  seam, a reused boundary and a one-direction final style before any spend;
+  numbers stored once in `acceptance-profile.json` `ww_wave.pace_change`.
+- WW-24 (measured-only evidence provenance): `timing_guard` measures no audio and
+  validates each D1..D5 result's evidence record against the take binding;
+  `story_coverage.script_report` separates lexical estimate, music-only allowance
+  and runtime, refusing `INFLATED_SECONDS_OF_WORDS`; `spoken_share.measured_runtime_s`
+  refuses a plan as physical runtime. No sixth audio gate.
+- IN-BRANCH WIRING (WW-23 -> WW-22): `song_contract.check_pace_style` now binds
+  its anchor presence through WW-22's `story_coverage.ordered_run_match` instead
+  of a raw substring scan.
+
+Every guard is reachable from the production path; no guard weakened, no floor
+lowered, no assertion's intent changed, nothing skipped or xfailed. Base
+boundaries intact: WW-21's fail-closed acceptance boundary, the per-verse rap
+floor, `parse_lyrics` storing the bracket cue under `"cue"`, the pace clause LAST
+in the assembled `input.style`, and the createTask contract with its
+`LEGACY_FLAT_CONTRACT` guard.
+
+## v2.9.29 - 2026-10-11 - WW30R re-cut: pull request 1856's createTask migration stacked as draft `unit/WW30-U2` on live `unit/WWR3INT-U2`, with the three opus-fail test fixes
+
+ONE real-content commit whose parent is the live head of `unit/WWR3INT-U2`
+(`531f5b390f`, read at build time). It carries pull request #1856's content
+delta (`871eab98c..d6b3f45c`, its own single commit, read live at
+`d6b3f45c304bbc100edf13086e7b8007525e97df`) onto that base as ONE coherent
+change, and keeps EVERY change the base already carried -- WW-21's fail-closed
+boundary, the WW-16 opening-vocalise ceiling, `parse_lyrics` storing the
+bracket cue under `"cue"`, and WW-07's pace clause LAST in the assembled
+`input.style` (the drop and the return, after the ending and arrangement
+clauses). `suno_recipe.build_request` keeps BOTH signatures: `pace_plan` (WW-07)
+AND `callback_url` (WW-30), and `song_choices.build_requests` still appends the
+pace clause after the variant clause -- now on the nested `input.style`.
+
+The three suites the opus check returned FAIL on at `d6b3f45c` are fixed INSIDE
+this same commit, each still testing what it tested, against the shape
+production actually emits:
+
+- `sung_hook/test_hook_placement.py` reads `request["input"]["lyrics"]`, not the
+  retired top-level `request["lyrics"]` (KeyError 'lyrics').
+- `suno_recipe/test_voice_tags_u5.py` reads `request["input"]["vocal_gender"]`,
+  not the retired top-level field (which read `None`).
+- `sung_hook/test_no_skip_and_goldens.py`'s golden-sheet builder emits the
+  nested createTask envelope instead of the retired flat `/api/v1/generate`
+  payload (`REQUEST_ENVELOPE_REJECTED: LEGACY_FLAT_CONTRACT`).
+
+The `LEGACY_FLAT_CONTRACT` guard and every other guard are unchanged; no
+assertion was weakened, skipped, xfailed or re-pointed. Skills 75 and 68 still
+build and validate exactly ONE music contract: POST `<KIE host>/api/v1/jobs/createTask`
+with the outer `model` `ai-music-api/generate`, a TOP-LEVEL camelCase
+`callBackUrl` and a nested snake_case `input`; `input.lyrics` is the single
+approved lyrics source (a competing `prompt` is `COMPETING_LYRICS`); the legacy
+flat route is RETIRED with no fallback. The individual V6-family VALUE is
+recorded `UNDETERMINED` with UNRANKED candidates `V6`, `V6_MINI`, `V6_WILD`;
+the task-ID acknowledgement nesting is reported UNVERIFIED. Proved with the
+zero-spend fake transport only (`test_music_createtask_ww30.py`): the exact URL
+and serialized payload are captured, each refusal is asserted by name, and
+success / rejection / timeout / malformed acknowledgement / multiple returned
+tracks are each exercised. No provider call, nothing spent.
+
+Bundles the Skill 75 v2.9.29 bump (read live from the base's skill-version
+v2.9.28) and the root v27.1.11 release roll (read live from the base's
+`/version` v27.1.10) with its CHANGELOG entry, together in the same commit.
+
 ## v2.9.28 - 2026-10-11 - WWR3INT2 re-cut: pull request 1855 onto live main (WW-21 kept whole) on the 88-second R&B Flow card
 
 ONE real-content commit. It carries the FULL CONTENT of pull request #1855's
@@ -142,7 +225,6 @@ whether the five results *carried to it* may advance.
 No threshold, check, test or guard was weakened, skipped, xfailed, deleted or
 re-run to green. No paid call is made anywhere in this unit; nothing was
 regenerated.
-
 
 ## v2.9.26 - 2026-10-11 - empty-home test: make the core copy deterministic so the `__pycache__` race cannot fail `QC static invariants`
 

@@ -181,7 +181,18 @@ def _end(w):
 
 
 def _tok(w):
-    """The word text, with Suno's inline section header dropped."""
+    """The word text, with Suno's inline section header dropped.
+
+    WW-22: UNCHANGED, on purpose. The header-drop rule this module shipped --
+    the last newline-separated segment -- is what an ALIGNED row's own token is
+    (Suno puts the section tag before the break and the lyric after it), and a
+    row that ends on a break carries the segment Suno emitted there. The
+    lexical-token preservation WW-22 asks for already holds through the
+    PUBLIC token API this module matches on: ``is_lexical("up\\n\\n")`` is True,
+    ``_norm("up\\n\\n")`` is "up" and ``words_of("up\\n\\n")`` is ["up"], so a
+    trailing break never erases a token on the SHEET path. ``_norm`` is applied
+    only to a token that has already had its header dropped, never to a raw
+    row, so "[Verse 1 (rap): ...]\\nI " normalizes to "i", not to the tag."""
     return str((w or {}).get("word") or "").split("\n")[-1]
 
 
@@ -310,19 +321,13 @@ def first_plot_line_s(aligned_words, plot, min_words=PLOT_LINE_MIN_WORDS):
     if not lines:
         raise CoverageError("plot is empty; nothing to look for")
     toks = [(s, _norm(tok)) for s, _e, tok in aligned_lexical_words(aligned_words)]
-    best = None
-    for line in lines:
-        if len(line) < min_words:
-            continue
-        for j in range(0, len(line) - min_words + 1):
-            win = line[j:j + min_words]
-            n = len(win)
-            for i in range(0, len(toks) - n + 1):
-                if [t[1] for t in toks[i:i + n]] == win:
-                    if best is None or toks[i][0] < best:
-                        best = toks[i][0]
-                    break
-    return None if best is None else round(best, 3)
+    # WW-22: the ONE ordered matcher, shared with the text-coverage gate. The
+    # token list is time-ordered, so the first matching INDEX is the first
+    # matching START in seconds -- the same value the inline loop returned.
+    idx = ordered_run_match(lines, [t[1] for t in toks], min_words=min_words)
+    if idx is None:
+        return None
+    return round(toks[idx][0], 3)
 
 
 def _opening_non_lexical_s(aligned_words):
@@ -461,6 +466,15 @@ def story_start_gate(aligned_words, plot, delivered_s,
         "opening_ceiling_s": opening_max_s,
         "opening_share_ceiling_s": round(opening_share * D, 3),
         "plot_line_min_words": min_words,
+        # WW-22: the EXACT approved opening line (ordered, repeats kept) rides
+        # in this gate's context, so a caller measures an onset against the
+        # approved LINE, never against a vocabulary. The onset itself is
+        # assessed by audio gate D2, never here.
+        "approved_opening_line": list(lines[0]) if lines else [],
+        "approved_opening_line_ordered": True,
+        # WW-22: no onset is claimed here. The delivered ONSET on the take is
+        # audio gate D2's measurement, never this pre/post story context.
+        "delivered_onset_owner": "D2",
         "ceiling_s": max_s,
         "detail": ("first approved plot line %s (ceiling %.1f s), first plot word "
                    "%s, opening wordless %s s, longest opening wordless span %s s "
@@ -594,6 +608,148 @@ def _norm_tokens(seq):
     return out
 
 
+def normalize_approved_words(approved):
+    """The APPROVED words as an ORDERED sequence, with REPEATS KEPT (WW-22).
+
+    The approved side of a match is a SEQUENCE, never a vocabulary. A set or
+    frozenset carries no order, so it is REFUSED (no words) rather than sorted
+    into an order the sheet never had; a string or a flat list/tuple of words
+    is read left to right and every repeat is kept. A caller that needs an
+    ordered match must hand over an ordered input."""
+    if isinstance(approved, (set, frozenset)):
+        return []
+    if isinstance(approved, str):
+        return _norm_tokens(approved)
+    if not isinstance(approved, (list, tuple)):
+        return []
+    out = []
+    for x in approved:
+        out.extend(_norm_tokens(x))
+    return out
+
+
+def ordered_match(approved, observed):
+    """Match the APPROVED words against the OBSERVED words IN ORDER (WW-22).
+
+    Greedy left-to-right: each approved word is looked for at or after the
+    observed cursor, and the cursor advances past each hit. Returns
+    {"matched", "covered", "approved_n", "observed_n", "coverage", "refusal",
+    "approved"}.
+
+    Never a set-membership or multiset test, which is what this replaces: a
+    ``Counter`` pool counted the SAME coverage for "two for cooked i" as for
+    "i cooked for two", so reversed words covered the approved line. Here the
+    approved words are consumed IN ORDER, so four repeated filler tokens
+    ("i i i i") cover one approved word and reversed words cover one -- both
+    refused. Vocables are not on the approved side by construction (the sheet's
+    plot lines carry real words only) and never match a real approved word.
+
+    A set/frozenset on EITHER side is refused along with the match: it carries
+    no order to match against, which is the whole point of this function."""
+    ap = normalize_approved_words(approved)
+    if isinstance(observed, (set, frozenset)):
+        ob = []
+    elif isinstance(observed, str):
+        ob = _norm_tokens(observed)
+    elif isinstance(observed, (list, tuple)):
+        ob = []
+        for x in observed:
+            ob.extend(_norm_tokens(x))
+    else:
+        ob = []
+    covered, i = 0, 0
+    for w in ap:
+        while i < len(ob):
+            hit = ob[i] == w
+            i += 1
+            if hit:
+                covered += 1
+                break
+    n = len(ap)
+    return {
+        "matched": bool(n) and covered == n,
+        "covered": covered,
+        "approved_n": n,
+        "observed_n": len(ob),
+        "coverage": (covered / n) if n else 0.0,
+        "refusal": ("" if (n and covered == n)
+                    else ("empty approved sequence" if not n
+                          else "approved words not carried in order (%d of %d)"
+                               % (covered, n))),
+        "approved": ap,
+        "ordered": True,
+        "repeats_kept": True,
+        "source": "WW-22: ordered, repeats kept; never set membership",
+    }
+
+
+def ordered_run_match(approved_lines, observed_tokens, min_words=PLOT_LINE_MIN_WORDS):
+    """The index of the FIRST observed token that opens a CONTIGUOUS run of at
+    least ``min_words`` words of ONE approved line, IN ORDER; None when there
+    is no such run (WW-22).
+
+    The run is a contiguous slice of ONE approved line matched against a
+    contiguous slice of the observed tokens: not a vocabulary membership test
+    and not a subsequence. Repeats are retained on both sides, so four repeated
+    filler tokens never stand in for the approved line. This is the ONE ordered
+    matcher the story gates use; ``first_plot_line_s`` maps its index to a
+    timestamp."""
+    lines = []
+    for ln in (approved_lines or []):
+        ws = [str(w) for w in ln] if isinstance(ln, (list, tuple)) else _norm_tokens(ln)
+        lines.append([n for n in (_norm(w) for w in ws) if n])
+    toks = _norm_tokens(observed_tokens)
+    best = None
+    for line in lines:
+        if len(line) < min_words:
+            continue
+        for j in range(0, len(line) - min_words + 1):
+            win = line[j:j + min_words]
+            n = len(win)
+            for i in range(0, len(toks) - n + 1):
+                if toks[i:i + n] == win:
+                    if best is None or i < best:
+                        best = i
+                    break
+    return best
+
+
+def approved_opening_line(sheet_text):
+    """The EXACT approved opening story line, as its ORDERED words (WW-22).
+
+    The opening PLOT line of the sheet -- the first line under a section that
+    is not the opener, the closing call to action or a wordless vocalise --
+    normalized to lowercase words with REPEATS KEPT and the sheet's own order
+    preserved. This is the value carried into the request/evidence context so
+    an onset is measured against the APPROVED line, never against a vocabulary.
+
+    Returns {"line": [...], "lines_considered": n, "ordered": True,
+    "repeats_kept": True, "source": ...}; "line" is [] when the sheet names no
+    plot line, which the caller reports as UNAVAILABLE, never as a pass."""
+    lines = plot_lines_from_sheet(sheet_text)
+    return {"line": list(lines[0]) if lines else [],
+            "lines_considered": len(lines),
+            "ordered": True,
+            "repeats_kept": True,
+            "source": "WW-22: the approved opening story line, exact and ordered"}
+
+
+def delivered_words_ordered(sections):
+    """The sheet's delivered lyric words IN ORDER, headers/tags excluded.
+
+    ``sections`` is ``song_contract.parse_sections`` output (or anything shaped
+    like it): [{"lines": [...]}]. The words are read line by line, in the
+    sheet's own order, so an ordered match runs against what the request asks
+    Suno to deliver -- not against a sorted vocabulary."""
+    out = []
+    for s in sections or []:
+        if not isinstance(s, dict):
+            continue
+        for ln in (s.get("lines") or []):
+            out.extend(words_of(ln))
+    return out
+
+
 def text_coverage_gate(approved_words, observed_words=None,
                        floor=TEXT_COVERAGE_MIN):
     """The 98% TEXT-coverage gate, kept SEPARATE from the 0.90 word-retention
@@ -609,21 +765,18 @@ def text_coverage_gate(approved_words, observed_words=None,
                 "denominator": "approved normalized words (text)",
                 "detail": "the approved text or the observed text is absent: "
                           "the 0.98 text floor cannot be measured"}
-    approved = _norm_tokens(approved_words)
+    approved = normalize_approved_words(approved_words)
     observed = _norm_tokens(observed_words)
     if not approved:
         return {"verdict": "UNAVAILABLE", "reason_code": "NO_APPROVED_TEXT",
                 "text_coverage": None, "approved_n": 0, "floor": floor,
                 "denominator": "approved normalized words (text)",
                 "detail": "no approved text to cover"}
-    from collections import Counter
-    pool = Counter(observed)
-    covered = 0
-    for w in approved:
-        if pool[w] > 0:
-            pool[w] -= 1
-            covered += 1
-    share = covered / len(approved)
+    # WW-22: the coverage is ORDERED, never a multiset pool. The greedy
+    # left-to-right scan is what the Counter could not do -- it refuses reversed
+    # words and repeated filler that a pool count accepted as full coverage.
+    m = ordered_match(approved, observed)
+    covered, share = m["covered"], m["coverage"]
     passed = share >= floor
     return {
         "verdict": "PASS" if passed else "FAIL",
@@ -631,12 +784,14 @@ def text_coverage_gate(approved_words, observed_words=None,
                        else "TEXT_COVERAGE_BELOW_FLOOR",
         "text_coverage": round(share, 4), "coverage_raw": share,
         "approved_n": len(approved), "covered_n": covered, "floor": floor,
+        "matched_in_order": m["matched"], "ordered": True,
         "denominator": "approved normalized words (text), separate from the "
                        "0.90 word and 0.85 voice floors",
-        "detail": ("%d of %d approved words present (%.1f%%, floor %.0f%%)"
-                   % (covered, len(approved), share * 100, floor * 100)),
+        "detail": ("%d of %d approved words present IN ORDER (%.1f%%, floor "
+                   "%.0f%%)" % (covered, len(approved), share * 100, floor * 100)),
         "thresholds_are_new_acceptance_rules": True,
-        "source": "WW-05: 0.98 text coverage with its own denominator",
+        "source": ("WW-05: 0.98 text coverage with its own denominator; "
+                   "WW-22: matched IN ORDER, never a multiset pool"),
     }
 
 
@@ -804,6 +959,57 @@ def coverage_report(vocal_words_s, music_only_s, intro_outro_s=None):
     }
 
 
+#: WW-24: the rounding tolerance the script report compares labels at -- the
+#: same 1e-9 arithmetic ``timing_guard._EPS`` uses, never a new universal rule.
+REPORT_EPS = 1e-9
+
+
+def script_report(lexical_estimate_s, music_only_allowance_s, runtime_s=None,
+                  inflated_seconds_of_words=None):
+    """WW-24: the SCRIPT report's three figures, under SEPARATE labels.
+
+    ``lexical_estimate_s`` is the estimate of words-in-seconds (a lexical
+    estimate, never a measurement of returned audio); ``music_only_allowance_s``
+    is the music-only allowance (intro / outro / gaps / end card);
+    ``runtime_s`` is their sum. The lexical estimate is NEVER reported as the
+    runtime, and the runtime is never reported as "seconds of words".
+
+    ``inflated_seconds_of_words`` is a single combined label a caller may try to
+    report ("58.4 s of words"). When it names more than the lexical estimate it
+    is the failed-ad shape and is REFUSED with ``INFLATED_SECONDS_OF_WORDS`` --
+    words and music-only time must sit under separate labels, and their sum may
+    appear only as ``runtime_s``. ``audit_summary_labels`` owns the receipt
+    audit; this is the script report's own writer, wired through
+    ``judge_returned_take``.
+    """
+    out = {"schema": SCHEMA,
+           "lexical_estimate_s": round(float(lexical_estimate_s), 3),
+           "music_only_allowance_s": round(float(music_only_allowance_s), 3),
+           "words_and_music_are_separate_labels": True}
+    if runtime_s is None:
+        runtime_s = out["lexical_estimate_s"] + out["music_only_allowance_s"]
+    out["runtime_s"] = round(float(runtime_s), 3)
+    if inflated_seconds_of_words is not None:
+        inflated = float(inflated_seconds_of_words)
+        out["inflated_seconds_of_words"] = round(inflated, 3)
+        if inflated > out["lexical_estimate_s"] + REPORT_EPS:
+            out["verdict"] = "FAIL"
+            out["reason_code"] = "INFLATED_SECONDS_OF_WORDS"
+            out["detail"] = ("a single '%.3f s of words' label exceeds the lexical "
+                             "estimate %.3f s; report words, music-only time and the "
+                             "runtime under separate labels"
+                             % (inflated, out["lexical_estimate_s"]))
+            return out
+    out["verdict"] = "PASS"
+    out["reason_code"] = "SEPARATE_FIGURES"
+    out["detail"] = ("%.3f s lexical estimate; %.3f s music-only allowance; %.3f s "
+                     "runtime (the lexical estimate is NEVER the runtime)"
+                     % (out["lexical_estimate_s"], out["music_only_allowance_s"],
+                        out["runtime_s"]))
+    out["source"] = "WW-24: lexical estimate, music-only allowance and runtime, separate"
+    return out
+
+
 def words_vs_music_figures(plan):
     """The words figure and the music-only figure for a PLAN, under separate
     labels, WIRED to ``coverage_report`` -- the arithmetic is never re-derived
@@ -896,11 +1102,21 @@ def judge_returned_take(take, plan, sheet_text=None, delivered_s=None):
     verdict = ("FAIL" if "FAIL" in verdicts
                else "UNAVAILABLE" if "UNAVAILABLE" in verdicts else "PASS")
     out = {"verdict": verdict, "gates": gates, "applicable": True,
+           "approved_opening_line":
+               gates["story_start"].get("approved_opening_line") or [],
+           "delivered_onset_owner": "D2",
            "detail": " | ".join("%s=%s" % (k, v["verdict"])
                                 for k, v in sorted(gates.items())),
            "source": "WWFIX D1: the story gates run on the returned take"}
     if isinstance(D, (int, float)) and D > 0:
         out["coverage"] = words_vs_music_figures(dict(plan, delivered_s=D))
+    # WW-24: the SCRIPT report rides with every returned-take judgement, its
+    # three figures under separate labels -- the lexical estimate (the plan's
+    # voice seconds), the music-only allowance (the plan's own intro/outro) and
+    # their runtime. Written here so the production seam and the report can
+    # never drift apart.
+    out["script_report"] = script_report(planned_voice_s(plan),
+                                         plan.get("intro_outro_s") or 0.0)
     return out
 
 

@@ -214,7 +214,7 @@ class GoldenSheets(unittest.TestCase):
             if len(g["segments"]) == 1:                  # one Suno request per segment
                 req = R.build_request(sid, sheet, chorus, g["title"], None,
                                       delivered_s=D, hook_plan=plan)
-                self.assertEqual(req["lyrics"], out["lyrics"], name)
+                self.assertEqual(req["input"]["lyrics"], out["lyrics"], name)
             # the chorus is never the hook alone (shared hook/chorus rule)
             for h in hooks:
                 self.assertGreaterEqual(len(set(h["lines"])), 2, (name, h))

@@ -184,7 +184,7 @@ def _director_to_dispatch(text, style, title, sid, client, D, beat):
     req = MD.build_generate_request(text, style, title, style_id=sid, client_text=client,
                                     length_s=D, true_at_beat=beat)
     seen = []
-    SD.run_takes(dict(req["input"], _hook_plan=req["_hook_plan"]),
+    SD.run_takes(dict(req, _hook_plan=req["_hook_plan"]),
                  {"delivered_s": D, "style_id": sid}, lambda rq: seen.append(rq) or [],
                  lambda t: {}, lambda t, r: None, client, client,
                  cap_cents=6, cost_cents=6, kie=lambda fn, *a, **k: fn(), style_id=sid)
@@ -232,7 +232,7 @@ class Round4NoSkip(unittest.TestCase):
             D = g["delivered_s"]
             sent = _director_to_dispatch(text, g["style"], g["title"], g["music_style"],
                                          client, D, g["hook_plan"]["true_at_beat"])
-            self.assertEqual(sent["duration"], D, name)
+            self.assertEqual(sent["input"]["duration"], D, name)
             self.assertNotIn("_hook_plan", sent, name)
 
 

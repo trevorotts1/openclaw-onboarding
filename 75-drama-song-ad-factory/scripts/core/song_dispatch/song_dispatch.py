@@ -51,11 +51,15 @@ import suno_recipe as _R     # noqa: E402
 #: recipe helper can be called without editing the package's export list (which
 #: this unit does not own).
 _RM = getattr(_R, "suno_recipe", _R)
+#: WW-23: the song_contract MODULE itself, for a new helper the package
+#: __init__ does not re-export (same shape as _RM above).
+_SCM = getattr(_SC, "song_contract", _SC)
 import sung_hook as _SH      # noqa: E402
 from sung_hook import hook_placement as _HP   # noqa: E402
 import words_fit as _WF      # noqa: E402
 import music_qc.pace_change as _PC   # noqa: E402
 import music_qc.rap_check as _RC     # noqa: E402
+import timing_guard as _TG     # noqa: E402  WW-24: measured-only evidence provenance
 
 TOOL_NAME = "song_dispatch"
 TOOL_VERSION = "1.2.0"
@@ -85,6 +89,13 @@ GATES += ("story", "timeline")
 # versions, D5 more than one character voice. WW-21 is the aggregation and
 # EVIDENCE-BINDING stage that runs BEFORE spend: it decides only whether the
 # five results CARRIED to it may advance. It claims no audio-quality outcome.
+#
+# WW-24 (2026-10-11): the carried results are not trusted on their binding
+# alone -- each result that carries an ``evidence`` record is held to the
+# measured-only provenance boundary in ``timing_guard`` (matching export digest,
+# actual duration, detector/alignment artifacts, trusted context); a planned or
+# stretched timeline never becomes a measurement. That validates the INPUTS to
+# D1..D5, so it adds no sixth audio gate.
 #
 # PROPOSED (WW-21, 2026-10-11): _MIN_AUDIO_RESULTS is the COUNT OF THE FIVE
 # GATE NAMES THE PLAN ALREADY NAMES. It is a proposed value -- not a measured
@@ -135,36 +146,64 @@ def refuse_asr(engine):
 
 
 def validate_request(req, style_id=None, client_text="", delivered_s=None):
-    """List of refusals for a KIE generate-music input; [] = send it.
+    """List of refusals for ONE KIE createTask music request; [] = send it.
 
     ``delivered_s`` is the plan's delivered seconds (plan["delivered_s"]),
     never the request duration, which carries Suno's 15% headroom: the
     style contract (core/song_contract, FU-RNBFLOW-SONG) counts hooks on it,
     and a missing style_id or delivered_s is a refusal ("UNMEASURED: ..."),
-    never a skipped check."""
-    errs = []
-    if req.get("model") != "V6":
-        errs.append("model must be V6")
-    if req.get("custom_mode") is not True or req.get("instrumental") is not False:
+    never a skipped check.
+
+    WW-30: the ONE accepted contract is the createTask envelope
+    (``suno_recipe.check_envelope``: outer model, TOP-LEVEL callBackUrl,
+    nested snake_case input, exactly one lyrics source at ``input.lyrics``).
+    Every direction below is read from ``input`` -- never from the top level,
+    where the retired flat contract used to put them. A payload that is not
+    an envelope is refused up front and nothing below is measured on it.
+    """
+    errs = _R.check_envelope(req)
+    inp = _R.envelope_input(req)
+    if inp is None:
+        return errs
+    if inp.get("custom_mode") is not True or inp.get("instrumental") is not False:
         errs.append("custom_mode must be true and instrumental false")
-    d = req.get("duration")
+    d = inp.get("duration")
     if not isinstance(d, (int, float)) or isinstance(d, bool) or not 10 <= d <= 360:
         errs.append("duration must be 10-360 s")
-    if req.get("vocal_gender") not in ("f", "m"):
+    if inp.get("vocal_gender") not in ("f", "m"):
         errs.append("vocal_gender must be f or m")
     for k, v in (("style_weight", 0.75), ("weirdness_constraint", 0.3), ("variety", 0)):
-        if req.get(k) != v:
+        if inp.get(k) != v:
             errs.append("%s must be %s" % (k, v))
-    errs += _R.check_style_text(req.get("style", ""))
-    errs += _R.check_negatives(req.get("negative_tags", ""), style_id)
-    sheet = _R.parse_lyrics(req.get("lyrics", ""))
+    errs += _R.check_style_text(inp.get("style", ""))
+    errs += _R.check_negatives(inp.get("negative_tags", ""), style_id)
+    sheet = _R.parse_lyrics(_lyrics_of(req))
     d = d if isinstance(d, (int, float)) and not isinstance(d, bool) else None
     # FU-RNBFLOW-SONG: the style reaches the sheet check (rap is judged as rap,
     # never refused as "no style"), and the style's own contract runs.
     errs += _R.check_lyric_sheet(sheet, client_text, d, style_id=style_id)
     # WW-16: the declared opening vocalise cue must satisfy the ceiling.
-    errs += _SC.check_sheet(req.get("lyrics", ""), style_id, delivered_s, req.get("style"))["reasons"]
+    errs += _SC.check_sheet(_lyrics_of(req), style_id, delivered_s, inp.get("style"))["reasons"]
     return errs
+
+
+def _lyrics_of(req):
+    """The ONE approved lyrics source of an envelope: ``input.lyrics``.
+
+    A ``prompt`` beside it is already refused by ``check_envelope``
+    (COMPETING_LYRICS); this reader never falls back to it, so a competing
+    lyrics source can never reach the judge or the provider.
+    """
+    return (_R.envelope_input(req) or {}).get("lyrics") or ""
+
+
+def _input_of(req):
+    """The envelope's nested input, refused loudly when it is not one."""
+    inp = _R.envelope_input(req)
+    if inp is None:
+        raise DispatchError("REQUEST_ENVELOPE_REJECTED: %s"
+                            % "; ".join(_R.check_envelope(req)))
+    return inp
 
 
 def _w(t):
@@ -686,6 +725,16 @@ def _accept_audio_results(results, binding, required, profile):
             reasons.append("STALE_PROFILE: %s was produced against profile revision %r; the "
                            "profile in force is %r"
                            % (name, rb.get("profile_revision"), prof_rev))
+        # WW-24: validate the PROVENANCE of the evidence this result carries.
+        # A PLANNED/stretched timeline, a digest that does not match the take
+        # being advanced, a missing actual duration, a doubled runtime, a
+        # missing detector/alignment artifact or a hand-set source="measured"
+        # label BLOCKS the result HERE -- the input validator for the five
+        # delivered-audio results, never a sixth audio gate. A result carrying
+        # no evidence record makes no measurement claim to validate.
+        ev = rec.get("evidence")
+        if ev is not None:
+            reasons.extend(_TG.measured_evidence_reasons(ev, binding=binding))
     for name in sorted(results):
         if name in want:
             continue
@@ -869,10 +918,19 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     other take (FAIL, FLAG, UNMEASURED, UNAVAILABLE, UNKNOWN) is judged and its
     paid stem kept, but never delivered.
     """
+    # WW-30: every direction is read from the createTask envelope's nested
+    # input. A request that is not an envelope (the retired flat contract, a
+    # misplaced callback, competing lyrics) is refused HERE, before the script
+    # gate, the ledger and any generation.
+    envelope_errs = _R.check_envelope(request)
+    if envelope_errs:
+        raise DispatchError("REQUEST_ENVELOPE_REJECTED: %s"
+                            % "; ".join(envelope_errs))
+    inp = _input_of(request)
     # SCRIPT APPROVAL: a client who asked to approve the script first gets no generation until they do.
     if script_approval is None:       # found in the run folder; nobody passes it by hand
         script_approval = _SA.record_near(run_dir, request.get("run_dir"))
-    refusal = _SA.check_script_approval(script_approval, request.get("lyrics"))
+    refusal = _SA.check_script_approval(script_approval, _lyrics_of(request))
     if refusal:
         raise DispatchError("%s: %s" % (refusal["reason_code"], refusal["detail"]))
     # G9 (FU-U6, plan E.2 default): the request carries the planned time plus the
@@ -880,10 +938,10 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # master_length, so "whole tracks only" is judged against that headroom
     # (words_fit.max_suno_duration), never a patch/short duration.
     allowed = _WF.max_suno_duration(plan["delivered_s"])
-    if request.get("duration") not in (plan["delivered_s"], allowed):
+    if inp.get("duration") not in (plan["delivered_s"], allowed):
         raise DispatchError("whole tracks only: request duration %r != planned %r (or its %r s "
                             "Suno headroom; never a patch)"
-                            % (request.get("duration"), plan["delivered_s"], allowed))
+                            % (inp.get("duration"), plan["delivered_s"], allowed))
     # FU-HOOK-PLACEMENT: the director's hook_plan rides the request as
     # _hook_plan; it moves into the judge's plan and never reaches KIE.
     plan = dict(plan, hook_plan=request.get("_hook_plan") or plan.get("hook_plan"))
@@ -892,20 +950,34 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # (_pace_plan). It moves into the judge's plan and NEVER reaches KIE.
     plan = dict(plan, pace_change=request.get("_pace_plan") or plan.get("pace_change"))
     request = {k: v for k, v in request.items() if k != "_pace_plan"}
+    # WW-23: BEFORE any generation, the ordered pace change must be complete and
+    # the exact request the provider would receive must carry BOTH directions.
+    # A missing seam, a reused boundary, a final style that carries only one
+    # transition, or the internal _pace_plan metadata leaking into any
+    # provider-visible field is refused HERE -- nothing is spent. The audio
+    # check (D3) runs later, on the exports, inside judge_take.
+    if plan.get("pace_change"):
+        pace_errs = _PC.check_pace_plan(plan["pace_change"])
+        pace_errs += _SCM.check_pace_style(inp.get("style"), plan["pace_change"])
+        if _PC.pace_provider_leak(request):
+            pace_errs.append("PACE_INTERNAL_METADATA_IN_PAYLOAD: the internal "
+                             "_pace_plan judging metadata reaches a provider field")
+        if pace_errs:
+            raise DispatchError("PACE_PAYLOAD_REJECTED: %s" % "; ".join(pace_errs))
     # D2: when the run answered Yes to SONG APPROVAL the music stage runs as
     # THREE variants, and each variant is generated per variant; the three
     # variants run in PARALLEL lanes (song_choices.plan_units, providerSlots 3,
     # reserve 0), so a variant is one lane's whole job, never a second take of
     # the same arrangement.
     refuse_asr("faster-" + "wh" + "isper")
-    plan = dict(plan, sheet_text=plan.get("sheet_text") or request.get("lyrics"))
+    plan = dict(plan, sheet_text=plan.get("sheet_text") or _lyrics_of(request))
     spent, receipts = 0, []
     while spent + cost_cents <= cap_cents:
         spent += cost_cents
         for take in kie(lambda: generate(request), "song generate", generation=True):
             take = dict(take, **measure(take))
             rcpt = judge_take(take, plan, script_words, hook_text, spoken_range_pct,
-                              style_id, request.get("lyrics"))
+                              style_id, _lyrics_of(request))
             save(take, rcpt)                               # stem + timestamps, every take
             receipts.append(rcpt)
             # WW-18: only a take whose REQUIRED gate set all PASSes is delivered.

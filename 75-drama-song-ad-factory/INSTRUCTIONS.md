@@ -73,8 +73,11 @@ guard that already failed.
    references to Skills 66/67/68/74 do not install them (section 2.4).
 
 3. **Reuse canonical skills (step 3).** Music/lyrics/vocals -> Skill 68
-   (Suno createTask envelope for V6/V6_MINI/V6_WILD; legacy dedicated
-   routes stay V4-V5_5 only). Images -> Skill 66. Video clips -> Skill 67.
+   (Suno createTask envelope ONLY: POST /api/v1/jobs/createTask, outer model
+   ai-music-api/generate, TOP-LEVEL callBackUrl, nested snake_case input,
+   one lyrics source at input.lyrics; the legacy /api/v1/generate
+   music-generation route is RETIRED with no fallback). Images -> Skill 66.
+   Video clips -> Skill 67.
    Paid transport, poll and credits -> Skill 74 (shadow-first; submit
    never chooses or changes a model). Callbacks -> Skill 46. Spoken voice
    -> Skill 30 (Fish Audio). Account setup -> Skill 07. FFmpeg/editor
