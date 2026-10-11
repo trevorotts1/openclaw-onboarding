@@ -34,6 +34,19 @@ Unit U3-U1. New client-facing Studio UI under `mini-app/ui/` (no service behavio
 - Accessibility asserted by `checks/a11y-check.mjs` (32 rules, light and dark): WCAG contrast computed from the real stylesheet tokens with every text pair clearing 4.5:1, a real `<label>` and `id` for every input, focus order = source order (no positive `tabindex`), a page change moving focus to the new page heading, a visible `:focus-visible` ring, every state announced in a polite live region and no state carried by motion or colour alone, and a `prefers-reduced-motion` guard. Not covered and said so in the same words: a real browser and a screen reader.
 - Proof: `cd 75-drama-song-ad-factory/mini-app/ui && bash checks/run-all.sh` runs four checks — `ui-contract.mjs` (the version-0 surface exists and imports cleanly), `a11y-check.mjs`, `qr-roundtrip.mjs` (the QR decoded by an independent decoder), and `download-bytes-check.mjs` (real bytes with the redirect-only negative control) — exit 0 = all pass, 2 = a check failed.
 - Version: `skill-version.txt` and the `SKILL.md` frontmatter land at v2.9.19 in this commit (G3 gate).
+## v2.9.20 - 2026-10-10 - U12: the pairing/admin surface behind the approval and QR gates
+
+The studio's pairing and admin surface at `mini-app/pairing`: the admin mints a
+client key and a single-use pairing code, the code burns on first use, wrong or
+absent admin keys are refused with nothing written, and the QR the machine scans
+is proved module-for-module identical to Apple's own `CIQRCodeGenerator`. Option 3
+is refused without a recorded approval naming the client, and nothing the browser
+loads persists anything. Seven files, disjoint from U2's `service/**`, U3's pages
+and U4's deploy files; it consumes U2's boundary prover, never copies it.
+
+Checks: 18 pairing tests exit 0; 17 pairing-guardrail checks exit 0; 14 QR cases
+module-for-module identical to Apple's encoder, exit 0.
+
 ## v2.9.19 - 2026-10-10 - U2: the Drama Studio service foundation at mini-app/service
 
 The planned studio home (joint plan section 5.4) gets its service side: per-client
