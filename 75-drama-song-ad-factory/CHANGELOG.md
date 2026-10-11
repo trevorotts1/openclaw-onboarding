@@ -6,6 +6,76 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.25 - 2026-10-11 - WW-01 + WW-06: the rap budget is reserved first (per-verse floor) and a real rap measurement can now be ACCEPTED
+
+Wanted Woman recurrence fix, work package WFWWU1-U2 (`wave3/ww/U1/rap-budget-evidence`),
+built from the verified recurrence-prevention specification held outside the repo
+(sha256 `600172026cac295a037bbdab4e4fea1deb49fe08113f35f063f25fe45b091d29`),
+section 3 fixes WW-01 and WW-06 read against section 4 Unit U1. Every threshold
+below is a **NEW PROPOSED ACCEPTANCE RULE** added by this fix; it is **not**
+calibrated against any measured passing song, carries no guarantee, and is
+**not** attributed to the owner.
+
+- **WW-01 — the rap floor is reserved BEFORE the opener/closer allocation.**
+  `length_formula.py` gains `RAP_FLOOR_S = 8.0`, `RAP_FLOOR_SHARE = 0.10`,
+  `RAP_VERSE_MIN_S = 8.0`, `MIN_RAP_VERSES = 2` and `LEXICAL_COVERAGE_MIN = 0.70`
+  with `rap_floor_s()`, `rap_floor_words()`, `rap_verse_min_words()`,
+  `rap_verse_budget_s()`, `rap_verse_floor_for()`, `rap_floor_gate()`,
+  `assert_rap_floor()`, `lexical_seconds()`, `lexical_gate()`,
+  `assert_lexical_floor()`. `plan(..., rap_floor=True)` now caps the spoken
+  blocks at `spoken_s - rap_floor_s(D)` so the opener and the closing call to
+  action YIELD to the rap verses, floors `rap_s` at
+  `max(rap_floor_s(D), MIN_RAP_VERSES * RAP_VERSE_MIN_S)`, floors `rap_words` at
+  `ceil(rap_s * style rap rate)`, always emits the `rap` key for a rap style,
+  and calls `assert_rap_floor` + `assert_lexical_floor`, so a rap style can no
+  longer ship a plan that planned no rap. Before this fix the rap budget was a
+  bare remainder and `plan(90, 'rnb-flow')` emitted no `rap` key at all.
+- **WW-01 item 2 — the per-verse sheet floor.** `song_contract.check_sheet` now
+  refuses a rap style's sheet BEFORE spend when it declares fewer than
+  `MIN_RAP_VERSES` rap sections (`RAP_VERSE_COUNT_BELOW_MIN`), plans zero rap
+  words (`RAP_PLANNED_ZERO_WORDS`), or carries any rap verse below
+  `RAP_VERSE_MIN_S` seconds / `ceil(8.0 * the style's rap rate)` words
+  (`RAP_VERSE_BELOW_FLOOR`). At the R&B Flow rap rate of 2.5 words/s that is
+  8.0 s / 20 words PER VERSE. `rap_floor_for()` and `rap_verse_floor_for()` read
+  every number from `length_formula` so the plan and the sheet gate cannot drift.
+- **WW-01 item 3 — the lexical-completeness assertion.** For a rap style the
+  sung allocation is re-priced at the STYLE's real sung rate (1.9 words/s for
+  R&B Flow) instead of the generic `SUNG_WPS`, so the plan must clear the 70 %
+  lexical floor itself. `plan(90, 'rnb-flow')` previously computed
+  `15/2.0 + 23/2.5 + 67/1.9 = 51.9632` lexical seconds against the 61.6 owed at
+  D = 88; it now emits `spoken 15 + sung 73 + rap 40` = 128 words and
+  **61.9211** lexical seconds. `plan(90, 'soul-ballad')` stays BYTE-IDENTICAL
+  with no `rap` key (the unchanged control).
+- `words_fit.style_sung_target_pct` reads the plan with `rap_floor=False` so the
+  rap reservation cannot re-price the sung-share FLOOR every sheet is already
+  held to (R&B Flow 148 s stays 71.1, 298 s stays 66.0).
+- **WW-06 — a real rap measurement can now be ACCEPTED.** `music_qc/rap_check.py`
+  (new) keeps the automatic classifier permanently `UNMEASURED` in both branches
+  and adds the ONE acceptance route: a bounded **timed listening review** by a
+  reviewer who is NOT the maker, with bounded labelled windows recorded with
+  start and end seconds, bound to the audio `sha256`, the reviewer's identity,
+  the session and the timestamp. `validate_review()` refuses
+  `RAP_REVIEW_UNBOUND`, `RAP_REVIEW_BINDING_MISMATCH`, `RAP_REVIEW_MAKER_SELF`
+  and `RAP_REVIEW_WINDOW_INVALID`; `rap_union()` intersects the review's rap
+  windows with the measured VOICE on one physical timeline; `judge_rap_delivery()`
+  judges that union against the plan's per-verse and total budget and never
+  grants PASS without an independent bound review. Fixture existence, sheet
+  tags, word counts, a rate estimate or a maker's own verdict can never upgrade
+  `UNMEASURED`.
+- **Follow-up required outside this unit's exclusive ownership** (the shared
+  test assets still carry rap sheets below the new floors, so the skill 75 CI
+  suite is RED on this commit until the refresh lands): enlarge the rap test
+  sheets to at least `MIN_RAP_VERSES` verses of `RAP_VERSE_MIN_S` / 20 words
+  each — `song_contract/fixtures/rnb-flow-150-pass.txt` (both verses are 13
+  words today), `references/prompt-templates/fixtures/suno-sheets/suno-90s-rnb-flow.json`
+  (10-word verses), `song_choices/test_song_choices_fu_song.py` and
+  `suno_recipe/test_suno_recipe.py` (R&B Flow sheets with no rap verse) — and
+  re-export the new public names from `length_formula/__init__.py` and
+  `song_contract/__init__.py`. The predecessor PR 1838 touched the same class of
+  assets for the TOTAL floor alone (it enlarged only the rnb-flow-150 fixture).
+
+---
+
 ## v2.9.23 - 2026-10-11 - U20: OPTIONAL web push in the onboarding planned service (version 2, OFF by default, never a version-0 gate)
 
 Unit U20 of the drama studio joint plan. Plan **line 1091**: `| U20 | Optional

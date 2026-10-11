@@ -73,6 +73,14 @@ import spoken_share as _SS     # noqa: E402
 import sung_hook as _SH        # noqa: E402
 import words_fit as _WF        # noqa: E402
 import suno_recipe as _RP     # noqa: E402
+#: WW-01: the rap-floor API (rap_floor_s / rap_floor_words / rap_verse_floor_for
+#: / MIN_RAP_VERSES / RAP_VERSE_MIN_S) lives on the length_formula MODULE. The
+#: package ``__init__`` re-exports only a subset on this tree, so the module is
+#: read directly for it rather than through the package surface.
+try:
+    from length_formula import length_formula as _LFM   # noqa: E402
+except ImportError:                                     # pragma: no cover
+    _LFM = _LF
 #: the module itself whether core/suno_recipe/ is a package or on sys.path
 _R = getattr(_RP, "suno_recipe", _RP)
 try:   # FU-HOOK-PLACEMENT owns hook count and placement once it is installed
@@ -220,6 +228,33 @@ def sung_target(style_id, delivered_s):
     return _WF.style_sung_target_pct(_sid(style_id), delivered_s)
 
 
+def rap_floor_for(style_id, delivered_s):
+    """The rap sheet FLOOR for one style and ad length (WW-01).
+
+    ONE rule, read from length_formula: ``max(8.0 s, 10 % of D)`` seconds and
+    ``ceil(floor_s * style_rap_rate)`` words, where D is the DELIVERED seconds --
+    the same D ``length_formula.plan`` uses, so the plan and the sheet gate can
+    never disagree (at D = 88 the floor is 8.8 s / 22 words). NEW PROPOSED
+    ACCEPTANCE RULE."""
+    sid = _sid(style_id)
+    return {"style_id": sid, "delivered_s": delivered_s,
+            "floor_s": round(_LFM.rap_floor_s(delivered_s), 3),
+            "rate": _WF.rates_for(sid)["rap"],
+            "floor_words": _LFM.rap_floor_words(sid, delivered_s),
+            "source": "WW-01: max(8 s, 10 % of D) and ceil(seconds * rap rate)"}
+
+
+def rap_verse_floor_for(style_id):
+    """The PER-VERSE rap floor for one style (WW-01, NEW PROPOSED).
+
+    Every declared rap verse must reach ``RAP_VERSE_MIN_S`` seconds and
+    ``ceil(RAP_VERSE_MIN_S * style_rap_rate)`` words (20 words at the R&B Flow
+    rap rate of 2.5 words/s), and a sheet must declare at least
+    ``MIN_RAP_VERSES`` rap verses. Both rules are strictly stronger than the
+    total floor and never replace it."""
+    return dict(_LFM.rap_verse_floor_for(_sid(style_id)))
+
+
 def _pct(part, whole):
     return round(100.0 * part / whole, 1) if whole else 0.0
 
@@ -268,8 +303,54 @@ def check_sheet(sheet_text, style_id, delivered_s, style_text=None):
     totals.update({"%s_s" % d: round(seconds[d], 1) for d in _R.DELIVERIES})
     totals.update({"%s_word_share_pct" % d: _pct(words[d], total_w) for d in _R.DELIVERIES})
     totals["total_words"] = total_w
+    # WW-01: THE RAP SHEET FLOOR AND THE PER-VERSE FLOOR. A rap style whose
+    # sheet plans fewer rap words than the total floor -- or whose declared rap
+    # verses are thinner than the per-verse floor, or that declares fewer than
+    # MIN_RAP_VERSES rap verses at all -- is refused HERE, before any spend.
+    # The failed run's sheet planned a 10-word and a 9-word rap verse and
+    # nothing refused it. NEW PROPOSED ACCEPTANCE RULES.
+    rap_floor, rap_verses = None, None
+    rap_rows = [r for r in rows if r["delivery"] == "rap"]
+    if _is_rap_style(sid):
+        rap_floor = rap_floor_for(sid, delivered_s)
+        verse_floor = rap_verse_floor_for(sid)
+        rap_verses = {"count": len(rap_rows), "min_verses": verse_floor["min_verses"],
+                      "min_s": verse_floor["min_s"], "min_words": verse_floor["min_words"],
+                      "short": []}
+        totals["rap_floor_words"] = rap_floor["floor_words"]
+        totals["rap_floor_s"] = rap_floor["floor_s"]
+        totals["rap_verse_count"] = len(rap_rows)
+        totals["rap_verse_min_s"] = verse_floor["min_s"]
+        totals["rap_verse_min_words"] = verse_floor["min_words"]
+        if not words["rap"]:
+            reasons.append("RAP_PLANNED_ZERO_WORDS: %s delivers rap and the sheet "
+                           "carries no rap lines at all (floor %d rap words / %.1f s)"
+                           % (label, rap_floor["floor_words"], rap_floor["floor_s"]))
+        else:
+            if len(rap_rows) < verse_floor["min_verses"]:
+                reasons.append("RAP_VERSE_COUNT_BELOW_MIN: %s delivers rap and the sheet "
+                               "declares %d rap verse(s); the floor is %d rap verses, each "
+                               "reaching %.1f s and %d words"
+                               % (label, len(rap_rows), verse_floor["min_verses"],
+                                  verse_floor["min_s"], verse_floor["min_words"]))
+            short = [r for r in rap_rows
+                     if r["words"] < verse_floor["min_words"]
+                     or r["seconds"] + 1e-9 < verse_floor["min_s"]]
+            rap_verses["short"] = [{"tag": r["tag"], "words": r["words"],
+                                    "seconds": r["seconds"]} for r in short]
+            if short:
+                first = short[0]
+                reasons.append("RAP_VERSE_BELOW_FLOOR: %d of %d rap verse(s) are below the "
+                               "per-verse floor (first: %r at %d words / %.1f s, floor %d "
+                               "words / %.1f s at %.1f words per second); the %g s %s total "
+                               "floor is %d rap words"
+                               % (len(short), len(rap_rows), first["tag"], first["words"],
+                                  first["seconds"], verse_floor["min_words"],
+                                  verse_floor["min_s"], verse_floor["rate"],
+                                  delivered_s, label, rap_floor["floor_words"]))
     out = {"verdict": "FAIL", "style_id": sid, "label": label, "delivered_s": delivered_s,
            "reasons": reasons, "flags": flags, "sections": rows, "totals": totals,
+           "rap_floor": rap_floor, "rap_verses": rap_verses,
            "rap_vs_spoken": "planned from the sheet's tags; on the audio " + RAP_AUDIO_UNMEASURED}
     if not rows:
         reasons.append("no tagged sections: every block must name sung, spoken or rap")

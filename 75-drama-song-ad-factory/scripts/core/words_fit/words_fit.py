@@ -112,7 +112,14 @@ def style_sung_target_pct(style=None, length_s=None):
     song_contract holds every sheet to): more singing is never a fault, so a
     Soul sheet may be almost all sung. A rap style (R&B Flow) takes the sung
     share its own length plan holds once its rap budget is carved out, at
-    the style's rates; every other style (and no style) keeps the 77.5%."""
+    the style's rates; every other style (and no style) keeps the 77.5%.
+
+    WW-01: the plan is read with ``rap_floor=False``. The rap reservation is a
+    SHEET floor with its own gate (``length_formula.rap_floor_gate`` /
+    ``song_contract.rap_floor_for``); letting it re-price THIS floor would
+    silently WEAKEN an existing gate -- R&B Flow at 148 s fell from 71.1 to 68.5
+    -- which sung_hook/test_no_skip_and_goldens.py pins. A new rule may not
+    lower the floor every sheet is already held to."""
     try:
         sid = _MS.style(style)["style_id"]
     except (_MS.MusicStyleError, TypeError):
@@ -123,7 +130,8 @@ def style_sung_target_pct(style=None, length_s=None):
         import length_formula as _LF                # lazy: length_formula imports this module
     except ImportError:
         from .. import length_formula as _LF
-    w, r = _LF.plan(length_s + _LF.END_EARLY_S, style_id=sid)["words"], rates_for(sid)
+    w, r = _LF.plan(length_s + _LF.END_EARLY_S, style_id=sid,
+                    rap_floor=False)["words"], rates_for(sid)
     sung = w["sung"] / float(r["sung"])
     voice = sung + w["spoken"] / float(r["spoken"]) + w.get("rap", 0) / float(r["rap"])
     return round(100.0 * sung / voice, 1)
