@@ -6,6 +6,59 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.25 - 2026-10-11 - WW wave Unit U1 (arc-revision-battery): the performed-beat manifest, the creative fingerprint, the concurrency-evidence overlap gate, the extended battery, the parity check and the import audit (WW-03, WW-10, WW-11, WW-15, WW-19, WW-20)
+
+Unit U1 of the WW-PREVENT-RECURRENCE wave (source: verified specification
+`WW-PREVENT-RECURRENCE-SPEC.md`, section 3, fixes WW-03, WW-10, WW-11, WW-15,
+WW-19 and WW-20). This is the **arc-revision-battery** work package of four
+concurrent U1 packages; it owns `story_arc/story_arc.py`,
+`music_qc/pace_change.py`, `song_choices/overlap.py`,
+`music_qc/test_wwfix_u1.py` and `acceptance-profile.json`. The version was read
+LIVE from `origin/main` at build time (`v2.9.24`); this bump is bundled INSIDE
+the real-content commit, never a bump-only commit (WW-20).
+
+- **WW-03 / WW-15 — the performed-beat manifest and the creative fingerprint.**
+  `story_arc.build_manifest` generates the manifest from ONE source for all
+  twelve canonical beats with the lines that must be heard IN ORDER, the
+  delivery, the approved line ids, the measured window, the approved devices,
+  the hook placement and the pace cues. `story_arc.creative_fingerprint` covers
+  the FIVE components the fix names — lines, delivery, beat map, hook and pace —
+  and `check_performed_manifest` REFUSES a take whose fingerprint does not match
+  the fingerprinted revision actually submitted, a metadata-only twelve-identifier
+  list, a beat with no heard mapped line inside its window, a reordered line and
+  an absent required device. `assert_take_bound` never retroactively binds an
+  existing take to an edited sheet. The fifteen-stage source method and the eight
+  coarse timing stages are preserved through explicit NAMED mappings
+  (`stage_mapping_report`), never by relabelling one count as another. The
+  arrangement choice is NOT made here: it stays with the owner.
+- **WW-10 — the overlap gate is a concurrency-evidence fix.** `overlap.overlap_gate`
+  now requires exactly THREE DISTINCT initial identities (variant, attempt and
+  task id): duplicate or identical receipts FAIL. It compares INTEGER
+  MICROSECONDS with no rounding and PASSes only at or above `1_000_000` us, so
+  0.999999 s (999,999 us) FAILS. Missing trustworthy lifecycle evidence is
+  UNAVAILABLE; malformed, reversed, duplicated and digest-mismatched evidence is
+  FAIL. The labelled clock distinction (`accepted_submit_at`, `terminal_at`,
+  `timestamp_source`) is kept and local clocks are never admissible or backfilled.
+  The fix is scoped honestly as `CONCURRENCY_EVIDENCE`: it did not cause this
+  run's thin rap, dead-air intro or paper arc.
+- **WW-11 — one battery, extended.** `music_qc/test_wwfix_u1.py` (the ONE existing
+  battery file) gains the WW-10 overlap tests, the WW-03 manifest/fingerprint
+  tests, the judge-path gate-removal and delivery-boundary tests (present and
+  fail-closed; UNDETERMINED until the WW-08/WW-18 wiring lands with their own
+  packages), and a release-level parity check that treats a missing canonical
+  source — or a twin that has not recorded the revision it mirrored — as
+  UNDETERMINED, never a release PASS. The new rules are stored ONCE in
+  `acceptance-profile.json` under `ww_wave`.
+- **WW-19 — the import audit.** The battery audits the six referenced module
+  paths and distinguishes PRESENT from NOT-YET-PUBLISHED (UNDETERMINED) from
+  ABSENT (a failure), reporting the tally verbatim. This package lands three of
+  the six (`music_qc/pace_change.py`, `song_choices/overlap.py`,
+  `music_qc/test_wwfix_u1.py`); `music_qc/rap_check.py`,
+  `story_coverage/story_coverage.py` and `story_coverage/__init__.py` land with
+  the sibling U1 packages.
+- No provider call, no paid call, no regeneration, no spend. The canonical
+  checkout was never written to.
+
 ## v2.9.23 - 2026-10-11 - U20: OPTIONAL web push in the onboarding planned service (version 2, OFF by default, never a version-0 gate)
 
 Unit U20 of the drama studio joint plan. Plan **line 1091**: `| U20 | Optional

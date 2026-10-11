@@ -11,6 +11,7 @@ early reveal.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -190,6 +191,306 @@ def selftest():
     for f in fails:
         print(" -", f)
     return 0 if not fails else 1
+
+
+# =====================================================================
+# WW-03 / WW-15: the performed-beat manifest, the creative fingerprint
+# and the story gate that refuses a paper arc.
+#
+# WW-03 (WW-PREVENT-RECURRENCE-SPEC section 3, Unit U1): a performed-beat
+# manifest is generated from ONE source for all twelve canonical beats -- the
+# approved line identifiers and text that must be heard IN ORDER, with the
+# delivery, the hook placement and the pace cues. A creative fingerprint over
+# lines, delivery, beat map, hook and pace is stored with the take and compared
+# against the fingerprinted revision actually submitted, so a take whose
+# fingerprint does not match the approved sheet is refused, a metadata-only
+# twelve-identifier list does not pass, and the shipped take carrying only one
+# of the seven approved devices is refused.
+#
+# WW-15's binding half: the chosen master revision is bound by that fingerprint
+# and an existing take is NEVER retroactively bound to an edited sheet. The
+# ARRANGEMENT CHOICE ITSELF is NOT made here and must not be read as made: it
+# stays with the owner.
+# =====================================================================
+
+MANIFEST_SCHEMA = "blackceo.performed-beat-manifest/v1"
+FINGERPRINT_SCHEMA = "blackceo.creative-fingerprint/v1"
+FINGERPRINT_COMPONENTS = ("lines", "delivery", "beat_map", "hook", "pace")
+
+#: The SOURCE METHOD is the fifteen-beat Resilia arc (SOP
+#: `SOP--drama-song-ad-pipeline.md` DS-4 step 1: "cold-open teaser through direct
+#: pitch"). Its stage names are authored per campaign -- only three are written
+#: in the tree today (named below) -- so this module preserves the METHOD and its
+#: FIFTEEN count, and maps each CANONICAL beat to a source-method position and to
+#: one of the eight coarse timing stages BY NAME. The two counts are never
+#: relabelled as one another (WW-03: "never by relabelling one count as another").
+SOURCE_METHOD_NAME = "fifteen-beat Resilia arc"
+SOURCE_METHOD_STAGE_COUNT = 15
+SOURCE_METHOD_NAMED_EXAMPLES = ("cold_open_teaser", "converts", "direct_pitch")
+
+#: The EIGHT coarse timing stages (FU-U16 doctrine; the same eight
+#: length_formula.STORY_ARC_U16 carries). Kept as literal names so this module
+#: stays stdlib-only and free of a length_formula import.
+TIMING_STAGES = ("hook", "the_world", "villain_arrives", "pain_deepens",
+                 "lowest_point", "the_turn", "the_rise", "call_to_action")
+
+#: Canonical beat -> coarse timing stage, by NAME (monotonic in canonical order).
+BEAT_TO_TIMING = {
+    "ordinary_world": "hook",
+    "humiliation": "the_world",
+    "wound_deepens": "villain_arrives",
+    "frozen": "pain_deepens",
+    "seeing_it_too": "lowest_point",
+    "failed_solutions": "the_turn",
+    "mentor": "the_turn",
+    "product_intro": "the_turn",
+    "doubt": "the_rise",
+    "climb": "the_rise",
+    "vindication": "the_rise",
+    "return_cta": "call_to_action",
+}
+
+#: Canonical beat -> its position (1..15) in the fifteen-stage source method,
+#: monotonic. product_intro (the reveal) is authored at source position 9 of 15.
+BEAT_TO_SOURCE_POSITION = {
+    "ordinary_world": 1, "humiliation": 2, "wound_deepens": 3, "frozen": 4,
+    "seeing_it_too": 5, "failed_solutions": 6, "mentor": 7, "product_intro": 9,
+    "doubt": 10, "climb": 12, "vindication": 14, "return_cta": 15,
+}
+
+
+class StoryArcError(ValueError):
+    """Malformed manifest or binding; a gate that cannot read its input never passes."""
+
+
+def _norm(text):
+    """Fold for comparison: lowercase, keep alphanumerics and apostrophes."""
+    return " ".join(re.findall(r"[a-z0-9']+", str(text or "").lower()))
+
+
+def _tok(word):
+    """One token for order matching: lowercase, keep alphanumerics and
+    apostrophes, and keep intra-word underscores so an id like ``beat_1`` is
+    ONE token (never silently split into two)."""
+    return re.sub(r"[^a-z0-9'_]", "", str(word or "").lower())
+
+
+def _tokens(text):
+    return [t for t in (_tok(w) for w in str(text or "").split()) if t]
+
+
+def stage_mapping_report():
+    """The explicit named mapping between the three counts: fifteen source-method
+    stages, eight coarse timing stages, twelve canonical beats. Distinct counts,
+    named stages -- never one count relabelled as another."""
+    counts = {"source_method_stages": SOURCE_METHOD_STAGE_COUNT,
+              "timing_stages": len(TIMING_STAGES), "canonical_beats": len(BEATS)}
+    distinct = len(set(counts.values())) == len(counts)
+    return {
+        "source_method": SOURCE_METHOD_NAME,
+        "source_method_stage_count": SOURCE_METHOD_STAGE_COUNT,
+        "source_method_named_examples": list(SOURCE_METHOD_NAMED_EXAMPLES),
+        "timing_stages": list(TIMING_STAGES),
+        "timing_stage_count": len(TIMING_STAGES),
+        "canonical_beats": list(BEATS),
+        "canonical_beat_count": len(BEATS),
+        "beat_to_timing": dict(BEAT_TO_TIMING),
+        "beat_to_source_position": dict(BEAT_TO_SOURCE_POSITION),
+        "counts": counts,
+        "counts_are_distinct": distinct,
+        "mapped_by_name_not_by_count": True,
+    }
+
+
+def build_manifest(source):
+    """ONE source -> the performed-beat manifest for all twelve canonical beats.
+
+    ``source`` is either a mapping keyed by canonical beat id, or a manifest /
+    list already carrying ``beat`` keys. Each beat record carries the approved
+    lines that must be heard IN ORDER, the delivery, the approved line ids, the
+    measured window, the approved devices it must carry, the hook placement and
+    the pace cue. Every canonical beat is emitted; a beat with no performed
+    content is recorded as missing -- never silently dropped."""
+    if isinstance(source, dict) and "beats" in source:
+        src = source["beats"]
+    else:
+        src = source
+    if isinstance(src, list):
+        src = {b.get("beat") or b.get("beat_id"): b
+               for b in src if isinstance(b, dict)}
+    if not isinstance(src, dict):
+        src = {}
+    rows, missing = [], []
+    for beat in BEATS:
+        raw = src.get(beat) or {}
+        if not isinstance(raw, dict):
+            raw = {"lines": [raw]}
+        lines = raw.get("lines")
+        if isinstance(lines, str):
+            lines = [lines]
+        lines = [str(x) for x in (lines or []) if str(x).strip()]
+        line_ids = [str(x) for x in (raw.get("line_ids") or [])]
+        window = None
+        win = raw.get("window")
+        if isinstance(win, (list, tuple)) and len(win) == 2:
+            try:
+                window = [float(win[0]), float(win[1])]
+            except (TypeError, ValueError):
+                window = None
+        row = {"beat": beat, "delivery": raw.get("delivery"),
+               "line_ids": line_ids, "lines": lines, "window": window,
+               "devices": [str(d) for d in (raw.get("devices") or [])],
+               "hook": raw.get("hook"), "pace": raw.get("pace")}
+        row["present"] = bool(lines or line_ids)
+        if not row["present"]:
+            missing.append(beat)
+        rows.append(row)
+    manifest = {"schema": MANIFEST_SCHEMA, "beat_count": len(BEATS), "beats": rows,
+                "present_count": sum(1 for r in rows if r["present"]),
+                "missing": missing,
+                "source_method": SOURCE_METHOD_NAME,
+                "source_method_stage_count": SOURCE_METHOD_STAGE_COUNT}
+    manifest["fingerprint"] = creative_fingerprint(manifest)["sha256"]
+    return manifest
+
+
+def creative_fingerprint(manifest):
+    """The creative fingerprint over the FIVE components WW-03 names: lines,
+    delivery, beat map, hook and pace. Stable, order-independent JSON -> sha256."""
+    rows = (manifest or {}).get("beats") if isinstance(manifest, dict) else None
+    rows = rows or []
+    comp = {k: [] for k in FINGERPRINT_COMPONENTS}
+    for r in rows:
+        b = r.get("beat")
+        comp["lines"].append([b, [_norm(ln) for ln in (r.get("lines") or [])]])
+        comp["delivery"].append([b, r.get("delivery")])
+        comp["beat_map"].append([b, list(r.get("line_ids") or []), r.get("window")])
+        comp["hook"].append([b, None if r.get("hook") is None else bool(r.get("hook"))])
+        comp["pace"].append([b, r.get("pace")])
+    blob = json.dumps(comp, sort_keys=True, separators=(",", ":"), default=str)
+    return {"schema": FINGERPRINT_SCHEMA,
+            "sha256": hashlib.sha256(blob.encode("utf-8")).hexdigest(),
+            "components": list(FINGERPRINT_COMPONENTS)}
+
+
+def bind_revision(revision_id, manifest):
+    """Bind ONE chosen master revision id to the manifest's fingerprint. This is
+    the binding record stored with the take; it does NOT choose the revision --
+    that is the owner's decision and is never made here."""
+    fp = creative_fingerprint(manifest)
+    return {"schema": FINGERPRINT_SCHEMA, "revision_id": str(revision_id),
+            "fingerprint": fp["sha256"], "components": fp["components"]}
+
+
+def _heard_tokens(aligned_words):
+    ws = [w for w in (aligned_words or [])
+          if isinstance(w, dict) and w.get("startS") is not None]
+    ws.sort(key=lambda w: float(w.get("startS") or 0.0))
+    return [(_tok(w.get("word")), float(w.get("startS") or 0.0),
+             float(w.get("endS") or 0.0)) for w in ws]
+
+
+def _find_line(tokens, line_tokens, window):
+    """The index where ``line_tokens`` sits contiguously in ``tokens`` (inside
+    ``window`` when one is given), or None. Order is the contract."""
+    n = len(line_tokens)
+    if not n or n > len(tokens):
+        return None
+    for i in range(len(tokens) - n + 1):
+        if [t[0] for t in tokens[i:i + n]] == list(line_tokens):
+            if window is None or window[0] <= tokens[i][1] <= window[1]:
+                return i
+    return None
+
+
+def check_performed_manifest(manifest, binding, aligned_words, duration_s=None,
+                             required_devices=None):
+    """The performed-content story gate. FAILS when a required beat has no heard
+    mapped line inside its measured window, when a line is reordered, when a
+    required approved device is absent, or when the take's fingerprint does not
+    match the fingerprinted revision actually submitted. A metadata-only
+    twelve-identifier list never passes; missing heard evidence is UNAVAILABLE,
+    never PASS."""
+    if not isinstance(manifest, dict) or not manifest.get("beats"):
+        return {"verdict": "UNAVAILABLE", "reason_code": "NO_MANIFEST",
+                "failed": ["NO_MANIFEST"], "detail": "no performed-beat manifest"}
+    failed = []
+    present = [r for r in manifest["beats"] if r.get("present")]
+    if not present:
+        failed.append("MANIFEST_METADATA_ONLY")
+    manifest_fp = creative_fingerprint(manifest)["sha256"]
+    bind_fp = (binding or {}).get("fingerprint") if isinstance(binding, dict) else binding
+    if not bind_fp:
+        failed.append("TAKE_UNBOUND")
+    elif bind_fp != manifest_fp:
+        failed.append("FINGERPRINT_MISMATCH")
+    tokens = _heard_tokens(aligned_words)
+    positions = []
+    for r in manifest["beats"]:
+        if not r.get("present"):
+            continue
+        line_tokens = _tokens(" ".join(r.get("lines") or []))
+        if not line_tokens:
+            if "MANIFEST_METADATA_ONLY" not in failed:
+                failed.append("MANIFEST_METADATA_ONLY")
+            continue
+        idx = _find_line(tokens, line_tokens, r.get("window"))
+        if idx is None:
+            failed.append("BEAT_NOT_HEARD:%s" % r["beat"])
+        else:
+            positions.append((r["beat"], idx))
+    order = [i for _, i in positions]
+    if any(order[k] > order[k + 1] for k in range(len(order) - 1)):
+        failed.append("BEAT_REORDERED")
+    for d in (required_devices or []):
+        if _tokens(d) and _find_line(tokens, _tokens(d), None) is None:
+            failed.append("DEVICE_MISSING:%s" % d)
+    if failed:
+        verdict, reason = "FAIL", "PERFORMED_STORY_REJECTED"
+    elif not tokens:
+        verdict, reason = "UNAVAILABLE", "NOTHING_HEARD_TO_JUDGE"
+    else:
+        verdict, reason = "PASS", "PERFORMED_STORY_COVERED"
+    return {"verdict": verdict, "reason_code": reason, "failed": failed,
+            "heard_beats": [b for b, _ in positions],
+            "missing_beats": list(manifest.get("missing") or []),
+            "fingerprint": manifest_fp, "binding_fingerprint": bind_fp,
+            "beat_count": len(manifest["beats"]),
+            "detail": ("every required beat is heard in order and the take matches "
+                       "the approved revision" if verdict == "PASS"
+                       else "performed story rejected: %s" % ", ".join(failed))}
+
+
+def assert_take_bound(take, manifest):
+    """Never retroactively bind an existing take to an edited sheet.
+
+    A take that carries a fingerprint different from the approved sheet's is
+    refused; a take that carries none is UNAVAILABLE. Nothing here re-stamps a
+    take -- an edited later draft can never certify earlier paid audio."""
+    stored = take.get("fingerprint") if isinstance(take, dict) else take
+    fp = creative_fingerprint(manifest)["sha256"]
+    if not stored:
+        return {"verdict": "UNAVAILABLE", "reason_code": "TAKE_UNBOUND",
+                "fingerprint": fp, "detail": "the take carries no revision fingerprint"}
+    if stored != fp:
+        return {"verdict": "FAIL", "reason_code": "FINGERPRINT_MISMATCH",
+                "fingerprint": fp, "take_fingerprint": stored,
+                "detail": "the take does not match the approved sheet revision; an "
+                          "edited sheet never re-binds an existing take"}
+    return {"verdict": "PASS", "reason_code": "FINGERPRINT_MATCH", "fingerprint": fp,
+            "detail": "the take matches the fingerprinted approved revision"}
+
+
+def revision_provenance(binding, take):
+    """Which approved revision a delivered take came from (WW-15). Records the
+    binding's revision id and the take's stored fingerprint; never asserts a
+    match it cannot prove."""
+    stored = take.get("fingerprint") if isinstance(take, dict) else take
+    bind_fp = (binding or {}).get("fingerprint") if isinstance(binding, dict) else None
+    return {"revision_id": (binding or {}).get("revision_id") if isinstance(binding, dict) else None,
+            "binding_fingerprint": bind_fp, "take_fingerprint": stored,
+            "matched": bool(stored) and stored == bind_fp,
+            "determined": bool(binding) and bool(stored)}
 
 
 def main(argv=None):
