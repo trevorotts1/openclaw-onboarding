@@ -10,12 +10,18 @@
 # core files. A stale stub sentinel short-circuited the merge forever while the
 # gate kept reporting core-updates:sentinel-missing for 01/02/03/69/71/72.
 #
-# BOTH DIRECTIONS, on the REAL function extracted from update-skills.sh:
+# THREE DIRECTIONS, on the REAL function extracted from update-skills.sh:
 #   (A) stub sentinel present, workspace empty  -> payload MUST still merge
 #       (the fix); pre-fix this returned 0 without merging.
-#   (B) workspace sentinel present, stub empty  -> MUST skip (idempotency holds).
+#   (B) workspace sentinel present AND the payload's own BEGIN marker in the
+#       workspace target -> MUST skip (idempotency holds).
+#   (C) workspace sentinel present but NO BEGIN marker — the ORPHAN state the
+#       merge itself can create (the sentinel is stamped unconditionally, even
+#       when the payload write was interrupted or later pruned) -> MUST re-merge.
+#       Pre-fix the sentinel alone short-circuited forever, so the payload never
+#       landed and skill 36's QC Section E/H asserts failed on every pass.
 #
-# Exit 0 = both directions hold. Exit 1 = regression.
+# Exit 0 = all three directions hold. Exit 1 = regression.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -84,8 +90,8 @@ cat > "$SKILL_DIR/01-teach-yourself-protocol/CORE_UPDATES.md" <<'CUEOF'
 TEACH YOURSELF PROTOCOL sentinel-body-marker
 CUEOF
 
-run_case() { # $1 = stub-sentinel 0/1, $2 = workspace-sentinel 0/1
-  local stub="$1" wsp="$2" box="$T/box_${1}_${2}"
+run_case() { # $1 = stub-sentinel 0/1, $2 = workspace-sentinel 0/1, $3 = workspace-BEGIN 0/1
+  local stub="$1" wsp="$2" wbegin="$3" box="$T/box_${1}_${2}_${3}"
   mkdir -p "$box/home/.openclaw/agents/main" "$box/ws"
   printf '' > "$box/home/.openclaw/agents/main/AGENTS.md"
   [ "$stub" = 1 ] && printf '<!-- skill:01-teach-yourself-protocol:core-update-applied -->\n' \
@@ -94,6 +100,10 @@ run_case() { # $1 = stub-sentinel 0/1, $2 = workspace-sentinel 0/1
     printf '' > "$box/ws/$f.md"
   done
   [ "$wsp" = 1 ] && printf '<!-- skill:01-teach-yourself-protocol:core-update-applied -->\n' \
+    >> "$box/ws/AGENTS.md"
+  # A genuinely wired target carries the payload's OWN BEGIN marker — that is the
+  # content evidence the skip-check now requires in addition to the sentinel.
+  [ "$wbegin" = 1 ] && printf '<!-- BEGIN skill:01-teach-yourself-protocol:agents -->\nPRIOR BODY\n<!-- END skill:01-teach-yourself-protocol:agents -->\n' \
     >> "$box/ws/AGENTS.md"
 
   HOME="$box/home" SANDBOX="$box" SKILLS_DIR="$SKILL_DIR" \
@@ -109,32 +119,59 @@ run_case() { # $1 = stub-sentinel 0/1, $2 = workspace-sentinel 0/1
 }
 
 # (A) stale stub sentinel only -> the payload MUST merge into the workspace.
-run_case 1 0
-if grep -q 'Wired CORE_UPDATES.md' "$T/box_1_0/out.txt" && \
-   grep -q 'TEACH YOURSELF PROTOCOL sentinel-body-marker' "$T/box_1_0/ws/AGENTS.md"; then
+run_case 1 0 0
+if grep -q 'Wired CORE_UPDATES.md' "$T/box_1_0_0/out.txt" && \
+   grep -q 'TEACH YOURSELF PROTOCOL sentinel-body-marker' "$T/box_1_0_0/ws/AGENTS.md"; then
   pass "(A) stale agent-dir stub sentinel no longer blocks the workspace merge"
 else
   fail "(A) stub sentinel still blocked the merge (payload absent from workspace AGENTS.md)"
-  sed 's/^/    /' "$T/box_1_0/out.txt"
+  sed 's/^/    /' "$T/box_1_0_0/out.txt"
 fi
-if grep -qF '<!-- skill:01-teach-yourself-protocol:core-update-applied -->' "$T/box_1_0/ws/AGENTS.md"; then
+if grep -qF '<!-- skill:01-teach-yourself-protocol:core-update-applied -->' "$T/box_1_0_0/ws/AGENTS.md"; then
   pass "(A) workspace sentinel landed (the gate's own read-path is now satisfied)"
 else
   fail "(A) workspace sentinel missing after merge"
 fi
 
-# (B) workspace sentinel present -> merge MUST be skipped (idempotent).
-run_case 0 1
-if grep -q 'Wired CORE_UPDATES.md' "$T/box_0_1/out.txt"; then
-  fail "(B) workspace sentinel no longer short-circuits the re-merge"
-  sed 's/^/    /' "$T/box_0_1/out.txt"
+# (B) workspace sentinel + the payload's own BEGIN marker -> merge MUST be skipped.
+run_case 0 1 1
+if grep -q 'Wired CORE_UPDATES.md' "$T/box_0_1_1/out.txt"; then
+  fail "(B) a wired workspace no longer short-circuits the re-merge"
+  sed 's/^/    /' "$T/box_0_1_1/out.txt"
 else
-  pass "(B) workspace sentinel still short-circuits the re-merge (idempotency holds)"
+  pass "(B) wired workspace (sentinel + BEGIN marker) short-circuits the re-merge (idempotency holds)"
 fi
-if grep -q 'sentinel-body-marker' "$T/box_0_1/ws/AGENTS.md"; then
-  fail "(B) payload was re-merged despite the workspace sentinel"
+if grep -q 'sentinel-body-marker' "$T/box_0_1_1/ws/AGENTS.md"; then
+  fail "(B) payload was re-merged despite the wired workspace"
 else
   pass "(B) payload not re-merged"
+fi
+if [ "$(grep -cF '<!-- BEGIN skill:01-teach-yourself-protocol:agents -->' "$T/box_0_1_1/ws/AGENTS.md")" -eq 1 ]; then
+  pass "(B) the pre-existing BEGIN block was left untouched (no duplicate)"
+else
+  fail "(B) the pre-existing BEGIN block was duplicated or removed"
+fi
+
+# (C) ORPHAN: workspace sentinel present but NO BEGIN marker -> MUST re-merge.
+# This is the state the merge itself creates when the payload write is interrupted
+# or later pruned — the sentinel is stamped unconditionally.
+run_case 0 1 0
+if grep -q 'Wired CORE_UPDATES.md' "$T/box_0_1_0/out.txt" && \
+   grep -q 'TEACH YOURSELF PROTOCOL sentinel-body-marker' "$T/box_0_1_0/ws/AGENTS.md"; then
+  pass "(C) orphan sentinel (no BEGIN marker) re-runs the merge and the payload lands"
+else
+  fail "(C) orphan sentinel still short-circuited the merge (payload never lands)"
+  sed 's/^/    /' "$T/box_0_1_0/out.txt"
+fi
+if [ "$(grep -cF '<!-- BEGIN skill:01-teach-yourself-protocol:agents -->' "$T/box_0_1_0/ws/AGENTS.md")" -eq 1 ]; then
+  pass "(C) exactly one BEGIN block after the orphan re-merge"
+else
+  fail "(C) BEGIN block count wrong after the orphan re-merge"
+fi
+if [ "$(grep -cF '<!-- skill:01-teach-yourself-protocol:core-update-applied -->' "$T/box_0_1_0/ws/AGENTS.md")" -eq 1 ]; then
+  pass "(C) the sentinel was not duplicated by the re-merge"
+else
+  fail "(C) the sentinel was duplicated by the re-merge"
 fi
 
 echo ""

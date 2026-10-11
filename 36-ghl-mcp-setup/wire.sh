@@ -6,6 +6,34 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
+# ── Install the reference docs into master files ──────────────────────────────
+# Repo bug this closes: the AGENTS.md payload this skill merges points at
+# [MASTER_FILES_FOLDER]/36-ghl-mcp-setup/ghl-mcp-setup-full.md, and QC Section F
+# asserts the doc is archived there — but NOTHING ever copied it. It relied on
+# INSTALL.md Action 8, a manual step, so on every auto-wired box the pointer
+# dangled and Section F failed. Skill 07's wire.sh installs its own reference on
+# every pass; this is the same pattern, same platform resolution.
+MFD="${OPENCLAW_MASTER_FILES_DIR:-}"
+if [ -z "$MFD" ]; then
+  if [ -f /data/.openclaw/openclaw.json ]; then
+    MFD="/data/.openclaw/master-files"
+  else
+    MFD="$HOME/Downloads/openclaw-master-files"
+  fi
+fi
+SKILL_DEST="$MFD/36-ghl-mcp-setup"
+for _ref in ghl-mcp-setup-full.md QC.md; do
+  # Skip when this script IS the installed copy (running from master files).
+  if [ -f "$SCRIPT_DIR/$_ref" ] && [ "$SCRIPT_DIR" != "$SKILL_DEST" ]; then
+    mkdir -p "$SKILL_DEST" 2>/dev/null || true
+    if [ ! -f "$SKILL_DEST/$_ref" ] || [ "$SCRIPT_DIR/$_ref" -nt "$SKILL_DEST/$_ref" ]; then
+      if cp "$SCRIPT_DIR/$_ref" "$SKILL_DEST/$_ref" 2>/dev/null; then
+        echo "STATUS: skill-36 installed reference -> $SKILL_DEST/$_ref"
+      fi
+    fi
+  fi
+done
+
 # ---- live skill version: read from the canonical source, never a literal ----
 # (FIX-XC-13a — kills the wire.sh-vs-skill-version.txt drift.) Used only for the
 # human-readable STATUS reporting below.

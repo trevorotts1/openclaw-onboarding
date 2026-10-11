@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.6"
+ONBOARDING_VERSION="v27.1.7"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2024,7 +2024,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.6 - safe_json_edit
+# v27.1.7 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -7537,11 +7537,27 @@ sys.exit(0 if (isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()) 
     # A stale stub sentinel therefore short-circuited the merge FOREVER while
     # the gate kept reporting core-updates:sentinel-missing for 01/02/03/69/
     # 71/72. The skip-check must judge the same files the gate does.
+    #
+    # ORPHAN-SENTINEL leg. The sentinel alone is NOT evidence that the payload
+    # landed: the merge stamps it UNCONDITIONALLY (see the SENTINEL block at the
+    # bottom of the python below), so a box whose payload write was interrupted
+    # or later pruned carries the stamp with no content. Keying the skip on the
+    # stamp alone made that orphan permanent — the merge returned 0 forever,
+    # skill 36's QC Section E/H asserts (Tier Escalation Protocol, canonical
+    # state block, GHL_COMMUNITY_MCP_URL, TOOLS.md/MEMORY.md records, tier table)
+    # failed on every pass, and the onboarding-resume cron looped.
+    # The skip now ALSO requires the payload's own BEGIN marker in a target file
+    # — the same evidence the python's idempotency guard uses. A genuinely wired
+    # skill still short-circuits; an orphan re-merges (the merge is idempotent
+    # per target via that BEGIN guard, so a re-merge cannot duplicate a block).
     local SENTINEL="<!-- skill:${SKILL_FOLDER}:core-update-applied -->"
-    if grep -qF "$SENTINEL" "$AGENTS_FILE" 2>/dev/null || \
-       grep -qF "$SENTINEL" "$TOOLS_FILE" 2>/dev/null || \
-       grep -qF "$SENTINEL" "$MEMORY_FILE" 2>/dev/null || \
-       grep -qF "$SENTINEL" "$SOUL_FILE" 2>/dev/null; then
+    if { grep -qF "$SENTINEL" "$AGENTS_FILE" 2>/dev/null || \
+         grep -qF "$SENTINEL" "$TOOLS_FILE" 2>/dev/null || \
+         grep -qF "$SENTINEL" "$MEMORY_FILE" 2>/dev/null || \
+         grep -qF "$SENTINEL" "$SOUL_FILE" 2>/dev/null; } && \
+       grep -qF "<!-- BEGIN skill:${SKILL_FOLDER}:" \
+         "$AGENTS_FILE" "$TOOLS_FILE" "$MEMORY_FILE" "$SOUL_FILE" \
+         "$IDENTITY_FILE" "$USER_FILE" 2>/dev/null; then
       return 0
     fi
 
