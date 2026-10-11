@@ -32,9 +32,12 @@ downloaded artifact checksum.
 
 ## 4. Route/model coherence (repair cycle 2, 2026-10-06)
 
-Legacy dedicated routes (/api/v1/generate*) accept ONLY legacy families V4-V5_5
-(references/music.md said this all along). V6/V6_MINI/V6_WILD ride ONLY the market
-createTask envelope (ai-music-api/* ids, input.model). Crossing = hard reject, rc 2.
+The legacy BARE `POST /api/v1/generate` music-GENERATION route is RETIRED (WW-30):
+it accepts NOTHING and the validator refuses it (rc 2). The other dedicated
+`/api/v1/generate/<op>` routes (extend, sounds, cover, ...) accept ONLY legacy
+families V4-V5_5 (references/music.md said this all along). V6/V6_MINI/V6_WILD ride
+ONLY the market createTask envelope (ai-music-api/* ids, input.model). Crossing =
+hard reject, rc 2.
 First repair (cycle 1) shipped "V6 on legacy route accepted, provider decides" --
 contradicted our own reference doc; checker DTS-215 caught it same day. Fixture
 legacy-route-v6-bad.json now expects rc 2.

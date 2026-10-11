@@ -41,11 +41,13 @@ and the limit quotes, see references/tts.md (TTS) and references/music.md (Suno)
 1. TTS (Gemini + ElevenLabs): generic Market
    `POST https://api.kie.ai/api/v1/jobs/createTask`, model enum selects engine.
    Asynchronous: get taskId, wait for callback or poll recordInfo.
-2. Music/Suno: CURRENT `POST /api/v1/jobs/createTask` with `ai-music-api/*`
-   (input.model V4..V6_WILD, default V6) for generate / extend /
-   upload-and-extend-audio / generate-persona / sounds; LEGACY dedicated
-   `POST /api/v1/generate` family kept for V4..V5_5 (Discontinued — warned,
-   kept). ONLY ai-music-api/* rides createTask.
+2. Music/Suno: GENERATION rides ONLY `POST /api/v1/jobs/createTask` with
+   `ai-music-api/generate` (input.model V4..V6_WILD, default V6); the same
+   createTask envelope carries extend / upload-and-extend-audio /
+   generate-persona / sounds. The LEGACY `POST /api/v1/generate` music-generation
+   route is RETIRED (WW-30 — refused, no fallback); the other `/api/v1/generate/<op>`
+   routes (extend, sounds, cover, ...) are different routes and untouched. ONLY
+   ai-music-api/* rides createTask.
 3. STT: not available. `ADVERTISED_NOT_YET_VERIFIED`, `dispatch_enabled: false`.
    Never route a transcription request here.
 
@@ -78,11 +80,12 @@ Required: `model`, `callBackUrl` (recommended), `input` with `speakers[]` and
 
 ## Music/Suno — generate
 
-Current route: createTask + `ai-music-api/generate`; version at `input.model`
-(V4..V6_WILD, default V6). Required input (non-custom): `custom_mode`,
-`instrumental`, `model`. Legacy route `POST /api/v1/generate`: `prompt`,
-`customMode`, `instrumental`, `model` (V4/V4_5/V4_5PLUS/V4_5ALL/V5/V5_5),
-`callBackUrl`.
+Current (and ONLY) route: createTask + `ai-music-api/generate`; version at
+`input.model` (V4..V6_WILD, default V6). Required input (non-custom):
+`custom_mode`, `instrumental`, `model`. The legacy `POST /api/v1/generate`
+music-generation route and its flat `prompt`/`customMode`/`instrumental`/
+`model`/`callBackUrl` body are RETIRED (WW-30) — refused by the validator,
+never dispatched.
 Custom: `style`, `title` (+`prompt` if not instrumental). Optional: `negativeTags`,
 `vocalGender` ("m"/"f"), `styleWeight`/`weirdnessConstraint`/`audioWeight` (0-1),
 `personaId`, `personaModel` (style_persona/voice_persona),
@@ -158,10 +161,11 @@ fallback_used true, the adapter is off or in shadow mode and sent nothing: dispa
 with curl as before (steps 1 and 2 already ran). Adapter absent: skip steps 1 and 2
 with a one-line note and use curl.
 
-Suno music keeps its curated layered route (W0-02 contract, live docs 2026-10-06):
-current createTask envelope `ai-music-api/*` is authoritative for new work and Skill 74
-`submit` may carry it; the legacy dedicated `/api/v1/generate` family stays valid for
-V4..V5_5 (Discontinued — warned, kept). Run `A price --model <id>` and `A preflight
+Suno music generation rides ONLY the current createTask envelope `ai-music-api/generate`
+(W0-02 contract, live docs 2026-10-06; authoritative for new work) and Skill 74
+`submit` may carry it. The legacy dedicated `/api/v1/generate` music-generation route is
+RETIRED (WW-30) and never dispatched; the other `/api/v1/generate/<op>` routes are
+different routes and untouched. Run `A price --model <id>` and `A preflight
 --model <id>` for the matching catalog id when one exists.
 
 ## Async completion
