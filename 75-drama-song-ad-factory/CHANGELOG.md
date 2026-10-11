@@ -6,6 +6,32 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.26 - 2026-10-11 - U3: story-first audio acceptance documents (SKILL.md, INSTRUCTIONS.md, stage runbook)
+
+Documentation unit U3 of the drama studio joint plan, built from the
+specification `WW-PREVENT-RECURRENCE-SPEC.md`, section 4 Unit U3 read together
+with sections 5A, 5B and 5C. Text only: the rule block is taken VERBATIM from
+the specification, no rule is invented and nothing is paraphrased. No product
+code and no test file is changed. No provider is called and nothing is spent.
+
+- `SKILL.md` gains the new section `## Story-first audio acceptance`
+  (specification section 5A), placed after the recipe dispatcher paragraph that
+  closes "Suno song recipe (read this first when you build audio)" and before
+  `## Sung hook (I8)`.
+- `INSTRUCTIONS.md` gains the same rule block after the department-worker step
+  (step 7), before the next step (step 8), plus the one extra line the
+  specification names: that the three-version SONG APPROVAL rule is separate
+  from the under-120-second minute-lane rule, which applies to visuals and never
+  to song-choice fan-out (specification section 5B).
+- `references/stage-runbook.md` has its contradiction fixed in the file itself
+  (specification section 5C): the `music` stage row now says that when the card's
+  SONG APPROVAL answer is Yes the music stage makes three labelled versions of
+  the same approved sheet in parallel lanes (`song_choices.py generate`), and
+  that the single `kie_dispatch` dispatch row describes the one-song case only.
+  The one-song row keeps the same command shape, so no signature changes.
+- Version read LIVE from `origin/main` at build time (`v2.9.25`); this bump is
+  bundled inside the real-content commit, never a bump-only commit.
+
 ## v2.9.25 - 2026-10-11 - WWFIX-U1 gaps: the sung-share floor, markup-as-story, the unwired audio gates and the hardcoded dispatch count
 
 Four defects found in v2.9.22, fixed in the product. No test assertion was weakened, skipped,
