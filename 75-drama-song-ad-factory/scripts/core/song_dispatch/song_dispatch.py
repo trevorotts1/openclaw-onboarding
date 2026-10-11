@@ -15,6 +15,11 @@ Rules (Trevor 2026-10-08):
     PLACEMENT: Suno added or moved no hook block earlier than the sheet and
     sang the first hook after the build-up window) -- before any picture or
     video spend;
+  * WW-21: the aggregation/evidence-binding boundary (`accept_audio_results`)
+    is TOTAL and fail-closed -- missing, empty, malformed, unknown,
+    unavailable, unmeasured, flagged, failed or stale-bound evidence BLOCKS,
+    and only a complete set of five PASS, bound delivered-audio results
+    advances. It is the boundary before spend, NOT a sixth audio gate;
   * stop at the first PASS, else deliver the best FLAG take inside the
     per-author spend cap, never a FAIL;
   * the vocal stem and timestamps are saved for EVERY take;
@@ -24,6 +29,8 @@ stdlib only; no network, no spend of its own.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import sys
@@ -56,6 +63,33 @@ GATES += ("song_contract",)      # FU-RNBFLOW-SONG: the style's own contract on 
 # CALLED by the pipeline, so "UNMEASURED blocks a take PASS" was only true of
 # the module in isolation. Both are now gates of the take judge.
 GATES += ("rap_audio", "pace_change")
+
+# ---- WW-21: total fail-closed acceptance (the aggregation boundary) --------
+#
+# WW-21 IS NOT A SIXTH AUDIO GATE. The operator plan (WW-ROUND3-FIX-PLAN.md,
+# unit WW-21, lines 54-58; sha256 ce567435cae0d7933156db7034c8eb8069b9846c24
+# d382b6a2ebcba1a921162f) names exactly FIVE delivered-audio gates -- D1 real
+# rap, D2 story start, D3 both pace changes, D4 three audibly different
+# versions, D5 more than one character voice. WW-21 is the aggregation and
+# EVIDENCE-BINDING stage that runs BEFORE spend: it decides only whether the
+# five results CARRIED to it may advance. It claims no audio-quality outcome.
+#
+# PROPOSED (WW-21, 2026-10-11): _MIN_AUDIO_RESULTS is the COUNT OF THE FIVE
+# GATE NAMES THE PLAN ALREADY NAMES. It is a proposed value -- not a measured
+# limit, and NOT a number Trevor set -- and it moves only when the plan's own
+# gate list moves. Same label in acceptance-profile.json, CHANGELOG.md and the
+# test docstring.
+AUDIO_RESULTS = ("D1", "D2", "D3", "D4", "D5")
+_MIN_AUDIO_RESULTS = 5            # PROPOSED -- see the note above
+#: Every gate verdict that is NOT a PASS blocks. Only PASS advances.
+BLOCKING_VERDICTS = ("FAIL", "FLAG", "UNMEASURED", "UNAVAILABLE", "UNKNOWN")
+#: A binding naming one of these is a HAND-SET LABEL, not a binding.
+_MANUAL_SOURCES = ("manual", "hand", "handset", "hand-set", "relabel", "relabelled",
+                   "relabeled", "typed", "literal", "assumed")
+_BINDING_KEYS = ("export_digest", "creative_revision", "profile_revision")
+_ACCEPTANCE_DIR = os.path.join("music", "acceptance")
+ACCEPTANCE_CODE_OK = "ACCEPTANCE_OK"
+ACCEPTANCE_CODE_NOT_PROVEN = "ACCEPTANCE_NOT_PROVEN"
 
 
 class DispatchError(ValueError):
@@ -198,7 +232,20 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
                                        "approved plan" if planned_rap is not None
                                        else "default"))
         else:
-            put("rap_share", "PASS", "no rap planned, none measured")
+            # WW-21: THE no-planned-and-no-measured-rap LOOPHOLE. This branch
+            # used to be a PASS ("no rap planned, none measured"), so an
+            # R&B Flow take whose plan carries no rap word count AND whose
+            # audio measured 0.0 s of rap advanced as if the rap gate had been
+            # satisfied. It had not: the style's whole definition is that it
+            # DELIVERS rap. Missing evidence is not a deviation, so this can
+            # never be a PASS -- the take is flagged here and the WW-21
+            # acceptance boundary (accept_audio_results) blocks it outright,
+            # because only PASS advances there.
+            put("rap_share", "FLAG",
+                "RAP_NEITHER_PLANNED_NOR_MEASURED: style %r delivers rap, the approved plan "
+                "declares no rap words (_planned_pct -> None) and the take measured %.1f s of "
+                "rap. Missing evidence is not a deviation; this take cannot pass."
+                % (style_id, m["rap_seconds"]))
     else:
         put("rap_share", "PASS" if m["rap_seconds"] <= 0 else
             _SS.judge_gap(m["rap_share_pct"], 0.0)["verdict"],
@@ -284,18 +331,340 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
     return _finish(g)
 
 
-def _finish(g):
-    """FAIL when a gate FAILs; otherwise FLAG when any gate FLAGs OR is
-    UNMEASURED; only an all-PASS take PASSes.
+def _finish(g, required=None):
+    """THE TOTAL finisher. FAIL when a gate FAILs; otherwise FLAG when any gate
+    FLAGs OR is UNMEASURED; only an all-PASS take PASSes.
 
     WWFIXGAPS U1 (defect 2): UNMEASURED counts as a flag, never as nothing --
     a take carrying an unmeasured gate (no labelled rap control, no gear-change
     evidence) cannot reach PASS. It is kept OUT of ``failed`` on purpose: it is
-    missing evidence, not a measured failure."""
-    bad = [k for k, v in g.items() if v["verdict"] == "FAIL"]
-    flags = [k for k, v in g.items() if v["verdict"] in ("FLAG", "UNMEASURED")]
-    return {"verdict": "FAIL" if bad else ("FLAG" if flags else "PASS"), "gates": g,
-            "failed": bad, "flagged": flags}
+    missing evidence, not a measured failure.
+
+    WW-21 (total, fail-closed): this vocabulary is now TOTAL, so no shape of
+    input can reach PASS by accident. A gate verdict of FAIL, FLAG,
+    UNMEASURED, UNAVAILABLE or UNKNOWN, a verdict string that is missing,
+    empty or unrecognised (a MALFORMED record), a non-mapping record, a gate
+    of ``required`` that is ABSENT, an EMPTY gate set and any exception raised
+    while reading the mapping ALL block. Before this, ``_finish({})`` returned
+    PASS -- an empty gate set was indistinguishable from a perfect take -- and
+    an UNKNOWN or UNAVAILABLE gate was silently ignored.
+    """
+    req = tuple(GATES) if required is None else tuple(required)
+    gates = g if isinstance(g, dict) else {}
+    bad, flags, malformed, missing = [], [], [], []
+    try:
+        for k in req:
+            if k not in gates:
+                missing.append(k)
+        for k, rec in gates.items():
+            v = rec.get("verdict") if isinstance(rec, dict) else None
+            if not isinstance(v, str) or not v.strip():
+                malformed.append(k)
+                continue
+            v = v.strip().upper()
+            if v == "FAIL":
+                bad.append(k)
+            elif v in BLOCKING_VERDICTS:
+                flags.append(k)
+            elif v != "PASS":
+                malformed.append(k)
+    except Exception as e:                     # noqa: BLE001 -- a raised error blocks
+        malformed.append("RAISED_ERROR:%s" % type(e).__name__)
+    if not isinstance(g, dict) or not gates:
+        missing = missing or ["<empty>"]
+    blocked_by = (["EMPTY_GATE_SET: an empty gate set never passes"] if (not isinstance(g, dict) or not gates) else [])
+    blocked_by += ["MISSING_REQUIRED_GATE: %s" % k for k in missing]
+    blocked_by += ["MALFORMED_GATE_RECORD: %s" % k for k in malformed]
+    verdict = "FAIL" if (bad or malformed or missing or not gates) else ("FLAG" if flags else "PASS")
+    return {"verdict": verdict, "gates": gates, "failed": bad, "flagged": flags,
+            "malformed": malformed, "missing": missing, "blocked_by": blocked_by}
+
+
+# ---- WW-21: the aggregation and evidence-binding boundary ------------------
+#
+# One implementation, one place. `judge_take`/`_finish` judge ONE take's gates;
+# `accept_audio_results` is the boundary that stands between the five CARRIED
+# delivered-audio results and any offer, pick or purchase. It is pure (no
+# network, no spend of its own), so a refusal costs zero purchases by
+# construction -- every path that calls it is asserted at zero spend.
+
+
+def _open_json(path):
+    """Read a JSON document; None for absent or unreadable. Never raises."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def acceptance_profile():
+    """core/acceptance-profile.json. None when absent/unreadable -- and None
+    BLOCKS, so a lost profile can never be read as "no gates required"."""
+    return _open_json(os.path.join(_CORE, "acceptance-profile.json"))
+
+
+def profile_revision(profile=None):
+    p = profile if isinstance(profile, dict) else acceptance_profile()
+    return (p or {}).get("profile_version")
+
+
+def _profile_required(profile):
+    """The required audio results from the profile, else the module constant.
+    A malformed list falls back to ``AUDIO_RESULTS``; it never empties."""
+    rows = ((profile or {}).get("audio_results") or {}).get("required")
+    if isinstance(rows, list) and rows and all(isinstance(r, str) and r for r in rows):
+        return tuple(rows)
+    return AUDIO_RESULTS
+
+
+def _profile_min_count(profile):
+    """The PROPOSED minimum count of carried results, read from the profile so
+    the key the profile WRITES is the key this boundary READS; the module
+    constant is the fallback, never an empty value."""
+    n = ((profile or {}).get("audio_results") or {}).get("minimum_count")
+    if isinstance(n, int) and not isinstance(n, bool) and n > 0:
+        return n
+    return _MIN_AUDIO_RESULTS
+
+
+def _block(reasons, results=None, binding=None, required=None):
+    """Every refusal from this boundary has the same shape, and every one of
+    them reports zero purchases -- nothing here can spend."""
+    rs = [str(r) for r in reasons]
+    return {"verdict": "FAIL", "blocked": True, "reasons": rs, "blocked_by": list(rs),
+            "results": results if isinstance(results, dict) else {},
+            "binding": binding if isinstance(binding, dict) else {},
+            "required": list(required or AUDIO_RESULTS),
+            "purchases": 0,
+            "next_action": "no take is offered, picked or purchased on this path"}
+
+
+def binding_reasons(binding, where="take"):
+    """Why this binding is not admissible. [] = admissible.
+
+    A binding is the take's OWN export digest (sha256 of the delivered file),
+    its creative revision and the profile revision the result was produced
+    against. A hand-set label -- ``source: manual``, a bare string, a missing
+    key -- is NOT a binding; a manually relabelled source never substitutes
+    for the digest of the export that was actually measured.
+    """
+    if not isinstance(binding, dict):
+        return ["MALFORMED_BINDING: the %s binding is %s, not a mapping"
+                % (where, type(binding).__name__)]
+    out = []
+    src = str(binding.get("source", "") or "").strip().lower().replace("_", "-")
+    if src in _MANUAL_SOURCES:
+        out.append("MANUAL_RELABEL: the %s binding says source=%r; a hand-set label is not a "
+                   "binding and cannot stand in for the export digest" % (where, src))
+    for k in _BINDING_KEYS:
+        v = binding.get(k)
+        if not isinstance(v, (str, int)) or isinstance(v, bool) or not str(v).strip():
+            out.append("MISSING_BINDING: the %s binding carries no %s" % (where, k))
+    dig = binding.get("export_digest")
+    if isinstance(dig, str) and dig.strip() and not re.fullmatch(r"[0-9a-f]{64}", dig.strip().lower()):
+        out.append("MALFORMED_DIGEST: the %s export_digest is not a sha256 (%r)"
+                   % (where, dig))
+    return out
+
+
+def accept_audio_results(results, binding, required=None, profile=None):
+    """WW-21: THE total, fail-closed aggregation boundary over the carried
+    delivered-audio results. Returns ``{verdict, reasons, blocked_by, ...}``.
+
+    It advances ONLY when every required delivered-audio result is present, is
+    a mapping, carries a PASS verdict, and is bound to the exact export digest,
+    creative revision and profile revision of the take being advanced. It
+    BLOCKS, with a named reason, on: a missing result, an empty result set, a
+    non-mapping result set, a malformed record (no verdict string), a verdict
+    of FAIL/FLAG/UNMEASURED/UNAVAILABLE/UNKNOWN, an unrecognised verdict, a
+    stale digest or revision, a manual relabel, a missing/absent binding, an
+    unavailable profile and any exception raised while reading any of it.
+
+    This is NOT a sixth audio gate: it measures no audio and claims no quality
+    outcome. It is the boundary that stops an incomplete or unbound receipt
+    from reaching spend.
+    """
+    try:
+        return _accept_audio_results(results, binding, required, profile)
+    except Exception as e:                     # noqa: BLE001 -- a raised error blocks
+        return _block(["RAISED_ERROR: %s: %s" % (type(e).__name__, e)],
+                      results if isinstance(results, dict) else None,
+                      binding if isinstance(binding, dict) else None, required)
+
+
+def _accept_audio_results(results, binding, required, profile):
+    prof = profile if profile is not None else acceptance_profile()
+    want = _profile_required(prof) if required is None else tuple(required)
+    if not isinstance(prof, dict):
+        return _block(["PROFILE_UNAVAILABLE: acceptance-profile.json is missing or unreadable; "
+                       "no result may advance without the profile revision it was produced against"],
+                      results, binding, want)
+    reasons = []
+    if not isinstance(results, dict):
+        return _block(["MALFORMED_RESULT_SET: the carried results are %s, not a mapping"
+                       % type(results).__name__], None, binding, want)
+    if not results:
+        return _block(["EMPTY_GATE_SET: no delivered-audio results were carried; "
+                       "an empty result set never passes"], results, binding, want)
+    reasons += binding_reasons(binding, "take")
+    prof_rev = prof.get("profile_version")
+    if not isinstance(prof_rev, str) or not prof_rev.strip():
+        reasons.append("PROFILE_UNAVAILABLE: acceptance-profile.json carries no profile_version")
+    minimum = _profile_min_count(prof)
+    if len(results) < minimum:
+        reasons.append("INCOMPLETE_EVIDENCE: %d delivered-audio results carried, %d required "
+                       "(PROPOSED count of the five gates the plan names)"
+                       % (len(results), minimum))
+    for name in want:
+        rec = results.get(name)
+        if rec is None:
+            reasons.append("MISSING_AUDIO_RESULT: required delivered-audio result %s was not "
+                           "carried" % name)
+            continue
+        if not isinstance(rec, dict):
+            reasons.append("MALFORMED_RECORD: %s is %s, not a mapping"
+                           % (name, type(rec).__name__))
+            continue
+        v = rec.get("verdict")
+        if not isinstance(v, str) or not v.strip():
+            reasons.append("MALFORMED_RECORD: %s carries no verdict string" % name)
+            continue
+        if v.strip().upper() != "PASS":
+            reasons.append("BLOCKING_VERDICT: %s returned %r; only PASS advances"
+                           % (name, v.strip().upper()))
+            continue
+        rb = rec.get("binding")
+        br = binding_reasons(rb, name)
+        if br:
+            reasons.extend(br)
+            continue
+        for k in _BINDING_KEYS:
+            if str(rb.get(k)).strip().lower() != str(binding.get(k)).strip().lower():
+                reasons.append("STALE_BINDING: %s was produced against %s=%r but the take being "
+                               "advanced carries %r" % (name, k, rb.get(k), binding.get(k)))
+        if isinstance(prof_rev, str) and str(rb.get("profile_revision")).strip() != prof_rev.strip():
+            reasons.append("STALE_PROFILE: %s was produced against profile revision %r; the "
+                           "profile in force is %r"
+                           % (name, rb.get("profile_revision"), prof_rev))
+    for name in sorted(results):
+        if name in want:
+            continue
+        rec = results[name]
+        v = rec.get("verdict") if isinstance(rec, dict) else None
+        if not isinstance(v, str) or v.strip().upper() != "PASS":
+            reasons.append("UNEXPECTED_AUDIO_RESULT: %s is carried but is not one of the "
+                           "required results and did not PASS (%r)" % (name, v))
+    if reasons:
+        return _block(reasons, results, binding, want)
+    return {"verdict": "PASS", "blocked": False, "reasons": [], "blocked_by": [],
+            "results": dict(results), "binding": dict(binding), "required": list(want),
+            "profile_revision": prof_rev, "purchases": 0,
+            "note": "all %d delivered-audio results PASS and are bound to this take; "
+                    "nothing was measured or claimed here" % len(want)}
+
+
+def _sha256_file(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def take_binding(export_path, creative_revision, profile=None):
+    """The binding a take is advanced under: its OWN export digest plus the
+    creative and profile revisions it was produced against."""
+    return {"export_digest": _sha256_file(export_path),
+            "creative_revision": str(creative_revision),
+            "profile_revision": str(profile_revision(profile) or "")}
+
+
+def record_acceptance(run_dir, variant_id, binding, results, required=None):
+    """Write ONE variant's WW-21 acceptance record under
+    ``<run>/music/acceptance/<variant>.json`` and return it. This is the
+    WRITER ``acceptance_from_run`` reads, so the read key and the written key
+    are the same key by construction."""
+    rec = accept_audio_results(results, binding, required=required)
+    out = dict(rec, variant_id=str(variant_id))
+    p = os.path.join(run_dir, _ACCEPTANCE_DIR, "%s.json" % variant_id)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=2, sort_keys=True)
+    return out
+
+
+def _take_exists(d):
+    try:
+        return any(n.lower().endswith((".mp3", ".wav", ".flac", ".m4a", ".aac"))
+                   for n in os.listdir(d))
+    except OSError:
+        return False
+
+
+def acceptance_from_run(run_dir):
+    """Read the WW-21 acceptance records and the take folders under the run.
+
+    ``applicable`` is False only when the run has NEITHER an acceptance record
+    NOR a produced take -- a run that never reached the music stage has
+    nothing to gate. The moment a variant has a produced take under
+    ``<run>/music/takes/<variant>/`` (the folder ``_real_generate`` fills,
+    where the dispatch envelope is written), an acceptance record is REQUIRED
+    for it: a take on disk with no all-PASS acceptance record BLOCKS. That is
+    what keeps this a live guard and not a key nobody writes.
+    """
+    base = os.path.join(run_dir, _ACCEPTANCE_DIR)
+    takes = os.path.join(run_dir, "music", "takes")
+    records = {}
+    if os.path.isdir(base):
+        for name in sorted(os.listdir(base)):
+            if not name.endswith(".json"):
+                continue
+            rec = _open_json(os.path.join(base, name))
+            if not isinstance(rec, dict):
+                continue
+            vid = str(rec.get("variant_id") or name[:-5])
+            records[vid] = dict(rec, variant_id=vid)
+    if os.path.isdir(takes):
+        for name in sorted(os.listdir(takes)):
+            d = os.path.join(takes, name)
+            if not os.path.isdir(d) or not _take_exists(d):
+                continue
+            if name in records:
+                continue
+            records[name] = {
+                "variant_id": name, "verdict": "FAIL", "blocked": True,
+                "reasons": ["ACCEPTANCE_RECORD_MISSING: music/takes/%s holds a produced take but "
+                            "no WW-21 acceptance record was written for it; only a complete set "
+                            "of five PASS, bound delivered-audio results may advance" % name],
+                "purchases": 0}
+    if not records:
+        return {"applicable": False, "verdict": "UNAVAILABLE", "allowed": False,
+                "blocked": [], "variants": {}}
+    bad = sorted(v for v, r in records.items() if r.get("verdict") != "PASS")
+    return {"applicable": True, "verdict": "FAIL" if bad else "PASS",
+            "allowed": not bad, "blocked": bad, "variants": records}
+
+
+def acceptance_refusal(run_dir, action):
+    """The delivery-boundary refusal: None when nothing is held, else the
+    refusal record. Mirrors ``song_choices.overlap._overlap_refusal``; the
+    BLOCK reaches the offer, the pick and every paid job."""
+    chk = acceptance_from_run(run_dir)
+    if not chk.get("applicable"):
+        return None
+    if chk.get("allowed"):
+        return None
+    detail = []
+    for v in chk.get("blocked") or []:
+        detail += ["%s: %s" % (v, r) for r in (chk["variants"][v].get("reasons") or [])]
+    return {"reason_code": ACCEPTANCE_CODE_NOT_PROVEN,
+            "detail": "the WW-21 acceptance boundary has not passed (%s); %s is held. Only a "
+                      "complete set of five PASS delivered-audio results, each bound to the "
+                      "take's export digest, creative revision and profile revision, may "
+                      "advance -- zero purchases on this path."
+                      % ("; ".join(detail[:4]) or "no PASS record", action),
+            "blocked": chk.get("blocked") or [],
+            "next_action": "re-run the five delivered-audio results against the export being "
+                           "advanced and record them with record_acceptance; no paid retry is "
+                           "authorised by this refusal."}
 
 
 def run_takes(request, plan, generate, measure, save, script_words, hook_text,
