@@ -3,7 +3,7 @@
 ## 1. Purpose
 Enables the agent to generate TTS (Gemini 3.1 Flash / 2.5 Pro + ElevenLabs
 dialogue-v3 / multilingual-v2 / turbo-2-5 via the generic Market `createTask`
-route) and Suno music/sound generation (CURRENT createTask envelope `ai-music-api/*` + LEGACY dedicated `/api/v1/generate` family — ONLY `ai-music-api/*` rides createTask), using the EXISTING fleet credential KIE_API_KEY,
+route) and Suno music generation (CURRENT createTask envelope `ai-music-api/generate`; the legacy `/api/v1/generate` music-generation route is RETIRED — ONLY `ai-music-api/*` rides createTask), using the EXISTING fleet credential KIE_API_KEY,
 with correct payload shapes, caps, validation, async completion handling, and
 REAL audio QC. STT is registered as `ADVERTISED_NOT_YET_VERIFIED`,
 `dispatch_enabled: false` — this skill cannot do speech-to-text and must never
@@ -22,7 +22,7 @@ pretend otherwise.
       `source_url`.
 - [ ] The references document the correct model ids (`google/gemini-3-1-flash-tts`, etc.)
       and endpoints (`https://api.kie.ai/api/v1/jobs/createTask` for TTS and for Suno CURRENT `ai-music-api/*`;
-      LEGACY dedicated `/api/v1/generate` family for Suno V4..V5_5).
+      the legacy `/api/v1/generate` music-generation route is RETIRED, refused by the validator).
 - [ ] `skill-version.txt` reads `v2.2.0`.
 - [ ] No real credential value appears anywhere in the skill files.
 
@@ -33,7 +33,7 @@ pretend otherwise.
 - [ ] `KIE_API_KEY` is present (SET) — referenced, never printed.
 - [ ] `curl` and `python3` (stdlib only) are available.
 - [ ] The installer understands the three sub-domains and their API families:
-      TTS = generic Market `createTask`; Suno = LAYERED (CURRENT createTask `ai-music-api/*`, LEGACY dedicated `/api/v1/generate` family — ONLY `ai-music-api/*` rides createTask); STT = not dispatchable.
+      TTS = generic Market `createTask`; Suno = current createTask `ai-music-api/generate` (the legacy `/api/v1/generate` music-generation route is RETIRED — ONLY `ai-music-api/*` rides createTask); STT = not dispatchable.
 
 ## 4. Key Detection
 - [ ] Search the standard secret locations in order: `~/.openclaw/secrets/.env`,

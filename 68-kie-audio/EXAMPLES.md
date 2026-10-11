@@ -137,30 +137,36 @@ enforcement") — enforce language_code on those two models. Callback failure
 carries failCode "GENERATION_FAILED".
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXAMPLE 4: SUNO GENERATE - CUSTOM SONG (V5)
+EXAMPLE 4: SUNO GENERATE - CUSTOM SONG (V6)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-CURRENT route (recommended): POST /api/v1/jobs/createTask with top-level
-"model": "ai-music-api/generate" and the version at input.model (default V6).
-Required input: custom_mode, instrumental, model. Custom caps: prompt/lyrics
-5,000, style 1,000, title 80. customMode true + V5_5/V6-family = duration
-applies (10-360, default 20). LEGACY route POST /api/v1/generate keeps
-V4..V5_5 (Discontinued — warned, kept).
+CURRENT (and ONLY) route: POST /api/v1/jobs/createTask with top-level
+"model": "ai-music-api/generate" and every direction nested under input
+(snake_case). Version at input.model (default V6). Required input: custom_mode,
+instrumental, model. Custom caps: lyrics/prompt 5,000, style 1,000, title 80.
+input.style is a rule-12 DESCRIPTIVE field (validator target 95-100% of the
+1,000 cap, hard floor 80%) -- the value below is sized to the band (917 chars). duration applies when custom_mode true and input.model
+is V5_5 or the V6 family (V6/V6_MINI/V6_WILD): 10-360, default 20. The legacy
+POST /api/v1/generate music-generation route is RETIRED (WW-30): refused, no
+fallback, no silent switch-back. The other /api/v1/generate/<op> routes
+(extend, sounds, cover, ...) are different routes and untouched.
 
-curl https://api.kie.ai/api/v1/generate \
+curl https://api.kie.ai/api/v1/jobs/createTask \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "A slow-burning synthwave ballad about a lighthouse keeper, analog synths, tape hiss, 88 BPM",
-    "customMode": true,
-    "instrumental": false,
-    "model": "V5",
-    "style": "synthwave, dreamy, analog",
-    "title": "The Last Light",
-    "vocalGender": "f",
-    "negativeTags": "autotune, edm drop",
-    "styleWeight": 0.8,
-    "callBackUrl": "https://your-handler.example.com/kie-callback"
+    "model": "ai-music-api/generate",
+    "callBackUrl": "https://your-handler.example.com/kie-callback",
+    "input": {
+      "custom_mode": true,
+      "instrumental": false,
+      "model": "V6",
+      "title": "The Last Light",
+      "style": "Slow-burning synthwave ballad, 88 BPM, minor key: warm analog pad swells, a pulsing Juno bass, glassy electric piano and a dry gated snare, with tape saturation and gentle wow-and-flutter hiss for a worn cassette feel. The verse stays sparse and intimate - soft rimshot, one arpeggio, a close-mic breathy female lead; the pre-chorus lifts a rising filter sweep and stacked oohs; the chorus opens wide with a soaring lead, doubled harmonies a third above, a sawtooth hook line and a four-on-the-floor kick. A short instrumental bridge trades the voice for a nostalgic chorus-soaked guitar solo and a plate reverb tail, then a stripped final chorus ends on a lone sustained pad and a tape-stop. Mood: wistful, cinematic, nocturnal, hopeful, lonely - a lighthouse keeper watching the last light over a black sea. Avoid edm drops, autotune and choir stacks; keep the low end round and the top end soft, 88 BPM throughout.",
+      "lyrics": "<the verbatim lyrics sheet; sections in [brackets]>",
+      "negative_tags": "choir, reverb, echo",
+      "duration": 120
+    }
   }'
 
 Response: { "data": { "taskId": "..." } }. Callback stages: text → first →
@@ -171,20 +177,32 @@ stream_audio_url, image_url, prompt, model_name, title, tags, duration.
 EXAMPLE 5: SUNO NON-CUSTOM MODE (PROMPT-ONLY)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-curl https://api.kie.ai/api/v1/generate \
+curl https://api.kie.ai/api/v1/jobs/createTask \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "Lo-fi hip hop, rain on a window, vinyl crackle",
-    "customMode": false,
-    "instrumental": true,
-    "model": "V4_5",
-    "callBackUrl": "https://your-handler.example.com/kie-callback"
+    "model": "ai-music-api/generate",
+    "callBackUrl": "https://your-handler.example.com/kie-callback",
+    "input": {
+      "custom_mode": false,
+      "instrumental": true,
+      "model": "V6",
+      "prompt": "Lo-fi hip hop, rain on a window, vinyl crackle, mellow Rhodes",
+      "title": "Rainy Window",
+      "style": "lo-fi hip hop, mellow, instrumental",
+      "negative_tags": "choir, reverb, echo",
+      "duration": 60
+    }
   }'
 
-Non-custom prompt limit: 3,000 characters per the generate-music page (the
-mashup page says 500 — the two pages disagree; UNDETERMINED, validator enforces
-3,000 here and treats the conflict as advisory).
+Non-custom prompt limit: the generate-music page says 3,000 characters, the
+mashup page says 500 (the two pages disagree; UNDETERMINED, the validator enforces
+the smallest documented ceiling of 500 with no floor and treats the conflict as
+advisory). With custom_mode false the prompt is the ONE lyrics source -- never send
+input.lyrics beside it. duration is advisory here; it takes effect only for custom
+V5_5/V6-family. Skill 75's drama-song build emits only the CUSTOM form (input.lyrics
+present, input.prompt refused); this non-custom form is the general KIE envelope
+documented in references/music.md -- same createTask route, same field names.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EXAMPLE 6: SUNO EXTEND
@@ -278,9 +296,11 @@ COMMON MISTAKES TO AVOID
 MISTAKE 1: Routing the wrong Suno model through createTask.
   WRONG:  POST /api/v1/jobs/createTask with model "V5" or "suno/...".
   RIGHT:  createTask carries ONLY ai-music-api/* (e.g. "ai-music-api/generate"
-          with input.model V6); legacy versions stay on DEDICATED
-          POST /api/v1/generate (+ /extend, /sounds, per-op routes).
-          The validator rejects the wrong family (exit 2).
+          with input.model V6). The legacy POST /api/v1/generate
+          music-generation route is RETIRED (refused, exit 2); the other
+          /api/v1/generate/<op> routes (extend, sounds, cover, ...) are
+          different routes and untouched. The validator rejects the wrong
+          family (exit 2).
 
 MISTAKE 2: Treating the 200 as the finished audio.
   WRONG:  Listening for audio in the createTask response.

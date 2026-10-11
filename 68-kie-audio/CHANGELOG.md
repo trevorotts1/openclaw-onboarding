@@ -4,6 +4,14 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.3.3] - 2026-10-11 - DOC68-EX: EXAMPLES.md music examples point at createTask; the legacy /api/v1/generate music-generation route is marked RETIRED everywhere
+
+- `EXAMPLES.md` EXAMPLE 4 (custom song) and EXAMPLE 5 (non-custom prompt-only) now dispatch the ONE music-generation contract: `POST /api/v1/jobs/createTask` with top-level `"model": "ai-music-api/generate"`, a top-level camelCase `callBackUrl`, and every direction nested under snake_case `input` (`custom_mode`, `instrumental`, `model`, `title`, `style`, `lyrics`/`prompt`, `negative_tags`, `duration`) -- matching `references/music.md` and Skill 75's `suno_recipe.check_envelope`. Neither curls `POST /api/v1/generate` any more.
+- The legacy `/api/v1/generate` music-GENERATION route is now named RETIRED (never "warned" or "kept") in `SKILL.md`, `INSTRUCTIONS.md`, `CORE_UPDATES.md` (and the mirrored `wire.sh` payloads), `QC.md`, `references/PROVIDER-DISCREPANCIES.md` section 4, and `EXAMPLES.md` MISTAKE 1. The other `/api/v1/generate/<op>` routes (extend, sounds, cover, ...) stay documented as separate, untouched routes.
+- Version roll to v2.3.3 (`SKILL.md` frontmatter, `skill-version.txt`). No behavior, credential, ledger, callback or reconciliation change; no live transport ran.
+
+---
+
 ## [2.3.2] - 2026-10-11 - WW-30: the legacy `/api/v1/generate` music-generation route is RETIRED
 
 - `validate_audio_request.py --domain music`: a payload on `/api/v1/generate` (the flat
@@ -29,7 +37,7 @@ All notable changes to this skill are documented here.
 
 ## [v2.2.0] - 2026-10-06 - feat: Suno reconciled to the current KIE envelope (W0-02 contract)
 
-- LAYERED routes (directive §9.2 hard gate; `planning/provider-contracts.md` §§1-4): CURRENT `POST /api/v1/jobs/createTask` with top-level model `ai-music-api/*` (generate, extend, upload-and-extend-audio, generate-persona, sounds; version at `input.model`, default V6) is authoritative for new work. LEGACY dedicated `/api/v1/generate` family stays valid for V4..V5_5 (live-marked Discontinued — validator warns, never drops). ONLY `ai-music-api/*` rides createTask; any other model on createTask is still exit 2.
+- LAYERED routes (directive §9.2 hard gate; `planning/provider-contracts.md` §§1-4): CURRENT `POST /api/v1/jobs/createTask` with top-level model `ai-music-api/*` (generate, extend, upload-and-extend-audio, generate-persona, sounds; version at `input.model`, default V6) is authoritative for new work. LEGACY dedicated `/api/v1/generate` family stayed valid for V4..V5_5 (live-marked Discontinued — validator warns, never drops). ONLY `ai-music-api/*` rides createTask; any other model on createTask is still exit 2. (SUPERSEDED by v2.3.2/WW-30: the bare `/api/v1/generate` music-generation route is now RETIRED — refused by the validator, no fallback; the other `/api/v1/generate/<op>` routes remain valid.)
 - Validator: new `_validate_ai_music_envelope` normalizes snake_case envelope keys and delegates caps to the existing validators (one transport, one set of caps). Enums extended from the live Skill 74 registry snapshot: sounds `V5/V5_5/V6/V6_MINI/V6_WILD`; extend title/prompt and generate caps cover the V6 family; duration effective for V5_5/V6/V6_MINI/V6_WILD custom (10-360, default 20); generate checks lyrics ≤5000 (verbatim) and personaModel enum. Self-test 42 became 58 checks (current-envelope pass/reject, legacy-Discontinued warning, sounds/persona/extend/upload-and-extend coverage).
 - `models.json`: Suno entries carry `model_enum` with the V6 family, `model_default: V6` (generate), `route_models` current+legacy, `discontinued: [V4..V5_5]`, lyrics 5000 / persona enum / variety 0-4 caps; last_verified_at 2026-10-06. TTS/STT entries untouched; STT gate unchanged and fail-closed.
 - Docs (`SKILL.md`, `references/music.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `INSTALL.md`, `CORE_UPDATES.md`+`wire.sh` payloads, `QC.md`, `references/qc.md`) describe the layered routes; `skill-version.txt` rolled to v2.2.0.

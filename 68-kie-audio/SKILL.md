@@ -3,11 +3,11 @@ name: kie-audio
 description: >
   KIE.ai audio skill: TTS (Gemini 3.1 Flash / 2.5 Pro + ElevenLabs dialogue-v3 /
   multilingual-v2 / turbo-2-5 via generic Market createTask), Suno music/sound
-  generation (CURRENT createTask envelope ai-music-api/* default V6 + LEGACY
-  dedicated /api/v1/generate family), supported audio processing operations,
-  and speech-to-text CAPABILITY DETECTION (ADVERTISED_NOT_YET_VERIFIED — no
+  generation (CURRENT createTask envelope ai-music-api/generate default V6; the
+  legacy /api/v1/generate music-generation route is RETIRED), supported audio
+  processing operations, and speech-to-text CAPABILITY DETECTION (ADVERTISED_NOT_YET_VERIFIED — no
   endpoint, dispatch_enabled false).
-version: v2.3.2
+version: v2.3.3
 metadata:
   version: "2.3.1"
   priority: HIGH
@@ -23,10 +23,11 @@ completion, and audio QC for three sub-domains with DISTINCT API families:
 2. **MUSIC** — Suno in TWO routes (see `references/music.md`): CURRENT
    `POST /api/v1/jobs/createTask` with top-level model `ai-music-api/*`
    (version at `input.model`, default V6) for generate / extend /
-   upload-and-extend-audio / generate-persona / sounds, plus the LEGACY
-   dedicated `POST /api/v1/generate` family (+ `/extend`, `/sounds`, and 14
-   documented operations) kept for V4..V5_5 (live-marked Discontinued —
-   accepted with a warning, never dropped). ONLY `ai-music-api/*` rides
+   upload-and-extend-audio / generate-persona / sounds. The LEGACY
+   `POST /api/v1/generate` music-generation route is RETIRED (WW-30 — refused
+   by the validator, no fallback, no silent switch-back); the other
+   `/api/v1/generate/<op>` routes (`/extend`, `/sounds`, and 14 documented
+   operations) are different routes and untouched. ONLY `ai-music-api/*` rides
    createTask.
 3. **STT** — `ADVERTISED_NOT_YET_VERIFIED`, `dispatch_enabled: false`. KIE's
    market page advertises ElevenLabs speech-to-text, but no first-party callable
@@ -64,7 +65,7 @@ audio/music/TTS, route here (AGENTS.md routing block).
 
 Full schema in `references/tts.md` (every field, enums, output shape, callback).
 
-### Music (Suno LAYERED routes — current createTask envelope + legacy dedicated family)
+### Music (Suno routes — current createTask envelope; legacy music-generation route RETIRED)
 
 | Route | Purpose |
 |---|---|
@@ -72,7 +73,7 @@ Full schema in `references/tts.md` (every field, enums, output shape, callback).
 | `POST /api/v1/jobs/createTask` + `ai-music-api/extend` / `ai-music-api/upload-and-extend-audio` | extend a track from `continue_at` (CURRENT) |
 | `POST /api/v1/jobs/createTask` + `ai-music-api/sounds` | sound effects (CURRENT); V5/V5_5/V6/V6_MINI/V6_WILD; prompt 500 |
 | `POST /api/v1/jobs/createTask` + `ai-music-api/generate-persona` | persona (CURRENT); vocal window 10-30s |
-| `POST /api/v1/generate` | songs (LEGACY; V4..V5_5 Discontinued — warned, kept) |
+| `POST /api/v1/generate` | songs — RETIRED (WW-30); refused, no fallback |
 | `POST /api/v1/generate/extend` | extend a track from `continueAt` (LEGACY) |
 | `POST /api/v1/generate/sounds` | sound effects (LEGACY); V5/V5_5; prompt 500 |
 | + 14 operations | upload-cover, upload-extend, add-instrumental, add-vocals, cover, replace-section, generate-persona, mashup (exactly 2 URLs), lyrics, get-timestamped-lyrics, wav, vocal-removal, midi, mp4 |
