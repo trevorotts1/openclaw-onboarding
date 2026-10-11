@@ -2182,8 +2182,30 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   CC_ZERO_DOWNTIME=0
   CC_AT_PIN=0
   if git -C "$DASHBOARD_DIR" merge-base --is-ancestor "$CC_UPDATE_TARGET" HEAD 2>/dev/null; then
-    CC_AT_PIN=1
-    log "INFO" "phase=6: the checkout already contains the pinned release; the Command Center code is not changed"
+    # The pin is a FLOOR, never proof of currency. CC main moves past the pin
+    # mid-roll (v7.6.112 -> origin/main 933f1993d) while cc-compat.json's
+    # pinnedTag lags. Treating "contains the pin" as "current" made this branch
+    # exit 0 on a checkout still behind origin/main, and update-skills.sh then
+    # printed "FATAL ... not current on origin/main" (exit 2) and skipped the CC
+    # steps below it. Currency is decided by the LIVE default branch, not the pin.
+    _cc_default="$(git -C "$DASHBOARD_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
+    [[ -n "$_cc_default" ]] || _cc_default="main"
+    git -C "$DASHBOARD_DIR" fetch --quiet origin "+refs/heads/$_cc_default:refs/remotes/origin/$_cc_default" >>"$LOG_FILE" 2>&1 || true
+    if git -C "$DASHBOARD_DIR" merge-base --is-ancestor "origin/$_cc_default" HEAD 2>/dev/null; then
+      CC_AT_PIN=1
+      log "INFO" "phase=6: the checkout is current on origin/$_cc_default and contains the pinned release; the Command Center code is not changed"
+    elif CC_UPDATE_TARGET="" cc_git_sync_to_default_branch "$DASHBOARD_DIR"; then
+      # Converge FORWARD onto origin/$_cc_default (the emptied target makes the
+      # real state-preserving helper merge the live default branch, never below
+      # the pin, never a reset/stash/discard). Retarget the deploy to the
+      # converged tip too, or a pin-targeted update.sh below would revert HEAD
+      # to the pin and re-break the updater's currency check. CC_AT_PIN stays 0
+      # so the canonical deploy below rebuilds and health-verifies the checkout.
+      export CC_UPDATE_TARGET="$(git -C "$DASHBOARD_DIR" rev-parse "origin/$_cc_default")"
+      log "INFO" "phase=6: the checkout contained the pinned release but was behind origin/$_cc_default; converged forward (local commits preserved)"
+    else
+      fail_install "phase=6: the checkout contains the pinned release but is behind origin/$_cc_default and could not be converged without discarding local work. Existing checkout was not deployed. Resolve the git conflict and re-run."
+    fi
   elif cc_zero_downtime_ready "$DASHBOARD_DIR"; then
     CC_ZERO_DOWNTIME=1
     log "INFO" "phase=6: zero-downtime update: the live checkout, node_modules and build stay untouched until CC's update.sh promotes the new release"
