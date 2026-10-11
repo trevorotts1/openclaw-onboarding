@@ -6,6 +6,32 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.33 - 2026-10-11 - WORKER-CFG: ship mini-app/worker/wrangler.toml (closes the U2/U4 config gap)
+
+ONE real-content commit whose parent is the live main head
+(`0babaac894f88f8a49b629b3abde7bc1e47985d3`, read at build time). Skill 75 is
+bumped exactly once, inside this one commit; the repository root `/version`
+and root `CHANGELOG.md` are unchanged.
+
+- Ships the missing Cloudflare Worker config `mini-app/worker/wrangler.toml`
+  that U4 deploy.sh preflight line 173 refuses without: "FATAL preflight:
+  missing .../worker/wrangler.toml (U2 service contract). Cannot deploy.". U2
+  deliberately shipped no wrangler.toml and U4 #1815 shipped only
+  `mini-app/deploy/` files, so the file belonged to neither unit.
+- Content: `name = "drama-studio-mini-app"`, `main = "src/index.js"`, route
+  `studio.zerohumanworkforce.com/*` on zone `zerohumanworkforce.com`,
+  `compatibility_date = "2024-09-23"`, `<PLACEHOLDER>` `account_id`; one R2
+  binding `DRAMA_STUDIO` -> bucket `zhw-drama-studio`; one KV binding
+  `DS_STUDIO` with `<PLACEHOLDER>` id/preview_id; `[observability] enabled`.
+  Both binding names are exactly what `service/src/index.js` reads. No real
+  id; secrets stay out of the file (`wrangler secret put`); the
+  zerohumanworkforce.com zone landmine is documented in the file.
+- No deploy.sh edit: U4's deploy.sh resolves only
+  `<PLACEHOLDER_CF_ACCOUNT_ID>` and has no KV-namespace step and no
+  `R_KV_ID`/`R_PREVIEW_ID` variables, and kv/r2 creation is out of scope for
+  this unit, so the KV placeholders stay the committed contract (same shape as
+  the Book Writer config).
+
 ## v2.9.32 - 2026-10-11 - WW-29: optional vocalise, no stale early-hook rule, consistent R&B Flow direction, one reconciled fewer-words budget
 
 ONE real-content commit whose parent is the live head of `unit/WWC-U1`
