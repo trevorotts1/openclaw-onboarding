@@ -48,8 +48,13 @@ CHECK_MODE=0
 for arg in "$@"; do
   case "$arg" in
     --repair) REPAIR_MODE=1 ;;
+    # update-skills.sh runs every skill installer as `bash <installer> --idempotent`.
+    # Accept that flag as a non-interactive convergence run (same as --repair);
+    # without this the updater's invocation exits 2 at usage and the four
+    # config-isolation gates this installer satisfies are never applied.
+    --idempotent) REPAIR_MODE=1; NONINTERACTIVE=1 ;;
     --check) CHECK_MODE=1 ;;
-    *) echo "usage: $0 [--repair] [--check]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--repair] [--check] [--idempotent]" >&2; exit 2 ;;
   esac
 done
 
@@ -156,7 +161,7 @@ OPENCLAW_BIN="$(command -v openclaw || true)"
 # Candidate validation runner: the INSTALLED openclaw validates the candidate.
 # Fails closed — if openclaw is absent the candidate is not promoted on the
 # strength of a structural check alone.
-REPORT_JSON="$(mktemp -t rr032-report)"
+REPORT_JSON="$(mktemp "${TMPDIR:-/tmp}/rr032-report.XXXXXX")"
 set +e
 python3 "$ENGINE" \
   --cfg "$CFG_PATH" \
