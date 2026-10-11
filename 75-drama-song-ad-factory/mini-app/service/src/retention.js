@@ -17,6 +17,12 @@
 // | enrollment_record    | NEVER — the scope rule excludes it               |
 // | delivery_receipt     | NEVER                                            |
 // | ghl_media            | NEVER — the studio never deletes a GHL copy      |
+// | push_subscription    | NEVER — U20. A subscription is removed only by an  |
+// |                      | explicit unsubscribe or a push service 404/410,    |
+// |                      | never by a time sweep. The plan states no retention|
+// |                      | for an optional version-2 push record, so the       |
+// |                      | studio takes the never-surprise choice: a client    |
+// |                      | never stops hearing from the studio on a timer.    |
 //
 // Section 3.15: "Deletion code does not exist in either live mini app today.
 // It is new work (U2)." This module IS that work: it decides, it never
@@ -41,6 +47,7 @@ export const RETENTION_RULES = {
   enrollment_record: { never: true },
   delivery_receipt: { never: true },
   ghl_media: { never: true },
+  push_subscription: { never: true },
 };
 
 export const AF_RET_UNKNOWN_KIND = 'AF-DS-RET-UNKNOWN-KIND';
