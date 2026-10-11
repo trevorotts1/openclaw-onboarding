@@ -1,0 +1,6 @@
+{
+  "name": "drama-song-ad-factory-mini-app-ui",
+  "private": true,
+  "type": "module",
+  "description": "U3 version-0 studio UI. ESM marker so the runnable checks import the shipped modules unchanged. No dependencies."
+}
