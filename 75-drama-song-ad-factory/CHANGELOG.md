@@ -6,6 +6,73 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.28 - 2026-10-11 - WWR3INT2 re-cut: pull request 1855 onto live main (WW-21 kept whole) on the 88-second R&B Flow card
+
+ONE real-content commit. It carries the FULL CONTENT of pull request #1855's
+three commits (`9e33dd85`, `90961735`, `c43b8117`) -- the WW-PREVENT-RECURRENCE
+wave with its WW-16 and WW-07 production fixes -- onto live `origin/main`
+(`fdb7bf1af`, read at build time, which already holds WW-21 via the batch merge
+`197ee673a`). The version bump for `skill-version.txt`, the `SKILL.md`
+frontmatter and this entry ride inside the same commit -- never a bump-only or
+changelog-only commit.
+
+Overlaps with WW-21 were resolved so that **neither side wins silently**:
+
+* `song_choices/song_choices.py`, `song_dispatch/song_dispatch.py`,
+  `music_qc/test_wwfix_u1.py` and `core/acceptance-profile.json` are the four
+  files both sides touched.
+* `song_dispatch.song_dispatch._finish` keeps **WW-21's total, fail-closed
+  boundary** (empty gate set blocks with `EMPTY_GATE_SET`, a malformed record
+  blocks, a missing required gate blocks) AND the WW-08 behaviour #1855 relies
+  on: a required gate that did not run is recorded in `gates` as `UNMEASURED`
+  and the same names stay in `missing`; `not_applicable` carrying its style flag
+  advances. `required_gates` is carried for the delivery decision
+  (`take_accepted`).
+* WW-21's whole aggregation and evidence-binding block (`accept_audio_results`,
+  `take_binding`, `record_acceptance`, `acceptance_from_run`,
+  `acceptance_refusal`, the `RAP_NEITHER_PLANNED_NOR_MEASURED` loophole
+  closure, `_MIN_AUDIO_RESULTS`) is present, and #1855's
+  `take_accepted` / `constituent_receipt` / `constituent_ok` are present beside
+  it. `story` and `timeline` were added to `GATES` because #1855's judge emits
+  them for every take.
+* `acceptance-profile.json` carries both WW-21's `audio_results` block and
+  #1855's `ww_wave` block.
+
+Production fixes that survive and are re-proved on this head:
+
+* **WW-16** -- `suno_recipe.parse_lyrics` stores the bracket cue text under the
+  key `"cue"`, so `check_lyric_sheet`'s vocalise-ceiling guard is reached by the
+  production path through `song_dispatch.validate_request`; the fixture
+  `scripts/core/suno_recipe/fixtures/one-check-lyrics.txt` line 5 is refused
+  before spend.
+* **WW-07** -- in `song_choices.build_requests` the variant / arrangement clause
+  is placed so the pace drop and the return are the LAST text in the assembled
+  `request["style"]` on all three variants; the `build_requests` docstring reads
+  "AFTER the ending and arrangement clauses"; and a test asserts, on the
+  ASSEMBLED `request["style"]`, that the pace offset is GREATER than the
+  Arrangement offset.
+
+The rapped R&B Flow fixtures in `music_qc/test_wwfix_u1.py`,
+`song_choices/test_song_choices_fu_song.py`,
+`song_choices/test_song_wire_fu_song2.py` and `suno_recipe/test_suno_recipe.py`
+moved from the 58-second card to the **88-second card** (option (i) of the
+orchestrator's decision). WW-01 made the rap floor PER VERSE, and below 88 s no
+sheet clears BOTH the per-verse floor AND the style's sung-share target at once;
+at 88 s the shipped golden `suno-90s-rnb-flow.json` clears every gate the same
+way. The rap floor and every other guard is untouched -- nothing was lowered,
+loosened, skipped, xfailed or routed around, and no assertion's intent changed.
+
+`/version` (the repository root version, `v27.1.10`) is UNCHANGED: `v27.1.11` is
+reserved for the WW-30 re-cut that stacks on this one. `scripts/bundle-release-in-branch.sh`
+was NOT run, because a prior quality check measured it as `REPO_ROOT`-scoped (it
+would have changed the root `/version` and the root `CHANGELOG.md`); the skill-75
+files were bumped by the same shape #1854 used instead.
+
+Zero paid provider calls: every suite drives fake transports only. No provider
+was called, nothing was spent, no song or video was regenerated.
+
+---
+
 ## v2.9.27 - 2026-10-11 - WW-21: the total fail-closed acceptance boundary (five bound delivered-audio results, zero purchases on every refusal)
 
 WW-21 is the **aggregation and evidence-binding boundary that runs before
@@ -75,6 +142,7 @@ whether the five results *carried to it* may advance.
 No threshold, check, test or guard was weakened, skipped, xfailed, deleted or
 re-run to green. No paid call is made anywhere in this unit; nothing was
 regenerated.
+
 
 ## v2.9.26 - 2026-10-11 - empty-home test: make the core copy deterministic so the `__pycache__` race cannot fail `QC static invariants`
 

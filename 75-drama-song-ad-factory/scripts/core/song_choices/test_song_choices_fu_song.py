@@ -44,16 +44,32 @@ SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
          {"tag": "Hook 3", "delivery": "sung", "lines": HOOK},
          {"tag": "Outro", "delivery": "spoken", "lines": ["She Found Power in the Climb. Get the book. Link below."]}]
 # WWFIX D1: R&B Flow DELIVERS rap, so its sheet must plan the rap floor
-# (max(8 s, 10% of D) => 20 rap words at 58 s). The soul styles above carry no
+# (max(8 s, 10% of D) => 22 rap words at 88 s). The soul styles above carry no
 # rap and are refused a rap block, so the two styles cannot share one sheet.
+# WWR3INTFIX U1 (option i): the rapped R&B Flow fixture runs on the 88-SECOND
+# CARD. WW-01 made the floor PER VERSE (2 verses, each 8.8 s / 22 words at
+# D = 88 => 40 rap words = 16.0 s at 2.5 wps); below 88 s no sheet clears BOTH
+# the per-verse floor AND the 72.9% sung-share target at once, which is why the
+# old 58 s fixture was refused. At 88 s the shipped golden
+# (suno-90s-rnb-flow.json) clears every gate the same way, so the rapped
+# variant runs the 88 s sheet, KEEPING the spoken [Outro] CTA (the take judge's
+# script_words gate needs the client's own closing words present) and declaring
+# FOUR hook blocks.
+RNB_LEN = 88
 SHEET_RNB = [SHEET[0], SHEET[1], SHEET[2], SHEET[3],
              {"tag": "Verse", "delivery": "sung",
-              "lines": ["One seed of truth made me stro-o-ong,", "I hold the light I found,", "I walk free,"]},
+              "lines": ["One seed of truth made me stro-o-ong,", "I hold the light I found,",
+                        "I walk out free,", "I rise a-a-above,", "I am more than this,",
+                        "I am he-e-ere,", "I am not lost,", "I am still standing ta-a-all,"]},
              SHEET[5], SHEET[6],
+             {"tag": "Hook 4", "delivery": "sung", "lines": HOOK},
              {"tag": "Verse", "delivery": "rap",
               "lines": ["Backup shoes, backup jacket, but no backup plan,",
                         "So I count what I make and not what they take today,"]},
-             SHEET[7]]
+             {"tag": "Verse", "delivery": "rap",
+              "lines": ["Every door they closed I opened with my own two hands,",
+                        "And I keep walking toward the morning light now,"]},
+             SHEET[7]]   # the spoken [Outro] CTA (the script_words gate needs it)
 
 
 def sheet_for(style):
@@ -62,20 +78,22 @@ def sheet_for(style):
 
 
 _FIRST_WORD_S = 4.0      # the first aligned word's start; the hook window opens at 13.4 s
-PLAN = LF.plan(60, (15, 20))
+PLAN = LF.plan(90, (15, 20))
 SCRIPT = "One closed door. She Found Power in the Climb. Get the book. Link below."
 HOOKTXT = " ".join(HOOK)
 _W = "one closed door oo-o-oh i am not small i never was one seed of truth made me strong " \
      "i am not small i never was i am not small i never was she found power in the climb get the book link below".split()
-GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 2, "source": "measured"},
-                     {"delivery": "sung", "start": 2.5, "end": 45, "source": "measured"},
-                     {"delivery": "spoken", "start": 45, "end": 54, "source": "measured"}],
+# WWR3INTFIX U1: the take's measured windows scale with the 88-second card, so
+# every hook block the 88 s sheet declares lands inside a sung window.
+GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 3, "source": "measured"},
+                     {"delivery": "sung", "start": 3, "end": 80, "source": "measured"},
+                     {"delivery": "spoken", "start": 80, "end": 86, "source": "measured"}],
         "aligned_words": [{"word": w, "startS": 3 + i, "endS": 3.5 + i} for i, w in enumerate(_W)],
-        "detector": "singing_detector 2.0.0", "duration_s": 57.5, "music_under_speech_ratio": 0.6,
+        "detector": "singing_detector 2.0.0", "duration_s": 87.5, "music_under_speech_ratio": 0.6,
         "tail_rms_dbfs": -30.0, "first_sung_s": 2.5}
 
 
-def _suno_words(lyrics, duration_s=57.5):
+def _suno_words(lyrics, duration_s=87.5):
     """Aligned words the way Suno returns them: each section header rides inline on
     the section's first word (FU-HOOK-PLACEMENT reads them), spread EVENLY from 4 s
     to the take's own duration so a longer sheet still lands inside the take."""
@@ -102,7 +120,7 @@ def _tag(path):
 
 def _pipeline(tmp, bad_first=(), bad_always=()):
     """Run the Yes path with a fake generator. Returns (results, calls, barrier_ok)."""
-    reqs = SC.build_requests("rnb-flow", sheet_for("rnb-flow"), CLIENT, "T", 58,
+    reqs = SC.build_requests("rnb-flow", sheet_for("rnb-flow"), CLIENT, "T", RNB_LEN,
                              hook_plan={"true_at_beat": "the_world"})
     calls, seen, lock = {}, set(), threading.Lock()
     barrier = threading.Barrier(3, timeout=10)
@@ -153,7 +171,9 @@ def test_recap_lists_it_and_line_change_works():
 
 def test_three_distinct_variants_per_style_all_pass_the_request_check():
     for style in ("rnb-flow", "soul-ballad", "soul-rise"):
-        reqs = SC.build_requests(style, sheet_for(style), CLIENT, "T", 58, hook_plan={"true_at_beat": "the_world"})
+        reqs = SC.build_requests(style, sheet_for(style), CLIENT, "T",
+                                 RNB_LEN if style == "rnb-flow" else 58,
+                                 hook_plan={"true_at_beat": "the_world"})
         assert len({rq["style"] for _, rq in reqs}) == 3 and len({v["label"] for v, _ in reqs}) == 3
         assert len({rq["lyrics"] for _, rq in reqs}) == 1        # same lyric sheet
         for v, rq in reqs:
@@ -173,7 +193,7 @@ def test_yes_path_three_labelled_files_titles_readme_and_parallel():
         for n in names:
             assert _tag(os.path.join(folder, n)) == n[:-4], (n, _tag(os.path.join(folder, n)))
         readme = open(os.path.join(folder, "README.txt")).read().splitlines()
-        assert len(readme) == 3 and readme[0].startswith("1 - POLISHED MODERN - 0:58 - ")
+        assert len(readme) == 3 and readme[0].startswith("1 - POLISHED MODERN - 1:28 - ")
         assert "1. POLISHED MODERN" in msg and "2. WARM LIVE BAND" in msg and "3. CINEMATIC STRINGS" in msg
         assert "Reply 1, 2 or 3 to pick your song." in msg
 

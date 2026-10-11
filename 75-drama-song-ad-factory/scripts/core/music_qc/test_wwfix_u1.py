@@ -17,11 +17,22 @@ profile revision it was produced against. PROPOSED: the minimum count of 5
 audio_results.minimum_count`) is the count of the five gate names the operator
 plan already names -- a proposed value, not a measured limit and NOT a number
 Trevor set. It moves only when that plan's gate list moves.
+Extended by the WW-PREVENT-RECURRENCE wave (Unit U1, package arc-revision-battery):
+WW-10 (three DISTINCT initial identities, integer microseconds, 0.999 s FAILS),
+WW-03 (the performed-beat manifest and the creative fingerprint, from ONE source),
+WW-11 (parity release check, judge-path gate-removal and delivery-boundary tests)
+and WW-19 (the import audit of the six referenced module paths). The WW-wave
+thresholds are NEW ACCEPTANCE RULES under the same rule stated above.
+
+ONE battery: this file. No second framework, no second suite.
 
 Run: python3 core/music_qc/test_wwfix_u1.py
 """
 import argparse
 import datetime
+import hashlib
+import importlib
+import importlib.util
 import json
 import os
 import sys
@@ -29,6 +40,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
+SKILL_ROOT = os.path.dirname(os.path.dirname(CORE))
 for sub in ("", "intake_preflight"):
     sys.path.insert(0, os.path.join(CORE, sub))
 
@@ -42,6 +54,7 @@ import song_contract as SCT                    # noqa: E402
 import suno_recipe as R                        # noqa: E402
 
 FAILURES = []
+UNDETERMINED = []
 
 
 def check(cond, label):
@@ -52,17 +65,59 @@ def check(cond, label):
         FAILURES.append(label)
 
 
+def undetermined(label, why):
+    """A dependency owned by a sibling work package that has not landed yet is
+    UNDETERMINED -- never a pass."""
+    print("UNDETERMINED %s: %s" % (label, why))
+    UNDETERMINED.append("%s (%s)" % (label, why))
+
+
+def gate(cond, label, why):
+    """Guard: a missing (not-yet-published) dependency is UNDETERMINED, never a
+    pass; a present-but-wrong dependency is a real FAIL."""
+    if cond:
+        return True
+    undetermined(label, why)
+    return False
+
+
+def _load_path(rel):
+    """Load a module from a file path so the battery never depends on a package
+    __init__ that lands with another work package."""
+    p = os.path.join(CORE, rel)
+    if not os.path.exists(p):
+        return None
+    mod = "dsaf_" + rel.replace("/", "_").replace(".", "_")
+    try:
+        spec = importlib.util.spec_from_file_location(mod, p)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+    except Exception:
+        return None
+
+
+try:
+    import song_dispatch as SD                      # noqa: E402
+except Exception:
+    SD = None
+SA = _load_path("story_arc/story_arc.py")
+
+
 CLIENT = ("I am not small. I never was. One seed of truth made me strong. "
           "She Found Power in the Climb.")
 HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
-#: The R&B Flow sheet: the style DELIVERS rap, so the sheet must plan the rap
-#: floor (max(8 s, 10% of D) = 20 rap words at 58 s) and keep the sung share.
-#: WWFIXGAPS U1 (defect 0): the sung share the style's own plan holds at 58 s
-#: is 72.9% of voice time, and the plan's word budget at 58 s is 76 words (85
-#: with the band). A rap sheet that keeps BOTH the D1 rap floor (20 words) and
-#: a spoken closing call to action cannot also sing enough to clear that floor
-#: -- 61 sung + 20 rap + 14 spoken = 95 words -- so this sheet runs WITHOUT the
-#: spoken [Outro]. The intro + CTA shape is exercised by the non-rap sheets.
+#: The R&B Flow sheet on the 88-SECOND CARD (WW-01 made the rap floor PER
+#: VERSE: 2 verses, each 8.8 s / 22 words at D = 88 => 40 rap words = 16.0 s at
+#: 2.5 wps). Below 88 s the same shape cannot hold BOTH the per-verse rap floor
+#: AND the style's sung-share target at once -- at 58 s the sung share the style
+#: plans (72.9% of voice) and the per-verse floor pull in opposite directions
+#: and no 58 s sheet satisfies both, which is exactly the defect the 58 s
+#: fixtures hit. At 88 s the budget clears both: 78 sung + 40 rap + 3 spoken,
+#: the shipped 88-second golden (suno-90s-rnb-flow.json) passes every gate the
+#: same way. The spoken [Outro] is dropped for the rap variant -- the intro +
+#: CTA shape is exercised by every non-rap sheet -- and the hook block is
+#: declared FOUR times (the 88 s plan fits four hook blocks; three is refused).
 SHEET_RNB = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
              {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
              {"tag": "Verse", "delivery": "sung",
@@ -70,22 +125,27 @@ SHEET_RNB = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."
              {"tag": "Hook 1", "delivery": "sung", "lines": HOOK},
              {"tag": "Verse", "delivery": "sung",
               "lines": ["One seed of truth made me stro-o-ong,", "I hold the light I found,",
-                        "I walk free,"]},
+                        "I walk out free,", "I rise a-a-above,", "I am more than this,",
+                        "I am he-e-ere,", "I am not lost,", "I am still standing ta-a-all,"]},
              {"tag": "Hook 2", "delivery": "sung", "lines": HOOK},
              {"tag": "Hook 3", "delivery": "sung", "lines": HOOK},
+             {"tag": "Hook 4", "delivery": "sung", "lines": HOOK},
              {"tag": "Verse", "delivery": "rap",
               "lines": ["Backup shoes, backup jacket, but no backup plan,",
-                        "So I count what I make and not what they take today,"]}]
+                        "So I count what I make and not what they take today,"]},
+             {"tag": "Verse", "delivery": "rap",
+              "lines": ["Every door they closed I opened with my own two hands,",
+                        "And I keep walking toward the morning light now,"]}]
 HOOK_PLAN = {"true_at_beat": "the_world"}
 SPOKEN_RANGE = (15, 20)
 
 
 def _reqs():
-    return SC.build_requests("rnb-flow", SHEET_RNB, CLIENT, "T", 58, hook_plan=HOOK_PLAN)
+    return SC.build_requests("rnb-flow", SHEET_RNB, CLIENT, "T", 88, hook_plan=HOOK_PLAN)
 
 
 def _plan():
-    return {"delivered_s": 58, "style_id": "rnb-flow",
+    return {"delivered_s": 88, "style_id": "rnb-flow",
             "sheet_text": R.render_lyrics(SHEET_RNB, "rnb-flow"), "hook_plan": HOOK_PLAN}
 
 
@@ -93,9 +153,9 @@ def _spec_file(tmp):
     path = os.path.join(tmp, "req.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"style_id": "rnb-flow", "client_text": CLIENT, "title": "T",
-                   "length_s": 58, "hook_plan": HOOK_PLAN,
+                   "length_s": 88, "hook_plan": HOOK_PLAN,
                    "input": {"lyrics": R.render_lyrics(SHEET_RNB, "rnb-flow"),
-                             "style_id": "rnb-flow", "duration": 58, "vocal_gender": "f"}}, f)
+                             "style_id": "rnb-flow", "duration": 88, "vocal_gender": "f"}}, f)
     return path
 
 
@@ -232,11 +292,17 @@ def test_d2_cmd_next_exposes_one_mode_at_a_time():
 
 # ---- D2 item 3: the provider-overlap receipt -------------------------------
 
-def _receipts(base, seconds, attempt_ids=("a1", "a2", "a3"), initial=True):
+def _receipts(base, seconds, attempt_ids=("a1", "a2", "a3"), initial=True, variants=None):
+    # WW-10: the gate needs three DISTINCT (variant, attempt, task) identities, so
+    # the default variant is per-attempt. ``variants`` lets a caller pin its own.
     t0 = base
-    return [OV.make_receipt("polished-modern", {"k": i}, "logical", aid, "task-%s" % aid,
-                            t0, t0 + datetime.timedelta(seconds=seconds), initial=initial)
-            for i, aid in enumerate(attempt_ids)]
+    out = []
+    for i, aid in enumerate(attempt_ids):
+        v = variants[i] if variants and i < len(variants) else "variant-%s" % aid
+        out.append(OV.make_receipt(v, {"k": i}, "logical", aid, "task-%s" % aid,
+                                   t0, t0 + datetime.timedelta(seconds=seconds),
+                                   initial=initial))
+    return out
 
 
 def test_overlap_gate_boundary_and_fail_closed():
@@ -257,9 +323,19 @@ def test_overlap_gate_boundary_and_fail_closed():
     regen = OV.overlap_gate(_receipts(base, 5.0, attempt_ids=("a4", "a5", "a6"), initial=False))
     check(regen["verdict"] == "UNAVAILABLE",
           "D2: regenerated attempts never stand in for the three initial ones")
-    naive = [dict(r, submitted_at=r["submitted_at"].replace("Z", "")) for r in _receipts(base, 5.0)]
+    # WW-10 adaptation: the gate now reads the labelled provider clock
+    # (``accepted_submit_at``) and validates the receipt digest, so a naive-clock
+    # probe must strip BOTH provider stamps and the digest.
+    naive = [dict(r, submitted_at=r["submitted_at"].replace("Z", ""),
+                  accepted_submit_at=r["accepted_submit_at"].replace("Z", ""),
+                  terminal_at=r["terminal_at"].replace("Z", ""), receipt_sha256=None)
+             for r in _receipts(base, 5.0)]
     check(OV.overlap_gate(naive)["verdict"] == "UNAVAILABLE",
           "D2: an unlabelled/naive clock is not admissible evidence")
+    local = [dict(r, timestamp_source="local", receipt_sha256=None)
+             for r in _receipts(base, 5.0)]
+    check(OV.overlap_gate(local)["verdict"] == "UNAVAILABLE",
+          "D2: a receipt labelled with a LOCAL clock is not admissible evidence")
     check(at_1["requires_owner_authority"] is True and at_1["paid_redo"] is False,
           "D2: the gate never authorises a paid redo on its own")
 
@@ -298,14 +374,14 @@ def test_d1_rap_sheet_below_floor_is_refused_before_spend():
     """A rap style whose sheet plans fewer rap words than the floor is refused,
     and a non-rap style carrying a rap block is refused too."""
     thin = [s for s in SHEET_RNB if s["delivery"] != "rap"]
-    out = SCT.check_sheet(R.render_lyrics(thin, "rnb-flow"), "rnb-flow", 58)
+    out = SCT.check_sheet(R.render_lyrics(thin, "rnb-flow"), "rnb-flow", 88)
     check(out["verdict"] == "FAIL"
           and any(r.startswith("RAP_PLANNED_ZERO_WORDS") for r in out["reasons"]),
           "D1: an R&B Flow sheet with no rap lines is refused (%r)" % (out["reasons"][:1],))
-    check(out["totals"]["rap_floor_words"] == 20 and out["totals"]["rap_floor_s"] == 8.0,
-          "D1: the refusal names the 58 s floor (20 rap words / 8.0 s)")
-    ok = SCT.check_sheet(R.render_lyrics(SHEET_RNB, "rnb-flow"), "rnb-flow", 58)
-    check(ok["verdict"] == "PASS" and ok["totals"]["rap_words"] >= 20,
+    check(out["totals"]["rap_floor_words"] == 22 and out["totals"]["rap_floor_s"] == 8.8,
+          "D1: the refusal names the 88 s floor (22 rap words / 8.8 s)")
+    ok = SCT.check_sheet(R.render_lyrics(SHEET_RNB, "rnb-flow"), "rnb-flow", 88)
+    check(ok["verdict"] == "PASS" and ok["totals"]["rap_words"] >= 22,
           "D1: the same sheet WITH its rap floor passes (%r)" % (ok["verdict"],))
     soul = SCT.check_sheet(R.render_lyrics(SHEET_RNB, "soul-ballad"), "soul-ballad", 58)
     check(soul["verdict"] == "FAIL",
@@ -848,6 +924,494 @@ def test_ww21_the_block_reaches_offer_pick_and_purchase():
               "WW-21: an unreadable acceptance record BLOCKS")
         check(purchases == [], "WW-21: still zero purchases")
 
+# ---- WW-10: three DISTINCT identities, integer microseconds ---------------
+
+def test_ww10_three_distinct_identities_are_required():
+    """WW-10: the gate needs EXACTLY three DISTINCT (variant, attempt, task)
+    identities. Two receipts sharing a task id, a repeated variant, or a repeated
+    attempt FAIL -- they never PASS."""
+    if not gate(OV is not None, "WW-10 distinctness", "song_choices/overlap.py not present"):
+        return
+    base = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    good = OV.overlap_gate(_receipts(base, 5.0))
+    check(good["verdict"] == "PASS" and len(good["distinct_identities"]) == 3,
+          "WW-10: three distinct task ids PASS (%r)" % (good["distinct_identities"],))
+    dup_task = [dict(r) for r in _receipts(base, 5.0)]
+    dup_task[1]["task_id"] = dup_task[0]["task_id"]
+    g = OV.overlap_gate(dup_task)
+    check(g["verdict"] == "FAIL" and g["reason_code"] == "OVERLAP_IDENTITY_DUPLICATE",
+          "WW-10: two receipts sharing a task id FAIL (%r)" % (g["verdict"],))
+    same_identity = [dict(r) for r in _receipts(base, 5.0)]
+    same_identity[2].update(attempt_id=same_identity[0]["attempt_id"],
+                            task_id=same_identity[0]["task_id"],
+                            variant_id=same_identity[0]["variant_id"])
+    check(OV.overlap_gate(same_identity)["verdict"] == "FAIL",
+          "WW-10: a repeated (variant, attempt, task) identity FAILS")
+    no_var = [dict(r) for r in _receipts(base, 5.0)]
+    no_var[1]["variant_id"] = None
+    check(OV.overlap_gate(no_var)["verdict"] == "UNAVAILABLE",
+          "WW-10: an identity with no variant id is UNAVAILABLE, never a pass")
+
+
+def test_ww10_microseconds_no_rounding_and_0999_fails():
+    """WW-10: the comparison is INTEGER MICROSECONDS with no rounding. 999,999 us
+    FAILS; 1,000,000 us PASSes -- 0.999999 s can never become 1.0."""
+    if not gate(OV is not None, "WW-10 microseconds", "song_choices/overlap.py not present"):
+        return
+    base = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    just_below = OV.overlap_gate(_receipts(base, 0.999999))
+    check(just_below["verdict"] == "FAIL" and just_below["overlap_us"] == 999999,
+          "WW-10: 999,999 us FAILS with no rounding (%r us)" % (just_below["overlap_us"],))
+    at_floor = OV.overlap_gate(_receipts(base, 1.0))
+    check(at_floor["verdict"] == "PASS" and at_floor["overlap_us"] == 1000000,
+          "WW-10: exactly 1,000,000 us PASSes")
+    check(OV.MIN_OVERLAP_US == 1_000_000 and at_floor["microseconds_compared_without_rounding"],
+          "WW-10: the floor is declared in microseconds and the comparison states so")
+
+
+def test_ww10_malformed_reversed_duplicated_digest_all_fail():
+    """WW-10: MISSING lifecycle evidence is UNAVAILABLE; MALFORMED, REVERSED,
+    DUPLICATED and DIGEST-MISMATCHED evidence is FAIL."""
+    if not gate(OV is not None, "WW-10 malformed", "song_choices/overlap.py not present"):
+        return
+    base = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    reversed_r = [dict(r, receipt_sha256=None) for r in _receipts(base, 5.0)]
+    reversed_r[0]["terminal_at"] = "2025-12-31T00:00:00.000Z"     # before its submit
+    g = OV.overlap_gate(reversed_r)
+    check(g["verdict"] == "FAIL" and g["reason_code"] == "OVERLAP_EVIDENCE_REVERSED",
+          "WW-10: a reversed timestamp FAILS (%r)" % (g["reason_code"],))
+    malformed = [dict(r, receipt_sha256=None) for r in _receipts(base, 5.0)]
+    malformed[0]["terminal_at"] = "not-a-timestamp"
+    g = OV.overlap_gate(malformed)
+    check(g["verdict"] == "FAIL" and g["reason_code"] == "OVERLAP_EVIDENCE_MALFORMED",
+          "WW-10: a malformed timestamp FAILS (%r)" % (g["reason_code"],))
+    tampered = [dict(r) for r in _receipts(base, 5.0)]
+    tampered[1]["terminal_at"] = "2026-01-01T00:00:05.500Z"       # edited after the digest
+    g = OV.overlap_gate(tampered)
+    check(g["verdict"] == "FAIL" and g["reason_code"] == "OVERLAP_DIGEST_MISMATCH",
+          "WW-10: a digest-mismatched receipt FAILS (%r)" % (g["reason_code"],))
+    four = OV.overlap_gate(_receipts(base, 5.0, attempt_ids=("a1", "a2", "a3", "a4")))
+    check(four["verdict"] == "FAIL", "WW-10: four initial rows FAIL")
+    missing = [dict(r, receipt_sha256=None) for r in _receipts(base, 5.0)]
+    missing[2]["terminal_at"] = None
+    check(OV.overlap_gate(missing)["verdict"] == "UNAVAILABLE",
+          "WW-10: a missing terminal stamp is UNAVAILABLE, never a pass")
+
+
+def test_ww10_scope_is_honest_concurrency_evidence():
+    """WW-10: the fix is scoped as a CONCURRENCY-EVIDENCE fix and carries no
+    automatic paid redo."""
+    if not gate(OV is not None, "WW-10 scope", "song_choices/overlap.py not present"):
+        return
+    base = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    g = OV.overlap_gate(_receipts(base, 5.0))
+    check(g.get("scope") == "CONCURRENCY_EVIDENCE" and g.get("paid_redo") is False
+          and g.get("preserve_paid_tracks") is True,
+          "WW-10: scope is CONCURRENCY_EVIDENCE, no paid redo, paid tracks preserved")
+
+# ---- WW-03 / WW-15: the performed-beat manifest and the fingerprint --------
+
+def _manifest_source(lines_by_beat, delivery="sung", devices=None):
+    return {b: {"lines": lines_by_beat.get(b, []), "delivery": delivery,
+                "devices": (devices or {}).get(b, [])} for b in SA.BEATS}
+
+
+def _aligned(text, start=0.0, step=0.3):
+    out = []
+    for i, w in enumerate(str(text).split()):
+        out.append({"word": w, "startS": start + i * step, "endS": start + i * step + 0.2})
+    return out
+
+
+def test_ww03_manifest_covers_all_twelve_beats_from_one_source():
+    """WW-03: ONE source -> the performed-beat manifest for ALL TWELVE canonical
+    beats; the fingerprint covers lines, delivery, beat map, hook and pace."""
+    if not gate(SA is not None, "WW-03 manifest", "story_arc.py not present"):
+        return
+    lines = {b: ["line for %s" % b] for b in SA.BEATS}
+    man = SA.build_manifest(_manifest_source(lines))
+    check(man["beat_count"] == 12 and len(man["beats"]) == 12
+          and man["present_count"] == 12 and not man["missing"],
+          "WW-03: the manifest covers all twelve canonical beats from ONE source")
+    fp = SA.creative_fingerprint(man)
+    check(fp["components"] == ["lines", "delivery", "beat_map", "hook", "pace"]
+          and isinstance(fp["sha256"], str) and len(fp["sha256"]) == 64,
+          "WW-03: the fingerprint covers lines, delivery, beat map, hook and pace")
+    src2 = dict(_manifest_source(lines))
+    src2[SA.BEATS[3]] = {"lines": ["a different wound line"], "delivery": "sung"}
+    check(SA.build_manifest(src2)["fingerprint"] != man["fingerprint"],
+          "WW-03: editing ONE line changes the fingerprint")
+
+
+def test_ww03_metadata_only_twelve_identifiers_do_not_pass():
+    """A metadata-only twelve-identifier list (ids but no heard lines) must NOT
+    pass -- it is MANIFEST_METADATA_ONLY, never a pass."""
+    if not gate(SA is not None, "WW-03 metadata-only", "story_arc.py not present"):
+        return
+    ids_only = {b: {"line_ids": ["id-%s" % b]} for b in SA.BEATS}
+    man = SA.build_manifest(ids_only)
+    binding = SA.bind_revision("rev-3", man)
+    g = SA.check_performed_manifest(man, binding, _aligned("anything at all"))
+    check(g["verdict"] == "FAIL"
+          and any(x == "MANIFEST_METADATA_ONLY" for x in g["failed"]),
+          "WW-03: a metadata-only twelve-identifier list is refused (%r)" % (g["failed"],))
+
+
+def test_ww03_the_shipped_take_is_refused_on_missing_devices():
+    """The stored take carries only ONE of the seven approved devices, so six
+    required devices are missing and the performed gate refuses it."""
+    if not gate(SA is not None, "WW-03 devices", "story_arc.py not present"):
+        return
+    seven = ["The book showed me the way", "The mirror named the pattern",
+             "The mentor held the light", "The wound had a name",
+             "The climb was mine", "The doubt was loud", "The call came at dawn"]
+    lines = {b: ["line for %s" % b] for b in SA.BEATS}
+    lines[SA.BEATS[0]] = ["The book showed me the way"]
+    man = SA.build_manifest(_manifest_source(lines))
+    binding = SA.bind_revision("rev-3", man)
+    heard = (_aligned(" ".join(" ".join(lines[b]) for b in SA.BEATS))
+             + _aligned("stray filler", start=400.0))
+    g = SA.check_performed_manifest(man, binding, heard, required_devices=seven)
+    check(g["verdict"] == "FAIL"
+          and sum(1 for x in g["failed"] if x.startswith("DEVICE_MISSING")) == 6,
+          "WW-03: the shipped take with 1 of 7 devices is refused (%d missing)"
+          % sum(1 for x in g["failed"] if x.startswith("DEVICE_MISSING")))
+
+
+def test_ww03_reorder_and_fingerprint_mismatch_fail():
+    """WW-03: a reordered line FAILS, and a take whose stored fingerprint does not
+    match the approved sheet is refused -- never retroactively re-bound."""
+    if not gate(SA is not None, "WW-03 reorder/fingerprint", "story_arc.py not present"):
+        return
+    lines = {b: ["line for %s" % b] for b in SA.BEATS}
+    man = SA.build_manifest(_manifest_source(lines))
+    binding = SA.bind_revision("rev-3", man)
+    in_order = _aligned(" ".join(" ".join(lines[b]) for b in SA.BEATS))
+    ok = SA.check_performed_manifest(man, binding, in_order)
+    check(ok["verdict"] == "PASS" and ok["reason_code"] == "PERFORMED_STORY_COVERED",
+          "WW-03: all twelve lines heard in order PASS with a matching fingerprint")
+    swapped = list(SA.BEATS)
+    swapped[1], swapped[2] = swapped[2], swapped[1]
+    reordered = _aligned(" ".join(" ".join(lines[b]) for b in swapped))
+    bad = SA.check_performed_manifest(man, binding, reordered)
+    check(bad["verdict"] == "FAIL", "WW-03: a line reordered FAILS")
+    edited = SA.build_manifest(_manifest_source(dict(lines, **{SA.BEATS[0]: ["a new opener"]})))
+    mismatch = SA.check_performed_manifest(man, SA.bind_revision("rev-4", edited), in_order)
+    check(mismatch["verdict"] == "FAIL" and "FINGERPRINT_MISMATCH" in mismatch["failed"],
+          "WW-03: a take whose fingerprint does not match the approved sheet is refused")
+    stale = SA.assert_take_bound({"fingerprint": "deadbeef"}, man)
+    check(stale["verdict"] == "FAIL" and stale["reason_code"] == "FINGERPRINT_MISMATCH",
+          "WW-15: an existing take is NEVER retroactively bound to an edited sheet")
+    check(SA.assert_take_bound({"fingerprint": man["fingerprint"]}, man)["verdict"] == "PASS",
+          "WW-15: a take matching the approved revision PASSes")
+
+
+def test_ww03_counts_are_named_and_distinct_never_relabelled():
+    """WW-03: the fifteen-stage source method, the eight coarse timing stages and
+    the twelve canonical beats are preserved through explicit NAMED mappings and
+    never by relabelling one count as another."""
+    if not gate(SA is not None, "WW-03 stage mapping", "story_arc.py not present"):
+        return
+    rep = SA.stage_mapping_report()
+    check(rep["source_method_stage_count"] == 15 and rep["timing_stage_count"] == 8
+          and rep["canonical_beat_count"] == 12,
+          "WW-03: 15 source-method stages, 8 timing stages, 12 canonical beats")
+    check(rep["counts_are_distinct"] and rep["mapped_by_name_not_by_count"],
+          "WW-03: the three counts are distinct and mapped BY NAME")
+    check(all(b in rep["beat_to_timing"] and rep["beat_to_timing"][b] in rep["timing_stages"]
+              for b in rep["canonical_beats"]),
+          "WW-03: every canonical beat names a real coarse timing stage")
+
+
+def test_ww03_pace_component_is_one_source():
+    """The fingerprint's pace component is defined once, in music_qc/pace_change."""
+    if not gate(PC is not None and hasattr(PC, "pace_fingerprint_component"),
+                "WW-03 pace component", "music_qc/pace_change.py not present"):
+        return
+    a = PC.pace_fingerprint_component({"reason": "the bridge lifts", "boundary_s": 40.0})
+    b = PC.pace_fingerprint_component({"boundary_s": 40.0, "reason": "the bridge lifts"})
+    check(a and a == b, "WW-03: the pace component is stable under key order")
+    check(PC.pace_fingerprint_component(None) == ""
+          and PC.canonical_pace({"pace_change": {"boundary_s": 1.0}})["drop"]
+          == PC.PACE_CUE_DROP,
+          "WW-03: no ordered change -> empty component; the cue names half-time")
+
+def test_ww03_beat_missing_is_named_per_absent_beat():
+    """ORCH-DEFECTS-0710 (a)/(b): a manifest with ELEVEN of the twelve required
+    beats present and heard IN ORDER must FAIL, and the failed list must carry ONE
+    BEAT_MISSING entry NAMING the single absent beat. A summary count can never
+    stand in for a named missing beat."""
+    if not gate(SA is not None, "WW-03 beat-missing", "story_arc.py not present"):
+        return
+    lines = {b: ["line for %s" % b] for b in SA.BEATS}
+    absent = SA.BEATS[7]
+    partial = {b: v for b, v in lines.items() if b != absent}
+    man = SA.build_manifest(_manifest_source(partial))
+    check(man["present_count"] == 11 and man["missing"] == [absent],
+          "WW-03: eleven of twelve beats are present; %s is the one absent beat" % absent)
+    heard = _aligned(" ".join(" ".join(lines[b]) for b in SA.BEATS if b != absent))
+    binding = SA.bind_revision("rev-5", man)
+    g = SA.check_performed_manifest(man, binding, heard)
+    check(g["verdict"] == "FAIL",
+          "WW-03: eleven of twelve required beats heard in order is a FAIL (%r)"
+          % (g["verdict"],))
+    check("BEAT_MISSING:%s" % absent in g["failed"],
+          "WW-03: the absent beat is NAMED as BEAT_MISSING:%s (%r)" % (absent, g["failed"]))
+    check(sum(1 for x in g["failed"] if x.startswith("BEAT_MISSING:")) == 1,
+          "WW-03: exactly ONE named missing beat, no summary count (%r)" % (g["failed"],))
+
+# ---- WW-11: judge-path gate-removal and delivery-boundary tests ------------
+
+def _inspect_source(fn):
+    try:
+        import inspect
+        return inspect.getsource(fn)
+    except Exception:
+        return ""
+
+
+def _story_gate_wired():
+    if SD is None or not hasattr(SD, "judge_take"):
+        return False, "song_dispatch.judge_take is not present"
+    if "check_returned_story" not in _inspect_source(SD.judge_take):
+        return False, "check_returned_story is not yet called from judge_take (WW-08 lands with its own package)"
+    return True, ""
+
+
+def test_ww11_judge_path_gate_removal_breaks_the_suite():
+    """WW-08/WW-11: deleting the story-gate invocation from judge_take must break
+    the suite. Until the wiring lands this is UNDETERMINED -- never a pass."""
+    wired, why = _story_gate_wired()
+    if not gate(wired, "WW-11 gate-removal", why):
+        return
+    import song_contract as _SCTmod
+    take = {"segments": [{"delivery": "sung", "start": 0.0, "end": 30.0, "source": "measured"}],
+            "aligned_words": [], "duration_s": 58.0, "first_sung_s": 30.0}
+    plan = {"delivered_s": 58, "style_id": "rnb-flow", "sheet_text": "", "hook_plan": {}}
+    original = getattr(_SCTmod, "check_returned_story", None)
+    try:
+        _SCTmod.check_returned_story = lambda *a, **k: {"verdict": "PASS", "reasons": []}
+        kept = SD.judge_take(take, plan, "", "", None, "rnb-flow", "")
+    finally:
+        if original is not None:
+            _SCTmod.check_returned_story = original
+    check("story_coverage" in (kept.get("gates") or {})
+          or "story_coverage" in (kept.get("flagged") or [])
+          or "story_coverage" in (kept.get("failed") or []),
+          "WW-11: the story gate is in the take judge's gate set (removal would drop it)")
+
+
+def test_ww11_delivery_boundary_refuses_a_non_pass_take():
+    """WW-18/WW-11: the delivery path must refuse a take whose required gates did
+    not all PASS. Until the delivery-level block lands this is UNDETERMINED."""
+    if not gate(SC is not None and hasattr(SC, "deliver_choices"),
+                "WW-11 delivery boundary", "song_choices.deliver_choices is not present"):
+        return
+    src = _inspect_source(SC.deliver_choices) + _inspect_source(getattr(SC, "record_pick", lambda: None))
+    if "gates" not in src and "verdict" not in src.replace("FAILED", ""):
+        undetermined("WW-11 delivery boundary",
+                     "the delivery path does not yet consult the required gate set (WW-18 lands with its own package)")
+        return
+    bad = {"status": "FLAG", "variant": {"id": "v1"}, "take": {"path": "/tmp/x.mp3"},
+           "receipts": [], "gates": {"story": {"verdict": "UNMEASURED"}}}
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            SC.deliver_choices([bad], tmp, os.path.join(tmp, "d"), send=lambda *a: None)
+        except Exception as e:
+            check(True, "WW-11: a take with an unmeasured required gate is refused (%s)"
+                  % type(e).__name__)
+        else:
+            check(False, "WW-11: the delivery path offered a take with an unmeasured gate")
+
+
+# ---- WW-11: the release-level parity check --------------------------------
+
+def _tree_hash(root):
+    lines = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+        for name in sorted(filenames):
+            if name.endswith(".pyc"):
+                continue
+            p = os.path.join(dirpath, name)
+            rel = os.path.relpath(p, root).replace(os.sep, "/")
+            with open(p, "rb") as f:
+                lines.append("%s  %s" % (hashlib.sha256(f.read()).hexdigest(), rel))
+    return hashlib.sha256("\n".join(sorted(lines)).encode("utf-8")).hexdigest(), sorted(lines)
+
+
+def parity_check(canonical_core, twin_core, pinned_revision=None, twin_revision=None):
+    """The release-level parity check (WW-11): the same shared core scope must be
+    byte-identical between the two copies. A missing canonical source -- a missing
+    twin, or a twin that has not recorded the revision it mirrored -- is
+    UNDETERMINED, never a release PASS."""
+    if not canonical_core or not os.path.isdir(canonical_core):
+        return {"status": "UNDETERMINED", "detail": "canonical core absent",
+                "canonical": canonical_core}
+    if not twin_core or not os.path.isdir(twin_core):
+        return {"status": "UNDETERMINED", "detail": "twin core absent", "twin": twin_core}
+    if pinned_revision is None or twin_revision is None:
+        return {"status": "UNDETERMINED",
+                "detail": "the twin has not recorded the revision it mirrored"}
+    if str(pinned_revision) != str(twin_revision):
+        return {"status": "UNDETERMINED",
+                "detail": "the twin pinned a different revision (%s != %s)"
+                          % (twin_revision, pinned_revision)}
+    ch, cl = _tree_hash(canonical_core)
+    th, tl = _tree_hash(twin_core)
+    cset = {ln.split("  ", 1)[1] for ln in cl}
+    tset = {ln.split("  ", 1)[1] for ln in tl}
+    if cset != tset:
+        return {"status": "FAIL", "detail": "shared core scope differs",
+                "only_canonical": sorted(cset - tset), "only_twin": sorted(tset - cset),
+                "canonical_hash": ch, "twin_hash": th}
+    if ch != th:
+        return {"status": "FAIL", "detail": "shared core bytes differ",
+                "canonical_hash": ch, "twin_hash": th}
+    return {"status": "PASS", "detail": "shared core is byte-identical",
+            "canonical_hash": ch, "twin_hash": th}
+
+
+def test_ww11_release_parity_is_undetermined_when_a_source_is_missing():
+    """WW-11: a missing canonical source (or twin), or a twin that has not
+    recorded the revision it mirrored, is UNDETERMINED -- NEVER a release PASS.
+    The check bites when the pins agree and the bytes differ."""
+    twin = os.environ.get("DSAF_TWIN_CORE") or os.path.expanduser(
+        "~/.claude/skills/drama-song-ad-factory/scripts/core")
+    res = parity_check(CORE, twin, os.environ.get("DSAF_PINNED_REVISION"),
+                       os.environ.get("DSAF_TWIN_PINNED_REVISION"))
+    if res["status"] != "PASS":
+        undetermined("WW-11 parity", "%s -- UNDETERMINED, not a release pass" % res["detail"])
+    else:
+        check(True, "WW-11: the shared core scope is byte-identical between the two copies")
+    # deterministic controls: missing source -> UNDETERMINED; pinned + differing -> FAIL
+    missing = parity_check(os.path.join(CORE, "no-such-dir"), twin, "R", "R")
+    check(missing["status"] == "UNDETERMINED",
+          "WW-11: a missing canonical source is UNDETERMINED, never a release PASS")
+    with tempfile.TemporaryDirectory() as tmp:
+        a, b, c = (os.path.join(tmp, n) for n in ("a", "b", "c"))
+        for d in (a, b, c):
+            os.makedirs(d)
+        for d in (a, b):
+            with open(os.path.join(d, "x.py"), "w", encoding="utf-8") as f:
+                f.write("x = 1\n")
+        with open(os.path.join(c, "x.py"), "w", encoding="utf-8") as f:
+            f.write("x = 2\n")
+        check(parity_check(a, b, "R", "R")["status"] == "PASS",
+              "WW-11: byte-identical copies at the SAME pinned revision PASS")
+        check(parity_check(a, c, "R", "R")["status"] == "FAIL",
+              "WW-11: differing bytes at the same pinned revision FAIL")
+        check(parity_check(a, b, "R", "R2")["status"] == "UNDETERMINED",
+              "WW-11: a twin pinned to a different revision is UNDETERMINED")
+
+
+# ---- WW-19: the import audit of the six referenced module paths ------------
+
+SIX_MODULE_PATHS = [
+    "scripts/core/music_qc/rap_check.py",
+    "scripts/core/music_qc/pace_change.py",
+    "scripts/core/music_qc/test_wwfix_u1.py",
+    "scripts/core/story_coverage/story_coverage.py",
+    "scripts/core/story_coverage/__init__.py",
+    "scripts/core/song_choices/overlap.py",
+]
+OWNED_HERE = {
+    "scripts/core/music_qc/pace_change.py",
+    "scripts/core/music_qc/test_wwfix_u1.py",
+    "scripts/core/song_choices/overlap.py",
+}
+#: Built by the OTHER concurrent packages of THIS SAME unit; absent here means
+#: NOT-YET-PUBLISHED (UNDETERMINED), not ABSENT.
+NOT_YET_PUBLISHED = {
+    "scripts/core/music_qc/rap_check.py",
+    "scripts/core/story_coverage/story_coverage.py",
+    "scripts/core/story_coverage/__init__.py",
+}
+
+
+def import_audit(core_dir, not_yet_published=None):
+    """WW-19: audit the six referenced module paths. PRESENT / NOT-YET-PUBLISHED
+    (UNDETERMINED) / ABSENT (a failure). Absent is distinguished from
+    not-yet-published, and neither is ever reported as PASS."""
+    nyp = NOT_YET_PUBLISHED if not_yet_published is None else not_yet_published
+    rows = []
+    for rel in SIX_MODULE_PATHS:
+        rel_from_core = rel[len("scripts/core/"):]
+        if os.path.exists(os.path.join(core_dir, rel_from_core)):
+            state = "PRESENT"
+        elif rel in nyp:
+            state = "NOT_YET_PUBLISHED"
+        else:
+            state = "ABSENT"
+        rows.append({"path": rel, "state": state})
+    counts = {s: sum(1 for r in rows if r["state"] == s)
+              for s in ("PRESENT", "NOT_YET_PUBLISHED", "ABSENT")}
+    return {"rows": rows, "counts": counts,
+            "verdict": "FAIL" if counts["ABSENT"] else "DETERMINED"}
+
+
+def test_ww19_import_audit_reports_absent_vs_not_yet_published():
+    audit = import_audit(CORE)
+    print("   WW-19 import audit on this tree: %r" % (audit["counts"],))
+    check(audit["counts"]["ABSENT"] == 0,
+          "WW-19: no referenced module is ABSENT on this tree (%r)" % (audit["counts"],))
+    check(audit["counts"]["PRESENT"] >= 3,
+          "WW-19: this package's three owned modules are PRESENT (%r)" % (audit["counts"],))
+    # WW-19 fail-closed control, re-based at build time. Pull request 1844 asserted
+    # "with no not-yet-published allowance the audit FAILS closed" against ITS base,
+    # where three of the six referenced modules did not exist yet. WWFIXPIN-U1 has
+    # since landed music_qc/rap_check.py, story_coverage/story_coverage.py and
+    # story_coverage/__init__.py on main, so this tree can no longer observe ABSENT
+    # with the real core -- the premise, not the rule, changed. The control runs the
+    # audit over an EMPTY core dir instead, which exercises the same fail-closed rule
+    # deterministically: with no allowance all six are ABSENT and the audit FAILS,
+    # and the not-yet-published allowance excuses exactly its own three.
+    with tempfile.TemporaryDirectory() as tmp:
+        strict = import_audit(tmp, not_yet_published=set())
+        check(strict["verdict"] == "FAIL"
+              and strict["counts"]["ABSENT"] == len(SIX_MODULE_PATHS),
+              "WW-19: with no not-yet-published allowance the audit FAILS closed (%r)"
+              % (strict["counts"],))
+        excused = import_audit(tmp, not_yet_published=NOT_YET_PUBLISHED)
+        check(excused["verdict"] == "FAIL"
+              and excused["counts"]["NOT_YET_PUBLISHED"] == len(NOT_YET_PUBLISHED)
+              and excused["counts"]["ABSENT"] == len(SIX_MODULE_PATHS) - len(NOT_YET_PUBLISHED),
+              "WW-19: the not-yet-published allowance excuses exactly its own three (%r)"
+              % (excused["counts"],))
+
+
+# ---- WW-20: the version is read live, never from a PR body -----------------
+
+def version_check(skill_root, live_version):
+    """WW-20: the written version must be strictly ABOVE the version read live
+    from main at build time. No live value read -> UNDETERMINED."""
+    path = os.path.join(skill_root, "skill-version.txt")
+    try:
+        with open(path, encoding="utf-8") as f:
+            written = f.read().strip()
+    except OSError:
+        return {"status": "UNDETERMINED", "detail": "skill-version.txt not found"}
+    if not live_version:
+        return {"status": "UNDETERMINED", "detail": "no live version read at build time",
+                "written": written}
+
+    def _parts(v):
+        return tuple(int(x) for x in v.lstrip("v").split(".") if x.isdigit())
+
+    return {"status": "PASS" if _parts(written) > _parts(live_version) else "FAIL",
+            "written": written, "live": live_version}
+
+
+def test_ww20_version_is_read_live_and_strictly_above():
+    live = os.environ.get("DSAF_LIVE_SKILL_VERSION")
+    res = version_check(SKILL_ROOT, live)
+    if res["status"] == "UNDETERMINED":
+        undetermined("WW-20 live version",
+                     "%s -- set DSAF_LIVE_SKILL_VERSION to prove the bump" % res["detail"])
+        return
+    check(res["status"] == "PASS",
+          "WW-20: %s is strictly above the live %s" % (res["written"], res["live"]))
+
 
 def main():
     for name, fn in sorted(globals().items()):
@@ -856,6 +1420,10 @@ def main():
     if FAILURES:
         print("\n%d FAILED: %s" % (len(FAILURES), "; ".join(FAILURES)))
         return 1
+    if UNDETERMINED:
+        print("\nPASS (%d UNDETERMINED -- NOT a release pass): %s"
+              % (len(UNDETERMINED), "; ".join(UNDETERMINED)))
+        return 0
     print("\nALL PASS")
     return 0
 
