@@ -125,6 +125,60 @@ Bundles the skill-version bump into the U6 real-content commit (G3: skill 75 con
 - `timer-artifacts/README.md` — the mechanism and the install paths, stating nothing is installed, loaded, scheduled or registered.
 - No credential is embedded; `run-timer.sh` references the key from its 0600 store and exports `DS_KEY` in the environment only.
 - Proof: `python3 75-drama-song-ad-factory/timer-artifacts/checks/run_checks.py` is 22/22 green (exit 0) on the pristine tree; a lane-local copy with a planted credential literal in `run-timer.sh` fails `F no-secret` with a true non-zero exit (21/22), and that copy was deleted. No LaunchAgent, `launchctl` entry or crontab line for the timer exists on the build machine.
+## v2.9.19 - 2026-10-10 - HYBRIDDP-U1: dual-presence rule for hybrid ads (APPROVED 2026-10-11)
+
+Owner order 2026-10-11 (joint plan section 3.17). Every hybrid ad carries
+**exactly one** `DUAL_PRESENCE` shot: the photoreal lead and an opaque sketch
+twin visible together in one locked-off side-by-side two-shot, starting 45-75%
+of the ad (target 55-65%), held 3.0-6.0 s, photoreal 55-65% of width, twin
+35-45%, head heights within 15%, twin on the side opposite the lead. Two
+negative controls are required - the same shot with the twin removed, and the
+single-style "some time later" phone shot at 112.0-114.3 s - and both must
+return zero passing frames. It is a planned shot with its own storyboard field,
+never a patch.
+
+- `SKILL.md` gains the dual-presence bullet between the Five looks and Music
+  bullets; `INSTRUCTIONS.md` gains its own between Five looks and Music styles.
+- `scripts/core/style_bibles/hybrid/hybrid_bible.py` (stdlib only, never
+  renders, never calls a provider, never spends) gains the dual-presence
+  constants (commented STARTING values - calibrate on both controls),
+  `dual_presence_errors()` / `assert_dual_presence()` refusing each rule BY
+  NAME and never a bare boolean, `dual_presence_shot_list()` emitting the
+  single `DUAL-01` entry with `BASE_REAL` (photoreal clip) and `OVERLAY_SKETCH`
+  (alpha PNG, matched pose frame) and refusing to emit when the validator
+  refuses, `dual_presence_assembly()` (100% opacity alpha overlay on the
+  photoreal base, dissolve in 8 frames or fewer, hard cut out on 1 frame,
+  cross-blend refused by name) and the frame-level gate `qc_dual_presence()` /
+  `qc_dual_presence_window()`: sample at 4 fps, a frame passes when one half is
+  line art (low saturation, high edge density) and the other half is photoreal
+  colour, require `duration_s x 4` CONSECUTIVE passing frames with floor 12,
+  and run BOTH negative controls - a missing control is not a pass. Every
+  threshold comes from the constants, so calibration changes one place.
+- New colocated test `scripts/core/style_bibles/hybrid/test_hybrid_dual_presence.py`
+  (17 tests, stdlib, offline, $0): every named rule refused, one mutation per
+  rule; the shot list refusing to emit; the assembly refusals; the gate's OWN
+  known-good control FIRST - a synthetic frame pair it must PASS and a
+  synthetic single-style frame it must FAIL, so a gate that returns zero
+  passing frames on everything cannot read as a pass - then the positive
+  control and BOTH negative controls. Also proves a 17-frame run does not pass
+  an 18-frame requirement, and that the twin-removed clip used as the positive
+  control fails the gate.
+- MEASUREMENT, reported plainly (approved Spaulding 3V3 FIX2 video, sha256
+  `0213de02ff690bbb17d72a3171af432e6a2a36ee87409d4e341c70cf89503004`, read
+  from a read-only copy; the original was never edited, moved or re-encoded):
+  with the STARTING thresholds above and a 50/50 half split, the gate returns
+  ZERO passing frames on the real flagship beat window (88.292-93.792 s) - both
+  halves classify photoreal - while a real sketch window (2-6 s) classifies
+  SKETCH and real photoreal windows (100-104 s and the 112.0-114.3 s phone
+  control) classify PHOTOREAL. The instrument therefore discriminates, so this
+  is a real negative and not a broken check. The beat window does show elevated
+  low-saturation pixels (mean 8.3% of the frame vs 0.7% in plain photoreal) and
+  elevated edge density (0.20-0.29 vs 0.10-0.12), so the twin region is
+  plausibly present but smaller than, or positioned off, the 50/50 boundary.
+  NO real-video calibration was run: the bands ship as the plan's STARTING
+  values and calibrating them against both controls is the follow-up work the
+  plan itself calls for. Control one (twin removed) has no real-video
+  counterpart and is proven on synthetic frames only.
 
 ## v2.9.18 - 2026-10-10 - PKG-11 attempt 4: twelve REAL `produce_delivery` paths, real-run e2e, no fixture bytes
 

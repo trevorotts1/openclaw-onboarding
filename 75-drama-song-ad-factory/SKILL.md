@@ -848,6 +848,35 @@ SOP named above.
   matched poses, 0.3-0.4 s dissolve, at least 3 seconds held per style, no
   flicker, identity locked; golden realism carries the transformation and
   payoff.
+- **Dual presence (APPROVED 2026-10-11):** every hybrid ad carries **exactly
+  one** `DUAL_PRESENCE` shot - the photoreal lead and an opaque sketch twin
+  visible **together**, locked off in one side-by-side two-shot. It starts
+  between **45% and 75%** of the ad (target **55-65%**), holds **3.0-6.0 s**,
+  and sits in the objection-to-reframe bridge just before the register call to
+  action. Photoreal **55-65% of width**, twin **35-45%**, head heights within
+  **15%**, twin on the side **opposite the lead**. No split-screen, no
+  picture-in-picture, no ghost blend. Same identity in both renders; the
+  sketch is pure black-and-white line art, the base fully photoreal, exactly
+  two figures; the sketch eyeline lands on the photoreal lead (a mirrored pose
+  fails). Storyboard field `DUAL_PRESENCE {shot_id, start_pct, duration_s,
+  composition TWO_SHOT_SIDE_BY_SIDE, sketch_character INNER-NAME, eyeline
+  SKETCH-TO-REAL, ad_card TRUE}` must be complete **before any generation
+  spend**; shot list entry `DUAL-01` carries `BASE_REAL` (photoreal clip) and
+  `OVERLAY_SKETCH` (alpha PNG, matched pose frame). Assembly is a 100% opacity
+  alpha overlay on the photoreal base, dissolve in of **8 frames or fewer**,
+  **hard cut out of 1 frame** - never a cross-blend of the two styles.
+  Frame-level QC samples the declared window at **4 fps**; a frame passes when
+  one half is line art and the other photoreal colour, needing `duration_s x
+  4` consecutive passing frames (**floor 12**). **Two negative controls, both
+  required:** the same shot with the twin removed (the stronger control) and
+  the single-style "some time later" phone shot at **112.0-114.3 s** must each
+  return **zero passing frames**; the flagship beat is the positive control.
+  Bands are starting values - calibrate on both controls. This is a **planned
+  shot with its own storyboard field, never a patch**: INNER CHANEL is a named
+  cast member, receipt line 252 names S6 (S030 to S031 two-shot), built as
+  still `IMG-SHOT-S031-T2` and clip `VID-S031-T3` with the overlay assembled
+  by `FIX0010/RR/BUILD_BASES.PY`; stills and clips by MiniMax-H3 768p, Kling
+  for lip-sync only.
 - **Music (decision 30):** Soul Ballad (default), R&B Flow, Soul Rise.
 - **Style questions on the intake card:** each music and video option shows
   one plain line saying what it is; Sketch to Life shows as "Sketch to Life
