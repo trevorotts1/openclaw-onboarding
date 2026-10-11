@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<meta name="studio-origin" content="">
+<title>Drama Studio — pairing and admin</title>
+<!--
+  DRAMA STUDIO MINI-APP :: U12 — PAIRING / ADMIN SURFACE
+  ===========================================================================
+  The operator's page: mint a pairing code for a client (with a QR the client
+  scans), check a key, set the option behind the Option 3 approval gate, and
+  see the cutoff. It is the admin half of the pairing flow; the client half is
+  U13's `studio.py pair`, which this page never calls.
+
+  It is ONE self-contained shell: inline CSS only, zero external dependencies,
+  and the two local scripts beside it (lib/qr.js, lib/admin_client.js). No
+  framework, no CDN, no build step — the same shape 53-book-writer/mini-app/
+  pages/ uses, so the repo keeps one page pattern.
+
+  WHAT IT TALKS TO (U2's measured contract, service/README.md):
+    POST /api/studio/admin/pairing-code  { admin_key, client_id }
+    POST /api/studio/options             { admin_key, target_client_id, option, approval? }
+    GET  /api/studio/options             header x-ds-key
+
+  SECURITY POSTURE, deliberately boring:
+    - The presented key travels in the `x-ds-key` HEADER or a POST body, never
+      in a query string, so it cannot land in a URL log.
+    - Nothing is written to localStorage, sessionStorage, a cookie or the URL.
+    - A key is never rendered, never logged and never put in an error message.
+    - Every refusal shows the SERVICE'S OWN code. There is no success path that
+      does not come back from the service as `{ ok: true }`.
+
+  ACCESSIBILITY: every control has a <label>; the option choice is a native
+  fieldset/radio group so arrow keys work; status lines are live regions
+  (role="status" for results, role="alert" for refusals); the QR carries
+  role="img" with an aria-label AND the code is printed as text beside it, so
+  the QR is decoration and the code is the accessible content; focus is visible
+  on every control and the tab order is the reading order.
+  ===========================================================================
+-->
+<style>
+  :root {
+    --bg: #14110f;
+    --surface: #1e1a17;
+    --surface-2: #272220;
+    --ink: #f4ece4;
+    --ink-soft: #b9aca0;
+    --line: #3a322d;
+    --accent: #d98b5f;
+    --accent-ink: #1b1613;
+    --ok: #8fbf7f;
+    --bad: #e2836f;
+    --focus: #ffd9a8;
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); }
+  body {
+    margin: 0;
+    padding: 24px 16px 64px;
+    color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    max-width: 760px;
+    margin-inline: auto;
+  }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h2 { font-size: 1.1rem; margin: 0 0 4px; }
+  p.lede { color: var(--ink-soft); margin: 0 0 24px; }
+  section {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px;
+    margin: 0 0 18px;
+  }
+  .field { margin: 12px 0; }
+  label { display: block; font-weight: 600; margin-bottom: 4px; }
+  .hint { color: var(--ink-soft); font-size: 0.86rem; margin: 2px 0 0; }
+  input[type="text"], input[type="password"], input[type="time"] {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 9px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--ink);
+    font: inherit;
+  }
+  fieldset { border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px 10px; margin: 12px 0; }
+  legend { font-weight: 600; padding: 0 6px; }
+  .choice { display: flex; align-items: baseline; gap: 8px; margin: 6px 0; }
+  .choice input { margin: 0; }
+  .choice label { font-weight: 400; margin: 0; }
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 10px 16px;
+    border-radius: 9px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-ink);
+    cursor: pointer;
+    margin: 8px 8px 0 0;
+  }
+  button.secondary { background: transparent; color: var(--ink); border-color: var(--line); }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  [role="status"], [role="alert"] { margin-top: 12px; min-height: 1.2em; }
+  [role="alert"] { color: var(--bad); }
+  .ok { color: var(--ok); }
+  .code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 2rem;
+    letter-spacing: 0.12em;
+    margin: 6px 0;
+    word-break: break-all;
+  }
+  .result {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: flex-start;
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+    margin-top: 14px;
+  }
+  .qr { background: #fff; padding: 8px; border-radius: 10px; line-height: 0; }
+  .qr svg { width: 168px; height: 168px; }
+  .meta { color: var(--ink-soft); font-size: 0.9rem; }
+  code.inline { font-family: ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+
+<h1>Drama Studio — pairing and admin</h1>
+<p class="lede">Mint a pairing code, check a key, set the option, see the cutoff. Everything here talks to the studio service; nothing here holds a credential of its own.</p>
+
+<!-- ======================= 1. PAIRING ======================= -->
+<section aria-labelledby="pairing-h">
+  <h2 id="pairing-h">1. Pair a client&rsquo;s computer</h2>
+  <p class="hint">Mint a code for this client. It is single use, good for 15 minutes, and it burns the moment their computer uses it.</p>
+
+  <div class="field">
+    <label for="pair-client">Client id</label>
+    <input id="pair-client" name="client_id" type="text" autocomplete="off" spellcheck="false" aria-describedby="pair-client-hint">
+    <p class="hint" id="pair-client-hint">The studio&rsquo;s id for this client, like <code class="inline">c_9f2&hellip;</code>. Never a name.</p>
+  </div>
+
+  <div class="field">
+    <label for="admin-key">Admin key</label>
+    <input id="admin-key" name="admin_key" type="password" autocomplete="off" spellcheck="false" aria-describedby="admin-key-hint">
+    <p class="hint" id="admin-key-hint">Sent in the request body only. It is never stored in this page, never put in a URL and never shown back.</p>
+  </div>
+
+  <button type="button" id="mint">Mint pairing code</button>
+  <div role="status" id="mint-status"></div>
+  <div role="alert" id="mint-error"></div>
+
+  <div class="result" id="pairing-result" hidden>
+    <div class="qr" id="qr-holder"></div>
+    <div>
+      <p class="meta">Pairing code — read it out, or let their computer scan the square.</p>
+      <p class="code" id="code-text"></p>
+      <p class="meta" id="code-expiry"></p>
+      <p class="meta">On their computer, run <code class="inline">studio.py pair</code> and enter that code, or scan the square above.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= 2. KEY SURFACE ======================= -->
+<section aria-labelledby="key-h">
+  <h2 id="key-h">2. Check a key</h2>
+  <p class="hint">Paste a key to see whether the studio still accepts it, and whose record it opens. The key is sent in the <code class="inline">x-ds-key</code> header, never in the address bar.</p>
+
+  <div class="field">
+    <label for="check-key">Key to check</label>
+    <input id="check-key" name="check_key" type="password" autocomplete="off" spellcheck="false" aria-describedby="check-key-hint">
+    <p class="hint" id="check-key-hint">The value is never displayed again and never written down; this page can only hold it while the tab stays open.</p>
+  </div>
+
+  <button type="button" id="check">Check this key</button>
+  <button type="button" class="secondary" id="revoke" aria-describedby="revoke-hint">Cut this key off</button>
+  <p class="hint" id="revoke-hint">Version 0 has no revoke route on the studio service, so this refuses and says so. It never reports a cut-off that did not happen.</p>
+  <div role="status" id="key-status"></div>
+  <div role="alert" id="key-error"></div>
+</section>
+
+<!-- ======================= 3. OPTIONS ======================= -->
+<section aria-labelledby="options-h">
+  <h2 id="options-h">3. Set the option</h2>
+  <p class="hint">The option is per client. Option 3 starts their crew automatically and needs a recorded approval, by name, for that one client.</p>
+
+  <div class="field">
+    <label for="option-client">Client id</label>
+    <input id="option-client" name="target_client_id" type="text" autocomplete="off" spellcheck="false">
+  </div>
+
+  <fieldset>
+    <legend>Option for this client</legend>
+    <div class="choice">
+      <input type="radio" id="opt-1" name="option" value="1" checked>
+      <label for="opt-1">1 — their crew starts when they open Claude Code themselves.</label>
+    </div>
+    <div class="choice">
+      <input type="radio" id="opt-2" name="option" value="2">
+      <label for="opt-2">2 — their crew is watching; orders start within about 2 minutes while their computer is on.</label>
+    </div>
+    <div class="choice">
+      <input type="radio" id="opt-3" name="option" value="3" aria-controls="approval-block" aria-expanded="false">
+      <label for="opt-3">3 — their crew starts automatically. Needs your approval below.</label>
+    </div>
+  </fieldset>
+
+  <div class="field" id="approval-block" hidden>
+    <div class="choice">
+      <input type="checkbox" id="approval-given" name="option3">
+      <label for="approval-given">I approve Option 3 for this client.</label>
+    </div>
+    <label for="approval-name">Client name on the approval</label>
+    <input id="approval-name" name="client_name" type="text" autocomplete="off" aria-describedby="approval-name-hint">
+    <p class="hint" id="approval-name-hint">The name the approval is recorded against. Option 3 is refused without it — by this page and again by the service.</p>
+  </div>
+
+  <button type="button" id="set-option">Set option</button>
+  <div role="status" id="option-status"></div>
+  <div role="alert" id="option-error"></div>
+</section>
+
+<!-- ======================= 4. CUTOFF ======================= -->
+<section aria-labelledby="cutoff-h">
+  <h2 id="cutoff-h">4. Cutoff</h2>
+  <p class="hint">The time of day new orders stop starting for a client. Version 0 has no cutoff route on the studio service: this page computes and shows the cutoff, and refuses, by name, to claim it was saved.</p>
+
+  <div class="field">
+    <label for="cutoff-time">Cutoff time</label>
+    <input id="cutoff-time" name="cutoff_time" type="time" value="18:30" aria-describedby="cutoff-time-hint">
+    <p class="hint" id="cutoff-time-hint">Local to the client&rsquo;s timezone below.</p>
+  </div>
+
+  <div class="field">
+    <label for="cutoff-zone">Client timezone</label>
+    <input id="cutoff-zone" name="timezone" type="text" value="America/New_York" autocomplete="off" spellcheck="false" aria-describedby="cutoff-zone-hint">
+    <p class="hint" id="cutoff-zone-hint">An IANA name, like <code class="inline">America/New_York</code>.</p>
+  </div>
+
+  <button type="button" id="compute-cutoff">Show the cutoff</button>
+  <button type="button" class="secondary" id="save-cutoff">Save cutoff</button>
+  <div role="status" id="cutoff-status"></div>
+  <div role="alert" id="cutoff-error"></div>
+</section>
+
+<script src="lib/qr.js"></script>
+<script src="lib/admin_client.js"></script>
+<script>
+/* ---------------------------------------------------------------------------
+ * Page wiring. All judgement lives in lib/admin_client.js; this file only
+ * moves values between the DOM and that module, and renders what came back.
+ * ------------------------------------------------------------------------ */
+(function () {
+  'use strict';
+  var A = globalThis.DSAdmin;
+  var Q = globalThis.DSQR;
+
+  var studioMeta = document.querySelector('meta[name="studio-origin"]');
+  var STUDIO = (studioMeta && studioMeta.content) || '';
+
+  function el(id) { return document.getElementById(id); }
+  function say(statusId, errorId, text, isError) {
+    el(statusId).textContent = isError ? '' : text;
+    el(errorId).textContent = isError ? text : '';
+  }
+  /** POST a JSON body. The key is inside the body, never the URL. */
+  function sendPost(path, body) {
+    return fetch(STUDIO + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      credentials: 'omit',
+      cache: 'no-store',
+    }).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (json) {
+        return A.readReply(res.status, json);
+      });
+    });
+  }
+
+  /** GET with the key in the x-ds-key header. Never a query string. */
+  function sendKeyedGet(path, key) {
+    return fetch(STUDIO + path, {
+      method: 'GET',
+      headers: { 'x-ds-key': key },
+      credentials: 'omit',
+      cache: 'no-store',
+    }).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (json) {
+        return A.readReply(res.status, json);
+      });
+    });
+  }
+
+  // ---- 1. pairing -------------------------------------------------------
+  var countdown = null;
+
+  function stopCountdown() {
+    if (countdown) { clearInterval(countdown); countdown = null; }
+  }
+
+  el('mint').addEventListener('click', function () {
+    stopCountdown();
+    var built = A.mintPairingCodeRequest(el('admin-key').value, el('pair-client').value);
+    if (!built.ok) {
+      el('pairing-result').hidden = true;
+      say('mint-status', 'mint-error', built.code + ' — ' + built.message, true);
+      return;
+    }
+    say('mint-status', 'mint-error', 'Asking the studio…', false);
+    sendPost(built.path, built.body).then(function (reply) {
+      if (!reply.ok) {
+        el('pairing-result').hidden = true;
+        say('mint-status', 'mint-error', reply.code + ' — ' + reply.message, true);
+        return;
+      }
+      showCode(reply.data.code, reply.data.expires_in);
+      say('mint-status', 'mint-error', 'Code minted for ' + built.body.client_id + '.', false);
+    }).catch(function () {
+      el('pairing-result').hidden = true;
+      say('mint-status', 'mint-error', 'The studio could not be reached, so no code was minted.', true);
+    });
+  });
+
+  function showCode(code, expiresIn) {
+    var checked = A.checkCode(code);
+    if (!checked.ok) {
+      el('pairing-result').hidden = true;
+      say('mint-status', 'mint-error', checked.code + ' — the studio returned a code this page does not recognise.', true);
+      return;
+    }
+    el('code-text').textContent = checked.code;
+    var qr = Q.encode(checked.code, { level: 'M' });
+    if (!qr.ok) {
+      el('qr-holder').innerHTML = '';
+      el('qr-holder').textContent = 'The square could not be drawn; read the code out instead.';
+    } else {
+      el('qr-holder').innerHTML = Q.toSvg(qr, { label: 'Pairing code ' + checked.code, width: '168', height: '168' });
+    }
+    el('pairing-result').hidden = false;
+
+    var left = typeof expiresIn === 'number' ? expiresIn : A.PAIRING_TTL_SECONDS;
+    var tick = function () {
+      if (left <= 0) {
+        el('code-expiry').textContent = 'This code has expired. Mint another one.';
+        stopCountdown();
+        return;
+      }
+      var m = Math.floor(left / 60);
+      var s = left % 60;
+      el('code-expiry').textContent = 'Expires in ' + m + ':' + (s < 10 ? '0' : '') + s + ', or when it is used once.';
+      left -= 1;
+    };
+    tick();
+    countdown = setInterval(tick, 1000);
+  }
+
+  // ---- 2. key surface ---------------------------------------------------
+  el('check').addEventListener('click', function () {
+    var built = A.checkKeyRequest(el('check-key').value);
+    if (!built.ok) {
+      say('key-status', 'key-error', built.code + ' — ' + built.message, true);
+      return;
+    }
+    say('key-status', 'key-error', 'Asking the studio…', false);
+    sendKeyedGet(built.path, built.header['x-ds-key']).then(function (reply) {
+      if (!reply.ok) {
+        say('key-status', 'key-error', reply.code + ' — ' + reply.message, true);
+        return;
+      }
+      say('key-status', 'key-error', 'Accepted. ' + A.keyLabel(built.header['x-ds-key']) + '. Option ' + reply.data.option + ': ' + reply.data.line, false);
+    }).catch(function () {
+      say('key-status', 'key-error', 'The studio could not be reached.', true);
+    });
+  });
+
+  el('revoke').addEventListener('click', function () {
+    var refused = A.revokeKeyRequest();
+    say('key-status', 'key-error', refused.code + ' — ' + refused.message, true);
+  });
+
+  // ---- 3. options -------------------------------------------------------
+  function optionValue() {
+    var picked = document.querySelector('input[name="option"]:checked');
+    return picked ? parseInt(picked.value, 10) : null;
+  }
+
+  function syncApproval() {
+    var isThree = optionValue() === 3;
+    el('approval-block').hidden = !isThree;
+    el('opt-3').setAttribute('aria-expanded', isThree ? 'true' : 'false');
+  }
+  for (var i = 0; i < 3; i++) document.querySelectorAll('input[name="option"]')[i].addEventListener('change', syncApproval);
+  syncApproval();
+
+  el('set-option').addEventListener('click', function () {
+    var option = optionValue();
+    var approval = option === 3
+      ? { option3: el('approval-given').checked, client_name: el('approval-name').value }
+      : undefined;
+    var built = A.setOptionRequest(el('admin-key').value, el('option-client').value, option, approval);
+    if (!built.ok) {
+      say('option-status', 'option-error', built.code + ' — ' + built.message, true);
+      return;
+    }
+    say('option-status', 'option-error', 'Asking the studio…', false);
+    sendPost(built.path, built.body).then(function (reply) {
+      if (!reply.ok) {
+        say('option-status', 'option-error', reply.code + ' — ' + reply.message, true);
+        return;
+      }
+      say('option-status', 'option-error', 'Option ' + reply.data.option + ' is set. ' + reply.data.line, false);
+    }).catch(function () {
+      say('option-status', 'option-error', 'The studio could not be reached, so nothing was changed.', true);
+    });
+  });
+
+  // ---- 4. cutoff --------------------------------------------------------
+  function cutoffMinutes() {
+    var raw = el('cutoff-time').value;
+    if (!/^\d{2}:\d{2}$/.test(raw)) return NaN;
+    return parseInt(raw.slice(0, 2), 10) * 60 + parseInt(raw.slice(3, 5), 10);
+  }
+
+  el('compute-cutoff').addEventListener('click', function () {
+    var verdict = A.cutoffVerdict(cutoffMinutes(), el('cutoff-zone').value.trim(), Date.now());
+    if (!verdict.ok) {
+      say('cutoff-status', 'cutoff-error', verdict.code + ' — ' + verdict.message, true);
+      return;
+    }
+    say('cutoff-status', 'cutoff-error',
+      verdict.line + ' Right now the studio is ' + (verdict.before ? 'before' : 'past') + ' that cutoff.', false);
+  });
+
+  el('save-cutoff').addEventListener('click', function () {
+    var saved = A.setCutoffRequest(cutoffMinutes(), el('cutoff-zone').value.trim());
+    say('cutoff-status', 'cutoff-error', saved.code + ' — ' + saved.message, true);
+  });
+})();
+</script>
+</body>
+</html>

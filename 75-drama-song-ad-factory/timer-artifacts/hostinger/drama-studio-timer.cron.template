@@ -1,0 +1,23 @@
+# Drama Studio bridge timer — Hostinger client container (U6).
+#
+# This is the platform DEFINITION (a crontab line), not a registration. It lives
+# on the container's persistent volume at
+#   /data/.openclaw/scripts/drama-studio-timer.cron
+# so it survives `docker compose up -d --force-recreate` (the volume is
+# persistent; the container layer is not). The operator installs it by handing
+# this file to the container's `node` user crontab — install-timer.sh only
+# PRINTS that command, it never runs it:
+#   docker exec -u node <container> sh -c 'crontab /data/.openclaw/scripts/drama-studio-timer.cron'
+#
+# DIRECT SHELL: the command is [/bin/sh, run-timer.sh] with an explicit minimal
+# environment. No Claude, no claude-nine, no model, no interactive session, no
+# idle/agent event. Restart state: cron re-fires every 2 minutes; the script's
+# state lives on /data (persistent HOME), so a reboot/recreate/login keeps it.
+#
+# Placeholders expanded by install-timer.sh:
+#   __SCRIPT_PATH__ -> /data/.openclaw/scripts/run-timer.sh
+#   __LOG_PATH__    -> /data/.openclaw/logs/drama-studio-timer.log
+#   __HOME__        -> /data          (persistent HOME for the node user)
+#   __PATH__        -> container PATH with the persistent npm-global first
+#   __STORE_DIR__   -> /data/.drama-studio
+__SCHEDULE__ HOME=__HOME__ PATH=__PATH__ DS_PLATFORM=hostinger DS_STATE_DIR=__STORE_DIR__ /bin/sh __SCRIPT_PATH__ >> __LOG_PATH__ 2>&1
