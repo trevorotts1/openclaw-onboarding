@@ -14,6 +14,12 @@ warn_only(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=
 
 if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u; fi
 : "${FISH_AUDIO_API_KEY:=}"; : "${FISH_AUDIO_VOICE_ID:=}"
+# Credential stores: secrets/.env was the only one read; also read ~/.openclaw/.env and openclaw.json env.vars.
+# One call per variable: the helper's break 2 ends the outer var loop, so a shared call would starve the second var.
+if declare -F oc_fill_from_env_stores >/dev/null 2>&1; then
+  oc_fill_from_env_stores FISH_AUDIO_API_KEY
+  oc_fill_from_env_stores FISH_AUDIO_VOICE_ID
+fi
 
 echo ""
 echo "═══ Skill 30 — Fish Audio API Reference — Install QC ═══"
