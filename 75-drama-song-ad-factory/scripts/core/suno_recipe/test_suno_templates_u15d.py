@@ -127,10 +127,16 @@ def test_b_caps_are_refused():
     # length formula's business, and this check is the CAP's.
     base = R.render_lyrics(_base_sheet(), "soul-ballad")
     line = "a" * 40
-    n = -(-(5001 - len(base)) // 41) + 1
     s = _base_sheet()
-    s[2] = {"tag": "Verse", "delivery": "sung", "lines": [line] * n}
-    lyric = R.render_lyrics(s, "soul-ballad")
+    # WWR3INTFIX U1: the pad is sized on the RENDERED text, never on an
+    # assumed header length -- the cue vocabulary (WW-16) is data and its
+    # size moves, and the lyric has to really be over the cap for b0/b1.
+    lyric = base
+    for n in range(1, 400):
+        s[2] = {"tag": "Verse", "delivery": "sung", "lines": [line] * n}
+        lyric = R.render_lyrics(s, "soul-ballad")
+        if len(lyric) > 5000:
+            break
     check("b0 the padded lyric really is over 5,000 chars", len(lyric) > 5000, len(lyric))
     # FU-HOOK-PLACEMENT: build_request now refuses a missing length as
     # UNMEASURED before any cap, so the lyric cap is measured at the

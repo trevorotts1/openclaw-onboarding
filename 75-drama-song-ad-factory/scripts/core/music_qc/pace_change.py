@@ -46,6 +46,7 @@ same onset-rate instrument.
 from __future__ import annotations
 
 import cmath
+import json
 import math
 
 TOOL_NAME = "pace_change"
@@ -341,6 +342,55 @@ def judge_plan_pace(plan, before, problem, after, **kw):
     out = confirm_pace_change(before, problem, after, reason=reason, **kw)
     out["applicable"] = True
     return out
+
+
+# ---- the pace component of the creative fingerprint (WW-03 / WW-15) --------
+#
+# WW-03 binds a take to ONE approved creative revision by a fingerprint whose
+# five components are lines, delivery, beat map, hook and pace. This module owns
+# the PACE component so it is defined in exactly one place: the ordered gear
+# shift a plan carries (``pace_change`` / ``_pace_plan``), canonicalised to the
+# approved lowest-point direction and its return. The approved direction words
+# ("half-time", "thin drums", the return) are the specification's own
+# (WW-07: "half-time, thin drums ... turn and rise back to the groove"); they
+# are recorded here, never re-derived per caller.
+
+PACE_CUE_DROP = "half-time"
+PACE_CUE_RETURN = "turn and rise back to the groove"
+FINGERPRINT_SCHEMA = "blackceo.pace-cue/v1"
+
+
+def canonical_pace(order):
+    """The ordered gear-shift cue a plan carries, as ONE stable dict -- or None
+    when the plan carries no ordered change (nothing to bind). Accepts a plan,
+    a ``pace_change`` order or a bare reason string."""
+    if not order:
+        return None
+    if isinstance(order, dict):
+        if "pace_change" in order or "_pace_plan" in order:
+            order = order.get("pace_change") or order.get("_pace_plan")
+            if not order:
+                return None
+    if not isinstance(order, dict):
+        order = {"reason": str(order)}
+    boundary = order.get("boundary_s")
+    return {
+        "schema": FINGERPRINT_SCHEMA,
+        "boundary_s": None if boundary is None else round(float(boundary), 6),
+        "drop": order.get("drop") or PACE_CUE_DROP,
+        "thin_drums": bool(order.get("thin_drums", True)),
+        "return": order.get("return") or PACE_CUE_RETURN,
+        "reason": order.get("reason"),
+    }
+
+
+def pace_fingerprint_component(order):
+    """The canonical JSON string of the pace cue, for the creative fingerprint.
+    Empty string when there is no ordered change (a valid component value)."""
+    cue = canonical_pace(order)
+    if cue is None:
+        return ""
+    return json.dumps(cue, sort_keys=True, separators=(",", ":"))
 
 
 # ---- the anchored controls -------------------------------------------------

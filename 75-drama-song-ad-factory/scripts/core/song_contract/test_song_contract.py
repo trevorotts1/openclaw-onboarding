@@ -66,8 +66,12 @@ def _end():
 
 
 def check(name, cond, detail=""):
+    # c4 helper bug: `detail` may be a TUPLE (the (errs, lyr) pair), and
+    # "%s" % (a, b) is a two-argument format -> "TypeError: not all arguments
+    # converted during string formatting" the moment a tuple detail fails.
+    # Wrapping it in a one-tuple formats the whole value, never its members.
     print("%s: %s%s" % ("ok" if cond else "FAIL", name,
-                        (" (%s)" % detail) if detail and not cond else ""))
+                        (" (%s)" % (detail,)) if detail and not cond else ""))
     if not cond:
         FAILS.append(name)
 
