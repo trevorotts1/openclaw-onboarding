@@ -6,15 +6,6 @@ frontmatter `version:` field).
 
 ---
 
-## v2.9.19 - 2026-10-10 - U1: the studio-json question/price/example export
-
-Unit U1 (joint plan section 5, wave 1b). Not yet released: it rides in its own DRAFT unit PR and folds into a batch release later.
-
-- `scripts/core/choice_card/intake_card/intake_card.py` gains `--format studio-json`: the Drama Studio export. It emits one screen per intake question, each carrying `question` (the screen's question text), `price` (the price line that screen shows, or `null`) and `example` (the "See a great answer" line from `references/CLIENT-GUIDE.md`), plus the question's `options` with their own per-option price. The export reads the SAME `QUESTIONS` list the card asks, so the card and the studio can never disagree about a question or a price.
-- One price sentence, two surfaces: `_model_price_line()` is the single source of the VIDEO MODEL screen's price line, read by both the card's `ask` and the studio export. `spend_question()` now carries the `price` line the studio BUDGET screen shows (the card total, else the brief limit, else `null`).
-- Fail closed, never a half file: a screen missing its question text, its example or its options raises `StudioExportError`; the CLI prints `studio-json: STUDIO_JSON_FIELD_MISSING id=... field=...` on stderr and exits 1 with an empty stdout, so the studio never renders a screen missing a required field.
-- Proof: `python3 core/choice_card/intake_card/test_studio_json_u1.py` (8 checks green). Positive: the CLI writes the 9-screen export and exits 0. Negative controls: a screen missing its `ask` exits 1 with `field=question` on stderr and empty stdout; an id with no guide example exits with `field=example`. Version marker `skill-version.txt` and the SKILL.md frontmatter v2.9.18 -> v2.9.19 (G3).
-
 ## v2.9.18 - 2026-10-10 - PKG-11 attempt 4: twelve REAL `produce_delivery` paths, real-run e2e, no fixture bytes
 
 Released with onboarding v27.1.1 (same follow-up batch; attempt 3 only claimed the one naming scheme).
