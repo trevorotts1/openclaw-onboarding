@@ -6,6 +6,50 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.31 - 2026-10-11 - WWC combined branch C: WW-25 copy-first archive, WW-26 three complete briefs, WW-27 ensemble character bible and distinct voices, WW-28 causal plot and earned hook
+
+ONE real-content commit whose parent is the live head of `unit/WWB-U1`
+(`9b4b30df07`, read at build time), joining the three parallel builders'
+patches (WWC-U25, WWC-U26, WWC-U27) with the carried WW-28 patch
+(`wave3/carry/WW-28.patch`) into a single coherent change, and finishing
+WW-28's DEPENDS-ON-WW-27 clause on WW-27's cast model. Skill 75 is bumped
+exactly once, inside this one commit; the repository root `/version` and root
+`CHANGELOG.md` are unchanged.
+
+- WW-25 (copy-first archive): the existing shipping writer
+  `song_choices.deliver_choices` copies each approved take into a NEW
+  noncolliding `<run>/song-choices/archive/<stamp>` folder, verifies every
+  copied file's sha256 against its source, writes a complete receipt and only
+  THEN publishes. Originals are never deleted or moved; a prior archive is
+  never overwritten; a copy fault or hash mismatch refuses with both sides
+  preserved and nothing published. No parallel archive module was created.
+- WW-26 (three complete briefs, including the upbeat option):
+  `song_choices/variants.json` carries three COMPLETE briefs per style (all ten
+  directions each, exactly one explicit upbeat role), assembled per variant
+  through `suno_recipe.brief_style_text`; `_require_three` checks complete
+  treatments, not identifiers; `_check_three_briefs` refuses
+  MISSING_DIRECTION / GENRE_SUBSTITUTION / UPBEAT_DIRECTION /
+  SHARED_CORE_PLUS_SUFFIX / STYLE_TOO_LONG on the exact serialized
+  `request["input"]["style"]` before spend.
+- WW-27 (ensemble character bible and distinct voices): the new
+  `character_bible` cast model (seven character fields, six voice-direction
+  fields, ensemble by default, a speaking villain or foil that receives a
+  consequential reply, undeclared speakers and a single-voice ensemble style
+  refused) is wired into `song_contract.check_sheet`,
+  `suno_recipe.build_request`/`guard_request`, `music_director.build_generate_request`
+  and `lyric_writer.validate_lyrics`; `qc_voice_match.line_voice_fit` decides a
+  second voice on TIMBRE, beyond pitch.
+- WW-28 (causal plot and earned hook): `story_arc` gates the nine causal
+  fields, the fiction/testimonial split, the mood-board plot, the exact
+  payload closing call, the exact hook line versus the refrain, two-declared
+  versus companion-line counting and maker self-approval; the twelve-beat /
+  eight-stage / fifteen-stage mappings are asserted preserved.
+- WW-28 DEPENDS-ON-WW-27 (finished here): the independent non-maker's
+  'exchanged replies' leg now judges a declared cast on WW-27's model --
+  `character_bible.traded_replies` over `speaker_turns` -- and reports
+  `cast_model: "ww27-ensemble-cast"`; with no cast declared it keeps the base
+  speaker-prefix leg unchanged.
+
 ## v2.9.30 - 2026-10-11 - WWB combined branch B: WW-22 ordered approved-story-line matching, WW-23 both musical transitions, WW-24 measured-only evidence provenance
 
 ONE real-content commit whose parent is the live head of `unit/WW30-U2`

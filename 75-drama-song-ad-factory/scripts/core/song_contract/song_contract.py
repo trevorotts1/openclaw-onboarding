@@ -74,6 +74,10 @@ import sung_hook as _SH        # noqa: E402
 import words_fit as _WF        # noqa: E402
 import suno_recipe as _RP     # noqa: E402
 from story_coverage import story_coverage as _story   # noqa: E402  (WWFIX D1)
+try:   # WW-28: the payload closing must carry the approved commercial call
+    from story_arc import story_arc as _SARC   # noqa: E402
+except ImportError:                            # pragma: no cover
+    _SARC = None
 #: the module itself whether core/suno_recipe/ is a package or on sys.path
 _R = getattr(_RP, "suno_recipe", _RP)
 #: WW-01: the per-verse rap-floor API (RAP_VERSE_MIN_S / MIN_RAP_VERSES /
@@ -88,6 +92,21 @@ try:   # FU-HOOK-PLACEMENT owns hook count and placement once it is installed
     from sung_hook import hook_placement as _HP   # noqa: E402
 except ImportError:
     _HP = None
+
+
+#: WW-27: the ensemble cast model lives in character_bible; it is imported
+#: LAZILY so a caller that passes no cast (and a sheet with no speaker bracket)
+#: never loads it and no existing sheet check changes.
+_CB_MOD = None
+
+
+def _cast_model():
+    """character_bible.character_bible, loaded once (WW-27's cast gate)."""
+    global _CB_MOD
+    if _CB_MOD is None:
+        from character_bible import character_bible as _cb   # noqa: PLC0415
+        _CB_MOD = getattr(_cb, "character_bible", _cb)
+    return _CB_MOD
 
 TOOL_NAME = "song_contract"
 TOOL_VERSION = "1.1.0"
@@ -267,11 +286,22 @@ def _non_hook_sung(sections, blocks):
             and s["kind"] in NON_HOOK_SUNG_KINDS]
 
 
-def check_sheet(sheet_text, style_id, delivered_s, style_text=None):
+def check_sheet(sheet_text, style_id, delivered_s, style_text=None, cast=None):
     """The style contract on one lyric sheet. Never raises on a bad sheet:
     returns {"verdict": PASS|FLAG|FAIL|EXEMPT, "reasons", "flags",
     "sections" (per-section words, seconds and word share by delivery),
-    "totals", "hook", "sung_non_hook", "sung_of_voice"}."""
+    "totals", "hook", "sung_non_hook", "sung_of_voice", "cast"}.
+
+    WW-27: with ``cast`` (a brief carrying ``characters``, or an already
+    resolved cast) the ensemble gate runs here too -- the sheet's speaker
+    brackets must name declared characters, a villain or foil must speak and be
+    answered, two characters must not share one Suno voice direction, and an
+    ensemble whose FINAL ``style_text`` commands a single voice is refused.
+    With no cast passed the sheet is judged exactly as before (the legacy
+    single-voice sheet has no cast to declare its brackets against, so there is
+    nothing to refuse). The EXEMPT voiceover style returns before this
+    (spoken dialogue by design) and a missing style_id/length_s returns first
+    (already a FAIL), exactly as before."""
     missing = ["UNMEASURED: %s" % f for f, v in (("style_id", style_id), ("length_s", delivered_s))
                if v is None]
     if missing:   # no gate switches itself off: a missing input is a FAIL
@@ -284,6 +314,17 @@ def check_sheet(sheet_text, style_id, delivered_s, style_text=None):
     rates = _rates(sid)
     secs = parse_sections(sheet_text)
     reasons, flags = [], []
+    # WW-27: the ensemble cast gate, BEFORE any spend. It runs when a cast is
+    # DECLARED (a brief with characters, or an already resolved cast); a sheet
+    # with no cast at all is the legacy single-voice sheet and is judged exactly
+    # as before, so character_bible is never imported and nothing changes.
+    # ponytail: with no cast record the sheet's brackets are not "undeclared" --
+    # there is no cast to declare them against -- so SPEAKER_UNDECLARED needs a
+    # declared cast. character_bible.check_cast called directly stays closed.
+    _cast = None
+    if cast is not None:
+        _cast = _cast_model().check_cast(cast, sheet_text=sheet_text, style_text=style_text)
+        reasons.extend(_cast["reasons"])
     rows, words, seconds = [], dict.fromkeys(_R.DELIVERIES, 0), dict.fromkeys(_R.DELIVERIES, 0.0)
     for s in secs:
         n = sum(len(ln.split()) for ln in s["lines"])
@@ -361,7 +402,7 @@ def check_sheet(sheet_text, style_id, delivered_s, style_text=None):
         _opening["line"], _story.delivered_words_ordered(secs))
     out = {"verdict": "FAIL", "style_id": sid, "label": label, "delivered_s": delivered_s,
            "rap_floor": rap_floor, "rap_verses": rap_verses,
-           "approved_opening": _opening,
+           "approved_opening": _opening, "cast": _cast,
            "reasons": reasons, "flags": flags, "sections": rows, "totals": totals,
            "rap_vs_spoken": "planned from the sheet's tags; on the audio " + RAP_AUDIO_UNMEASURED}
     if not rows:
@@ -443,6 +484,17 @@ def check_sheet(sheet_text, style_id, delivered_s, style_text=None):
                            "closing lines on the hook melody" % (s["tag"], s["cue"]))
     if upbeat and style_text and _SLOW_RE.search(str(style_text)):
         reasons.append("style text asks for slow delivery in upbeat %s" % label)
+    # WW-28: the payload CLOSING must carry an approved commercial call (a book
+    # order or an assessment call) -- never a summary-only promise, an
+    # interchangeable slogan or a magical unsupported cure. It fires on a
+    # closing block tagged as a call ([CTA ...]/[Offer ...]); a sheet with no
+    # such closing is left to the story gate, so no existing sheet is refused.
+    if _SARC is not None:
+        _closing = _SARC.check_payload_closing(sheet_text)
+        if _closing.get("outcome") == "rejected":
+            reasons.append("%s: %s (closing block %r)" % (_closing["reason_code"],
+                                                          _closing["detail"], _closing.get("tag")))
+        out["payload_closing"] = _closing
     out["verdict"] = "FAIL" if reasons else ("FLAG" if flags else "PASS")
     return out
 

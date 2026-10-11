@@ -132,6 +132,16 @@ def validate_story(story):
             isinstance(story["story_id"], str) and STORY_ID_RE.match(story["story_id"])):
         errors.append({"error": "story-id-invalid", "detail": repr(story.get("story_id"))})
 
+    # WW-28: the causal craft gate, BEFORE budgeting. It runs on a record
+    # that declares causal content: the chain, the fiction/testimonial split,
+    # the reconstruction from the exact lyrics, the hook line and the closing
+    # call are WW-28's pre-generation acceptance rules -- never a sixth audio
+    # gate (D1-D5 stay the only delivered-audio gates).
+    if declares_causal(story):
+        for _e in check_causal_story(story)["errors"]:
+            if _e not in errors:
+                errors.append(_e)
+
     if errors:
         return _res("rejected", errors[0]["error"], errors, story, ids, reveal)
     return _res("ok", "story-valid", [], story, ids, reveal)
@@ -504,6 +514,425 @@ def revision_provenance(binding, take):
             "binding_fingerprint": bind_fp, "take_fingerprint": stored,
             "matched": bool(stored) and stored == bind_fp,
             "determined": bool(binding) and bool(stored)}
+
+
+# =====================================================================
+# WW-28: causal plot and earned hook. BEFORE budgeting, the script must
+# declare a CAUSAL chain -- scene, inciting event, opposing action,
+# escalation, cost, choice, product mechanism, consequence and commercial
+# action -- built from FICTION separated from TESTIMONIAL fact, with an
+# exact hook LINE defined against the refrain BEFORE any counting, and a
+# closing that carries an approved commercial call, never a summary-only
+# promise, an interchangeable slogan or a magical unsupported cure. An
+# independent NON-MAKER reconstructs the causal story from the EXACT
+# lyrics, never from a scene summary. This is a PRE-GENERATION craft gate:
+# it adds NO delivered-audio craft gate (D1-D5 stay the only audio gates).
+# Every threshold below is a NEW PROPOSED ACCEPTANCE RULE (WW-28), never a
+# measured limit of an earlier run and NOT a number Trevor set.
+# =====================================================================
+
+CAUSAL_SCHEMA = "blackceo.causal-story/v1"
+#: The nine causal fields, in causal order. Each must be declared and
+#: non-empty BEFORE budgeting: an ad whose plot is not causal is not planned.
+CAUSAL_FIELDS = ("scene", "inciting_event", "opposing_action", "escalation",
+                 "cost", "choice", "product_mechanism", "consequence",
+                 "commercial_action")
+#: A scene is invented (fiction) or a real client fact (testimonial). The two
+#: are never mixed: a claim shown as the client's real life is not a scene.
+SCENE_KINDS = ("fiction", "testimonial")
+#: A real commercial call: an action the viewer can take. PROPOSED list.
+COMMERCIAL_ACTIONS = ("book", "order", "assessment", "schedule", "call",
+                      "apply", "enroll", "enrol", "reserve", "checkout", "buy",
+                      "sign up")
+#: A closing that promises but never asks for anything.
+_PROMISE_RE = re.compile(r"\b(will (?:change|transform)|your (?:life|world)|a new you|"
+                         r"believing in yourself|the answer is within|everything you ever|"
+                         r"nothing (?:can|will) stop)\b", re.I)
+#: A magical, unsupported cure: a claim of a fix with no mechanism.
+_CURE_RE = re.compile(r"\b(miraculous|instantly (?:cures?|fixes?|heals?)|"
+                      r"permanently (?:cures?|fixes?|heals?)|cures? you|"
+                      r"(?:guaranteed|always) works|fixes? (?:you|it all))\b", re.I)
+_COMMERCIAL_RE = re.compile(r"\b(%s)\b" % "|".join(re.escape(a) for a in COMMERCIAL_ACTIONS),
+                            re.I)
+#: a block tagged as the closing call.
+_CTA_TAG_RE = re.compile(r"\b(?:cta|call ?to ?action|offer|book|assessment|"
+                         r"next ?step|closing|pitch)\b", re.I)
+_SECTION_RE = re.compile(r"\[[^\]]*\]")
+_BLOCK_RE = re.compile(r"^\[([^\]]*)\]\s*$")
+_COST_RE = re.compile(r"\b(lost|lose|losing|cost|costs|hurt|hurts|failed|fail|debt|"
+                      r"broke|broken|alone|pain|ache|empty|tired|scared|afraid|wound|"
+                      r"wounded|nothing left|gave up)\b", re.I)
+_SPEAKER_RE = re.compile(r"^(?P<who>[A-Z][A-Za-z'’\-]{1,20})\s*:\s*\S")
+_LINK_RE = re.compile(r"\b(cause|causes|caused|effect|because|so|then|leads?|led|"
+                      r"result|therefore|which made|and that)\b", re.I)
+
+
+def _blank(v):
+    """True when a declared value carries nothing: None, empty string/list/dict."""
+    if v is None:
+        return True
+    if isinstance(v, str):
+        return not v.strip()
+    if isinstance(v, (list, tuple, dict, set)):
+        return len(v) == 0
+    return False
+
+
+def declares_causal(story):
+    """True when the record declares causal content (a ``causal`` block or any
+    of the nine causal fields on the record). A record with none is judged by
+    the legacy beat contract alone."""
+    if not isinstance(story, dict):
+        return False
+    if isinstance(story.get("causal"), dict):
+        return True
+    return any(f in story for f in CAUSAL_FIELDS)
+
+
+def _causal_block(story):
+    blk = dict(story.get("causal")) if isinstance(story.get("causal"), dict) else {}
+    for f in CAUSAL_FIELDS + ("lyrics", "maker", "approved_by"):
+        if f in story and f not in blk:
+            blk[f] = story[f]
+    return blk
+
+
+def _scene_links(scene):
+    """True when a scene row carries a causal link (a cause/effect key or a
+    linking word in its text). A flat list of images carries none."""
+    if not isinstance(scene, dict):
+        return bool(_LINK_RE.search(str(scene or "")))
+    for k in ("cause", "effect", "because", "then", "leads", "result"):
+        if not _blank(scene.get(k)):
+            return True
+    return bool(_LINK_RE.search(" ".join(str(scene.get(k) or "")
+                                          for k in ("text", "line", "then", "effect"))))
+
+
+def _contains(seq, sub):
+    """True when ``sub`` sits contiguously in ``seq`` (both token lists)."""
+    n = len(sub)
+    if not n or n > len(seq):
+        return False
+    return any(seq[i:i + n] == list(sub) for i in range(len(seq) - n + 1))
+
+
+_CB_MOD = None
+
+
+def _cast_model():
+    """character_bible.character_bible, loaded once (WW-27's ensemble cast model).
+
+    WW-28's reconstruction gate judges the 'exchanged replies' leg against this
+    cast model whenever the story declares a cast. Lazy so a story with no
+    declared cast never imports it (base behaviour unchanged)."""
+    global _CB_MOD
+    if _CB_MOD is None:
+        try:
+            import character_bible.character_bible as _cb    # noqa: PLC0415
+        except Exception:
+            try:
+                from character_bible import character_bible as _cb   # noqa: PLC0415
+            except Exception:
+                return None
+        _CB_MOD = getattr(_cb, "character_bible", _cb)
+    return _CB_MOD
+
+
+def _rec(determined, reason_code, detail, **extra):
+    out = {"determined": bool(determined), "reason_code": reason_code, "detail": detail,
+           "stakes": None, "exchanged_replies": None, "earned_hook": None,
+           "hook_line": None, "cast_model": "base-structures"}
+    out.update(extra)
+    return out
+
+
+def reconstruct_causal_story(lyrics, hook_line=None, cast=None):
+    """An independent NON-MAKER reads the EXACT lyrics -- never a scene
+    summary -- and reconstructs the causal story. Returns
+    {"determined", "reason_code", "detail", "stakes", "exchanged_replies",
+     "earned_hook", "hook_line", "cast_model", "traded_reply"}.
+
+    The exact lyrics carry SECTION TAGS; a scene summary does not. With NO cast
+    declared the 'exchanged replies' leg is judged against the character
+    structures already on the base (speaker prefixes and quoted replies). When
+    the story DECLARES a cast -- WW-27's ensemble character bible -- the leg is
+    judged against THAT cast model instead: a villain or foil must SPEAK and
+    receive a consequential reply from another declared character
+    (``character_bible.traded_replies`` over ``character_bible.speaker_turns``),
+    and the receipt carries ``cast_model: "ww27-ensemble-cast"`` plus the traded
+    reply. This is WW-28's DEPENDS-ON-WW-27 clause, finished on WW-27's model."""
+    text = str(lyrics or "")
+    if not text.strip():
+        return _rec(False, "causal-lyrics-missing",
+                    "the exact approved lyrics are required to reconstruct the story")
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    body = [ln for ln in lines if not _SECTION_RE.search(ln)]
+    if not _SECTION_RE.search(text) or not body:
+        return _rec(False, "SCENE_SUMMARY_NOT_LYRICS",
+                    "no section tags: this is a scene summary, not the exact lyrics; the "
+                    "story is reconstructed from the lyrics alone")
+    stakes = any(_COST_RE.search(ln) for ln in body)
+    speakers = [m.group("who").lower() for m in (_SPEAKER_RE.match(ln) for ln in body) if m]
+    quoted = sum(1 for ln in body if ln.count('"') >= 2 or ln.count("“") >= 1)
+    exchanged = (len(set(speakers)) >= 2) or (quoted >= 2) or any(
+        body[i].endswith("?") and i + 1 < len(body) and not body[i + 1].endswith("?")
+        for i in range(len(body)))
+    # WW-27's cast model, when the story declares one: a villain or foil must
+    # speak AND be answered. Only the 'exchanged replies' leg moves; stakes and
+    # the earned hook are unchanged.
+    cast_model = "base-structures"
+    traded = None
+    if cast is not None:
+        cb = _cast_model()
+        if cb is not None:
+            cast_model = "ww27-ensemble-cast"
+            resolved = cb.resolve_cast(cast)
+            opponents = [c["name"] for c in (resolved.get("characters") or [])
+                         if c.get("role") in cb.OPPOSING_ROLES]
+            traded = (cb.traded_replies(cb.speaker_turns(text), opponents)
+                      if opponents else None)
+            exchanged = traded is not None
+    hook = str(hook_line or "").strip()
+    earned = None
+    if hook:
+        htoks = _tokens(hook)
+        hit = next((i for i, ln in enumerate(body) if _contains(_tokens(ln), htoks)), None)
+        earned = hit is not None and any(_COST_RE.search(ln) for ln in body[:hit])
+    missing = []
+    if not stakes:
+        missing.append("stakes")
+    if not exchanged:
+        missing.append("exchanged replies")
+    if hook and not earned:
+        missing.append("earned hook")
+    if missing:
+        return _rec(False, "CAUSAL_CHAIN_INCOMPLETE",
+                    "the exact lyrics do not reconstruct a causal story (missing: %s)"
+                    % ", ".join(missing), stakes=stakes, exchanged_replies=exchanged,
+                    earned_hook=earned, hook_line=hook or None, cast_model=cast_model,
+                    traded_reply=traded)
+    return _rec(True, "causal-reconstructed",
+                "the causal story reconstructs from the exact lyrics",
+                stakes=stakes, exchanged_replies=exchanged, earned_hook=earned,
+                hook_line=hook or None, cast_model=cast_model, traded_reply=traded)
+
+
+def check_causal_story(story):
+    """The causal craft gate: refuse a non-causal, mood-board, self-approved or
+    slogan-closed story BEFORE budgeting. Only runs on a record that declares
+    causal content (``declares_causal``). Never raises."""
+    if not isinstance(story, dict):
+        return {"schema": CAUSAL_SCHEMA, "outcome": "error", "reason_code": "story-not-an-object",
+                "errors": [{"error": "story-not-an-object"}], "declared": []}
+    blk = _causal_block(story)
+    errors = []
+    declared = sorted(f for f in CAUSAL_FIELDS if not _blank(blk.get(f)))
+    missing = [f for f in CAUSAL_FIELDS if _blank(blk.get(f))]
+    if missing:
+        errors.append({"error": "causal-incomplete",
+                       "detail": "before budgeting every causal field must be declared; missing: %s"
+                                 % ", ".join(missing)})
+    scenes = story.get("scenes")
+    if scenes is None and isinstance(blk.get("scene"), list):
+        scenes = blk["scene"]
+    if scenes is not None:
+        if not isinstance(scenes, list) or not scenes:
+            errors.append({"error": "scene-kind-undeclared",
+                           "detail": "scenes must be a non-empty list of {kind, text}"})
+        else:
+            bad = [i for i, s in enumerate(scenes)
+                   if not isinstance(s, dict)
+                   or str(s.get("kind", "")).lower() not in SCENE_KINDS]
+            if bad:
+                errors.append({"error": "scene-kind-undeclared",
+                               "detail": "scene index %s: kind must be one of %s -- a fiction is "
+                                         "never told as a testimonial fact" % (bad, list(SCENE_KINDS))})
+            elif len(scenes) > 1 and not any(_scene_links(s) for s in scenes):
+                errors.append({"error": "mood-board-plot",
+                               "detail": "scenes carry no causal link (cause/effect/because/then): "
+                                         "a mood board, not a plot"})
+    contra = []
+    ca_have = str(blk.get("commercial_action") or "").strip()
+    lyrics_text = str(blk.get("lyrics") or story.get("lyrics") or "")
+    if ca_have and lyrics_text.strip():
+        if closing_block(lyrics_text) is None:
+            contra.append("the story declares the closing call %r but the payload has no closing "
+                          "block to carry it" % ca_have)
+        else:
+            cl = check_payload_closing(lyrics_text, commercial_action=ca_have, require_cta=True)
+            if cl.get("outcome") == "rejected":
+                contra.append("the story closes on %r but the payload closing does not carry it "
+                              "(%s)" % (ca_have, cl["reason_code"]))
+    if isinstance(story.get("beats"), list) and "product_intro" in story["beats"]:
+        pi = story["beats"].index("product_intro") + 1
+        rev = story.get("product_reveal")
+        if isinstance(rev, int) and not isinstance(rev, bool) and pi < rev:
+            contra.append("product_intro appears at beat %d, before the reveal stage %d"
+                          % (pi, rev))
+    if contra:
+        errors.append({"error": "causal-contradiction", "detail": "; ".join(contra)})
+    ca = str(blk.get("commercial_action") or "")
+    if ca:
+        if _CURE_RE.search(ca):
+            errors.append({"error": "magical-cure",
+                           "detail": "commercial action promises a cure with no mechanism: %r" % ca})
+        elif not _COMMERCIAL_RE.search(ca):
+            errors.append({"error": "summary-only-promise",
+                           "detail": "commercial action %r asks for no real step "
+                                     "(book/order/assessment/schedule/call/apply)" % ca})
+    maker = str(story.get("maker") or blk.get("maker") or "").strip().lower()
+    approver = str(story.get("approved_by") or blk.get("approved_by") or "").strip().lower()
+    if maker and approver and maker == approver:
+        errors.append({"error": "maker-self-approval",
+                       "detail": "the maker %r cannot approve their own script" % maker})
+    hook = story.get("hook") if isinstance(story.get("hook"), dict) else None
+    hline = str((hook or {}).get("line") or "").strip()
+    refrain = str((hook or {}).get("refrain") or "").strip()
+    if hook is None or not hline:
+        errors.append({"error": "hook-line-undefined",
+                       "detail": "define the EXACT hook line against the refrain before any counting"})
+    elif refrain and _norm(hline) == _norm(refrain):
+        errors.append({"error": "hook-line-undefined",
+                       "detail": "the hook line and the refrain are the same text; the exact hook "
+                                 "line is defined separately from the refrain"})
+    lyrics = blk.get("lyrics") or story.get("lyrics")
+    cast = blk.get("cast")
+    if cast is None and (blk.get("characters") or blk.get("cast_mode")):
+        cast = blk
+    rec = reconstruct_causal_story(lyrics, hook_line=hline or None, cast=cast)
+    if not rec["determined"]:
+        errors.append({"error": rec["reason_code"], "detail": rec["detail"]})
+    if errors:
+        return {"schema": CAUSAL_SCHEMA, "outcome": "rejected", "reason_code": errors[0]["error"],
+                "errors": errors, "declared": declared, "reconstruction": rec}
+    return {"schema": CAUSAL_SCHEMA, "outcome": "ok", "reason_code": "causal-ok",
+            "errors": [], "declared": declared, "reconstruction": rec}
+
+
+def _blocks(text):
+    out, cur = [], None
+    for ln in str(text or "").splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        m = _BLOCK_RE.match(s)
+        if m:
+            cur = {"tag": m.group(1), "lines": []}
+            out.append(cur)
+        elif cur is not None:
+            cur["lines"].append(s)
+    return out
+
+
+def closing_block(sheet_text):
+    """The closing block: the last non-[End], non-instrumental section, or None."""
+    blocks = [b for b in _blocks(sheet_text)
+              if not re.search(r"\bend\b|instrumental", b["tag"], re.I)]
+    return blocks[-1] if blocks else None
+
+
+def check_payload_closing(sheet_text, commercial_action=None, require_cta=False):
+    """The payload CLOSING must carry an approved commercial call (book order /
+    assessment call) -- never a summary-only promise, a slogan or a magical
+    unsupported cure. Fires when the closing block is tagged as a call
+    (``[CTA ...]``/``[Offer ...]``), when a call is required, or when an
+    approved commercial action is supplied; otherwise it stands aside and
+    reports ``skipped`` so it never refuses a sheet it was never pointed at."""
+    blk = closing_block(sheet_text)
+    if blk is None:
+        return {"outcome": "skipped", "reason_code": "no-closing", "detail": ""}
+    if not (_CTA_TAG_RE.search(blk["tag"]) or require_cta or commercial_action is not None):
+        return {"outcome": "skipped", "reason_code": "not-a-call-block", "detail": "",
+                "tag": blk["tag"]}
+    body = " ".join(blk["lines"])
+    out = {"tag": blk["tag"], "body": body, "commercial_action": commercial_action}
+    if _CURE_RE.search(body):
+        out.update(outcome="rejected", reason_code="magical-cure",
+                   detail="the closing promises a cure with no mechanism")
+        return out
+    if not _COMMERCIAL_RE.search(body):
+        out.update(outcome="rejected", reason_code="summary-only-promise",
+                   detail="the closing asks for no commercial action "
+                          "(book/order/assessment/schedule/call/apply)")
+        return out
+    if commercial_action is not None:
+        want = _COMMERCIAL_RE.search(str(commercial_action))
+        if want and not re.search(r"\b%s\b" % re.escape(want.group(1)), body, re.I):
+            out.update(outcome="rejected", reason_code="closing-not-approved-call",
+                       detail="the closing lacks the approved action %r" % want.group(1))
+            return out
+    out.update(outcome="ok", reason_code="closing-ok",
+               detail="the closing carries the commercial call")
+    return out
+
+
+def count_hook_occurrences(sheet_text, hook):
+    """Audition the hook on the approved script: the EXACT hook line is counted,
+    the refrain and any companion line are NOT. Returns
+    {"hook_line", "refrain", "declared", "counted_exact", "counted_with_companions",
+     "companion_substitution"}.
+
+    ``declared`` is the number of hook occurrences the sheet declares (the
+    number of hook blocks); ``counted_with_companions`` adds any line that
+    shares the hook's opening words but is a DIFFERENT line, so a promised two
+    occurrences can never be reported as four through companion lines."""
+    hook = hook or {}
+    hline = str(hook.get("line") or "").strip()
+    refrain = str(hook.get("refrain") or "").strip()
+    htoks = _tokens(hline)
+    blocks = _blocks(sheet_text)
+    lines = [ln for b in blocks for ln in b["lines"]]
+    exact = sum(1 for ln in lines if _norm(ln) == _norm(hline)) if hline else 0
+    with_comp = exact
+    if htoks:
+        head = htoks[0]
+        for ln in lines:
+            toks = _tokens(ln)
+            if not toks or toks[0] != head:
+                continue
+            if _norm(ln) == _norm(hline):
+                continue
+            shared = len(set(toks) & set(htoks))
+            if shared >= max(1, len(htoks) // 2):
+                with_comp += 1
+    declared = int(hook.get("declared_occurrences") or exact)
+    return {"hook_line": hline or None, "refrain": refrain or None, "declared": declared,
+            "counted_exact": exact, "counted_with_companions": with_comp,
+            "companion_substitution": with_comp > declared and with_comp > exact}
+
+
+def check_hook_declaration(sheet_text, hook):
+    """Refuse a hook whose declared occurrences are inflated by companion-line
+    substitution. Returns {"outcome", "reason_code", "detail", "counts"}."""
+    counts = count_hook_occurrences(sheet_text, hook)
+    if not counts["hook_line"]:
+        return {"outcome": "rejected", "reason_code": "hook-line-undefined",
+                "detail": "no exact hook line is defined against the refrain", "counts": counts}
+    if counts["companion_substitution"]:
+        return {"outcome": "rejected", "reason_code": "hook-companion-substitution",
+                "detail": "%d declared hook occurrence(s) would be counted as %d through "
+                          "companion lines" % (counts["declared"], counts["counted_with_companions"]),
+                "counts": counts}
+    return {"outcome": "ok", "reason_code": "hook-counted",
+            "detail": "%d hook occurrence(s), counted on the exact hook line" % counts["declared"],
+            "counts": counts}
+
+
+def assert_mappings_intact():
+    """The three counts are preserved and mapped by name: twelve canonical beats,
+    eight timing stages, fifteen source-method stages. Returns the mapping report
+    after asserting the counts have not drifted (WW-28: 'preserve explicit
+    mappings')."""
+    report = stage_mapping_report()
+    assert report["canonical_beat_count"] == 12, "canonical beat count drifted"
+    assert report["timing_stage_count"] == 8, "timing stage count drifted"
+    assert report["source_method_stage_count"] == 15, "source-method stage count drifted"
+    assert report["counts_are_distinct"], "the three counts were relabelled as one another"
+    assert set(report["beat_to_timing"]) == set(BEATS), "beat->timing mapping is incomplete"
+    assert set(report["beat_to_source_position"]) == set(BEATS), \
+        "beat->source-position mapping is incomplete"
+    return report
 
 
 def main(argv=None):

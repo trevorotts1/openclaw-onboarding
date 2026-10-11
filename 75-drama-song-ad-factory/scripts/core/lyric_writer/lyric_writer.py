@@ -9,7 +9,14 @@ W-G-002 amend (Trevor order 2026-10-08 11:50 EDT, part G; review item G5):
 lines marked ``delivery: "sung"`` must be SINGABLE -- short metered lines
 inside the 4..12 syllable band, each connected to another sung line by
 rhyme or repetition, with at least one hook (a line or three-word phrase)
-repeated twice in the song. A sung line that connects to nothing is script
+repeated twice in the song.
+
+WW-27 amend: the CAST DECISION precedes drafting. A brief that declares a cast
+is judged FIRST (character_bible.check_cast): every character needs its full
+treatment and Suno voice, an ensemble needs at least two characters, a villain
+or foil must speak and be answered, and no two characters share one voice
+direction. A brief with no cast declares nothing and is judged exactly as
+before. A sung line that connects to nothing is script
 prose cut at line breaks -- the O3 fault -- and is refused as
 "prose-line-in-sung-block"; prose belongs in spoken blocks. Lines that do
 not carry a ``delivery`` field are judged exactly as before (no behaviour
@@ -49,6 +56,43 @@ SUNG_SYL_MIN = 4
 SUNG_SYL_MAX = 12
 HOOK_REPEAT = 2      # a hook line/phrase repeats at least this many times
 PHRASE_WORDS = 3     # a run this long shared by two lines is a hook phrase
+
+#: WW-27: the ensemble cast gate (character_bible.character_bible), imported
+#: LAZILY so a brief that declares no cast never loads it.
+#:
+#: The gate fires on a WW-27 CAST DECLARATION (cast_mode / cast_decision /
+#: cast), never on the legacy ``characters`` name list alone: a brief whose
+#: ``characters`` are there for protected-name checks (H7) is judged exactly as
+#: before, so this unit changes nothing for an existing caller.
+_CAST_MOD = None
+_CAST_KEYS = ("cast_mode", "cast_decision", "cast")
+
+
+def _cast_gate(brief):
+    """WW-27: the cast decision, taken BEFORE the lines are judged.
+
+    None when the brief declares no cast at all -- the check is then off,
+    exactly as today. With a declared cast, ``check_cast`` refuses an incomplete
+    character, a cast under the ensemble default, a villain/foil that never
+    speaks or is never answered, or a shared Suno voice direction -- so the
+    script's drafting never begins on a broken cast. PRE-GENERATION: audio gate
+    D5 alone confirms the delivered voices.
+    """
+    global _CAST_MOD
+    b = brief if isinstance(brief, dict) else {}
+    if not any(b.get(k) for k in _CAST_KEYS):
+        return None
+    if _CAST_MOD is None:
+        from character_bible import character_bible as _cb   # noqa: PLC0415
+        _CAST_MOD = getattr(_cb, "character_bible", _cb)
+    return _CAST_MOD.check_cast(b)
+
+
+def _with_cast(res, cast_rcpt):
+    """Every lyric verdict carries the cast decision that preceded it."""
+    res["cast_decision"] = cast_rcpt
+    return res
+
 
 def _structure():
     try:
@@ -197,12 +241,26 @@ def _res(outcome, reason_code, errors, lines, coverage):
 
 
 def validate_lyrics(lines, brief=None):
-    """Validate sung lines against the brief. Returns outcome/reason/coverage."""
+    """Validate sung lines against the brief. Returns outcome/reason/coverage.
+
+    WW-27: the CAST DECISION is taken FIRST. A declared cast that is not a
+    complete ensemble refuses here, before one line is judged, so drafting never
+    begins on a broken cast; with no declared cast nothing changes.
+    """
     brief = brief or {}
+    cast_rcpt = _cast_gate(brief)
+    if cast_rcpt is not None and cast_rcpt["reasons"]:
+        return _with_cast(
+            _res("rejected", cast_rcpt["reason_code"],
+                 [{"error": cast_rcpt["reason_code"].lower().replace("_", "-"),
+                   "detail": m} for m in cast_rcpt["reasons"]],
+                 lines, {"critical_words": 0, "covered": 0, "missing": []}), cast_rcpt)
     if not isinstance(lines, list) or not lines:
-        return _res("rejected", "lyrics-empty",
-                    [{"error": "lyrics-empty", "detail": "lyrics must be a non-empty list"}],
-                    lines, {"critical_words": 0, "covered": 0, "missing": []})
+        return _with_cast(
+            _res("rejected", "lyrics-empty",
+                 [{"error": "lyrics-empty",
+                   "detail": "lyrics must be a non-empty list"}],
+                 lines, {"critical_words": 0, "covered": 0, "missing": []}), cast_rcpt)
 
     errors, seen, ok_lines = [], set(), []
     crit_words = brief_words(brief)
@@ -290,8 +348,9 @@ def validate_lyrics(lines, brief=None):
     coverage = {"critical_words": len(crit_words), "covered": len(covered), "missing": missing}
 
     if errors:
-        return _res("rejected", errors[0]["error"], errors, lines, coverage)
-    return _res("ok", "lyrics-valid", [], lines, coverage)
+        return _with_cast(_res("rejected", errors[0]["error"], errors, lines,
+                               coverage), cast_rcpt)
+    return _with_cast(_res("ok", "lyrics-valid", [], lines, coverage), cast_rcpt)
 
 
 def _spoken_share():

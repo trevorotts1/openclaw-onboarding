@@ -45,6 +45,29 @@ from song_choices import overlap as _OV            # noqa: E402  (WWFIX D2 item 
 TOOL_NAME = "song_choices"
 DIRNAME = "SONG-CHOICES"
 BANNED_WORDS = ("choir", "reverb", "echo", "rap", "spoken", "speak", "acapella")
+#: WW-26: words no complete brief may carry whatever the style -- a sound the
+#: style bans outright, or a delivery the style text already names once.
+_BANNED_ALWAYS = ("choir", "reverb", "echo", "acapella")
+_BANNED_SHARED = ("spoken", "speak")
+#: WW-26: the ten directions a COMPLETE brief must carry. A brief missing any
+#: one is an identifier, not a treatment, and is refused BEFORE spend.
+#: The ORDER the brief is serialized in. ``arrangement`` is LAST so the
+#: assembled style ends with the variant's own arrangement clause, exactly as
+#: the base asserted, with the approved pace clause appended after it.
+_BRIEF_FIELDS = ("groove", "palette", "energy", "vocals", "hook",
+                 "scene_words", "problem_shift", "solution_shift", "ending",
+                 "arrangement")
+_DIRECTION_LABEL = {"groove": "groove", "palette": "palette",
+                    "arrangement": "arrangement", "energy": "energy",
+                    "vocals": "cast/vocals", "hook": "rap-vs-sung hook",
+                    "scene_words": "immediate scene words",
+                    "problem_shift": "problem shift",
+                    "solution_shift": "solution shift", "ending": "short ending"}
+#: WW-26: the shape a shared core plus a short suffix leaves in the FINAL
+#: serialized styles -- a long identical prefix and only a short remainder.
+#: A complete brief differs from its siblings from the first word.
+SHARED_CORE_PREFIX_MIN = 120
+SHARED_SUFFIX_MAX = 160
 EXTRA_GENERATIONS = 2          # the card pays for 2 more songs than the single-song run
 _TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "variants.json")
 
@@ -53,17 +76,130 @@ class ChoiceError(ValueError):
     """A loud refusal: nothing was spent or delivered on the broken path."""
 
 
+def _brief_refusals(variant):
+    """WW-26: the ten-direction completeness of ONE variant brief. [] = complete.
+
+    A brief that names its genre but carries no treatment is an identifier, not
+    a brief; this is the check ``_require_three`` runs, so completeness is
+    enforced before any generation, not only where the data is loaded."""
+    brief = variant.get("brief") if isinstance(variant, dict) else None
+    if not isinstance(brief, dict):
+        return ["MISSING_BRIEF: variant %r carries no complete brief" % (variant.get("id"),)]
+    out = []
+    for f in _BRIEF_FIELDS:
+        val = brief.get(f)
+        if not isinstance(val, str) or len(val.strip()) < 8:
+            out.append("MISSING_DIRECTION: variant %r brief lacks the %s direction"
+                       % (variant.get("id"), _DIRECTION_LABEL[f]))
+    return out
+
+def _banned_words(style_id):
+    """WW-26: the words a brief for THIS style may not carry. ``rap`` is refused
+    only for a style that delivers none -- an R&B Flow brief is REQUIRED to name
+    the rap-versus-sung hook, so the old blanket ban would forbid the direction."""
+    _sr = getattr(_R, "suno_recipe", _R)
+    try:
+        sid = _sr._style_key(style_id)
+        raps = sid in getattr(_sr, "RAP_STYLE_IDS", ()) or bool(
+            _sr.music_block(sid).get("rap_allowed"))
+    except Exception:   # noqa: BLE001  unknown style -> the stricter set
+        raps = False
+    words = list(_BANNED_ALWAYS) + list(_BANNED_SHARED)
+    if not raps:
+        words += ["rap", "rapping"]
+    return tuple(words)
+
 def variants_for(style_id):
-    """The three variants for a music style (data table). Fails closed."""
+    """WW-26: the three COMPLETE briefs for a music style (data table). Fails
+    closed on a missing/duplicate set, an incomplete brief, a banned word, a
+    genre substitution or a count that is not exactly ONE upbeat role."""
     with open(_TABLE, encoding="utf-8") as f:
         rows = json.load(f).get(str(style_id))
     if not rows or len(rows) != 3:
         raise ChoiceError("no three-variant set for music style %r in variants.json" % (style_id,))
+    banned = _banned_words(style_id)
     for r in rows:
-        low = r["clause"].lower()
-        bad = [w for w in BANNED_WORDS if re.search(r"\b%s" % w, low)]
-        if bad or len(r["clause"]) > 140:
-            raise ChoiceError("variant %r clause breaks the style rules: %s" % (r["id"], bad or "too long"))
+        for why in _brief_refusals(r):
+            raise ChoiceError(why)
+        if r.get("genre") != str(style_id):
+            raise ChoiceError("variant %r substitutes genre %r for the chosen %r"
+                              % (r.get("id"), r.get("genre"), style_id))
+    for r in rows:
+        text = " ".join(str(r["brief"][f]) for f in _BRIEF_FIELDS).lower()
+        bad = [w for w in banned if re.search(r"\b%s" % w, text)]
+        if bad:
+            raise ChoiceError("variant %r brief breaks the style rules: %s" % (r["id"], bad))
+        if len(r["brief"]["arrangement"]) > 140:
+            raise ChoiceError("variant %r arrangement clause too long" % (r["id"],))
+        # back-compat: the trailing clause is the brief's own arrangement sentence
+        r["clause"] = r["brief"]["arrangement"]
+    if sum(1 for r in rows if r.get("upbeat")) != 1:
+        raise ChoiceError("exactly ONE variant must be the explicitly upbeat role for %r"
+                          % (style_id,))
+    return rows
+
+def _brief_text(variant, vocal_gender):
+    """One variant's authored brief CORE, in order, as the start of the provider
+    style. The arrangement sentence is EXCLUDED here and passed back separately
+    as the style's trailing clause, so the style ends with the variant's own
+    arrangement exactly as the base asserted."""
+    _sr = getattr(_R, "suno_recipe", _R)
+    word = _sr.vocal_gender_word(vocal_gender)
+    brief = variant["brief"]
+    return " ".join(str(brief[f]).replace("{gender}", word).strip()
+                    for f in _BRIEF_FIELDS if f != "arrangement")
+
+def _common_prefix_len(strs):
+    if not strs:
+        return 0
+    n = min(len(s) for s in strs)
+    i = 0
+    while i < n and all(s[i] == strs[0][i] for s in strs):
+        i += 1
+    return i
+
+def _check_three_briefs(rows, vocal_gender="f"):
+    """WW-26: the pre-spend gate on the EXACT serialized three variant payloads.
+
+    Reads ``request["input"]["style"]`` after every transformation and refuses a
+    missing cast/vocals/rap/shift/upbeat direction, a shared-core-plus-suffix
+    shape, a genre substitution, a wrong upbeat count and a final over-cap text.
+    The value the guard tests is printed at this real call site."""
+    _sr = getattr(_R, "suno_recipe", _R)
+    word = _sr.vocal_gender_word(vocal_gender)
+    refusals, styles, genres, upbeats = [], [], [], 0
+    for v, req in rows:
+        style = ((req.get("input") or {}).get("style")) or ""
+        styles.append(style)
+        brief = v.get("brief") or {}
+        print("  WW-26 serialized input.style [%s] len=%d chars" % (v.get("id"), len(style)))
+        for f in _BRIEF_FIELDS:
+            need = str(brief.get(f, "")).replace("{gender}", word)
+            if not need or need not in style:
+                refusals.append("MISSING_DIRECTION: variant %s style lacks the %s "
+                                "direction (%r)" % (v.get("id"), _DIRECTION_LABEL[f], need))
+        if len(style) > _sr.SUNO_STYLE_FIELD_MAX:
+            refusals.append("STYLE_TOO_LONG: variant %s style is %d chars, limit %d"
+                            % (v.get("id"), len(style), _sr.SUNO_STYLE_FIELD_MAX))
+        genres.append(brief.get("genre") or v.get("genre"))
+        if v.get("upbeat"):
+            upbeats += 1
+    if len(set(genres)) != 1 or any(g is None for g in genres):
+        refusals.append("GENRE_SUBSTITUTION: the three variants name %r" % (genres,))
+    if upbeats != 1:
+        refusals.append("UPBEAT_DIRECTION: exactly one variant must be the upbeat role; got %d"
+                        % upbeats)
+    if styles and len(styles) == 3:
+        lcp = _common_prefix_len(styles)
+        shortest = min(len(s) for s in styles)
+        print("  WW-26 three styles: common prefix %d chars, shortest %d chars"
+              % (lcp, shortest))
+        if lcp >= SHARED_CORE_PREFIX_MIN and (shortest - lcp) <= SHARED_SUFFIX_MAX:
+            refusals.append("SHARED_CORE_PLUS_SUFFIX: the three variants share %d leading "
+                            "chars and differ only by a suffix of %d chars"
+                            % (lcp, shortest - lcp))
+    if refusals:
+        raise ChoiceError("three complete briefs refused before spend: %s" % "; ".join(refusals))
     return rows
 
 
@@ -84,26 +220,21 @@ def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="
     ``build_request`` put it ahead of the variant clause, which is the WW-07
     defect this fixes."""
     pace_plan = kw.pop("pace_plan", None)   # WW-07: into the style, never into the payload
-    # WW-07: the style's OWN text is built without the pace clause so the drop
-    # and the return can be appended LAST, after the variant's arrangement
-    # clause. pace_clause / SUNO_STYLE_FIELD_MAX live on the bare module, not the
-    # package (same resolution music_director uses).
+    # WW-07 / WW-26: each variant's style is its OWN complete brief, assembled
+    # by suno_recipe.brief_style_text -- compliance trailer first, the variant's
+    # whole brief next, the approved pace clause LAST, cap on the FINAL text.
+    # pace_clause / SUNO_STYLE_FIELD_MAX live on the bare module, not the package
+    # (same resolution music_director uses).
     _sr = getattr(_R, "suno_recipe", _R)
-    pace = _sr.pace_clause(pace_plan)
     out = []
     for v in variants_for(style_id):
         req = _R.build_request(style_id, sheet, client_text, title, length_s, vocal_gender, **kw)
-        # WW-30: the variant clause lands on the NESTED input.style -- the
-        # createTask envelope carries directions inside ``input`` and nothing
-        # at the top level except the route model and the callBackUrl.
-        style = req["input"]["style"].rstrip() + " " + v["clause"].rstrip(".") + "."
-        if pace:                       # AFTER the ending and arrangement clauses
-            style = "%s %s" % (style.rstrip(), pace)
-        # the catalog cap is measured on the FINAL text, so an over-cap append
-        # raises rather than truncating (the promise build_request keeps)
-        if len(style) > _sr.SUNO_STYLE_FIELD_MAX:
-            raise _R.RecipeError("STYLE_TOO_LONG", "%d chars, limit %d"
-                                 % (len(style), _sr.SUNO_STYLE_FIELD_MAX))
+        # WW-30: the style lands on the NESTED input.style -- the createTask
+        # envelope carries directions inside ``input`` and nothing at the top
+        # level except the route model and the callBackUrl.
+        style = _sr.brief_style_text(style_id, _brief_text(v, vocal_gender),
+                                     sheet, vocal_gender, pace_plan,
+                                     tail_clause=v["brief"]["arrangement"])
         req = dict(req, input=dict(req["input"], style=style))
         errs = _SD.validate_request(req, style_id, client_text, length_s)   # 1758: delivered_s required
         if errs:
@@ -120,18 +251,42 @@ def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="
         if pace_plan is not None:
             req["_pace_plan"] = pace_plan
         out.append((v, req))
+    _check_three_briefs(out, vocal_gender)
     return out
 
 
+def _variant_of(row):
+    """The variant record a guard row exposes: a ``(variant, request)`` pair, a
+    result dict carrying ``variant``, or None when the row carries neither."""
+    if isinstance(row, (tuple, list)) and row:
+        return row[0] if isinstance(row[0], dict) else None
+    if isinstance(row, dict):
+        v = row.get("variant")
+        return v if isinstance(v, dict) else None
+    return None
+
 def _require_three(rows, key=lambda r: r):
-    """The count-and-distinctness guard. Raises BEFORE any generation, so a
-    malformed call spends nothing. Three versions must be THREE, and three
-    DISTINCT arrangements -- never the same one three times."""
+    """The count, distinctness AND completeness guard. Raises BEFORE any
+    generation, so a malformed call spends nothing. Three versions must be
+    THREE; three DISTINCT arrangements; and -- WW-26 -- three COMPLETE
+    treatments, not identifiers only: every brief must carry all ten
+    directions and exactly ONE role must be the explicit upbeat option."""
     if len(rows) != 3:
         raise ChoiceError("three versions are required; got %d" % len(rows))
     ids = [key(r) for r in rows]
     if len(set(ids)) != 3:
         raise ChoiceError("the three versions must be three DISTINCT arrangements; got %r" % (ids,))
+    variants = [_variant_of(r) for r in rows]
+    if any(v is not None and "brief" in v for v in variants):
+        for v in variants:
+            if v is None or "brief" not in v:
+                raise ChoiceError("the three versions must carry a COMPLETE brief each, "
+                                  "not identifiers only")
+            for why in _brief_refusals(v):
+                raise ChoiceError(why)
+        if sum(1 for v in variants if v.get("upbeat")) != 1:
+            raise ChoiceError("exactly ONE of the three versions must be the explicit "
+                              "upbeat role")
     return rows
 
 
@@ -366,6 +521,75 @@ def _accepted(result):
             (False, "no take receipt recorded")
     return _SD.constituent_ok(rec)
 
+# ---- WW-25: the copy-first archive (the shipping writer, no second module) --
+#
+# The EXISTING shipping publish step is ``deliver_choices`` below: it
+# ffmpeg-copies the approved takes into ``<delivery>/SONG-CHOICES/`` and
+# rewrites README.txt and state.json. On a re-run that folder is REPLACED, so
+# the approved take files must be preserved by COPY -- never by deleting the
+# originals and never by overwriting an earlier archive to make the re-run
+# succeed. NO pre-existing archive helper exists in skill 75 (resolved from
+# disk: zero ``archive`` symbols under 75-drama-song-ad-factory/scripts/, and
+# no such module anywhere in this repo's git history for skill 75), so the
+# copy-first archive lives HERE, on the existing shipping writer -- never in a
+# new parallel module. The historical defective
+# qualification/.../WW-011-lane/build_restart2.py ``archive_replaced()``
+# (os.remove on an existing archive then shutil.move) is EVIDENCE of the
+# defect, never the shipping destination.
+
+ARCHIVE_DIRNAME = "archive"
+
+def _sha256_file(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+def _noncolliding_dir(base):
+    """A directory path that does NOT exist yet. An earlier archive is NEVER
+    overwritten: a name collision bumps '-2', '-3', ... until the name is
+    free."""
+    if not os.path.exists(base):
+        return base
+    i = 2
+    while os.path.exists("%s-%d" % (base, i)):
+        i += 1
+    return "%s-%d" % (base, i)
+
+def archive_before_publish(run_dir, items, stamp="published", copier=None):
+    """WW-25 copy-first archive. COPY every source into a NEW noncolliding
+    archive folder and verify each copy's sha256 EQUALS its source BEFORE any
+    replacement output is published. Never deletes or moves a source; never
+    writes into an existing archive. Any copy fault or hash mismatch raises
+    ChoiceError with BOTH sides preserved: the sources are untouched and the
+    fresh archive folder is left exactly as written, never rolled back by a
+    delete. ``items`` is [{"name", "source"}]; returns the receipt."""
+    copier = copier or shutil.copy2
+    root = os.path.join(run_dir, "song-choices", ARCHIVE_DIRNAME)
+    os.makedirs(root, exist_ok=True)
+    dest = _noncolliding_dir(os.path.join(root, stamp))
+    os.makedirs(dest, exist_ok=False)      # noncolliding: a fresh folder only
+    receipt = {"dir": dest, "stamp": stamp, "files": [], "complete": False}
+    for it in items:
+        name, src = it["name"], it["source"]
+        if not os.path.isfile(src):
+            raise ChoiceError("WW-25 archive: source missing for %s: %s "
+                              "(nothing was published)" % (name, src))
+        target = os.path.join(dest, name)
+        try:
+            copier(src, target)
+        except Exception as exc:            # noqa: BLE001 - any copy fault refuses before publish
+            raise ChoiceError("WW-25 archive: copy failed for %s (%r); both sides "
+                              "preserved, nothing was published" % (name, exc))
+        got, want = _sha256_file(target), _sha256_file(src)
+        if got != want:
+            raise ChoiceError("WW-25 archive: copied hash mismatch for %s (copy %s != "
+                              "source %s); both sides preserved, nothing was published"
+                              % (name, got, want))
+        receipt["files"].append({"name": name, "sha256": got})
+    receipt["complete"] = True
+    with open(os.path.join(dest, "archive-receipt.json"), "w", encoding="utf-8") as f:
+        json.dump(receipt, f, indent=2, sort_keys=True)
+    return receipt
+
 
 def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=None, send=None):
     """Write SONG-CHOICES/ and the offered list into state.json. Returns the
@@ -394,12 +618,22 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
     if not good:
         raise ChoiceError("no song version passed every required song gate; nothing to offer")
     folder = os.path.join(delivery_dir, DIRNAME)
+    # WW-25: COPY-FIRST archive BEFORE any replacement output is published. Every
+    # approved take file is copied into a NEW noncolliding archive and each copy
+    # is hash-verified against its source; a copy fault or mismatch raises here,
+    # so NOTHING is published (not even the folder), the originals are untouched
+    # and a prior archive is never overwritten. This call is the guard the WW-25
+    # fixtures prove reachable from the production delivery path.
+    plan = [(_safe("%d - %s (%s)" % (r["n"], r["variant"]["label"],
+                                     r["variant"]["description"])) + ".mp3",
+             r["take"]["audio_path"], r) for r in good]
+    archive_before_publish(run_dir, [{"name": n, "source": s} for n, s, _ in plan])
     os.makedirs(folder, exist_ok=True)
     offered, lines = {}, []
-    for r in good:
+    for name, _src, r in plan:
         v, take = r["variant"], r["take"]
         label = "%d - %s (%s)" % (r["n"], v["label"], v["description"])
-        dst = os.path.join(folder, _safe(label) + ".mp3")
+        dst = os.path.join(folder, name)
         runner(["ffmpeg", "-y", "-i", take["audio_path"], "-c", "copy",
                 "-metadata", "title=" + label, dst])
         dur = _mmss(take.get("duration_s", 0))
