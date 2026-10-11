@@ -271,6 +271,25 @@ URL=""
 if command -v openclaw >/dev/null 2>&1; then
   URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' | sed 's|/$||')
 fi
+# BUG-4 fix (repo): the resolution above has a single source. `openclaw config get`
+# returns EMPTY while the gateway is restarting/maintenance or has not yet loaded
+# openclaw.json, which turned the whole of Section D (5 asserts) into spurious
+# FAILs on a healthy box. When the CLI gave us nothing, read the SAME key straight
+# from the config file — the file the gateway itself reads.
+if [ -z "$URL" ] && [ -n "${CONFIG_JSON:-}" ] && [ -f "$CONFIG_JSON" ] \
+   && command -v python3 >/dev/null 2>&1; then
+  URL=$(OC_JSON="$CONFIG_JSON" python3 - <<'PYEOF' 2>/dev/null || true
+import json, os
+try:
+    with open(os.environ['OC_JSON'], encoding='utf-8') as fh:
+        cfg = json.load(fh)
+    val = ((cfg.get('env') or {}).get('vars') or {}).get('GHL_COMMUNITY_MCP_URL') or ''
+    print(str(val).strip().rstrip('/'))
+except Exception:
+    pass
+PYEOF
+)
+fi
 assert "ghl-community-mcp NOT registered in mcp.servers (Tier 2 is on-demand curl)" "! { command -v openclaw >/dev/null 2>&1 && openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; }"
 assert "Tier 2 /tools curl returns the tool surface on-demand" "[ -n \"$URL\" ] && curl -sS -m 8 \"$URL/tools\" 2>/dev/null | grep -qE 'ghl_list_products|\"tools\"'"
 # BUG-3 / D5-ii fix: the VPS canonical supervisor is pm2 (Hostinger Docker has NO
