@@ -615,10 +615,21 @@ def test_sfx_default_run_zero_jobs_f4():
         "save": (0, {"state": "success", "task_id": "t-song",
                      "saved_paths": ["/tmp/f4-song.mp3"], "credits_consumed": 10}),
     })
+    # WW-30: a music job rides the createTask ENVELOPE, so the fixture is a
+    # COMPLETE one (outer model, top-level callBackUrl, every required
+    # direction in the nested snake_case input). What this test still proves
+    # is unchanged: a song job with no sound-effects order is NOT blocked by
+    # the F4 SFX rule.
     env2, db2, fake2, tmp2 = run_case(
         song_script, "f4-song", model="ai-music-api/generate", cost=100,
-        request={"model": "V6", "endpoint": "/api/v1/jobs/createTask",
-                 "input": {"custom_mode": True, "instrumental": False}})
+        request={"endpoint": "/api/v1/jobs/createTask",
+                 "model": "ai-music-api/generate",
+                 "callBackUrl": "https://example.invalid/cb",
+                 "input": {"custom_mode": True, "instrumental": False,
+                           "model": "V6", "title": "T", "style": "soul ballad",
+                           "lyrics": "[Verse (sung): melodic]\nOne line.",
+                           "negative_tags": "choir, reverb, echo",
+                           "duration": 58}})
     check("f4: song generation unaffected",
           env2["outcome"] == "ok", str(env2["outcome"]))
     check("f4: song job reconciled in ledger",

@@ -1,3 +1,5 @@
+## [v27.1.11]  -  2026-10-11  -  WW30R: carry pull request 1856's createTask migration (skills 75 and 68) onto unit/WWR3INT-U2 as one commit, with the three opus-fail test fixes; the legacy /api/v1/generate music route stays retired
+
 ## [v27.1.10]  -  2026-10-11  -  Merge train: #1841 docs(sop): drama-song SOP checks delivery against the twelve…; #1847 WFMTFIX-U1: make the skill 75 empty-home core copy deterministic (no…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

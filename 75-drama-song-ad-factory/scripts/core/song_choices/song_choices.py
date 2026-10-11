@@ -93,7 +93,10 @@ def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="
     out = []
     for v in variants_for(style_id):
         req = _R.build_request(style_id, sheet, client_text, title, length_s, vocal_gender, **kw)
-        style = req["style"].rstrip() + " " + v["clause"].rstrip(".") + "."
+        # WW-30: the variant clause lands on the NESTED input.style -- the
+        # createTask envelope carries directions inside ``input`` and nothing
+        # at the top level except the route model and the callBackUrl.
+        style = req["input"]["style"].rstrip() + " " + v["clause"].rstrip(".") + "."
         if pace:                       # AFTER the ending and arrangement clauses
             style = "%s %s" % (style.rstrip(), pace)
         # the catalog cap is measured on the FINAL text, so an over-cap append
@@ -101,7 +104,7 @@ def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="
         if len(style) > _sr.SUNO_STYLE_FIELD_MAX:
             raise _R.RecipeError("STYLE_TOO_LONG", "%d chars, limit %d"
                                  % (len(style), _sr.SUNO_STYLE_FIELD_MAX))
-        req = dict(req, style=style)
+        req = dict(req, input=dict(req["input"], style=style))
         errs = _SD.validate_request(req, style_id, client_text, length_s)   # 1758: delivered_s required
         if errs:
             raise ChoiceError("variant %s request refused before spend: %s" % (v["id"], "; ".join(errs)))

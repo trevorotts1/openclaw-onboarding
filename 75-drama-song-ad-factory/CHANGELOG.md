@@ -6,6 +6,50 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.29 - 2026-10-11 - WW30R re-cut: pull request 1856's createTask migration stacked as draft `unit/WW30-U2` on live `unit/WWR3INT-U2`, with the three opus-fail test fixes
+
+ONE real-content commit whose parent is the live head of `unit/WWR3INT-U2`
+(`531f5b390f`, read at build time). It carries pull request #1856's content
+delta (`871eab98c..d6b3f45c`, its own single commit, read live at
+`d6b3f45c304bbc100edf13086e7b8007525e97df`) onto that base as ONE coherent
+change, and keeps EVERY change the base already carried -- WW-21's fail-closed
+boundary, the WW-16 opening-vocalise ceiling, `parse_lyrics` storing the
+bracket cue under `"cue"`, and WW-07's pace clause LAST in the assembled
+`input.style` (the drop and the return, after the ending and arrangement
+clauses). `suno_recipe.build_request` keeps BOTH signatures: `pace_plan` (WW-07)
+AND `callback_url` (WW-30), and `song_choices.build_requests` still appends the
+pace clause after the variant clause -- now on the nested `input.style`.
+
+The three suites the opus check returned FAIL on at `d6b3f45c` are fixed INSIDE
+this same commit, each still testing what it tested, against the shape
+production actually emits:
+
+- `sung_hook/test_hook_placement.py` reads `request["input"]["lyrics"]`, not the
+  retired top-level `request["lyrics"]` (KeyError 'lyrics').
+- `suno_recipe/test_voice_tags_u5.py` reads `request["input"]["vocal_gender"]`,
+  not the retired top-level field (which read `None`).
+- `sung_hook/test_no_skip_and_goldens.py`'s golden-sheet builder emits the
+  nested createTask envelope instead of the retired flat `/api/v1/generate`
+  payload (`REQUEST_ENVELOPE_REJECTED: LEGACY_FLAT_CONTRACT`).
+
+The `LEGACY_FLAT_CONTRACT` guard and every other guard are unchanged; no
+assertion was weakened, skipped, xfailed or re-pointed. Skills 75 and 68 still
+build and validate exactly ONE music contract: POST `<KIE host>/api/v1/jobs/createTask`
+with the outer `model` `ai-music-api/generate`, a TOP-LEVEL camelCase
+`callBackUrl` and a nested snake_case `input`; `input.lyrics` is the single
+approved lyrics source (a competing `prompt` is `COMPETING_LYRICS`); the legacy
+flat route is RETIRED with no fallback. The individual V6-family VALUE is
+recorded `UNDETERMINED` with UNRANKED candidates `V6`, `V6_MINI`, `V6_WILD`;
+the task-ID acknowledgement nesting is reported UNVERIFIED. Proved with the
+zero-spend fake transport only (`test_music_createtask_ww30.py`): the exact URL
+and serialized payload are captured, each refusal is asserted by name, and
+success / rejection / timeout / malformed acknowledgement / multiple returned
+tracks are each exercised. No provider call, nothing spent.
+
+Bundles the Skill 75 v2.9.29 bump (read live from the base's skill-version
+v2.9.28) and the root v27.1.11 release roll (read live from the base's
+`/version` v27.1.10) with its CHANGELOG entry, together in the same commit.
+
 ## v2.9.28 - 2026-10-11 - WWR3INT2 re-cut: pull request 1855 onto live main (WW-21 kept whole) on the 88-second R&B Flow card
 
 ONE real-content commit. It carries the FULL CONTENT of pull request #1855's
@@ -142,7 +186,6 @@ whether the five results *carried to it* may advance.
 No threshold, check, test or guard was weakened, skipped, xfailed, deleted or
 re-run to green. No paid call is made anywhere in this unit; nothing was
 regenerated.
-
 
 ## v2.9.26 - 2026-10-11 - empty-home test: make the core copy deterministic so the `__pycache__` race cannot fail `QC static invariants`
 

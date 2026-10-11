@@ -4,6 +4,22 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.3.2] - 2026-10-11 - WW-30: the legacy `/api/v1/generate` music-generation route is RETIRED
+
+- `validate_audio_request.py --domain music`: a payload on `/api/v1/generate` (the flat
+  `prompt`/`customMode`/`instrumental`/`model`/`callBackUrl` contract) is now a HARD violation
+  (exit 2) and must NOT be dispatched — it was a warning before. There is no legacy fallback
+  and no silent switch-back. The other `/api/v1/generate/<op>` routes (extend, sounds, cover,
+  add-vocals, ...) are DIFFERENT routes and are untouched.
+- `models.json` (`suno-generate`): `create_endpoint` is `/api/v1/jobs/createTask`,
+  `legacy_create_endpoint` records the retired path, `route_models.legacy_endpoint_status` is
+  `RETIRED (WW-30)`, the query endpoint is the documented
+  `GET /api/v1/jobs/recordInfo?taskId=<taskId> -> data.response.data[].audio_url`.
+- Self-test re-cut (58 checks, still green): the retired route's fixtures now assert exit 2,
+  and the rule-12 style band and the non-custom description caps are measured on the CURRENT
+  createTask envelope.
+- No credential, ownership, ledger, callback or reconciliation change.
+
 ## [2.3.1] - 2026-10-09 - vendor note: createTask Suno tasks poll through recordInfo
 
 - `SKILL.md` async completion: added the vendor note from KIE's official kie-models text (2026-10-09) that newer Suno tasks sent through the generic createTask envelope are polled with the normal `recordInfo` call, with tracks at `response.data[].audio_url` and text/analysis tasks at `response.resultObject`. Marked as vendor text, not a live test. The legacy `/api/v1/generate` family's record path stays UNVERIFIED.

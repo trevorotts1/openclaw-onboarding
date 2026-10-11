@@ -3,8 +3,9 @@
 Suno rides TWO routes (W0-02 contract, live docs 2026-10-06). CURRENT:
 `POST /api/v1/jobs/createTask` with top-level model `ai-music-api/*` (version
 at `input.model`, default V6). LEGACY: the dedicated `/api/v1/generate` family
-below, kept for V4..V5_5 (marked Discontinued on the live pages — accepted with
-a validator warning, never dropped). ONLY `ai-music-api/*` rides createTask.
+below. Its V4..V5_5 models are marked Discontinued on the live pages, and the
+music-GENERATION route itself is RETIRED (WW-30, hard violation, no fallback —
+see section 1). ONLY `ai-music-api/*` rides createTask.
 
 Server: `https://api.kie.ai`. Auth: `Authorization: Bearer $KIE_API_KEY`.
 
@@ -12,7 +13,14 @@ Facts below are from first-party KIE docs pages fetched 2026-08-26; limits
 quoted verbatim with source URLs. Pricing is NOT published on these pages —
 no numbers are invented here.
 
-## 1. Generate music — CURRENT `POST /api/v1/jobs/createTask` (`ai-music-api/generate`) + LEGACY `POST /api/v1/generate` — VERIFIED
+## 1. Generate music — CURRENT `POST /api/v1/jobs/createTask` (`ai-music-api/generate`) — VERIFIED
+### The LEGACY `POST /api/v1/generate` music-generation route is RETIRED (WW-30)
+It is a HARD violation of `validate_audio_request.py --domain music` (exit 2):
+the flat `prompt`/`customMode`/`instrumental`/`model`/`callBackUrl` payload must
+NOT be dispatched, and there is no legacy fallback and no silent switch-back.
+The other `/api/v1/generate/<op>` routes (extend, sounds, cover, ...) are
+DIFFERENT routes and are untouched. Which individual V6-family VALUE is the
+newest is UNDETERMINED — candidates `V6`, `V6_MINI`, `V6_WILD`, unranked.
 
 Source: https://docs.kie.ai/suno-api/generate-music/ (live fetch 2026-10-06, W0-02 contract §2)
 
