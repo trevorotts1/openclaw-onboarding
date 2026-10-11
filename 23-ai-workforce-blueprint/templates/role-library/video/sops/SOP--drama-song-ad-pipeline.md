@@ -192,11 +192,11 @@ model maximum.
 
 **Steps:**
 
-1. Build the fifteen-beat Resilia arc (cold-open teaser through direct pitch)
-   and scale it to the chosen length: 60 s takes the ten strongest beats,
-   90 s takes all but "converts", 2 minutes takes all fifteen (every beat's
-   share clears the 3-second merge floor at 120 s), and 3 minutes, 5 minutes
-   and 10 minutes take all fifteen.
+1. Keep the fifteen-stage source method (cold-open teaser through direct
+   pitch) as the authoring method. The twelve canonical arc beats are what
+   the delivered song is checked against, with an explicit named mapping
+   between the two counts; a summary count may never stand in for a performed
+   beat.
 2. Write lyrics as sales copy: first person, one idea per line,
    pronunciation-tested product words, claims truthful and evidence-backed.
 3. Tag every line with its character's voice in the one grammar the recipe
@@ -248,13 +248,14 @@ another character's line.
 
 **Steps:**
 
-1. Generate the song with Suno through Skill 68. One V6 generation covers
-   any length of 10-360 s; 60 s through 5 minutes are one base take
-   (`length-classes.json` `suno_generations`), and 10 minutes is **1 base plus
-   3 extends** (`length_formula.plan`). Use **Suno extend only to hit an
-   exact length or to repair a section**, never as routine billing: extend
-   carries no duration field, so the extended length is measured back, never
-   requested (`core/audio_c3/extend/suno_extend.py`).
+1. Generate the song with Suno through Skill 68. One generation covers the
+   chosen length for a single song; when the card's SONG APPROVAL answer is
+   Yes the music stage makes three labelled versions of the same approved
+   sheet, and the rap-versus-sung budget, the story-start ceiling and the pace
+   direction are checked on the returned audio before any later spend. Use
+   **Suno extend only to hit an exact length or to repair a section**, never as
+   routine billing: extend carries no duration field, so the extended length is
+   measured back, never requested (`core/audio_c3/extend/suno_extend.py`).
 2. Apply the chosen music style: Soul Ballad (slow, emotional), R&B Flow
    (rap verses with a sung hook), or Soul Rise (slow through the pain, lifts
    at the turning point). One tag grammar parses the lyric sheet

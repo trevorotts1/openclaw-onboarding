@@ -1,3 +1,13 @@
+## [v27.1.10]  -  2026-10-11  -  Merge train: #1841 docs(sop): drama-song SOP checks delivery against the twelve…; #1847 WFMTFIX-U1: make the skill 75 empty-home core copy deterministic (no…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1841 — [v27.1.10]  -  2026-10-11  -  docs(sop): drama-song SOP checks delivery against the twelve canonical arc beats and makes three labelled versions on a Yes
+
+### #1847 — WFMTFIX-U1: make the skill 75 empty-home core copy deterministic (no __pycache__ race)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
 ## [v27.1.9]  -  2026-10-11  -  repo-fix: skill 06 GHL install-pages repo-side QC/pytest fixes (version-lockstep pin, untracked probe receipt, playwright skip guard, layout-aware sentinel docs) + client-name scrub
 
 ## [v27.1.8]  -  2026-10-11  -  repo-fix: skill 15 remote-rescue installer is discovered and runs portably (idempotent repair accepted)
