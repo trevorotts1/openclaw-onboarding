@@ -116,8 +116,8 @@ STEP 3: RUN THE VALIDATOR SELF-TEST
   rejected; STT dispatch attempt rejected (exit 2); bad accent and speed 1.5
   rejected; non-ai-music-api Suno via createTask rejected; current envelope
   (ai-music-api/generate V6, sounds V6, persona, extend, upload-and-extend)
-  passes and its bad shapes reject; legacy V4..V5_5 accepted with a
-  Discontinued warning.
+  passes and its bad shapes reject; legacy MODEL VALUES V4..V5_5 accepted with a
+  Discontinued warning (the legacy ROUTE itself is RETIRED: exit 2).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 4: WIRE CORE FILES
