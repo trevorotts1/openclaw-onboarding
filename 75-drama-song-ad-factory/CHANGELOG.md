@@ -6,6 +6,76 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.27 - 2026-10-11 - WW-21: the total fail-closed acceptance boundary (five bound delivered-audio results, zero purchases on every refusal)
+
+WW-21 is the **aggregation and evidence-binding boundary that runs before
+spend**. It is **not a sixth delivered-audio gate**: it measures no audio and
+claims no audio-quality outcome. The operator plan names exactly five audio
+gates -- D1 real rap, D2 story start, D3 both pace changes, D4 three audibly
+different versions, D5 more than one character voice -- and WW-21 decides only
+whether the five results *carried to it* may advance.
+
+`scripts/core/song_dispatch/song_dispatch.py`
+
+* `_finish` is now **total**. Before it, `_finish({})` returned `PASS`: an
+  empty gate set was indistinguishable from a perfect take, and an `UNKNOWN`
+  or `UNAVAILABLE` gate verdict was silently ignored (`FAIL`, `FLAG` and
+  `UNMEASURED` were the only verdicts it understood). Now `FAIL`, `FLAG`,
+  `UNMEASURED`, `UNAVAILABLE`, `UNKNOWN`, an unrecognised verdict, a missing
+  or empty verdict string, a non-mapping record, a **missing required gate**,
+  an **empty gate set** and any exception raised while reading the mapping all
+  block, and only `PASS` advances.
+* New `accept_audio_results(results, binding)` -- the total, fail-closed
+  aggregation over the five carried results -- plus `take_binding` (the take's
+  own export sha256 + creative revision + profile revision),
+  `record_acceptance` (the single writer), `acceptance_from_run` and
+  `acceptance_refusal`. A result may not advance on absent, empty,
+  non-mapping, malformed or **stale** evidence; a **manually relabelled**
+  binding (`source: manual`, a bare string, a missing key) is refused as a
+  binding.
+* The **rap-style no-planned/no-measured-rap loophole is closed.** The
+  `rap_share` branch used to `PASS` with the detail "no rap planned, none
+  measured", so an R&B Flow take whose plan declares no rap word count and
+  whose audio measured 0.0 s of rap advanced as if the rap gate had been
+  satisfied. It is now `RAP_NEITHER_PLANNED_NOR_MEASURED` and the take cannot
+  pass; the WW-21 boundary blocks it outright.
+
+`scripts/core/song_choices/song_choices.py`
+
+* The block reaches the **real delivery boundary**: the moment a variant has a
+  produced take under `<run>/music/takes/<variant>/` (the folder the production
+  generator fills), a WW-21 acceptance record is required for it, and until
+  that record is all-`PASS` the take is **never offered, never picked and never
+  purchased**. `deliver_choices` (offer), `record_pick` (pick) and
+  `refusal`/`dispatch_refusal` (the `kie_dispatch` purchase seam) all consult
+  the same one implementation, so the gate and the receipt cannot drift.
+
+`scripts/core/acceptance-profile.json`
+
+* `audio_results` names the five required results and their verdict
+  vocabulary. **PROPOSED (WW-21, 2026-10-11):** `minimum_count = 5` is the
+  COUNT OF THE FIVE GATE NAMES THE PLAN ALREADY NAMES -- a proposed value, not
+  a measured limit, and **not a number Trevor set**. It is labelled PROPOSED
+  here, in the code (`_MIN_AUDIO_RESULTS`) and in the test docstring, and it
+  moves only when the plan's own gate list moves.
+
+`scripts/core/music_qc/test_wwfix_u1.py`
+
+* The positive control (all five valid results pass, zero purchases) and every
+  negative control the plan names: remove one result, inject `UNKNOWN`,
+  `UNAVAILABLE` and `UNMEASURED`, a stale digest, a malformed non-mapping
+  record, a removed required gate, a manual relabel and `_finish({})`. Each
+  BLOCKS with its named reason and asserts **zero purchases**.
+* The dead-guard proof: `cmd_generate` -- the production entry point -- builds
+  a plan with no `words` key at all, so the rap guard is reached through the
+  real call path (`cmd_generate -> one_variant -> run_takes -> judge_take ->
+  _finish`), its input is printed at that call site, and it fires on the value
+  that path produces.
+
+No threshold, check, test or guard was weakened, skipped, xfailed, deleted or
+re-run to green. No paid call is made anywhere in this unit; nothing was
+regenerated.
+
 ## v2.9.26 - 2026-10-11 - empty-home test: make the core copy deterministic so the `__pycache__` race cannot fail `QC static invariants`
 
 The required check `QC static invariants`, step "Skill 75 empty-home test suite (manual 02 B6)",
