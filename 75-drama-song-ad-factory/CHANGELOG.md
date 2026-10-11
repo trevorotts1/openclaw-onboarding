@@ -6,6 +6,19 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.27 - 2026-10-11 - U3 r2: two separately bound pace changes (docs)
+
+Documentation-only correction to the story-first audio acceptance rule added in
+v2.9.26. That rule described ONE ordered problem gear-shift with a measured
+"return": one pace change. Trevor ordered TWO pace changes, each separately bound
+to its OWN story beat. The single-shift sentence in `SKILL.md` and
+`INSTRUCTIONS.md` now states the two shifts separately and each tied to its own
+beat: the problem shift at the beat where the story hits the problem, and the rise
+shift at the beat where the story reaches the solution, the rise, never merged
+into one. No product code and no test file is changed, no rule is added beyond the
+two-shift restatement, and no variant, upbeat, cast or story-craft guidance is
+added. The version bump sits inside this same real-content commit.
+
 ## v2.9.26 - 2026-10-11 - U3: story-first audio acceptance documents (SKILL.md, INSTRUCTIONS.md, stage runbook)
 
 Documentation unit U3 of the drama studio joint plan, built from the
