@@ -1,3 +1,5 @@
+## [v27.1.8]  -  2026-10-11  -  repo-fix: skill 15 remote-rescue installer is discovered and runs portably (idempotent repair accepted)
+
 ## [v27.1.7]  -  2026-10-11  -  Fix skill 36-ghl-mcp-setup QC: skip-gate sentinel + orphan-end repair, GHL MCP wire.sh master-file copies, QC env-store fallback
 
 ## [v27.1.6]  -  2026-10-11  -  repo-fix: Skill-47 embedded Skill-74 KIE client stamp regenerated to v1.1.8 (skill 47 v15.1.8)

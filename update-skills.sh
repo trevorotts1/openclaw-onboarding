@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.7"
+ONBOARDING_VERSION="v27.1.8"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2024,7 +2024,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.7 - safe_json_edit
+# v27.1.8 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -8379,14 +8379,18 @@ PYEOF
     fi
 
     # Step 1: Run the skill's own executable installer if present
-    # Priority: wire.sh > install.sh > setup-*.sh (first match)
+    # Priority: wire.sh > install.sh > scripts/install.sh > scripts/install-*.sh
+    #           > setup-*.sh (first match).
+    # The scripts/install-*.sh glob is what discovers a skill whose installer
+    # is named for its job rather than plain install.sh (skill 15 ships
+    # scripts/install-remote-rescue.sh, which no other candidate matched).
     SKILL_INSTALLER=""
     # Reset per skill -- gates the sentinel write below. A failed installer
     # must NOT be sentinel-gated (that was the defect that made a failed
     # cron registration permanent -- see the note at the sentinel write for
     # the full story).
     _INSTALLER_FAILED=0
-    for _candidate in "$SKILL_DIR/wire.sh" "$SKILL_DIR/install.sh" "$SKILL_DIR/scripts/install.sh"; do
+    for _candidate in "$SKILL_DIR/wire.sh" "$SKILL_DIR/install.sh" "$SKILL_DIR/scripts/install.sh" "$SKILL_DIR"/scripts/install-*.sh; do
       if [ -x "$_candidate" ]; then
         SKILL_INSTALLER="$_candidate"
         break
