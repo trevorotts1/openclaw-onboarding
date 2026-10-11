@@ -310,7 +310,7 @@ INSTRUMENTAL = "instrumental"
 _BRACKET_RE = re.compile(r"^\[([^\]]*)\]\s*$")
 #: The recipe's own dialect: [Name (sung|spoken|rap): note]. The tag kept is
 #: Name, so render_lyrics -> parse_lyrics round-trips.
-_NAMED_TAG_RE = re.compile(r"^(.*?)\s*\((sung|spoken|rap)\)(?::[^\]]*)?$", re.I)
+_NAMED_TAG_RE = re.compile(r"^(.*?)\s*\((sung|spoken|rap)\)(?::\s*([^\]]*))?$", re.I)
 
 
 def parse_tag(tag):
@@ -367,6 +367,12 @@ def parse_lyrics(text):
                 if named is not None:
                     cur = {"tag": named.group(1).strip(),
                            "delivery": named.group(2).lower(), "lines": []}
+                    # WW-16: KEEP the bracket's declared cue, so
+                    # check_lyric_sheet's opening-vocalise ceiling guard can fire
+                    # on the production path (song_dispatch.validate_request ->
+                    # parse_lyrics), not only on a hand-built dictionary.
+                    if named.group(3):
+                        cur["cue"] = named.group(3).strip()
                     sheet.append(cur)
                     continue
                 d = parse_tag(inner)

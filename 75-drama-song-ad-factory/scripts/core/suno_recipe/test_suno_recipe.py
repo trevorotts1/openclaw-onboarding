@@ -39,18 +39,35 @@ def sheet(hook=HOOK, repeats=3, vocalise=True, rap=False):
         # to clear that floor: 61 sung + 20 rap + 14 spoken = 95 words. The rap
         # variant therefore runs the same 58 s sheet WITHOUT the spoken [Outro];
         # the intro + CTA shape is covered by every rap=False case below.
+        # WWR3INTFIX U1: WW-01 made the floor PER VERSE, so the variant declares
+        # TWO rap verses (40 rap words = 16.0 s, the whole per-verse budget).
         s.append({"tag": "Verse", "delivery": "sung",
                   "lines": ["I hold the light I found,", "I am more than this,",
                             "I am not lost, I am here,", "I am still standing tall,"]})
         s.append({"tag": "Verse", "delivery": "rap",
                   "lines": ["Backup shoes, backup jacket, but no backup plan,",
                             "So I count what I make and not what they take today,"]})
+        s.append({"tag": "Verse", "delivery": "rap",
+                  "lines": ["Every door they closed I opened with my own two hands,",
+                            "And I keep walking toward the morning light now,"]})
     for i in range(repeats):
         s.append({"tag": "Hook %d" % (i + 1), "delivery": "sung", "lines": list(hook)})
     if not rap:
         s.append({"tag": "Outro", "delivery": "spoken",
                   "lines": ["She Found Power in the Climb. Get the book. Link below."]})
     return s
+
+
+def _no_cue(parsed):
+    """WW-16: a round-trip is compared on the sheet's LYRIC CONTENT.
+
+    ``render_lyrics`` writes each section's cue from the style DATA, and
+    ``parse_lyrics`` (WW-16) keeps the bracket cue under "cue" so
+    ``check_lyric_sheet``'s opening-vocalise ceiling fires on the production
+    path. The cue is therefore the style's own text, not something the sheet's
+    dict declares -- it is dropped here and nowhere else.
+    """
+    return [{k: v for k, v in s.items() if k != "cue"} for s in parsed]
 
 
 #: The story beat of every hook block (FU-HOOK-PLACEMENT rules 2-3).
@@ -136,7 +153,7 @@ class Recipe(unittest.TestCase):
                           req["weirdness_constraint"], req["vocal_gender"], req["duration"]),
                          ("V6", True, 0.75, 0, 0.3, "f", 58))
         self.assertIn("band dropout", req["negative_tags"])
-        self.assertEqual(R.parse_lyrics(req["lyrics"]), sheet())
+        self.assertEqual(_no_cue(R.parse_lyrics(req["lyrics"])), sheet())
 
     def test_syllables(self):
         self.assertEqual(R.syllables("I am not sma-a-all"), 4)
@@ -144,7 +161,7 @@ class Recipe(unittest.TestCase):
 
     def test_sheet_roundtrip(self):
         s = sheet()
-        self.assertEqual(R.parse_lyrics(R.render_lyrics(s)), s)
+        self.assertEqual(_no_cue(R.parse_lyrics(R.render_lyrics(s))), s)
 
     def test_request_seam_blocks_bypass(self):
         import music_director as MD

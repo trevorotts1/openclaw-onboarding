@@ -255,6 +255,30 @@ def test_ww07_the_payload_carries_the_drop_and_return_after_the_ending():
     assert "_pace_plan" not in req and "_hook_plan" not in req
 
 
+def test_ww07_the_assembled_variant_styles_all_carry_the_pace_clause_last():
+    """WW-07: what SHIPS is the assembled three-variant provider style, so the
+    drop and the return are asserted on ``request["style"]`` from
+    song_choices.build_requests -- never on the recipe's style_text alone. On
+    every variant the pace clause must come AFTER the ending clause and AFTER
+    that variant's own ARRANGEMENT clause."""
+    pace = {"drop": "half-time drop, thin drums", "return": "turn and rise back to the groove"}
+    reqs = SC.build_requests("soul-ballad", SHEET, CLIENT, "T", 58,
+                            hook_plan=HOOK_PLAN, pace_plan=pace)
+    assert len(reqs) == 3 and len({v["id"] for v, _ in reqs}) == 3
+    for v, rq in reqs:
+        style = rq["style"]
+        clause = v["clause"].rstrip(".")
+        assert "half-time" in style and "rise back" in style, (v["id"], style)
+        assert style.index("half-time") > style.index(R._EQ.STYLE_ENDING), v["id"]
+        assert style.index(clause) < style.index("half-time"), (v["id"], style[-240:])
+        assert style.index("half-time") < style.index("rise back"), (v["id"], style[-240:])
+        # the return is the LAST clause of the assembled provider style
+        assert style.rstrip().rstrip(".").endswith(pace["return"].rstrip(".")), \
+            (v["id"], style[-240:])
+        assert len(style) <= R.SUNO_STYLE_FIELD_MAX
+        assert rq["_pace_plan"] == pace          # rides to the judge, never to KIE
+
+
 def test_ww07_no_pace_plan_means_no_clause_and_an_over_cap_append_raises():
     plain = R.build_request("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN)
     assert "half-time" not in plain["style"]

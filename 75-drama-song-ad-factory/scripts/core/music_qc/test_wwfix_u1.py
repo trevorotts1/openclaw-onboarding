@@ -104,6 +104,13 @@ HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
 #: a spoken closing call to action cannot also sing enough to clear that floor
 #: -- 61 sung + 20 rap + 14 spoken = 95 words -- so this sheet runs WITHOUT the
 #: spoken [Outro]. The intro + CTA shape is exercised by the non-rap sheets.
+#: WWR3INTFIX U1: WW-01 made the floor PER VERSE (2 verses, each 8.0 s / 20
+#: words => 40 rap words = 16.0 s at 2.5 wps), so the sheet declares TWO rap
+#: verses and the sung block is widened to 61 words -- 61 sung + 40 rap + 3
+#: spoken = 104 words, the largest sheet the 58 s budget (93 + band = 104) can
+#: carry. At 58 s that shape still clears the floor by 8.2 points of voice
+#: share (a FLAG, no refusal); a PASS needs 105 words, which the same budget
+#: refuses -- see the unit's defect note.
 SHEET_RNB = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
              {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
              {"tag": "Verse", "delivery": "sung",
@@ -111,12 +118,15 @@ SHEET_RNB = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."
              {"tag": "Hook 1", "delivery": "sung", "lines": HOOK},
              {"tag": "Verse", "delivery": "sung",
               "lines": ["One seed of truth made me stro-o-ong,", "I hold the light I found,",
-                        "I walk free,"]},
+                        "I walk out free,", "I rise,", "I am more than this,", "I am here,"]},
              {"tag": "Hook 2", "delivery": "sung", "lines": HOOK},
              {"tag": "Hook 3", "delivery": "sung", "lines": HOOK},
              {"tag": "Verse", "delivery": "rap",
               "lines": ["Backup shoes, backup jacket, but no backup plan,",
-                        "So I count what I make and not what they take today,"]}]
+                        "So I count what I make and not what they take today,"]},
+             {"tag": "Verse", "delivery": "rap",
+              "lines": ["Every door they closed I opened with my own two hands,",
+                        "And I keep walking toward the morning light now,"]}]
 HOOK_PLAN = {"true_at_beat": "the_world"}
 SPOKEN_RANGE = (15, 20)
 

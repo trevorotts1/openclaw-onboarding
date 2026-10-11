@@ -78,14 +78,29 @@ def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="
 
     WW-07: the approved ``pace_plan`` is written into the FINAL provider
     ``input.style`` (the lowest-point drop and the return, AFTER the ending and
-    hook clauses), and it rides the request as internal ``_pace_plan`` for the
-    judge -- never to KIE."""
+    arrangement clauses), and it rides the request as internal ``_pace_plan`` for
+    the judge -- never to KIE. The arrangement clause is appended BEFORE the drop
+    and return: assembling the pace clause inside ``build_request`` put it ahead
+    of the variant clause, which is the WW-07 defect this fixes."""
     pace_plan = kw.pop("pace_plan", None)   # WW-07: into the style, never into the payload
+    # WW-07: the style's OWN text is built without the pace clause so the drop
+    # and the return can be appended LAST, after the variant's arrangement
+    # clause. pace_clause / SUNO_STYLE_FIELD_MAX live on the bare module, not the
+    # package (same resolution music_director uses).
+    _sr = getattr(_R, "suno_recipe", _R)
+    pace = _sr.pace_clause(pace_plan)
     out = []
     for v in variants_for(style_id):
-        req = _R.build_request(style_id, sheet, client_text, title, length_s, vocal_gender,
-                               pace_plan=pace_plan, **kw)
-        req = dict(req, style=req["style"].rstrip() + " " + v["clause"].rstrip(".") + ".")
+        req = _R.build_request(style_id, sheet, client_text, title, length_s, vocal_gender, **kw)
+        style = req["style"].rstrip() + " " + v["clause"].rstrip(".") + "."
+        if pace:                       # AFTER the ending and arrangement clauses
+            style = "%s %s" % (style.rstrip(), pace)
+        # the catalog cap is measured on the FINAL text, so an over-cap append
+        # raises rather than truncating (the promise build_request keeps)
+        if len(style) > _sr.SUNO_STYLE_FIELD_MAX:
+            raise _R.RecipeError("STYLE_TOO_LONG", "%d chars, limit %d"
+                                 % (len(style), _sr.SUNO_STYLE_FIELD_MAX))
+        req = dict(req, style=style)
         errs = _SD.validate_request(req, style_id, client_text, length_s)   # 1758: delivered_s required
         if errs:
             raise ChoiceError("variant %s request refused before spend: %s" % (v["id"], "; ".join(errs)))
