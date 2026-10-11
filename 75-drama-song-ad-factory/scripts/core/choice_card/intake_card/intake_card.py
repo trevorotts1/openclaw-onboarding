@@ -21,7 +21,12 @@ under Telegram's 4096-character limit. ``telegram_payload`` and
 ``openclaw_send_argv`` build the exact send payloads with the text untouched
 (an argv list, never a shell string, so no shell flattens the newlines).
 
-Stdlib only. No network: this module builds text, it never sends.
+``--format studio-json`` (U1) is the studio-shaped export: every question as a
+screen carrying its question text, its price line and its "See a great answer"
+example from the client guide (``studio_json``), so the Drama Studio renders the
+same questions the card asks.
+
+Stdlib only. No network: this module builds text and reads one local guide.
 """
 from __future__ import annotations
 
@@ -127,7 +132,11 @@ def spend_question(price=None, limit=None, from_brief=False):
             "ask": ("What's the most you want to spend on this video?" if opts[:-1] else
                     "What's the most you want to spend on this video? Reply with a dollar amount, like $25."),
             # no price and no limit: nothing to recommend, the client types an amount
-            "options": opts, "values": vals, "recommended": 0 if opts[:-1] else None}
+            "options": opts, "values": vals, "recommended": 0 if opts[:-1] else None,
+            #: the price line the studio BUDGET screen shows (U1 studio-json export);
+            #: None when no price and no limit is known yet.
+            "price": (_usd(price) if price is not None else
+                      "up to " + _usd(limit) if limit is not None else None)}
 
 
 def _models_q():
@@ -177,16 +186,24 @@ def _questions():
     ]
 
 
+def _model_price_line(length_label):
+    """The one price sentence the VIDEO MODEL screen shows, from the length the
+    client chose. The card's ask and the studio-json export both read it here,
+    so the two price surfaces cannot drift apart."""
+    from choice_card.video_models import video_models as VM
+    return ("Prices are for your %s ad, with the song, pictures and a 20%% "
+            "redo allowance." % VM.length_phrase(VM.length_seconds(length_label)))
+
+
 def _model_question(length_label):
     """VIDEO MODEL: four models, each priced for the client's chosen length."""
     from choice_card.video_models import video_models as VM
     from catalog_calculator import card_render as CR
-    sec = VM.length_seconds(length_label)
     cost = {m["n"]: "$%.2f" % CR.quote(m["n"], length_label) for m in VM.MODELS}
     return {"id": "model", "why": "The video model sets how good the shots look and what they cost.",
             "reason": "it gives the best balance of quality and price.", "label": "VIDEO MODEL",
-            "ask": "Which video model should make your shots? Prices are for your %s ad, "
-                   "with the song, pictures and a 20%% redo allowance." % VM.length_phrase(sec),
+            "ask": "Which video model should make your shots? " + _model_price_line(length_label),
+            "price": _model_price_line(length_label),
             "options": [(m["name"], "%s - about %s" % (m["blurb"], cost[m["n"]])) for m in VM.MODELS],
             "values": [cost[m["n"]] for m in VM.MODELS],
             "recommended": next(i for i, m in enumerate(VM.MODELS) if m["recommended"])}
@@ -626,12 +643,115 @@ except ImportError:                                # run as a plain script
     from intro import INTRO as _INTRO, take as _intro_take  # noqa: E402
 
 
+# --- U1: the studio-shaped export (studio-json) --------------------------------
+#: The Drama Studio renders one screen per intake question, and each screen shows
+#: three things: the question text, the price line (when that screen carries one)
+#: and a "See a great answer" example from the client guide. This export hands
+#: those to the studio from the SAME question list the card uses, so the card and
+#: the studio can never disagree about a question or a price.
+#:
+#: A screen missing its question text or its example is a broken screen, not a
+#: thin one: studio_json REFUSES it (StudioExportError -> exit 1) instead of
+#: writing a json file the studio would render half-empty.
+
+#: question id -> the Client Guide STEP that carries that question's example.
+GUIDE_STEP = {
+    "models": 3, "saved_character": 6, "length": 7, "music": 8, "look": 9,
+    "model": 10, "spend": 11, "script": 13, "song": 14, "storyboard": 15,
+}
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+CLIENT_GUIDE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(_HERE)))),
+    "references", "CLIENT-GUIDE.md")
+
+
+class StudioExportError(ValueError):
+    """A studio screen is missing a field the studio cannot render without."""
+
+
+def _great_answers(path=None):
+    """STEP number -> the '**Great answer:**' line under that STEP in the guide.
+
+    One example per step: the first 'Great answer' line after the heading, never
+    one carried over from the previous step (the step resets on every heading).
+    """
+    import re
+    try:
+        with open(path or CLIENT_GUIDE, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError as e:
+        raise StudioExportError("STUDIO_JSON_GUIDE_UNREADABLE %s" % e)
+    out, step = {}, None
+    for line in lines:
+        m = re.match(r"^## STEP (\d+):", line)
+        if m:
+            step = int(m.group(1))
+            continue
+        if step and step not in out and line.startswith("**Great answer:**"):
+            out[step] = line.split("**Great answer:**", 1)[1].strip()
+    return out
+
+
+def _studio_option(q, n, opt):
+    """One option as the studio sees it: number, label, one sentence, its own
+    price when the option has one, and whether it is the recommended pick."""
+    text = opt[0] if isinstance(opt, (tuple, list)) else str(opt)
+    detail = opt[1] if isinstance(opt, (tuple, list)) and len(opt) > 1 else ""
+    values = q.get("values")
+    raw = (values[n - 1] if isinstance(values, list) and n - 1 < len(values)
+           else values.get(n) if isinstance(values, dict) else None)
+    rec = q.get("recommended")
+    return {"n": n, "text": text, "detail": detail or "",
+            "price": None if raw is None else _usd(raw),
+            "recommended": rec is not None and n - 1 == rec}
+
+
+def studio_questions(questions=None, guide=None):
+    """The card's questions as studio screens: id, label, question, price,
+    example, options. Raises StudioExportError when a screen has no question
+    text, no example, or no options."""
+    qs = QUESTIONS if questions is None else questions
+    answers = _great_answers(guide)
+    out = []
+    for q in qs:
+        ask = q.get("ask") or ""
+        if not ask:
+            raise StudioExportError(
+                "STUDIO_JSON_FIELD_MISSING id=%r field=question" % q.get("id"))
+        step = GUIDE_STEP.get(q.get("id"))
+        example = answers.get(step) if step is not None else None
+        if not example:
+            raise StudioExportError(
+                "STUDIO_JSON_FIELD_MISSING id=%r field=example" % q.get("id"))
+        options = q.get("options") or []
+        if not options:
+            raise StudioExportError(
+                "STUDIO_JSON_FIELD_MISSING id=%r field=options" % q.get("id"))
+        out.append({
+            "id": q.get("id"), "label": q.get("label", ""), "question": ask,
+            "price": q.get("price"),
+            "example": example,
+            "options": [_studio_option(q, n, o) for n, o in enumerate(options, 1)],
+        })
+    return out
+
+
+def studio_json(questions=None, guide=None):
+    """The studio-json envelope (version 0): every intake question as a studio
+    screen carrying its question, price and example."""
+    screens = studio_questions(questions, guide)
+    return {"format": "studio-json", "version": 0,
+            "question_count": len(screens), "questions": screens}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Print the intake card (nine questions, ten with a saved character).")
-    ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json"),
+    ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json", "studio-json"),
                     default="text",
                     help="text: raw card for the Claude Code chat. "
-                         "openclaw-json / telegram-json: one send payload per message.")
+                         "openclaw-json / telegram-json: one send payload per message. "
+                         "studio-json: the studio question/price/example export (U1).")
     ap.add_argument("--target", default="", help="Telegram chat id (send formats)")
     ap.add_argument("--step", action="store_true",
                     help="one question at a time: print only the NEXT message, "
@@ -658,6 +778,14 @@ def main(argv=None):
     a = ap.parse_args(argv)
     qs = [spend_question(a.price, a.limit, a.limit_from_brief) if q["id"] == "spend" else q
           for q in _with_saved_character(a.client_dir)]
+    if a.format == "studio-json":                  # U1: the studio export, whole card
+        try:
+            payload = studio_json(qs)
+        except StudioExportError as e:
+            sys.stderr.write("studio-json: %s\n" % e)
+            return 1                               # refuse loudly, never a half file
+        sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+        return 0
     if a.step:
         st = conversation(a.reply, qs, run_dir=a.run_dir or None, target=a.target or None)
         if not a.reply and a.run_state_file and _intro_take(a.run_state_file):
