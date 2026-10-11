@@ -76,6 +76,14 @@ import suno_recipe as _RP     # noqa: E402
 from story_coverage import story_coverage as _story   # noqa: E402  (WWFIX D1)
 #: the module itself whether core/suno_recipe/ is a package or on sys.path
 _R = getattr(_RP, "suno_recipe", _RP)
+#: WW-01: the per-verse rap-floor API (RAP_VERSE_MIN_S / MIN_RAP_VERSES /
+#: rap_verse_floor_for / rap_verse_budget_s) lives on the length_formula MODULE.
+#: The package ``__init__`` re-exports only a subset on this tree, so the module
+#: is read directly for it rather than through the package surface.
+try:
+    from length_formula import length_formula as _LFM   # noqa: E402
+except ImportError:                                     # pragma: no cover
+    _LFM = _LF
 try:   # FU-HOOK-PLACEMENT owns hook count and placement once it is installed
     from sung_hook import hook_placement as _HP   # noqa: E402
 except ImportError:
@@ -237,6 +245,17 @@ def rap_floor_for(style_id, delivered_s):
             "source": "WWFIX D1: max(8 s, 10% of D) and ceil(seconds * rap rate)"}
 
 
+def rap_verse_floor_for(style_id):
+    """The PER-VERSE rap floor for one style (WW-01, NEW PROPOSED).
+
+    Every declared rap verse must reach ``RAP_VERSE_MIN_S`` seconds and
+    ``ceil(RAP_VERSE_MIN_S * style_rap_rate)`` words (8.0 s / 20 words at the
+    R&B Flow rap rate of 2.5 words per second), and a sheet must declare at least
+    ``MIN_RAP_VERSES`` rap verses. Both rules are STRICTLY STRONGER than the
+    total floor and never replace it. ONE copy of the numbers: length_formula."""
+    return dict(_LFM.rap_verse_floor_for(_sid(style_id)))
+
+
 def _pct(part, whole):
     return round(100.0 * part / whole, 1) if whole else 0.0
 
@@ -285,27 +304,53 @@ def check_sheet(sheet_text, style_id, delivered_s, style_text=None):
     totals.update({"%s_s" % d: round(seconds[d], 1) for d in _R.DELIVERIES})
     totals.update({"%s_word_share_pct" % d: _pct(words[d], total_w) for d in _R.DELIVERIES})
     totals["total_words"] = total_w
-    # WWFIX D1: THE RAP SHEET FLOOR. A rap style whose sheet plans fewer rap
-    # words than the floor is refused HERE, before any spend. The failed run's
-    # sheet planned its rap to nothing and nothing refused it. NEW ACCEPTANCE
-    # RULE: the floor is length_formula.rap_floor_s (max 8 s, else 10% of D).
-    rap_floor = None
+    # WWFIX D1 x WW-01: THE RAP SHEET FLOOR AND THE PER-VERSE FLOOR. A rap style
+    # whose sheet plans fewer rap words than the total floor -- or whose declared
+    # rap verses are thinner than the per-verse floor, or that declares fewer
+    # than MIN_RAP_VERSES rap verses at all -- is refused HERE, before any spend.
+    # The failed run's sheet shipped a 10-word and a 9-word rap verse and nothing
+    # refused it. These are NEW PROPOSED ACCEPTANCE RULES.
+    rap_floor, rap_verses = None, None
+    rap_rows = [r for r in rows if r["delivery"] == "rap"]
     if _is_rap_style(sid):
         rap_floor = rap_floor_for(sid, delivered_s)
+        verse_floor = rap_verse_floor_for(sid)
+        rap_verses = {"count": len(rap_rows), "min_verses": verse_floor["min_verses"],
+                      "min_s": verse_floor["min_s"], "min_words": verse_floor["min_words"],
+                      "short": []}
         totals["rap_floor_words"] = rap_floor["floor_words"]
         totals["rap_floor_s"] = rap_floor["floor_s"]
+        totals["rap_verse_count"] = len(rap_rows)
+        totals["rap_verse_min_s"] = verse_floor["min_s"]
+        totals["rap_verse_min_words"] = verse_floor["min_words"]
         if not words["rap"]:
             reasons.append("RAP_PLANNED_ZERO_WORDS: %s delivers rap and the sheet "
                            "carries no rap lines at all (floor %d rap words / %.1f s)"
                            % (label, rap_floor["floor_words"], rap_floor["floor_s"]))
-        elif words["rap"] < rap_floor["floor_words"]:
-            reasons.append("the sheet plans %d rap words; the %g s %s floor is %d "
-                           "(%.1f s at %.1f words per second)"
-                           % (words["rap"], delivered_s, label,
-                              rap_floor["floor_words"], rap_floor["floor_s"],
-                              rap_floor["rate"]))
+        else:
+            if len(rap_rows) < verse_floor["min_verses"]:
+                reasons.append("RAP_VERSE_COUNT_BELOW_MIN: %s delivers rap and the sheet "
+                               "declares %d rap verse(s); the floor is %d rap verses, each "
+                               "reaching %.1f s and %d words"
+                               % (label, len(rap_rows), verse_floor["min_verses"],
+                                  verse_floor["min_s"], verse_floor["min_words"]))
+            short = [r for r in rap_rows
+                     if r["words"] < verse_floor["min_words"]
+                     or r["seconds"] + 1e-9 < verse_floor["min_s"]]
+            rap_verses["short"] = [{"tag": r["tag"], "words": r["words"],
+                                    "seconds": r["seconds"]} for r in short]
+            if short:
+                first = short[0]
+                reasons.append("RAP_VERSE_BELOW_FLOOR: %d of %d rap verse(s) are below the "
+                               "per-verse floor (first: %r at %d words / %.1f s, floor %d "
+                               "words / %.1f s at %.1f words per second); the %g s %s total "
+                               "floor is %d rap words"
+                               % (len(short), len(rap_rows), first["tag"], first["words"],
+                                  first["seconds"], verse_floor["min_words"],
+                                  verse_floor["min_s"], verse_floor["rate"],
+                                  delivered_s, label, rap_floor["floor_words"]))
     out = {"verdict": "FAIL", "style_id": sid, "label": label, "delivered_s": delivered_s,
-           "rap_floor": rap_floor,
+           "rap_floor": rap_floor, "rap_verses": rap_verses,
            "reasons": reasons, "flags": flags, "sections": rows, "totals": totals,
            "rap_vs_spoken": "planned from the sheet's tags; on the audio " + RAP_AUDIO_UNMEASURED}
     if not rows:

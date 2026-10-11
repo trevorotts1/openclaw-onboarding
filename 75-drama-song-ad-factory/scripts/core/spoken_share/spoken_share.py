@@ -290,7 +290,14 @@ def _number(value, what, code="BAD_SEGMENT"):
     return value
 
 
-def _segments(segments):
+#: Timestamp alignment tolerance (WW-04): the SAME 1e-6 agreement tolerance
+#: ``timing_guard.check_frame_grid`` uses, restated here so this stdlib-only
+#: module keeps no dependency on timing_guard. It is one documented tolerance,
+#: never a new universal microsecond rule.
+_TIMELINE_TOL = 1e-6
+
+
+def _segments(segments, dedupe=True):
     """Normalize timing segments to [(delivery, start, end, seconds), ...].
 
     Accepts {"delivery": d, "seconds": n} or {"delivery": d, "start": a,
@@ -301,6 +308,7 @@ def _segments(segments):
         raise SpokenShareError("BAD_SEGMENTS",
                                "segments must be a non-empty list")
     out = []
+    seen = set()
     cursor = 0.0
     for seg in segments:
         if not isinstance(seg, dict):
@@ -334,14 +342,66 @@ def _segments(segments):
         else:
             raise SpokenShareError("BAD_SEGMENT",
                                    "segment needs seconds, or start and end")
+        # WW-04: identical annotations de-duplicate without changing a share.
+        if dedupe:
+            key = (delivery, round(start, 6), round(end, 6))
+            if key in seen:
+                continue
+            seen.add(key)
         out.append((delivery, start, end, secs))
         cursor = max(cursor, end)
+    if not out:
+        raise SpokenShareError("BAD_SEGMENTS",
+                               "segments are empty after de-duplication")
     return out
 
 
-def measure_share(segments, basis=BASIS_MEASURED, style_id=None):
+def _require_disjoint_partition(parsed_raw, duration_s):
+    """WW-04: the RAW delivery partition must be a SINGLE DISJOINT PARTITION of
+    ``[0, duration_s]`` -- validated BEFORE de-duplication, so a doubled or
+    overlapping timeline (a detector timeline concatenated with an aligned
+    timeline over the same audio) is REFUSED, never silently folded.
+
+    The canonical, fuller check lives in ``timing_guard.check_timeline_partition``
+    (arithmetic + alignment tolerances in one place); this keeps the stdlib-only
+    module free of that dependency while still refusing the doubling. Returns the
+    measured duration to use as the runtime denominator."""
+    D = float(duration_s)
+    rows = sorted((s, e) for _d, s, e, _secs in parsed_raw)
+    prev = None
+    for s, e in rows:
+        if s < -_TIMELINE_TOL or e > D + _TIMELINE_TOL:
+            raise SpokenShareError(
+                "TIMELINE_MALFORMED",
+                "a segment lies outside [0, %.6f]: %.6f -> %.6f" % (D, s, e))
+        if prev is not None:
+            if s < prev - _TIMELINE_TOL:
+                raise SpokenShareError(
+                    "TIMELINE_NOT_DISJOINT",
+                    "overlapping or duplicated segments at %.6f (prior end %.6f)"
+                    % (s, prev))
+            if s > prev + _TIMELINE_TOL:
+                raise SpokenShareError(
+                    "TIMELINE_GAP", "a %.6f s gap at %.6f" % (s - prev, prev))
+        prev = e
+    if rows and (rows[0][0] > _TIMELINE_TOL or rows[-1][1] < D - _TIMELINE_TOL):
+        raise SpokenShareError(
+            "TIMELINE_GAP",
+            "the partition does not span [0, %.6f]" % D)
+    return D
+
+
+def measure_share(segments, basis=BASIS_MEASURED, style_id=None, duration_s=None):
     """Spoken-style share of runtime from timing segments (G8: AUDIO, never
     labels).
+
+    WW-04: when ``duration_s`` (the MEASURED audio duration) is given, the
+    segments must form a single disjoint partition of ``[0, duration_s]`` and
+    the RUNTIME DENOMINATOR is ``duration_s`` itself -- never the sum of segment
+    lengths. That is what stops a doubled timeline (a detector timeline
+    concatenated with an aligned timeline over the same audio) from inflating
+    the denominator and diluting every share. Identical segments de-duplicate;
+    a partition the integrity check refuses raises ``SpokenShareError``.
 
     ``basis="measured"`` (default) accepts only detector segments carrying
     source="measured"; ``basis="aligned"`` accepts detector or word-aligned
@@ -367,6 +427,12 @@ def measure_share(segments, basis=BASIS_MEASURED, style_id=None):
     when the cut carries no sung line). Total 0 is refused rather than
     reported as 0%.
     """
+    measured_duration = None
+    if duration_s is not None:
+        # The partition is validated on the RAW segments (before de-duplication)
+        # so a doubled or overlapping timeline is REFUSED, never silently folded.
+        measured_duration = _require_disjoint_partition(
+            _segments(segments, dedupe=False), duration_s)
     parsed = _segments(segments)
     _require_basis(segments, basis, "measure_share")
     t = style_targets(style_id)
@@ -374,7 +440,8 @@ def measure_share(segments, basis=BASIS_MEASURED, style_id=None):
     for delivery, _start, _end, secs in parsed:
         seconds[delivery] += secs
     spoken, rap, sung, none = (seconds[d] for d in SEGMENT_DELIVERIES)
-    total = spoken + rap + sung + none
+    total = measured_duration if measured_duration is not None \
+        else spoken + rap + sung + none
     if total <= 0:
         raise SpokenShareError("ZERO_RUNTIME",
                                "segments total 0 seconds; share undefined")
@@ -397,6 +464,8 @@ def measure_share(segments, basis=BASIS_MEASURED, style_id=None):
         "none_seconds": round(none, 6),
         "voice_seconds": round(spoken + rap + sung, 6),
         "total_seconds": round(total, 6),
+        "runtime_denominator_s": round(total, 6),
+        "runtime_denominator_is_measured_duration": measured_duration is not None,
         "spoken_style_seconds": round(spoken_style, 6),
         "spoken_denominator_seconds": round(spoken_denominator, 6),
         "share": round(spoken_style / total, 6),
@@ -804,6 +873,65 @@ def check_first_sung(segments, basis="planned"):
     return out
 
 
+def check_first_sung_story(story_line_start_s, length_s,
+                           detector_first_sung_s=None):
+    """WW-17: ``first_sung`` measured on the FIRST APPROVED STORY-BEARING LINE,
+    the same line the story gate uses -- never on any vowel.
+
+    The failed take's detector read a wordless vocalise as "first sung" (7.0 s)
+    while the first approved story line was at 22.107 s, so the story was
+    postponed unchallenged. Here the figure IS the story line's start.
+
+    The owner's existing 5/10 band is PRESERVED for the detector's own
+    first-sung figure as a SEPARATE RECORDED NUMBER (``detector`` below): this
+    function never tightens that band and never rewrites it. The hard ceiling
+    is the story gate's (``story_coverage.FIRST_STORY_WORD_MAX_S``), carried by
+    the gate, not here."""
+    length_s = _number(length_s, "length_s", "BAD_LENGTH")
+    if length_s <= 0:
+        raise SpokenShareError("BAD_LENGTH", "length_s must be positive")
+    out = {
+        "story_line_start_s": (None if story_line_start_s is None
+                               else round(float(story_line_start_s), 6)),
+        "length_s": length_s,
+        "target_pct": FIRST_SUNG_TARGET_PCT,
+        "accept_pct": [FIRST_SUNG_TARGET_PCT - ACCEPT_PTS,
+                       FIRST_SUNG_TARGET_PCT + ACCEPT_PTS],
+        "detector_first_sung_s": detector_first_sung_s,
+        "band_owner": {"accept_pts": ACCEPT_PTS, "flag_pts": FLAG_PTS,
+                       "note": "the owner's 5/10 band, preserved for the "
+                               "detector's first-sung figure, never tightened"},
+        "reasons": [], "flags": [],
+    }
+    if detector_first_sung_s is not None:
+        dpct = round(float(detector_first_sung_s) / length_s * 100.0, 3)
+        dj = judge_gap(dpct, FIRST_SUNG_TARGET_PCT)
+        out["detector"] = {
+            "first_sung_start_s": round(float(detector_first_sung_s), 6),
+            "first_sung_pct": dpct, "verdict": dj["verdict"], "band": dj["band"],
+            "gap_pts": dj["gap_pts"],
+            "source": "singing detector (unchanged 5/10 band)"}
+    if story_line_start_s is None:
+        out.update({"verdict": VERDICT_FAIL, "band": BAND_REDO,
+                    "story_first_sung_pct": None, "gap_pts": None})
+        out["reasons"].append(
+            "no approved story-bearing line was measured: first_sung cannot be "
+            "certified on a sung vowel")
+        return out
+    pct = round(float(story_line_start_s) / length_s * 100.0, 3)
+    j = judge_gap(pct, FIRST_SUNG_TARGET_PCT)
+    text = ("first approved story line at %.3f s = %.1f%% of runtime, target "
+            "%d%%, %.1f points off" % (float(story_line_start_s), pct,
+                                       FIRST_SUNG_TARGET_PCT, j["gap_pts"]))
+    out.update({"verdict": j["verdict"], "band": j["band"],
+                "story_first_sung_pct": pct, "gap_pts": j["gap_pts"]})
+    if j["verdict"] == VERDICT_FLAG:
+        out["flags"].append(text + ": accepted with a flag")
+    elif j["verdict"] == VERDICT_FAIL:
+        out["reasons"].append(text + ": redo")
+    return out
+
+
 def steer_first_sung(segments, basis="planned"):
     """What the lyric-sheet builder does with a first-sung result: the check
     plus which way to move the sung hook and by how many seconds to land on
@@ -924,6 +1052,7 @@ __all__ = [
     "TARGET_FLAG_PCT",
     "segments_from_sung_stretches",
     "steer_first_sung",
+    "check_first_sung_story",
     "CAP",
     "FLAG_PTS",
     "NO_REAL_SINGING_STRETCH_S",
