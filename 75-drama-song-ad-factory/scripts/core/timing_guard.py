@@ -26,6 +26,9 @@ _PROFILE_PATH = Path(__file__).resolve().parent / "acceptance-profile.json"
 
 _WORD_RE = re.compile(r"[a-z0-9]+(?:'[a-z0-9]+)?")
 _EPS = 1e-9
+#: Timestamp alignment tolerance: the same 1e-6 ``check_frame_grid`` uses, so
+#: the timeline-integrity check (WW-04) never invents a new microsecond rule.
+_ALIGN_TOL = 1e-6
 
 
 class TimingError(Exception):
@@ -145,6 +148,116 @@ def check_containment(parent, children, label):
                               "%s children exceed [%s, %s]"
                               % (label, parent["start"], parent["end"]))
     return True
+
+
+def _finite(value):
+    """float(value) when it is a finite number, else None (bools are not times)."""
+    if isinstance(value, bool):
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v in (float("inf"), float("-inf")):
+        return None
+    return v
+
+
+def check_timeline_partition(segments, duration_s, tol=_ALIGN_TOL):
+    """WW-04: ONE physical audio timeline.
+
+    The take's delivery partition must be a SINGLE DISJOINT PARTITION of
+    ``[0, duration_s]``: every segment lies inside ``[0, duration_s]``, no two
+    segments overlap, none is a duplicate, and the union equals the MEASURED
+    duration. The runtime denominator is ``duration_s`` itself, NEVER the sum
+    of segment lengths. A partition built by concatenating a measured detector
+    timeline with a word-aligned timeline over the same audio overlaps itself
+    and is refused (``TIMELINE_NOT_DISJOINT``) -- that concatenation is exactly
+    how the failed take's doubled denominator arose.
+
+    Refuses non-finite, reversed or out-of-range timestamps
+    (``TIMELINE_MALFORMED``). Tolerances are this module's own: ``_EPS`` (1e-9)
+    for arithmetic and ``_ALIGN_TOL`` (1e-6, the same alignment tolerance
+    ``check_frame_grid`` uses) -- no new universal microsecond rule.
+
+    Returns {"verdict", "reason_code", "duration_s", "partition_seconds",
+    "segments", "union_s", ...}; PASS means the partition is sound."""
+    D = _finite(duration_s)
+    if D is None or D <= 0:
+        return {"verdict": "FAIL", "reason_code": "TIMELINE_MALFORMED",
+                "duration_s": None, "segments": len(segments or []),
+                "detail": "duration_s must be a positive finite number, got %r"
+                          % (duration_s,)}
+    rows = []
+    for i, seg in enumerate(segments or []):
+        if not isinstance(seg, dict):
+            return {"verdict": "FAIL", "reason_code": "TIMELINE_MALFORMED",
+                    "duration_s": D, "segments": len(segments or []),
+                    "detail": "segment %d is not a record" % i}
+        s, e = _finite(seg.get("start", seg.get("startS"))), \
+            _finite(seg.get("end", seg.get("endS")))
+        if s is None or e is None:
+            return {"verdict": "FAIL", "reason_code": "TIMELINE_MALFORMED",
+                    "duration_s": D, "segments": len(segments or []),
+                    "detail": "segment %d has a non-finite timestamp (%r, %r)"
+                              % (i, seg.get("start"), seg.get("end"))}
+        if e < s - _EPS:
+            return {"verdict": "FAIL", "reason_code": "TIMELINE_MALFORMED",
+                    "duration_s": D, "segments": len(segments or []),
+                    "detail": "segment %d is reversed (%.6f -> %.6f)" % (i, s, e)}
+        if s < -tol or e > D + tol:
+            return {"verdict": "FAIL", "reason_code": "TIMELINE_MALFORMED",
+                    "duration_s": D, "segments": len(segments or []),
+                    "detail": "segment %d lies outside [0, %.6f]: %.6f -> %.6f"
+                              % (i, D, s, e)}
+        rows.append((s, e))
+    if not rows:
+        return {"verdict": "FAIL", "reason_code": "TIMELINE_MALFORMED",
+                "duration_s": D, "segments": 0,
+                "detail": "the delivery partition is empty"}
+    rows.sort()
+    total = 0.0
+    prev_end = None
+    for s, e in rows:
+        total += e - s
+        if prev_end is not None:
+            if s < prev_end - tol:
+                return {"verdict": "FAIL", "reason_code": "TIMELINE_NOT_DISJOINT",
+                        "duration_s": D, "segments": len(rows),
+                        "union_s": round(total, 6),
+                        "detail": "overlapping or duplicated segments: a segment "
+                                  "starts at %.6f before the prior end %.6f"
+                                  % (s, prev_end)}
+            if s > prev_end + tol:
+                return {"verdict": "FAIL", "reason_code": "TIMELINE_GAP",
+                        "duration_s": D, "segments": len(rows),
+                        "union_s": round(total, 6),
+                        "detail": "a %.6f s gap between %.6f and %.6f"
+                                  % (s - prev_end, prev_end, s)}
+        prev_end = e
+    if rows[0][0] > tol:
+        return {"verdict": "FAIL", "reason_code": "TIMELINE_GAP",
+                "duration_s": D, "segments": len(rows),
+                "union_s": round(total, 6),
+                "detail": "the partition starts at %.6f, not 0" % rows[0][0]}
+    if rows[-1][1] < D - tol:
+        return {"verdict": "FAIL", "reason_code": "TIMELINE_GAP",
+                "duration_s": D, "segments": len(rows),
+                "union_s": round(total, 6),
+                "detail": "the partition ends at %.6f, short of %.6f"
+                          % (rows[-1][1], D)}
+    if total > D + tol:
+        return {"verdict": "FAIL", "reason_code": "TIMELINE_NOT_DISJOINT",
+                "duration_s": D, "segments": len(rows),
+                "union_s": round(total, 6),
+                "detail": "the segment lengths sum to %.6f s over a %.6f s "
+                          "duration: the timeline is doubled" % (total, D)}
+    return {"verdict": "PASS", "reason_code": "TIMELINE_DISJOINT",
+            "duration_s": D, "partition_seconds": D, "segments": len(rows),
+            "union_s": round(total, 6),
+            "runtime_denominator_is_measured_duration": True,
+            "detail": "a single disjoint partition of [0, %.6f]: %d segment(s)"
+                      % (D, len(rows))}
 
 
 def round_to_grid(t, fps):

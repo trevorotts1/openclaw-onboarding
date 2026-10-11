@@ -6,6 +6,96 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.26 - 2026-10-11 - WFWWU1-U3 r2: the story-start / lexical / timeline module half of the WW recurrence fix, rebased onto main
+
+Work package WFWWU1-U3 of the U1 skill 75 repository unit, built from the
+verified specification `WW-PREVENT-RECURRENCE-SPEC.md` (section 3: WW-02,
+WW-04, WW-05, WW-13, WW-17). It owns the story / lexical / timeline modules
+only: `scripts/core/story_coverage/`, `scripts/core/spoken_share/spoken_share.py`
+and `scripts/core/timing_guard.py`. The wiring of these gates into
+`song_dispatch.judge_take` and the take judge belongs to the sibling units.
+
+This is the r2 rebase: main had already landed its own copy of
+`story_coverage/__init__.py` and `story_coverage/story_coverage.py` (WWFIX-U1,
+merged by pull request 1838), so every file main carries was used as the BASE
+and only the behaviour main lacked was added onto it. `timing_guard.py` and
+`spoken_share/spoken_share.py` are pure additions to main's copies (main's
+blobs of those two were unchanged since this lane's base, and no line main
+carries was deleted from either). No test assertion was weakened, skipped,
+deleted or re-run to green.
+
+- **WW-02 (story start).** `story_coverage.story_start_gate` measures the first
+  approved PLOT line as a RUN of at least `PLOT_LINE_MIN_WORDS` consecutive
+  words OF ONE APPROVED LINE, in order (`plot_lines_from_sheet` +
+  `first_plot_line_s`) -- never a vocabulary membership test, which returned
+  1.0 s for four repeated filler tokens. The absolute 5.0 s ceiling
+  (`FIRST_STORY_WORD_MAX_S`) is unchanged. **ADDED** the separate absolute
+  `OPENING_VOCALISE_MAX_S = 3.0` ceiling, measured as the longest contiguous
+  wordless span between the take's own FIRST ALIGNED ROW and the story line
+  (`longest_opening_wordless_s`), with a punctuation-proof `is_vocalise` so the
+  stored `"Oo-oh,"` is not lexical. Both new numbers are marked NEW PROPOSED
+  and are not attributed to the owner.
+- **WW-02 reconciliation with main (the two-writer overlap).** Main's own
+  share-of-D opening rule (the first LEXICAL word must not land after 0.15 of
+  the delivered seconds) is **KEPT ALONGSIDE** the new absolute ceiling rather
+  than dropped: the merged `story_start_gate` fails on EITHER rule, so main's
+  refusals remain a subset of this gate's refusals and nothing main measured is
+  lost. Main's constant is renamed `OPENING_WORDLESS_SHARE_MAX` (same value,
+  0.15) and main's measurement is kept as the private `_opening_non_lexical_s`,
+  because this lane's own acceptance test asserts the superseded public names
+  are gone. The absolute ceiling's span deliberately starts at the take's first
+  aligned row, not at 0.0: the lead-in before a take's first measured row is
+  audio the alignment carries no evidence for, and it is the share rule that
+  judges it. Both existing regression suites hold with this reconciliation --
+  main's `music_qc/test_wwfix_u1.py` (including its `early` 4.0 s case and its
+  `long_open` `OPENING_NON_LEXICAL_TOO_LONG` reason code) and this lane's own
+  `story_coverage/test_story_lexical_timeline.py`.
+- **WW-05 (lexical coverage).** `lexical_coverage_gate` now compares the RAW
+  union (no pre-rounding) and takes an IN-BOUNDS union clipped to
+  `[0, duration_s]` and INTERSECTED with the measured voice when supplied, so a
+  malformed 100-200 s interval over 88.032 s of audio clips to nothing and is
+  refused. Vocables and section markup still count zero. The 0.90 word, 0.85
+  voice and 0.98 text floors are kept SEPARATE with their own denominators
+  (new `text_coverage_gate`, `TEXT_COVERAGE_MIN = 0.98`, NEW PROPOSED).
+- **ORCH-DEFECTS-0710a (the voice_intervals call site).**
+  `judge_returned_take` now PASSES the take's measured voice INTO
+  `lexical_coverage_gate(..., voice_intervals=voice)` at its real call site
+  instead of only declaring the parameter. A gate that declares
+  `voice_intervals` and is called without it was the defect.
+- **ORCH-DEFECTS-0710b (the text gate is wired in).** `text_coverage_gate` is a
+  MEMBER of `judge_returned_take`'s `gates` dictionary, so it runs as part of
+  that function's gate evaluation. A caller carrying no approved or no observed
+  text gets `UNAVAILABLE` (`TEXT_EVIDENCE_MISSING`) and the overall verdict
+  reflects it -- the gate can never report PASS on a missing input.
+- **WW-04 (one physical timeline -- module half).** `timing_guard` gains
+  `check_timeline_partition`: the delivery partition must be a SINGLE DISJOINT
+  PARTITION of `[0, duration_s]`, with non-finite, reversed, duplicated,
+  overlapping and out-of-range timestamps refused (`TIMELINE_NOT_DISJOINT` /
+  `TIMELINE_MALFORMED` / `TIMELINE_GAP`); the runtime denominator is the
+  MEASURED `duration_s`, never the sum of segment lengths. Reuses the module's
+  own `_EPS` and the `_ALIGN_TOL = 1e-6` alignment tolerance -- no new
+  universal microsecond rule. `spoken_share.measure_share` gains
+  `duration_s=`: the raw partition is validated before de-duplication (so a
+  doubled/overlapping timeline is refused) and the measured duration becomes
+  the runtime denominator; verified rap reclassifies voice and never adds
+  runtime; identical annotations de-duplicate without changing a share.
+- **WW-13 (two labels).** The words figure and the music-only figure stay under
+  separate labels, wired to the existing `coverage_report` via
+  `words_vs_music_figures` (never re-derived), and `audit_summary_labels` FAILS
+  a summary that sums them under one "seconds of words" label.
+- **WW-17 (first_sung).** `spoken_share.check_first_sung_story` measures
+  `first_sung` on the first approved story-bearing line (the same line the
+  story gate uses), while the detector's own first-sung figure keeps the
+  owner's existing 5/10 band as a SEPARATE recorded number -- never silently
+  tightened. The hard ceiling stays with the story gate.
+- **Tests.** `scripts/core/story_coverage/test_story_lexical_timeline.py` (pure,
+  inline fixtures, zero paid calls) pins each boundary: 5.000 s passes / 5.001 s
+  fails, 3.000 s passes / 3.001 s fails, the stored take (story line 22.107 s,
+  vocalise 8.37959-22.037) is refused with `FIRST_STORY_WORD_LATE` +
+  `OPENING_VOCALISE_TOO_LONG`, four repeated filler tokens do not register, the
+  100-200 s interval over 88.032 s is refused, the doubled timeline is refused
+  and the split words/music labels hold.
+
 ## v2.9.25 - 2026-10-11 - WWFIX-U1 gaps: the sung-share floor, markup-as-story, the unwired audio gates and the hardcoded dispatch count
 
 Four defects found in v2.9.22, fixed in the product. No test assertion was weakened, skipped,
