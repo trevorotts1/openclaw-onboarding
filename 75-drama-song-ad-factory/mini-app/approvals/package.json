@@ -1,0 +1,6 @@
+{
+  "name": "drama-song-ad-factory-mini-app-approvals",
+  "private": true,
+  "type": "module",
+  "description": "U8 approvals layer + producer hand-off. ESM marker so the runnable checks import the shipped modules unchanged. No dependencies."
+}
