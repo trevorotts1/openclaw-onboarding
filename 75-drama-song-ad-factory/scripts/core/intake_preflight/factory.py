@@ -412,7 +412,9 @@ def cmd_next(a):
             if _c not in sys.path:
                 sys.path.insert(0, _c)
             from song_choices import song_choices as _sc  # noqa: PLC0415
-            hold = _sc.refusal(str(run_dir))
+            # WW-08 item 3: the pick must be in AND every offered song's
+            # constituent-evidence receipt current before a later stage runs.
+            hold = _sc.refusal(str(run_dir)) or _sc.constituent_hold(str(run_dir))
         except Exception as exc:  # noqa: BLE001 - a broken gate never opens
             hold = {"reason_code": "SONG_GATE_BROKEN", "next_action": "song gate failed: %r" % (exc,)}
         if hold:

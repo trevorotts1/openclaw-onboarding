@@ -114,7 +114,7 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
                            duration=None, callback_url="https://example.invalid/cb",
                            packet_lines=None, protected=(),
                            style_id=None, client_text=None, length_s=None,
-                           mode=None, true_at_beat=None, hook_plan=None):
+                           mode=None, true_at_beat=None, hook_plan=None, pace_plan=None):
     """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
 
     F7 (words match the script exactly): when ``packet_lines`` is given, the
@@ -187,6 +187,15 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
                               hook_plan=hook_plan)  # recipe v2 + I8 + hook placement
     if not instrumental:  # I5: ask for a real ending (outro + resolved chord)
         lyrics_text, style_text = ending_qc.with_clean_ending(lyrics_text, style_text)
+    # WW-07: the approved pace direction (the lowest-point drop and the return)
+    # is written into the FINAL style AFTER the ending clause is appended, and
+    # BEFORE the catalog cap is measured below, so an over-cap append raises
+    # rather than truncating. `pace_plan` is judging metadata only -- it reaches
+    # the judge as the internal `_pace_plan` and never the provider.
+    _sr = getattr(suno_recipe, "suno_recipe", suno_recipe)
+    pace_note = _sr.pace_clause(pace_plan)
+    if pace_note:
+        style_text = "%s %s" % (str(style_text).rstrip(), pace_note)
     ver = _checked_version(version)
     req = {"endpoint": CREATE_TASK_ENDPOINT,
            "model": route_model(GENERATE_CATALOG_ID),
@@ -210,6 +219,10 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     prompt_limits.check_request(GENERATE_CATALOG_ID, req)
     if hook_plan is not None:
         req["_hook_plan"] = hook_plan
+    # WW-07: the pace plan rides the request like the hook plan; run_takes moves
+    # _pace_plan into the judge's plan and it never reaches KIE.
+    if pace_plan is not None:
+        req["_pace_plan"] = pace_plan
     return req
 
 

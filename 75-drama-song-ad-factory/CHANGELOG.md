@@ -6,6 +6,65 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.27 - 2026-10-11 - WWR3 integration: the content of pull requests 1848, 1849, 1850, 1851 and 1853 on one branch cut from live main
+
+ONE integration change. The content of five open draft pull requests
+(#1848, #1849, #1850, #1851, #1853) is carried onto one branch cut from live
+`origin/main` (`871eab98c`, read at build time), with the version bump for
+`skill-version.txt` and this entry bundled inside this same commit -- never a
+bump-only or changelog-only commit, and #1848's content is a SINGLE change with
+no separate bump-only commit of its own.
+
+Collisions resolved once, deliberately, at the end:
+
+- `75-drama-song-ad-factory/skill-version.txt` and the `SKILL.md` frontmatter:
+  ONE bundled bump. The version was read LIVE from `origin/main` at build time
+  (`v2.9.26`); `v2.9.27` is the next patch above it. The three sources that
+  bumped to `v2.9.26` against the older base (`30017e519`) were stale against
+  live main and did not win.
+- `CHANGELOG.md`: ONE bundled entry (this one). The five sources' own entries
+  were not stacked one per source; the change of record is the integration.
+- `SKILL.md`: #1849 is the only source that changes its content (the
+  `## Story-first audio acceptance` section). The other four change the
+  frontmatter `version:` line only. The section is carried verbatim and the old
+  single-shift sentence is GONE, not supplemented: the text now states TWO pace
+  changes, each separately bound to its own story beat, read back on the
+  integrated head.
+
+No line any source relied on was dropped and no source order was silently
+preferred: every non-colliding file came from exactly one source and the file
+sets are disjoint (`length_formula`, `rap_check`, `song_contract` from #1848;
+`INSTRUCTIONS.md`, `references/stage-runbook.md` from #1849;
+`intake_preflight`/`factory.py`, `music_director/__init__.py`,
+`music_qc/__init__.py`, `song_choices/song_choices.py`,
+`song_dispatch/song_dispatch.py`, `suno_recipe/suno_recipe.py` from #1850;
+`acceptance-profile.json`, `music_qc/pace_change.py`,
+`song_choices/overlap.py`, `story_arc/story_arc.py` from #1851;
+`spoken_share/spoken_share.py`, `story_coverage/`, `timing_guard.py` from #1853).
+
+DEFECT CARRIED, NOT HIDDEN -- a guard whose key production never writes.
+#1853 (ORCH-DEFECTS-0710a) passes `take.get("voice_intervals")` into
+`story_coverage.lexical_coverage_gate`. NO production code writes
+`voice_intervals`: a grep of the whole skill on live main returns zero hits, and
+the only production caller of `judge_returned_take`
+(`song_contract.check_returned_story`) builds its take from `aligned_words`
+only. The guard is therefore DEAD on the production call path and must be
+reported as a defect, not left as a silent pass. #1848's timed-listening route
+has the same shape at its own call site: `song_dispatch.judge_take` calls
+`_RC.gate(segs)` with NO review argument, so the only route that can ACCEPT a
+rap measurement is unreachable from the pipeline. Both are recorded here
+because this commit integrates the content; it does not certify it.
+
+#1848 was FAILED by its own quality check on exactly one clause, "the branch
+holds TWO new commits, not one"; its content is carried anyway, as ONE change.
+#1849, #1850, #1851 and #1853 are carried as they stand. This unit integrates;
+it does not certify.
+
+Zero paid provider calls: every suite drives fake transports only. No provider
+was called, nothing was spent, no song or video was regenerated.
+
+---
+
 ## v2.9.26 - 2026-10-11 - empty-home test: make the core copy deterministic so the `__pycache__` race cannot fail `QC static invariants`
 
 The required check `QC static invariants`, step "Skill 75 empty-home test suite (manual 02 B6)",

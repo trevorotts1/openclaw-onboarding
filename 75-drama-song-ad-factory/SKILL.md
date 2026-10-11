@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.26
+version: v2.9.27
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -290,6 +290,10 @@ The Suno payload itself is assembled the same way: `prompt_templates.suno_parts(
 `references/prompt-templates/music/<style>.json` and `models/suno-v6.json`, so the style text,
 the delivery cues, the negative tags and the caps are data and not constants; the caps are
 measured on the FINAL payload, after `ending_qc`. See "Prompt templates" above.
+
+## Story-first audio acceptance
+
+R&B Flow reserves at least max(8 seconds, 10% of the delivered runtime) of measured rhythmic rap before any intro/outro allocation, and each rap verse on the sheet must itself reach a real budget: at least 8 seconds and at least ceil(8 seconds × the style's rap rate) words. Story-bearing lexical content starts within 5 seconds, and no opening wordless span may exceed 3 seconds. Real lexical word timing covers at least 70% of the delivered runtime; vocalise and music-only time never count. Every approved plot beat must be heard, in order, and each take is bound to the exact approved sheet revision it was generated from. Two pace changes are ordered, each separately bound to its own story beat and never merged into one. The first, the problem shift, belongs to the beat where the story hits the problem: it must be written into the submitted music style and must then pass a measured onset and energy drop check. The second, the rise shift, belongs to the beat where the story reaches the solution, the rise: it must be written into the submitted music style and must then pass its own measured rise check. Each pace change must additionally pass an independent smooth-transition review. Required rap evidence that is unmeasured, unavailable or unknown cannot pass; only an independent timed listening review or a calibrated classifier may grant it. These are new acceptance rules; the owner's existing spoken/sung 5/10 band is unchanged. The recommended SONG APPROVAL answer is Yes and an explicit No stays one song, but no assistant may answer a card question on the client's behalf: an answer with no recorded author and no recorded authority is treated as unspecified and routes to the recommended Yes.
 
 ## Sung hook (I8)
 
