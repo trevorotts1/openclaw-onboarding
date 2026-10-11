@@ -151,7 +151,7 @@ pass "T1: memory search lives at entry.memory.search, not a top-level memorySear
   || fail "T1: the fallback migration did not reach entry.memory.search"
 pass "T1: the in-place memory-search migrations reach the LIVE config, not a copy"
 
-# Skill 76 gap (LeAnne Dolce roll): a department agent must never be scaffolded with
+# Skill 76 gap (a client roll): a department agent must never be scaffolded with
 # multimodal on, or switching memory.search to a text-only embedder (local ollama) makes
 # its re-index fail. dept-sales/dept-video are NEW here, so this is the scaffold default.
 for want in dept-sales dept-video; do

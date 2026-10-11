@@ -11457,7 +11457,7 @@ except Exception:
   # Skill 76 step 5c (Gemini SOP fallback copy) needs Command Center >= 7.6.108,
   # but the wiring loop runs skill 76 BEFORE this refresh. On a box whose CC was
   # older when skill 76 ran, 5c skipped ("older than 7.6.108") and nothing
-  # retried it in the same roll (LeAnne Dolce's box). Re-run ONLY 5c now that the
+  # retried it in the same roll (a client box). Re-run ONLY 5c now that the
   # CC is current. Chosen over reordering the wiring loop: that would move a
   # skill with a 2h time budget past ~2000 unrelated lines and break the generic
   # per-skill sentinel flow, while 5c is already idempotent (manifest sha + sops

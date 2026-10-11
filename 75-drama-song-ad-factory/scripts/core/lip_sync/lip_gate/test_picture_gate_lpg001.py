@@ -27,9 +27,9 @@ def N(h, roll, yaw, smile, gap, sharp, jaw=0.0):
 
 # Trevor-APPROVED lip-sync pictures: every one must PASS or ACCEPT_WITH_FLAG.
 APPROVED = {
-    "LeAnne CUa": N(26.3, 4.9, 0.067, 0.00, 0.05, 130.4),
-    "LeAnne CUb": N(26.7, 5.2, 0.057, 0.11, 3.55, 119.8),
-    "LeAnne CUc": N(26.0, 10.5, 0.070, 0.82, 0.24, 133.3),
+    "Client CUa": N(26.3, 4.9, 0.067, 0.00, 0.05, 130.4),
+    "Client CUb": N(26.7, 5.2, 0.057, 0.11, 3.55, 119.8),
+    "Client CUc": N(26.0, 10.5, 0.070, 0.82, 0.24, 133.3),
     "Kiesett HO1": N(21.4, -14.8, -0.145, 0.00, 0.00, 258.1, 0.001),
     "Kiesett HO2": N(23.4, -13.5, -0.142, 0.00, 0.00, 455.0, 0.001),
     "Kiesett HO3": N(23.4, -13.8, -0.106, 0.01, 0.06, 541.9, 0.001),
@@ -92,9 +92,9 @@ def test_one_rule_set():
 def test_every_approved_picture_passes_or_flags():
     for name, n in APPROVED.items():
         assert verdict(n) in G.ACCEPTED, (name, G.check_numbers(n))
-    assert verdict(APPROVED["LeAnne CUa"]) == G.PASS
-    assert codes(APPROVED["LeAnne CUc"]) == (set(), {"HEAD_ROLL", "SMILE"})
-    assert codes(APPROVED["LeAnne CUb"]) == (set(), {"HEAD_ROLL", "TEETH"})
+    assert verdict(APPROVED["Client CUa"]) == G.PASS
+    assert codes(APPROVED["Client CUc"]) == (set(), {"HEAD_ROLL", "SMILE"})
+    assert codes(APPROVED["Client CUb"]) == (set(), {"HEAD_ROLL", "TEETH"})
     assert codes(APPROVED["Kiesett HO1"]) == (set(), {"FACE_SIZE", "HEAD_ROLL", "HEAD_YAW"})
 
 
@@ -183,7 +183,7 @@ def test_paid_regen_only_for_a_fail_a_crop_cannot_fix_max_two():
         assert len(calls) == 2
         # flags (smile, teeth, tilt under 20, small face over 20) never spend
         calls.clear()
-        for flagged in (DAUGHTER, RESET_28, APPROVED["Kiesett HO1"], APPROVED["LeAnne CUc"]):
+        for flagged in (DAUGHTER, RESET_28, APPROVED["Kiesett HO1"], APPROVED["Client CUc"]):
             G.gate_picture(a, measure=lambda p: flagged, crop=lambda p, o: None, regenerate=regen)
         assert calls == []
 

@@ -206,7 +206,7 @@ The layers and the assembler are the same in both distributions (U15a-U15i):
 
 Every Suno music style (Soul Ballad, R&B Flow, Soul Rise, and any Suno style
 added later) follows this recipe by default. It is what made the Kiesett and
-LeAnne Dolce songs land. The code is `scripts/core/suno_recipe/`; every Suno
+the client songs land. The code is `scripts/core/suno_recipe/`; every Suno
 request goes through `suno_recipe.prepare()` and the `music_director` seam
 refuses a raw Suno style that skipped it.
 
@@ -904,7 +904,7 @@ SOP named above.
   `lip_gate/picture_gate.gate_picture()` MEASURES every close-up with mediapipe
   FaceLandmarker (one rule set: the constants block at the top of `picture_gate.py`, same
   names in the onboarding repo). LPG003 loosened it (Trevor: "loosen the checks so it's not
-  as strict"), calibrated so every Trevor-approved Kiesett version 2 and LeAnne Dolce
+  as strict"), calibrated so every Trevor-approved Kiesett version 2 and client
   picture passes or flags. Three verdicts. FAIL (refused) is for clear problems only: face
   count not 1, face height under 20%, |roll| over 20 deg, |yaw| over 0.25 (side profile),
   jawOpen over 0.30 (wide-open mouth), sharpness under 60. ACCEPT_WITH_FLAG (goes to Kling,

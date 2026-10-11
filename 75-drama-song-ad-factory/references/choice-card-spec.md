@@ -698,7 +698,7 @@ can release the whole album.
 
 Every Suno music style (Soul Ballad, R&B Flow, Soul Rise, and any Suno style
 added later) follows this recipe by default. It is what made the Kiesett and
-LeAnne Dolce songs land. The code is `scripts/core/suno_recipe/`; every Suno
+the client songs land. The code is `scripts/core/suno_recipe/`; every Suno
 request goes through `suno_recipe.prepare()` and the `music_director` seam
 refuses a raw Suno style that skipped it.
 

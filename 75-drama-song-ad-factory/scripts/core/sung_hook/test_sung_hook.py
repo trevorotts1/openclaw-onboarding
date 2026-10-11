@@ -17,8 +17,8 @@ if CORE not in sys.path:
 import sung_hook as H              # noqa: E402
 import suno_recipe as R            # noqa: E402
 
-CLIENT = "We keep the lights on for every family. Come home to Dolce, come home tonight."
-HOOK = ["Come home to Dolce", "come home tonight"]
+CLIENT = "We keep the lights on for every family. Come home to Beacon, come home tonight."
+HOOK = ["Come home to Beacon", "come home tonight"]
 VERSES = [{"tag": "Verse %d" % i, "delivery": "sung", "lines": ["We keep the lights on"]}
           for i in range(1, 5)]
 STYLE = "all_suno"
@@ -31,7 +31,7 @@ def seg(d, a, b):
 def words_at(*starts):
     out = []
     for t in starts:
-        for k, w in enumerate("come home to dolce come home tonight".split()):
+        for k, w in enumerate("come home to beacon come home tonight".split()):
             out.append({"word": w, "startS": t + k * 0.5, "endS": t + k * 0.5 + 0.4})
     return out
 
@@ -58,8 +58,8 @@ class HookText(unittest.TestCase):
     def test_own_words_and_length(self):
         self.assertEqual(H.check_hook_text(HOOK, CLIENT), [])
         self.assertTrue(H.check_hook_text("come home", CLIENT))                 # too short
-        self.assertTrue(H.check_hook_text("come home to Dolce, forever more", CLIENT))  # invented
-        self.assertTrue(H.check_hook_text("come home to dolce tonight", CLIENT, ["Dolce"]))
+        self.assertTrue(H.check_hook_text("come home to Beacon, forever more", CLIENT))  # invented
+        self.assertTrue(H.check_hook_text("come home to beacon tonight", CLIENT, ["Beacon"]))
 
 
 class Sheet(unittest.TestCase):
@@ -98,30 +98,30 @@ class Measured(unittest.TestCase):
     SUNG = [seg("sung", 0, 40)]
 
     def test_all_sung_passes(self):
-        r = H.measure("come home to dolce", words_at(5, 15, 25), self.SUNG, 3)
+        r = H.measure("come home to beacon", words_at(5, 15, 25), self.SUNG, 3)
         self.assertEqual((r["verdict"], r["measured"], r["action"]), ("PASS", 3, "accept"))
         self.assertEqual(r["times_s"], [5, 15, 25])
 
     def test_one_short_flags(self):
-        r = H.measure("come home to dolce", words_at(5, 15), self.SUNG, 3)
+        r = H.measure("come home to beacon", words_at(5, 15), self.SUNG, 3)
         self.assertEqual((r["verdict"], r["action"]), ("FLAG", "accept-with-flag"))
 
     def test_two_short_regenerates(self):
-        r = H.measure("come home to dolce", words_at(5), self.SUNG, 3)
+        r = H.measure("come home to beacon", words_at(5), self.SUNG, 3)
         self.assertEqual((r["verdict"], r["action"]), ("FAIL", "regenerate"))
 
     def test_spoken_occurrence_not_counted(self):
         segs = [seg("spoken", 0, 20), seg("sung", 20, 60)]
-        r = H.measure("come home to dolce", words_at(5, 15, 25), segs, 3)
+        r = H.measure("come home to beacon", words_at(5, 15, 25), segs, 3)
         self.assertEqual(r["measured"], 1)
 
     def test_labels_are_not_measurement(self):
         segs = [dict(seg("sung", 0, 40), source="label")]
-        self.assertEqual(H.measure("come home to dolce", words_at(5, 15), segs, 2)["verdict"], "FAIL")
+        self.assertEqual(H.measure("come home to beacon", words_at(5, 15), segs, 2)["verdict"], "FAIL")
 
     def test_score_take_carries_receipt(self):
         take = {"segments": [seg("spoken", 0, 4), seg("sung", 4, 40)]}
-        out = R.score_take(take, "come home to dolce", words_at(5), 58)
+        out = R.score_take(take, "come home to beacon", words_at(5), 58)
         self.assertEqual(out["hook"]["target"], 3)
         self.assertEqual(out["hook"]["measured"], 1)
         self.assertEqual(out["verdict"], "FAIL")

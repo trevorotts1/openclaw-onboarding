@@ -348,13 +348,19 @@ def test_selftest_subprocess_exit_zero():
 def test_cli_json_flag_stdout_only_no_file(tmp_path):
     """--json must print valid JSON and not write the default file."""
     cp_path = os.path.join(_TOOLS_DIR, "capability_probe.py")
+    default_out = os.path.normpath(os.path.join(_TOOLS_DIR, "..", "working",
+                                                "skill6-capability.json"))
+    # A prior probe run (the QC script's own --out call) legitimately writes the
+    # default receipt, and the artifact is not tracked. Clear any leftover first
+    # so this asserts the --json contract (writes nothing) rather than an earlier
+    # run's output.
+    if os.path.exists(default_out):
+        os.remove(default_out)
     proc = subprocess.run([sys.executable, cp_path, "--json"],
                           capture_output=True, text=True, timeout=120)
     assert proc.returncode == 0, proc.stderr
     doc = json.loads(proc.stdout)
     assert "selectedLane" in doc
-    default_out = os.path.normpath(os.path.join(_TOOLS_DIR, "..", "working",
-                                                "skill6-capability.json"))
     assert not os.path.exists(default_out)
 
 
