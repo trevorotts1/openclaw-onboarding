@@ -6,6 +6,69 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.26 - 2026-10-11 - WW wave Unit U1 (arc-revision-battery) r2: performed-beat manifest, creative fingerprint, concurrency-evidence overlap gate, extended battery, parity check and import audit (WW-03, WW-10, WW-11, WW-15, WW-19, WW-20)
+
+Unit U1 of the WW-PREVENT-RECURRENCE wave (source: verified specification
+`WW-PREVENT-RECURRENCE-SPEC.md`, section 3, fixes WW-03, WW-10, WW-11, WW-15,
+WW-19 and WW-20), re-based onto live main. This is the **arc-revision-battery**
+work package of four concurrent U1 packages; it owns `story_arc/story_arc.py`,
+`music_qc/pace_change.py`, `song_choices/overlap.py`,
+`music_qc/test_wwfix_u1.py` and `acceptance-profile.json`. The version was read
+LIVE from `origin/main` at build time (`v2.9.25`); this bump is bundled INSIDE
+the real-content commit, never a bump-only commit (WW-20).
+
+- **WW-03 / WW-15 - the performed-beat manifest and the creative fingerprint.**
+  `story_arc.build_manifest` generates the manifest from ONE source for all
+  twelve canonical beats with the lines that must be heard IN ORDER, the
+  delivery, the approved line ids, the measured window, the approved devices,
+  the hook placement and the pace cues. `story_arc.creative_fingerprint` covers
+  the FIVE components the fix names - lines, delivery, beat map, hook and pace -
+  and `check_performed_manifest` REFUSES a take whose fingerprint does not match
+  the fingerprinted revision actually submitted, a metadata-only twelve-identifier
+  list, a beat with no heard mapped line inside its window, a reordered line and
+  an absent required device. `assert_take_bound` never retroactively binds an
+  existing take to an edited sheet. The fifteen-stage source method and the eight
+  coarse timing stages are preserved through explicit NAMED mappings
+  (`stage_mapping_report`), never by relabelling one count as another. The
+  arrangement choice is NOT made here: it stays with the owner.
+- **WW-10 - the overlap gate is a concurrency-evidence fix.** `overlap.overlap_gate`
+  now requires exactly THREE DISTINCT initial identities (variant, attempt and
+  task id): duplicate or identical receipts FAIL. It compares INTEGER
+  MICROSECONDS with no rounding and PASSes only at or above `1_000_000` us, so
+  0.999999 s (999,999 us) FAILS. Missing trustworthy lifecycle evidence is
+  UNAVAILABLE; malformed, reversed, duplicated and digest-mismatched evidence is
+  FAIL. The labelled clock distinction (`accepted_submit_at`, `terminal_at`,
+  `timestamp_source`) is kept and local clocks are never admissible or backfilled.
+  The fix is scoped honestly as `CONCURRENCY_EVIDENCE`: it did not cause this
+  run's thin rap, dead-air intro or paper arc.
+- **WW-11 - one battery, extended.** `music_qc/test_wwfix_u1.py` (the ONE existing
+  battery file) gains the WW-10 overlap tests, the WW-03 manifest/fingerprint
+  tests, the judge-path gate-removal and delivery-boundary tests (present and
+  fail-closed; UNDETERMINED until the WW-08/WW-18 wiring lands with their own
+  packages), and a release-level parity check that treats a missing canonical
+  source - or a twin that has not recorded the revision it mirrored - as
+  UNDETERMINED, never a release PASS. The new rules are stored ONCE in
+  `acceptance-profile.json` under `ww_wave`.
+- **WW-19 - the import audit.** The battery audits the six referenced module
+  paths and distinguishes PRESENT from NOT-YET-PUBLISHED (UNDETERMINED) from
+  ABSENT (a failure), reporting the tally verbatim.
+- **ORCH-DEFECTS-0710 (a) - every absent required beat is NAMED.**
+  `check_performed_manifest` APPENDS one `BEAT_MISSING:<beat>` entry to its
+  `failed` list for EVERY required beat whose `present` is False, and for EVERY
+  entry in `manifest["missing"]`. A summary count (`missing_beats`) can never
+  stand in for a named missing beat. ORCH-DEFECTS-0710 (b): a negative test
+  builds ELEVEN of the twelve required beats present and heard IN ORDER and
+  asserts the gate FAILS naming the single absent beat - it wrongly PASSED
+  against the unpatched gate and FAILS against the patched one.
+- **Re-base note (overlap rule).** Live main already carried
+  `music_qc/pace_change.py`, `song_choices/overlap.py` and
+  `music_qc/test_wwfix_u1.py` from the merged pull request 1838, with different
+  blobs. Main's copies are the BASE: every line main carried is preserved and
+  only the behaviour main lacked was added. `CHANGELOG.md` and `skill-version.txt`
+  were built by ADDING to main's current copies, never by replacing them.
+- No provider call, no paid call, no regeneration, no spend. The canonical
+  checkout was never written to.
+
 ## v2.9.25 - 2026-10-11 - WWFIX-U1 gaps: the sung-share floor, markup-as-story, the unwired audio gates and the hardcoded dispatch count
 
 Four defects found in v2.9.22, fixed in the product. No test assertion was weakened, skipped,
