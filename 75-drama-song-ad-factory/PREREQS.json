@@ -55,7 +55,7 @@
       "label": "Skill 68 - KIE audio (Suno)",
       "check": { "skill": "68-kie-audio" },
       "severity": "required",
-      "satisfy": "Install Skill 68 (68-kie-audio): Suno music/lyrics/vocals go through Skill 68's createTask contract (V6/V6_MINI/V6_WILD market envelope; legacy dedicated routes stay V4-V5_5 only). From an onboarding checkout run: bash update-skills.sh; verify the 68-kie-audio folder exists in SKILLS_DIR."
+      "satisfy": "Install Skill 68 (68-kie-audio): Suno music/lyrics/vocals go through Skill 68's createTask contract ONLY (POST /api/v1/jobs/createTask, outer model ai-music-api/generate, top-level callBackUrl, nested snake_case input with one lyrics source at input.lyrics; the legacy /api/v1/generate music-generation route is RETIRED with no fallback). From an onboarding checkout run: bash update-skills.sh; verify the 68-kie-audio folder exists in SKILLS_DIR."
     },
     {
       "id": "skill-74-kie-live-adapter",

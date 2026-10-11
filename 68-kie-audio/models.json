@@ -358,8 +358,9 @@
         "V6_MINI",
         "V6_WILD"
       ],
-      "create_endpoint": "/api/v1/generate",
-      "query_endpoint": "get-music-details via taskId (poll every 30 seconds per sounds page guidance)",
+      "create_endpoint": "/api/v1/jobs/createTask",
+      "legacy_create_endpoint": "/api/v1/generate",
+      "query_endpoint": "GET /api/v1/jobs/recordInfo?taskId=<taskId> -> data.response.data[].audio_url (WW-30)",
       "auth_env": "KIE_API_KEY",
       "caps": {
         "custom_prompt_max_chars": {
@@ -426,13 +427,14 @@
       "active": true,
       "known_inconsistencies": [
         "Non-custom prompt limit: generate-music page says 3000 characters; generate-mashup page says non-custom max 500 characters. Two KIE documents disagree; both reported verbatim; conflict UNDETERMINED.",
-        "Live pages 2026-10-06: V4..V5_5 marked Discontinued; default V6 (current family V6/V6_MINI/V6_WILD). Legacy dedicated route kept, accepted with a validator warning."
+        "Live pages 2026-10-06: V4..V5_5 marked Discontinued; default V6 (current family V6/V6_MINI/V6_WILD). WW-30: the legacy dedicated music-GENERATION route /api/v1/generate is RETIRED and is now a HARD violation in validate_audio_request (no legacy fallback, no silent switch-back); the other /api/v1/generate/<op> routes are untouched."
       ],
       "model_default": "V6",
       "route_models": {
         "current": "ai-music-api/generate",
         "current_endpoint": "/api/v1/jobs/createTask",
-        "legacy_endpoint": "/api/v1/generate"
+        "legacy_endpoint": "/api/v1/generate",
+  "legacy_endpoint_status": "RETIRED (WW-30) - refused by validate_audio_request with a hard violation; no fallback to it"
       },
       "discontinued": [
         "V4",

@@ -390,6 +390,20 @@ def validate_music(p):
     if not endpoint:
         _warn("music: no 'endpoint' field in payload; endpoint inferred from required fields")
 
+    # WW-30: the LEGACY music-generation route is RETIRED, not warned about.
+    # A payload on /api/v1/generate (the flat prompt/customMode/... contract)
+    # is a HARD violation: it must not be dispatched, and there is no legacy
+    # fallback and no silent switch-back. A classic /api/v1/generate/<op>
+    # route (sounds, extend, cover, ...) is a DIFFERENT route and is untouched.
+    if str(endpoint).rstrip("/") == "/api/v1/generate":
+        _err("music: the legacy /api/v1/generate music-generation route is RETIRED "
+             "(WW-30) and must NOT be dispatched. Send the createTask envelope: "
+             "POST /api/v1/jobs/createTask with a top-level 'model' of "
+             "ai-music-api/generate, a TOP-LEVEL camelCase 'callBackUrl' and a "
+             "nested snake_case 'input' (custom_mode, instrumental, model, title, "
+             "lyrics, style, negative_tags, duration). There is no legacy fallback.")
+        return
+
     if "createTask" in endpoint:
         return _validate_ai_music_envelope(p)
 
@@ -895,18 +909,37 @@ def self_test():
         _expect_exit(write("el-ok.json", e1), "tts", 0)
         _expect_exit(write("el-err.json", e2), "tts", 2)
 
-        # Suno V4 custom 3000 OK / 3001 exit 2
+        # WW-30: the LEGACY /api/v1/generate music-generation route is RETIRED
+        # and must NOT be dispatchable. The old "V4 custom 3000 OK" fixture is
+        # therefore a HARD violation now -- that IS the assertion.
         s1 = {"endpoint": "/api/v1/generate", "model": "V4", "customMode": True,
               "instrumental": False, "prompt": "x" * 3000, "title": "t",
               "callBackUrl": "https://x/cb"}
         s2 = dict(s1); s2["prompt"] = "x" * 3001
-        _expect_exit(write("suno-ok.json", s1), "music", 0)
-        _expect_exit(write("suno-err.json", s2), "music", 2)
+        _expect_exit(write("suno-ok.json", s1), "music", 2)      # RETIRED route
+        _expect_exit(write("suno-err.json", s2), "music", 2)     # RETIRED route
 
-        # V5_5 duration 8 -> warning ignored (rc 0)
-        s3 = {"endpoint": "/api/v1/generate", "model": "V5_5", "customMode": True,
-              "instrumental": False, "prompt": "p", "duration": 8,
-              "callBackUrl": "https://x/cb"}
+        # The CURRENT contract: a complete createTask envelope is valid, and
+        # its own caps are measured inside the envelope.
+        env_ok = {"endpoint": "/api/v1/jobs/createTask",
+                  "model": "ai-music-api/generate",
+                  "callBackUrl": "https://x/cb",
+                  "input": {"custom_mode": True, "instrumental": False,
+                            "model": "V6", "title": "t", "style": "s" * 950,
+                            "lyrics": "y" * 5000, "duration": 58,
+                            "negative_tags": "choir, reverb, echo"}}
+        _expect_exit(write("suno-envelope-ok.json", env_ok), "music", 0)
+        env_lyr = json.loads(json.dumps(env_ok))
+        env_lyr["input"]["lyrics"] = "y" * 5001
+        _expect_exit(write("suno-envelope-lyr.json", env_lyr), "music", 2)
+
+        # duration 8 -> warning ignored (rc 0), measured on the ENVELOPE route
+        s3 = {"endpoint": "/api/v1/jobs/createTask",
+              "model": "ai-music-api/generate", "callBackUrl": "https://x/cb",
+              "input": {"custom_mode": True, "instrumental": False,
+                        "model": "V6", "title": "t", "style": "s" * 950,
+                        "lyrics": "p", "duration": 8,
+                        "negative_tags": "choir, reverb, echo"}}
         _expect_exit(write("suno-dur8.json", s3), "music", 0)
 
         # Sounds 500 OK / 501 exit 2
@@ -948,11 +981,13 @@ def self_test():
                         "lyrics": "verbatim lyrics are exempt from the floor"},
               "callBackUrl": "https://x/cb"}
         _expect_exit(write("cur-gen-ok.json", cg), "music", 0)
-        # Legacy version on the legacy route: accepted with a Discontinued warning, rc 0
+        # WW-30: the legacy ROUTE itself is retired, so a legacy model on it is
+        # a hard violation (it used to be a Discontinued warning at rc 0).
         cg_leg = {"endpoint": "/api/v1/generate", "model": "V4_5", "customMode": True,
                   "instrumental": False, "prompt": "lyrics are verbatim and exempt from the floor",
                   "style": "x" * 950, "title": "t", "callBackUrl": "https://x/cb"}
-        _expect_exit(write("legacy-v45-ok.json", cg_leg), "music", 0, expect_out="Discontinued")
+        _expect_exit(write("legacy-v45-retired.json", cg_leg), "music", 2,
+                     expect_out="RETIRED")
         # Legacy version inside the current envelope: same warning, rc 0
         cg_leg2 = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/generate",
                    "input": {"custom_mode": True, "instrumental": False, "model": "V5_5",
@@ -1054,22 +1089,30 @@ def self_test():
         _expect_exit(write("addvoc-ok.json", av3), "music", 0)
 
         # Rule 12 for DESCRIPTIVE music fields: Suno V5 custom style max 1000 -> floor 800, ceiling 1000.
+        # WW-30: the band is measured on the CURRENT route (the legacy route
+        # is retired); the V6 style cap is the same 1000, so the percentages
+        # below are unchanged.
         def style_req(n):
-            return {"endpoint": "/api/v1/generate", "model": "V5", "customMode": True, "instrumental": False,
-                    "prompt": "lyrics are verbatim and exempt from the floor", "style": "x" * n,
-                    "title": "t", "callBackUrl": "https://x/cb"}
+            return {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/generate",
+                    "callBackUrl": "https://x/cb",
+                    "input": {"custom_mode": True, "instrumental": False, "model": "V6",
+                              "lyrics": "lyrics are verbatim and exempt from the floor",
+                              "style": "x" * n, "title": "t", "duration": 30,
+                              "negative_tags": "choir, reverb, echo"}}
         _expect_exit(write("style-79.json", style_req(790)), "music", 2)    # 79 percent rejected
         _expect_exit(write("style-80.json", style_req(800)), "music", 0)    # 80 percent floor passes (target warning)
         _expect_exit(write("style-95.json", style_req(950)), "music", 0)    # 95 percent passes
         _expect_exit(write("style-100.json", style_req(1000)), "music", 0)  # 100 percent passes
         _expect_exit(write("style-101.json", style_req(1001)), "music", 2)  # 101 percent rejected
         # non-custom song description: limit UNDETERMINED (500 vs 3000), so no floor and the ceiling is 500
-        nc = {"endpoint": "/api/v1/generate", "model": "V5", "customMode": False, "instrumental": False,
-              "prompt": "x" * 20, "callBackUrl": "https://x/cb"}
+        nc = {"endpoint": "/api/v1/jobs/createTask", "model": "ai-music-api/generate",
+              "callBackUrl": "https://x/cb",
+              "input": {"custom_mode": False, "instrumental": False, "model": "V6",
+                        "prompt": "x" * 20, "title": "t", "duration": 30}}
         _expect_exit(write("noncustom-short.json", nc), "music", 0)      # no floor on an unknown limit
-        nc2 = dict(nc); nc2["prompt"] = "x" * 500
+        nc2 = json.loads(json.dumps(nc)); nc2["input"]["prompt"] = "x" * 500
         _expect_exit(write("noncustom-500.json", nc2), "music", 0)       # a 500-char description must pass
-        nc3 = dict(nc); nc3["prompt"] = "x" * 501
+        nc3 = json.loads(json.dumps(nc)); nc3["input"]["prompt"] = "x" * 501
         _expect_exit(write("noncustom-501.json", nc3), "music", 2)       # over the smallest documented value
         # sounds prompt (max 500): 79 percent rejected, 95 percent passes
         so3 = {"endpoint": "/api/v1/generate/sounds", "model": "V5", "prompt": "x" * 395, "soundTempo": 120}

@@ -92,7 +92,7 @@ def _run(rec, calls):
 def test_yes_pauses_before_any_music_submit_and_sends_script():
     run = tempfile.mkdtemp()
     req, _ = _req_and_plan()
-    msgs = SA.request_approval(run, TITLE, STORY, SHEET, req["lyrics"])
+    msgs = SA.request_approval(run, TITLE, STORY, SHEET, req["input"]["lyrics"])
     assert msgs and "THE SONG LYRICS" in "\n".join(msgs)
     rec = SA.record_for(run)
     assert rec["required"] and rec["status"] == "pending"
@@ -106,7 +106,7 @@ def test_yes_pauses_before_any_music_submit_and_sends_script():
     assert calls == []                                          # the music submit mock was never called
     # missing record on a run that required it is the caller's pending record: a record
     # that is required but empty of approval fails closed too
-    assert SA.check_script_approval({"required": True}, req["lyrics"])
+    assert SA.check_script_approval({"required": True}, req["input"]["lyrics"])
 
 
 def test_dispatch_path_refuses_pending_and_allows_approved_and_unasked():

@@ -39,7 +39,13 @@ from sung_hook import hook_placement
 TOOL_NAME = "music_director"
 TOOL_VERSION = "1.0.0"
 
-CREATE_TASK_ENDPOINT = "/api/v1/jobs/createTask"
+#: WW-30: the createTask route, endpoint and outer model come from ONE named
+#: place (suno_recipe), never a second copy here. The legacy
+#: /api/v1/generate music path is retired with no fallback.
+CREATE_TASK_ENDPOINT = suno_recipe.KIE_MUSIC_TASK_ENDPOINT
+MUSIC_TASK_MODEL = suno_recipe.KIE_MUSIC_TASK_MODEL
+MUSIC_MODEL_VALUE = suno_recipe.KIE_MUSIC_MODEL_VALUE
+MUSIC_MODEL_VALUE_STATUS = suno_recipe.KIE_MUSIC_MODEL_VALUE_STATUS
 GENERATE_CATALOG_ID = "suno-generate"
 EXTEND_CATALOG_ID = "suno-extend"
 PERSONA_OP = "generate-persona"
@@ -197,21 +203,33 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     if pace_note:
         style_text = "%s %s" % (str(style_text).rstrip(), pace_note)
     ver = _checked_version(version)
+    # WW-30: the outer model is the createTask ROUTE, never a version; the
+    # version rides input.model. negative_tags is a REQUIRED direction of the
+    # envelope, so it is always present (empty only when no style is known --
+    # the recipe's own negative_tags() is the single source when there is one).
     req = {"endpoint": CREATE_TASK_ENDPOINT,
-           "model": route_model(GENERATE_CATALOG_ID),
+           "model": MUSIC_TASK_MODEL,
            "callBackUrl": callback_url,
            "input": {"custom_mode": True, "instrumental": bool(instrumental),
                      "model": ver, "style": style_text, "title": title,
-                     "lyrics": lyrics_text}}
+                     "lyrics": lyrics_text,
+                     "negative_tags": (suno_recipe.negative_tags(style_id)
+                                       if style_id else "")}}
     if vocal_gender is not None:
         req["input"]["vocal_gender"] = vocal_gender
-    if duration is not None:
-        req["input"]["duration"] = duration
-    elif fit is not None:
-        # The DELIVERED length (card - END_EARLY_S tail; ``length_s`` here),
-        # which song_dispatch.run_takes requires ("whole tracks only"). The
-        # words-fit check above stays on planned vocal time.
-        req["input"]["duration"] = length_s
+    # ponytail: ''duration'' is always PRESENT (a required direction), from the
+    # caller''s value, else the delivered length. It is null only on the
+    # pre-length seams (style_id=None fixtures that never reach a dispatch);
+    # song_dispatch.run_takes still refuses a null/short duration on any real
+    # generation. Upgrade path: require a number here once every caller knows
+    # its delivered length.
+    req["input"]["duration"] = duration if duration is not None else length_s
+    # WW-30: the FINAL envelope is checked against the ONE contract (outer
+    # model, top-level callBackUrl, nested input, exactly one lyrics source)
+    # before its caps are measured; the retired flat payload is refused here.
+    envelope_errs = suno_recipe.check_envelope(req)
+    if envelope_errs:
+        raise ValueError("; ".join(envelope_errs))
     # FU-U6 (plan E.2): the FINAL payload, measured after every mutation
     # (with_clean_ending appends the ending to the style ABOVE). Over a cap,
     # prompt_limits raises PROMPT_OVER_CAP naming field, chars, cap, source and

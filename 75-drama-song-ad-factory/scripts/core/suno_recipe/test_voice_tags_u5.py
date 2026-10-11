@@ -311,17 +311,20 @@ def test_f_all_suno_is_unchanged():
         check("(f) build_request still builds a clean sheet", False,
               "%s: %s" % (type(exc).__name__, exc))
         return
+    # WW-30: the directions live in the createTask envelope's nested input --
+    # every check below reads THAT, the shape production actually emits.
+    inp = req["input"]
     check("(f) exactly ONE vocal_gender on the request",
-          req.get("vocal_gender") == "f", repr(req.get("vocal_gender")))
+          inp.get("vocal_gender") == "f", repr(inp.get("vocal_gender")))
     check("(f) the KIE params are untouched",
-          all(req.get(k) == v for k, v in R.kie_params().items()),
-          repr({k: req.get(k) for k in R.kie_params()}))
+          all(inp.get(k) == v for k, v in R.kie_params().items()),
+          repr({k: inp.get(k) for k in R.kie_params()}))
     check("(f) no per-character voice map was added",
-          not [k for k in req if "voice" in k and k != "vocal_gender"], repr(sorted(req)))
+          not [k for k in inp if "voice" in k and k != "vocal_gender"], repr(sorted(inp)))
     check("(f) the request shape is exactly the KIE fields plus the song",
-          sorted(req) == sorted(list(R.kie_params()) + [
+          sorted(inp) == sorted(list(R.kie_params()) + [
               "duration", "vocal_gender", "title", "style", "lyrics",
-              "negative_tags"]), repr(sorted(req)))
+              "negative_tags"]), repr(sorted(inp)))
 
 def main():
     test_a_parse_voice_tags_reads_the_gender_word()

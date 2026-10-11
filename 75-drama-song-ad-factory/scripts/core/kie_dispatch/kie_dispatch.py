@@ -63,6 +63,12 @@ import load_governor as _LG  # noqa: E402  (core/ is on sys.path just above)
 
 import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
 import kie_dispatch.model_lock as ML  # noqa: E402  (F14 video-model lock)
+# WW-30: the ONE music contract (createTask envelope + retired legacy route)
+# lives in suno_recipe; imported, never copied.
+try:  # pragma: no cover - the guard below is what matters
+    import suno_recipe as _R  # noqa: E402
+except Exception:  # noqa: BLE001 - without it the music guard fails closed
+    _R = None
 
 #: FU-U7 final-payload prompt caps (plan E.1). Soft import like the F15 seam
 #: below: when the module is missing, a video or avatar job is refused
@@ -206,6 +212,121 @@ except ImportError:  # pragma: no cover - flat script path
     from audio_c3 import soundtrack as _SND  # type: ignore # noqa: E402
 
 PARTIAL_SUNO_JOB = "PARTIAL_SUNO_JOB"
+LEGACY_MUSIC_ROUTE = "LEGACY_MUSIC_ROUTE"
+MUSIC_ENVELOPE_REJECTED = "MUSIC_ENVELOPE_REJECTED"
+
+def music_contract_refusal(model, request):
+    """WW-30: [] when a music job may go, else the refusal text.
+
+    Two rules, both fail-closed and both BEFORE the ledger:
+
+    1. the legacy flat ``/api/v1/generate`` music-GENERATION route is RETIRED
+       -- it is refused by name and there is no fallback to it (a classic
+       ``/api/v1/generate/<op>`` route such as ``/generate/sounds`` or
+       ``/generate/extend`` is a DIFFERENT route and is untouched);
+    2. a job on the createTask music route must carry the ONE approved
+       envelope: outer model ``ai-music-api/generate``, a TOP-LEVEL camelCase
+       ``callBackUrl``, a nested snake_case ``input``, exactly one lyrics
+       source at ``input.lyrics`` and every required direction present.
+       ``suno_recipe.check_envelope`` is that gate; the reasons come back
+       verbatim so the refusal names its cause.
+    """
+    req = request if isinstance(request, dict) else {}
+    endpoint = str(req.get("endpoint") or "").strip().rstrip("/")
+    m = str(model or "").strip()
+    if _R is not None and (endpoint == _R.KIE_LEGACY_GENERATE_ENDPOINT
+                           or m == _R.KIE_LEGACY_GENERATE_ENDPOINT):
+        return (LEGACY_MUSIC_ROUTE,
+                "the legacy %s music-generation route is RETIRED: send the "
+                "createTask envelope (endpoint %s on the KIE host, outer "
+                "model %r, top-level callBackUrl, nested snake_case input). "
+                "There is no legacy fallback and no silent switch-back."
+                % (_R.KIE_LEGACY_GENERATE_ENDPOINT,
+                   _R.KIE_MUSIC_TASK_ENDPOINT, _R.KIE_MUSIC_TASK_MODEL))
+    if _R is None:
+        if m == "ai-music-api/generate":
+            return (MUSIC_ENVELOPE_REJECTED,
+                    "the music contract module (suno_recipe) is not importable, "
+                    "so the createTask envelope cannot be checked; nothing was "
+                    "sent")
+        return None
+    if m == _R.KIE_MUSIC_TASK_MODEL:
+        errs = _R.check_envelope(req)
+        if errs:
+            return (MUSIC_ENVELOPE_REJECTED, "; ".join(errs))
+    return None
+
+#: The KIE result shape the revised research DOES document:
+#:   GET <KIE host>/api/v1/jobs/recordInfo?taskId=<taskId>
+#:   -> data.response.data[] with audio_url per returned track.
+#: The result READ path and the submit path as PATHS. Deliberately no host
+#: here: this module names no URL at all (its own static test proves it, and
+#: Skill 74 is the only transport). The absolute URL is composed at the
+#: transport boundary, never inside the dispatcher.
+RECORD_INFO_ENDPOINT = "/api/v1/jobs/recordInfo"
+#: Plausible places a task id can sit in a submit acknowledgement. The INITIAL
+#: task-ID ACKNOWLEDGEMENT NESTING IS **UNVERIFIED** -- no live call was made,
+#: so nothing here is guessed as THE shape: the reader below TOLERATES all of
+#: these and reports which one it found. What IS established: the recordInfo
+#: READ path above and audio_url on each returned track. What is NOT
+#: established: whether the submit ack nests the id at data.taskId,
+#: data.task_id, data.data.taskId or data.data.task_id.
+ACK_TASK_ID_PATHS = (
+    ("data", "taskId"), ("data", "task_id"), ("data", "data", "taskId"),
+    ("data", "data", "task_id"), ("taskId",), ("task_id",),
+    ("data", "taskInfo", "taskId"), ("data", "taskInfo", "task_id"),
+)
+
+def task_id_from_acknowledgement(ack):
+    """(task_id, path) from a submit acknowledgement, tolerating more than one
+    plausible nesting. (\"\", \"\") when none of the tolerated paths carries one.
+
+    The ack nesting is UNVERIFIED (see ``ACK_TASK_ID_PATHS``): this reader
+    never asserts a single shape, it searches the tolerated set and returns
+    the path it actually used, so the receipt says what was found rather than
+    what was assumed.
+    """
+    if not isinstance(ack, dict):
+        return "", ""
+    for path in ACK_TASK_ID_PATHS:
+        node = ack
+        for key in path:
+            if not isinstance(node, dict) or key not in node:
+                break
+            node = node[key]
+        else:
+            if isinstance(node, str) and node.strip():
+                return node.strip(), ".".join(path)
+    return "", ""
+
+def audio_urls_from_result(result):
+    """[(audio_url, title)] from a recordInfo-shaped result, defensively.
+
+    The documented shape is ``data.response.data[]`` with ``audio_url`` per
+    returned track; the variants below are tolerated so a multiple-track
+    answer is never silently truncated to one. An unrecognised shape returns
+    [] -- an empty read is "not established", never "no tracks".
+    """
+    if not isinstance(result, dict):
+        return []
+    data = result.get("data") if isinstance(result.get("data"), dict) else result
+    node = data
+    for key in ("response", "data"):
+        if isinstance(node.get(key), dict):
+            node = node[key]
+    rows = node.get("data") if isinstance(node, dict) else None
+    if not isinstance(rows, list):
+        rows = node if isinstance(node, list) else []
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in ("audio_url", "audioUrl", "url"):
+            v = row.get(key)
+            if isinstance(v, str) and v.strip():
+                out.append((v.strip(), str(row.get("title") or "")))
+                break
+    return out
 
 def suno_job_refusal(request):
     """F2 intake seam: [] when a Suno job may go, else the refusal reasons.
@@ -1068,6 +1189,24 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         attempt_id=attempt_id,
                         evidence=cap_refusal["evidence"])
 
+    # ---- 0. WW-30 music contract (retired legacy route / envelope) --------
+    # Before ANY other gate, ledger row or paid call: a music job rides the
+    # createTask envelope only. The legacy /api/v1/generate generation route
+    # is refused by name, and a malformed envelope is refused with the named
+    # reason from suno_recipe.check_envelope. Nothing reserved, nothing sent.
+    music_refusal = music_contract_refusal(model, request)
+    if music_refusal is not None:
+        code, detail = music_refusal
+        return envelope(
+            "dispatch", "rejected", code,
+            detail + " Nothing was reserved and nothing was sent.",
+            run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+            evidence={"generated": False, "gate": "WW-30-music-contract",
+                      "retired_endpoint": (_R.KIE_LEGACY_GENERATE_ENDPOINT
+                                           if _R is not None else None),
+                      "required_endpoint": (_R.KIE_MUSIC_TASK_ENDPOINT
+                                            if _R is not None else None)})
+
     # ---- 0. F14 model lock (before any ledger row) ------------------------
     # Scope: VIDEO jobs only. A video model must be on price-menu.md
     # (seedance-1.5-pro included) and must equal the card-locked choice.
@@ -1404,6 +1543,12 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                  "disposition": "not-submitted", "job": logical_key},
                 final="failed", cost=0)
         task_id = s.get("task_id") or ""
+        # WW-30: the submit acknowledgement nesting is UNVERIFIED, so when the
+        # adapter reports no top-level task_id, look through the tolerated
+        # nestings rather than declaring the job id-less. The path used is
+        # recorded in the receipt so the shape is evidence, not assumption.
+        if not task_id:
+            task_id = task_id_from_acknowledgement(s)[0]
         s_err = s.get("error") if isinstance(s.get("error"), dict) else {}
 
         if s_state == RUN_SKIPPED:
