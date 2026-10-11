@@ -1,3 +1,5 @@
+## [v27.1.6]  -  2026-10-11  -  Fix skill 36-ghl-mcp-setup QC: skip-gate sentinel + orphan-end repair, GHL MCP wire.sh master-file copies, QC env-store fallback
+
 ## [v27.1.5]  -  2026-10-11  -  repo-fix: skill 30 fish-audio QC reads credential env stores (per-var oc_fill_from_env_stores)
 
 ## [v27.1.4]  -  2026-10-11  -  repo-fix: daily-briefings canonical slug alias (guard 63/63 + dispatch bridge)
