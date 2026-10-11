@@ -6,6 +6,61 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.27 - 2026-10-11 - WF1848F-U1: four acceptance holes in the timed rap review and the rap plan
+
+Four holes verified by reading the source at the head this was built from
+(v2.9.26) and fixed in the product. Every threshold named here is the one the
+brief names; the only value that is NOT measured is called out. No test
+assertion was weakened, skipped, deleted or re-run to green.
+
+- **A planned voice map was counted as measured voice.** `rap_check._voice_intervals`
+  documents "the measured VOICE as [start, end) intervals (source == measured)"
+  but its body checked neither `source` nor `delivery`, so ANY segment -- a
+  planned one, or one whose delivery is `none` -- was intersected with the
+  review as if the detector had produced it, and a review could PASS on
+  evidence the detector never produced. It now keeps a segment only when
+  `source == "measured"` AND `delivery` is not `None`/`"none"`. With no measured
+  voice there is nothing to intersect the review with, so `judge_rap_delivery`
+  reports UNMEASURED (the fail-closed state `qc_gate.VERDICTS` calls UNAVAILABLE;
+  both block PASS) instead of a PASS or a bare FAIL.
+- **The audio and maker bindings were optional.** `rap_check.validate_review`
+  checked the audio `sha256`, the reviewer and the session only when the CALLER
+  passed them, so a caller that passed nothing earned `RAP_REVIEW_BOUND` for a
+  review bound to ANY audio at all, and `maker` was optional, so a record that
+  named no maker skipped the self-approval refusal entirely. The take's real
+  hash is now REQUIRED (`RAP_REVIEW_UNBOUND` when it is missing), and a record
+  that records no maker is refused with `RAP_REVIEW_UNBOUND` carrying the reason
+  "no maker recorded". A maker self-review is still refused by name
+  (`RAP_REVIEW_MAKER_SELF`).
+- **Spoken seconds and rap seconds did not add up.** `length_formula.plan`
+  computed `spoken_cap_words` from `rap_floor_s(D)` (8.8 s at D 88) and then
+  raised `rap_s` to `rap_verse_budget_s(D)` (16.0 s) without re-capping the
+  spoken words: `plan(90, 'rnb-flow')` spent 26.7143 s of a 19.8 s spoken
+  allowance. The cap now reserves `max(rap_floor_s(D), rap_verse_budget_s(D))`
+  BEFORE the spoken words are capped, `rap_s` is held to that same reservation,
+  and the plan REPORTS `rap_s` floored to one decimal (16.4571 used to be
+  reported as 16.5 and read 0.0429 s over the allowance). Where the reservation
+  is larger than the style's whole spoken allowance the ordered style cannot fit
+  and `assert_rap_floor` REFUSES the plan rather than emit seconds that do not
+  add up: at D 60 the 16.0 s two-verse reservation is asked of a 13.5 s
+  allowance, so `plan(62, 'rnb-flow')` raises `RapFloorError` instead of
+  claiming 16.0 s of rap inside 13.5 s. At D 88 the plan now emits rap_s 16.2 /
+  41 rap words and 62.0579 lexical seconds against the 61.6 owed (v2.9.26
+  emitted 16.0 / 40 / 61.9211, which was over budget).
+- **Two verse labels could cover the same physical seconds.** One record could
+  PASS on the SAME 16-second window labelled as both verse 1 and verse 2, so
+  each verse cleared the per-verse floor off the same seconds. Two distinct
+  verse labels whose own physical seconds overlap by MORE than
+  `rap_check.VERSE_OVERLAP_MAX_S` now fail with `RAP_REVIEW_VERSE_OVERLAP`, and
+  each second is counted once across verses on the one physical timeline.
+  **`VERSE_OVERLAP_MAX_S = 0.5` is a PROPOSED value** named by the diagnosing
+  lane, NOT a measured limit.
+- New tests: `scripts/core/music_qc/test_ww1848f_rap_accept.py` (six checks, one
+  per hole plus the named overlapping-verse regression record). Each was run
+  against the UNPATCHED code first and wrongly passed there.
+
+---
+
 ## v2.9.26 - 2026-10-11 - WW-01 / WW-06: the per-verse rap floor, the lexical-completeness assertion and the timed listening review that can ACCEPT
 
 Two fixes from the verified recurrence-prevention specification (`WW-PREVENT-RECURRENCE-SPEC.md`,

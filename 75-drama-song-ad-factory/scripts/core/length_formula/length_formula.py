@@ -613,11 +613,21 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True):
             # RAP_VERSE_MIN_S, so the budget is max(total floor, 16.0 s) at
             # D = 88 -- strictly stronger than the total floor, never a
             # replacement for it.
-            spoken_cap_words = int(max(wb["spoken_s"] - rap_floor_s(D), 0.0) * SPOKEN_WPS)
+            # WF1848F-U1 fix 3: the cap must reserve the SAME seconds rap_s is
+            # held to below. It reserved only rap_floor_s(D) (8.8 s at D 88)
+            # while rap_s was then raised to rap_verse_budget_s(D) (16.0 s), so
+            # spoken + rap spent 26.7143 s of a 19.8 s spoken allowance and the
+            # words did not add up. A reservation can also never exceed the
+            # style's whole spoken allowance: where it does (D 60: 16.0 s asked
+            # of 13.5 s) the ordered style cannot fit, and assert_rap_floor below
+            # REFUSES the plan rather than emit seconds that do not add up.
+            reserve_s = min(max(rap_floor_s(D), rap_verse_budget_s(D)),
+                            wb["spoken_s"])
+            spoken_cap_words = int(max(wb["spoken_s"] - reserve_s, 0.0) * SPOKEN_WPS)
             spoken_words = min(spoken_words, spoken_cap_words)
         rap_s = max(wb["spoken_s"] - spoken_words / SPOKEN_WPS, 0.0)
         if rap_floor:
-            rap_s = max(rap_s, rap_verse_budget_s(D))
+            rap_s = max(rap_s, reserve_s)
             # ceil(rap_s * rate), and never below the per-verse word floor the
             # gate reads -- the caps above are computed in floats, so this pins
             # the invariant.
@@ -674,7 +684,11 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True):
         # its own rap verdict, so a rap style that planned zero rap words is
         # visible ON THE PLAN, before any spend.
         out["style_id"] = style_id
-        out["rap_s"] = round(rap_s, 1)
+        # WF1848F-U1 fix 3: the plan REPORTS rap_s to one decimal and must never
+        # report MORE seconds than it reserved. round() took 16.4571 UP to 16.5
+        # and the spoken + rap total then read 0.0429 s over the spoken
+        # allowance. Floor to the tenth so the reported plan always adds up.
+        out["rap_s"] = math.floor(rap_s * 10 + 1e-9) / 10.0
         if rap_floor:
             out["rap_floor_s"] = round(rap_floor_s(D), 3)
             out["rap_verse_floor"] = rap_verse_floor_for(style_id)

@@ -65,6 +65,11 @@ REVIEW_SCHEMA = "blackceo.rap-timed-review/v1"
 REVIEW_LABELS = ("rap", "sung", "spoken_over_beat")
 #: Every field the record must be bound to: audio, reviewer, session, time.
 BINDING_FIELDS = ("audio_sha256", "reviewer", "session", "timestamp")
+#: WF1848F-U1 fix 4: two verse labels may never cover the same physical seconds.
+#: An overlap ABOVE this many seconds fails the record; anything at or under it
+#: is inside the tolerance. PROPOSED by the WF1848F-U1 diagnosing lane, NOT a
+#: measured limit -- state it as proposed wherever this number is reported.
+VERSE_OVERLAP_MAX_S = 0.5
 
 RAP_VERSE_MIN_S = getattr(_LF, "RAP_VERSE_MIN_S", 8.0)
 MIN_RAP_VERSES = getattr(_LF, "MIN_RAP_VERSES", 2)
@@ -176,21 +181,46 @@ def validate_review(record, audio_sha256=None, reviewer=None, maker=None, sessio
     """The binding check for one review. Never raises on a bad record: returns
     {"ok": bool, "reason_code", "detail"} and REFUSES the record.
 
-    Reason codes: RAP_REVIEW_UNBOUND (a binding field is missing/empty),
+    Reason codes: RAP_REVIEW_UNBOUND (a binding field is missing/empty, the
+    take's own ``audio_sha256`` was not supplied, or the record names no maker),
     RAP_REVIEW_BINDING_MISMATCH (the record names another audio / reviewer /
     session), RAP_REVIEW_MAKER_SELF (the reviewer is the maker),
+    RAP_REVIEW_VERSE_OVERLAP (two verse labels cover the same physical seconds),
     RAP_REVIEW_WINDOW_INVALID (an unbounded, reversed or out-of-range window, or
     a label that is not rap / sung / spoken_over_beat).
+
+    WF1848F-U1 fix 2: the audio, the reviewer and the session bindings were
+    checked only when the CALLER passed them, so a caller that passed nothing
+    earned RAP_REVIEW_BOUND for a review bound to ANY audio at all; ``maker``
+    was optional, so a record with no maker skipped the self-approval refusal
+    entirely. Both holes close here: the take's real hash is REQUIRED and a
+    record with no maker is refused by name.
     """
     if not isinstance(record, dict):
         return _bad("RAP_REVIEW_UNBOUND", "no review record was supplied")
     if record.get("schema") != REVIEW_SCHEMA:
         return _bad("RAP_REVIEW_UNBOUND",
                     "review schema %r is not %r" % (record.get("schema"), REVIEW_SCHEMA))
+    # WF1848F-U1 fix 4: two verse labels may never cover the same physical
+    # seconds. The overlap is a defect in the record's OWN content and does not
+    # depend on the take, so it is named first and refused by that reason.
+    overlaps = _verse_overlaps(record.get("windows"))
+    if overlaps:
+        av, bv, ov = overlaps[0]
+        return _bad("RAP_REVIEW_VERSE_OVERLAP",
+                    "verse %d and verse %d cover the same physical seconds "
+                    "(%.4f s of overlap; the proposed limit is %.1f s)"
+                    % (av, bv, ov, VERSE_OVERLAP_MAX_S))
     for f in BINDING_FIELDS:
         if not str(record.get(f) or "").strip():
             return _bad("RAP_REVIEW_UNBOUND", "the review records no %s" % f)
-    if audio_sha256 is not None and str(record.get("audio_sha256")) != str(audio_sha256):
+    # WF1848F-U1 fix 2: the take's real hash is required, never optional.
+    if not str(audio_sha256 or "").strip():
+        return _bad("RAP_REVIEW_UNBOUND",
+                    "no audio sha256 was supplied for the take: the review must "
+                    "be bound to the delivered file's real hash, never to any "
+                    "audio at all")
+    if str(record.get("audio_sha256")) != str(audio_sha256):
         return _bad("RAP_REVIEW_BINDING_MISMATCH",
                     "the review is bound to audio %s, the take is %s"
                     % (record.get("audio_sha256"), audio_sha256))
@@ -202,11 +232,17 @@ def validate_review(record, audio_sha256=None, reviewer=None, maker=None, sessio
         return _bad("RAP_REVIEW_BINDING_MISMATCH",
                     "the review names session %r, the take expects %r"
                     % (record.get("session"), session))
+    # WF1848F-U1 fix 2: a record that names NO maker cannot rule a self-review
+    # out, so it is refused rather than waved through.
+    if not str(record.get("maker") or "").strip():
+        return _bad("RAP_REVIEW_UNBOUND",
+                    "no maker recorded: a self-review cannot be ruled out "
+                    "without one, so the review is refused")
     # maker self-approval is refused BY NAME
     maker_id = str(record.get("maker") or "").strip()
     if maker is not None and str(maker).strip():
         maker_id = str(maker).strip()
-    if maker_id and maker_id == str(record.get("reviewer")).strip():
+    if maker_id == str(record.get("reviewer")).strip():
         return _bad("RAP_REVIEW_MAKER_SELF",
                     "reviewer %r is the maker: a maker's own verdict is refused"
                     % (record.get("reviewer"),))
@@ -257,11 +293,60 @@ def _union(intervals):
     return total
 
 
+def _overlap_s(a_ivs, b_ivs):
+    """Seconds two interval lists share on ONE physical timeline (each second
+    counted once, even where a list overlaps itself)."""
+    pieces = []
+    for a_s, a_e in a_ivs:
+        for b_s, b_e in b_ivs:
+            lo, hi = max(a_s, b_s), min(a_e, b_e)
+            if hi > lo:
+                pieces.append((lo, hi))
+    return _union(pieces)
+
+
+def _verse_overlaps(windows):
+    """[(verse_a, verse_b, overlap_s), ...] for every pair of DISTINCT verse
+    labels whose own physical seconds overlap by MORE than VERSE_OVERLAP_MAX_S.
+
+    WF1848F-U1 fix 4. Each verse's seconds are its own union, so the comparison
+    is on the physical timeline, not window by window, and the same 16-second
+    window labelled as both verse 1 and verse 2 is caught. PROPOSED threshold
+    (VERSE_OVERLAP_MAX_S), not a measured limit."""
+    by_verse = {}
+    for w in (windows or []):
+        if not isinstance(w, dict) or w.get("verse") is None:
+            continue
+        try:
+            a, b = _num(w.get("start_s"), "start_s"), _num(w.get("end_s"), "end_s")
+        except RapReviewError:
+            continue
+        if b > a:
+            by_verse.setdefault(int(w["verse"]), []).append((a, b))
+    out = []
+    keys = sorted(by_verse)
+    for i, va in enumerate(keys):
+        for vb in keys[i + 1:]:
+            ov = _overlap_s(by_verse[va], by_verse[vb])
+            if ov > VERSE_OVERLAP_MAX_S + 1e-9:
+                out.append((va, vb, round(ov, 4)))
+    return out
+
+
 def _voice_intervals(voice_segments, duration_s):
-    """The measured VOICE as [start, end) intervals (source == "measured")."""
+    """The measured VOICE as [start, end) intervals (source == "measured").
+
+    WF1848F-U1 fix 1: a segment counts as MEASURED voice only when its
+    ``source`` SAYS measured and its ``delivery`` is a real delivery. Before
+    this the body took every segment, so a PLANNED list -- or one whose
+    delivery is ``none`` -- was counted as detector-measured voice and a
+    review could earn a PASS on evidence the detector never produced.
+    """
     out = []
     for s in (voice_segments or []):
         if not isinstance(s, dict):
+            continue
+        if s.get("source") != "measured" or s.get("delivery") in (None, "none"):
             continue
         try:
             a, b = float(s.get("start")), float(s.get("end"))
@@ -298,7 +383,9 @@ def rap_union(record, audio_sha256=None, duration_s=None, reviewer=None, maker=N
     voice = _voice_intervals(voice_segments, duration_s)
     if not voice:
         return _bad("RAP_VOICE_UNMEASURED",
-                    "no detector-measured voice segments to intersect the review with")
+                    "no detector-measured voice segments to intersect the review "
+                    "with (WF1848F-U1 fix 1: a planned-only or delivery-none "
+                    "voice map is NOT measured voice)")
     rap_ivs, per_verse = [], {}
     for w in record["windows"]:
         if w["label"] != "rap":
@@ -363,6 +450,17 @@ def judge_rap_delivery(record, *, style_id=None, delivered_s=None, duration_s=No
                       reviewer=reviewer, maker=maker, session=session,
                       voice_segments=voice_segments)
     if not union["ok"]:
+        if union["reason_code"] == "RAP_VOICE_UNMEASURED":
+            # WF1848F-U1 fix 1: no MEASURED voice means there is nothing to
+            # intersect the review with -- that is the unavailable state, not a
+            # refusal of the review. rap_check's name for it is UNMEASURED
+            # (qc_gate.VERDICTS calls the same fail-closed state UNAVAILABLE);
+            # both block PASS.
+            return {"verdict": "UNMEASURED", "reason_code": union["reason_code"],
+                    "rap_seconds": None, "budget": None, "detail": union["detail"],
+                    "reason": "UNAVAILABLE: no measured voice to intersect the "
+                              "review with, so the rap read stays UNMEASURED and "
+                              "can never be PASS"}
         return {"verdict": "FAIL", "reason_code": union["reason_code"],
                 "rap_seconds": None, "budget": None, "detail": union["detail"],
                 "reason": "the review is refused and never counted (%s)" % union["reason_code"]}
