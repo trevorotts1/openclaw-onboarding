@@ -125,13 +125,18 @@ class Recipe(unittest.TestCase):
         late = sheet()
         late[0]["tag"] = "Verse"                      # spoken outside Intro/Outro
         bad = ((sheet(repeats=1), "repeated"), (sheet(hook=["Buy now and save big"]), "client's own"),
-               (sheet(vocalise=False), "vocalise"), (late, "only allowed"),
+               (late, "only allowed"),
                ([{"tag": "Hook", "delivery": "sung", "lines": HOOK}] + sheet()[1:], "may not open"))
         for b_, why in bad:
             errs = R.check_lyric_sheet(b_, CLIENT)
             self.assertTrue(any(why in e for e in errs), (why, errs))
             with self.assertRaises(R.RecipeError):
                 R.prepare("soul-ballad", b_, CLIENT)
+        # WW-29: the wordless vocalise is OPTIONAL, never a forced lead-in, so the
+        # no-vocalise sheet is legal. (This replaces the base entry that pinned the
+        # removed mandate; the sheet is still refused by prepare without its length.)
+        self.assertEqual(R.check_lyric_sheet(sheet(vocalise=False), CLIENT), [],
+                         "WW-29: the vocalise is OPTIONAL")
         self.assertEqual(R.check_lyric_sheet(sheet(), CLIENT, 58), [])   # the BSW shape passes at 58 s
         long_ = sheet()
         long_[1]["lines"] = ["la la la la la la la la"] * 30
