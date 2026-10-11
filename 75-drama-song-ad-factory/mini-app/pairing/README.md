@@ -88,8 +88,10 @@ pairing/prove/prove_qr_against_apple.mjs     the QR cross-check
 1. **A key never reaches a URL.** The presented key travels in the `x-ds-key`
    header; the admin key travels in a POST body. No builder emits a query
    string, and `keyLabel` is the only way the page may mention a key — as a
-   character count. Nothing is written to `localStorage`, `sessionStorage` or a
-   cookie.
+   character count. The files a browser loads (`admin.html` and `lib/*.js`, with
+   comments stripped) contain no `localStorage`, `sessionStorage` or
+   `document.cookie`, and that check carries its own control: a planted storage
+   use is still caught after comment-stripping.
 2. **Option 3 is refused without a well-formed approval.**
 3. **A pairing code is single use.** U2 burns the record on use; the second use
    is refused with the service's own `AF-DS-PAIR-UNKNOWN`.
@@ -106,7 +108,7 @@ node --test 75-drama-song-ad-factory/mini-app/pairing/test/pairing.test.mjs
 # Security prover: the three gates above, each with a positive control on the
 # same instrument AND a planted-defect run that must go red
 node 75-drama-song-ad-factory/mini-app/pairing/prove/prove_pairing_guardrails.mjs
-#   exit 0 = 16 checks pass, 2 = a named check failed, 3 = the prover could not run
+#   exit 0 = 17 checks pass, 2 = a named check failed, 3 = the prover could not run
 
 # The QR encoder against Apple's own CIQRCodeGenerator
 node 75-drama-song-ad-factory/mini-app/pairing/prove/prove_qr_against_apple.mjs

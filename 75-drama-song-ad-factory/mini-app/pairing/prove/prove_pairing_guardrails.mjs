@@ -270,33 +270,55 @@ function noKeyInAnyBody(secretValues) {
   return { ok: true, detail: seenBodies.length + ' response bodies captured; none echoed a key value' };
 }
 
-/** (d) the shipped sources persist nothing and never build a keyed URL. */
+/**
+ * Code with its comments taken out. A comment that SAYS "nothing is written to
+ * localStorage" is prose; a comment must not be able to satisfy this check, and
+ * it must not be able to fail it either. Only whole-line `//` comments and
+ * block comments are stripped, so a real use on a code line can never be hidden
+ * behind a `//` that happens to sit inside a URL string.
+ */
+function withoutComments(text) {
+  return text
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '');
+}
+
+/**
+ * (d) the files a browser actually loads persist nothing and never build a
+ * keyed URL. The subject is exactly what the page pulls in: admin.html and the
+ * scripts beside it in lib/. The test and the provers are not shipped, and they
+ * are allowed to name the patterns they are checking for.
+ */
 function shippedSourcesPersistNothing() {
-  const files = [];
-  const walk = (dir) => {
-    for (const name of readdirSync(dir, { withFileTypes: true })) {
-      const p = join(dir, name.name);
-      if (name.isDirectory()) walk(p);
-      else if (/\.(js|mjs|html)$/.test(name.name)) files.push(p);
-    }
-  };
-  walk(PAIRING_DIR);
+  const scanned = readdirSync(join(PAIRING_DIR, 'lib'))
+    .filter((name) => name.endsWith('.js'))
+    .map((name) => join(PAIRING_DIR, 'lib', name));
+  scanned.push(join(PAIRING_DIR, 'admin.html'));
   const banned = [
     ['localStorage', /localStorage/],
     ['sessionStorage', /sessionStorage/],
     ['document.cookie', /document\.cookie/],
     ['keyed query string', /\?(admin_key|x-ds-key|key)=/],
   ];
-  for (const file of files) {
-    if (file === fileURLToPath(import.meta.url)) continue; // this prover names the patterns
-    const text = readFileSync(file, 'utf8');
+  for (const file of scanned) {
+    const text = withoutComments(readFileSync(file, 'utf8'));
     for (const [what, re] of banned) {
       if (re.test(text)) {
         return { ok: false, detail: what + ' appears in ' + file.slice(PAIRING_DIR.length + 1) };
       }
     }
   }
-  return { ok: true, detail: files.length - 1 + ' shipped js/mjs/html files: no browser storage, no keyed query string' };
+  return { ok: true, detail: scanned.length + ' shipped js/mjs/html files (comments stripped): no browser storage, no keyed query string' };
+}
+
+/** The check above is only meaningful if it still bites. Plant a real use. */
+function plantedStorageUseIsCaught() {
+  const planted = 'const saved = localStorage.getItem("ds-admin-key");';
+  const caught = /localStorage/.test(withoutComments(planted));
+  return caught
+    ? { ok: true, detail: 'a planted localStorage use is still caught after comment-stripping' }
+    : { ok: false, detail: 'comment-stripping also removed a real storage use, so the check stopped biting' };
 }
 
 /** The alphabet this surface accepts must be the alphabet the service mints. */
@@ -351,6 +373,8 @@ try {
   check('D3-no-response-body-echoes-a-key', d3.ok, d3.detail);
   const d4 = shippedSourcesPersistNothing();
   check('D4-shipped-sources-persist-nothing', d4.ok, d4.detail);
+  const d4b = plantedStorageUseIsCaught();
+  check('D4b-control-a-planted-storage-use-is-still-caught', d4b.ok, d4b.detail);
 
   const e1 = await alphabetMatchesLiveService(live, adminClient);
   check('E1-surface-alphabet-matches-live-service', e1.ok, e1.detail);
