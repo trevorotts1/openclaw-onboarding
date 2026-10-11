@@ -1,3 +1,9 @@
+## [v27.1.4]  -  2026-10-11  -  repo-fix: daily-briefings canonical slug alias (guard 63/63 + dispatch bridge)
+
+Daily Briefings never canonicalized, so the runtime-parity guard and specialist dispatch both missed it. The board workspace slug is `daily-briefings` (plural) while the live runtime folder and the `openclaw.json` `agents.entries` key are `dept-daily-briefing-dept` (singular base + folder `-dept`). `shared-utils/canonical_slug.py`'s `ALIAS_MAP` carried no daily-briefing entry, so `canonical_dept_slug()` returned each spelling unchanged and the alias expansion bridged neither direction: `guard-department-runtime-parity.py` failed 1/63 (Daily Briefings, no_specialist_runtime) and dispatch could not resolve the department's runtime, leaving `openclaw_agent_id` NULL on its four rows.
+
+Two `ALIAS_MAP` entries now map `daily-briefings` -> `daily-briefing` and `daily-briefing-dept` -> `daily-briefing`, mirrored into the byte-identical vendored copy under `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/persona_service/resources/helpers/canonical_slug.py`; both `__main__` self-tests gain the two cases (21 PASS). Load-bearing with the SHR002 `canonical_agent_ids` guard already on main: SHR002 guard + patched `canonical_slug.py` = 63/63 exit 0 against the live operator `mission-control.db` + `openclaw.json` (measured twice, plus a simulated post-merge); the same guard without the aliases = 1/63, and the aliases without the guard = 1/63. Paired Command Center: v7.6.112 (same fix shipped there as v7.6.113).
+
 ## [v27.1.3]  -  2026-10-11  -  CC currency: skill-32 AT-PIN no longer treats a stale pin as current
 
 ## [v27.1.2]  -  2026-10-10  -  Batch KIE: settings.json rule 14 with digest env.KIE_API_KEY exception (KIE-U0 follow-up), 24-hour KIE upload retention text and widened docs-port scan test (PRs #1810, #1811)
