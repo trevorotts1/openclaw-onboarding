@@ -51,11 +51,15 @@ import suno_recipe as _R     # noqa: E402
 #: recipe helper can be called without editing the package's export list (which
 #: this unit does not own).
 _RM = getattr(_R, "suno_recipe", _R)
+#: WW-23: the song_contract MODULE itself, for a new helper the package
+#: __init__ does not re-export (same shape as _RM above).
+_SCM = getattr(_SC, "song_contract", _SC)
 import sung_hook as _SH      # noqa: E402
 from sung_hook import hook_placement as _HP   # noqa: E402
 import words_fit as _WF      # noqa: E402
 import music_qc.pace_change as _PC   # noqa: E402
 import music_qc.rap_check as _RC     # noqa: E402
+import timing_guard as _TG     # noqa: E402  WW-24: measured-only evidence provenance
 
 TOOL_NAME = "song_dispatch"
 TOOL_VERSION = "1.2.0"
@@ -85,6 +89,13 @@ GATES += ("story", "timeline")
 # versions, D5 more than one character voice. WW-21 is the aggregation and
 # EVIDENCE-BINDING stage that runs BEFORE spend: it decides only whether the
 # five results CARRIED to it may advance. It claims no audio-quality outcome.
+#
+# WW-24 (2026-10-11): the carried results are not trusted on their binding
+# alone -- each result that carries an ``evidence`` record is held to the
+# measured-only provenance boundary in ``timing_guard`` (matching export digest,
+# actual duration, detector/alignment artifacts, trusted context); a planned or
+# stretched timeline never becomes a measurement. That validates the INPUTS to
+# D1..D5, so it adds no sixth audio gate.
 #
 # PROPOSED (WW-21, 2026-10-11): _MIN_AUDIO_RESULTS is the COUNT OF THE FIVE
 # GATE NAMES THE PLAN ALREADY NAMES. It is a proposed value -- not a measured
@@ -714,6 +725,16 @@ def _accept_audio_results(results, binding, required, profile):
             reasons.append("STALE_PROFILE: %s was produced against profile revision %r; the "
                            "profile in force is %r"
                            % (name, rb.get("profile_revision"), prof_rev))
+        # WW-24: validate the PROVENANCE of the evidence this result carries.
+        # A PLANNED/stretched timeline, a digest that does not match the take
+        # being advanced, a missing actual duration, a doubled runtime, a
+        # missing detector/alignment artifact or a hand-set source="measured"
+        # label BLOCKS the result HERE -- the input validator for the five
+        # delivered-audio results, never a sixth audio gate. A result carrying
+        # no evidence record makes no measurement claim to validate.
+        ev = rec.get("evidence")
+        if ev is not None:
+            reasons.extend(_TG.measured_evidence_reasons(ev, binding=binding))
     for name in sorted(results):
         if name in want:
             continue
@@ -929,6 +950,20 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # (_pace_plan). It moves into the judge's plan and NEVER reaches KIE.
     plan = dict(plan, pace_change=request.get("_pace_plan") or plan.get("pace_change"))
     request = {k: v for k, v in request.items() if k != "_pace_plan"}
+    # WW-23: BEFORE any generation, the ordered pace change must be complete and
+    # the exact request the provider would receive must carry BOTH directions.
+    # A missing seam, a reused boundary, a final style that carries only one
+    # transition, or the internal _pace_plan metadata leaking into any
+    # provider-visible field is refused HERE -- nothing is spent. The audio
+    # check (D3) runs later, on the exports, inside judge_take.
+    if plan.get("pace_change"):
+        pace_errs = _PC.check_pace_plan(plan["pace_change"])
+        pace_errs += _SCM.check_pace_style(inp.get("style"), plan["pace_change"])
+        if _PC.pace_provider_leak(request):
+            pace_errs.append("PACE_INTERNAL_METADATA_IN_PAYLOAD: the internal "
+                             "_pace_plan judging metadata reaches a provider field")
+        if pace_errs:
+            raise DispatchError("PACE_PAYLOAD_REJECTED: %s" % "; ".join(pace_errs))
     # D2: when the run answered Yes to SONG APPROVAL the music stage runs as
     # THREE variants, and each variant is generated per variant; the three
     # variants run in PARALLEL lanes (song_choices.plan_units, providerSlots 3,

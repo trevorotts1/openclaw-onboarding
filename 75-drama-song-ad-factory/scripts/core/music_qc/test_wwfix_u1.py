@@ -616,6 +616,182 @@ def test_d1_the_two_audio_gates_are_wired_into_the_take_judge():
           "D2: an ordered gear change with no evidence never reaches PASS")
 
 
+# ---- WW-23: BOTH musical transitions ---------------------------------------
+#
+# WW-23 extends the EXISTING D3 pace gate (music_qc/pace_change) -- it is not a
+# sixth audio gate. Two approved semantic anchors (the drop and the return) and
+# TWO DISTINCT seam timestamps are mandatory BEFORE generation; the exports are
+# judged by D3 alone. Every threshold is PROPOSED (acceptance-profile.json
+# ww_wave.pace_change), never a measured limit and never a number Trevor set.
+
+#: the WW-23 module helper the song_contract package __init__ does not re-export
+_SCM = getattr(SCT, "song_contract", SCT)
+
+def _ww23_order(**over):
+    o = {"drop": "half-time drop, thin drums", "return": "turn and rise back to the groove",
+         "boundary_s": 20.0, "return_boundary_s": 60.0}
+    o.update(over)
+    return o
+
+def _ww23_request(order):
+    """The REAL assembled provider request for rnb-flow at 88 s, carrying the
+    order's pace clause in input.style and the internal _pace_plan metadata."""
+    return SC.build_requests("rnb-flow", SHEET_RNB, CLIENT, "T", 88,
+                             hook_plan=HOOK_PLAN, pace_plan=order)[0][1]
+
+def _ww23_take():
+    return {"segments": [{"delivery": "sung", "start": 0.0, "end": 30.0, "source": "measured"}],
+            "aligned_words": [], "duration_s": 88.0, "detector": "singing_detector 2",
+            "music_under_speech_ratio": 1.0, "tail_rms_dbfs": -20.0, "first_sung_s": 5.0}
+
+def test_ww23_the_exact_payload_carries_both_directions_and_no_internal_metadata():
+    """The exact SERIALIZED payload carries both approved directions, and the
+    internal _pace_plan judging metadata is not a provider instruction."""
+    if not gate(SD is not None, "WW-23 payload", "song_dispatch/song_choices absent"):
+        return
+    order = _ww23_order()
+    req = _ww23_request(order)
+    payload = json.dumps(req, sort_keys=True)
+    check(("half-time drop, thin drums" in payload and "turn and rise back to the groove" in payload),
+          "WW-23: the exact serialized payload carries BOTH pace changes")
+    check(_SCM.check_pace_style(req["input"]["style"], order) == [],
+          "WW-23: the final style carries both directions (known-good control)")
+    check(PC.pace_provider_leak(req) is True and "_pace_plan" in payload,
+          "WW-23: the internal _pace_plan IS on the raw request until run_takes strips it")
+    check(PC.pace_provider_leak({"input": {"style": "clean"}}) is False,
+          "WW-23: a clean provider payload carries no _pace_plan metadata")
+
+def test_ww23_pre_generation_gate_blocks_missing_seam_reused_boundary_and_one_direction():
+    """BEFORE generation. Removing the gate invocation in song_dispatch.run_takes
+    makes every one of these negatives stop refusing, so the wiring is real."""
+    if not gate(SD is not None and hasattr(SD, "run_takes"), "WW-23 pre-gen gate",
+                "song_dispatch.run_takes absent"):
+        return
+    plan = dict(_plan())
+
+    def _gen(calls):
+        def gen(rq):
+            calls.append(rq)
+            return [dict(_ww23_take()), dict(_ww23_take())]
+        return gen
+
+    # KNOWN-GOOD CONTROL first: a complete two-seam order reaches generation.
+    calls = []
+    order_ok = _ww23_order()
+    out = SD.run_takes(_ww23_request(order_ok), dict(plan, pace_change=order_ok),
+                       _gen(calls), lambda t: {}, lambda t, r: None,
+                       CLIENT, " ".join(HOOK), cap_cents=6)
+    check(len(calls) == 1, "WW-23: a complete two-seam order reaches generation")
+    check(calls and not PC.pace_provider_leak(calls[0]),
+          "WW-23: the request the provider receives carries NO _pace_plan metadata")
+
+    # MISSING SEAM blocks before any generation
+    calls = []
+    miss = _ww23_order(return_boundary_s=None)
+    try:
+        SD.run_takes(_ww23_request(miss), dict(plan, pace_change=miss),
+                     _gen(calls), lambda t: {}, lambda t, r: None,
+                     CLIENT, " ".join(HOOK), cap_cents=6)
+        check(False, "WW-23: a missing seam was accepted")
+    except SD.DispatchError as e:
+        check("PACE_SEAM_MISSING" in str(e) and calls == [],
+              "WW-23: a MISSING seam blocks before any generation (%s)" % (str(e)[:70],))
+
+    # REUSED BOUNDARY blocks
+    calls = []
+    reuse = _ww23_order(return_boundary_s=20.0)
+    try:
+        SD.run_takes(_ww23_request(reuse), dict(plan, pace_change=reuse),
+                     _gen(calls), lambda t: {}, lambda t, r: None,
+                     CLIENT, " ".join(HOOK), cap_cents=6)
+        check(False, "WW-23: a reused boundary was accepted")
+    except SD.DispatchError as e:
+        check("PACE_SEAM_REUSED_BOUNDARY" in str(e) and calls == [],
+              "WW-23: a REUSED boundary blocks before any generation (%s)" % (str(e)[:70],))
+
+    # ONE DIRECTION in the final style blocks (the return clause stripped)
+    calls = []
+    order_ok = _ww23_order()
+    req = _ww23_request(order_ok)
+    half = dict(req, input=dict(req["input"],
+                                style=req["input"]["style"].replace(order_ok["return"], "the outro")))
+    try:
+        SD.run_takes(half, dict(plan, pace_change=order_ok),
+                     _gen(calls), lambda t: {}, lambda t, r: None,
+                     CLIENT, " ".join(HOOK), cap_cents=6)
+        check(False, "WW-23: a one-direction final style was accepted")
+    except SD.DispatchError as e:
+        check("PACE_DIRECTION_MISSING" in str(e) and calls == [],
+              "WW-23: a final style carrying only ONE transition blocks (%s)" % (str(e)[:70],))
+
+    # check_pace_plan / pace_seams are the unit-level guards the gate calls
+    check(PC.check_pace_plan(order_ok) == [],
+          "WW-23: check_pace_plan passes a complete order")
+    check(any("PACE_SEAM_MISSING" in r for r in PC.check_pace_plan(miss)),
+          "WW-23: check_pace_plan names the missing seam")
+    check(PC.pace_seams(reuse)["reused"] is True and PC.pace_seams(order_ok)["distinct"] is True,
+          "WW-23: pace_seams reads a reused boundary vs two distinct seams")
+
+def test_ww23_return_energy_is_symmetric_and_a_24db_overshoot_blocks():
+    """PROPOSED D3: solution onset return 80-120% AND the ABSOLUTE energy
+    difference within 3 dB. A 24 dB overshoot is FAIL, not a return."""
+    before = {"onset_rate_per_s": 4.0, "rms_dbfs": -14.0}
+    problem = {"onset_rate_per_s": 2.0, "rms_dbfs": -18.0}
+    good = PC.confirm_pace_change(before, problem, {"onset_rate_per_s": 4.1, "rms_dbfs": -14.5})
+    check(good["verdict"] == "PASS", "WW-23: a real return within 3 dB PASSES")
+    over = PC.confirm_pace_change(before, problem, {"onset_rate_per_s": 4.1, "rms_dbfs": 10.0})
+    check(over["verdict"] == "FAIL" and "energy_return" in over["failed"]
+          and over["return_energy_gap_db"] == 24.0,
+          "WW-23: a 24 dB return OVERSHOOT blocks (symmetric bound)")
+    under = PC.confirm_pace_change(before, problem, {"onset_rate_per_s": 4.1, "rms_dbfs": -38.0})
+    check(under["verdict"] == "FAIL" and "energy_return" in under["failed"],
+          "WW-23: a 24 dB return UNDERSHOOT blocks the same way (symmetric)")
+    check(good["floor"]["return_energy_is_symmetric"] is True,
+          "WW-23: the gate reports its return-energy bound as symmetric")
+
+def test_ww23_flat_and_octave_flip_controls_cannot_pass():
+    """A flat arrangement (no onset/energy movement) and an octave-aliased bpm
+    pair (the same beat) can never register as a gear change."""
+    flat = {"onset_rate_per_s": 4.0, "rms_dbfs": -14.0}
+    out = PC.confirm_pace_change(flat, dict(flat), dict(flat), bpm_before=42.857, bpm_after=42.857)
+    check(out["verdict"] == "FAIL" and "onset_reduction" in out["failed"]
+          and "energy_drop" in out["failed"],
+          "WW-23: a FLAT arrangement cannot pass the ordered gear change")
+    alias = PC.confirm_pace_change(flat, dict(flat), dict(flat), bpm_before=85.2, bpm_after=181.5)
+    check(alias["verdict"] == "FAIL" and alias["octave_fold"]["same_beat"] is True
+          and alias["bpm_grants_pass"] is False,
+          "WW-23: an OCTAVE-FLIP bpm alias with no onset/energy movement cannot pass")
+
+def test_ww23_d3_judges_both_seams_on_the_exports():
+    """D3 alone performs both musical checks on the exports: each approved seam
+    gets its own smooth-transition review, and the SECOND (return) seam can fail
+    on its own."""
+    # envelope: the drop seam at 2.0 s is smooth; the return seam at 4.0 s is a cut
+    env = [1.0] * 60
+    env[40] = 100.0                                  # a flux spike AT the return seam
+    before = {"onset_rate_per_s": 4.0, "rms_dbfs": -14.0}
+    problem = {"onset_rate_per_s": 2.0, "rms_dbfs": -18.0}
+    after = {"onset_rate_per_s": 4.1, "rms_dbfs": -14.5}
+    both = PC.confirm_pace_change(before, problem, after, boundary_s=2.0,
+                                  return_boundary_s=4.0, envelope=env, hop_s=0.1)
+    check(both["checks"].get("smooth_transition") is True
+          and both["checks"].get("smooth_transition_return") is False,
+          "WW-23: D3 judges BOTH seams independently (drop smooth, return a cut)")
+    check(both["verdict"] == "FAIL" and "smooth_transition_return" in both["failed"],
+          "WW-23: a hard RETURN seam blocks the exported take on its own")
+    # the plan carries both seams into the D3 judge through judge_plan_pace
+    order = {"reason": "the bridge lifts", "boundary_s": 2.0, "return_boundary_s": 4.0}
+    jp = PC.judge_plan_pace({"pace_change": order}, before, problem, after,
+                            envelope=env, hop_s=0.1)
+    check(jp["applicable"] is True
+          and jp["checks"].get("smooth_transition_return") is False
+          and "smooth_transition_return" in jp["failed"],
+          "WW-23: judge_plan_pace routes the SECOND seam into D3")
+    # NOT a sixth audio gate: the pace checks stay inside the one pace_change gate
+    check("pace_change" in SD.GATES
+          and not [g for g in SD.GATES if "pace" in g and g != "pace_change"],
+          "WW-23: no sixth audio gate -- both pace checks live in the D3 gate")
+
 # ---- WW-21: the total fail-closed acceptance boundary ----------------------
 #
 # WW-21 is the aggregation + EVIDENCE-BINDING boundary that runs BEFORE spend.
@@ -1411,6 +1587,469 @@ def test_ww20_version_is_read_live_and_strictly_above():
         return
     check(res["status"] == "PASS",
           "WW-20: %s is strictly above the live %s" % (res["written"], res["live"]))
+
+
+# <<< WWB-U22 BLOCK START -- WW-22: Ordered approved-story-line matching >>>
+# WW-22 (WW-22 "Ordered approved-story-line matching", WW-ROUND3-FIX-PLAN.md):
+# normalize the approved words, RETAIN REPEATS and require ORDERED matching
+# rather than set membership; carry the EXACT approved opening line into the
+# request/evidence context. The delivered ONSET on an exported take stays audio
+# gate D2's measurement -- nothing in this block claims a measured onset.
+#
+# No numeric threshold is introduced here: the only number used is
+# story_coverage.PLOT_LINE_MIN_WORDS (4), which the base already pins and this
+# unit does not move. PROPOSED-and-unchanged, never attributed to Trevor.
+
+#: The WW-22 fixture, verbatim from the plan's gate: an approved opening line of
+#: four real words and the four observed shapes the matcher must sort.
+WW22_APPROVED = ["i", "cooked", "for", "two"]
+
+#: A production-shaped sheet whose opening PLOT line IS that approved line.
+WW22_SHEET = "\n".join([
+    "[Verse 1 (rap): rhythmic rap on the beat, tight metered flow, clear diction]",
+    "I cooked for two",
+])
+
+
+def _ww22_rows(words, start=4.0, step=0.4):
+    return [{"word": w, "startS": start + i * step, "endS": start + i * step + 0.3}
+            for i, w in enumerate(words)]
+
+
+def test_ww22_ordered_match_accepts_the_approved_line_in_order():
+    """KNOWN-GOOD CONTROL FIRST: the approved words, in order, match."""
+    m = SV.ordered_match(WW22_APPROVED, "I cooked for two")
+    check(m["matched"] is True and m["coverage"] == 1.0 and m["approved_n"] == 4,
+          "WW-22: 'I cooked for two' matches the approved line IN ORDER (%.2f)"
+          % m["coverage"])
+    check(m["refusal"] == "" and m["ordered"] is True and m["repeats_kept"] is True,
+          "WW-22: an in-order match refuses nothing and reports the ordered rule")
+    # the same line read from the sheet, through the production reader
+    check(SV.plot_lines_from_sheet(WW22_SHEET) == [WW22_APPROVED],
+          "WW-22: the sheet's approved opening line reads back as the exact "
+          "ordered words %r" % (WW22_APPROVED,))
+
+
+def test_ww22_ordered_match_rejects_four_filler_tokens_and_reversed_words():
+    """The plan's gate: four `I` tokens and reversed words are REFUSED.
+
+    The multiset count this unit replaces is computed alongside, so the test
+    shows the defect it closes rather than asserting an unprovable claim."""
+    four = SV.ordered_match(WW22_APPROVED, ["i", "i", "i", "i"])
+    check(four["matched"] is False and four["covered"] == 1,
+          "WW-22: four `I` tokens do NOT match the approved line (covered %d/4)"
+          % four["covered"])
+    rev = SV.ordered_match(WW22_APPROVED, ["two", "for", "cooked", "i"])
+    check(rev["matched"] is False and rev["covered"] == 1,
+          "WW-22: reversed words do NOT match the approved line (covered %d/4) "
+          "-- a Counter pool scored this 4/4" % rev["covered"])
+    from collections import Counter
+    pool = Counter(["two", "for", "cooked", "i"])
+    old = sum(1 for w in WW22_APPROVED if pool[w] > 0)
+    check(old == 4 and rev["covered"] == 1,
+          "WW-22: the replaced multiset scored the reversed words %d/4 while the "
+          "ordered matcher scores %d/4" % (old, rev["covered"]))
+
+
+def test_ww22_vocables_never_match_an_approved_line():
+    """A vocalise is not a story word, so it never covers an approved word."""
+    m = SV.ordered_match(WW22_APPROVED, ["oo-o-o-o-o-oh", "la", "na", "mmm"])
+    check(m["matched"] is False and m["covered"] == 0,
+          "WW-22: vocables cover no approved word (covered %d/4)" % m["covered"])
+    check(SV.words_of("Oo-o-o-o-o-oh, la-na") == ["la-na"] or
+          SV.words_of("Oo-o-o-o-o-oh,") == [],
+          "WW-22: the vocalise reader drops the vocable and keeps a real word")
+    # the approved side refuses a SET: a vocabulary has no order to match against
+    s = SV.ordered_match({"i", "cooked", "for", "two"}, "I cooked for two")
+    check(s["matched"] is False and s["approved_n"] == 0,
+          "WW-22: a set is REFUSED as the approved side (no invented order)")
+
+
+def test_ww22_up_newline_token_remains_lexical():
+    """The plan's gate: `up\\n\\n` remains lexical. Preserved, not newly won."""
+    check(SV.is_lexical("up\n\n") is True,
+          "WW-22: the token 'up\\n\\n' is still lexical (is_lexical)")
+    check(SV._norm("up\n\n") == "up",
+          "WW-22: its normalized form after the header/whitespace strip is 'up'")
+    check(SV.words_of("up\n\n") == ["up"],
+          "WW-22: words_of('up\\n\\n') is ['up'] -- the trailing break does not "
+          "erase the token")
+    check(SV.is_lexical(SV._tok({"word": "[Verse 1 (rap): tight]\\nI "}) ) is False
+          and SV.words_of("I ") == ["i"],
+          "WW-22: a lexical token AFTER a section header is preserved ('I ')")
+    check(SV.is_lexical("Oo-oh,") is False,
+          "WW-22: a punctuation-bearing vocalise is STILL not lexical")
+
+
+def test_ww22_text_coverage_matches_in_order_not_by_pool():
+    """The pre-generation text floor compares IN ORDER (WW-22).
+
+    Base pins kept: 98/100 passes the 0.98 floor and 97/100 fails."""
+    ok = SV.text_coverage_gate(["word"] * 100, ["word"] * 98)
+    check(ok["verdict"] == "PASS" and ok["text_coverage"] == 0.98
+          and ok["covered_n"] == 98 and ok["ordered"] is True
+          and ok["matched_in_order"] is False,
+          "WW-22: 98/100 still PASSES the 0.98 floor -- a floor, not a full "
+          "match -- and is measured IN ORDER (covered %d/100)"
+          % ok.get("covered_n", -1))
+    check(SV.text_coverage_gate(["word"] * 100, ["word"] * 97)["verdict"] == "FAIL",
+          "WW-22: 97/100 still FAILS the 0.98 floor")
+    good = SV.text_coverage_gate(WW22_APPROVED, "I cooked for two")
+    check(good["verdict"] == "PASS" and good["text_coverage"] == 1.0,
+          "WW-22: the approved line present in order covers 100%% of the text")
+    rev = SV.text_coverage_gate(WW22_APPROVED, "two for cooked i")
+    check(rev["verdict"] == "FAIL" and rev["covered_n"] == 1,
+          "WW-22: REVERSED words are refused by the text floor (covered %d/4)"
+          % rev["covered_n"])
+    four = SV.text_coverage_gate(WW22_APPROVED, ["i", "i", "i", "i"])
+    check(four["verdict"] == "FAIL",
+          "WW-22: four repeated filler tokens are refused by the text floor")
+    voc = SV.text_coverage_gate(WW22_APPROVED, ["oo-o-o-o-o-oh"] * 8)
+    check(voc["verdict"] == "FAIL",
+          "WW-22: a wall of vocables is refused by the text floor")
+    check(SV.text_coverage_gate({"i", "cooked"}, "i cooked")["reason_code"]
+          == "NO_APPROVED_TEXT",
+          "WW-22: a set on the approved side is UNAVAILABLE, never a pass")
+
+
+def test_ww22_exact_approved_opening_line_reaches_the_request_evidence_context():
+    """The exact approved opening line is CARRIED, through the production path.
+
+    The sheet text below is the SAME value song_dispatch.validate_request hands
+    to song_contract.check_sheet at its `_SC.check_sheet(_lyrics_of(req), ...)`
+    call site, so the carried line is the value the production path records
+    before any spend."""
+    from song_dispatch import song_dispatch as SD
+    reqs = SC.build_requests("rnb-flow", SHEET_RNB, CLIENT, "T", 88, hook_plan=HOOK_PLAN)
+    req = reqs[0][1]                           # [(variant, request)] x3
+    sheet = SD._lyrics_of(req)                 # the production call site's argument
+    SD.validate_request(req, style_id="rnb-flow", delivered_s=88)   # must not raise
+    out = SCT.check_sheet(sheet, "rnb-flow", 88)
+    want = SV.plot_lines_from_sheet(sheet)
+    check(want and out["approved_opening"]["line"] == want[0],
+          "WW-22: check_sheet carries the EXACT approved opening line %r"
+          % (out["approved_opening"]["line"][:4],))
+    check(out["approved_opening"]["ordered"] is True
+          and out["approved_opening"]["repeats_kept"] is True
+          and out["approved_opening"]["ordered_match"]["matched"] is True,
+          "WW-22: the carried line is ordered, repeats kept, and matched IN ORDER "
+          "against the sheet's own delivered words")
+    check(out["approved_opening"]["line"] ==
+          SV.approved_opening_line(sheet)["line"],
+          "WW-22: the same exact line is returned by the public accessor")
+    check(out["approved_opening"]["ordered_match"]["refusal"] == "",
+          "WW-22: the carried match refuses nothing on a real sheet")
+
+
+def test_ww22_production_story_gate_carries_and_enforces_the_ordered_line():
+    """The ordered matcher is REACHABLE from the production judge path.
+
+    song_dispatch.judge_take -> song_contract.check_returned_story ->
+    story_coverage.judge_returned_take -> story_start_gate -> ordered_run_match.
+    The known-good control runs first, then the two refusals."""
+    good = SCT.check_returned_story(
+        {"aligned_words": _ww22_rows(["i", "cooked", "for", "two"])},
+        "rnb-flow", 88.0, WW22_SHEET, {"delivered_s": 88.0})
+    gs = good["story_coverage"]["gates"]["story_start"]
+    check(gs["verdict"] == "PASS" and gs["first_plot_line_s"] == 4.0
+          and gs["failed"] == [],
+          "WW-22 control: the approved line in order at 4.0 s PASSES story_start")
+    check(gs["approved_opening_line"] == WW22_APPROVED
+          and good["story_coverage"]["approved_opening_line"] == WW22_APPROVED,
+          "WW-22: the exact approved opening line rides the production gate's "
+          "context %r" % (gs["approved_opening_line"],))
+    check(gs["delivered_onset_owner"] == "D2"
+          and good["story_coverage"]["delivered_onset_owner"] == "D2",
+          "WW-22: no onset is claimed here -- the delivered onset is D2's")
+    four = SCT.check_returned_story(
+        {"aligned_words": _ww22_rows(["i", "i", "i", "i"])},
+        "rnb-flow", 88.0, WW22_SHEET, {"delivered_s": 88.0})
+    gf = four["story_coverage"]["gates"]["story_start"]
+    check(gf["verdict"] == "FAIL" and "NO_PLOT_LINE_SUNG" in gf["failed"],
+          "WW-22: four `I` tokens are REFUSED by the production story gate (%r)"
+          % (gf["failed"],))
+    rev = SCT.check_returned_story(
+        {"aligned_words": _ww22_rows(["two", "for", "cooked", "i"])},
+        "rnb-flow", 88.0, WW22_SHEET, {"delivered_s": 88.0})
+    gr = rev["story_coverage"]["gates"]["story_start"]
+    check(gr["verdict"] == "FAIL" and "NO_PLOT_LINE_SUNG" in gr["failed"],
+          "WW-22: reversed words are REFUSED by the production story gate (%r)"
+          % (gr["failed"],))
+    voc = SCT.check_returned_story(
+        {"aligned_words": _ww22_rows(["oo-oh"] * 8)},
+        "rnb-flow", 88.0, WW22_SHEET, {"delivered_s": 88.0})
+    gv = voc["story_coverage"]["gates"]["story_start"]
+    check(gv["verdict"] == "FAIL" and "NO_PLOT_LINE_SUNG" in gv["failed"],
+          "WW-22: vocables alone are REFUSED by the production story gate (%r)"
+          % (gv["failed"],))
+    check(gr["approved_opening_line"] == WW22_APPROVED,
+          "WW-22: the refusal still names the exact approved line it matched "
+          "against")
+    tc = SCT.check_returned_story(
+        {"aligned_words": _ww22_rows(["i", "cooked", "for", "two"])},
+        "rnb-flow", 88.0, WW22_SHEET, {"delivered_s": 88.0})
+    check("text_coverage" in tc["story_coverage"]["gates"]
+          and "story_start" in tc["story_coverage"]["gates"],
+          "WW-22: both ordered guards are members of the production gate set")
+    check(SCT.check_returned_story(
+        {"aligned_words": _ww22_rows(["i", "cooked", "for", "two"])},
+        "rnb-flow", 88.0, WW22_SHEET, {"delivered_s": 88.0})
+        ["story_coverage"]["gates"]["text_coverage"]["verdict"] == "UNAVAILABLE",
+        "WW-22: with no observed text the text floor is UNAVAILABLE (fail-closed), "
+        "never a silent pass -- check_returned_story does not carry observed text")
+    # judge_returned_take is the evaluator check_returned_story delegates to;
+    # driven directly here so the ordered refusal is exercised on real inputs.
+    jt = SV.judge_returned_take(
+        {"aligned_words": _ww22_rows(["i", "cooked", "for", "two"]),
+         "approved_words": "I cooked for two", "observed_words": "two for cooked i"},
+        {"delivered_s": 88.0}, WW22_SHEET, 88.0)
+    g = jt["gates"]["text_coverage"]
+    check(g["verdict"] == "FAIL" and g["matched_in_order"] is False
+          and g["covered_n"] == 1,
+          "WW-22: the ordered text floor REFUSES reversed observed text "
+          "(covered %d of %d)" % (g.get("covered_n", -1), g.get("approved_n", -1)))
+    jt_ok = SV.judge_returned_take(
+        {"aligned_words": _ww22_rows(["i", "cooked", "for", "two"]),
+         "approved_words": "I cooked for two", "observed_words": "I cooked for two"},
+        {"delivered_s": 88.0}, WW22_SHEET, 88.0)
+    gok = jt_ok["gates"]["text_coverage"]
+    check(gok["verdict"] == "PASS" and gok["matched_in_order"] is True,
+          "WW-22 control: the same observed text IN ORDER passes the text floor")
+
+
+def test_ww22_ordered_run_match_is_the_shared_primitive():
+    """One ordered matcher: `first_plot_line_s` reads through `ordered_run_match`."""
+    toks = ["i", "cooked", "for", "two"]
+    check(SV.ordered_run_match([WW22_APPROVED], toks, min_words=4) == 0,
+          "WW-22: ordered_run_match finds the run at index 0 for the ordered line")
+    check(SV.ordered_run_match([WW22_APPROVED], ["two", "for", "cooked", "i"],
+                               min_words=4) is None,
+          "WW-22: ordered_run_match finds NO run for reversed words")
+    check(SV.ordered_run_match([WW22_APPROVED], ["i", "i", "i", "i"],
+                               min_words=4) is None,
+          "WW-22: ordered_run_match finds NO run for four filler tokens")
+    check(SV.ordered_run_match([WW22_APPROVED], ["x", "i", "cooked", "for", "two"],
+                               min_words=4) == 1,
+          "WW-22: the run is located at its true offset (index 1)")
+    check(SV.ordered_run_match([WW22_APPROVED], ["i", "cooked", "for"],
+                               min_words=4) is None,
+          "WW-22: a 3-word run cannot satisfy the 4-word line floor")
+    rows = _ww22_rows(["x", "i", "cooked", "for", "two"])
+    check(SV.first_plot_line_s(rows, [WW22_APPROVED]) == 4.4,
+          "WW-22: first_plot_line_s maps the shared matcher's index to seconds "
+          "(4.4 s)")
+
+# <<< WWB-U22 BLOCK END >>>
+# ==== WW-24: measured-only evidence provenance (WWB-U24) ====================
+#
+# WW-24 validates the INPUTS the five delivered-audio results (D1..D5) are built
+# from: PLANNED or STRETCHED timestamps never become returned-audio
+# measurements. It measures no audio and claims no audio-quality outcome, so it
+# adds NO sixth audio gate. One delimited block; functions prefixed test_ww24_.
+# Every numeric threshold here is a NEW ACCEPTANCE RULE, not a measured limit.
+
+import timing_guard as TG                        # noqa: E402  (WW-24 boundary)
+import spoken_share.spoken_share as SS          # noqa: E402  (WW-24 runtime helper)
+
+WW24_DIGEST = "a" * 64
+
+
+def _ww24_segments(D):
+    return [{"delivery": "sung", "start": 0.0, "end": D, "source": "measured"}]
+
+
+def _ww24_good(D=40.0, digest=WW24_DIGEST, **over):
+    ev = {"schema": "blackceo.measured-evidence/v1", "source": "measured",
+          "export_digest": digest, "actual_duration_s": D,
+          "detector": "singing_detector", "detector_version": "2.0.0",
+          "stem_id": "stem-1", "alignment": {"words": []},
+          "segments": _ww24_segments(D),
+          "trusted_context": {"source": "pipeline", "tool": "singing_detector",
+                              "tool_version": "2.0.0",
+                              "measured_at": "2026-10-11T00:00:00Z"}}
+    ev.update(over)
+    return ev
+
+
+def _ww24_with_evidence(binding, ev):
+    """The five carried results, each bound to the take, each carrying ``ev``."""
+    out = _ww21_results(binding)
+    for rec in out.values():
+        rec["evidence"] = dict(ev)
+    return out
+
+
+def test_ww24_a_known_good_control_passes():
+    """POSITIVE CONTROL, before any negative: a complete measured-evidence
+    record is admitted, and the production boundary advances it at zero spend."""
+    good = _ww24_good()
+    rcpt = TG.check_measured_evidence(good)
+    print("  WW-24 known-good control: verdict=%r reason=%r" % (rcpt["verdict"], rcpt["reason_code"]))
+    check(rcpt["verdict"] == "PASS" and rcpt["blocked"] is False and rcpt["purchases"] == 0,
+          "WW-24: the known-good measured-evidence control PASSES")
+    with tempfile.TemporaryDirectory() as tmp:
+        b = _ww21_binding(tmp)
+        ev = _ww24_good(digest=b["export_digest"])
+        out = SD.accept_audio_results(_ww24_with_evidence(b, ev), b)
+        print("  WW-24 production boundary on the control: verdict=%r blocked_by=%r"
+              % (out["verdict"], out["blocked_by"][:1]))
+        check(out["verdict"] == "PASS" and out["purchases"] == 0,
+              "WW-24: the production boundary advances the known-good evidence")
+
+
+def test_ww24_b_no_sixth_audio_gate_is_added():
+    """WW-24 measures no audio. The five delivered-audio gate names, and the
+    boundary's own claim, are unchanged."""
+    check(SD.AUDIO_RESULTS == ("D1", "D2", "D3", "D4", "D5") and SD._MIN_AUDIO_RESULTS == 5,
+          "WW-24: the five delivered-audio results are unchanged (no sixth gate)")
+    check(TG.check_measured_evidence(_ww24_good())["measures_no_audio"] is True,
+          "WW-24: the provenance boundary declares it measures no audio")
+
+
+def test_ww24_c_zero_gap_stretched_plan_blocks():
+    """A PLAN stretched to fill [0, D] with zero gaps is still a plan."""
+    ev = _ww24_good()
+    ev["source"] = "stretched"
+    for s in ev["segments"]:
+        s["source"] = "stretched"
+    reasons = TG.measured_evidence_reasons(ev)
+    print("  WW-24 zero-gap stretched plan -> %s" % (reasons[:1],))
+    check(reasons and reasons[0].startswith("PLANNED_TIMESTAMPS"),
+          "WW-24: a zero-gap stretched plan BLOCKS (PLANNED_TIMESTAMPS)")
+
+
+def test_ww24_d_duplicate_runtime_blocks():
+    """A doubled timeline (measured + annotations over the same audio) is refused."""
+    ev = _ww24_good()
+    ev["segments"] = [{"delivery": "sung", "start": 0.0, "end": 40.0, "source": "measured"},
+                      {"delivery": "sung", "start": 0.0, "end": 40.0, "source": "measured"}]
+    reasons = TG.measured_evidence_reasons(ev)
+    print("  WW-24 duplicate runtime -> %s" % (reasons[:1],))
+    check(reasons and reasons[0].startswith("DUPLICATE_RUNTIME"),
+          "WW-24: a duplicate runtime BLOCKS (DUPLICATE_RUNTIME)")
+    ev2 = _ww24_good()
+    ev2["segments"] = []
+    ev2["segment_seconds_total"] = 80.0
+    r2 = TG.measured_evidence_reasons(ev2)
+    check(r2 and any(x.startswith("DUPLICATE_RUNTIME") for x in r2),
+          "WW-24: segment seconds above the measured runtime BLOCK (DUPLICATE_RUNTIME)")
+
+
+def test_ww24_e_wrong_audio_blocks():
+    """The evidence digest must match the take being advanced."""
+    with tempfile.TemporaryDirectory() as tmp:
+        b = _ww21_binding(tmp)
+        ev = _ww24_good(digest="b" * 64)
+        reasons = TG.measured_evidence_reasons(ev, binding=b)
+        print("  WW-24 wrong audio -> %s" % (reasons[:1],))
+        check(any(x.startswith("WRONG_AUDIO") for x in reasons),
+              "WW-24: evidence measured against another export BLOCKS (WRONG_AUDIO)")
+        out = SD.accept_audio_results(_ww24_with_evidence(b, ev), b)
+        check(out["verdict"] != "PASS" and out["purchases"] == 0,
+              "WW-24: the production boundary BLOCKS a wrong-audio receipt")
+
+
+def test_ww24_f_fabricated_receipt_blocks():
+    """A HAND-SET source="measured" label is not provenance."""
+    for label, ev in (
+            ("hand-set source only", {"source": "measured"}),
+            ("source + digest, no artifacts", {"source": "measured",
+                                               "export_digest": WW24_DIGEST,
+                                               "actual_duration_s": 40.0}),
+            ("source + artifacts, no trusted context",
+             dict(_ww24_good(), trusted_context=None)),
+            ("source + context with a manual label",
+             _ww24_good(trusted_context={"source": "manual", "tool": "x",
+                                         "tool_version": "1", "measured_at": "now"})),
+            ("a bare string standing in for the record", "measured")):
+        rcpt = TG.check_measured_evidence(ev) if isinstance(ev, dict) else \
+            {"verdict": "FAIL", "reasons": TG.measured_evidence_reasons(ev)}
+        print("  WW-24 fabricated receipt [%s] -> %s" % (label, (rcpt["reasons"] or ["<none>"])[0]))
+        check(rcpt["verdict"] != "PASS",
+              "WW-24: a fabricated receipt BLOCKS [%s]" % label)
+
+
+def test_ww24_g_boundary_is_wired_and_load_bearing():
+    """THE DEAD-GUARD PROOF. Drive the REAL production writer and boundary with a
+    fabricated receipt, print the value at the call site, then REMOVE the gate
+    invocation and show the same fixture flips to PASS."""
+    fabricated = {"source": "measured", "actual_duration_s": 40.0}
+    with tempfile.TemporaryDirectory() as tmp:
+        run = os.path.join(tmp, "run")
+        b = _ww21_binding(tmp)
+        rec = SD.record_acceptance(run, "polished-modern", b,
+                                   _ww24_with_evidence(b, fabricated))
+        print("  WW-24 production writer record_acceptance -> verdict=%r reason=%s"
+              % (rec["verdict"], (rec["blocked_by"] or ["<none>"])[0]))
+        check(rec["verdict"] != "PASS" and rec["purchases"] == 0,
+              "WW-24: record_acceptance BLOCKS a fabricated provenance receipt")
+        check(SD.acceptance_from_run(run)["allowed"] is False,
+              "WW-24: a run whose acceptance record carries fabricated evidence BLOCKS")
+        # remove the gate invocation: swap the validator for a permissive stub
+        saved = SD._TG.measured_evidence_reasons
+        SD._TG.measured_evidence_reasons = lambda *a, **k: []
+        try:
+            out = SD.accept_audio_results(_ww24_with_evidence(b, fabricated), b)
+            print("  WW-24 gate invocation REMOVED -> verdict=%r" % out["verdict"])
+            check(out["verdict"] == "PASS",
+                  "WW-24: removing the gate invocation lets the fabricated receipt PASS "
+                  "(the guard is load-bearing, not dead)")
+        finally:
+            SD._TG.measured_evidence_reasons = saved
+        back = SD.accept_audio_results(_ww24_with_evidence(b, fabricated), b)
+        check(back["verdict"] != "PASS",
+              "WW-24: with the gate restored the fabricated receipt BLOCKS again")
+
+
+def test_ww24_h_script_report_separates_figures():
+    """The script report carries the lexical estimate, the music-only allowance
+    and the runtime under SEPARATE labels; an inflated 'seconds of words' label
+    is refused. Reached through the production judge seam."""
+    rep = SV.script_report(50.416, 8.0)
+    print("  WW-24 script report -> %r" % (rep["reason_code"],))
+    check(rep["verdict"] == "PASS" and rep["lexical_estimate_s"] == 50.416
+          and rep["music_only_allowance_s"] == 8.0 and rep["runtime_s"] == 58.416,
+          "WW-24: lexical estimate, music-only allowance and runtime are separate")
+    inflated = SV.script_report(50.416, 8.0, inflated_seconds_of_words=58.416)
+    print("  WW-24 inflated label -> %r" % (inflated["reason_code"],))
+    check(inflated["verdict"] == "FAIL"
+          and inflated["reason_code"] == "INFLATED_SECONDS_OF_WORDS",
+          "WW-24: the inflated 'seconds of words' label is REFUSED")
+    # the production seam (song_contract -> judge_returned_take) writes it
+    plan = {"delivered_s": 58, "words": {"total": 120}, "intro_outro_s": 8.0,
+            "beats_u16": len(LF.STORY_ARC_U16)}
+    out = SV.judge_returned_take({"aligned_words": [], "duration_s": 58}, plan, "", 58)
+    report = out.get("script_report")
+    print("  WW-24 judge_returned_take report keys -> %r"
+          % (sorted(report or {})[:6],))
+    check(isinstance(report, dict) and "lexical_estimate_s" in report
+          and "music_only_allowance_s" in report and "runtime_s" in report,
+          "WW-24: the production judge seam emits the separate script report")
+
+
+def test_ww24_i_word_annotations_never_add_runtime():
+    """Word annotations (source="aligned"/"annotation") are timing evidence over
+    the returned audio; they never ADD physical runtime. The WW-04 one-timeline
+    repair refuses a doubled denominator."""
+    D = 40.0
+    segs = [{"delivery": "sung", "start": 0.0, "end": 20.0, "source": "measured"},
+            {"delivery": "spoken", "start": 20.0, "end": 40.0, "source": "measured"}]
+    check(SS.measured_runtime_s(segs, D) == D,
+          "WW-24: the measured duration IS the physical runtime, never the sum")
+    doubled = segs + [{"delivery": "sung", "start": 0.0, "end": 40.0, "source": "aligned"}]
+    try:
+        SS.measured_runtime_s(doubled, D)
+        check(False, "WW-24: a doubled (measured + annotations) runtime was accepted")
+    except SS.SpokenShareError as e:
+        print("  WW-24 doubled runtime refused -> %s" % e.code)
+        check(e.code == "TIMELINE_NOT_DISJOINT",
+              "WW-24: word annotations over the same audio BLOCK (doubled runtime)")
+    try:
+        SS.measured_runtime_s(segs, None)
+        check(False, "WW-24: a plan with no measured duration was accepted as runtime")
+    except SS.SpokenShareError as e:
+        check(e.code == "MISSING_ACTUAL_DURATION",
+              "WW-24: no measured duration BLOCKS (a plan is not physical runtime)")
 
 
 def main():

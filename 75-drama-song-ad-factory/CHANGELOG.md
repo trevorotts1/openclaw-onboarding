@@ -6,6 +6,45 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.30 - 2026-10-11 - WWB combined branch B: WW-22 ordered approved-story-line matching, WW-23 both musical transitions, WW-24 measured-only evidence provenance
+
+ONE real-content commit whose parent is the live head of `unit/WW30-U2`
+(`c6dc6e9d41`, read at build time), joining the three parallel builders'
+patches (WWB-U22, WWB-U23, WWB-U24) into a single coherent change. This branch
+is skill-75 only: the repository root `/version` and root `CHANGELOG.md` are
+unchanged (the same shape #1858 used). WW-28 is NOT on this branch -- per
+`WW-ROUND3-FIX-PLAN.md` line 100 it depends on WW-27 (combined branch C, above
+this branch) and its patch is carried forward to `wave3/carry/WW-28.patch`.
+
+- WW-22 (ordered approved-story-line matching): `normalize_approved_words`
+  keeps repeats and refuses a set; `ordered_match` matches the approved words
+  against the observed words IN ORDER, replacing the multiset; `ordered_run_match`
+  is the ONE contiguous-run matcher `first_plot_line_s` now reads through; and
+  `text_coverage_gate` matches in order. `song_contract.check_sheet` carries the
+  exact approved opening line into the request/evidence context. `up\n\n` stays
+  lexical.
+- WW-23 (both musical transitions): two approved semantic anchors (drop, return)
+  and two distinct seam timestamps (`boundary_s`, `return_boundary_s`); the
+  return-energy check is SYMMETRIC; D3 judges BOTH seams; the pre-generation gate
+  `check_pace_plan` / `check_pace_style` / `pace_provider_leak` blocks a missing
+  seam, a reused boundary and a one-direction final style before any spend;
+  numbers stored once in `acceptance-profile.json` `ww_wave.pace_change`.
+- WW-24 (measured-only evidence provenance): `timing_guard` measures no audio and
+  validates each D1..D5 result's evidence record against the take binding;
+  `story_coverage.script_report` separates lexical estimate, music-only allowance
+  and runtime, refusing `INFLATED_SECONDS_OF_WORDS`; `spoken_share.measured_runtime_s`
+  refuses a plan as physical runtime. No sixth audio gate.
+- IN-BRANCH WIRING (WW-23 -> WW-22): `song_contract.check_pace_style` now binds
+  its anchor presence through WW-22's `story_coverage.ordered_run_match` instead
+  of a raw substring scan.
+
+Every guard is reachable from the production path; no guard weakened, no floor
+lowered, no assertion's intent changed, nothing skipped or xfailed. Base
+boundaries intact: WW-21's fail-closed acceptance boundary, the per-verse rap
+floor, `parse_lyrics` storing the bracket cue under `"cue"`, the pace clause LAST
+in the assembled `input.style`, and the createTask contract with its
+`LEGACY_FLAT_CONTRACT` guard.
+
 ## v2.9.29 - 2026-10-11 - WW30R re-cut: pull request 1856's createTask migration stacked as draft `unit/WW30-U2` on live `unit/WWR3INT-U2`, with the three opus-fail test fixes
 
 ONE real-content commit whose parent is the live head of `unit/WWR3INT-U2`

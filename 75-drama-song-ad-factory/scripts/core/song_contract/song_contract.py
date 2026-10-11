@@ -349,8 +349,19 @@ def check_sheet(sheet_text, style_id, delivered_s, style_text=None):
                                   first["seconds"], verse_floor["min_words"],
                                   verse_floor["min_s"], verse_floor["rate"],
                                   delivered_s, label, rap_floor["floor_words"]))
+    # WW-22: the EXACT approved opening story line -- ordered, repeats kept --
+    # is CARRIED into this gate's returned context, which is the
+    # request/evidence context song_dispatch.validate_request and
+    # suno_recipe.guard_request record before any spend. It rides with its
+    # ordered match against the sheet's own delivered words, so the line is
+    # matched IN ORDER and never as a vocabulary set. (The delivered ONSET on
+    # the take is assessed by audio gate D2, never here.)
+    _opening = _story.approved_opening_line(sheet_text)
+    _opening["ordered_match"] = _story.ordered_match(
+        _opening["line"], _story.delivered_words_ordered(secs))
     out = {"verdict": "FAIL", "style_id": sid, "label": label, "delivered_s": delivered_s,
            "rap_floor": rap_floor, "rap_verses": rap_verses,
+           "approved_opening": _opening,
            "reasons": reasons, "flags": flags, "sections": rows, "totals": totals,
            "rap_vs_spoken": "planned from the sheet's tags; on the audio " + RAP_AUDIO_UNMEASURED}
     if not rows:
@@ -568,3 +579,44 @@ def check_returned_story(take, style_id, delivered_s, sheet_text=None, plan=None
                                        plan, sheet, delivered_s)
     return {"verdict": "FAIL" if story["verdict"] in ("FAIL", "UNAVAILABLE") else "PASS",
             "detail": story["detail"], "story_coverage": story}
+
+
+# ---- WW-23: the final style carries BOTH musical transitions ---------------
+
+def _pace_norm(text):
+    """Whitespace-collapsed, lower-cased text for a substring test."""
+    return " ".join(str(text or "").lower().split())
+
+def check_pace_style(style_text, pace_plan):
+    """WW-23: the FINAL provider style must carry BOTH approved musical
+    directions -- the lowest-point drop AND the return that follows it.
+
+    The two anchors are read from the ordered ``pace_plan`` (with the
+    specification's own clause words as the fallback, the SAME source
+    ``suno_recipe.pace_clause`` writes from), so a style that carries only one
+    transition -- the WW-23 defect -- is refused BEFORE any spend. No pace plan
+    means no ordered change and nothing to enforce. Returns a list of reasons
+    (empty = ok). NEW ACCEPTANCE RULE: the clauses are the plan's own approved
+    directions, never re-derived here."""
+    if not pace_plan:
+        return []
+    o = pace_plan if isinstance(pace_plan, dict) else {}
+    drop = o.get("drop") or getattr(_R, "PACE_DROP_CLAUSE", "")
+    ret = o.get("return") or getattr(_R, "PACE_RETURN_CLAUSE", "")
+    # WWB-INT in-branch seam (WW-23 -> WW-22): the anchor presence is decided by
+    # WW-22's ONE ordered matcher, story_coverage.ordered_run_match, instead of a
+    # raw substring scan. Each approved direction must appear as a CONTIGUOUS run
+    # of its full word sequence, IN ORDER, so a final style that carries the
+    # direction's words out of order, or only in fragments, is refused -- never a
+    # set/vocabulary test. Repeats are kept on both sides (WW-22
+    # normalize_approved_words). The ordered words come from the same approved
+    # anchors the D3 gate and the serialized payload carry.
+    obs = _story.normalize_approved_words(style_text)
+    reasons = []
+    for _label, _anchor in (("drop", drop), ("return", ret)):
+        _words = _story.normalize_approved_words(_anchor)
+        if not _words or _story.ordered_run_match([_words], obs,
+                                                  min_words=len(_words)) is None:
+            reasons.append("PACE_DIRECTION_MISSING: the final style does not carry the "
+                           "%s direction (%r) in order" % (_label, _anchor))
+    return reasons

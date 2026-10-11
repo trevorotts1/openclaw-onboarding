@@ -48,16 +48,37 @@ from __future__ import annotations
 import cmath
 import json
 import math
+import os
 
 TOOL_NAME = "pace_change"
 TOOL_VERSION = "2.0.0"
 SCHEMA = "blackceo.pace-change/v2"
 
-#: NEW ACCEPTANCE RULES (WWFIX 2026-10-11).
-PACE_ONSET_REDUCTION = 0.30    # the problem window's onset rate at most this share
-PACE_ENERGY_DROP_DB = 3.0      # AND the problem window at least this much quieter
-PACE_RETURN_TOL = 0.20         # the closing window's onset rate back within this share
-PACE_RETURN_DB = 3.0           # AND energy back within this many dB
+#: NEW ACCEPTANCE RULES (WWFIX 2026-10-11; WW-23 2026-10-11).
+#:
+#: WW-23: the D3 numbers live ONCE in core/acceptance-profile.json
+#: (ww_wave.pace_change) and are read here; the literals below are the fallback
+#: used only when that file or its key is absent. Every value is PROPOSED -- a
+#: new acceptance choice, never a measured limit and never a number Trevor set.
+def _ww_pace_profile():
+    try:
+        _p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "acceptance-profile.json")
+        with open(_p, encoding="utf-8") as f:
+            return ((json.load(f) or {}).get("ww_wave") or {}).get("pace_change") or {}
+    except Exception:
+        return {}
+
+_WW_PACE = _ww_pace_profile()
+PACE_ONSET_REDUCTION = float(_WW_PACE.get("problem_onset_reduction", 0.30))  # problem onset rate at most this share
+PACE_ENERGY_DROP_DB = float(_WW_PACE.get("problem_energy_drop_db", 3.0))     # AND at least this much quieter
+PACE_RETURN_TOL = float(_WW_PACE.get("solution_onset_return_tol", 0.20))     # closing onset rate back within this share
+#: WW-23: the return-energy bound is SYMMETRIC -- the closing window may be at
+#: most this many dB ABOVE the baseline as well as this many dB below it. The
+#: old one-sided form (a >= b - 3) let a 24 dB overshoot pass as a "return".
+PACE_RETURN_DB = float(_WW_PACE.get("solution_energy_return_db", 3.0))
+#: WW-23: TWO mandatory seams -- the drop boundary and the return boundary.
+PACE_SEAM_COUNT = int(_WW_PACE.get("mandatory_seams", 2))
 PEAK_MIN_SPACING_S = 0.12      # minimum spacing between onset peaks
 PEAK_THRESHOLD_SD = 1.0        # a peak rises this many standard deviations above the mean
 FRAME_S = 0.046               # analysis frame (1024 samples at 22050 Hz)
@@ -246,14 +267,18 @@ def octave_fold_bpm(bpm_a, bpm_b, tol_oct=OCTAVE_TOL_OCT):
 
 
 def confirm_pace_change(before, problem, after, boundary_s=None, envelope=None,
-                        hop_s=None, bpm_before=None, bpm_after=None, reason=None):
+                        hop_s=None, bpm_before=None, bpm_after=None, reason=None,
+                        return_boundary_s=None):
     """Judge one ordered gear change: before -> problem -> after.
 
     PASS needs ALL of: >= 30% onset-rate reduction, >= 3 dB energy drop, the
-    return to baseline within 20% onset and 3 dB, and -- when an envelope is
-    supplied -- a smooth seam. Anything less is FAIL. Missing onset or energy
-    evidence is UNMEASURED, never PASS; bpm is reported and folded but never
-    grants a PASS."""
+    return to baseline within 20% onset AND a SYMMETRIC energy bound, and --
+    when an envelope is supplied -- a smooth seam. WW-23: the return energy is
+    an ABSOLUTE bound (|after - before| <= PACE_RETURN_DB), so a closing window
+    that overshoots the baseline by 24 dB FAILS; and when the order carries a
+    SECOND, distinct return boundary, both seams are checked independently.
+    Anything less is FAIL. Missing onset or energy evidence is UNMEASURED,
+    never PASS; bpm is reported and folded but never grants a PASS."""
     try:
         b = _window(before, "before")
         p = _window(problem, "problem")
@@ -269,19 +294,27 @@ def confirm_pace_change(before, problem, after, boundary_s=None, envelope=None,
     # BEFORE the problem, not against the problem window itself.
     return_gap = (abs(a["onset_rate"] - b["onset_rate"]) / b["onset_rate"]
                   if b["onset_rate"] > 0 else None)
+    # WW-23 SYMMETRIC return energy: an absolute distance, not a one-sided floor.
+    energy_gap = round(abs(a["rms_dbfs"] - b["rms_dbfs"]), 3)
     return_db = round(a["rms_dbfs"] - (b["rms_dbfs"] - PACE_ENERGY_DROP_DB), 3)
     checks = {
         "onset_reduction": onset_reduction is not None
                             and onset_reduction >= PACE_ONSET_REDUCTION,
         "energy_drop": energy_drop >= PACE_ENERGY_DROP_DB,
         "onset_return": return_gap is not None and return_gap <= PACE_RETURN_TOL,
-        "energy_return": a["rms_dbfs"] >= b["rms_dbfs"] - PACE_RETURN_DB,
+        "energy_return": energy_gap <= PACE_RETURN_DB,
     }
-    seam = None
-    if envelope is not None and boundary_s is not None and hop_s:
-        seam = smooth_transition_check(envelope, hop_s, boundary_s)
-        if seam.get("smooth") is not None:
-            checks["smooth_transition"] = bool(seam["smooth"])
+    seam, return_seam = None, None
+    if envelope is not None and hop_s:
+        if boundary_s is not None:
+            seam = smooth_transition_check(envelope, hop_s, boundary_s)
+            if seam.get("smooth") is not None:
+                checks["smooth_transition"] = bool(seam["smooth"])
+        # WW-23: the SECOND mandatory seam (the return) is judged the same way.
+        if return_boundary_s is not None:
+            return_seam = smooth_transition_check(envelope, hop_s, return_boundary_s)
+            if return_seam.get("smooth") is not None:
+                checks["smooth_transition_return"] = bool(return_seam["smooth"])
     fold = None
     if bpm_before is not None and bpm_after is not None:
         try:
@@ -304,26 +337,30 @@ def confirm_pace_change(before, problem, after, boundary_s=None, envelope=None,
         "energy_dbfs_after": a["rms_dbfs"],
         "energy_drop_db": energy_drop,
         "return_onset_gap": None if return_gap is None else round(return_gap, 4),
+        "return_energy_gap_db": energy_gap,
         "return_energy_margin_db": return_db,
         "smooth_transition": seam,
+        "smooth_transition_return": return_seam,
         "octave_fold": fold,
         "bpm_grants_pass": False,
         "floor": {"onset_reduction": PACE_ONSET_REDUCTION,
                   "energy_drop_db": PACE_ENERGY_DROP_DB,
                   "return_tol": PACE_RETURN_TOL, "return_db": PACE_RETURN_DB,
+                  "return_energy_is_symmetric": True,
+                  "mandatory_seams": PACE_SEAM_COUNT,
                   "peak_min_spacing_s": PEAK_MIN_SPACING_S},
         "detail": ("gear change confirmed: onsets %.3f -> %.3f/s (%.0f%% down), "
                    "%+.2f dB, back to %.3f/s and %+.2f dB"
                    % (b["onset_rate"], p["onset_rate"], (onset_reduction or 0) * 100,
-                      -energy_drop, a["onset_rate"], return_db))
+                      -energy_drop, a["onset_rate"], -energy_gap))
                   if verdict == "PASS" else
                   ("no gear change: %s (onsets %.3f -> %.3f/s, %+.2f dB)"
                    % (", ".join(failed), b["onset_rate"], p["onset_rate"], -energy_drop)),
         "reason": reason,
         #: NEW ACCEPTANCE RULE: every threshold here is set by this fix.
         "thresholds_are_new_acceptance_rules": True,
-        "source": "WWFIX D1/F2 (X3/X4): onset reduction + energy drop + return + "
-                  "smooth seam; bpm alone never grants PASS",
+        "source": "WWFIX D1/F2 (X3/X4) + WW-23: onset reduction + energy drop + "
+                  "symmetric return energy + BOTH seams; bpm alone never grants PASS",
     }
 
 
@@ -337,8 +374,12 @@ def judge_plan_pace(plan, before, problem, after, **kw):
         return {"verdict": "PASS", "applicable": False,
                 "detail": "no ordered pace change in the plan"}
     reason = order.get("reason") if isinstance(order, dict) else None
-    if isinstance(order, dict) and order.get("boundary_s") is not None:
-        kw.setdefault("boundary_s", order["boundary_s"])
+    if isinstance(order, dict):
+        if order.get("boundary_s") is not None:
+            kw.setdefault("boundary_s", order["boundary_s"])
+        # WW-23: the SECOND mandatory seam (the return) rides the order too.
+        if order.get("return_boundary_s") is not None:
+            kw.setdefault("return_boundary_s", order["return_boundary_s"])
     out = confirm_pace_change(before, problem, after, reason=reason, **kw)
     out["applicable"] = True
     return out
@@ -358,6 +399,12 @@ def judge_plan_pace(plan, before, problem, after, **kw):
 PACE_CUE_DROP = "half-time"
 PACE_CUE_RETURN = "turn and rise back to the groove"
 FINGERPRINT_SCHEMA = "blackceo.pace-cue/v1"
+#: WW-23: the TWO approved semantic anchors a pace order names -- the drop and
+#: the return -- plus the two DISTINCT seam timestamps it must carry. NEW
+#: ACCEPTANCE RULE (see core/acceptance-profile.json ww_wave.pace_change).
+PACE_ANCHOR_DROP = "drop"
+PACE_ANCHOR_RETURN = "return"
+PACE_SEAM_KEYS = ("boundary_s", "return_boundary_s")
 
 
 def canonical_pace(order):
@@ -374,9 +421,14 @@ def canonical_pace(order):
     if not isinstance(order, dict):
         order = {"reason": str(order)}
     boundary = order.get("boundary_s")
+    ret_boundary = order.get("return_boundary_s")
     return {
         "schema": FINGERPRINT_SCHEMA,
+        "drop_anchor": order.get("drop_anchor") or PACE_ANCHOR_DROP,
+        "return_anchor": order.get("return_anchor") or PACE_ANCHOR_RETURN,
         "boundary_s": None if boundary is None else round(float(boundary), 6),
+        "return_boundary_s": (None if ret_boundary is None
+                              else round(float(ret_boundary), 6)),
         "drop": order.get("drop") or PACE_CUE_DROP,
         "thin_drums": bool(order.get("thin_drums", True)),
         "return": order.get("return") or PACE_CUE_RETURN,
@@ -392,6 +444,81 @@ def pace_fingerprint_component(order):
         return ""
     return json.dumps(cue, sort_keys=True, separators=(",", ":"))
 
+
+# ---- WW-23: the pre-generation payload gate --------------------------------
+#
+# The audio gate (D3, ``confirm_pace_change``) inspects the EXPORTS. These three
+# guards run BEFORE any generation on the exact request the provider would
+# receive: the order must carry BOTH approved anchors and TWO DISTINCT seam
+# timestamps, the final style must carry BOTH directions, and the internal
+# ``_pace_plan`` judging metadata must never ride a provider-visible field.
+
+def pace_anchors(order):
+    """The TWO approved semantic anchors a pace order names, resolved with the
+    specification's own cue words as the fallback."""
+    o = order if isinstance(order, dict) else {"reason": str(order)}
+    return {"drop": o.get("drop") or PACE_CUE_DROP,
+            "return": o.get("return") or PACE_CUE_RETURN,
+            "drop_anchor": o.get("drop_anchor") or PACE_ANCHOR_DROP,
+            "return_anchor": o.get("return_anchor") or PACE_ANCHOR_RETURN}
+
+def pace_seams(order):
+    """The TWO mandatory seam timestamps of one pace order.
+
+    Returns {"drop_s", "return_s", "distinct", "missing", "reused"}. ``missing``
+    names the absent seam key(s); ``reused`` is True when both seams were given
+    but share the SAME timestamp (a reused boundary is not two transitions)."""
+    o = order if isinstance(order, dict) else {}
+    vals = {}
+    for key in PACE_SEAM_KEYS:
+        v = o.get(key)
+        if v is None:
+            vals[key] = None
+            continue
+        try:
+            vals[key] = float(v)
+        except (TypeError, ValueError):
+            vals[key] = None
+    drop, ret = vals["boundary_s"], vals["return_boundary_s"]
+    missing = [k for k in PACE_SEAM_KEYS if vals[k] is None]
+    return {"drop_s": drop, "return_s": ret,
+            "missing": missing,
+            "reused": not missing and drop == ret,
+            "distinct": not missing and drop != ret}
+
+def check_pace_plan(order):
+    """BEFORE generation: the ordered pace change must carry TWO approved
+    semantic anchors and TWO DISTINCT seam timestamps. A missing seam, a reused
+    boundary (both seams the same moment) or a non-numeric seam is refused HERE,
+    with the reason string. No order -> no reasons (nothing to enforce)."""
+    if not order:
+        return []
+    reasons = []
+    anchors = pace_anchors(order)
+    if not str(anchors["drop"]).strip() or not str(anchors["return"]).strip():
+        reasons.append("PACE_ANCHOR_MISSING: the ordered pace change must name "
+                       "both approved anchors (the drop and the return)")
+    seams = pace_seams(order)
+    if seams["missing"]:
+        reasons.append("PACE_SEAM_MISSING: the ordered pace change carries %s; "
+                       "two mandatory seams (boundary_s and return_boundary_s) are "
+                       "required" % ", ".join(seams["missing"]))
+    elif seams["reused"]:
+        reasons.append("PACE_SEAM_REUSED_BOUNDARY: the drop and the return share "
+                       "the timestamp %r; the two musical transitions are distinct "
+                       "moments, never one reused boundary" % (seams["drop_s"],))
+    return reasons
+
+def pace_provider_leak(payload):
+    """WW-23: True when the internal ``_pace_plan`` judging metadata rides any
+    provider-visible field. The final style carrying the two DIRECTIONS is
+    required and fine; the metadata KEY is not a provider instruction and must
+    be stripped before generation (``song_dispatch.run_takes`` does this)."""
+    try:
+        text = json.dumps(payload, sort_keys=True, default=str)
+    except Exception:
+        return True
+    return "_pace_plan" in text
 
 # ---- the anchored controls -------------------------------------------------
 
@@ -425,8 +552,19 @@ def selftest():
     # an octave alias is the SAME beat and can never register as a change
     fold = octave_fold_bpm(85.2, 181.5)
     assert fold["same_beat"] is True, fold
+    # WW-23: the return energy is SYMMETRIC -- a 24 dB OVERSHOOT is not a return
+    over = confirm_pace_change(fast, half, {"onset_rate_per_s": 2.9, "rms_dbfs": 10.0})
+    assert over["verdict"] == "FAIL" and "energy_return" in over["failed"], over
+    assert over["return_energy_gap_db"] == 24.0, over
+    # WW-23: two DISTINCT seams; a missing seam and a reused boundary both refuse
+    assert check_pace_plan({"drop": "half-time", "return": "rise",
+                            "boundary_s": 20.0, "return_boundary_s": 60.0}) == []
+    assert any("PACE_SEAM_MISSING" in r for r in check_pace_plan({"boundary_s": 20.0}))
+    assert any("PACE_SEAM_REUSED_BOUNDARY" in r
+               for r in check_pace_plan({"boundary_s": 20.0, "return_boundary_s": 20.0}))
     return {"pair": ok["verdict"], "shipped": shipped["verdict"],
-            "bare": bare["verdict"], "alias_same_beat": fold["same_beat"]}
+            "bare": bare["verdict"], "alias_same_beat": fold["same_beat"],
+            "overshoot": over["verdict"]}
 
 
 if __name__ == "__main__":
