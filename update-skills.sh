@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.2"
+ONBOARDING_VERSION="v27.1.3"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2024,7 +2024,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.2 - safe_json_edit
+# v27.1.3 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -11250,9 +11250,22 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
         [ -n "$_CC_DEFAULT" ] || _CC_DEFAULT="main"
         if [ "$_CC_BRANCH" != "$_CC_DEFAULT" ] \
            || ! git -C "$_CC_DIR" merge-base --is-ancestor "origin/$_CC_DEFAULT" HEAD 2>/dev/null; then
-          echo "FATAL: Command Center installer returned success but checkout is not current on origin/$_CC_DEFAULT" >&2
-          echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC checkout not on origin/$_CC_DEFAULT." >&2
-          exit 2
+          # Residual mismatch: the installer's phase=6 now converges a checkout
+          # that contains the pinned release but is behind origin/<default>.
+          # If one still slips through, route it through ONE convergence attempt
+          # before failing — the ff-only merge preserves local commits or
+          # refuses (never a reset/stash/discard), and a merely-stale checkout
+          # must not be a bare FATAL that skips the CC steps below.
+          if [ "$_CC_BRANCH" = "$_CC_DEFAULT" ] \
+             && git -C "$_CC_DIR" fetch --quiet origin "+refs/heads/$_CC_DEFAULT:refs/remotes/origin/$_CC_DEFAULT" >>"$LOG_FILE" 2>&1 \
+             && git -C "$_CC_DIR" -c user.name="Command Center Updater" -c user.email="updater@localhost" merge --ff-only "origin/$_CC_DEFAULT" >>"$LOG_FILE" 2>&1 \
+             && git -C "$_CC_DIR" merge-base --is-ancestor "origin/$_CC_DEFAULT" HEAD 2>/dev/null; then
+            echo "  ✓ Command Center checkout converged to origin/$_CC_DEFAULT after the installer returned (one ff-only attempt)"
+          else
+            echo "FATAL: Command Center installer returned success but checkout is not current on origin/$_CC_DEFAULT" >&2
+            echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC checkout not on origin/$_CC_DEFAULT." >&2
+            exit 2
+          fi
         fi
         echo "  ✓ Command Center app refreshed, current on origin/$_CC_DEFAULT, rebuilt, and health-verified"
         # Refresh outcome and parity outcome are separate facts. The installer
