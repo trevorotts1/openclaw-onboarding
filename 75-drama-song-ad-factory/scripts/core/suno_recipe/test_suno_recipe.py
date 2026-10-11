@@ -132,11 +132,19 @@ class Recipe(unittest.TestCase):
         self.assertTrue(R.check_negatives("rap"))                      # dry rule missing
         self.assertNotIn("rap", R.negative_tags("rnb-flow"))           # the rap style keeps its rap
         req = R.build_request("soul-ballad", sheet(), CLIENT, "T", 58, hook_plan=HOOK_PLAN)
-        self.assertEqual((req["model"], req["custom_mode"], req["style_weight"], req["variety"],
-                          req["weirdness_constraint"], req["vocal_gender"], req["duration"]),
-                         ("V6", True, 0.75, 0, 0.3, "f", 58))
-        self.assertIn("band dropout", req["negative_tags"])
-        self.assertEqual(R.parse_lyrics(req["lyrics"]), sheet())
+        # WW-30: the build is the createTask ENVELOPE -- the route model and
+        # the top-level camelCase callBackUrl sit outside, every direction
+        # (including the generation value) sits inside the snake_case input.
+        self.assertEqual(req["endpoint"], R.KIE_MUSIC_TASK_ENDPOINT)
+        self.assertEqual(req["model"], R.KIE_MUSIC_TASK_MODEL)
+        self.assertTrue(req["callBackUrl"])
+        self.assertEqual(R.check_envelope(req), [])
+        inp = req["input"]
+        self.assertEqual((inp["model"], inp["custom_mode"], inp["style_weight"], inp["variety"],
+                          inp["weirdness_constraint"], inp["vocal_gender"], inp["duration"]),
+                         (R.KIE_MUSIC_MODEL_VALUE, True, 0.75, 0, 0.3, "f", 58))
+        self.assertIn("band dropout", inp["negative_tags"])
+        self.assertEqual(R.parse_lyrics(inp["lyrics"]), sheet())
 
     def test_syllables(self):
         self.assertEqual(R.syllables("I am not sma-a-all"), 4)

@@ -118,7 +118,7 @@ def _pipeline(tmp, bad_first=(), bad_always=()):
         src = os.path.join(tmp, "%s-%d.mp3" % (v["id"], k))
         _mp3(src, 300 + 100 * len(calls))
         bad = v["id"] in bad_always or (v["id"] in bad_first and k == 1)
-        t = dict(GOOD, audio_path=src, aligned_words=_suno_words(rq["lyrics"], GOOD["duration_s"]))
+        t = dict(GOOD, audio_path=src, aligned_words=_suno_words(rq["input"]["lyrics"], GOOD["duration_s"]))
         if bad:
             t["detector"] = "singcheck v1"
         return [t]
@@ -154,10 +154,10 @@ def test_recap_lists_it_and_line_change_works():
 def test_three_distinct_variants_per_style_all_pass_the_request_check():
     for style in ("rnb-flow", "soul-ballad", "soul-rise"):
         reqs = SC.build_requests(style, sheet_for(style), CLIENT, "T", 58, hook_plan={"true_at_beat": "the_world"})
-        assert len({rq["style"] for _, rq in reqs}) == 3 and len({v["label"] for v, _ in reqs}) == 3
-        assert len({rq["lyrics"] for _, rq in reqs}) == 1        # same lyric sheet
+        assert len({rq["input"]["style"] for _, rq in reqs}) == 3 and len({v["label"] for v, _ in reqs}) == 3
+        assert len({rq["input"]["lyrics"] for _, rq in reqs}) == 1        # same lyric sheet
         for v, rq in reqs:
-            assert rq["style"].endswith(v["clause"].rstrip(".") + ".")
+            assert rq["input"]["style"].endswith(v["clause"].rstrip(".") + ".")
 
 
 def test_yes_path_three_labelled_files_titles_readme_and_parallel():

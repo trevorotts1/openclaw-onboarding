@@ -1,3 +1,5 @@
+## [v27.1.11]  -  2026-10-11  -  WW-30: retire the legacy /api/v1/generate music-generation route in skills 75 and 68 (createTask envelope only: outer model ai-music-api/generate, top-level callBackUrl, nested snake_case input, one lyrics source at input.lyrics), with a zero-spend fake-transport proof
+
 ## [v27.1.10]  -  2026-10-11  -  Merge train: #1841 docs(sop): drama-song SOP checks delivery against the twelve…; #1847 WFMTFIX-U1: make the skill 75 empty-home core copy deterministic (no…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

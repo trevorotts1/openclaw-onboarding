@@ -6,6 +6,47 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.27 - 2026-10-11 - WW-30: the createTask envelope is the ONLY music contract; the legacy `/api/v1/generate` route is RETIRED
+
+`scripts/core/suno_recipe/suno_recipe.py` now BUILDS the createTask envelope and nothing else:
+outer `model` `ai-music-api/generate` (`KIE_MUSIC_TASK_MODEL`), a TOP-LEVEL camelCase
+`callBackUrl`, and a nested snake_case `input` carrying `custom_mode`, `instrumental`,
+`model`, `title`, `lyrics`, `style`, `negative_tags`, `duration`, `vocal_gender` and the
+weights. `input.lyrics` is the ONE approved lyrics source: a `prompt` beside it is
+`COMPETING_LYRICS` (a defect), never a silent preference. The legacy flat payload (its
+fields at the top level, on `/api/v1/generate`) is refused with `LEGACY_FLAT_CONTRACT`
+and there is **no legacy fallback and no silent switch-back**. The KIE HOST is named in
+neither skill-75 module (F14 keeps it at the transport boundary).
+
+- `suno_recipe`: new `check_envelope` / `envelope_input` and the named refusals
+  (`LEGACY_FLAT_CONTRACT`, `CALLBACK_NOT_TOP_LEVEL`, `COMPETING_LYRICS`,
+  `MISSING_DIRECTION`, `UNSUPPORTED_MODEL`, `UNSUPPORTED_MODEL_VALUE`, `ENVELOPE_INPUT_MISSING`).
+  `build_request` returns the envelope; the header keeps the route path only.
+- **The individual V6-family VALUE is UNDETERMINED**: the newest documented FAMILY is V6 and
+  the candidate VALUES are `V6`, `V6_MINI`, `V6_WILD` ("Required. Use V6, V6_MINI or V6_WILD."),
+  published with NO chronological ranking. `KIE_MUSIC_MODEL_VALUE` = `"V6"` with
+  `KIE_MUSIC_MODEL_VALUE_STATUS = "UNDETERMINED"` is the SINGLE named place to update it;
+  the candidates are listed UNRANKED, no newest variant is invented, and no paid acceptance
+  test was run to find one.
+- `song_dispatch.validate_request` / `run_takes` read the envelope (`input.*`) only, and
+  refuse a non-envelope request before the script gate, the ledger or any generation.
+  `song_choices.build_requests` appends the variant clause to `input.style`.
+  `music_director.build_generate_request` uses the same constants and always carries
+  `negative_tags` plus a `duration` key; its envelope is checked before the caps are measured.
+- `kie_dispatch`: new `music_contract_refusal` gate at the top of `dispatch` (before any
+  ledger row or call) refusing the retired route (`LEGACY_MUSIC_ROUTE`) and any malformed
+  music envelope (`MUSIC_ENVELOPE_REJECTED`); new defensive readers
+  `task_id_from_acknowledgement` (tolerates more than one plausible nesting — the initial
+  task-ID ack nesting is **UNVERIFIED** and is never guessed) and `audio_urls_from_result`
+  (the documented `data.response.data[].audio_url`, tolerating variants, never truncating a
+  multiple-track answer to one).
+- Credentials handling, ownership, the ledger, callbacks, reconciliation, the paid tracks
+  and every other `/api/v1/generate/<op>` route are UNCHANGED.
+- New `scripts/core/test_music_createtask_ww30.py`: a FAKE TRANSPORT captures the exact URL
+  and the exact serialized payload of both entry paths, each refusal is asserted by name, and
+  success / rejection / timeout / malformed acknowledgement / multiple returned tracks are
+  each exercised. ZERO SPEND: no provider call is made.
+
 ## v2.9.26 - 2026-10-11 - empty-home test: make the core copy deterministic so the `__pycache__` race cannot fail `QC static invariants`
 
 The required check `QC static invariants`, step "Skill 75 empty-home test suite (manual 02 B6)",

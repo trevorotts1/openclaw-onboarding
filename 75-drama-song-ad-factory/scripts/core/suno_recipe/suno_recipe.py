@@ -86,6 +86,63 @@ RAP_STYLE_IDS = frozenset({"rnb-flow"})              # rap IS this style: no rap
 #: KIE generate-music values measured/researched 2026-10-08.
 KIE_PARAMS = {"model": "V6", "custom_mode": True, "instrumental": False,
               "style_weight": 0.75, "weirdness_constraint": 0.3, "variety": 0}
+
+# ---------------------------------------------------------------------------
+# WW-30: the CURRENT KIE music-generation contract, held in ONE place.
+#
+#   POST <KIE host>/api/v1/jobs/createTask      (path: KIE_MUSIC_TASK_ENDPOINT)
+#   {"model": "ai-music-api/generate",
+#    "callBackUrl": <TOP-LEVEL camelCase URL>,
+#    "input": {"custom_mode": ..., "instrumental": ..., "model": <value>,
+#              "title": ..., "lyrics": ..., "style": ...,
+#              "negative_tags": ..., "duration": ...}}
+#
+# The legacy flat /api/v1/generate music-generation contract is RETIRED in
+# this skill: nothing here builds it, nothing falls back to it and
+# ``check_envelope`` refuses it by name. There is no silent switch-back.
+#: The route PATH. No host is named in this module: the KIE host belongs to
+#: the transport boundary (Skill 74), and the skill's own static checks refuse
+#: a KIE host outside kie_dispatch/ (F14). The absolute URL is therefore
+#: endpoint-on-the-KIE-host, composed where the request is actually sent.
+KIE_MUSIC_TASK_ENDPOINT = "/api/v1/jobs/createTask"
+KIE_MUSIC_TASK_URL = "POST " + KIE_MUSIC_TASK_ENDPOINT + " on the KIE host"
+#: The outer route model of the createTask envelope (never a version).
+KIE_MUSIC_TASK_MODEL = "ai-music-api/generate"
+#: RETIRED (refused with LEGACY_FLAT_CONTRACT). Kept as a NAMED constant so a
+#: reader can see exactly which path was retired rather than inferring it.
+KIE_LEGACY_GENERATE_ENDPOINT = "/api/v1/generate"
+
+#: The individual Suno generation VALUE, sent as ``input.model``.
+#:
+#: STATUS: **UNDETERMINED**. The plan's revised research names the newest
+#: documented FAMILY as V6 and the candidate VALUES as ``V6``, ``V6_MINI`` and
+#: ``V6_WILD`` ("Required. Use V6, V6_MINI or V6_WILD."). NO chronological
+#: ranking is published, so WHICH of the three is newest is UNVERIFIED. The
+#: candidates below are listed UNRANKED, no newest variant is invented, and no
+#: paid acceptance test was run to find one. This constant is the SINGLE named
+#: place this skill reads the value from: a later run that establishes the
+#: value updates it HERE and nowhere else.
+KIE_MUSIC_MODEL_VALUE = "V6"
+KIE_MUSIC_MODEL_VALUE_STATUS = "UNDETERMINED"
+KIE_MUSIC_MODEL_VALUE_CANDIDATES = ("V6", "V6_MINI", "V6_WILD")
+
+#: Placeholder callback for local fixtures only; a real run passes the Skill 46
+#: relay URL. ``check_envelope`` refuses a payload without a TOP-LEVEL
+#: camelCase ``callBackUrl``, so no request can silently lose its callback.
+DEFAULT_CALLBACK_URL = "https://example.invalid/cb"
+
+#: The directions the createTask envelope must carry inside ``input``.
+REQUIRED_MUSIC_DIRECTIONS = ("custom_mode", "instrumental", "title", "lyrics",
+                             "style", "negative_tags", "duration")
+#: Keys that only ever existed on the retired FLAT contract: seeing one at the
+#: top level of an envelope proves a legacy payload, not a createTask one.
+LEGACY_FLAT_KEYS = ("lyrics", "custom_mode", "instrumental", "style",
+                    "negative_tags", "title", "prompt", "duration")
+#: A callback written with any of these names, or nested in ``input``, is a
+#: misplaced callback: the contract carries exactly one TOP-LEVEL callBackUrl.
+MISPLACED_CALLBACK_KEYS = ("callback_url", "callbackUrl", "callback",
+                           "call_back_url", "CallBackUrl")
+
 _SPOKEN_WORD_RE = re.compile(r"\b(spoken|speaks?|speaking|speech|talk\w*|narrat\w*)\b", re.I)
 
 
@@ -760,18 +817,125 @@ def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
             "negative_tags": negative_tags(style_id)}
 
 
+def envelope_input(req):
+    """The nested ``input`` object of a createTask envelope, or None.
+
+    ONE reader for every caller: nothing reads a direction off the top level,
+    because the top level carries the route model and the callback only.
+    """
+    if not isinstance(req, dict):
+        return None
+    inp = req.get("input")
+    return inp if isinstance(inp, dict) else None
+
+
+def check_envelope(req):
+    """Named refusals for one built music request. [] = send it.
+
+    The ONE approved contract is the createTask envelope::
+
+        POST <KIE host>/api/v1/jobs/createTask   (KIE_MUSIC_TASK_ENDPOINT)
+        {"model": "ai-music-api/generate",
+         "callBackUrl": <TOP-LEVEL camelCase URL>,
+         "input": {snake_case directions}}
+
+    Every deviation is refused with a named reason, and the legacy flat
+    ``/api/v1/generate`` music-generation contract is RETIRED: it is never
+    accepted here and never used as a fallback. Exactly ONE approved lyrics
+    source may be sent -- ``input.lyrics`` -- and sending a ``prompt`` beside
+    it is a defect (COMPETING_LYRICS), never a silent preference.
+    """
+    if not isinstance(req, dict):
+        return ["ENVELOPE_NOT_AN_OBJECT: a music request must be a JSON object"]
+    errs = []
+    inp = envelope_input(req)
+    flat = sorted(k for k in LEGACY_FLAT_KEYS if k in req)
+    if inp is None:
+        if flat:
+            # The retired flat contract: its own fields sit at the TOP level.
+            return ["LEGACY_FLAT_CONTRACT: the retired flat %s payload (fields "
+                    "%s at the top level) is refused; send the createTask "
+                    "envelope instead (outer model %r, top-level callBackUrl, "
+                    "nested snake_case input)"
+                    % (KIE_LEGACY_GENERATE_ENDPOINT, ", ".join(flat),
+                       KIE_MUSIC_TASK_MODEL)]
+        return ["ENVELOPE_INPUT_MISSING: createTask requires a nested 'input' "
+                "object carrying the snake_case directions"]
+    if flat:
+        errs.append("LEGACY_FLAT_CONTRACT: %s belong inside 'input', not at "
+                    "the top level of the createTask envelope"
+                    % ", ".join(flat))
+    # -- the callback: exactly one, TOP LEVEL, camelCase --------------------
+    cb = req.get("callBackUrl")
+    if not (isinstance(cb, str) and cb.strip()):
+        errs.append("CALLBACK_NOT_TOP_LEVEL: the createTask envelope needs a "
+                    "non-empty TOP-LEVEL camelCase 'callBackUrl'; got %r"
+                    % (cb,))
+    misplaced = [k for k in MISPLACED_CALLBACK_KEYS if k in req or k in inp]
+    if "callBackUrl" in inp:
+        misplaced.append("input.callBackUrl")
+    if misplaced:
+        errs.append("CALLBACK_NOT_TOP_LEVEL: callback key(s) %s are misplaced; "
+                    "the contract carries exactly one TOP-LEVEL 'callBackUrl'"
+                    % ", ".join(sorted(misplaced)))
+    # -- the model: outer route id, inner VALUE ----------------------------
+    if req.get("model") != KIE_MUSIC_TASK_MODEL:
+        errs.append("UNSUPPORTED_MODEL: the outer model must be %r (got %r); "
+                    "a version never rides the outer model on createTask"
+                    % (KIE_MUSIC_TASK_MODEL, req.get("model")))
+    ver = inp.get("model")
+    if ver not in KIE_MUSIC_MODEL_VALUE_CANDIDATES:
+        errs.append("UNSUPPORTED_MODEL_VALUE: input.model must be one of %s "
+                    "(got %r); the newest individual value is %s and no value "
+                    "outside the named candidates is accepted"
+                    % (", ".join(KIE_MUSIC_MODEL_VALUE_CANDIDATES), ver,
+                       KIE_MUSIC_MODEL_VALUE_STATUS))
+    # -- exactly one lyrics source -----------------------------------------
+    lyrics, prompt = inp.get("lyrics"), inp.get("prompt")
+    if lyrics and prompt:
+        errs.append("COMPETING_LYRICS: both input.lyrics and input.prompt are "
+                    "set; send EXACTLY ONE approved lyrics source (input.lyrics "
+                    "is the approved one) and drop the prompt")
+    elif not lyrics and not prompt:
+        errs.append("MISSING_DIRECTION: no lyrics source at all; input.lyrics "
+                    "must carry the one approved sheet")
+    # -- required directions ------------------------------------------------
+    missing = [f for f in REQUIRED_MUSIC_DIRECTIONS if f not in inp]
+    if missing:
+        errs.append("MISSING_DIRECTION: input is missing %s"
+                    % ", ".join(missing))
+    return errs
+
+
 def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f",
-                  spoken_share_pct=None, delivered_s=None, hook_plan=None):
-    """KIE generate-music input for one ad (snake_case). ``length_s`` is the
-    DELIVERED length (chosen - 2). Raises RecipeError on any rule break."""
+                  spoken_share_pct=None, delivered_s=None, hook_plan=None,
+                  callback_url=DEFAULT_CALLBACK_URL):
+    """The KIE createTask envelope for one ad. ``length_s`` is the DELIVERED
+    length (chosen - 2). Raises RecipeError on any rule break.
+
+    WW-30: this returns the CURRENT contract only -- outer model
+    ``ai-music-api/generate``, a TOP-LEVEL camelCase ``callBackUrl`` and a
+    nested snake_case ``input`` carrying every direction plus exactly one
+    lyrics source (``input.lyrics``). The legacy flat payload is not built
+    here and there is no fallback to it.
+    """
     out = prepare(style_id, sheet, client_text, length_s, spoken_share_pct,
                   vocal_gender, delivered_s, hook_plan)
     if out.get("exempt"):
         raise RecipeError("EXEMPT", "voiceover style has no Suno request")
-    req = kie_params()
-    req.update({"duration": length_s, "vocal_gender": vocal_gender, "title": title,
+    inp = kie_params()
+    inp.pop("model", None)          # the route model is the OUTER model now
+    inp.update({"model": KIE_MUSIC_MODEL_VALUE, "duration": length_s,
+                "vocal_gender": vocal_gender, "title": title,
                 "style": out["style"], "lyrics": out["lyrics"],
                 "negative_tags": out["negative_tags"]})
+    req = {"endpoint": KIE_MUSIC_TASK_ENDPOINT,
+           "model": KIE_MUSIC_TASK_MODEL,
+           "callBackUrl": callback_url,
+           "input": inp}
+    errs = check_envelope(req)
+    if errs:
+        raise RecipeError("REQUEST_ENVELOPE_REJECTED", "; ".join(errs))
     # FU-U6 (plan E.1): the final payload measured against the catalog caps;
     # over a cap, prompt_limits raises naming field, chars, cap, source, status.
     _PL.check_request("suno-generate", req)

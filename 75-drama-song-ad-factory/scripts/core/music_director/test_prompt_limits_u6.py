@@ -165,7 +165,7 @@ def test_clear_path_builds_and_is_measured():
 def test_dispatch_allows_headroom_duration():
     plan = dict(LF.plan(60, (15, 20)), style_id="soul-ballad", hook_plan=HOOK_PLAN)
     req = R.build_request("soul-ballad", SHEET, CLIENT, "T", plan["delivered_s"], hook_plan=HOOK_PLAN)
-    req["duration"] = 67.0  # stub take, never real audio
+    req["input"]["duration"] = 67.0  # stub take, never real audio
     GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 2, "source": "measured"},
                          {"delivery": "sung", "start": 2.5, "end": 45, "source": "measured"},
                          {"delivery": "spoken", "start": 45, "end": 54, "source": "measured"}],
@@ -174,7 +174,7 @@ def test_dispatch_allows_headroom_duration():
     # FU-HOOK-PLACEMENT: Suno's aligned words carry each section header inline
     # on the section's first word; the always-on hook_placement gate reads them.
     words = []
-    for block in req["lyrics"].split("\n\n"):
+    for block in req["input"]["lyrics"].split("\n\n"):
         head, *lines = block.split("\n")
         toks = " ".join(lines).split() or [""]
         words += [{"word": (head + "\n" + w + " ") if k == 0 else w + " "} for k, w in enumerate(toks)]
@@ -189,12 +189,12 @@ def test_dispatch_allows_headroom_duration():
                        style_id="soul-ballad")
     check("G9 headroom duration accepted (no whole-track refusal)",
           out["verdict"] in ("PASS", "FLAG", "FAIL") and out["spent_cents"] == 6, out)
-    out2 = SD.run_takes(dict(req, duration=plan["delivered_s"]), plan, lambda rq: [dict(GOOD), dict(GOOD)],
+    out2 = SD.run_takes(dict(req, input=dict(req["input"], duration=plan["delivered_s"])), plan, lambda rq: [dict(GOOD), dict(GOOD)],
                         lambda t: {}, lambda t, r: None, script, hook, (15, 20),
                         kie=lambda fn, lbl, generation=False: fn(), style_id="soul-ballad")
     check("exact planned duration still accepted", out2["spent_cents"] == 6, out2)
     try:
-        SD.run_takes(dict(req, duration=30), plan, lambda rq: [], lambda t: {}, lambda t, r: None,
+        SD.run_takes(dict(req, input=dict(req["input"], duration=30)), plan, lambda rq: [], lambda t: {}, lambda t, r: None,
                      script, hook, (15, 20))
         check("a patch/short duration is still refused", False, "30 s accepted")
     except SD.DispatchError:

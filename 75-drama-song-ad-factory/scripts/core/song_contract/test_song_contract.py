@@ -93,11 +93,17 @@ def _take(name):
 
 
 def _request(lyrics):
-    req = R.kie_params()
-    req.update({"duration": D, "vocal_gender": "f", "title": "T",
+    """WW-30: a valid createTask ENVELOPE (the only contract validate_request
+    accepts). The directions sit in the nested snake_case input; the route
+    model and the top-level callBackUrl sit outside."""
+    inp = R.kie_params()
+    inp.pop("model", None)
+    inp.update({"model": R.KIE_MUSIC_MODEL_VALUE, "duration": D,
+                "vocal_gender": "f", "title": "T",
                 "style": R.style_text("rnb-flow", R.parse_lyrics(GOOD)),
                 "lyrics": lyrics, "negative_tags": R.negative_tags("rnb-flow")})
-    return req
+    return {"endpoint": R.KIE_MUSIC_TASK_ENDPOINT, "model": R.KIE_MUSIC_TASK_MODEL,
+            "callBackUrl": R.DEFAULT_CALLBACK_URL, "input": inp}
 
 
 def test_a_v1_sheet_fails_with_the_reason():
@@ -416,11 +422,13 @@ def test_k_proper_sheet_goes_through_the_director():
     # (mocked generator, no spend) takes it ("whole tracks only" never fires)
     try:
         seen = []
-        SD.run_takes(dict(req["input"], _hook_plan=req["_hook_plan"]),
+        # WW-30: the director's createTask ENVELOPE is what goes to run_takes;
+        # the delivered length is read from the nested input.
+        SD.run_takes(dict(req, _hook_plan=req["_hook_plan"]),
                      {"delivered_s": D, "style_id": "rnb-flow"}, lambda rq: seen.append(rq) or [],
                      lambda t: {}, lambda t, r: None, CLIENT, CLIENT, cap_cents=6, cost_cents=6,
                      kie=lambda fn, *a, **k: fn(), style_id="rnb-flow")
-        sent = seen[0]["duration"]
+        sent = seen[0]["input"]["duration"]
     except Exception as exc:                     # noqa: BLE001 - report the refusal
         sent = "%s: %s" % (type(exc).__name__, exc)
     check("k3 director -> run_takes: Suno duration is the delivered %d s" % D, sent == D, str(sent)[:300])

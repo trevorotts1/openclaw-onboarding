@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.26
+version: v2.9.27
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -522,9 +522,19 @@ frames were read. The checker that reports this is `UNAVAILABLE`, never PASS.
 
 ## Paid generation (what this skill may do)
 
-- Music/lyrics/vocals: Suno via Skill 68 (`68-kie-audio`) — Market
-  `createTask` envelope only for V6/V6_MINI/V6_WILD. Legacy dedicated
-  routes (`/api/v1/generate*`) stay V4–V5_5 only.
+- Music/lyrics/vocals: Suno via Skill 68 (`68-kie-audio`) — the Market
+  `POST /api/v1/jobs/createTask` envelope ONLY: outer `model`
+  `ai-music-api/generate`, a TOP-LEVEL camelCase `callBackUrl` and a nested
+  snake_case `input` (custom_mode, instrumental, model, title, lyrics,
+  style, negative_tags, duration), with exactly ONE approved lyrics source
+  at `input.lyrics`. The other-market routes (`/api/v1/generate/<op>`, e.g.
+  `/generate/extend`, `/generate/sounds`) are untouched. **The legacy
+  music-GENERATION route `/api/v1/generate` (the flat
+  prompt/customMode/... payload) is RETIRED**: `suno_recipe.check_envelope`
+  and `kie_dispatch` refuse it by name and there is NO legacy fallback and
+  no silent switch-back. Which individual V6-family VALUE is newest is
+  UNDETERMINED (candidates `V6`, `V6_MINI`, `V6_WILD`, unranked) — the value
+  is one named constant, `suno_recipe.KIE_MUSIC_MODEL_VALUE`.
 - Image and video: Skill 66 (`66-kie-image`) / Skill 67 (`67-kie-video`).
 - Live transport/polling/credit checks: Skill 74 (`74-kie-live-adapter`),
   shadow-first — submit never chooses or changes a model.
