@@ -46,14 +46,23 @@ SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
 # WWFIX D1: R&B Flow DELIVERS rap, so its sheet must plan the rap floor
 # (max(8 s, 10% of D) => 20 rap words at 58 s). The soul styles above carry no
 # rap and are refused a rap block, so the two styles cannot share one sheet.
+# WWR3INTFIX U1: WW-01 made the floor PER VERSE (2 verses, each 8.0 s / 20
+# words => 40 rap words = 16.0 s at 2.5 wps), so this sheet declares TWO rap
+# verses. The 58 s plan's word budget (93 + 10% band = 104) then leaves room
+# for 61 sung words and NO spoken closing -- exactly the trade the sibling
+# music_qc sheet documents -- so the rapped variant runs without the spoken
+# [Outro]; the intro + CTA shape is exercised by every non-rap sheet above.
 SHEET_RNB = [SHEET[0], SHEET[1], SHEET[2], SHEET[3],
              {"tag": "Verse", "delivery": "sung",
-              "lines": ["One seed of truth made me stro-o-ong,", "I hold the light I found,", "I walk free,"]},
+              "lines": ["One seed of truth made me stro-o-ong,", "I hold the light I found,",
+                        "I walk out free,", "I rise,", "I am more than this,", "I am here,"]},
              SHEET[5], SHEET[6],
              {"tag": "Verse", "delivery": "rap",
               "lines": ["Backup shoes, backup jacket, but no backup plan,",
                         "So I count what I make and not what they take today,"]},
-             SHEET[7]]
+             {"tag": "Verse", "delivery": "rap",
+              "lines": ["Every door they closed I opened with my own two hands,",
+                        "And I keep walking toward the morning light now,"]}]
 
 
 def sheet_for(style):

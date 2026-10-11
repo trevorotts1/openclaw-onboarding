@@ -195,3 +195,81 @@ def check_song_qc(approved_lines, observed_lines, checks,
                          for v, k, d in findings],
             "lyric_diff": diff,
             "checker_version": TOOL_VERSION}
+
+
+# ---- WW-08: the TOTAL take-gate verdict vocabulary and the constituent receipt
+#
+# One take gate returns exactly one of these words. ONLY "PASS" advances a take
+# to delivery; a gate that is genuinely not applicable to THIS run is recorded
+# NOT_APPLICABLE together with the style flag that backs it (WW-08 item 2),
+# never a bare skip. Everything else -- FAIL, FLAG, UNMEASURED, UNAVAILABLE,
+# UNKNOWN, a raised exception, a missing gate or an EMPTY gate set -- BLOCKS.
+# The old judge knew only FAIL/FLAG, so UNAVAILABLE and UNKNOWN fell straight
+# through to PASS and an empty gate set PASSed. Stdlib only.
+GATE_VERDICTS = ("PASS", "FAIL", "FLAG", "UNMEASURED", "UNAVAILABLE", "UNKNOWN",
+                 "NOT_APPLICABLE")
+NOT_APPLICABLE = "NOT_APPLICABLE"
+#: the receipt row written per take; a missing or stale one never counts.
+CONSTITUENT_SCHEMA = "ww.constituent-evidence/1"
+
+
+def norm_verdict(verdict):
+    """Fold any verdict onto the total vocabulary; an unknown word is UNKNOWN
+    (never a pass)."""
+    v = str(verdict or "").strip().upper()
+    return v if v in GATE_VERDICTS else "UNKNOWN"
+
+
+def verdict_advances(verdict, style_flag=None):
+    """True only for PASS, or a NOT_APPLICABLE carrying the style flag that
+    backs it (WW-08 item 2). Anything else blocks acceptance."""
+    n = norm_verdict(verdict)
+    if n == "PASS":
+        return True
+    if n == NOT_APPLICABLE:
+        return bool(isinstance(style_flag, str) and style_flag.strip())
+    return False
+
+
+def gate_blocked(gate):
+    """True when one take-gate record blocks acceptance (WW-08 item 2). A gate
+    that is not even a mapping (a raised exception, a missing record) blocks."""
+    if not isinstance(gate, dict):
+        return True
+    return not verdict_advances(gate.get("verdict"), gate.get("style_flag"))
+
+
+def constituent_receipt(*, audio_digest, creative_fingerprint, profile_version,
+                        checker, gates):
+    """WW-08 item 3: the constituent-evidence receipt, bound to the audio digest,
+    the creative fingerprint, the acceptance-profile version and the checker
+    identity, carrying every gate's verdict and naming every blocked gate."""
+    rows = {str(k): norm_verdict((v or {}).get("verdict"))
+            for k, v in (gates or {}).items()}
+    return {"schema": CONSTITUENT_SCHEMA,
+            "audio_digest": audio_digest,
+            "creative_fingerprint": creative_fingerprint,
+            "acceptance_profile_version": profile_version,
+            "checker": checker,
+            "gates": rows,
+            "blocked": sorted(str(k) for k, v in (gates or {}).items()
+                              if gate_blocked(v))}
+
+
+def check_constituent_receipt(receipt, *, audio_digest=None,
+                              creative_fingerprint=None, profile_version=None,
+                              checker=None):
+    """(ok, reason). A missing, stale or mismatched receipt never counts, and a
+    receipt naming any blocked gate never advances (WW-08 item 3)."""
+    if not isinstance(receipt, dict) or receipt.get("schema") != CONSTITUENT_SCHEMA:
+        return False, "no constituent-evidence receipt"
+    for field, want in (("audio_digest", audio_digest),
+                        ("creative_fingerprint", creative_fingerprint),
+                        ("acceptance_profile_version", profile_version),
+                        ("checker", checker)):
+        if want is not None and receipt.get(field) != want:
+            return False, "stale or mismatched receipt: %s" % field
+    if receipt.get("blocked"):
+        return False, ("required gates did not all PASS: %s"
+                       % ",".join(str(x) for x in receipt["blocked"]))
+    return True, ""
