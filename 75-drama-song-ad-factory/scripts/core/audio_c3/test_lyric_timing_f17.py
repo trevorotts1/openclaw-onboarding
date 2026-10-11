@@ -366,7 +366,8 @@ def test_scan_permits_faster_whisper_only_in_module():
           "rc=%s err=%s" % (r.returncode, r.stderr[-300:]))
     tmp = make_tmp()
     core2 = os.path.join(tmp, "core")
-    shutil.copytree(CORE, core2)
+    shutil.copytree(CORE, core2,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     os.makedirs(os.path.join(core2, "audio_c3"), exist_ok=True)
     with open(os.path.join(core2, "audio_c3", "second.py"), "w",
               encoding="utf-8") as f:
@@ -379,7 +380,8 @@ def test_scan_permits_faster_whisper_only_in_module():
 def test_scan_banned_surface_in_core():
     tmp = make_tmp()
     core2 = os.path.join(tmp, "core")
-    shutil.copytree(CORE, core2)
+    shutil.copytree(CORE, core2,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     with open(os.path.join(core2, "bad.py"), "w", encoding="utf-8") as f:
         f.write("import whisper\n")
     r = run_scan({"DRAMA75_CORE": core2})
