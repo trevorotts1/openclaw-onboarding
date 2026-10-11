@@ -95,6 +95,16 @@ pairing/admin surface).
   reports `ALL PASS` (checks A–E) with exit 0. This is the real-content commit of
   PR #1820 (branch `unit/U5-U1`); the v2.9.18 -> v2.9.19 patch bump and the
   SKILL.md frontmatter are bundled into that same commit per the bundle protocol.
+## v2.9.19 - 2026-10-10 - Approvals layer and producer hand-off mini-app (U8-U1): first answer wins, version dedup, nudge -> reminder -> silence
+
+Adds seven new files under `mini-app/approvals/` and touches nothing else in the mini-app (no `mini-app/service/**`, `mini-app/ui/**`, `mini-app/deploy/**`, pairing surface or `intake_card` file).
+
+- `approvals.mjs` — the approvals layer, pure over an injected store: register/dedup an item, record an answer (first answer wins), the nudge -> reminder -> silence ladder, and the producer hand-off gate. The refusal dict and exit 5 reuse the skill's existing gate convention.
+- `ui.mjs` — the three approval cards and the studio-lines region; renders the service's lines verbatim (real `<button>`/`<h2>`, `textContent` never `innerHTML`, every state in words).
+- `producer-handoff.mjs` — the CLI that carries ONE approved item to the producer and refuses an unapproved one with a real non-zero exit (5).
+- `package.json` — `{"type":"module"}`, no dependencies.
+- Four behaviours, each with a runnable proof (`prove/approvals.prove.mjs`, exit 0/2) and a planted-bad control (`prove/planted-bad.sh`, mutates a LOCAL copy, shows red, restores, then the clean control): a competing answer is refused by name (`APPROVAL_ANSWER_TAKEN`) and the record is left untouched; the same version returns the existing item (`created:false`) while a genuinely new version creates a new item (`created:true`); exactly two notices, then silence; the hand-off refuses an unapproved item with exit 5.
+- Bundled in the same commit: `skill-version.txt` and the `SKILL.md` frontmatter land at v2.9.19 on this unit branch, so the G3 skill-content-without-version-bump gate passes on this head.
 
 ## v2.9.18 - 2026-10-10 - PKG-11 attempt 4: twelve REAL `produce_delivery` paths, real-run e2e, no fixture bytes
 
