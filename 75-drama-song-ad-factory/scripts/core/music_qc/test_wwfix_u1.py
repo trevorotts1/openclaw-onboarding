@@ -3413,6 +3413,458 @@ def test_wwcu4_the_cast_model_call_is_load_bearing():
     check(back["determined"] is True,
           "WWC-U4: restoring the cast model accepts it again (load-bearing, not dead)")
 
+# =====================================================================
+# WW-29: reconciled template data and recipe (WW29-U2)
+#
+# The model block (references/prompt-templates/models/suno-v6.json) no longer
+# mandates a long wordless opening or an early hook, and the vocalise is
+# OPTIONAL; the R&B Flow rap/sung direction is one decision in the data and in
+# the recipe; the required directions and `negative_tags` reach the EXACT final
+# `request["input"]` on every entry path; and an over-cap final style REFUSES
+# with a named reason, deleting no clause.
+#
+# Every threshold pinned below is a rule this unit states, not a measured limit
+# of an earlier run. Entry paths exercised: suno_recipe.build_request,
+# music_director.build_generate_request and song_choices.build_requests (the
+# three-complete-briefs path through suno_recipe.brief_style_text).
+# =====================================================================
+
+import copy                                                    # noqa: E402
+import io                                                      # noqa: E402
+import os                                                      # noqa: E402
+
+import ending_qc as _EQ29                                      # noqa: E402
+import music_director as _MD29                                 # noqa: E402
+import prompt_limits as _PL29                                  # noqa: E402
+from sung_hook import hook_placement as _HP29                  # noqa: E402
+from words_fit import words_fit as _WF29                       # noqa: E402
+
+#: The bare recipe module: is_rap_style/check_opening_vocalise_cue/
+#: _fewer_words_budget live outside the package re-export list.
+_R29 = getattr(R, "suno_recipe", R)
+_M29 = getattr(LF, "length_formula", LF)
+_SKILL29 = os.path.dirname(os.path.dirname(CORE))              # .../75-drama-song-ad-factory
+WW29_LENGTH_S = 88
+
+#: R&B Flow on the 88 s card WITHOUT its [Vocalise] section: the shipped sheet
+#: with one wordless line removed, so it still clears the per-verse rap floor.
+SHEET_NO_VOCALISE = [s for s in SHEET_RNB
+                     if not str(s["tag"]).lower().startswith("vocalise")]
+#: The same sheet with a DECLARED long opening cue (the WW-16 defect, verbatim).
+SHEET_LONG_VOCALISE = [
+    dict(s, cue="two very long held notes") if str(s["tag"]).lower().startswith("vocalise")
+    else s for s in SHEET_RNB]
+#: The retired rule's own shape: the hook is the very first section.
+SHEET_HOOK_FIRST = ([{"tag": "Hook", "delivery": "sung", "lines": list(HOOK)}]
+                    + SHEET_RNB[1:])
+
+def _ww29_build(sheet=None, **kw):
+    """ENTRY PATH 1: the recipe's own createTask builder."""
+    return R.build_request("rnb-flow", SHEET_RNB if sheet is None else sheet,
+                           CLIENT, "T", WW29_LENGTH_S, hook_plan=HOOK_PLAN, **kw)
+
+def _ww29_director(sheet=None):
+    """ENTRY PATH 2: the director seam that builds the same envelope."""
+    sh = SHEET_RNB if sheet is None else sheet
+    return _MD29.build_generate_request(
+        R.render_lyrics(sh, "rnb-flow"), R.style_text("rnb-flow", sh, "f"), "T",
+        style_id="rnb-flow", client_text=CLIENT, length_s=WW29_LENGTH_S,
+        hook_plan=HOOK_PLAN)
+
+def _ww29_choices(sheet=None):
+    """ENTRY PATH 3: the three independently authored complete briefs."""
+    return SC.build_requests("rnb-flow", SHEET_RNB if sheet is None else sheet,
+                             CLIENT, "T", WW29_LENGTH_S, hook_plan=HOOK_PLAN)
+
+def _ww29_final_inputs(sheet=None):
+    rows = [("build_request", _ww29_build(sheet)),
+            ("director", _ww29_director(sheet))]
+    rows += [("choices/%s" % v["id"], req) for v, req in _ww29_choices(sheet)]
+    return [(name, req["input"]) for name, req in rows]
+
+def _ww29_why(fn, *a, **kw):
+    try:
+        fn(*a, **kw)
+    except Exception as e:                                     # noqa: BLE001
+        return str(e)
+    return ""
+
+def test_ww29_a_required_directions_and_transmitted_negatives_on_every_path():
+    """The EXACT serialized input of every entry path carries every required
+    direction and the style's own `negative_tags`, not a trimmed one."""
+    need = set(R.REQUIRED_MUSIC_DIRECTIONS)
+    data_neg = R.negative_tags("rnb-flow")
+    print("  WW-29 rnb-flow negative_tags -> %r" % (data_neg,))
+    for name, inp in _ww29_final_inputs():
+        print("  WW-29 %s input keys -> %r" % (name, sorted(inp)))
+        check(need <= set(inp),
+              "WW-29: %s input carries every required direction" % name)
+        check(isinstance(inp.get("negative_tags"), str) and inp["negative_tags"].strip(),
+              "WW-29: %s transmits a non-empty negative_tags" % name)
+        check(inp["negative_tags"] == data_neg,
+              "WW-29: %s negative_tags is the data's own string, untouched" % name)
+        check(R.check_negatives(inp["negative_tags"], "rnb-flow") == [],
+              "WW-29: %s keeps every required negative clause" % name)
+        check(R.check_style_text(inp["style"]) == [],
+              "WW-29: %s final style passes the style rules" % name)
+
+def test_ww29_b_the_vocalise_is_optional_and_the_ceiling_still_refuses_a_long_cue():
+    """CONTROL first: the shipped sheet (which HAS a vocalise) builds. Then the
+    same sheet with no [Vocalise] builds on every entry path -- the base refused
+    it with "no sung vocalise lead-in". The WW-16 ceiling still refuses a
+    DECLARED long/held cue, and removing that one call drops the refusal."""
+    control = _ww29_build()
+    check("[Vocalise" in control["input"]["lyrics"],
+          "WW-29 control: the shipped sheet still renders its optional vocalise")
+    errs = R.check_lyric_sheet(SHEET_NO_VOCALISE, CLIENT, WW29_LENGTH_S, style_id="rnb-flow")
+    print("  WW-29 no-vocalise sheet errors -> %r" % (errs,))
+    check(not any("vocalise" in e.lower() for e in errs),
+          "WW-29: a sheet carrying no vocalise is not refused for that")
+    for name, inp in _ww29_final_inputs(SHEET_NO_VOCALISE):
+        check("[Vocalise" not in inp["lyrics"],
+              "WW-29: %s builds a payload with no vocalise section" % name)
+    # the ceiling guard the unit KEEPS, on the producing path
+    why = _ww29_why(_ww29_build, SHEET_LONG_VOCALISE)
+    print("  WW-29 declared long opening cue -> %r" % (why[:110],))
+    check("3.0 s ceiling" in why,
+          "WW-29: a DECLARED long opening vocalise cue is still refused by the ceiling")
+    saved = _R29.check_opening_vocalise_cue
+    try:
+        _R29.check_opening_vocalise_cue = lambda cue: None
+        gone = _ww29_why(_ww29_build, SHEET_LONG_VOCALISE)
+    finally:
+        _R29.check_opening_vocalise_cue = saved
+    print("  WW-29 with the ceiling call removed -> %r" % (gone[:80],))
+    check("3.0 s ceiling" not in gone,
+          "WW-29: removing the ceiling call removes the refusal (load-bearing, not dead)")
+    check("3.0 s ceiling" in _ww29_why(_ww29_build, SHEET_LONG_VOCALISE),
+          "WW-29: restoring the ceiling call refuses it again")
+
+def test_ww29_c_no_stale_early_hook_rule_and_the_payoff_doctrine_refuses():
+    """The retired rule is gone from the DATA and from the CODE (read on disk),
+    and what refuses a hook-first sheet is the current payoff doctrine."""
+    data = io.open(os.path.join(_SKILL29, "references", "prompt-templates", "models",
+                               "suno-v6.json"), encoding="utf-8").read()
+    src = io.open(os.path.join(_SKILL29, "scripts", "core", "suno_recipe",
+                               "suno_recipe.py"), encoding="utf-8").read()
+    check("first by 15% of runtime" not in data,
+          "WW-29: the data no longer mandates the first hook at 15% of runtime")
+    check("two very long held notes" not in data and "OPTIONAL" in data,
+          "WW-29: the data says the vocalise is OPTIONAL, not two long held notes")
+    check("a vocalise comes first" not in src and "no sung vocalise lead-in" not in src,
+          "WW-29: the retired vocalise/early-hook reasons are gone from the recipe")
+    why = "; ".join(R.check_lyric_sheet(SHEET_HOOK_FIRST, CLIENT, style_id="rnb-flow"))
+    print("  WW-29 hook-first sheet -> %r" % (why[:130],))
+    check("may not open" in why and "payoff" in why,
+          "WW-29: a hook-first sheet is refused by the payoff doctrine")
+    check("vocalise comes first" not in why,
+          "WW-29: the refusal no longer cites the retired vocalise rule")
+    check(_HP29.check_buildup(SHEET_HOOK_FIRST, "rnb-flow", WW29_LENGTH_S),
+          "WW-29: hook_placement.check_buildup holds the same rule on the same sheet")
+
+def test_ww29_d_required_clauses_survive_the_cap_and_an_overflow_refuses():
+    """The required clauses (delivery map, band wording, one clean ending, the
+    hook-order clause, the approved pace clause) are ON the exact final style,
+    and an over-cap final style REFUSES without deleting one."""
+    pace = {"drop": "half-time drop, thin drums", "return": "turn and rise back to the groove"}
+    req = _ww29_build(pace_plan=pace)
+    style, inp = req["input"]["style"], req["input"]
+    for clause, label in ((_EQ29.STYLE_ENDING, "clean ending"),
+                          (_HP29.PROMPT_CLAUSE, "hook-order"),
+                          ("RAPS the lines tagged Rap", "rap delivery map"),
+                          ("SINGS the lines tagged Sung", "sung delivery map")):
+        check(clause in style, "WW-29: the final style still carries the %s clause" % label)
+    check(style.rstrip().endswith(_R29.pace_clause(pace).rstrip()),
+          "WW-29: the approved pace clause is still LAST in the final style")
+    check(len(style) <= _R29.SUNO_STYLE_FIELD_MAX,
+          "WW-29: the final style is inside the cap (%d chars)" % len(style))
+    # the cap refuses rather than trimming the negative clause
+    over = dict(inp, negative_tags="x, " * 400)
+    why = _ww29_why(_PL29.check_request, "suno-generate", {"input": over})
+    print("  WW-29 over-cap negative clause -> %r" % (why[:110],))
+    check("negative_tags" in why,
+          "WW-29: an over-cap negative clause is REFUSED with the field named, never trimmed")
+    # the OVERFLOW on the real three-briefs path: the production builder refuses
+    real = SC.variants_for
+    try:
+        rows = copy.deepcopy(real("rnb-flow"))
+        for v in rows:
+            v["brief"]["arrangement"] = "x" * 400
+        SC.variants_for = lambda style_id: rows
+        why = _ww29_why(SC.build_requests, "rnb-flow", SHEET_RNB, CLIENT, "T",
+                        WW29_LENGTH_S, hook_plan=HOOK_PLAN)
+    finally:
+        SC.variants_for = real
+    print("  WW-29 over-cap final style -> %r" % (why[:150],))
+    check("STYLE_TOO_LONG" in why and "NO clause is deleted" in why
+          and "delivery map" in why,
+          "WW-29: an over-cap final style REFUSES and deletes no clause")
+    check(len(_ww29_choices()[0][1]["input"]["style"]) <= _R29.SUNO_STYLE_FIELD_MAX,
+          "WW-29: with the variant brief restored the same path builds inside the cap")
+
+def test_ww29_e_rnb_flow_rap_and_sung_direction_is_one_decision():
+    """The rap fact reads the STYLE'S OWN DATA, so the label and the id judge
+    the same style the same way; the final style directs both deliveries."""
+    rap_neg = "rap, choir, reverb, echo"
+    id_errs = R.check_negatives(rap_neg, "rnb-flow")
+    label_errs = R.check_negatives(rap_neg, "R&B Flow")
+    print("  WW-29 id/label rap-negative errors -> %r / %r" % (id_errs, label_errs))
+    check(id_errs == label_errs and id_errs,
+          "WW-29: the label and the id give the SAME rap-negatives verdict (the base gave [] for the label)")
+    check(_R29.is_rap_style("rnb-flow") and _R29.is_rap_style("R&B Flow"),
+          "WW-29: is_rap_style reads the data, so both spellings answer rap")
+    for other in ("soul-ballad", "soul-rise", "velvet_voiceover", "brand-new-style", None, ""):
+        check(_R29.is_rap_style(other) is False,
+              "WW-29: is_rap_style(%r) is False (fail closed)" % (other,))
+    check(R.negative_tags("R&B Flow") == R.negative_tags("rnb-flow"),
+          "WW-29: the fallback negatives agree for the label and the id")
+    style = _ww29_build()["input"]["style"]
+    check("RAPS the lines tagged Rap" in style and "SINGS the lines tagged Sung" in style,
+          "WW-29: the final R&B Flow style directs rhythmic rap verses AND the sung hook")
+    data = io.open(os.path.join(_SKILL29, "references", "prompt-templates", "models",
+                               "suno-v6.json"), encoding="utf-8").read()
+    check("speech-rhythm rap" in data and "fully sung melodic r&b hook" in data,
+          "WW-29: the data states the same rap-versus-sung direction once")
+    saved = _R29.is_rap_style
+    try:
+        _R29.is_rap_style = lambda style_id: style_id in _R29.RAP_STYLE_IDS
+        leaked = R.check_negatives(rap_neg, "R&B Flow")
+    finally:
+        _R29.is_rap_style = saved
+    print("  WW-29 with the hard-coded id list only -> %r" % (leaked,))
+    check(leaked == [],
+          "WW-29: the old hard-coded list silently drops the guard for the label (load-bearing)")
+
+def test_ww29_f_the_fewer_words_budget_agrees_with_the_length_plan():
+    """OPTION (ii). An R&B Flow card's "fewer words" budget IS the length plan's
+    own total (rap words at the rap rate, the per-verse floor reserved); a style
+    that delivers no rap keeps the base arithmetic unchanged."""
+    L, io_s = 90, _WF29.INTRO_OUTRO_S
+    rates = _WF29.rates_for("rnb-flow")
+    target = _WF29.style_sung_target_pct("rnb-flow", L)
+    budget = _WF29._fewer_words_budget(L, target, rates, io_s, style="rnb-flow")
+    plan = _M29.plan(L, style_id="rnb-flow")
+    print("  WW-29 R&B Flow L=%g target=%r budget=%r plan total=%r"
+          % (L, target, budget, plan["words"]["total"]))
+    check(budget == float(plan["words"]["total"]),
+          "WW-29: the reconciled budget EQUALS length_formula.plan on the same card")
+    check(_WF29._fewer_words_budget(L, target, rates, io_s, style="R&B Flow") == budget,
+          "WW-29: the label and the id give the same budget")
+    floor_words = _M29.rap_verse_min_words("rnb-flow") * _M29.MIN_RAP_VERSES
+    check(plan["words"]["rap"] >= floor_words,
+          "WW-29: the plan the budget reads reserves the two-verse rap floor (%d words)"
+          % floor_words)
+    # the base shape ignored rap: prove the OLD number is no longer offered
+    old = ((L - io_s) * target / 100.0 * rates["sung"]
+           + (L - io_s) * (1 - target / 100.0) * rates["spoken"])
+    check(old != budget,
+          "WW-29: the old rap-blind arithmetic (%r) is replaced by the plan's number" % old)
+    # a non-rap style is byte-identical to the base
+    for style in ("soul-ballad", "Soul Rise", None):
+        r = _WF29.DEFAULT_SUNG_TARGET_PCT if style is None else _WF29.style_sung_target_pct(style, L)
+        rates_s = _WF29.rates_for(style)
+        got = _WF29._fewer_words_budget(L, r, rates_s, io_s, style=style)
+        # the BASE expression, char for char, so "unchanged" is exact, not near
+        vb = L - io_s
+        f = max(0.0, min(1.0, r / 100.0))
+        want = vb * f * rates_s["sung"] + vb * (1.0 - f) * rates_s["spoken"]
+        check(got == want,
+              "WW-29: %r keeps the base budget arithmetic unchanged (%r == %r)"
+              % (style, got, want))
+    # the number the OPTION SHOWS is the number the GATE enforces
+    pf = _WF29.preflight(L, 200, 30, style="rnb-flow")
+    shown = (pf.get("options") or {}).get("fewer_words") or {}
+    print("  WW-29 fewer_words option -> %r" % (shown,))
+    check(pf["outcome"] == "waiting" and shown.get("max_total_words") == float(plan["words"]["total"]),
+          "WW-29: the option offers the plan's budget, not the rap-blind one")
+    over = [dict(s) for s in SHEET_RNB]
+    over[4]["lines"] = list(over[4]["lines"]) + ["filler words here now %d" % i for i in range(20)]
+    gate_errs = R.check_lyric_sheet(over, CLIENT, WW29_LENGTH_S, style_id="rnb-flow")
+    print("  WW-29 over-budget sheet -> %r" % (gate_errs,))
+    check(any("budget" in e for e in gate_errs),
+          "WW-29: the recipe's own word gate refuses over the plan's budget")
+
+def test_ww29_g_a_card_that_cannot_hold_the_two_verse_rap_floor_is_still_refused():
+    """CONTROL first: the shipped R&B Flow sheet builds. Then a sheet whose two
+    rap verses sit under the per-verse floor is refused on the production path
+    with the floor named -- the budget work lowers no rap floor."""
+    check(_ww29_director()["input"]["lyrics"],
+          "WW-29 control: the shipped two-verse R&B Flow sheet still builds")
+    thin = []
+    for s in SHEET_NO_VOCALISE:
+        if s["delivery"] == "rap" and len([x for x in thin if x["delivery"] == "rap"]) == 0:
+            thin.append(dict(s, lines=["too short a verse here"]))
+        elif s["delivery"] == "rap":
+            thin.append(dict(s, lines=["and one more short line"]))
+        else:
+            thin.append(dict(s))
+    print("  WW-29 thin sheet rap words -> %r" % (R.sheet_words(thin, "rap"),))
+    why = _ww29_why(_ww29_director, thin)
+    print("  WW-29 thin rap sheet -> %r" % (why[:150],))
+    check("RAP_VERSE_BELOW_FLOOR" in why and "floor 20 words / 8.0 s" in why,
+          "WW-29: a card that cannot hold the two-verse rap floor is REFUSED, floor named")
+    check(_M29.rap_verse_min_words("rnb-flow") == 20 and _M29.MIN_RAP_VERSES == 2,
+          "WW-29: the per-verse floor the refusal names is the unchanged 20 words x 2 verses")
+    check(_M29.rap_floor_s(88) == 8.8 and _M29.RAP_FLOOR_SHARE == 0.10,
+          "WW-29: the total rap floor is unchanged (max(8.0 s, 10% of D))")
+# <<< WW29-U2 BLOCK END >>>
+
+
+# =====================================================================
+# WW29-U3 (Builder c: music director) -- WW-29 on the music director.
+#
+# WW-29 removes the mandatory wordless held-note opening and the stale
+# hook-in-the-first-fifteen-percent rule, keeps the hook a MEASURED payoff
+# (``true_at_beat``), makes the opening vocalise OPTIONAL, and requires the
+# cast, pace/shift, hook, ending and negative clauses to survive into the
+# EXACT serialized ``request["input"]`` with an overflow REFUSING rather than
+# dropping a clause.
+#
+# The rule enforcement for the vocalise and the cue lives in the recipe/data
+# (``scripts/core/suno_recipe/suno_recipe.py`` + ``references/prompt-templates``,
+# builder b) and the doctrine text in the docs (builder a). THIS builder owns
+# ``scripts/core/music_director/__init__.py`` and proves the DIRECTOR:
+#   (a) adds no vocalise / early-hook direction of its own;
+#   (b) carries every required direction and its own clauses to the EXACT
+#       payload from every entry path (the R&B Flow rap card and a non-rap
+#       soul card, built the same way);
+#   (c) refuses an over-cap final payload through the LOAD-BEARING cap gate
+#       without truncating anything (the gate is removed and shown to matter).
+# =====================================================================
+
+#: A non-rap soul card that clears the recipe at its delivered length (58 s).
+SHEET_BAL = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
+             {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
+             {"tag": "Verse 1", "delivery": "sung",
+              "lines": ["One seed of truth made me stro-o-ong,"]},
+             {"tag": "Hook 1", "delivery": "sung", "lines": list(HOOK)},
+             {"tag": "Hook 2", "delivery": "sung", "lines": list(HOOK)},
+             {"tag": "Hook 3", "delivery": "sung", "lines": list(HOOK)},
+             {"tag": "Outro", "delivery": "spoken",
+              "lines": ["She Found Power in the Climb. Get the book. Link below."]}]
+
+REQUIRED_DIRECTIONS = ("custom_mode", "instrumental", "title", "lyrics", "style",
+                       "negative_tags", "duration")
+
+
+def _ww29_u3_md():
+    """The music director for this block, or None when it is not on the tree."""
+    return _load_path("music_director/__init__.py")
+
+
+def test_ww29_u3_exact_input_carries_every_required_direction():
+    MD = _ww29_u3_md()
+    if not gate(MD is not None and R is not None, "WW29-U3 directions",
+                "music_director or suno_recipe did not load"):
+        return
+    out = R.prepare("rnb-flow", SHEET_RNB, CLIENT, 88, hook_plan=HOOK_PLAN)
+    req = MD.build_generate_request(out["lyrics"], out["style"], "T",
+                                    style_id="rnb-flow", client_text=CLIENT,
+                                    length_s=88, true_at_beat="the_world")
+    inp = req["input"]
+    missing = [f for f in REQUIRED_DIRECTIONS if f not in inp]
+    print("  WW29-U3 exact request['input'] keys: %s" % sorted(inp))
+    check(not missing,
+          "WW29-U3: the exact request['input'] carries every required direction (missing=%r)" % missing)
+    check(bool(inp["negative_tags"]) and "rap" not in [t.strip() for t in inp["negative_tags"].split(",")],
+          "WW29-U3: negative_tags is transmitted, and the R&B Flow negatives keep rap (no rap exclusion)")
+    check("resolved ending" in inp["style"].lower(),
+          "WW29-U3: the ending clause survives into the exact request['input']['style']")
+    check("[End]" in inp["lyrics"] and ("[Outro" in inp["lyrics"] or "[Resolve" in inp["lyrics"]),
+          "WW29-U3: the exact serialized lyrics still ask for a real ending ([Outro] + end tag)")
+    check(inp["duration"] == 88,
+          "WW29-U3: the delivered length reaches the exact input.duration (%r)" % inp["duration"])
+
+
+def test_ww29_u3_director_adds_no_vocalise_or_early_hook_of_its_own():
+    MD = _ww29_u3_md()
+    if not gate(MD is not None and R is not None, "WW29-U3 no-vocalise",
+                "music_director or suno_recipe did not load"):
+        return
+    # (1) deterministically: the text the director appends to a caller style is
+    # the ending clause only -- no wordless-vocalise mandate, no early-hook rule.
+    exotic = "warm analog strings, dry close vocal, slow tempo, female lead"
+    req = MD.build_generate_request("la la", exotic, "T", style_id="velvet_voiceover")
+    added = req["input"]["style"][len(exotic):].lower()
+    print("  WW29-U3 text the director adds to a caller style: %r" % added)
+    check("wordless" not in added and "vocalise" not in added and "vocalize" not in added,
+          "WW29-U3: the director injects NO wordless-vocalise mandate of its own")
+    check("15%" not in added and "fifteen" not in added and "percent" not in added,
+          "WW29-U3: the director injects NO percent-of-runtime early-hook rule of its own")
+    # (2) the removed mandate lives in the RECIPE, never the director: a sheet
+    # with NO vocalise is judged by suno_recipe (after WW-29 it is accepted).
+    novoc = [s for s in SHEET_RNB if not s["tag"].lower().startswith("vocalise")]
+    try:
+        R.prepare("rnb-flow", novoc, CLIENT, 88, hook_plan=HOOK_PLAN)
+        check(True, "WW29-U3: the recipe accepts a sheet that opens WITHOUT a vocalise (lead-in is OPTIONAL)")
+    except R.RecipeError as e:
+        print("  WW29-U3 no-vocalise refusal (must be the recipe's): %s" % str(e)[:120])
+        check("vocalise" in str(e).lower(),
+              "WW29-U3: any vocalise requirement is the RECIPE's (suno_recipe), named in its refusal; the director adds none")
+
+
+def test_ww29_u3_pace_shift_clause_is_last_and_single():
+    MD = _ww29_u3_md()
+    if not gate(MD is not None and R is not None, "WW29-U3 pace",
+                "music_director or suno_recipe did not load"):
+        return
+    out = R.prepare("rnb-flow", SHEET_RNB, CLIENT, 88, hook_plan=HOOK_PLAN)
+    pp = {"drop": "at the lowest point the groove drops to half-time with thin, sparse drums",
+          "return": "then it turns and rises back to the full groove"}
+    req = MD.build_generate_request(out["lyrics"], out["style"], "T",
+                                    style_id="rnb-flow", client_text=CLIENT,
+                                    length_s=88, true_at_beat="the_world", pace_plan=pp)
+    st = req["input"]["style"]
+    clause = getattr(R, "suno_recipe", R).pace_clause(pp).rstrip()
+    check(st.rstrip().endswith(clause),
+          "WW29-U3: the approved pace/shift clause is LAST in the exact request['input']['style']")
+    check(st.count(clause) == 1,
+          "WW29-U3: the shift clause appears exactly once (never duplicated, never dropped)")
+
+
+def test_ww29_u3_over_cap_refuses_and_the_cap_gate_is_load_bearing():
+    import prompt_limits as PL
+    MD = _ww29_u3_md()
+    if not gate(MD is not None and R is not None, "WW29-U3 cap",
+                "music_director or suno_recipe did not load"):
+        return
+    out = R.prepare("soul-ballad", SHEET_BAL, CLIENT, 58, hook_plan=HOOK_PLAN)
+    big_title = "T" * 81
+    try:
+        MD.build_generate_request(out["lyrics"], out["style"], big_title,
+                                  style_id="soul-ballad", client_text=CLIENT,
+                                  length_s=58, true_at_beat="the_world")
+        check(False, "WW29-U3: an 81-char title must REFUSE (no silent truncation)")
+    except PL.PromptLimitError as e:
+        check(e.code == "PROMPT_OVER_CAP" and e.field == "title" and e.chars == 81 and e.cap == 80,
+              "WW29-U3: the final cap gate refuses the over-cap title, naming field/chars/cap/PROMPT_OVER_CAP")
+    # wiring: remove the DIRECTOR's real cap call; the over-cap payload must now build.
+    orig = MD.prompt_limits.check_request
+    MD.prompt_limits.check_request = lambda *a, **k: {"measured": []}
+    try:
+        loose = MD.build_generate_request(out["lyrics"], out["style"], big_title,
+                                          style_id="soul-ballad", client_text=CLIENT,
+                                          length_s=58, true_at_beat="the_world")
+        check(loose["input"]["title"] == big_title,
+              "WW29-U3: with the cap gate removed the over-cap title reaches the payload (the gate is load-bearing, not decorative)")
+    finally:
+        MD.prompt_limits.check_request = orig
+
+
+def test_ww29_u3_a_non_rap_variant_carries_the_same_clauses():
+    MD = _ww29_u3_md()
+    if not gate(MD is not None and R is not None, "WW29-U3 soul variant",
+                "music_director or suno_recipe did not load"):
+        return
+    out = R.prepare("soul-ballad", SHEET_BAL, CLIENT, 58, hook_plan=HOOK_PLAN)
+    req = MD.build_generate_request(out["lyrics"], out["style"], "T",
+                                    style_id="soul-ballad", client_text=CLIENT,
+                                    length_s=58, true_at_beat="the_world")
+    inp = req["input"]
+    missing = [f for f in REQUIRED_DIRECTIONS if f not in inp]
+    check(not missing and bool(inp["negative_tags"]) and "resolved ending" in inp["style"].lower(),
+          "WW29-U3: a non-rap soul card carries the same required directions, negatives and ending clause (missing=%r)" % missing)
+
 def main():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
@@ -3426,6 +3878,110 @@ def main():
         return 0
     print("\nALL PASS")
     return 0
+
+
+# ===========================================================================
+# WW29-U1 (builder a: documents reconciliation) -- BEGIN delimited block.
+# Asserts the reconciled WW-29 doctrine is present in the three documents and
+# consistent with the style data. Known-good controls run before the negatives.
+# ===========================================================================
+
+def _ww29_u1_doc(rel):
+    """Read one skill-75 document from the tree (empty string if absent)."""
+    p = os.path.join(SKILL_ROOT, rel)
+    if not os.path.exists(p):
+        return ""
+    with open(p, "r", encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _ww29_u1_rule2_slice(text):
+    """The recipe's rule 2 only: from '2. Sung lines are short' to the next
+    numbered rule. Binds the assertion to rule 2 itself, never to a phrase
+    that survives elsewhere in the document."""
+    i = text.find("2. Sung lines are short")
+    if i < 0:
+        return ""
+    j = text.find("\n3.", i)
+    return text[i:(j if j > 0 else i + 600)]
+
+
+def _ww29_u1_rule2_ok(text):
+    """True when the rule-2 text states the wordless vocalise is OPTIONAL and
+    never a forced lead-in -- and the retired mandatory wording ("after a
+    wordless sung vocalise") is gone."""
+    t = text.lower()
+    return ("optional" in t and "never a forced" in t and "lead-in" in t
+            and "mandatory" not in t
+            and "after a wordless sung vocalise" not in t)
+
+
+def test_ww29_u1_vocalise_is_optional_not_a_forced_lead_in():
+    good = ("2. Sung lines are short, rhymed. A wordless vocalise is OPTIONAL, "
+            "never a forced\n   lead-in: one short note or none.")
+    check(_ww29_u1_rule2_ok(good),
+          "WW29-U1 control: the reconciled rule 2 wording passes the checker")
+    bad = ("2. Sung lines are short, rhymed, with hyphen-held vowels, "
+           "after a wordless sung vocalise.")
+    check(not _ww29_u1_rule2_ok(bad),
+          "WW29-U1 control: the retired mandatory-vocalise wording is rejected")
+    skill = _ww29_u1_doc("SKILL.md")
+    rule2 = _ww29_u1_rule2_slice(skill)
+    check(bool(rule2),
+          "WW29-U1: SKILL.md has the numbered recipe rule 2")
+    check(_ww29_u1_rule2_ok(rule2),
+          "WW29-U1: SKILL.md recipe rule 2 makes the vocalise optional, never a forced lead-in")
+    check("after a wordless sung vocalise" not in skill.lower(),
+          "WW29-U1: SKILL.md no longer mandates 'after a wordless sung vocalise' anywhere")
+    check("suno_parts" not in skill,
+          "WW29-U1: SKILL.md names no non-existent prompt_templates.suno_parts")
+    check("suno_recipe.style_text" in skill,
+          "WW29-U1: SKILL.md names the real style-text builder suno_recipe.style_text")
+
+
+def test_ww29_u1_three_docs_carry_the_reconciled_direction():
+    docs = {"SKILL.md": _ww29_u1_doc("SKILL.md"),
+            "INSTRUCTIONS.md": _ww29_u1_doc("INSTRUCTIONS.md"),
+            "references/stage-runbook.md": _ww29_u1_doc("references/stage-runbook.md")}
+    for name, text in docs.items():
+        low = text.lower()
+        check("five gates" in low,
+              "WW29-U1: %s states the five-gate delivered-audio boundary" % name)
+        check("optional" in low and "never a forced" in low,
+              "WW29-U1: %s states the vocalise is optional, never a forced opening" % name)
+        check("r&b flow" in low and "rap verses" in low and "sung" in low,
+              "WW29-U1: %s states the R&B Flow rap-versus-sung direction" % name)
+        check("negative_tags" in low,
+              "WW29-U1: %s carries the negative_tags transmission clause" % name)
+
+
+def test_ww29_u1_rnb_flow_data_matches_the_documented_direction():
+    rel = os.path.join("references", "prompt-templates", "music", "rnb-flow.json")
+    p = os.path.join(SKILL_ROOT, rel)
+    check(os.path.exists(p), "WW29-U1: the R&B Flow style data file exists")
+    if not os.path.exists(p):
+        return
+    with open(p, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    check(data.get("rap_allowed") is True,
+          "WW29-U1: the R&B Flow data allows rap")
+    check("rap" in (data.get("deliveries") or []),
+          "WW29-U1: the R&B Flow data lists rap as a delivery")
+    body = " ".join(data.get("style_parts") or []).lower()
+    check("rap" in body and "sung" in body,
+          "WW29-U1: the R&B Flow data contrasts rap verses with a sung hook")
+
+
+def test_ww29_u1_runbook_single_dispatch_is_the_one_song_case():
+    rb = _ww29_u1_doc("references/stage-runbook.md")
+    check("one-song case" in rb,
+          "WW29-U1: the runbook's single kie_dispatch row is the one-song case")
+    check("song_choices" in rb,
+          "WW29-U1: the runbook points the multi-version path at song_choices")
+
+# ===========================================================================
+# WW29-U1 -- END delimited block.
+# ===========================================================================
 
 
 if __name__ == "__main__":

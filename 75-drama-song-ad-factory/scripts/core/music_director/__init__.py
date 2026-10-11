@@ -13,6 +13,19 @@ lock -> extend-for-length.
 
 Tests run on throwaway ledger DBs with fixture costs and task IDs; no paid
 call leaves this module.
+
+WW-29 (reconciled templates and researched guidance): the direction that
+reaches the provider is the CALLER's style text (built from the recipe and
+the music data) plus the ending clause and, when a pace plan was approved,
+the pace clause. This module never mandates a wordless held-note opening and
+never emits a percent-of-runtime hook rule: the opening vocalise is OPTIONAL
+(a sheet may open on a verse) and the hook is placed by MEASUREMENT against
+``true_at_beat`` (``sung_hook.hook_placement``), never by a heuristic. The
+required directions (custom_mode, instrumental, title, lyrics, style,
+negative_tags, duration) and the required clauses (cast, pace/shift, hook,
+ending, negatives) must still be present on the EXACT serialized ``input``
+after every mutation; an over-cap field raises
+``prompt_limits.PromptLimitError`` (PROMPT_OVER_CAP) and nothing is dropped.
 """
 from __future__ import annotations
 
@@ -170,6 +183,16 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     ``input.lyrics``/``input.style``. The cast rides the script the request
     carries (the speaker tags in ``input.lyrics``), never a provider field this
     builder invents. No cast -> nothing changes.
+
+    WW-29: the opening vocalise is OPTIONAL -- a sheet that opens on a verse
+    is accepted; the mandate lives in the recipe/data (``suno_recipe``), never
+    in this builder, and this builder adds no such direction. The hook is
+    placed by MEASUREMENT against ``true_at_beat`` (above), never by a
+    percent-of-runtime rule. The required directions and the ending, pace/shift,
+    hook, cast and negative clauses reach the EXACT serialized ``input``: the
+    ending clause is appended BEFORE the catalog caps are measured and the pace
+    clause is appended LAST, so an overflow raises PROMPT_OVER_CAP and no clause
+    is ever truncated away to fit.
     """
     # WW-27: the CAST DECISION precedes drafting. With a cast the ensemble is
     # resolved and judged FIRST -- an incomplete character, a cast with fewer

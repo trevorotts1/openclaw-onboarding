@@ -6,6 +6,47 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.32 - 2026-10-11 - WW-29: optional vocalise, no stale early-hook rule, consistent R&B Flow direction, one reconciled fewer-words budget
+
+ONE real-content commit whose parent is the live head of `unit/WWC-U1`
+(`6341e24c3d`, read at build time), joining the three parallel builders'
+patches (WW29-U1 documents, WW29-U2 template/recipe/option-(ii) budget,
+WW29-U3 music director) with the integrator's cross-builder joins into a
+single coherent change. Skill 75 is bumped exactly once, inside this one
+commit; the repository root `/version` and root `CHANGELOG.md` are unchanged.
+
+- WW-29 change list: the mandatory "two long held wordless notes" opening is
+  removed and the vocalise is OPTIONAL, never a forced lead-in (the WW-16
+  3-second opening ceiling is kept and still refuses a DECLARED long/held cue);
+  the stale hook-in-the-first-fifteen-percent rule is removed from the recipe,
+  the model data and the music-style data, and the measured hook-placement /
+  payoff doctrine stands (the hook is the payoff, placed at/after the build-up
+  and at the story beat where its words become true); required cast, shift,
+  hook, ending and negative clauses survive the final cap and an overflow
+  REFUSES with a named reason rather than deleting a clause; `negative_tags`
+  is transmitted in the final `request["input"]`; evidence confidence is
+  documented (DOCUMENTED / CONSISTENT / LORE).
+- R&B Flow rap/sung direction is consistent across data, recipe, director and
+  docs: `suno_recipe.is_rap_style` reads a style's OWN data so the label
+  "R&B Flow" and the id "rnb-flow" judge identically (the base hard-coded
+  `RAP_STYLE_IDS` matched the bare id only, silently switching the rap-negative
+  guard off for the label).
+- OPTION (ii): `words_fit._fewer_words_budget` now prices the non-sung budget
+  with rap words at the rap rate for a rap style, so the "fewer words" option
+  and `length_formula.plan` are ONE rule on an R&B Flow card; a non-rap style's
+  budget is byte-identical to the base; the per-verse rap floor is unchanged and
+  a card that cannot hold the two-verse floor is still refused.
+- Integrator joins: `suno_recipe/test_suno_recipe.py`'s `test_sheet_rules` no
+  longer pins the removed vocalise mandate (it is replaced by a positive control
+  proving the no-vocalise sheet is legal, still refused by `prepare` without its
+  length); `references/prompt-templates/music/{rnb-flow,soul-ballad,soul-rise}.json`
+  skeleton rules no longer carry the stale "Hook 1 by 15%" rule or force a
+  vocalise.
+- Documents: `SKILL.md`, `INSTRUCTIONS.md` and `references/stage-runbook.md`
+  reconcile to the same doctrine, name the real `suno_recipe.style_text` builder
+  (the phantom `prompt_templates.suno_parts` is gone), and state the five-gate
+  delivered-audio boundary (WW-21's `song_dispatch.accept_audio_results`, never
+  a sixth gate).
 ## v2.9.31 - 2026-10-11 - WWC combined branch C: WW-25 copy-first archive, WW-26 three complete briefs, WW-27 ensemble character bible and distinct voices, WW-28 causal plot and earned hook
 
 ONE real-content commit whose parent is the live head of `unit/WWB-U1`
