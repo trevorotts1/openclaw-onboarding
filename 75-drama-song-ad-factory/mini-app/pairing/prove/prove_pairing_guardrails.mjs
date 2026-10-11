@@ -339,7 +339,12 @@ async function alphabetMatchesLiveService(mod, adminClient) {
 // Run
 // ---------------------------------------------------------------------------
 
-let plantedDir = null;
+// Every planted copy is tracked, not just the newest: three of them are made
+// in one run, and a single variable leaked the first two on every run.
+const plantedDirs = [];
+const cleanupPlanted = () => {
+  while (plantedDirs.length) rmSync(plantedDirs.pop(), { recursive: true, force: true });
+};
 try {
   const live = await loadService(join(SERVICE_DIR, 'src'));
   await import(pathToFileURL(join(PAIRING_DIR, 'lib', 'admin_client.js')).href);
@@ -380,25 +385,25 @@ try {
   check('E1-surface-alphabet-matches-live-service', e1.ok, e1.detail);
 
   // ---- planted-defect runs: every gate must go RED when its defect lands ---
-  plantedDir = plantedCopy([
+  plantedDirs.push(plantedCopy([
     ['options.js', "    const approved = approval && approval.option3 === true && typeof approval.client_name === 'string' && approval.client_name;",
       '    const approved = true;'],
-  ]);
-  const neuteredApproval = await loadService(join(plantedDir, 'src'));
+  ]));
+  const neuteredApproval = await loadService(join(plantedDirs[plantedDirs.length - 1], 'src'));
   const p1 = await option3Refused(neuteredApproval);
   check('P1-planted-option3-gate-neutered-turns-A1-red', !p1.ok, p1.ok ? 'A1 stayed green with the approval gate removed — the check is vacuous' : 'A1 went red as required');
 
-  plantedDir = plantedCopy([
+  plantedDirs.push(plantedCopy([
     ['index.js', '    await store.kvDelete(`pair:${attempt.record.fingerprint}`);', '    // burn removed by the planted defect'],
-  ]);
-  const burnRemoved = await loadService(join(plantedDir, 'src'));
+  ]));
+  const burnRemoved = await loadService(join(plantedDirs[plantedDirs.length - 1], 'src'));
   const p2 = await pairingCodeIsSingleUse(burnRemoved);
   check('P2-planted-missing-burn-turns-B1-red', !p2.ok, p2.ok ? 'B1 stayed green with the burn removed — the check is vacuous' : 'B1 went red as required');
 
-  plantedDir = plantedCopy([
+  plantedDirs.push(plantedCopy([
     ['index.js', "  return typeof expected === 'string' && expected.length > 0 && presented === expected;", '  return true;'],
-  ]);
-  const adminAlways = await loadService(join(plantedDir, 'src'));
+  ]));
+  const adminAlways = await loadService(join(plantedDirs[plantedDirs.length - 1], 'src'));
   const p3 = await adminKeyRefused(adminAlways);
   check('P3-planted-open-admin-gate-turns-C1-red', !p3.ok, p3.ok ? 'C1 stayed green with the admin gate opened — the check is vacuous' : 'C1 went red as required');
 
@@ -406,11 +411,11 @@ try {
   check('D5-no-response-body-echoes-a-key-after-defects', d5.ok, d5.detail);
 } catch (err) {
   process.stdout.write('COULD NOT RUN  ' + (err && err.stack ? err.stack : err) + '\n');
-  if (plantedDir) rmSync(plantedDir, { recursive: true, force: true });
+  cleanupPlanted();
   process.exit(3);
 }
 
-if (plantedDir) rmSync(plantedDir, { recursive: true, force: true });
+cleanupPlanted();
 
 const failed = results.filter((r) => !r.ok);
 process.stdout.write('\n' + results.length + ' checks, ' + (results.length - failed.length) + ' pass, ' + failed.length + ' fail\n');
