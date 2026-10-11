@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
 """WWFIX-U1 acceptance tests: the D2 three-version money-safety trap, the D1 rap
 floor, the story gates, the pace gate, the fail-closed rap check, the provider
-overlap receipt and the words-versus-music label.
+overlap receipt, the words-versus-music label, and WW-21's total fail-closed
+acceptance boundary.
 
 Every threshold these tests pin is a NEW ACCEPTANCE RULE added by WWFIX-U1, not
 a measured limit of an earlier run.
+
+WW-21 (this file's `test_ww21_*` section) is the aggregation and
+EVIDENCE-BINDING boundary that runs before spend -- NOT a sixth audio gate. It
+pins the five carried delivered-audio results (D1 real rap, D2 story start, D3
+both pace changes, D4 three audibly different versions, D5 more than one
+character voice), each bound to the export digest, creative revision and
+profile revision it was produced against. PROPOSED: the minimum count of 5
+(`song_dispatch._MIN_AUDIO_RESULTS`, `acceptance-profile.json
+audio_results.minimum_count`) is the count of the five gate names the operator
+plan already names -- a proposed value, not a measured limit and NOT a number
+Trevor set. It moves only when that plan's gate list moves.
 
 Run: python3 core/music_qc/test_wwfix_u1.py
 """
@@ -526,6 +538,315 @@ def test_d1_the_two_audio_gates_are_wired_into_the_take_judge():
     check(ordered["gates"]["pace_change"]["verdict"] == "UNMEASURED"
           and "pace_change" in ordered["flagged"] and ordered["verdict"] != "PASS",
           "D2: an ordered gear change with no evidence never reaches PASS")
+
+
+# ---- WW-21: the total fail-closed acceptance boundary ----------------------
+#
+# WW-21 is the aggregation + EVIDENCE-BINDING boundary that runs BEFORE spend.
+# It is NOT a sixth audio gate: it measures no audio and claims no
+# audio-quality outcome. The plan (WW-ROUND3-FIX-PLAN.md, unit WW-21, lines
+# 54-58) names exactly the five delivered-audio results below.
+#
+# PROPOSED: `SD._MIN_AUDIO_RESULTS == 5` is the COUNT OF THE FIVE GATE NAMES
+# THE PLAN ALREADY NAMES. It is a proposed value in acceptance-profile.json
+# (`audio_results.minimum_count`) -- a count, not a measured limit, and NOT a
+# number Trevor set. It moves only when the plan's own gate list moves.
+
+from song_dispatch import song_dispatch as SD   # noqa: E402  (WW-21 boundary)
+
+WW21_VID = "polished-modern"
+
+
+def _ww21_export(tmp, name="export-1"):
+    p = os.path.join(tmp, "%s.mp3" % name)
+    with open(p, "wb") as f:
+        f.write(("fake export bytes %s" % name).encode("utf-8"))
+    return p
+
+
+def _ww21_binding(tmp, name="export-1"):
+    return SD.take_binding(_ww21_export(tmp, name), "creative-r7")
+
+
+def _ww21_results(binding):
+    """All five valid controls: PASS, each bound to the take being advanced."""
+    return {name: {"verdict": "PASS", "binding": dict(binding), "detail": "control ok"}
+            for name in SD.AUDIO_RESULTS}
+
+
+def _three_results(tmp):
+    return [{"n": i, "variant": {"id": v, "label": L, "description": "d"},
+             "status": "PASS", "attempt": 1, "attempts": 1, "receipts": [],
+             "take": {"audio_path": _ww21_export(tmp, "take-%s" % v), "duration_s": 58.0}}
+            for i, (v, L) in enumerate((("polished-modern", "POLISHED MODERN"),
+                                        ("warm-live-band", "WARM LIVE BAND"),
+                                        ("cinematic-strings", "CINEMATIC STRINGS")), 1)]
+
+
+def test_ww21_five_valid_controls_pass_with_zero_purchases():
+    """POSITIVE CONTROL, before any generation: an empty fake-transport counter
+    stays at zero and the boundary advances ONLY on all five valid results."""
+    spend = []
+
+    def fake_transport(_):                       # the fake transport: a purchase
+        spend.append(_)
+        return []
+
+    assert SD.AUDIO_RESULTS == ("D1", "D2", "D3", "D4", "D5")
+    assert SD._MIN_AUDIO_RESULTS == 5
+    with tempfile.TemporaryDirectory() as tmp:
+        b = _ww21_binding(tmp)
+        out = SD.accept_audio_results(_ww21_results(b), b)
+        print("  WW-21 positive control: verdict=%r required=%r binding=%r"
+              % (out["verdict"], out["required"], sorted(b)))
+        assert out["verdict"] == "PASS" and out["blocked_by"] == [] and out["purchases"] == 0
+        assert out["required"] == list(SD.AUDIO_RESULTS)
+        fake_transport("nothing")                # the transport itself is proven callable
+        assert len(spend) == 1
+        spend.clear()
+    assert spend == [], "zero purchases on the positive control"
+
+
+def test_ww21_each_named_negative_control_blocks_with_its_reason():
+    """THE PLAN'S NEGATIVE CONTROLS. Every one of these must BLOCK with the
+    intended, named reason, and every refusal path reports zero purchases."""
+    with tempfile.TemporaryDirectory() as tmp:
+        b = _ww21_binding(tmp)
+        other = SD.take_binding(_ww21_export(tmp, "export-2"), "creative-r7")
+        removed = _ww21_results(b)
+        removed.pop("D4")                                     # remove one result
+        controls = [
+            ("remove one result D4", removed, b),
+            ("inject UNKNOWN on D4", dict(_ww21_results(b),
+                                          D4={"verdict": "UNKNOWN", "binding": dict(b)}), b),
+            ("inject UNAVAILABLE on D4", dict(_ww21_results(b),
+                                              D4={"verdict": "UNAVAILABLE", "binding": dict(b)}), b),
+            ("inject UNMEASURED on D4", dict(_ww21_results(b),
+                                             D4={"verdict": "UNMEASURED", "binding": dict(b)}), b),
+            ("inject FAIL on D3", dict(_ww21_results(b),
+                                       D3={"verdict": "FAIL", "binding": dict(b)}), b),
+            ("inject FLAG on D4", dict(_ww21_results(b),
+                                       D4={"verdict": "FLAG", "binding": dict(b)}), b),
+            ("stale digest on D2",
+             dict(_ww21_results(b), D2={"verdict": "PASS", "binding": dict(other)}), b),
+            ("malformed non-mapping record on D5",
+             dict(_ww21_results(b), D5=["PASS"]), b),
+            ("malformed record with no verdict on D1",
+             dict(_ww21_results(b), D1={"binding": dict(b)}), b),
+            ("manual relabel on D4",
+             dict(_ww21_results(b), D4={"verdict": "PASS",
+                                        "binding": dict(b, source="manual")}), b),
+            ("a bare string standing in for a binding on D4",
+             dict(_ww21_results(b), D4={"verdict": "PASS", "binding": "manual-pass"}), b),
+            ("stale profile revision on D4",
+             dict(_ww21_results(b), D4={"verdict": "PASS",
+                                        "binding": dict(b, profile_revision="0.0.0")}), b),
+            ("unexpected extra non-PASS result",
+             dict(_ww21_results(b), D6={"verdict": "UNKNOWN", "binding": dict(b)}), b),
+            ("an empty result set", {}, b),
+            ("a non-mapping result set", ["PASS"] * 5, b),
+            ("a take binding that is not a mapping", _ww21_results(b), "manual"),
+            ("a take binding missing its export digest",
+             _ww21_results(b), {"creative_revision": "r7", "profile_revision": "1.0.0"}),
+        ]
+        for label, results, binding in controls:
+            out = SD.accept_audio_results(results, binding)
+            first = (out["blocked_by"] or ["<none>"])[0]
+            print("  WW-21 BLOCK [%s] -> verdict=%r reason=%s" % (label, out["verdict"], first))
+            check(out["verdict"] != "PASS" and out["blocked_by"],
+                  "WW-21: %s BLOCKS (%s)" % (label, first.split(":")[0]))
+            check(out["purchases"] == 0,
+                  "WW-21: %s buys NOTHING (zero purchases)" % label)
+
+        # the profile's OWN keys are live: the boundary reads what the profile
+        # writes, so neither required[] nor minimum_count is a dead key
+        prof = SD.acceptance_profile()
+        check(prof["audio_results"]["required"] == list(SD.AUDIO_RESULTS),
+              "WW-21: the profile's required list is the five delivered-audio results")
+        lower = dict(prof, audio_results=dict(prof["audio_results"], minimum_count=4))
+        check(SD.accept_audio_results(_ww21_results(b), b, profile=lower)["verdict"] == "PASS",
+              "WW-21: the profile's minimum_count is READ (a lower count still passes)")
+        higher = dict(prof, audio_results=dict(prof["audio_results"], minimum_count=6))
+        hi = SD.accept_audio_results(_ww21_results(b), b, profile=higher)
+        print("  WW-21 profile minimum_count=6 -> %r %s" % (hi["verdict"], hi["blocked_by"][:1]))
+        check(hi["verdict"] != "PASS" and hi["blocked_by"][0].startswith("INCOMPLETE_EVIDENCE"),
+              "WW-21: a raised minimum_count BLOCKS 5 carried results")
+        sixth = dict(prof, audio_results=dict(prof["audio_results"],
+                                              required=list(SD.AUDIO_RESULTS) + ["D9"]))
+        six = SD.accept_audio_results(_ww21_results(b), b, profile=sixth)
+        print("  WW-21 profile required+D9 -> %r %s" % (six["verdict"], six["blocked_by"][:1]))
+        check(six["verdict"] != "PASS" and six["blocked_by"][0].startswith("MISSING_AUDIO_RESULT"),
+              "WW-21: the profile's required list is READ (a sixth required gate blocks)")
+        noprof = SD.accept_audio_results(_ww21_results(b), b, profile={})
+        check(noprof["verdict"] != "PASS" and noprof["blocked_by"][0].startswith("PROFILE_UNAVAILABLE"),
+              "WW-21: a missing profile BLOCKS -- no gates can be assumed away")
+
+
+def test_ww21_empty_and_malformed_finisher_never_pass():
+    """The TOTAL finisher. Before WW-21, `_finish({})` returned PASS -- an empty
+    gate set was indistinguishable from a perfect take -- and an UNKNOWN or
+    UNAVAILABLE gate was silently ignored."""
+    empty = SD._finish({})
+    print("  WW-21 _finish({}) -> %r %r" % (empty["verdict"], empty["blocked_by"][:1]))
+    check(empty["verdict"] != "PASS" and empty["blocked_by"],
+          "WW-21: _finish({}) BLOCKS -- an empty gate set never passes")
+    for verdict in ("FAIL", "FLAG", "UNMEASURED", "UNAVAILABLE", "UNKNOWN"):
+        out = SD._finish({"detector": {"verdict": verdict}})
+        print("  WW-21 _finish({'detector': %r}) -> %r" % (verdict, out["verdict"]))
+        check(out["verdict"] != "PASS",
+              "WW-21: a %s gate BLOCKS the finisher" % verdict)
+    for bad in ({"detector": "PASS"}, {"detector": {"verdict": ""}},
+                {"detector": {"verdict": "MADE-UP"}}, {"detector": {}}, {"detector": []}):
+        out = SD._finish(bad)
+        print("  WW-21 _finish(malformed %r) -> %r %r" % (bad, out["verdict"], out["malformed"]))
+        check(out["verdict"] != "PASS" and out["malformed"],
+              "WW-21: a malformed record BLOCKS the finisher (%r)" % (bad,))
+    missing = SD._finish({"detector": {"verdict": "PASS"}})
+    print("  WW-21 _finish(one PASS gate) -> %r missing=%d" % (missing["verdict"], len(missing["missing"])))
+    check(missing["verdict"] != "PASS" and missing["missing"],
+          "WW-21: a missing required gate BLOCKS the finisher")
+    check(SD._finish({"detector": {"verdict": "PASS"}}, required=("detector",))["verdict"] == "PASS",
+          "WW-21: with that ONE gate required and PASSing, the finisher PASSES")
+    take = {"segments": [{"delivery": "spoken", "start": 0.0, "end": 2.0, "source": "measured"},
+                         {"delivery": "sung", "start": 2.5, "end": 45.0, "source": "measured"},
+                         {"delivery": "spoken", "start": 45.0, "end": 54.0, "source": "measured"}],
+            "aligned_words": [], "duration_s": 57.5, "detector": "singing_detector 2.0.0",
+            "music_under_speech_ratio": 0.6, "tail_rms_dbfs": -30.0, "first_sung_s": 2.5}
+    full = SD.judge_take(take, {"delivered_s": 58, "style_id": "soul-ballad", "sheet_text": "",
+                                "hook_plan": {}}, "", "", None, "soul-ballad", "")
+    print("  WW-21 a fully-judged take: missing=%r malformed=%r verdict=%r"
+          % (full["missing"], full["malformed"], full["verdict"]))
+    check(full["missing"] == [] and full["malformed"] == [] and set(full["gates"]) == set(SD.GATES),
+          "WW-21: judge_take writes EVERY declared gate -- no gate in GATES is a dead name")
+
+
+def test_ww21_rap_loophole_guard_fires_on_the_production_call_path():
+    """THE DEAD-GUARD PROOF. The production entry point `cmd_generate` builds a
+    plan with NO `words` key at all, so `_planned_pct` returns None: the plan
+    declares no rap. The guard is reached through the REAL call path
+    (cmd_generate -> one_variant -> run_takes -> judge_take -> _finish), its
+    input is printed at that call site, and it fires on the value that path
+    produces -- `rap_share` is no longer a PASS."""
+    seen = []
+    with tempfile.TemporaryDirectory() as tmp:
+        calls = {"n": 0}
+
+        def generate(variant, request):
+            calls["n"] += 1
+            return [{"segments": [{"delivery": "spoken", "start": 0.0, "end": 2.0, "source": "measured"},
+                                  {"delivery": "sung", "start": 2.5, "end": 45.0, "source": "measured"},
+                                  {"delivery": "spoken", "start": 45.0, "end": 54.0, "source": "measured"}],
+                     "aligned_words": [], "duration_s": 57.5,
+                     "detector": "singing_detector 2.0.0", "music_under_speech_ratio": 0.6,
+                     "tail_rms_dbfs": -30.0, "first_sung_s": 2.5,
+                     "audio_path": _ww21_export(tmp, "prod-%s" % variant["id"])}]
+
+        def save(variant, take, rcpt):
+            seen.append((variant["id"], rcpt))
+
+        a = argparse.Namespace(run_dir=tmp, request=_spec_file(tmp), ledger="", run_id="R",
+                               variant="", unit_id="")
+        out = SC.cmd_generate(a, generate=generate, measure=lambda t: {}, save=save)
+        print("  WW-21 production path: cmd_generate dispatched=%r variants judged=%d"
+              % (out["dispatched"], len(seen)))
+        assert seen, "the production path never reached the take judge"
+    by = {vid: rcpt for vid, rcpt in seen}
+    assert len(by) == 3
+    for vid, rcpt in sorted(by.items()):
+        g = rcpt["gates"]["rap_share"]
+        print("  WW-21 guard input at the real call site [%s]: plan words has no 'rap' "
+              "(planned -> None) and the take measured 0.0 s of rap" % vid)
+        print("  WW-21 guard fires      [%s]: rap_share=%r detail=%s" % (vid, g["verdict"], g["detail"]))
+        check(g["verdict"] != "PASS" and g["detail"].startswith("RAP_NEITHER_PLANNED_NOR_MEASURED"),
+              "WW-21: the rnb-flow no-planned/no-measured-rap guard fires through cmd_generate (%s)" % vid)
+        check("rap_share" in rcpt["flagged"],
+              "WW-21: the closed loophole lands in the receipt's flagged set (%s)" % vid)
+    # and the same guard, on the SAME production plan shape, from the aggregator
+    with tempfile.TemporaryDirectory() as tmp2:
+        b = _ww21_binding(tmp2)
+        blocked = SD.accept_audio_results(
+            dict(_ww21_results(b), D1={"verdict": "FLAG",
+                                       "binding": dict(b),
+                                       "detail": "RAP_NEITHER_PLANNED_NOR_MEASURED"}), b)
+        print("  WW-21 aggregator on the carried rap FLAG -> %r %s"
+              % (blocked["verdict"], blocked["blocked_by"][:1]))
+        check(blocked["verdict"] != "PASS" and blocked["purchases"] == 0,
+              "WW-21: the rap-style fault cannot advance through the acceptance boundary")
+
+
+def test_ww21_the_block_reaches_offer_pick_and_purchase():
+    """THE DELIVERY BOUNDARY. The production generator writes a take into
+    <run>/music/takes/<variant>/; the moment one exists, an all-PASS acceptance
+    record is REQUIRED. Until it exists the take is never OFFERED, never
+    PICKED and never PURCHASED, and every refusal path shows zero purchases."""
+    with tempfile.TemporaryDirectory() as tmp:
+        run = os.path.join(tmp, "run")
+        d = os.path.join(run, "music", "takes", WW21_VID)
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "take-1.mp3"), "wb") as f:
+            f.write(b"a produced take, as _real_generate leaves it")
+        SC._write_envelope(run, WW21_VID, {"accepted_submit_at": "2026-01-01T00:00:00Z",
+                                           "terminal_at": "2026-01-01T00:00:04Z"})
+        chk = SC.acceptance_from_run(run)
+        print("  WW-21 boundary state at the delivery boundary: applicable=%r allowed=%r blocked=%r"
+              % (chk["applicable"], chk["allowed"], chk["blocked"]))
+        check(chk["applicable"] is True and chk["allowed"] is False,
+              "WW-21: a produced take with no acceptance record APPLIES and BLOCKS")
+        purchases = []
+        # OFFER
+        try:
+            SC.deliver_choices(_three_results(tmp), os.path.join(tmp, "D"), run,
+                               runner=purchases.append, send=purchases.append)
+        except SC.ChoiceError as e:
+            print("  WW-21 OFFER refused: %s" % e)
+            check(True, "WW-21: the OFFER is refused")
+        else:
+            check(False, "WW-21: an unaccepted take was OFFERED")
+        # PICK
+        SC.init(run, True)
+        st = SC._state(run) or {}
+        st.update(required=True, offered={"1": {"label": "1 - X (y)", "file": _ww21_export(tmp, "pick"),
+                                                "duration": "0:58"}})
+        SC._write(run, "state.json", st)
+        try:
+            SC.record_pick(run, "1")
+        except SC.ChoiceError as e:
+            print("  WW-21 PICK refused: %s" % e)
+            check(True, "WW-21: the PICK is refused")
+        else:
+            check(False, "WW-21: an unaccepted take was PICKED")
+        # PURCHASE (the kie_dispatch seam: every non-music paid job)
+        r = SC.dispatch_refusal(False, run)
+        print("  WW-21 PURCHASE gate: %r" % ((r or {}).get("reason_code"),))
+        check(bool(r) and r["reason_code"] == SD.ACCEPTANCE_CODE_NOT_PROVEN,
+              "WW-21: the PURCHASE gate refuses every non-music paid job")
+        check(SC.refusal(run)["reason_code"] == SD.ACCEPTANCE_CODE_NOT_PROVEN,
+              "WW-21: the run refusal carries the acceptance code")
+        check(purchases == [], "WW-21: zero purchases on every refusal path")
+
+        # a record that is not all PASS still blocks; only an all-PASS record opens it
+        b = _ww21_binding(tmp)
+        SD.record_acceptance(run, WW21_VID, b,
+                             dict(_ww21_results(b), D5={"verdict": "UNMEASURED", "binding": dict(b)}))
+        check(SC.acceptance_from_run(run)["allowed"] is False,
+              "WW-21: an UNMEASURED result in the written record still BLOCKS")
+        SD.record_acceptance(run, WW21_VID, b, _ww21_results(b))
+        print("  WW-21 written all-PASS record -> %r" % (SC.acceptance_from_run(run)["verdict"],))
+        check(SC.acceptance_from_run(run)["allowed"] is True,
+              "WW-21: the all-PASS record written by record_acceptance opens (the reader reads the writer's key)")
+        check(not SC._acceptance_refusal(run, "the offer"),
+              "WW-21: with the record in place the OFFER is no longer held")
+        # a corrupt record is skipped and the take rule re-blocks it
+        with open(os.path.join(run, "music", "acceptance", "%s.json" % WW21_VID), "w",
+                  encoding="utf-8") as f:
+            f.write("{not json at all")
+        chk = SC.acceptance_from_run(run)
+        print("  WW-21 corrupt record -> applicable=%r blocked=%r reason=%s"
+              % (chk["applicable"], chk["blocked"],
+                 chk["variants"][WW21_VID]["reasons"][0][:60]))
+        check(chk["applicable"] and chk["allowed"] is False,
+              "WW-21: an unreadable acceptance record BLOCKS")
+        check(purchases == [], "WW-21: still zero purchases")
 
 
 def main():

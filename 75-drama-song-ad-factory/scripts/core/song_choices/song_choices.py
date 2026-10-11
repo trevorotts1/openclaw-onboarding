@@ -285,6 +285,27 @@ def _overlap_refusal(run_dir, action):
                    code="SONG_OVERLAP_NOT_PROVEN")
 
 
+# ---- WW-21: the acceptance boundary at the real delivery boundary ----------
+#
+# The total fail-closed aggregation/evidence-binding boundary lives ONCE, in
+# song_dispatch (`accept_audio_results` / `acceptance_from_run`). Nothing is
+# re-derived here, so the gate and the receipt can never drift. It is anchored
+# to the SAME folder the production generator fills: the moment a variant has
+# a produced take under <run>/music/takes/<variant>/, its acceptance record is
+# required, and a take whose required gate set is not all PASS is never
+# OFFERED, never PICKED and never PURCHASED.
+
+def acceptance_from_run(run_dir):
+    """The WW-21 boundary state for this run (delegates to song_dispatch)."""
+    return _SD.acceptance_from_run(run_dir)
+
+
+def _acceptance_refusal(run_dir, action):
+    """None when the boundary is not applicable or has passed; else the
+    refusal that holds the offer, the pick and every paid job."""
+    return _SD.acceptance_refusal(run_dir, action)
+
+
 def fan_in(results, run_dir, delivery_dir, **kw):
     """CHECK and DELIVER results that already exist. Never generates: the
     fan-in step must not dispatch anything."""
@@ -313,6 +334,12 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
     hold = _overlap_refusal(run_dir, "delivery")
     if hold:
         raise ChoiceError(hold["detail"])
+    # WW-21: OFFER is a delivery boundary. A take whose required gate set is
+    # not all PASS -- or whose five results are missing, unbound or stale --
+    # is never offered. Zero purchases on this path.
+    ahold = _acceptance_refusal(run_dir, "the offer")
+    if ahold:
+        raise ChoiceError(ahold["detail"])
     _require_three(results, key=lambda r: r["variant"]["id"])
     good = [r for r in results if r["status"] != "FAILED" and r["take"]]
     if not good:
@@ -434,6 +461,10 @@ def record_pick(run_dir, reply):
     hold = _overlap_refusal(run_dir, "the pick")
     if hold:
         raise ChoiceError(hold["detail"])
+    # WW-21: the PICK is a delivery boundary too.
+    ahold = _acceptance_refusal(run_dir, "the pick")
+    if ahold:
+        raise ChoiceError(ahold["detail"])
     n = str(reply).strip()
     o = (st.get("offered") or {}).get(n)
     if not o or not os.path.isfile(o["file"]):
@@ -446,7 +477,14 @@ def record_pick(run_dir, reply):
 
 
 def refusal(run_dir):
-    """None when work may go on; else the refusal. No state file = answered No."""
+    """None when work may go on; else the refusal. No state file = answered No.
+
+    WW-21 first: a take whose required gate set is not all PASS holds EVERY
+    later stage (picture timing, paid video, image, lip-sync) before the pick
+    check is even consulted."""
+    ahold = _acceptance_refusal(run_dir, "every later stage")
+    if ahold:
+        return ahold
     try:
         st = _state(run_dir)
     except (OSError, ValueError):
