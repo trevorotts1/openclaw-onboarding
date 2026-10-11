@@ -115,12 +115,27 @@ def _checked_version(version, catalog_id=GENERATE_CATALOG_ID):
     return v
 
 
+#: WW-27: the ensemble cast gate (character_bible.character_bible), imported
+#: LAZILY so a build with no cast never loads it.
+_CB_MOD = None
+
+
+def _cast_model():
+    """character_bible.character_bible, loaded once (WW-27's cast gate)."""
+    global _CB_MOD
+    if _CB_MOD is None:
+        import character_bible.character_bible as _cb   # noqa: PLC0415
+        _CB_MOD = getattr(_cb, "character_bible", _cb)
+    return _CB_MOD
+
+
 def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
                            duration=None, callback_url="https://example.invalid/cb",
                            packet_lines=None, protected=(),
                            style_id=None, client_text=None, length_s=None,
-                           mode=None, true_at_beat=None, hook_plan=None, pace_plan=None):
+                           mode=None, true_at_beat=None, hook_plan=None, pace_plan=None,
+                           cast=None):
     """Current-envelope generate payload. Lyrics are verbatim (floor-exempt).
 
     F7 (words match the script exactly): when ``packet_lines`` is given, the
@@ -149,7 +164,24 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     judge's plan and never sends it to KIE). A caller-made ``hook_plan`` is
     checked and carried the same way. With a Suno style and neither, the
     guard refuses: "UNMEASURED: hook_plan". Shape in SKILL.md "Hook placement".
+
+    WW-27: ``cast`` (a brief carrying ``characters``, or a resolved cast) runs
+    the ensemble gate BEFORE anything is built and again on the FINAL
+    ``input.lyrics``/``input.style``. The cast rides the script the request
+    carries (the speaker tags in ``input.lyrics``), never a provider field this
+    builder invents. No cast -> nothing changes.
     """
+    # WW-27: the CAST DECISION precedes drafting. With a cast the ensemble is
+    # resolved and judged FIRST -- an incomplete character, a cast with fewer
+    # than two characters, a villain/foil that never speaks or is never
+    # answered, a shared Suno voice direction or a single-voice cast is refused
+    # while no payload exists. The final pass on the exact serialized payload
+    # follows below. No cast -> nothing changes, exactly as before.
+    cast_rcpt = None
+    if cast is not None:
+        cast_rcpt = _cast_model().check_cast(cast)
+        if cast_rcpt["reasons"]:
+            raise ValueError("; ".join(cast_rcpt["reasons"]))
     # FU-U4: concept mode means the client's own lines; no packet, no request.
     errors = protected_names.packet_required({"mode": mode}, packet_lines)
     if errors:
@@ -190,7 +222,7 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
         if errors:
             raise ValueError("; ".join(errors))
     suno_recipe.guard_request(style_text, lyrics_text, style_id, client_text, length_s,
-                              hook_plan=hook_plan)  # recipe v2 + I8 + hook placement
+                              hook_plan=hook_plan, cast=cast)  # recipe v2 + I8 + hook placement + WW-27 cast
     if not instrumental:  # I5: ask for a real ending (outro + resolved chord)
         lyrics_text, style_text = ending_qc.with_clean_ending(lyrics_text, style_text)
     # WW-07: the approved pace direction (the lowest-point drop and the return)
@@ -235,6 +267,13 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     # prompt_limits raises PROMPT_OVER_CAP naming field, chars, cap, source and
     # status; nothing is ever truncated.
     prompt_limits.check_request(GENERATE_CATALOG_ID, req)
+    if cast is not None:
+        # WW-27: the FINAL serialized payload, after every transformation --
+        # the sheet the provider will sing and the style it will follow.
+        cast_rcpt = _cast_model().check_cast(
+            cast, sheet_text=req["input"]["lyrics"], style_text=req["input"]["style"])
+        if cast_rcpt["reasons"]:
+            raise ValueError("; ".join(cast_rcpt["reasons"]))
     if hook_plan is not None:
         req["_hook_plan"] = hook_plan
     # WW-07: the pace plan rides the request like the hook plan; run_takes moves

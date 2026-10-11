@@ -16,6 +16,14 @@ the run's delivery folder under a numbered file name.
 The PDF is client-facing, so every string that reaches it passes
 ``assert_client_safe`` first: no product or model names, no money amounts, no
 income promises. Standard library only -- no renderer, no third-party package.
+
+WW-27 adds the ENSEMBLE CAST model and its pre-generation gate to this
+module: the cast decision precedes drafting, every character carries a full
+treatment and a Suno voice direction, a villain or foil speaks and is
+answered, undeclared speakers and a single-voice ensemble style are
+refused, and the take stays ONE full-song track. The gate judges the
+script and the serialized payload only -- audio gate D5 alone confirms the
+delivered voices.
 """
 from __future__ import annotations
 
@@ -379,6 +387,383 @@ def write_delivery(delivery_dir, rec, images=None):
                          "to ship beside the bible PDF"
                          % (rec.get("character_name") or "the character"))
     return pdf
+
+
+# ---- WW-27: the ensemble cast model and the distinct-voice gate -------------
+#
+# WW-27 (2026-10-11): the CAST DECISION precedes drafting. Multiple characters
+# are the DEFAULT and the count follows the conflict; a single-voice cast is
+# legal only when the brief declares it. Every declared character carries a
+# complete treatment -- name, role, want, wound, relationships, consequential
+# action, voice -- and a Suno voice direction of register, timbre, articulation,
+# delivery, emotional progression and version treatment. At least one villain or
+# foil SPEAKS and receives a consequential reply; a non-person antagonist is
+# permitted only with a speaking foil. A bracket in the sheet that names a
+# character nobody declared is REFUSED, and an ensemble whose FINAL style still
+# commands a single voice ("A single female voice.") is REFUSED. One full-song
+# track is kept: a stitched voice pack is REFUSED.
+#
+# This is a PRE-GENERATION check on the script and the serialized payload --
+# never a delivered-audio gate. Audio gate D5 alone confirms the delivered
+# voices. Every number here is a NEW ACCEPTANCE RULE, not a measured limit and
+# never a number Trevor set. Same as before: a check that only fires on a
+# hand-built dictionary is not a guard, so the seam is checked at the real call
+# sites (suno_recipe.build_request, music_director.build_generate_request,
+# song_contract.check_sheet).
+
+CAST_SCHEMA = "blackceo.ensemble-cast/v1"
+
+TOOL_NAME = "character_bible"
+
+CAST_MODES = ("ensemble", "single")
+DEFAULT_CAST_MODE = "ensemble"      # PROPOSED: multiple characters by default
+MIN_ENSEMBLE = 2                    # PROPOSED: an ensemble is two or more
+CAST_ROLES = ("protagonist", "villain", "foil", "antagonist", "support", "narrator")
+#: A role that OPPOSES the protagonist; one of these must speak.
+OPPOSING_ROLES = ("villain", "foil", "antagonist")
+CAST_FIELDS = ("name", "role", "want", "wound", "relationships",
+               "consequential_action", "voice")
+#: The character's SUNO VOICE direction: register, timbre, articulation,
+#: delivery, emotional progression and version treatment. The brief key is
+#: ``voice_direction`` -- the name is scrubbed because this module's own
+#: client-safety walker refuses a PUBLIC string constant that carries a product
+#: or model name, and the recipe host's name is one of them.
+VOICE_DIRECTION_FIELDS = ("register", "timbre", "articulation", "delivery",
+                          "emotional_progression", "version_treatment")
+CHARACTER_FIELDS = CAST_FIELDS + ("voice_direction",)
+
+CODE_CAST_NOT_ENSEMBLE = "CAST_NOT_ENSEMBLE"
+CODE_CAST_INCOMPLETE = "CAST_INCOMPLETE"
+CODE_CAST_VOICE_INCOMPLETE = "CAST_VOICE_INCOMPLETE"
+CODE_CAST_ROLE_UNKNOWN = "CAST_ROLE_UNKNOWN"
+CODE_CAST_NO_OPPOSING_VOICE = "CAST_NO_OPPOSING_VOICE"
+CODE_CAST_OPPONENT_SILENT = "CAST_OPPONENT_SILENT"
+CODE_CAST_NO_CONSEQUENTIAL_REPLY = "CAST_NO_CONSEQUENTIAL_REPLY"
+CODE_CAST_VOICES_IDENTICAL = "CAST_VOICES_IDENTICAL"
+CODE_SPEAKER_UNDECLARED = "SPEAKER_UNDECLARED"
+CODE_ENSEMBLE_SINGLE_VOICE_STYLE = "ENSEMBLE_SINGLE_VOICE_STYLE"
+CODE_VOICE_PACK_STITCHED = "VOICE_PACK_STITCHED"
+
+#: A style that COMMANDS one voice is refused for an ensemble cast. Matched on
+#: the FINAL serialized request["input"]["style"]. The plan's literal case is
+#: "A single female voice."
+#: ponytail: this is the command class the plan names, not every possible
+#: single-voice phrasing; extend the alternation when a built style ships one.
+_SINGLE_VOICE_RE = re.compile(
+    r"\b(?:a|one|single|only\s+one|just\s+one)\s+(?:single\s+|only\s+|solo\s+)?"
+    r"(?:female|male|woman|man|woman's|man's|gender)?\s*(?:lead\s+|solo\s+)?"
+    r"(?:voice|vocal|singer)\b"
+    r"|\bsolo\s+(?:female|male|woman|man)\s+(?:voice|vocal)\b"
+    r"|\bsingle\s+(?:lead\s+)?voice\b"
+    r"|\bonly\s+one\s+voice\b", re.I)
+
+
+def _present(v):
+    """True when a cast field carries a value: a non-empty string, list or
+    mapping, a True flag, or a number. False for None, "", [], {} and False."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return True
+    if isinstance(v, (list, tuple, dict, set)):
+        return len(v) > 0
+    return bool(str(v or "").strip())
+
+
+def _norm_name(name):
+    """A character name normalized for matching: case, spacing, separators."""
+    return re.sub(r"[^a-z0-9]+", " ", str(name or "").lower()).strip()
+
+
+def _recipe():
+    """suno_recipe, whether it is a package or the bare module on sys.path.
+
+    ONE tag grammar (FU-U1/FU-U5): the ensemble gate reads brackets through the
+    recipe's own reader, never a second parser."""
+    import suno_recipe as _R
+    return getattr(_R, "suno_recipe", _R)
+
+
+def _declared_mode(brief):
+    """The brief's DECLARED cast mode: "ensemble" | "single" | None when it
+    declares none (the default then applies)."""
+    b = brief if isinstance(brief, dict) else {}
+    if b.get("schema") == CAST_SCHEMA:
+        v = str(b.get("mode") or "").strip().lower()
+        return v if v in CAST_MODES else None
+    for key in ("cast_mode", "cast_decision"):
+        v = b.get(key)
+        if isinstance(v, dict):
+            v = v.get("mode")
+        v = str(v or "").strip().lower()
+        if v in CAST_MODES:
+            return v
+    c = b.get("cast")
+    if isinstance(c, dict):
+        v = str(c.get("mode") or "").strip().lower()
+        if v in CAST_MODES:
+            return v
+    return None
+
+
+def cast_decision(brief):
+    """THE cast decision, taken BEFORE drafting. Multiple characters by default.
+
+    "Count follows the conflict": with no explicit mode the decision is an
+    ensemble of ``MIN_ENSEMBLE`` or more, and "single" is honoured only when the
+    brief declares it. PRE-GENERATION script decision; D5 alone confirms the
+    delivered voices. PROPOSED numbers, never a measured limit.
+    """
+    b = brief if isinstance(brief, dict) else {}
+    explicit = _declared_mode(b)
+    n = len(b.get("characters") or [])
+    return {"schema": CAST_SCHEMA, "mode": explicit or DEFAULT_CAST_MODE,
+            "declared_mode": explicit, "default": explicit is None,
+            "declared_cast": bool(n) or explicit is not None,
+            "characters_n": n, "min_characters": MIN_ENSEMBLE,
+            "reason": ("multiple characters are the default; the count follows "
+                       "the conflict" if (explicit or DEFAULT_CAST_MODE) == "ensemble"
+                       else "the brief declares a single-voice cast")}
+
+
+def resolve_cast(brief_or_cast):
+    """The ensemble cast record a brief (or a resolved cast) becomes.
+
+    ONE shape: {"mode", "decision", "characters": [entry, ...]}. Each entry
+    carries the seven ``CAST_FIELDS``, the six ``VOICE_DIRECTION_FIELDS``, its gender
+    and its speech facts (``person`` / ``speaks`` / ``reply_to``), plus the exact
+    fields it is MISSING. Order is the brief's; nothing is invented, nothing is
+    dropped, and re-resolving a resolved cast changes nothing.
+    """
+    src = brief_or_cast if isinstance(brief_or_cast, dict) else {}
+    explicit = _declared_mode(src)
+    chars = []
+    for item in (src.get("characters") or []):
+        raw = item if isinstance(item, dict) else {"name": item}
+        entry = {k: raw.get(k) for k in CAST_FIELDS}
+        entry["name"] = str(raw.get("name") or "").strip()
+        entry["role"] = str(raw.get("role") or "").strip().lower()
+        sv = raw.get("voice_direction")
+        sv = sv if isinstance(sv, dict) else {}
+        entry["voice_direction"] = {k: sv.get(k) for k in VOICE_DIRECTION_FIELDS}
+        entry["gender"] = raw.get("gender")
+        entry["person"] = raw.get("person")
+        entry["speaks"] = raw.get("speaks")
+        entry["reply_to"] = raw.get("reply_to")
+        entry["missing"] = [k for k in CAST_FIELDS if not _present(raw.get(k))]
+        entry["voice_direction_missing"] = [k for k in VOICE_DIRECTION_FIELDS
+                                       if not _present(sv.get(k))]
+        chars.append(entry)
+    mode = explicit or DEFAULT_CAST_MODE
+    return {"schema": CAST_SCHEMA, "mode": mode, "decision": mode,
+            "mode_declared": explicit, "declared": bool(chars) or explicit is not None,
+            "characters": chars, "min_characters": MIN_ENSEMBLE}
+
+
+def speaker_turns(sheet_text):
+    """The sheet's speakers IN ORDER, each with the lines that follow it.
+
+    ONE tag grammar: the bracket reader is suno_recipe's (``parse_voice_tags``),
+    never a second parser. A bracket that names nobody ([Hook], [Intro], [End])
+    starts no turn, so an unnamed section never steals a character's line.
+    """
+    R = _recipe()
+    turns, cur = [], None
+    for raw in str(sheet_text or "").splitlines():
+        s = raw.strip()
+        if not s:
+            continue
+        if s.startswith("[") and s.endswith("]"):
+            tags = R.parse_voice_tags(s)
+            cur = None
+            if tags and tags[0]["name"]:
+                cur = {"speaker": tags[0]["name"], "gender": tags[0]["gender"],
+                       "tag": str(tags[0]["tag"])[:60], "lines": []}
+                turns.append(cur)
+            continue
+        if cur is not None:
+            cur["lines"].append(s)
+    return turns
+
+
+def traded_replies(turns, opponents):
+    """The first OPPOSING speaker whose NEXT named turn is another character.
+
+    WW-27's "traded replies": a villain or foil speaks AND receives a
+    consequential reply. The reply is the next named turn in the sheet, by a
+    DIFFERENT declared character. Returns {opponent, reply, ...} or None.
+    """
+    opp = {_norm_name(n) for n in opponents or []}
+    for i, t in enumerate(turns or []):
+        if _norm_name(t.get("speaker")) not in opp:
+            continue
+        for nxt in turns[i + 1:]:
+            if _norm_name(nxt.get("speaker")) != _norm_name(t.get("speaker")):
+                return {"opponent": t["speaker"], "reply": nxt["speaker"],
+                        "opponent_lines": len(t.get("lines") or []),
+                        "reply_lines": len(nxt.get("lines") or [])}
+    return None
+
+
+def cast_reasons(brief_or_cast, sheet_text=None, style_text=None, take=None):
+    """Why the cast, the script or the payload is not a developed ensemble.
+
+    [] = it is. PRE-GENERATION: this judges the cast record, the sheet's speaker
+    brackets and the FINAL style text -- never audio. Every refusal carries its
+    own named code:
+
+      CAST_NOT_ENSEMBLE             an ensemble decision with fewer than two
+      CAST_INCOMPLETE               a character missing a treatment field
+      CAST_VOICE_INCOMPLETE         a character missing a Suno voice field
+      CAST_ROLE_UNKNOWN             a role outside CAST_ROLES
+      CAST_NO_OPPOSING_VOICE        no villain/foil, or a non-person antagonist
+                                    with no speaking foil
+      CAST_OPPONENT_SILENT          the villain/foil never speaks
+      CAST_NO_CONSEQUENTIAL_REPLY   it speaks and no one answers it
+      CAST_VOICES_IDENTICAL         two characters share ONE Suno voice direction
+      SPEAKER_UNDECLARED            a sheet bracket names nobody the cast holds
+      ENSEMBLE_SINGLE_VOICE_STYLE   an ensemble style commanding one voice
+      VOICE_PACK_STITCHED           a stitched voice pack, not one full song
+
+    With no cast record at all the ensemble-count rule never fires (there is no
+    cast to count); an undeclared SPEAKER still refuses, because a name in the
+    script that nobody declared can never be cast.
+    """
+    cast = resolve_cast(brief_or_cast)
+    chars, mode = cast["characters"], cast["mode"]
+    reasons = []
+    # the cast decision: multiple characters by default, count follows conflict
+    if cast["declared"] and mode == "ensemble" and len(chars) < MIN_ENSEMBLE:
+        reasons.append("%s: the cast decision is an ensemble (%d characters by "
+                       "default, the count follows the conflict) and %d character(s) "
+                       "is declared" % (CODE_CAST_NOT_ENSEMBLE, MIN_ENSEMBLE, len(chars)))
+    # every declared character carries the complete treatment
+    for c in chars:
+        who = c["name"] or "<unnamed character>"
+        if c["missing"]:
+            reasons.append("%s: %s is missing %s"
+                           % (CODE_CAST_INCOMPLETE, who, ", ".join(c["missing"])))
+        if c["voice_direction_missing"]:
+            reasons.append("%s: %s's Suno voice is missing %s"
+                           % (CODE_CAST_VOICE_INCOMPLETE, who,
+                              ", ".join(c["voice_direction_missing"])))
+        if c["role"] and c["role"] not in CAST_ROLES:
+            reasons.append("%s: %s's role is %r, not one of %s"
+                           % (CODE_CAST_ROLE_UNKNOWN, who, c["role"],
+                              ", ".join(CAST_ROLES)))
+    # The SPEAKING rules are SCRIPT rules: they need the sheet. Before the
+    # script exists (the cast decision that precedes drafting) only the cast
+    # record is judged, plus any explicit ``speaks`` declaration.
+    has_script = sheet_text is not None
+    turns = speaker_turns(sheet_text) if has_script else []
+    spoken = {_norm_name(t["speaker"]) for t in turns if t.get("lines")}
+    opposing = [c for c in chars if c["role"] in OPPOSING_ROLES]
+    if chars:
+        speaking = [c for c in chars
+                    if c["speaks"] or (has_script and _norm_name(c["name"]) in spoken)]
+        # A NON-PERSON antagonist never speaks: its opposition is VOICED by a
+        # person — a villain or a foil — so only the person members are asked to
+        # speak and to be answered.
+        person_opp = [c for c in opposing if c["person"] is not False]
+        spokes = [c for c in person_opp if c in speaking]
+        nonperson = [c for c in opposing if c["person"] is False]
+        if not opposing:
+            reasons.append("%s: the cast declares no villain or foil; at least one "
+                           "opposition voice is required (roles: %s)"
+                           % (CODE_CAST_NO_OPPOSING_VOICE, ", ".join(CAST_ROLES)))
+        else:
+            if nonperson and not spokes:
+                reasons.append("%s: the antagonist %s is not a person and no speaking "
+                               "villain or foil voices it; a non-person antagonist needs "
+                               "a speaking foil"
+                               % (CODE_CAST_NO_OPPOSING_VOICE,
+                                  ", ".join(c["name"] or "<unnamed>" for c in nonperson)))
+            if has_script and not spokes:
+                reasons.append("%s: the villain/foil %s never speaks; at least one "
+                               "villain or foil must speak"
+                               % (CODE_CAST_OPPONENT_SILENT,
+                                  ", ".join(c["name"] or "<unnamed>" for c in person_opp
+                                            or opposing)))
+            elif has_script and traded_replies(
+                    turns, [c["name"] for c in person_opp]) is None:
+                reasons.append("%s: %s speaks but no other declared character answers "
+                               "it; the villain/foil must receive a consequential reply"
+                               % (CODE_CAST_NO_CONSEQUENTIAL_REPLY,
+                                  spokes[0]["name"] or "<unnamed>"))
+    # contrasting vocal directions: two characters never share ONE Suno voice
+    seen = {}
+    for c in chars:
+        key = tuple(str(c["voice_direction"].get(k) or "").strip().lower()
+                    for k in VOICE_DIRECTION_FIELDS)
+        if not any(key):
+            continue
+        who = c["name"] or "<unnamed character>"
+        if key in seen:
+            if seen[key] is not None:
+                reasons.append("%s: %s and %s carry the SAME Suno voice direction "
+                               "(%s); the ensemble needs contrasting vocal directions"
+                               % (CODE_CAST_VOICES_IDENTICAL, seen[key], who,
+                                  ", ".join(VOICE_DIRECTION_FIELDS)))
+                seen[key] = None
+            continue
+        seen[key] = who
+    # undeclared speakers: a bracket naming a character the cast does not hold
+    declared = {_norm_name(c["name"]) for c in chars}
+    for t in (_recipe().parse_voice_tags(sheet_text) if sheet_text else []):
+        n = t.get("name")
+        if n and _norm_name(n) not in declared:
+            reasons.append("%s: the sheet tags %r, who is not a declared character (%s)"
+                           % (CODE_SPEAKER_UNDECLARED, n,
+                              ", ".join(c["name"] for c in chars)
+                              or "no cast is declared"))
+    # an ensemble style that still commands ONE voice
+    if mode == "ensemble" and len(chars) >= MIN_ENSEMBLE and style_text:
+        m = _SINGLE_VOICE_RE.search(str(style_text))
+        if m is not None:
+            reasons.append("%s: the cast is an ensemble of %d characters but the style "
+                           "commands a single voice (%r); an ensemble style names every "
+                           "voice instead"
+                           % (CODE_ENSEMBLE_SINGLE_VOICE_STYLE, len(chars), m.group(0)))
+    # one full-song track: no stitched voice-pack revival
+    if isinstance(take, dict):
+        pack = take.get("voice_pack") or take.get("designated_voice") or take.get("stitched")
+        tracks = take.get("tracks")
+        if pack or (isinstance(tracks, int) and not isinstance(tracks, bool) and tracks > 1):
+            reasons.append("%s: the take is a stitched voice pack (%s), not one full-song "
+                           "track; the stitched voice-pack revival is not approved"
+                           % (CODE_VOICE_PACK_STITCHED,
+                              pack or ("%r tracks" % (tracks,))))
+    return reasons
+
+
+def check_cast(brief_or_cast, sheet_text=None, style_text=None, take=None):
+    """The WW-27 receipt for one cast, script and payload. PASS only when
+    ``cast_reasons`` is empty. Carries zero purchases and measures no audio, so
+    it is not a sixth delivered-audio gate: D5 alone confirms the voices."""
+    cast = resolve_cast(brief_or_cast)
+    reasons = cast_reasons(brief_or_cast, sheet_text=sheet_text,
+                           style_text=style_text, take=take)
+    turns = speaker_turns(sheet_text) if sheet_text else []
+    names = [c["name"] for c in cast["characters"]]
+    voices = {tuple(str(c["voice_direction"].get(k) or "").strip().lower()
+                    for k in VOICE_DIRECTION_FIELDS) for c in cast["characters"]}
+    return {"tool": TOOL_NAME, "schema": CAST_SCHEMA,
+            "verdict": "PASS" if not reasons else "FAIL",
+            "reason_code": reasons[0].split(":")[0] if reasons else "ENSEMBLE_CAST_OK",
+            "reasons": reasons, "blocked": bool(reasons), "purchases": 0,
+            "measures_no_audio": True,
+            "decision": cast["decision"], "mode": cast["mode"],
+            "mode_declared": cast["mode_declared"],
+            "characters": names, "characters_n": len(names),
+            "fields": list(CHARACTER_FIELDS), "voice_direction_fields": list(VOICE_DIRECTION_FIELDS),
+            "speakers": [t["speaker"] for t in turns],
+            "traded_replies": (traded_replies(
+                turns, [c["name"] for c in cast["characters"]
+                        if c["role"] in OPPOSING_ROLES]) if turns else None),
+            "contrast": len(voices),
+            "detail": ("; ".join(reasons) if reasons else
+                       "%d declared character(s); the ensemble cast is complete"
+                       % len(names))}
 
 
 # --- command line ------------------------------------------------------------

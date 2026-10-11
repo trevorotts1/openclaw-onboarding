@@ -837,6 +837,53 @@ def _sheet_deliveries(sheet, style_id):
     return set(music_block(style_id)["deliveries"])
 
 
+# ===== WWC-U26 (WW-26): the FINAL style for ONE complete variant brief =====
+#: WW-26 replaces the shared request plus a short appended ``clause`` with three
+#: independently authored COMPLETE briefs. The base recipe's shared DESCRIPTIVE
+#: core (``style_parts[0]`` genre/bpm and ``style_parts[1]`` shared vocal line)
+#: is REPLACED by the caller's per-variant brief. Only the COMPLIANCE trailer
+#: every style text must carry stays shared -- the delivery map, the band
+#: wording, the one clean ending and the hook-order clause (``style_parts[2:]``)
+#: -- because no variant may vary those.
+BRIEF_STYLE_NOTE = ("WW-26: compliance trailer first, the variant's own complete "
+                    "brief next, the approved pace clause LAST, cap on the final text")
+
+def brief_style_text(style_id, brief_text, sheet=None, vocal_gender=None,
+                     pace_plan=None, tail_clause=None):
+    """WW-26: the FINAL provider style for ONE complete variant brief.
+
+    ``brief_text`` is the variant's whole, independently authored core (groove,
+    palette, energy, cast/version vocal direction, rap-versus-sung hook,
+    immediate scene words, both shifts, short ending) -- it starts the style, so
+    the three styles share no common prefix and no variant is a short suffix on
+    a shared core. ``tail_clause`` (the variant's own arrangement sentence) is
+    the LAST content before the pace clause, so the assembled style still ends
+    with that variant's arrangement exactly as the base asserted. The mandated
+    compliance wording (delivery map, band wording, one clean ending, hook-order
+    clause) sits BETWEEN them -- it is the only shared text, because no variant
+    may vary it. The approved pace clause is appended LAST and the 1000-char cap
+    is measured on the FINAL text (a raise, never a truncation).
+    """
+    sid = _style_key(style_id)
+    block = music_block(sid)
+    parts = [str(p).rstrip(".") for p in (block.get("style_parts") or [])]
+    if len(parts) < 2:
+        raise RecipeError("NO_STYLE_PARTS", "%r carries no compliance parts" % (style_id,))
+    compliance = parts[2:] if len(parts) >= 4 else parts[-2:]
+    mid = _gender_variant(" ".join(compliance), vocal_gender_word(vocal_gender)).rstrip(".")
+    mid = "%s, %s." % (mid, _EQ.STYLE_ENDING)
+    mid = "%s %s." % (mid.rstrip(), _HP.PROMPT_CLAUSE)
+    text = "%s. %s" % (str(brief_text).strip().rstrip("."), mid)
+    if tail_clause:
+        text = "%s %s." % (text.rstrip(), str(tail_clause).strip().rstrip("."))
+    pace = pace_clause(pace_plan)
+    if pace:
+        text = "%s %s" % (text.rstrip(), pace)
+    if len(text) > SUNO_STYLE_FIELD_MAX:
+        raise RecipeError("STYLE_TOO_LONG",
+                          "%d chars, limit %d" % (len(text), SUNO_STYLE_FIELD_MAX))
+    return text
+
 def check_style_text(text):
     """Style rules: 1000 chars or less, spoken named at most once, band wording."""
     text = str(text)
@@ -987,11 +1034,37 @@ def check_envelope(req):
     return errs
 
 
+#: WW-27: the ensemble cast gate (character_bible.character_bible), imported
+#: LAZILY so a build with no cast never loads it.
+_CB_MOD = None
+
+
+def _cast_model():
+    """character_bible.character_bible, loaded once (WW-27's cast gate)."""
+    global _CB_MOD
+    if _CB_MOD is None:
+        import character_bible.character_bible as _cb   # noqa: PLC0415
+        _CB_MOD = getattr(_cb, "character_bible", _cb)
+    return _CB_MOD
+
+
 def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f",
                   spoken_share_pct=None, delivered_s=None, hook_plan=None, pace_plan=None,
                   callback_url=DEFAULT_CALLBACK_URL, **kw):
     """The KIE createTask envelope for one ad. ``length_s`` is the DELIVERED
     length (chosen - 2). Raises RecipeError on any rule break.
+
+    WW-27: ``cast`` (a brief carrying ``characters``, or an already resolved
+    cast) runs the ensemble gate TWICE -- the cast record alone BEFORE anything
+    is built (the cast decision precedes drafting), then the FINAL
+    ``input.lyrics`` and ``input.style`` after every transformation. An
+    incomplete character, an ensemble with fewer than two characters, a
+    villain/foil who never speaks or is never answered, an undeclared speaker, a
+    shared Suno voice direction or a style that commands a single voice raises
+    ``RecipeError("CAST_REJECTED")``. The cast rides the SCRIPT the request
+    carries -- the speaker tags in ``input.lyrics``, already checked -- never a
+    provider field this builder invents. No cast -> nothing changes, exactly as
+    before.
 
     WW-30: this returns the CURRENT contract only -- outer model
     ``ai-music-api/generate``, a TOP-LEVEL camelCase ``callBackUrl`` and a
@@ -1005,6 +1078,11 @@ def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f
     provider tempo field is ever invented. Unknown ``_``-prefixed keys (the
     internal ``_pace_plan``) are dropped.
     """
+    cast = kw.pop("cast", None)
+    if cast is not None:   # WW-27: the cast decision, BEFORE anything is built
+        _early = _cast_model().check_cast(cast)
+        if _early["reasons"]:
+            raise RecipeError("CAST_REJECTED", "; ".join(_early["reasons"]))
     out = prepare(style_id, sheet, client_text, length_s, spoken_share_pct,
                   vocal_gender, delivered_s, hook_plan, pace_plan)
     if out.get("exempt"):
@@ -1029,11 +1107,19 @@ def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f
     # FU-U6 (plan E.1): the final payload measured against the catalog caps;
     # over a cap, prompt_limits raises naming field, chars, cap, source, status.
     _PL.check_request("suno-generate", req)
+    if cast is not None:
+        # WW-27: the FINAL serialized payload is judged, after every
+        # transformation -- the sheet the provider will sing and the style it
+        # will follow, not an intermediate.
+        rcpt = _cast_model().check_cast(cast, sheet_text=req["input"]["lyrics"],
+                                        style_text=req["input"]["style"])
+        if rcpt["reasons"]:
+            raise RecipeError("CAST_REJECTED", "; ".join(rcpt["reasons"]))
     return req
 
 
 def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
-                  length_s=None, cast_genders=None, hook_plan=None):
+                  length_s=None, cast_genders=None, hook_plan=None, cast=None):
     """Seam for music_director.build_generate_request. Raises RecipeError.
 
     With style_id: the full recipe is enforced (exempt id passes untouched).
@@ -1077,7 +1163,10 @@ def guard_request(style_text_, lyrics_text, style_id=None, client_text=None,
     # as rap on the beat, plain spoken outro). No length -> "UNMEASURED:
     # length_s", a refusal, never a skipped check.
     from song_contract import song_contract as _SC
-    errs = _SC.check_sheet(lyrics_text, style_id, length_s, style_text_)["reasons"]
+    # WW-27: the declared cast judges the sheet's speakers and the FINAL style's
+    # voice direction here too; with no cast this call is byte-identical to before.
+    errs = _SC.check_sheet(lyrics_text, style_id, length_s, style_text_,
+                           cast=cast)["reasons"]
     errs += check_style_text(style_text_)
     errs += check_lyric_sheet(parse_lyrics(lyrics_text), client_text or "", length_s,
                               style_id=style_id, hook_plan=hook_plan)
