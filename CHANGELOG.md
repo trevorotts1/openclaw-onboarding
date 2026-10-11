@@ -1,3 +1,5 @@
+## [v27.1.5]  -  2026-10-11  -  repo-fix: Skill-47 embedded Skill-74 KIE client stamp regenerated to v1.1.8 (skill 47 v15.1.8)
+
 ## [v27.1.4]  -  2026-10-11  -  repo-fix: daily-briefings canonical slug alias (guard 63/63 + dispatch bridge)
 
 Daily Briefings never canonicalized, so the runtime-parity guard and specialist dispatch both missed it. The board workspace slug is `daily-briefings` (plural) while the live runtime folder and the `openclaw.json` `agents.entries` key are `dept-daily-briefing-dept` (singular base + folder `-dept`). `shared-utils/canonical_slug.py`'s `ALIAS_MAP` carried no daily-briefing entry, so `canonical_dept_slug()` returned each spelling unchanged and the alias expansion bridged neither direction: `guard-department-runtime-parity.py` failed 1/63 (Daily Briefings, no_specialist_runtime) and dispatch could not resolve the department's runtime, leaving `openclaw_agent_id` NULL on its four rows.
