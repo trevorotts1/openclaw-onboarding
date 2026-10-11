@@ -45,6 +45,19 @@
 //
 //   verifyDeliveryLink(url)                                // service-side HEAD, no redirect follow
 //     -> { ok, status, contentLength, contentType, disposition }
+//
+// OPTIONAL, version-2 only (U20). The page calls these ONLY when it wants the
+// optional web-push surface; the version-0 page never does, and the service
+// answers `enabled: false` for every studio with DS_WEB_PUSH_ENABLED unset.
+//
+//   getPushStatus()
+//     -> { enabled: bool }                                  // false unless an operator opted in
+//
+//   subscribePush({ clientId, subscription })              // subscription: the browser's own
+//     -> { ok: true, subscriptionId }                      // refused (503) and stores NOTHING when off
+//
+//   unsubscribePush({ clientId, subscriptionId })
+//     -> { ok: true, subscriptionId, status: "revoked" }
 // =============================================================================
 
 export const ENTRYPOINTS = [
@@ -57,6 +70,13 @@ export const ENTRYPOINTS = [
   "advance",
   "getDelivery",
   "verifyDeliveryLink",
+];
+
+/** U20 — the optional, version-2 push surface. Never required by version 0. */
+export const OPTIONAL_PUSH_ENTRYPOINTS = [
+  "getPushStatus",
+  "subscribePush",
+  "unsubscribePush",
 ];
 
 export class ServiceUnavailableError extends Error {
@@ -98,6 +118,10 @@ export const studio = {
   advance: (p) => call("advance", p),
   getDelivery: (p) => call("getDelivery", p),
   verifyDeliveryLink: (p) => call("verifyDeliveryLink", p),
+  // U20 — optional, version-2. Called only after getPushStatus() said enabled.
+  getPushStatus: (p) => call("getPushStatus", p),
+  subscribePush: (p) => call("subscribePush", p),
+  unsubscribePush: (p) => call("unsubscribePush", p),
 };
 
 export function serviceConnected() {

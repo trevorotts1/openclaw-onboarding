@@ -16,6 +16,7 @@ mints short-lived direct-upload links, and answers one line to a check-in.
 | Unit | Owns |
 | --- | --- |
 | **U2 (this unit)** | `75-drama-song-ad-factory/mini-app/service/**` — keys, inbox entry, uploads, retention, isolation, the option field and the real-wait line, lifecycle and timer precedence, the one operator record per client per day |
+| **U20 (this unit)** | `mini-app/service/src/push.js` + its prover — the **OPTIONAL**, version-2 web-push surface. OFF by default (joint plan line 1091); never a version-0 gate |
 | U3 | the version-0 pages, the QR screen, the options UI and accessibility. U3 **renders** the lines this service returns; it does not reword them |
 | U4 | the deploy files: wrangler config, dry run, zone guard, the bucket's 45-day rule object. **This unit deliberately ships no wrangler.toml** |
 | U12 | pairing/admin/key/cutoff **pages**, and setting Option 3 from the admin surface. This unit ships the key code and the endpoints U12 calls |
@@ -58,6 +59,19 @@ stable `code` — a refusal always names itself, never a silent blank.
 | `POST /api/studio/uploads/<id>/complete` | U3's page | header `x-ds-key` | `{ ok, job }` |
 | `GET /api/studio/options` | U3's page | header `x-ds-key` | `{ ok, option, line }` |
 | `POST /api/studio/options` | U12's admin page | `{ admin_key, target_client_id, option, approval? }` | `{ ok, option, line }`; Option 3 needs `approval: { option3: true, client_name }` |
+| `GET /api/studio/push` | U20's optional page | — | `{ ok, enabled }`; **false** unless an operator set `DS_WEB_PUSH_ENABLED` |
+| `POST /api/studio/push/subscribe` | U20's optional page | header `x-ds-key`, `{ subscription: { endpoint, keys: { p256dh, auth } } }` | `201 { ok, subscription_id }`; **503 `AF-DS-PUSH-DISABLED` and stores nothing** when push is off |
+| `POST /api/studio/push/unsubscribe` | U20's optional page | header `x-ds-key`, `{ subscription_id }` | `{ ok, subscription_id, status: "revoked" }`; a record that is not the caller's reports `AF-DS-PUSH-MISSING` |
+| `POST /api/studio/admin/push/send` | U20, operator only | `{ admin_key, target_client_id, payload }` | `{ ok, attempted, sent, failed, pruned }`; **503 `AF-DS-PUSH-DISABLED`** until push is enabled, configured and a transport is injected |
+
+> **U20 is OPTIONAL and version 2.** Joint plan line 1091: `| U20 | Optional web
+> push | U3 | onboarding planned service | U3; never version-0 gate |`. Line 832:
+> `none blocks version 0`. With `DS_WEB_PUSH_ENABLED` unset — every version-0
+> studio — the status route says `enabled: false`, the subscribe route refuses and
+> writes nothing, and the send path refuses before it reads a subscription. The
+> VAPID material is env-only and is never stored, echoed or printed; the actual
+> wire encryption + VAPID signing is a **transport the runtime injects**
+> (`sendPush({..., transport})`), so this unit ships no vendor and opens no socket.
 
 `event` is one of `claim`, `needs_you`, `answer`, `ready`, `deliver`, `done`.
 The `order` object is the record in `schema.sql` projected with its timers
@@ -128,6 +142,12 @@ node --test 75-drama-song-ad-factory/mini-app/service/test/service.test.mjs
 # Security prover — per-client isolation, retention, once-per-day
 node 75-drama-song-ad-factory/mini-app/service/prove/prove_service_boundaries.mjs
 #   exit 0 = PASS, 2 = a named case failed, 3 = the prover could not run
+
+# U20 optional-web-push prover (10 cases) and its planted-bad controls
+node 75-drama-song-ad-factory/mini-app/service/prove/prove_push_optional.mjs
+#   exit 0 = PASS, 2 = a named case failed, 3 = the prover could not run
+bash 75-drama-song-ad-factory/mini-app/service/prove/planted-bad.sh
+#   exit 0 = every planted defect went red AND the clean run is green
 ```
 
 The prover runs every store read through a **recording** proxy, so *"client B
@@ -150,3 +170,8 @@ second line replaces the first, and the next day opens a fresh one.
   upgrade path is to read `client.timezone` and key on the client's local day.
 - No deletion sweep runner — `retention.js` decides, and the caller deletes.
   A never-delete class is partitioned out of the delete list by construction.
+- **U20 web push is OPTIONAL (version 2).** It is OFF by default, ships no
+  vendor and opens no socket: the wire encryption and VAPID signing are a
+  transport the runtime injects, so the deployed Worker refuses to send until a
+  transport exists. No version-0 route, page or test reads `push.js`, and the
+  version-0 test suite runs unchanged.

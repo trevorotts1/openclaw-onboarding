@@ -34,6 +34,7 @@ import { acceptUpload, pollUpload } from './uploads.js';
 import { resolveOrderState, transition, writeOperatorRecord } from './lifecycle.js';
 import { AF_OPT_APPROVAL, optionLine, setOption, staleVerdict } from './options.js';
 import { listKeys, randomConnectHex } from './support.js';
+import { AF_PUSH_DISABLED, pushEnabled, registerSubscription, revokeSubscription, sendPush } from './push.js';
 
 export const SERVICE_VERSION = '0.1.0';
 export { randomConnectHex };
@@ -82,7 +83,7 @@ export default {
   },
 };
 
-export async function handle(request, env, store, objects) {
+export async function handle(request, env, store, objects, deps = {}) {
   const url = new URL(request.url);
   const parts = url.pathname.replace(/^\/+|\/+$/g, '').split('/');
   const nowMs = Date.now();
@@ -99,6 +100,13 @@ export async function handle(request, env, store, objects) {
   // GET /api/studio/health
   if (request.method === 'GET' && url.pathname === '/api/studio/health') {
     return ok({ service: 'drama-studio-service', version: SERVICE_VERSION });
+  }
+
+  // GET /api/studio/push — is the OPTIONAL web-push surface on? (U20)
+  // Public and inert: it reveals one boolean and nothing else. Unset
+  // DS_WEB_PUSH_ENABLED means `false` for every studio, forever.
+  if (request.method === 'GET' && url.pathname === '/api/studio/push') {
+    return ok({ enabled: pushEnabled(env) });
   }
 
   // POST /api/studio/enroll — a box registers itself ONCE and invents nothing
@@ -174,10 +182,42 @@ export async function handle(request, env, store, objects) {
     return ok({ option: set.record.option, line: optionLine(set.record, nowMs) });
   }
 
+  // POST /api/studio/admin/push/send — operator-triggered, explicitly opt-in (U20)
+  // Until a transport is injected (deps.pushTransport) this REFUSES and sends
+  // nothing: an unconfigured studio is inert, never a half-send.
+  if (request.method === 'POST' && url.pathname === '/api/studio/admin/push/send') {
+    if (!isAdmin(env, body.admin_key)) return fail(403, 'AF-DS-ADMIN-REFUSED', 'Not the admin.');
+    if (!body.target_client_id) return fail(400, 'AF-DS-ADMIN-INVALID', 'target_client_id is required.');
+    const out = await sendPush({
+      env, store, clientId: body.target_client_id, payload: body.payload, transport: deps.pushTransport, nowMs,
+    });
+    if (!out.ok) return fail(503, out.code || AF_PUSH_DISABLED, out.message || 'Web push is off.');
+    return ok({ attempted: out.attempted, sent: out.sent, failed: out.failed, pruned: out.pruned });
+  }
+
   // Everything below needs a key.
   const auth = await authorizeClient(store, key, body.client_id);
   if (!auth.ok) return fail(auth.code === 'AF-DS-ISO-CROSS' ? 403 : 401, auth.code, 'That key cannot open this.');
   const clientId = auth.client_id;
+
+  // POST /api/studio/push/subscribe — a browser registers its OWN subscription.
+  // With web push off this refuses and stores NOTHING (section 5.2: a refusal
+  // that writes is not a refusal).
+  if (request.method === 'POST' && url.pathname === '/api/studio/push/subscribe') {
+    if (!pushEnabled(env)) return fail(503, AF_PUSH_DISABLED, 'Web push is off. Nothing was stored.');
+    const reg = await registerSubscription(store, {
+      clientId, subscription: body.subscription, userAgent: request.headers.get('user-agent'), nowMs,
+    });
+    return reg.ok ? ok({ subscription_id: reg.record.subscription_id }, 201) : fail(400, reg.code, reg.message);
+  }
+
+  // POST /api/studio/push/unsubscribe — revoke one of the caller's own records.
+  if (request.method === 'POST' && url.pathname === '/api/studio/push/unsubscribe') {
+    const out = await revokeSubscription(store, { clientId, subscriptionId: body.subscription_id, nowMs });
+    return out.ok
+      ? ok({ subscription_id: out.record.subscription_id, status: out.record.status })
+      : fail(404, out.code, out.message || 'No such subscription for this key.');
+  }
 
   // POST /api/studio/checkin — the 2-minute network call. Zero model tokens.
   if (request.method === 'POST' && url.pathname === '/api/studio/checkin') {
