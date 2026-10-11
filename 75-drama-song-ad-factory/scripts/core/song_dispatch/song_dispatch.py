@@ -8,7 +8,8 @@ Rules (Trevor 2026-10-08):
     that breaks the recipe, or holds a rule that contradicts the researched
     wording (it never refuses the researched negatives or the "band keeps
     playing" line), is refused before spend;
-  * EVERY take is judged: singing detector v2, spoken share band (per-ad
+  * EVERY take is judged per variant; three variants run in parallel lanes:
+    singing detector v2, spoken share band (per-ad
     target), sung share of voice, 6 s sung stretch, hook sung 2+, all script
     words, length (L-2), music level under spoken lines, clean ending (no
     near-silent final 2 s), first sung time, and hook placement (FU-HOOK-
@@ -33,10 +34,16 @@ if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
 import load_governor as _LG   # noqa: E402
+import music_qc as _QC       # noqa: E402  WW-08: the total verdict vocabulary + the receipt
 import song_contract as _SC  # noqa: E402
 import script_approval as _SA   # noqa: E402
 import spoken_share as _SS   # noqa: E402
 import suno_recipe as _R     # noqa: E402
+#: the recipe MODULE itself, whether core/suno_recipe/ is a package (whose
+#: __init__ re-exports a fixed list) or the bare module on sys.path -- so a new
+#: recipe helper can be called without editing the package's export list (which
+#: this unit does not own).
+_RM = getattr(_R, "suno_recipe", _R)
 import sung_hook as _SH      # noqa: E402
 from sung_hook import hook_placement as _HP   # noqa: E402
 import words_fit as _WF      # noqa: E402
@@ -44,7 +51,7 @@ import music_qc.pace_change as _PC   # noqa: E402
 import music_qc.rap_check as _RC     # noqa: E402
 
 TOOL_NAME = "song_dispatch"
-TOOL_VERSION = "1.1.0"
+TOOL_VERSION = "1.2.0"
 GATES = ("detector", "spoken_share", "rap_share", "sung_of_voice", "sung_stretch", "hook", "script_words",
          "length", "music_under_speech", "clean_ending", "first_sung", "hook_placement")
 MUSIC_UNDER_SPEECH_MIN = 0.3     # music level under speech / music level under singing
@@ -56,6 +63,24 @@ GATES += ("song_contract",)      # FU-RNBFLOW-SONG: the style's own contract on 
 # CALLED by the pipeline, so "UNMEASURED blocks a take PASS" was only true of
 # the module in isolation. Both are now gates of the take judge.
 GATES += ("rap_audio", "pace_change")
+
+# WW-08: the acceptance-critical take gates. EVERY one is emitted for EVERY
+# take, and delivery refuses a take whose required gates did not all PASS.
+REQUIRED_TAKE_GATES = ("detector", "length", "song_contract", "script_words",
+                       "clean_ending", "hook", "hook_placement",
+                       "music_under_speech", "story", "timeline")
+#: gates that are only DELIVERY-required when THIS run's approved plan declares
+#: the matching requirement. A run that plans rap must prove measured rap
+#: (WW-06/17.8); a run that plans none has nothing to measure. The gate is
+#: recorded either way -- never silently skipped -- and it always counts toward
+#: the take's verdict, so an unmeasured read can never make a take PASS.
+CONDITIONAL_TAKE_GATES = ("rap_audio", "pace_change")
+#: the key that opts a run into the story protocol (WW-02/WW-03). A run that
+#: declares no approved revision records the story gate NOT_APPLICABLE WITH
+#: the flag below (WW-08 item 2) -- never a bare skip.
+STORY_PROTOCOL_KEY = "story_revision"
+STORY_OFF_FLAG = "story_protocol_off"
+TIMELINE_PENDING_FLAG = "timeline_check_pending"
 
 
 class DispatchError(ValueError):
@@ -99,6 +124,7 @@ def validate_request(req, style_id=None, client_text="", delivered_s=None):
     # FU-RNBFLOW-SONG: the style reaches the sheet check (rap is judged as rap,
     # never refused as "no style"), and the style's own contract runs.
     errs += _R.check_lyric_sheet(sheet, client_text, d, style_id=style_id)
+    # WW-16: the declared opening vocalise cue must satisfy the ceiling.
     errs += _SC.check_sheet(req.get("lyrics", ""), style_id, delivered_s, req.get("style"))["reasons"]
     return errs
 
@@ -128,8 +154,86 @@ def _planned_pct(plan, style_id, key):
     return round(float(words[key]) / float(rate) / float(delivered) * 100.0, 3)
 
 
+def _gate(verdict, detail="", style_flag=None):
+    """WW-08: one gate record on the TOTAL vocabulary, with the style flag that
+    backs a NOT_APPLICABLE (never a bare skip)."""
+    rec = {"verdict": _QC.norm_verdict(verdict), "detail": detail}
+    if style_flag:
+        rec["style_flag"] = style_flag
+    return rec
+
+
+def _story_gate(take, plan, style_id, D, sheet_text):
+    """WW-02/WW-08: the story gate, CALLED from judge_take. A run that declares
+    its approved revision runs song_contract.check_returned_story (story start,
+    lexical coverage, story arc, words floor) and a checker that is absent, that
+    raises, or that cannot pass BLOCKS. A run that declares no revision records
+    the flag-backed NOT_APPLICABLE (WW-08 item 2)."""
+    rev = (plan or {}).get(STORY_PROTOCOL_KEY) or (take or {}).get(STORY_PROTOCOL_KEY)
+    if not rev:
+        return _gate("NOT_APPLICABLE",
+                     "this run declares no approved story revision (STORY_PROTOCOL_KEY)",
+                     style_flag=STORY_OFF_FLAG)
+    fn = getattr(_SC, "check_returned_story", None)
+    if fn is None:
+        return _gate("UNAVAILABLE", "check_returned_story is not installed")
+    try:
+        res = fn(take, style_id, D, sheet_text, plan)
+    except Exception as exc:            # noqa: BLE001 - a gate that raises blocks
+        return _gate("UNAVAILABLE", "check_returned_story raised %r" % (exc,))
+    res = res or {}
+    detail = str(res.get("detail") or res.get("reason") or "")
+    return _gate(res.get("verdict", "UNKNOWN"), "story revision %s: %s" % (rev, detail))
+
+
+def _timeline_gate(take, plan, style_id, D):
+    """WW-08/WW-04: the timeline-integrity gate, CALLED from judge_take. WW-04
+    owns the partition check (timing_guard); when this revision ships no
+    checker the gate is recorded NOT_APPLICABLE WITH the flag below, never a
+    silent skip, and an absent or raising checker BLOCKS."""
+    try:
+        import timing_guard as _TG   # noqa: PLC0415
+    except Exception:                # noqa: BLE001 - an unimportable checker blocks
+        return _gate("UNAVAILABLE", "timing_guard is not installed")
+    fn = (getattr(_TG, "timeline_integrity", None)
+          or getattr(_TG, "check_timeline", None))
+    if fn is None:
+        return _gate("NOT_APPLICABLE",
+                     "this revision ships no timeline-integrity checker",
+                     style_flag=TIMELINE_PENDING_FLAG)
+    try:
+        res = fn(take, D)
+    except Exception as exc:         # noqa: BLE001 - a gate that raises blocks
+        return _gate("UNAVAILABLE", "the timeline gate raised %r" % (exc,))
+    res = res or {}
+    return _gate(res.get("verdict", "UNKNOWN"), str(res.get("detail", "")))
+
+
+def _rap_required(plan, style_id):
+    """True when the approved plan carries a rap budget (WW-06 item 3). A run
+    with no rap budget has no rap delivery to prove."""
+    words = (plan or {}).get("words") or {}
+    return bool(words.get("rap")) or _planned_pct(plan, style_id, "rap") is not None
+
+
+def _pace_required(plan, take):
+    """True when this run carries an approved pace order (WW-07)."""
+    return bool((plan or {}).get("pace_change") or (take or {}).get("pace_change"))
+
+
 def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
                style_id=None, sheet_text=None):
+    """WW-08: run EVERY required gate; a gate that raises blocks and never
+    passes."""
+    try:
+        return _judge_take_inner(take, plan, script_words, hook_text,
+                                 spoken_range_pct, style_id, sheet_text)
+    except Exception as exc:      # noqa: BLE001 - a raised exception blocks
+        return _finish({"judge_exception": _gate("FAIL", "the judge raised %r" % (exc,))})
+
+
+def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None,
+                      style_id=None, sheet_text=None):
     """Gate a measured take. ``take`` = {segments (measured and/or aligned),
     aligned_words, duration_s, detector, music_under_speech_ratio,
     tail_rms_dbfs, first_sung_s}. Returns {verdict, gates:{name:{verdict,
@@ -154,8 +258,8 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
     segs = take.get("segments") or []
     g = {}
 
-    def put(name, verdict, detail=""):
-        g[name] = {"verdict": verdict, "detail": detail}
+    def put(name, verdict, detail="", style_flag=None):
+        g[name] = _gate(verdict, detail, style_flag)
 
     det = str(take.get("detector", ""))
     srcs = {s.get("source") for s in segs if isinstance(s, dict)}
@@ -281,21 +385,106 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
     hp = _HP.check_returned(sheet, take.get("aligned_words") or [], sid, D, plan.get("hook_plan"))
     put("hook_placement", hp["verdict"], "; ".join(hp["reasons"]) or
         "first hook %s s (window %s s)" % (hp["first_hook_s"], hp["min_first_hook_s"]))
-    return _finish(g)
+    # WW-02/WW-08: the story gate (check_returned_story) is CALLED here, in the
+    # judge, together with the timeline-integrity gate. Both are emitted for
+    # EVERY take: a checker that is absent, that raises, or that cannot pass
+    # BLOCKS; a genuinely inapplicable one carries its style flag.
+    g["story"] = _story_gate(take, plan, sc_sid or sid, D, sheet)
+    g["timeline"] = _timeline_gate(take, plan, sc_sid or sid, D)
+    # WW-18: the DELIVERY-required set = the always-required gates plus the
+    # conditional gates THIS run declared on its approved plan. A run that plans
+    # rap must prove measured rap; one that plans none has nothing to measure.
+    required = list(REQUIRED_TAKE_GATES)
+    if _rap_required(plan, sc_sid or sid):
+        required.append("rap_audio")
+    if _pace_required(plan, take):
+        required.append("pace_change")
+    return _finish(g, required)
 
 
-def _finish(g):
-    """FAIL when a gate FAILs; otherwise FLAG when any gate FLAGs OR is
-    UNMEASURED; only an all-PASS take PASSes.
+def _finish(g, required=None):
+    """WW-08: the aggregate over the WHOLE verdict vocabulary.
 
-    WWFIXGAPS U1 (defect 2): UNMEASURED counts as a flag, never as nothing --
-    a take carrying an unmeasured gate (no labelled rap control, no gear-change
-    evidence) cannot reach PASS. It is kept OUT of ``failed`` on purpose: it is
-    missing evidence, not a measured failure."""
-    bad = [k for k, v in g.items() if v["verdict"] == "FAIL"]
-    flags = [k for k, v in g.items() if v["verdict"] in ("FLAG", "UNMEASURED")]
-    return {"verdict": "FAIL" if bad else ("FLAG" if flags else "PASS"), "gates": g,
-            "failed": bad, "flagged": flags}
+    A take advances (returns PASS) only when EVERY gate PASSes or is a
+    style-backed NOT_APPLICABLE. FAIL, FLAG, UNMEASURED, UNAVAILABLE, UNKNOWN,
+    a raised exception, a missing gate and an EMPTY gate set all keep the take
+    off PASS. ``required`` names the gates DELIVERY demands (WW-18); an
+    unmeasured conditional gate is still reported here and still keeps the take
+    off PASS, and only a run that declared the requirement makes it block
+    delivery too. UNMEASURED stays out of ``failed`` on purpose: it is missing
+    evidence, not a measured failure (kept for the WWFIXGAPS U1 contract)."""
+    required = tuple(required if required is not None else REQUIRED_TAKE_GATES)
+    if not g:
+        return {"verdict": "FAIL", "gates": {}, "failed": ["<empty gate set>"],
+                "flagged": [], "blocked": [], "missing_required": list(required),
+                "required_gates": sorted(required), "reason_code": "EMPTY_GATE_SET"}
+    # a gate whose record is not even a mapping (a checker that crashed before
+    # it could report) is UNMEASURED evidence and must block, never raise here.
+    g = {k: v if isinstance(v, dict) else
+         _gate("UNMEASURED", "gate %s returned no verdict record" % k)
+         for k, v in g.items()}
+    missing = [k for k in required if k not in g]
+    for k in missing:
+        g[k] = _gate("UNMEASURED", "required gate %s was not run" % k)
+    failed = [k for k, v in g.items() if _QC.norm_verdict(v.get("verdict")) == "FAIL"]
+    flagged = [k for k, v in g.items()
+               if _QC.norm_verdict(v.get("verdict")) in
+               ("FLAG", "UNMEASURED", "UNAVAILABLE", "UNKNOWN")]
+    blocked = [k for k in required if _QC.gate_blocked(g[k])]
+    verdict = "FAIL" if failed else ("FLAG" if flagged else "PASS")
+    return {"verdict": verdict, "gates": g,
+            "failed": sorted(failed), "flagged": sorted(flagged),
+            "blocked": sorted(set(blocked) | set(failed)),
+            "missing_required": sorted(missing),
+            "required_gates": sorted(required)}
+
+
+def take_accepted(rcpt):
+    """WW-18: the ONE delivery decision. A take whose REQUIRED gate set is not
+    all PASS (bar a style-backed NOT_APPLICABLE) is never offered; a missing
+    required gate and an empty gate set are refused. Returns (ok, reason)."""
+    if not isinstance(rcpt, dict):
+        return False, "no receipt"
+    gates = rcpt.get("gates") or {}
+    if not gates:
+        return False, "empty gate set"
+    required = rcpt.get("required_gates") or REQUIRED_TAKE_GATES
+    missing = [k for k in required if k not in gates]
+    if missing:
+        return False, "missing required gate(s): %s" % ",".join(missing)
+    bad = sorted(k for k in required if _QC.gate_blocked(gates[k]))
+    if bad:
+        return False, "required gate(s) not PASS: %s" % ",".join(bad)
+    return True, ""
+
+
+def constituent_receipt(take, rcpt, plan=None):
+    """WW-08 item 3: the per-take constituent-evidence receipt, bound to the
+    audio digest, the creative fingerprint, the acceptance-profile version and
+    the checker identity, carrying every gate verdict and the delivery verdict."""
+    plan = plan or {}
+    prof_v = plan.get("acceptance_profile_version") or plan.get("profile_version")
+    gates = (rcpt or {}).get("gates") or {}
+    rec = _QC.constituent_receipt(
+        audio_digest=take.get("audio_digest") or take.get("audio_sha256"),
+        creative_fingerprint=plan.get("creative_fingerprint") or plan.get(STORY_PROTOCOL_KEY),
+        profile_version=prof_v, checker=TOOL_NAME, gates=gates)
+    ok, why = take_accepted(rcpt)
+    rec["required_gates"] = list(rcpt.get("required_gates") or REQUIRED_TAKE_GATES)
+    rec["accepted"] = ok
+    rec["blocked"] = [] if ok else [why]
+    return rec
+
+
+def constituent_ok(rec):
+    """(ok, reason) for a constituent-evidence receipt recorded with a take.
+    WW-08: a missing, non-current or blocked receipt never counts."""
+    if not isinstance(rec, dict) or rec.get("schema") != _QC.CONSTITUENT_SCHEMA:
+        return False, "no constituent-evidence receipt"
+    if not rec.get("accepted"):
+        return False, "; ".join(str(x) for x in (rec.get("blocked") or
+                                                 ["required gates did not all PASS"]))
+    return True, ""
 
 
 def run_takes(request, plan, generate, measure, save, script_words, hook_text,
@@ -310,7 +499,10 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     request draws from the 20-per-10-s bucket and a 429 is resubmitted.
     ``script_approval`` is the run's script-approval record; left out, it is read from ``run_dir`` (or request["run_dir"]):
     required and not approved for these lyrics = refused before any generation.
-    Returns {delivered, verdict, receipts, spent_cents}.
+    Returns {delivered, verdict, receipt, receipts, spent_cents}.
+    WW-18: only a take whose REQUIRED gate set all PASSes is delivered; every
+    other take (FAIL, FLAG, UNMEASURED, UNAVAILABLE, UNKNOWN) is judged and its
+    paid stem kept, but never delivered.
     """
     # SCRIPT APPROVAL: a client who asked to approve the script first gets no generation until they do.
     if script_approval is None:       # found in the run folder; nobody passes it by hand
@@ -342,7 +534,7 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # the same arrangement.
     refuse_asr("faster-" + "wh" + "isper")
     plan = dict(plan, sheet_text=plan.get("sheet_text") or request.get("lyrics"))
-    spent, receipts, best = 0, [], None
+    spent, receipts = 0, []
     while spent + cost_cents <= cap_cents:
         spent += cost_cents
         for take in kie(lambda: generate(request), "song generate", generation=True):
@@ -351,10 +543,10 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
                               style_id, request.get("lyrics"))
             save(take, rcpt)                               # stem + timestamps, every take
             receipts.append(rcpt)
-            if rcpt["verdict"] == "PASS":
-                return {"delivered": take, "verdict": "PASS", "receipts": receipts, "spent_cents": spent}
-            if rcpt["verdict"] == "FLAG" and (best is None or len(rcpt["flagged"]) < len(best[1]["flagged"])):
-                best = (take, rcpt)
-    if best:
-        return {"delivered": best[0], "verdict": "FLAG", "receipts": receipts, "spent_cents": spent}
+            # WW-18: only a take whose REQUIRED gate set all PASSes is delivered.
+            # Every other take is judged and its paid stem kept, never offered.
+            if take_accepted(rcpt)[0]:
+                return {"delivered": take, "verdict": rcpt["verdict"],
+                        "receipt": constituent_receipt(take, rcpt, plan),
+                        "receipts": receipts, "spent_cents": spent}
     return {"delivered": None, "verdict": "FAIL", "receipts": receipts, "spent_cents": spent}

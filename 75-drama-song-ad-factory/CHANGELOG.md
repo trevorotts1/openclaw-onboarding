@@ -6,6 +6,82 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.26 - 2026-10-11 - U1: the total take-gate vocabulary, the delivery boundary, the payload pace clause and the bounded opening vocalise
+
+The skill 75 repository half of the U1 unit (spec section 3 fixes WW-08, WW-18,
+WW-07, WW-16, WW-09 and WW-14). Version read LIVE from `origin/main` at build
+time (`v2.9.25`); the next patch is `v2.9.26`. No test assertion was weakened,
+skipped, deleted or re-run to green.
+
+- **WW-08 — the take judge executes every required gate and the vocabulary is
+  total.** `song_dispatch.judge_take` now calls `song_contract.check_returned_story`
+  (the story gate) and a timeline-integrity gate, alongside `check_returned_song`,
+  the rap gate, the pace gate, the hook/hook-placement and the length/detector
+  gates, and it is wrapped so a raised exception blocks. `_finish` aggregates
+  over the WHOLE vocabulary: `FAIL`, `FLAG`, `UNMEASURED`, `UNAVAILABLE`,
+  `UNKNOWN`, an exception, a missing required gate and an EMPTY gate set all
+  keep a take off PASS (before this, `UNAVAILABLE` and `UNKNOWN` fell through to
+  PASS and `_finish({})` returned PASS). `music_qc` gains the vocabulary
+  (`norm_verdict`, `verdict_advances`, `gate_blocked`), the constituent-evidence
+  receipt and its checker. A per-take constituent receipt is recorded and
+  checked at the pick, at stage advance (`factory.cmd_next`) and at every later
+  purchase through the `kie_dispatch` seam.
+- **WW-18 — the block reaches the DELIVERY boundary.** `run_takes` delivers only
+  a take whose REQUIRED gate set all PASSes; `deliver_choices`, `record_pick`
+  and `dispatch_refusal` refuse every other take. The DELIVERY-required set is
+  the always-required gates plus the conditional gates THIS run declared on its
+  approved plan (a run that plans rap must prove measured rap; one that plans
+  none has nothing to measure). The gate set remains total -- an unmeasured
+  conditional gate still keeps the take off PASS -- so no helper can claim
+  production safety while being called by nothing.
+- **WW-07 — the pace direction is written into the submitted style.** The
+  approved lowest-point direction (half-time, thin drums) and the return are
+  appended by `suno_recipe.pace_clause` into the FINAL provider `input.style`,
+  AFTER the ending, hook-placement and delivery-map clauses, with the
+  1000-character cap measured on the final text (an over-cap append raises
+  `STYLE_TOO_LONG` rather than truncating). `music_director.build_generate_request`
+  does the same after `with_clean_ending`. The internal `_pace_plan` never
+  reaches the provider and no tempo field is invented.
+- **WW-16 — the mandated opening vocalise cue is bounded, PARTIALLY.** Delivered
+  here: `suno_recipe.check_opening_vocalise_cue` and its wiring into
+  `check_lyric_sheet` -- a sheet that DECLARES an opening-vocalise cue asking
+  for long/held notes, or naming a span over `OPENING_VOCALISE_MAX_S` (3.0 s),
+  is refused before any spend. NOT delivered here, and why (see the blocker note
+  below): the raw-text/bracket seam and the data cue itself.
+- **WW-09 — the recorded answer keeps its provenance.** `song_choices` records
+  who answered, on which channel and when; an explicit client No stays No, while
+  a missing, corrupt or author-less delegated answer is never silently turned
+  into No -- it is routed to the recommended Yes and the refusal to guess is
+  recorded. `cmd_generate` refuses an empty `measure`/`save` transport or an
+  empty hook text instead of substituting a silent no-op.
+- **WW-14 — the per-variant clause.** `song_dispatch`'s header now carries the
+  contract's exact wording: "EVERY take is judged per variant; three variants
+  run in parallel lanes".
+
+Known cross-unit dependency, stated honestly: WW-06 (the independent timed
+rap-listening review that can make the rap gate PASS) ships with unit U2; until
+it lands, a run whose approved plan carries a rap budget records the rap gate
+`UNMEASURED` and that take can never reach PASS or delivery.
+
+WW-16 remainder, stated honestly (the spec's own negative fixture is a POSITIVE
+in four suites outside this unit's file set): the spec names the STORED sheet as
+the negative fixture, and that sheet carries its cue in the bracket header
+(`[Vocalise (sung): wordless, full melodic voice, two very long held notes]`),
+while the cue text itself lives in DATA
+(`references/prompt-templates/models/suno-v6.json`, `cue_vocabulary.sung.vocalise`).
+Wiring the raw-text/bracket seam into `guard_request`/`validate_request` refuses
+`one-check-lyrics.txt` and all six `references/.../fixtures/suno-sheets/*.json`
+goldens, which `song_contract/test_song_contract.py`,
+`sung_hook/test_no_skip_and_goldens.py`, `suno_recipe/test_voice_tags_u5.py` and
+`suno_recipe/test_suno_templates_u15d.py` assert must flow to dispatch. Even a
+render-only override of the default vocalise cue breaks the byte-exact length
+assertion `b0` in `test_suno_templates_u15d.py`. Those four files and the two
+data files are outside this unit's ownership. The direction is stopped properly
+by changing the DATA cue to a short lead-in and updating those fixtures/tests;
+until that lands, only a DECLARED cue is refused.
+
+---
+
 ## v2.9.25 - 2026-10-11 - WWFIX-U1 gaps: the sung-share floor, markup-as-story, the unwired audio gates and the hardcoded dispatch count
 
 Four defects found in v2.9.22, fixed in the product. No test assertion was weakened, skipped,

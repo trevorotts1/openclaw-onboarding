@@ -74,11 +74,17 @@ def extra_cost_cents():
 
 def build_requests(style_id, sheet, client_text, title, length_s, vocal_gender="f", **kw):
     """[(variant, request)] x3: the style's own request plus the variant clause.
-    Every request must pass song_dispatch.validate_request or none is sent."""
-    pace_plan = kw.pop("pace_plan", None)   # never forwarded to suno_recipe
+    Every request must pass song_dispatch.validate_request or none is sent.
+
+    WW-07: the approved ``pace_plan`` is written into the FINAL provider
+    ``input.style`` (the lowest-point drop and the return, AFTER the ending and
+    hook clauses), and it rides the request as internal ``_pace_plan`` for the
+    judge -- never to KIE."""
+    pace_plan = kw.pop("pace_plan", None)   # WW-07: into the style, never into the payload
     out = []
     for v in variants_for(style_id):
-        req = _R.build_request(style_id, sheet, client_text, title, length_s, vocal_gender, **kw)
+        req = _R.build_request(style_id, sheet, client_text, title, length_s, vocal_gender,
+                               pace_plan=pace_plan, **kw)
         req = dict(req, style=req["style"].rstrip() + " " + v["clause"].rstrip(".") + ".")
         errs = _SD.validate_request(req, style_id, client_text, length_s)   # 1758: delivered_s required
         if errs:
@@ -115,7 +121,11 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
     """THE single-variant worker path. Every caller (the umbrella three-up
     run and the per-unit `--variant`/`--unit-id` run) calls this ONE helper:
     there is no second worker path to drift. One generation per attempt; a
-    FAIL is regenerated ONCE, then reported."""
+    FAIL is regenerated ONCE, then reported.
+
+    WW-18: `run_takes` delivers only a take whose REQUIRED gate set all PASSed
+    (its constituent receipt is current), so `status` is never a take that a
+    required gate blocked; the receipt rides the result to the delivery gate."""
     receipts, got, attempt = [], None, 0
     opts = dict(kw)
     opts.setdefault("style_id", request.get("_style_id"))
@@ -129,8 +139,9 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
             got = r
             break
     return {"n": n, "variant": variant, "status": got["verdict"] if got else "FAILED",
-            "take": got["delivered"] if got else None, "attempt": attempt,
-            "attempts": attempt, "receipts": receipts}
+            "take": got["delivered"] if got else None,
+            "receipt": got.get("receipt") if got else None,
+            "attempt": attempt, "attempts": attempt, "receipts": receipts}
 
 
 def run_unit(requests, unit_id=None, variant_id=None, **kw):
@@ -304,19 +315,38 @@ def _run_ffmpeg(argv):
     subprocess.run(argv, check=True, capture_output=True)
 
 
+def _accepted(result):
+    """WW-18: a result is offerable only when its take's REQUIRED gate set all
+    PASSES (its constituent receipt is current). A take with a failed, flagged,
+    unmeasured, unavailable or unknown REQUIRED gate (or no receipt) is never
+    offered."""
+    rec = (result or {}).get("receipt")
+    if rec is None:
+        return (False, "no constituent receipt") if result.get("receipts") else \
+            (False, "no take receipt recorded")
+    return _SD.constituent_ok(rec)
+
+
 def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=None, send=None):
     """Write SONG-CHOICES/ and the offered list into state.json. Returns the
     client message. Zero good versions raises (fail closed). With a target the
     message and the files go to the client right away (send_choices). No target
     argument: the client's chat id the card recorded in the run is used. No
-    target anywhere (CLI-only run): the message and file paths are printed."""
+    target anywhere (CLI-only run): the message and file paths are printed.
+
+    WW-18: a take whose REQUIRED gate set is not all PASS is NOT offered, so a
+    failed or unmeasured required gate can never reach the client; its paid file
+    still stands on disk. The block reaches this DELIVERY boundary, not just the
+    judge's verdict string.
+    """
     hold = _overlap_refusal(run_dir, "delivery")
     if hold:
         raise ChoiceError(hold["detail"])
     _require_three(results, key=lambda r: r["variant"]["id"])
-    good = [r for r in results if r["status"] != "FAILED" and r["take"]]
+    good = [r for r in results
+            if r.get("take") and r.get("status") != "FAILED" and _accepted(r)[0]]
     if not good:
-        raise ChoiceError("no song version passed the song checks; nothing to offer")
+        raise ChoiceError("no song version passed every required song gate; nothing to offer")
     folder = os.path.join(delivery_dir, DIRNAME)
     os.makedirs(folder, exist_ok=True)
     offered, lines = {}, []
@@ -328,7 +358,8 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
                 "-metadata", "title=" + label, dst])
         dur = _mmss(take.get("duration_s", 0))
         lines.append("%s - %s - %s" % (label.split(" (")[0], dur, v["description"]))
-        offered[str(r["n"])] = {"label": label, "file": dst, "duration": dur, "take": take}
+        offered[str(r["n"])] = {"label": label, "file": dst, "duration": dur,
+                                "take": take, "receipt": r.get("receipt")}
     with open(os.path.join(folder, "README.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     st = _state(run_dir) or {"required": True}
@@ -395,25 +426,71 @@ def _state(run_dir):
         return json.load(f)
 
 
+def answer_provenance(answer, target=None, channel="card"):
+    """WW-09 item 3: who answered (the client, a delegated assistant under
+    recorded authority, or unknown), on which channel, and at what time. The
+    intake card IS the client's own channel, so a card answer with the client's
+    chat id is the client's; an answer that names another channel with no author
+    is UNKNOWN (unspecified), never a client decision."""
+    a = answer if isinstance(answer, dict) else {}
+    author = a.get("who") or a.get("author") or a.get("by") or (str(target) if target else None)
+    ch = a.get("channel") or channel
+    unknown = not author and a.get("channel") is not None and a.get("channel") != "card"
+    return {"who": author, "channel": ch, "at": a.get("at") or a.get("when"),
+            "unknown": bool(unknown)}
+
+
+def classify_song_answer(answers, target=None):
+    """WW-09: (required, provenance, reason).
+
+    An EXPLICIT client answer is honoured: Yes = three labelled versions, No =
+    one song, exactly as recorded. A MISSING answer (no song row), a CORRUPT one
+    (n not 1 or 2) or an AUTHOR-LESS delegated one is NEVER silently turned into
+    No: it is treated as UNSPECIFIED and routed to the recommended Yes, and the
+    refusal to guess is recorded with the answer."""
+    rows = [a for a in (answers or []) if isinstance(a, dict)]
+    rec = next((a for a in rows if a.get("id") == "song"), None)
+    if rec is None:
+        return True, {"channel": "card", "unknown": True}, \
+            ("no song answer recorded: treated as unspecified and routed to the "
+             "recommended Yes (three labelled versions)")
+    prov = answer_provenance(rec, target)
+    n = rec.get("n")
+    if n not in (1, 2) or prov["unknown"]:
+        return True, prov, \
+            ("the song answer (n=%r, author=%r) is corrupt or has no recorded "
+             "author: treated as unspecified and routed to the recommended Yes"
+             % (n, prov["who"]))
+    return n == 1, prov, ""
+
+
 def record_card_answer(run_dir, answers, target=None):
     """The intake card's SONG APPROVAL answer -> the run (Yes turns the gate on,
     No records No). Called when the recap is confirmed. A changed answer before
     the songs are made replaces the old one; once versions exist (resume) the
-    recorded answer is kept untouched."""
-    from choice_card.intake_card import intake_card as _IC   # noqa: PLC0415
+    recorded answer is kept untouched.
+
+    WW-09: a missing, corrupt or author-less answer is never read as No (it
+    routes to the recommended Yes and records the refusal to guess); the
+    channel, the author and the timestamp, when recorded, are stored with the
+    answer so nobody can answer for the client unnoticed."""
     st = _state(run_dir)
     if st and st.get("offered"):
         return bool(st.get("required"))
-    required = _IC.song_required(answers)
-    init(run_dir, required, target or (st or {}).get("target"))
+    required, prov, guess_reason = classify_song_answer(answers, target)
+    if guess_reason:
+        prov = dict(prov, refused_to_guess=guess_reason)
+    init(run_dir, required, target or (st or {}).get("target"), provenance=prov)
     return required
 
 
-def init(run_dir, required, target=None):
+def init(run_dir, required, target=None, provenance=None):
     """Record the card answer (and the client's chat id). Call once when the card is approved."""
     st = {"required": bool(required), "offered": {}}
     if target:
         st["target"] = str(target)
+    if provenance is not None:
+        st["provenance"] = provenance
     _write(run_dir, "state.json", st)
 
 
@@ -427,7 +504,11 @@ def picked_song(run_dir):
 
 
 def record_pick(run_dir, reply):
-    """The client's 1, 2 or 3. Anything not offered is refused; returns the label."""
+    """The client's 1, 2 or 3. Anything not offered is refused; returns the label.
+
+    WW-18: a file may be picked only when its take's REQUIRED gate set all
+    PASSED (its constituent receipt is current); an offered file whose take did
+    not pass every required gate is refused here and at delivery."""
     st = _state(run_dir)
     if not st or not st.get("required"):
         raise ChoiceError("this run did not ask for song choices")
@@ -438,6 +519,9 @@ def record_pick(run_dir, reply):
     o = (st.get("offered") or {}).get(n)
     if not o or not os.path.isfile(o["file"]):
         raise ChoiceError("%r is not one of the offered songs %s" % (reply, sorted(st.get("offered") or {})))
+    ok, why = _SD.constituent_ok(o.get("receipt"))
+    if not ok:
+        raise ChoiceError("song %s is not offerable: %s" % (reply, why))
     os.makedirs(os.path.join(run_dir, "music"), exist_ok=True)
     shutil.copyfile(o["file"], picked_song(run_dir))
     _write(run_dir, "pick.json", {"pick": int(n), "label": o["label"], "sha256": _sha(picked_song(run_dir)),
@@ -470,9 +554,37 @@ def _refuse(why, code="SONG_PICK_MISSING"):
                            "No picture timing, video, image or lip-sync job starts before it."}
 
 
+def _refuse_constituent(why):
+    return {"reason_code": "SONG_CONSTITUENT_EVIDENCE_MISSING", "detail": why,
+            "next_action": "Re-record the take's constituent-evidence receipt (every required "
+                           "gate PASS) before any picture, image or video spend."}
+
+
+def constituent_hold(run_dir):
+    """WW-08 item 3: every OFFERED song must carry a current constituent-evidence
+    receipt (its required gates all PASS). A missing or blocked receipt closes
+    the gate at every later purchase and at delivery. None = nothing to hold."""
+    try:
+        st = _state(run_dir)
+    except (OSError, ValueError):
+        return _refuse_constituent("the song-choices state is unreadable")
+    if not st or not st.get("required"):
+        return None
+    bad = []
+    for n, o in (st.get("offered") or {}).items():
+        ok, why = _SD.constituent_ok((o or {}).get("receipt"))
+        if not ok:
+            bad.append("%s: %s" % (n, why))
+    return _refuse_constituent("; ".join(bad)) if bad else None
+
+
 def dispatch_refusal(is_music_job, run_dir):
-    """kie_dispatch seam: the song stage itself may run; everything else waits."""
-    return None if is_music_job else refusal(run_dir)
+    """kie_dispatch seam: the song stage itself may run; everything else waits
+    until the pick is in AND every offered song's constituent receipt is
+    current (WW-08 item 3)."""
+    if is_music_job:
+        return None
+    return refusal(run_dir) or constituent_hold(run_dir)
 
 
 # ---- the CLI generate path ----------------------------------------------
@@ -498,9 +610,25 @@ def _load_request(path):
             "pace_plan": doc.get("pace_plan") or doc.get("_pace_plan")}
 
 
+def _hook_text(spec):
+    """WW-09 item 5: the hook text the hook gate measures -- the sung lines the
+    sheet itself repeats (suno_recipe's own rule). Non-empty for a shipped sheet
+    and never a silent empty default."""
+    sung = [s for s in (spec.get("sheet") or [])
+            if s.get("delivery") == "sung" and s.get("lines")
+            and not str(s.get("tag", "")).lower().startswith("vocalise")]
+    counts = {}
+    for s in sung:
+        key = " ".join(str(x) for x in s["lines"])
+        counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return ""
+    best = max(counts, key=counts.get)
+    return best if counts[best] >= 2 else ""
+
+
 def _envelope_path(run_dir, variant_id):
     return os.path.join(run_dir, "music", "takes", variant_id, "dispatch-envelope.json")
-
 
 def _write_envelope(run_dir, variant_id, evidence):
     p = _envelope_path(run_dir, variant_id)
@@ -554,9 +682,22 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
     variant folder, ONE generation. Umbrella mode (neither flag, non-workflow
     run): all three once, three provider jobs in three threads inside this one
     agent unit. The fan-in only ever CHECKS and DELIVERS existing results.
+
+    WW-09 item 5: a production run REFUSES an empty ``measure``/``save``
+    transport or an empty hook text rather than substituting a silent no-op --
+    a take judged on no measurements, or a hook gate that never ran, is the
+    defect this unit fixes.
     """
     run_dir = os.path.abspath(os.path.expanduser(a.run_dir))
     spec = _load_request(a.request)
+    for _label, _fn in (("measure", measure), ("save", save)):
+        if _fn is None:
+            raise ChoiceError("REFUSED: the production run needs a real %s transport, "
+                              "not an empty default no-op" % _label)
+    hook_text = _hook_text(spec)
+    if not str(hook_text).strip():
+        raise ChoiceError("REFUSED: the run has no hook text (the sheet repeats no "
+                          "sung hook); the hook gate cannot be skipped")
     reqs = build_requests(spec["style_id"], spec["sheet"], spec["client_text"],
                           spec["title"], spec["length_s"], spec["vocal_gender"],
                           hook_plan=spec["hook_plan"], pace_plan=spec["pace_plan"])
@@ -565,9 +706,8 @@ def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
                     "sheet_text": spec["sheet_text"], "hook_plan": spec["hook_plan"],
                     "_pace_plan": spec["pace_plan"]}
     gen = generate or _real_generate(run_dir, a.ledger, a.run_id)
-    kw = dict(plan=plan, generate=gen, measure=measure or (lambda t: {}),
-              save=save or (lambda v, t, r: None), script_words=spec["client_text"],
-              hook_text="")
+    kw = dict(plan=plan, generate=gen, measure=measure, save=save,
+              script_words=spec["client_text"], hook_text=hook_text)
     # WWFIXGAPS U1 (defect 3): ``dispatched`` is MEASURED from the run that
     # actually happened, never a literal. One provider job goes out per
     # attempt, and ``one_variant`` regenerates a FAIL once, so a variant that

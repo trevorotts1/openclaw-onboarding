@@ -64,6 +64,25 @@ SUNO_STYLE_FIELD_MAX = 1000          # Suno style field character limit
 MIN_HOOK_REPEATS = 2
 MAX_SUNG_LINE_SYLLABLES = 8
 BAND_WORDING = "the full band keeps playing continuously under them"
+#: WW-16: the mandated opening vocalise is BOUNDED. Every sheet must still open
+#: with a wordless vocalise (rule 4), but its cue must ask for a SHORT lead-in
+#: (the 3.0-second ceiling); the data's "two very long held notes" produced a
+#: 13.657 s wordless gap that nothing measured. A sheet that DECLARES an
+#: opening-vocalise cue asking for long/held notes, or naming a span over the
+#: ceiling, is refused before any spend.
+#: ponytail: the DATA cue (models/suno-v6.json cue_vocabulary.sung.vocalise)
+#: still says "two very long held notes" and is not in this unit's file set;
+#: the shipped fixtures carry it in their bracket headers and three shipped
+#: suites assert they flow to dispatch. Fixing the data stops the direction
+#: being written; until then only a DECLARED cue is refused.
+OPENING_VOCALISE_MAX_S = 3.0
+_VOCALISE_LONG_RE = re.compile(
+    r"\b(?:long|held|hold|sustain\w*|prolong\w*|extended?|drag\w*)\b", re.I)
+_VOCALISE_SECONDS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b", re.I)
+#: WW-07: the approved lowest-point direction (half-time, thin drums) and the
+#: return, written from the approved pace plan into the FINAL provider style.
+PACE_DROP_CLAUSE = "at the lowest point the groove drops to half-time with thin, sparse drums"
+PACE_RETURN_CLAUSE = "then it turns and rises back to the full groove"
 #: U15d (design 4.2): the style lead, the cue strings and the gender words are
 #: DATA now (references/prompt-templates/music/*.json and models/suno-v6.json),
 #: never constants here. STYLE_LEAD was `female lead, ... slow tempo` for every
@@ -177,6 +196,37 @@ def cue_for(delivery, tag, style_id=None):
             or over.get("%s:verse" % delivery) or vocab.get("verse") or "")
 
 
+def pace_clause(pace_plan):
+    """WW-07: the approved lowest-point direction (half-time, thin drums) and the
+    return, written from the approved pace plan into the FINAL provider style.
+    No pace plan = no clause (never invented, never a provider tempo field)."""
+    if not pace_plan:
+        return ""
+    drop = pace_plan.get("drop") or PACE_DROP_CLAUSE
+    ret = pace_plan.get("return") or PACE_RETURN_CLAUSE
+    return "%s, %s." % (str(drop).strip().rstrip("."), str(ret).strip().rstrip("."))
+
+
+def check_opening_vocalise_cue(cue):
+    """WW-16: a DECLARED opening vocalise cue must be able to satisfy the
+    ceiling. A cue that asks for long/held notes, or names a span over
+    OPENING_VOCALISE_MAX_S seconds, is refused before spend. None/"" = no
+    declared cue (the render supplies the bounded one)."""
+    if cue is None:
+        return None
+    text = str(cue).strip()
+    if not text:
+        return None
+    m = _VOCALISE_SECONDS_RE.search(text)
+    if m and float(m.group(1)) > OPENING_VOCALISE_MAX_S:
+        return ("the opening vocalise cue asks for %s s, over the %.1f s ceiling"
+                % (m.group(1), OPENING_VOCALISE_MAX_S))
+    if _VOCALISE_LONG_RE.search(text):
+        return ("the opening vocalise cue asks for long/held notes, which cannot "
+                "satisfy the %.1f s ceiling" % (OPENING_VOCALISE_MAX_S,))
+    return None
+
+
 def syllables(line):
     """Rough syllable count; hyphen-held vowels (sma-a-all) count once."""
     n = 0
@@ -210,8 +260,13 @@ def _tag(sec, style_id=None):
         return ("[%s: %s]" % (sec["tag"], sec["cue"])) if sec.get("cue") \
             else "[%s]" % sec["tag"]
     # A section may carry its own cue / vocalist label (a rap verse sung by
-    # "Vocal B, male voice"); otherwise the cue is read from the data.
-    note = sec.get("cue") or cue_for(d, sec["tag"], style_id)
+    # "Vocal B, male voice"); otherwise the cue is read from the data, which is
+    # where the opening vocalise's cue belongs (WW-16: the data's "two very long
+    # held notes" is the defect; changing it is a DATA edit, see the CHANGELOG).
+    if sec.get("cue"):
+        note = sec["cue"]
+    else:
+        note = cue_for(d, sec["tag"], style_id)
     voice = sec.get("voice")
     if voice and note:
         note = "%s, %s" % (voice, note)
@@ -519,6 +574,14 @@ def check_lyric_sheet(sheet, client_text, length_s=None, spoken_share_pct=None,
         return errs + ["no sung section"]
     if not any(s["tag"].lower().startswith("vocalise") for s in sung):
         errs.append("no sung vocalise lead-in (wordless, before the first hook)")
+    # WW-16: the mandated opening vocalise cue must be a SHORT lead-in. A sheet
+    # that DECLARES a long/held or over-ceiling cue cannot satisfy the opening
+    # ceiling and is refused before spend.
+    voc = next((s for s in sung if s["tag"].lower().startswith("vocalise")), None)
+    if voc is not None and voc.get("cue"):
+        why = check_opening_vocalise_cue(voc["cue"])
+        if why:
+            errs.append(why)
     if sheet[0]["tag"].lower().startswith("hook"):
         errs.append("the first hook may not open the song: a vocalise comes first")
     keys = [tuple(_words(" ".join(s["lines"]))) for s in sung
@@ -653,7 +716,7 @@ def _gender_variant(part, gender_word):
     return part
 
 
-def style_text(style_id, sheet=None, vocal_gender="f"):
+def style_text(style_id, sheet=None, vocal_gender="f", pace_plan=None):
     """Suno style field: the style's OWN parts, in order, one clean ending.
 
     Built from music/<style>.json style_parts (design 4.2): part 1 is the base
@@ -682,12 +745,21 @@ def style_text(style_id, sheet=None, vocal_gender="f"):
         text = "%s %s." % (text, _HP.PROMPT_CLAUSE)
         # G1 delivery map: the map sentence must name the sheet's deliveries.
         text = _MS.assert_delivery_map(sid, text, _sheet_deliveries(sheet, sid))
+        # WW-07: the approved pace direction goes LAST, after the ending, the
+        # hook-placement order clause and the delivery map, and the 1000-char
+        # cap is measured on the FINAL text (a raise, never a truncation).
+        pace = pace_clause(pace_plan)
+        if pace:
+            text = "%s %s" % (text.rstrip(), pace)
         if len(text) > SUNO_STYLE_FIELD_MAX:
             raise RecipeError("STYLE_TOO_LONG",
                               "%d chars, limit %d" % (len(text), SUNO_STYLE_FIELD_MAX))
         return text
     text = "%s. Only the short intro and the final outro are spoken; %s." % (
         _MS.style_prompt(style_id).rstrip(".,"), BAND_WORDING)
+    pace = pace_clause(pace_plan)
+    if pace:
+        text = "%s %s" % (text.rstrip(), pace)
     if len(text) > SUNO_STYLE_FIELD_MAX:
         raise RecipeError("STYLE_TOO_LONG", "%d chars, limit %d" % (len(text), SUNO_STYLE_FIELD_MAX))
     return text
@@ -731,11 +803,13 @@ def check_negatives(neg, style_id=None):
 
 
 def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
-            vocal_gender="f", delivered_s=None, hook_plan=None):
+            vocal_gender="f", delivered_s=None, hook_plan=None, pace_plan=None):
     """THE gate every Suno style goes through. Returns style + lyrics text.
 
     Exempt (voiceover) -> {"exempt": True}. Unknown id -> fail closed.
     ``delivered_s`` (or ``length_s``) enables the U13 product-share gate.
+    ``pace_plan`` (WW-07) writes the approved lowest-point direction and the
+    return into the style, last, under the 1000-char cap.
     """
     if is_exempt(style_id):
         return {"exempt": True}
@@ -755,23 +829,35 @@ def prepare(style_id, sheet, client_text, length_s=None, spoken_share_pct=None,
     errs += _HP.check_story(sheet, hook_plan, d, style_id)
     if errs:
         raise RecipeError("LYRICS_REJECTED", "; ".join(errs))
-    return {"exempt": False, "style": style_text(style_id, sheet, vocal_gender),
+    return {"exempt": False, "style": style_text(style_id, sheet, vocal_gender, pace_plan),
             "lyrics": render_lyrics(sheet, style_id),
             "negative_tags": negative_tags(style_id)}
 
 
 def build_request(style_id, sheet, client_text, title, length_s, vocal_gender="f",
-                  spoken_share_pct=None, delivered_s=None, hook_plan=None):
+                  spoken_share_pct=None, delivered_s=None, hook_plan=None, pace_plan=None,
+                  **kw):
     """KIE generate-music input for one ad (snake_case). ``length_s`` is the
-    DELIVERED length (chosen - 2). Raises RecipeError on any rule break."""
+    DELIVERED length (chosen - 2). Raises RecipeError on any rule break.
+
+    WW-07: ``pace_plan`` writes the approved drop and return into the FINAL
+    ``style`` (after the ending and hook clauses, under the 1000-char cap). It
+    is judging metadata only: it is NEVER added to the request, and no provider
+    tempo field is ever invented (Suno's request fields are the six below).
+    Unknown ``_``-prefixed keys (the internal ``_pace_plan``) are dropped.
+    """
     out = prepare(style_id, sheet, client_text, length_s, spoken_share_pct,
-                  vocal_gender, delivered_s, hook_plan)
+                  vocal_gender, delivered_s, hook_plan, pace_plan)
     if out.get("exempt"):
         raise RecipeError("EXEMPT", "voiceover style has no Suno request")
     req = kie_params()
     req.update({"duration": length_s, "vocal_gender": vocal_gender, "title": title,
                 "style": out["style"], "lyrics": out["lyrics"],
                 "negative_tags": out["negative_tags"]})
+    # WW-07: internal judging metadata never reaches the provider.
+    for k in list(req):
+        if str(k).startswith("_"):
+            del req[k]
     # FU-U6 (plan E.1): the final payload measured against the catalog caps;
     # over a cap, prompt_limits raises naming field, chars, cap, source, status.
     _PL.check_request("suno-generate", req)
