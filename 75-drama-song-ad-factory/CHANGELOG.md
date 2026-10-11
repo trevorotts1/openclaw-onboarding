@@ -6,6 +6,30 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.26 - 2026-10-11 - empty-home test: make the core copy deterministic so the `__pycache__` race cannot fail `QC static invariants`
+
+The required check `QC static invariants`, step "Skill 75 empty-home test suite (manual 02 B6)",
+went RED on main after PR #1838 added `music_qc/pace_change.py`. That step runs every
+`scripts/core/test_*.py` file with its own `python3` process in parallel across the runner's
+cores, so while `audio_c3/test_lyric_timing_f17.py` copied `scripts/core/` it walked the
+`__pycache__` directories a sibling process was concurrently populating — including CPython's
+transient `__pycache__/<mod>.cpython-3xx.pyc.<pid>` bytecode, which exists when `os.scandir`
+lists the directory and is renamed away before `copytree` reads it. `shutil.copytree` therefore
+raised `shutil.Error: [... "[Errno 2] No such file or directory"]`. It is a race, not a
+deterministic regression: the same check was green on the previous main and on #1838's batch
+head, and only the newly-added module's bytecode widened the window.
+
+Both `shutil.copytree(CORE, core2)` calls in
+`scripts/core/audio_c3/test_lyric_timing_f17.py` (the two scan tests) now pass
+`ignore=shutil.ignore_patterns("__pycache__", "*.pyc")`, so the copy no longer walks generated
+bytecode. The scan itself (`scripts/qc-no-local-asr.sh`) already reads only `*.py` files with
+`--exclude-dir=__pycache__`, so the copied tree is byte-identical to what the scan inspects —
+nothing the tests depend on is dropped. No assertion, `check()` call, expected value, exit-code
+expectation, skip, xfail, retry, `try/except`, or `sleep` was added, removed or altered; the
+only change is the two `ignore=` arguments.
+
+---
+
 ## v2.9.25 - 2026-10-11 - WWFIX-U1 gaps: the sung-share floor, markup-as-story, the unwired audio gates and the hardcoded dispatch count
 
 Four defects found in v2.9.22, fixed in the product. No test assertion was weakened, skipped,
