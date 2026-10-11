@@ -6,6 +6,15 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.21 - 2026-10-10 - U11: one channel-neutral send path and a requested-only device notice
+
+- New `scripts/core/choice_card/intake_card/channel_send.py`: `app`, `terminal` and `storyboard` are delivery CHANNELS, not three senders. `CHANNEL_SEND[channel]` is `send()` bound to that channel's name, so all three reach the SAME function object and the send rules can never drift between them. The test proves the identity directly: `CHANNEL_SEND[c].func is send` is true for each of the three names.
+- Nothing was re-implemented and no gate was weakened: the send builds the EXISTING `intake_card.openclaw_send_argv` (the same `openclaw message send --channel telegram ...` argv the choice card's `render_messages --format openclaw-json` and the storyboard approval runner's `openclaw_sender` already build). A `gate=` callable runs BEFORE anything is built or sent and a refusal raises `SendRefused`, so the CLI exits 5 with an empty stdout — nothing is sent on a refusal. `song_pick_gate(run_dir)` is the existing `song_choices.refusal` reused verbatim.
+- `device_notice()` is the only notice sent to the client's device and it happens ONLY when `requested=True`: unsolicited means nothing is sent and it returns `None`. Pass a `run_dir` and the one nudge is recorded at `<run_dir>/control/device-notice.json`, so every later call is a no-op — one nudge, then silence, the client is never spammed. An unknown channel name raises `ChannelError`; there is no silent send on a wrong channel.
+- `README-channel-send.md` documents the shared entrypoint, what it reuses, the requested-only notice and the two CLI verbs (`send`, `notice`) with their exit codes (`0` sent or nothing to send, `5` refused).
+- Proof: `python3 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_channel_send_u11.py` (10 checks green). Positive: a send through each of the three channels reaches the one entrypoint and builds the existing argv. Negative controls: an unrequested notice sends nothing (with the requested case as its control), a second requested notice on the same run is silent, and a refusing gate stops the send with a real non-zero process exit and no output.
+- Version markers: `skill-version.txt` and the `SKILL.md` frontmatter `version:` land at v2.9.21 in this same commit, bundled with the real content (G3 gates a skill-content change on that bump, and the frontmatter is checked against `skill-version.txt`).
+
 ## v2.9.19 - 2026-10-10 - U4-U1: Drama Studio mini-app deploy files, dry-run path and a hard zone guard (files only, no deploy)
 
 - New `mini-app/deploy/` (three deploy-side files): `deploy.sh`, `deploy.manifest.json` and `DEPLOY.md`. U2 owns `worker/` (the service) and U3 owns `pages/` (the UI); this unit owns `deploy/` only and ships no worker, no page and no deployment. Nothing is deployed by this commit: no `wrangler` call, no Cloudflare mutation, no bucket creation, no secret creation, no token use.
