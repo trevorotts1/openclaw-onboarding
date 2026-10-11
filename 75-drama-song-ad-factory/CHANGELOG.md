@@ -6,6 +6,41 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.33 - 2026-10-11 - U10-EXTRAS-U1: optional Telegram button, card link and measurement view, native fields first, OFF by default
+
+Joint plan section 5, row **U10 extras** (verbatim: "Optional Telegram
+button/card link/measurement view, native fields first"; version table line
+832). One new module and its own suite; nothing existing is edited, so the
+required version-0 delivery is untouched.
+
+- New `scripts/core/choice_card/intake_card/optional_extras.py` — the optional
+  surface, OFF by default. `extras_enabled` is true only for the exact
+  on-values `"true"` / `"1"` (unset, empty, `"false"`, `"yes"`, `"TRUE"` all
+  stay off). With extras off every function returns its input UNCHANGED, so the
+  required GHL-first delivery and every required message/card/status path are
+  byte-identical; the module imports the required delivery nowhere.
+- Native fields first: the **Telegram button** is the native Bot API
+  `reply_markup.inline_keyboard` field appended to the payload the existing
+  message pattern already builds (`intake_card.telegram_payload`); the **card
+  link** is one `Open in Drama Studio: <url>` line reading the card's OWN
+  native `studio_url` first, the environment only as a fallback; the
+  **measurement view** renders ONLY the status counts a caller already has —
+  no store, no page, no scheduler, no network call. No link or button is ever
+  invented (extras on + no URL -> nothing added).
+- A caller that DEMANDS an extra while extras are off gets a refusal with the
+  named code `AF-DS-EXTRAS-DISABLED` and zero side effects; the CLI exit code
+  is `4` (ok `0`, error `1`), the same non-zero exit the skill's other gates
+  use. No send, no credential, fixture-only.
+- Proof: new `scripts/core/choice_card/intake_card/test_optional_extras_u10x.py`
+  (40 checks green) proves the off-by-default truth table, the native-field
+  additions, the append/no-op card link with native-first URL, the
+  counts-only measurement view, no input mutation, the named refusal, that the
+  module never imports the required delivery, and four real CLI subprocess
+  legs with true exit codes (0 ok, 4 refused).
+- Version: `skill-version.txt` and the `SKILL.md` frontmatter `version:` land
+  at v2.9.33 in this same commit (G3 gate). The repository root `/version` is
+  unchanged.
+
 ## v2.9.32 - 2026-10-11 - WW-29: optional vocalise, no stale early-hook rule, consistent R&B Flow direction, one reconciled fewer-words budget
 
 ONE real-content commit whose parent is the live head of `unit/WWC-U1`
