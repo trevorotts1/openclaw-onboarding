@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.24
+version: v2.9.25
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -402,6 +402,40 @@ sung, Trevor 4 out of 10: "it was not singing any lyrics").
   speech-to-text is used).
 - **No gate switches itself off**: a missing `style_id`, length or plan
   field is a FAIL that says `UNMEASURED: <field>`.
+- **Rap floor (WWFIX D1, NEW ACCEPTANCE RULE)**: a style that DELIVERS rap
+  (R&B Flow) must plan at least `rap_s >= max(8.0, 0.10 * D)` seconds of rap
+  and `rap_words >= ceil(rap_s * the style's rap rate)` words, where D is the
+  delivered seconds (`length_formula.rap_floor_s` / `rap_floor_words`, one
+  copy of the rule). At D = 88 that is 8.8 s and 22 words. The opener keeps
+  its cap; the closing call to action YIELDS, so the spoken blocks can never
+  eat the rap verses. `length_formula.plan` always emits `words.rap`,
+  `rap_s`, `rap_floor_s` and the `rap_gate` report for a rap style, and
+  `assert_rap_floor` refuses a rap style that plans ZERO rap. A sheet with
+  fewer rap words than the floor is refused before any spend
+  (`RAP_PLANNED_ZERO_WORDS` in `song_contract.check_sheet`). The before-fail
+  this closes: `plan(90, 'rnb-flow')` reported no rap at all.
+- **Story gates on the returned take (WWFIX D1, NEW ACCEPTANCE RULES)**:
+  `story_coverage.judge_returned_take` measures the approved PLOT LINE (a run
+  of at least 4 consecutive plot words, never one stray word) against an
+  ABSOLUTE `FIRST_STORY_WORD_MAX_S = 5.0`, the opening wordless span against
+  `OPENING_NON_LEXICAL_MAX_SHARE = 0.15` of the delivered seconds, real
+  lexical time against `LEXICAL_COVERAGE_MIN = 0.70` with NO vocalise
+  counted, and every story-arc window of at least 5 s against one measured
+  lexical line. `song_contract.check_returned_story` exposes the same verdict
+  to the take judge. Missing evidence is UNAVAILABLE, which blocks PASS
+  (never a silent pass).
+- **Pace gate (WWFIX D1, NEW ACCEPTANCE RULES)**: `music_qc/pace_change.py`
+  judges one ordered gear change on positive spectral flux with local onset
+  peaks, a fixed mean-plus-standard-deviation threshold and a >= 0.12 s peak
+  spacing. PASS needs BOTH a >= 30% onset-rate reduction AND a >= 3 dB
+  instrumental energy drop in the problem window, plus the return to baseline
+  within 20% and 3 dB and an independent smooth-seam check. bpm is REPORTED
+  and octave-folded but never grants a PASS (85.2 and 181.5 bpm are the same
+  beat an octave apart). Missing onset or energy evidence is UNMEASURED.
+- **Rap on the audio is UNMEASURED, never guessed**: `music_qc/rap_check.py`
+  ships fail-closed. No validated rap detector exists, so the verdict stays
+  UNMEASURED until a labelled rap control is present, and UNMEASURED blocks a
+  take PASS.
 
 ## Intake rules (from the build directive, section 24.3)
 
@@ -773,6 +807,42 @@ recorded once versions exist. The three files and the message go to the client
 in one `openclaw message send` (`song_choices.send_choices`, files attached
 in order 1, 2, 3) before any later stage; the client's reply 1, 2 or 3 is
 recorded with `song_choices.py pick`.
+
+**ONE music mode at a time; all three versions at once (WWFIX D2, money
+safety).** The three versions are ONE job, not three, so the music stage runs
+in exactly ONE of two modes and NEVER both:
+
+- *Umbrella* (the default, a non-workflow run): ONE agent unit runs all three
+  versions in one pass, three provider jobs in THREE THREADS inside that one
+  unit (`song_choices.generate_choices`; `cmd_generate` reports
+  `dispatched: 3, media_concurrency: 3, builder_agent_units: 1`). Three
+  threads are NOT three visible agent units, and the receipt must never
+  relabel them.
+- *Orchestrated* (the workflow case, exactly three agent units
+  `WW-001`..`WW-003`, one owned folder each, `providerSlots` 3, reserve 0):
+  each unit runs ONE variant with the canonical runner and the per-unit
+  selector `--variant <variant_id>` or `--unit-id WW-00N`
+  (`song_choices.run_unit` -> the SAME single-variant helper
+  `one_variant`; there is no second worker path). `cmd_generate` then reports
+  `dispatched: 1`.
+
+Never put an unqualified `song_choices.py generate` into all three unit
+prompts: each unit would then fan out three of its own and the run would pay
+for NINE generations instead of three. `factory.py next` exposes BOTH shapes
+with an EXPLICIT mode selection (`--orchestrated`): exactly one of them is
+`selected` and lands in `command`, the other is listed only
+(`factory._song_choices_next`). Fan-in only CHECKS and DELIVERS results that
+already exist (`song_choices.fan_in`, `deliver_choices` take no generate
+callable at all), and `_require_three` refuses a wrong or repeated set BEFORE
+any spend.
+
+The three INITIAL attempts also carry a provider-overlap receipt
+(`song_choices/overlap.py`): `min(terminal_at) - max(submitted_at)` over
+exactly the three INITIAL attempts, PASS at >= 1.000 s, FAIL at 0.999 s, zero
+or negative, UNAVAILABLE (never a pass) without labelled, aware-UTC
+timestamps. `accepted_submit_at` is stamped only after a VALID task id, and
+`terminal_at` at the first terminal provider response; a regenerated attempt
+never counts, and the gate never authorises a paid redo on its own.
 
 Client-facing question guide with examples and prep: `references/CLIENT-GUIDE.md`.
 
