@@ -6,6 +6,19 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.20 - 2026-10-10 - U12: the pairing/admin surface behind the approval and QR gates
+
+The studio's pairing and admin surface at `mini-app/pairing`: the admin mints a
+client key and a single-use pairing code, the code burns on first use, wrong or
+absent admin keys are refused with nothing written, and the QR the machine scans
+is proved module-for-module identical to Apple's own `CIQRCodeGenerator`. Option 3
+is refused without a recorded approval naming the client, and nothing the browser
+loads persists anything. Seven files, disjoint from U2's `service/**`, U3's pages
+and U4's deploy files; it consumes U2's boundary prover, never copies it.
+
+Checks: 18 pairing tests exit 0; 17 pairing-guardrail checks exit 0; 14 QR cases
+module-for-module identical to Apple's encoder, exit 0.
+
 ## v2.9.19 - 2026-10-10 - U2: the Drama Studio service foundation at mini-app/service
 
 The planned studio home (joint plan section 5.4) gets its service side: per-client
