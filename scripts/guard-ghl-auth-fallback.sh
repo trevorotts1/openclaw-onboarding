@@ -38,7 +38,9 @@
 #      operator path / operator key literal.
 #   7. TIER-1-PRIMARY — in ghl_auth.py the Tier-1 token branch precedes the
 #      ghl_auth_fallback import / run_tier2 call.
-#   8. DOCTRINE SENTINEL — the Tier-2 sentinel present verbatim in 5 docs.
+#   8. DOCTRINE SENTINEL — the Tier-2 sentinel present verbatim in the 3 skill-local
+#      docs (hard FAIL when absent), plus the repo-root AGENTS.md/TOOLS.md when
+#      those repo-integrity fixtures exist (visible SKIP in the installed layout).
 #   (No-client-names is enforced by qc-assert-no-client-names.sh, also wired in QC.)
 #
 # Modeled on guard-ghl-token-only.sh (same --repo-root, exit 0/1/2, red/green/
@@ -76,10 +78,21 @@ BROWSER="$TOOLS_DIR/ghl_login_browser.py"
 # ── The Tier-2 doctrine sentinel (MUST appear verbatim) ───────────────────────
 SENTINEL='GHL-AUTH-DOCTRINE: TIER-2 EMAIL-2FA FALLBACK — gated (auth+gmail-proven+email-2fa+creds), bounded, self-heals to TOKEN-ONLY'
 
+# Docs that MUST carry the sentinel so an agent reading any of them gets the rule.
+# The three skill-local docs ship inside the skill dir on EVERY layout, so their
+# absence is a hard FAIL.
 REQUIRED_SENTINEL_DOCS=(
   "$SKILL_DIR/SKILL.md"
   "$SKILL_DIR/INSTRUCTIONS.md"
   "$SKILL_DIR/CORE_UPDATES.md"
+)
+# REPO-INTEGRITY docs. These two exist only in a repo checkout: the updater
+# delivers skills/ + scripts/ to a box and merges the CORE_UPDATES payload into
+# the box's OWN workspace AGENTS.md/TOOLS.md, never into <skills>/AGENTS.md. When
+# they are absent (installed-skill layout) the check SKIPS VISIBLY — the same
+# doctrine as the GK-27 lattice tripwire in 06-ghl-install-pages/qc-ghl-install-pages.sh
+# — instead of failing every good box. Present-but-missing-sentinel still FAILS.
+REPO_LAYOUT_SENTINEL_DOCS=(
   "$REPO_ROOT/AGENTS.md"
   "$REPO_ROOT/TOOLS.md"
 )
@@ -436,6 +449,19 @@ for doc in "${REQUIRED_SENTINEL_DOCS[@]}"; do
   rel="${doc#$REPO_ROOT/}"
   if [ ! -f "$doc" ]; then
     red "  ✗ FAIL — required doc missing: $rel"; FAILS=$((FAILS + 1)); continue
+  fi
+  if grep -Fq "$SENTINEL" "$doc"; then
+    green "  ✓ PASS — sentinel present in $rel"
+  else
+    red "  ✗ FAIL — Tier-2 doctrine sentinel MISSING from $rel"
+    FAILS=$((FAILS + 1))
+  fi
+done
+for doc in "${REPO_LAYOUT_SENTINEL_DOCS[@]}"; do
+  rel="${doc#$REPO_ROOT/}"
+  if [ ! -f "$doc" ]; then
+    yellow "  ⚠ SKIP — $rel absent (repo-integrity doc; an installed box carries the payload in its own workspace AGENTS.md/TOOLS.md via CORE_UPDATES, not under \$SKILLS_DIR)"
+    continue
   fi
   if grep -Fq "$SENTINEL" "$doc"; then
     green "  ✓ PASS — sentinel present in $rel"

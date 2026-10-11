@@ -911,7 +911,7 @@ def selftest():
     expect("budget-mid", spoken_budget(180) == 4)
     expect("budget-long", spoken_budget(600) == 5)
 
-    # 5. LeAnne fixture: the done-when (<= 3 spoken blocks, lint PASS)
+    # 5. Client fixture: the done-when (<= 3 spoken blocks, lint PASS)
     import os
     import tempfile
     fx = os.path.join(os.path.dirname(os.path.abspath(__file__)),

@@ -140,7 +140,7 @@ def test_past_10_redoes_after_rounds():
 
     def gen(i, adj):
         rounds_seen.append(i)
-        # 64% spoken = 14 points off (the LeAnne T21 shape); length off too.
+        # 64% spoken = 14 points off (the client T21 shape); length off too.
         return [cand("far-%d" % i, 0.64, 0.36, 110.0)]
 
     out = TE.steer(gen, tg, max_rounds=TE.MAX_ROUNDS)

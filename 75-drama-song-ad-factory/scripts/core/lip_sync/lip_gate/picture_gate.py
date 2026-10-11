@@ -23,7 +23,7 @@ receipt), FAIL (refused). FAIL is for clear problems only: face count not 1, a
 tiny face, a side profile, a strong tilt, a wide-open mouth, a very soft image.
 Smile, teeth, a smaller face, a mild tilt or turn are FLAGS, never a paid
 regeneration on their own. Calibrated on the Trevor-approved Kiesett version 2
-and LeAnne Dolce lip-sync pictures (the table is in the PR body).
+and the client's lip-sync pictures (the table is in the PR body).
 
 Fail closed everywhere: mediapipe missing, face model missing, unreadable image,
 0 or 2+ faces, any number over a FAIL limit -> verdict FAIL / refusal.

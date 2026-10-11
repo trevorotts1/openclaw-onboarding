@@ -64,7 +64,7 @@ test('ids: scopePath keeps every object under the client, and refuses traversal'
   const id = randomClientId();
   assert.equal(scopePath(id, 'intake', 'a.png'), `clients/${id}/intake/a.png`);
   assert.throws(() => scopePath(id, '..', 'other'), /AF-DS-ID-TRAVERSAL/);
-  assert.throws(() => scopePath('karen-vaughn'), /AF-DS-ID-INVALID/);
+  assert.throws(() => scopePath('some-client-slug'), /AF-DS-ID-INVALID/);
   assert.ok(ownsPath(id, `clients/${id}/inbox.json`));
   assert.ok(!ownsPath(id, `clients/${randomClientId()}/inbox.json`));
 });

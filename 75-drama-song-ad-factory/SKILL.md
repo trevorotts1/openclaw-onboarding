@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.23
+version: v2.9.24
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -206,7 +206,7 @@ The layers and the assembler are the same in both distributions (U15a-U15i):
 
 Every Suno music style (Soul Ballad, R&B Flow, Soul Rise, and any Suno style
 added later) follows this recipe by default. It is what made the Kiesett and
-LeAnne Dolce songs land. The code is `scripts/core/suno_recipe/`; every Suno
+the client songs land. The code is `scripts/core/suno_recipe/`; every Suno
 request goes through `suno_recipe.prepare()` and the `music_director` seam
 refuses a raw Suno style that skipped it.
 
@@ -904,7 +904,7 @@ SOP named above.
   `lip_gate/picture_gate.gate_picture()` MEASURES every close-up with mediapipe
   FaceLandmarker (one rule set: the constants block at the top of `picture_gate.py`, same
   names in the onboarding repo). LPG003 loosened it (Trevor: "loosen the checks so it's not
-  as strict"), calibrated so every Trevor-approved Kiesett version 2 and LeAnne Dolce
+  as strict"), calibrated so every Trevor-approved Kiesett version 2 and client
   picture passes or flags. Three verdicts. FAIL (refused) is for clear problems only: face
   count not 1, face height under 20%, |roll| over 20 deg, |yaw| over 0.25 (side profile),
   jawOpen over 0.30 (wide-open mouth), sharpness under 60. ACCEPT_WITH_FLAG (goes to Kling,

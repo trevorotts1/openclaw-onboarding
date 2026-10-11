@@ -1,3 +1,5 @@
+## [v27.1.9]  -  2026-10-11  -  repo-fix: skill 06 GHL install-pages repo-side QC/pytest fixes (version-lockstep pin, untracked probe receipt, playwright skip guard, layout-aware sentinel docs) + client-name scrub
+
 ## [v27.1.8]  -  2026-10-11  -  repo-fix: skill 15 remote-rescue installer is discovered and runs portably (idempotent repair accepted)
 
 ## [v27.1.7]  -  2026-10-11  -  Fix skill 36-ghl-mcp-setup QC: skip-gate sentinel + orphan-end repair, GHL MCP wire.sh master-file copies, QC env-store fallback
