@@ -1,0 +1,63 @@
+# Drama Studio mini-app — Cloudflare Worker config. One Worker at
+# studio.zerohumanworkforce.com, main = src/index.js (the U2 service entrypoint
+# at mini-app/service/src/index.js). Modeled on 53-book-writer/mini-app/worker/
+# wrangler.toml — same placeholder / route / observability conventions.
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │ NO REAL ZONE / ACCOUNT / KV / R2 IDS IN THIS FILE. Everything is a       │
+# │ <PLACEHOLDER> resolved by U4 deploy.sh (npx wrangler, operator's         │
+# │ CLOUDFLARE_DRAMA_STUDIO_API_TOKEN) into a THROWAWAY temp config at       │
+# │ deploy time; this file is never rewritten. Never commit a real id.       │
+# │ ZONE LANDMINE: the zerohumanworkforce.com zone id is a DIFFERENT zone    │
+# │ than businessaftersixty.com — never reuse CLOUDFLARE_ZONE_ID for a       │
+# │ *.zerohumanworkforce.com binding (deploy.sh zone guard, G1/G2).          │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# The edge Worker is a DUMB RELAY: it holds ZERO client credentials, ZERO KIE
+# keys, ZERO GHL tokens and ZERO provider ids. The KV binding DS_STUDIO is the
+# sole authority for key/client/order records; DRAMA_STUDIO is the inbox /
+# uploaded-bytes object store. Both binding names are exactly the ones the
+# service reads (service/src/index.js).
+#
+# Deploy (once, by U4 deploy.sh via npx wrangler):
+#   1. Create the KV namespace DS_STUDIO and the R2 bucket zhw-drama-studio
+#      (ids stay <PLACEHOLDER> here until then).
+#   2. Set secrets (NEVER in this file, via `wrangler secret put`):
+#        R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY
+#   3. Deploy:
+#        npx wrangler deploy
+#   4. Verify:
+#        curl https://studio.zerohumanworkforce.com/  (route served by the Worker)
+#
+# Routes: studio.zerohumanworkforce.com/* — the drama studio host. The DNS
+# CNAME for studio.zerohumanworkforce.com points at the Worker.
+
+name               = "drama-studio-mini-app"
+main               = "src/index.js"
+compatibility_date = "2024-09-23"
+account_id         = "<PLACEHOLDER_CF_ACCOUNT_ID>"
+
+routes = [
+  { pattern = "studio.zerohumanworkforce.com/*", zone_name = "zerohumanworkforce.com" }
+]
+
+# R2 bucket for the client's inbox object and uploaded bytes. Convention:
+# zhw-<app>. deploy.manifest.json bucket = zhw-drama-studio.
+[[r2_buckets]]
+binding     = "DRAMA_STUDIO"
+bucket_name = "zhw-drama-studio"
+
+# KV binding — key records, client records, orders, check-ins, upload jobs and
+# the one operator record per client per day. The SOLE destination authority.
+# Fill id/preview_id from `npx wrangler kv namespace create DS_STUDIO`.
+[[kv_namespaces]]
+binding    = "DS_STUDIO"
+id         = "<PLACEHOLDER_KV_NAMESPACE_ID_DS_STUDIO>"
+preview_id = "<PLACEHOLDER_KV_NAMESPACE_PREVIEW_ID_DS_STUDIO>"
+
+[observability]
+enabled = true
+
+# Secrets (NEVER in this file — set via `wrangler secret put`, see U4 deploy.sh):
+#   R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY
+# No client GHL keys, no PITs — the box poller owns any GHL write.
