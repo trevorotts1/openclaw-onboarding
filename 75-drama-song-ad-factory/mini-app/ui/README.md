@@ -15,6 +15,7 @@ only**.
 | `qr.js` | A dependency-free QR generator (byte mode, EC level M, versions 1..10). Inline SVG, no CDN. |
 | `download.js` | The one place that decides whether a delivery link is an **actual download**. |
 | `api-client.js` | The whole U2 service boundary — the entrypoints the page consumes. Implements no service behaviour. |
+| `push.js` | **U20, OPTIONAL (version 2).** The web-push surface. **Not imported by `studio.js` or `index.html`**, so version 0 is unchanged. |
 | `package.json` | `{"type":"module"}` marker so the checks import the shipped modules unchanged. |
 | `checks/` | The runnable proofs (see below). |
 
@@ -95,6 +96,28 @@ Individual checks:
 - `node checks/a11y-check.mjs` — the accessibility floor above.
 - `node checks/qr-roundtrip.mjs` — the QR really scans (decoded by an independent decoder).
 - `node checks/download-bytes-check.mjs` — real bytes, with the redirect-only negative control.
+
+## U20 — the OPTIONAL web-push surface (version 2, never a version-0 gate)
+
+Joint plan line 1091: `| U20 | Optional web push | U3 | onboarding planned
+service | U3; never version-0 gate |`. Line 832: `none blocks version 0`.
+
+`push.js` is the browser side of that optional feature:
+
+- **OFF by default.** `pushSurfaceState()` returns `{ show: false }` unless it is
+  handed `enabled: true` (from the service's `GET /api/studio/push`) **and**
+  `supported: true`. `enablePush()` refuses and asks the browser nothing unless
+  `enabled` is exactly `true`.
+- **Inert for version 0.** `studio.js` and `index.html` do **not** import it. A
+  version-0 studio behaves exactly as it did before U20 existed.
+- **No key material here.** The page handles only its own subscription object and
+  the service's **public** VAPID key; no private key, endpoint secret or service
+  key is ever read, held or written by this file.
+
+Its behaviours are proved by the service-side prover
+`mini-app/service/prove/prove_push_optional.mjs` (cases `U20_UI_OFF_BY_DEFAULT`
+and `U20_UI_NEVER_ASKS_UNSOLICITED`), with a planted-bad control in
+`mini-app/service/prove/planted-bad.sh`.
 
 ## Not this unit
 

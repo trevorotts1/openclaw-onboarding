@@ -107,6 +107,31 @@
 --    the record; it never creates a second key and never stacks. TTL is 30
 --    days, so the marker prunes with the status record (section 3.15).
 --
+-- 8. WEB-PUSH SUBSCRIPTIONS (U20, OPTIONAL, version 2)
+--    key:  push:<client_id>:<subscription_id>
+--    value: JSON
+--      {
+--        "subscription_id": string,  -- "push_<24 hex>"; the studio invented it
+--        "client_id":   string,
+--        "endpoint":    string,  -- the push service URL; NOT a secret
+--        "keys": {"p256dh": string, "auth": string},  -- the browser's PUBLIC keys
+--        "user_agent":  string|null,
+--        "status":      string,  -- "active" | "revoked"
+--        "created_at":  number,
+--        "updated_at":  number,
+--        "revoked_at":  number|null,
+--        "last_sent_at": number|null
+--      }
+--    Written ONLY when DS_WEB_PUSH_ENABLED is exactly "true" or "1". With it
+--    unset the subscribe route refuses (AF-DS-PUSH-DISABLED) and stores NOTHING,
+--    so a version-0 studio has no record here at all (U20: "never version-0
+--    gate", joint plan line 1091; line 832, "none blocks version 0").
+--    One record per endpoint for a client: the same endpoint REPLACES its own
+--    record rather than stacking. Retention kind `push_subscription` is
+--    NEVER-SWEPT (retention.js): a subscription is removed only by an explicit
+--    unsubscribe or by a push service answering 404/410. NO key material is
+--    ever stored here — endpoint and the browser's two PUBLIC keys only.
+--
 -- ============================================================================
 -- R2  (binding: DRAMA_STUDIO)
 -- ============================================================================
@@ -143,6 +168,14 @@
 --                         an existing client's data (section 3.15).
 --   DS_ADMIN_KEY          the admin surface consumed by U12.
 --   R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY   presign only.
+--   DS_WEB_PUSH_ENABLED   OPTIONAL (U20). "true" or "1" turns web push on;
+--                         anything else — unset, empty, "false" — leaves it OFF.
+--   DS_WEB_PUSH_PUBLIC_KEY / DS_WEB_PUSH_PRIVATE_KEY / DS_WEB_PUSH_SUBJECT
+--                         OPTIONAL (U20) VAPID material. Read from env, never
+--                         stored, echoed or printed. The send path refuses while
+--                         they are unset.
 --
 -- Two secrets, per section 3.2. There is no per-client secret, no operator key
--- on a client box, and no client credential here of any kind.
+-- on a client box, and no client credential here of any kind. The U20 web-push
+-- values are env-only and optional: a studio that never sets them is a complete
+-- version-0 studio.

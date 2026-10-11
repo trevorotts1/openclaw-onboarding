@@ -6,6 +6,69 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.23 - 2026-10-11 - U20: OPTIONAL web push in the onboarding planned service (version 2, OFF by default, never a version-0 gate)
+
+Unit U20 of the drama studio joint plan. Plan **line 1091**: `| U20 | Optional
+web push | U3 | onboarding planned service | U3; never version-0 gate | 6 | 3 |
+Optional owner | 2 |`; plan **line 832** (version table): `| **Version 2** |
+Optional web push U20 and optional U10 extras: ... none blocks version 0 |`. The
+whole unit exists to be **optional**: nothing here runs, stores, sends or changes
+anything until an operator sets `DS_WEB_PUSH_ENABLED`. Predecessor U3 is merged
+(PR #1817); this is a DRAFT PR only — nothing is deployed and no provider is
+called.
+
+- New `mini-app/service/src/push.js` — the optional surface, OFF by default.
+  `pushEnabled(env)` is true only for the exact on-values `"true"`/`"1"` (unset,
+  empty, `"false"`, `"yes"`, `"TRUE"` all stay off). It follows the existing
+  service discipline rather than a parallel one: identity and path scoping from
+  `ids.js`, the isolated key-record pattern from `isolation.js`, a
+  `"active" | "revoked"` status like a key record in `keys.js`, subscription keys
+  namespaced `push:<client_id>:<subscription_id>` so another client cannot even
+  name a record, and one `subscriptionBelongsTo(record, clientId)` predicate
+  every read and revoke funnels through.
+- `sendPush({ env, store, clientId, payload, transport })` REFUSES — named code
+  `AF-DS-PUSH-DISABLED`, zero side effects, zero transport calls — unless web push
+  is enabled AND a VAPID private key is configured AND a transport was injected.
+  A 404/410 from a push service prunes that subscription (`status: "revoked"`),
+  the same way a revoked key fails to resolve. It opens no socket of its own: the
+  RFC 8291 encryption + VAPID JWT signing is a **transport the runtime injects**
+  (`{ subscription, payload, vapid }) -> { status }`), so this unit ships no
+  vendor and no network call.
+- New routes in `mini-app/service/src/index.js`: `GET /api/studio/push` (public,
+  one boolean, `false` for every studio with the flag unset); `POST
+  /api/studio/push/subscribe` (key-auth; **503 `AF-DS-PUSH-DISABLED` and stores
+  nothing** when off); `POST /api/studio/push/unsubscribe` (key-auth; a record
+  that is not the caller's reports `AF-DS-PUSH-MISSING`); and `POST
+  /api/studio/admin/push/send` (admin-only; 503 until push is enabled,
+  configured and a transport is injected). `handle()` gains an OPTIONAL fifth
+  `deps` argument — every existing four-argument caller is unchanged.
+- New `mini-app/ui/push.js` — the browser-side OPTIONAL surface. **Not imported
+  by `studio.js` or `index.html`**, so the version-0 page is unchanged by U20.
+  `pushSurfaceState()` shows nothing unless handed `enabled: true` AND
+  `supported: true`; `enablePush()` refuses and asks the browser nothing unless
+  `enabled` is exactly `true`. `api-client.js` gains the three optional
+  entrypoints (`getPushStatus`, `subscribePush`, `unsubscribePush`) in a separate
+  `OPTIONAL_PUSH_ENTRYPOINTS` list; the nine required ones are untouched.
+- Retention: `retention.js` gains a `push_subscription` kind marked
+  `never: true`, so a sweep partitions subscriptions out of a delete list. A
+  subscription is removed only by an explicit unsubscribe or a push service
+  404/410. `schema.sql` records the `push:<client_id>:<subscription_id>` contract
+  and the env-only VAPID names. No key material is ever stored: a record holds the
+  push endpoint and the browser's two PUBLIC keys only, and no VAPID value is
+  stored, echoed or printed.
+- Proof: `node 75-drama-song-ad-factory/mini-app/service/prove/prove_push_optional.mjs`
+  runs 10 cases green (exit 0) — off-by-default across eight flag inputs, the
+  inert surface, the unconfigured-send refusal, a POSITIVE control that the
+  enabled path really sends and prunes, per-client isolation, never-swept
+  retention, no-key-stored, version-0-unchanged, and the two UI-surface cases.
+  `bash .../service/prove/planted-bad.sh` exits 0: four planted defects (each
+  removing one `U20-GUARD:` line) turn their matching case red (exit 2) and the
+  clean run is re-asserted green. The version-0 suite is untouched and still
+  green: `node --test service/test/service.test.mjs` 22/22, the U2 boundary
+  prover passes, and `bash ui/checks/run-all.sh` passes all four checks.
+- Version: `skill-version.txt` and the `SKILL.md` frontmatter `version:` land at
+  v2.9.23 in this same commit, bundled with the real content (G3 gate).
+
 ## v2.9.21 - 2026-10-10 - U11: one channel-neutral send path and a requested-only device notice
 
 - New `scripts/core/choice_card/intake_card/channel_send.py`: `app`, `terminal` and `storyboard` are delivery CHANNELS, not three senders. `CHANNEL_SEND[channel]` is `send()` bound to that channel's name, so all three reach the SAME function object and the send rules can never drift between them. The test proves the identity directly: `CHANNEL_SEND[c].func is send` is true for each of the three names.
