@@ -1,27 +1,135 @@
 {
-  "_note": "Three arrangement variants per music style, one table. Each clause is appended to the style's own Suno style text; it must not hold a word the style bans (choir, reverb, echo, rap, spoken) and stays under 140 characters.",
+  "_note": "WW-26: three independently authored COMPLETE briefs per music style -- not one shared request plus a short appended clause. Each brief carries all ten directions (groove, palette, arrangement, energy, cast/version vocal direction, rap-versus-sung hook, immediate scene words, both shifts, short ending). Exactly ONE variant per style is the explicitly upbeat role, within the same music style (no unapproved genre substitution). The arrangement sentence is the trailing clause: the assembled provider style ends with it before the approved pace clause.",
   "rnb-flow": [
     {"id": "polished-modern", "label": "POLISHED MODERN", "description": "clean, radio-ready R&B with tight drums",
-     "clause": "Arrangement: polished modern R&B production, tight crisp drums, glossy synth pads, clean studio sound"},
+     "genre": "rnb-flow", "role": "polished", "upbeat": false,
+     "brief": {
+       "groove": "contemporary r&b hip-hop flow, 90 bpm",
+       "palette": "glossy pads, sub bass, crisp programmed drums",
+       "energy": "confident, lifting steadily into the hook",
+       "vocals": "{gender} lead plus tight backing replies",
+       "hook": "sung r&b hook; verses rap clear and metered",
+       "scene_words": "opens on the verse's immediate scene words",
+       "problem_shift": "shift one: drops to a half-time low point",
+       "solution_shift": "shift two: groove returns and lifts",
+       "ending": "short ending: one hook line, clean final chord",
+       "arrangement": "polished radio-ready mix, Rhodes stabs, tight kit"
+     }},
     {"id": "warm-live-band", "label": "WARM LIVE BAND", "description": "a warm live band feel with bass, keys and guitar",
-     "clause": "Arrangement: warm live band feel, round electric bass, soft Rhodes keys, gentle clean guitar, relaxed pocket"},
+     "genre": "rnb-flow", "role": "live", "upbeat": false,
+     "brief": {
+       "groove": "contemporary r&b hip-hop flow, live 88 bpm sway",
+       "palette": "round electric bass, soft Rhodes, gentle clean guitar",
+       "energy": "relaxed pocket tightening as the story turns",
+       "vocals": "{gender} lead answered by a live harmony stack",
+       "hook": "sung r&b hook; verses rap with a loose swing",
+       "scene_words": "first line names the room and the closed door",
+       "problem_shift": "shift one: band pulls back to bare bass",
+       "solution_shift": "shift two: full band surges back in",
+       "ending": "short ending: band stops on a held chord",
+       "arrangement": "warm live band tracking the beat in one room"
+     }},
     {"id": "cinematic-strings", "label": "CINEMATIC STRINGS", "description": "big film-style strings that swell under the hook",
-     "clause": "Arrangement: cinematic string section, swelling violins and cellos, soft piano, film-score drama"}
+     "genre": "rnb-flow", "role": "upbeat", "upbeat": true,
+     "brief": {
+       "groove": "contemporary r&b hip-hop flow, upbeat 94 bpm",
+       "palette": "bright synth plucks, sub bass, tight driving hats",
+       "energy": "clearly the most upbeat take, forward and driving",
+       "vocals": "{gender} lead with layered power-hook stacks",
+       "hook": "sung r&b hook; verses rap fast and clear",
+       "scene_words": "scene words land on the very first beat",
+       "problem_shift": "shift one: strings drop to a stark hold",
+       "solution_shift": "shift two: strings and drums drive back",
+       "ending": "short ending: strings cut on the last hook",
+       "arrangement": "cinematic strings swell over an upbeat r&b kit"
+     }}
   ],
   "soul-ballad": [
     {"id": "intimate-piano", "label": "INTIMATE PIANO", "description": "close, tender piano and voice",
-     "clause": "Arrangement: intimate solo piano, soft brushed drums, close tender mood"},
+     "genre": "soul-ballad", "role": "intimate", "upbeat": false,
+     "brief": {
+       "groove": "soul ballad, tender 64 bpm, close and quiet",
+       "palette": "solo felt piano, soft brushed drums, warm air",
+       "energy": "restrained, blooming only at the chorus",
+       "vocals": "{gender} lead, melismatic runs, close mike",
+       "hook": "fully sung hook, long held open vowels",
+       "scene_words": "opens softly on the first concrete image",
+       "problem_shift": "shift one: piano alone under the pain line",
+       "solution_shift": "shift two: bass and kit return under the hook",
+       "ending": "short ending: piano fades on one held note",
+       "arrangement": "intimate piano-and-voice arrangement"
+     }},
     {"id": "warm-live-band", "label": "WARM LIVE BAND", "description": "a warm live band feel with bass, keys and guitar",
-     "clause": "Arrangement: warm live band feel, round electric bass, soft organ, gentle clean guitar, slow pocket"},
+     "genre": "soul-ballad", "role": "live", "upbeat": false,
+     "brief": {
+       "groove": "soul ballad, warm 66 bpm live feel",
+       "palette": "round electric bass, soft organ, clean guitar",
+       "energy": "gentle build from verse into the chorus",
+       "vocals": "{gender} lead with a soft live harmony",
+       "hook": "fully sung hook, gentle rise in the voice",
+       "scene_words": "first line sets the scene in plain words",
+       "problem_shift": "shift one: band thins to organ and voice",
+       "solution_shift": "shift two: full band comes back warm",
+       "ending": "short ending: last chord rings and stops",
+       "arrangement": "warm live band with a breathing pulse"
+     }},
     {"id": "cinematic-strings", "label": "CINEMATIC STRINGS", "description": "big film-style strings that swell under the hook",
-     "clause": "Arrangement: cinematic string section, slow swelling violins and cellos, soft piano, film-score drama"}
+     "genre": "soul-ballad", "role": "upbeat", "upbeat": true,
+     "brief": {
+       "groove": "soul ballad lifted to an upbeat 84 bpm swing",
+       "palette": "bright strings, piano, claps, warm bass",
+       "energy": "the most upbeat take, hopeful and moving",
+       "vocals": "{gender} lead with layered soaring stacks",
+       "hook": "fully sung hook, soaring high and open",
+       "scene_words": "scene words land right at the open",
+       "problem_shift": "shift one: strings fall to a quiet hold",
+       "solution_shift": "shift two: strings and claps surge",
+       "ending": "short ending: strings resolve and stop",
+       "arrangement": "film-style strings over an upbeat soul groove"
+     }}
   ],
   "soul-rise": [
     {"id": "modern-lift", "label": "MODERN LIFT", "description": "modern drums and synths that lift into the groove",
-     "clause": "Arrangement: modern production, soft pads that build into tight upbeat drums and bright synths at the lift"},
+     "genre": "soul-rise", "role": "modern", "upbeat": false,
+     "brief": {
+       "groove": "soul rise, brooding 64 bpm opening into a lift",
+       "palette": "warm piano, round bass, thickening percussion",
+       "energy": "quiet pain rising into a big lift",
+       "vocals": "{gender} lead rising in register after the turn",
+       "hook": "fully sung hook, open and held",
+       "scene_words": "opens on the first plain scene image",
+       "problem_shift": "shift one: drums thin at the low point",
+       "solution_shift": "shift two: percussion and bass return",
+       "ending": "short ending: one held note then a stop",
+       "arrangement": "modern production building to the turn"
+     }},
     {"id": "warm-live-band", "label": "WARM LIVE BAND", "description": "a warm live band that lifts into a groove",
-     "clause": "Arrangement: warm live band feel, round bass, soulful organ and clean guitar, lifting into a live groove"},
+     "genre": "soul-rise", "role": "live", "upbeat": false,
+     "brief": {
+       "groove": "soul rise, live 66 bpm opening into the lift",
+       "palette": "live bass, organ, clean guitar, live kit",
+       "energy": "restrained start, full lift after the turn",
+       "vocals": "{gender} lead with a live harmony stack",
+       "hook": "fully sung hook, strong and open",
+       "scene_words": "first line names the scene in plain words",
+       "problem_shift": "shift one: band pulls back to organ",
+       "solution_shift": "shift two: full live band lifts",
+       "ending": "short ending: band lands and holds",
+       "arrangement": "warm live band tracking the two-part arc"
+     }},
     {"id": "cinematic-strings", "label": "CINEMATIC STRINGS", "description": "film-style strings that open into a big finish",
-     "clause": "Arrangement: cinematic strings and piano, a steady build opening into a big sweeping upbeat finish"}
+     "genre": "soul-rise", "role": "upbeat", "upbeat": true,
+     "brief": {
+       "groove": "soul rise, upbeat 108 bpm at the turn",
+       "palette": "bright horns, claps, strings, warm bass",
+       "energy": "the most upbeat take, triumphant at the turn",
+       "vocals": "{gender} lead with layered triumph stacks",
+       "hook": "fully sung hook, big and high",
+       "scene_words": "scene words arrive on the first beat",
+       "problem_shift": "shift one: strings drop to a hush",
+       "solution_shift": "shift two: horns and strings drive",
+       "ending": "short ending: final chord rings out",
+       "arrangement": "cinematic strings over a driving soul groove"
+     }}
   ]
 }

@@ -197,13 +197,43 @@ def _next_card_length(seconds):
     return CARD_LENGTHS_S[-1]
 
 
+def _delivers_rap(style=None):
+    """True when the style's OWN deliveries include rap (R&B Flow).
+
+    ONE copy of the fact: core/music_styles, read exactly as
+    ``style_sung_target_pct`` reads it, so a style named by its display label
+    answers as its id does. Unknown / absent style -> False (fail closed).
+    """
+    try:
+        return "rap" in _MS.style(style)["deliveries"]
+    except (_MS.MusicStyleError, TypeError):
+        return False
+
 def _fewer_words_budget(chosen_length_s, sung_target_pct, rates,
-                        intro_outro_s):
+                        intro_outro_s, style=None):
     """Max total words that fit at the carded length keeping the sung share.
 
     ``sung_target_pct`` is sung share of VOICE time (0-100). Vocal budget =
     length - intro/outro. Words are split by that share and each rate.
+
+    WW-29 option (ii): for a style that DELIVERS RAP that split is the wrong
+    shape. It prices the whole non-sung budget at the SPOKEN rate and never
+    mentions rap words at all, while ``length_formula.plan`` carries a rap
+    budget, prices it at the style's own rap rate and reserves the per-verse
+    rap floor. On the base the 90 s R&B Flow card therefore offered "at most
+    158 words" while the recipe's own word gate refuses anything over the
+    plan's 128 -- the option named a budget the gate then rejected. A rap
+    style's budget is the length plan's own total, so the number the person is
+    shown and the number the gate enforces are ONE rule and can never disagree;
+    a plan that cannot hold the two-verse rap floor still raises. A style that
+    delivers no rap keeps the arithmetic above, byte-identical to the base.
     """
+    if style is not None and _delivers_rap(style):
+        try:
+            import length_formula as _LF      # lazy: length_formula imports this module
+        except ImportError:
+            from .. import length_formula as _LF
+        return float(_LF.plan(chosen_length_s, style_id=style)["words"]["total"])
     vocal_budget = chosen_length_s - intro_outro_s
     if vocal_budget <= 0:
         return 0.0
@@ -292,7 +322,7 @@ def preflight(chosen_length_s, sung_words, spoken_words, rap_words=0.0,
     min_length_s = plan_s if plan_s > L else L
     longer = _next_card_length(min_length_s)
     natural = round(share, 3)
-    budget = _fewer_words_budget(L, target, r, io)
+    budget = _fewer_words_budget(L, target, r, io, style=style)
     cut = round(max(0.0, total_w - budget), 1)
     max_f = _max_sung_share_that_fits(total_w, L, r, io)
 

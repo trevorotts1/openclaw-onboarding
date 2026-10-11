@@ -16,29 +16,29 @@
     "cue_rule": "short and concrete (file 17); delivery named in every tag; a cue never carries plot or lyric words",
     "multi_vocalist_form": "[<Section> (<delivery>): Vocal A, <gender word from cast> voice, <cue>]",
     "multi_vocalist_rule": "labels repeat in every tag that voice sings; gender word comes from the cast record (U5), never hard-coded; identity is NOT guaranteed (file 17), so qc_voice_match line_voice_fit is the judge",
-    "section_names": ["Intro", "Vocalise", "Verse N", "Pre-Hook", "Hook", "Build", "Bridge", "Product", "Instrumental Break", "Outro"],
+    "section_names": ["Intro", "Vocalise", "Verse N", "Rap Verse N", "Pre-Hook", "Hook", "Build", "Bridge", "Product", "Instrumental Break", "Outro"],
     "end_tag": "[End]"
   },
   "cue_vocabulary": {
     "sung":   {"vocalise": "wordless, brief lead-in, one short note", "verse": "melodic, rhymed, slow long held notes", "hook": "full melody, sustained notes, slow long held notes", "product": "melodic, warm, clear diction on the name", "bridge": "half-time, stripped back, sustained", "build": "melodic, rising, tempo lifting"},
     "spoken": {"intro": "close dry voice, plain speech, no melody", "outro": "calm close voice, plain speech, no melody"},
-    "rap":    {"verse": "rhythmic rap on the beat, tight metered flow, clear diction", "verse_low": "low-register rhythmic rap on the beat, clear diction"}
+    "rap":    {"verse": "rhythmic speech-rhythm rap on the beat, tight metered flow, clear diction", "verse_low": "low-register rhythmic rap on the beat, clear diction"}
   },
   "lyric_line_rules": [
     "sung lines 5-6 syllables aimed, 8 at most (suno_recipe.MAX_SUNG_LINE_SYLLABLES)",
     "sung lines rhymed AABB, ending on open vowels where possible (go, me, high, slow), with hyphen-held vowels on the held word (ri-i-ise)",
-    "a wordless sung vocalise comes before the first hook; the first hook never starts at 0 s",
+    "the wordless sung vocalise is OPTIONAL, never a forced lead-in: when a sheet carries one it asks for a short note only, never long held notes; the first hook never OPENS the song",
     "the hook is pasted in full every time it is sung (never 'repeat chorus')",
     "numbers and times as words in sung text ('nine A M'); brand words in a pronounceable sheet spelling, display spelling for captions (U8 map)",
     "no essential words inside parentheses",
     "spoken text: short plain sentences, periods, no rhyme, no repetition (the contrast with the sung lines is the signal, file 09)",
-    "rap lines (R&B Flow only): 8-12 words per line, internal rhyme allowed, no line over 14 words"
+    "rap lines (R&B Flow only): rhythmic speech-rhythm rap verses, contrasted with the fully sung melodic r&b hook; 8-12 words per line, internal rhyme allowed, no line over 14 words"
   ],
   "hook_formula": {
     "words": "4-10 of the client's own words (sung_hook.check_hook_text), protected names exact",
     "shape": "one line of 6-8 syllables, or two lines of 5-6, ending on an open vowel; the payoff / brand promise",
     "count": "sung_hook.hook_count(delivered_s) = clamp(1 + floor(D/25), 2, 12)",
-    "placement": "first by 15% of runtime, last near 90% (before the CTA), the rest evenly spaced (sung_hook.hook_times)"
+    "placement": "the payoff, never the opener: at or after the build-up (a verse, plus a pre-chorus where the style has one) and at the story beat where its words become true (sung_hook.hook_placement.check_buildup / check_story); last near 90%, before the CTA. No fixed first-hook second: sung_hook.hook_times is only the fallback even spacing used when no hook plan gives the first hook second"
   },
   "extend_rules": [
     "Extend is used ONLY to land a length one generation cannot reach (delivered > 300 s, length_formula.MAX_GEN_S) or to repair a take that came back short.",

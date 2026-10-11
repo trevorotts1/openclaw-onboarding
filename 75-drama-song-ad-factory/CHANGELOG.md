@@ -6,6 +6,91 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.32 - 2026-10-11 - WW-29: optional vocalise, no stale early-hook rule, consistent R&B Flow direction, one reconciled fewer-words budget
+
+ONE real-content commit whose parent is the live head of `unit/WWC-U1`
+(`6341e24c3d`, read at build time), joining the three parallel builders'
+patches (WW29-U1 documents, WW29-U2 template/recipe/option-(ii) budget,
+WW29-U3 music director) with the integrator's cross-builder joins into a
+single coherent change. Skill 75 is bumped exactly once, inside this one
+commit; the repository root `/version` and root `CHANGELOG.md` are unchanged.
+
+- WW-29 change list: the mandatory "two long held wordless notes" opening is
+  removed and the vocalise is OPTIONAL, never a forced lead-in (the WW-16
+  3-second opening ceiling is kept and still refuses a DECLARED long/held cue);
+  the stale hook-in-the-first-fifteen-percent rule is removed from the recipe,
+  the model data and the music-style data, and the measured hook-placement /
+  payoff doctrine stands (the hook is the payoff, placed at/after the build-up
+  and at the story beat where its words become true); required cast, shift,
+  hook, ending and negative clauses survive the final cap and an overflow
+  REFUSES with a named reason rather than deleting a clause; `negative_tags`
+  is transmitted in the final `request["input"]`; evidence confidence is
+  documented (DOCUMENTED / CONSISTENT / LORE).
+- R&B Flow rap/sung direction is consistent across data, recipe, director and
+  docs: `suno_recipe.is_rap_style` reads a style's OWN data so the label
+  "R&B Flow" and the id "rnb-flow" judge identically (the base hard-coded
+  `RAP_STYLE_IDS` matched the bare id only, silently switching the rap-negative
+  guard off for the label).
+- OPTION (ii): `words_fit._fewer_words_budget` now prices the non-sung budget
+  with rap words at the rap rate for a rap style, so the "fewer words" option
+  and `length_formula.plan` are ONE rule on an R&B Flow card; a non-rap style's
+  budget is byte-identical to the base; the per-verse rap floor is unchanged and
+  a card that cannot hold the two-verse floor is still refused.
+- Integrator joins: `suno_recipe/test_suno_recipe.py`'s `test_sheet_rules` no
+  longer pins the removed vocalise mandate (it is replaced by a positive control
+  proving the no-vocalise sheet is legal, still refused by `prepare` without its
+  length); `references/prompt-templates/music/{rnb-flow,soul-ballad,soul-rise}.json`
+  skeleton rules no longer carry the stale "Hook 1 by 15%" rule or force a
+  vocalise.
+- Documents: `SKILL.md`, `INSTRUCTIONS.md` and `references/stage-runbook.md`
+  reconcile to the same doctrine, name the real `suno_recipe.style_text` builder
+  (the phantom `prompt_templates.suno_parts` is gone), and state the five-gate
+  delivered-audio boundary (WW-21's `song_dispatch.accept_audio_results`, never
+  a sixth gate).
+## v2.9.31 - 2026-10-11 - WWC combined branch C: WW-25 copy-first archive, WW-26 three complete briefs, WW-27 ensemble character bible and distinct voices, WW-28 causal plot and earned hook
+
+ONE real-content commit whose parent is the live head of `unit/WWB-U1`
+(`9b4b30df07`, read at build time), joining the three parallel builders'
+patches (WWC-U25, WWC-U26, WWC-U27) with the carried WW-28 patch
+(`wave3/carry/WW-28.patch`) into a single coherent change, and finishing
+WW-28's DEPENDS-ON-WW-27 clause on WW-27's cast model. Skill 75 is bumped
+exactly once, inside this one commit; the repository root `/version` and root
+`CHANGELOG.md` are unchanged.
+
+- WW-25 (copy-first archive): the existing shipping writer
+  `song_choices.deliver_choices` copies each approved take into a NEW
+  noncolliding `<run>/song-choices/archive/<stamp>` folder, verifies every
+  copied file's sha256 against its source, writes a complete receipt and only
+  THEN publishes. Originals are never deleted or moved; a prior archive is
+  never overwritten; a copy fault or hash mismatch refuses with both sides
+  preserved and nothing published. No parallel archive module was created.
+- WW-26 (three complete briefs, including the upbeat option):
+  `song_choices/variants.json` carries three COMPLETE briefs per style (all ten
+  directions each, exactly one explicit upbeat role), assembled per variant
+  through `suno_recipe.brief_style_text`; `_require_three` checks complete
+  treatments, not identifiers; `_check_three_briefs` refuses
+  MISSING_DIRECTION / GENRE_SUBSTITUTION / UPBEAT_DIRECTION /
+  SHARED_CORE_PLUS_SUFFIX / STYLE_TOO_LONG on the exact serialized
+  `request["input"]["style"]` before spend.
+- WW-27 (ensemble character bible and distinct voices): the new
+  `character_bible` cast model (seven character fields, six voice-direction
+  fields, ensemble by default, a speaking villain or foil that receives a
+  consequential reply, undeclared speakers and a single-voice ensemble style
+  refused) is wired into `song_contract.check_sheet`,
+  `suno_recipe.build_request`/`guard_request`, `music_director.build_generate_request`
+  and `lyric_writer.validate_lyrics`; `qc_voice_match.line_voice_fit` decides a
+  second voice on TIMBRE, beyond pitch.
+- WW-28 (causal plot and earned hook): `story_arc` gates the nine causal
+  fields, the fiction/testimonial split, the mood-board plot, the exact
+  payload closing call, the exact hook line versus the refrain, two-declared
+  versus companion-line counting and maker self-approval; the twelve-beat /
+  eight-stage / fifteen-stage mappings are asserted preserved.
+- WW-28 DEPENDS-ON-WW-27 (finished here): the independent non-maker's
+  'exchanged replies' leg now judges a declared cast on WW-27's model --
+  `character_bible.traded_replies` over `speaker_turns` -- and reports
+  `cast_model: "ww27-ensemble-cast"`; with no cast declared it keeps the base
+  speaker-prefix leg unchanged.
+
 ## v2.9.30 - 2026-10-11 - WWB combined branch B: WW-22 ordered approved-story-line matching, WW-23 both musical transitions, WW-24 measured-only evidence provenance
 
 ONE real-content commit whose parent is the live head of `unit/WW30-U2`

@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.30
+version: v2.9.32
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -215,7 +215,10 @@ The four rules (recipe v2, replaces G12):
 1. Spoken tags only in [Intro] and [Outro]; spoken is named once in the style
    text, and the style says the full band keeps playing under the spoken lines.
 2. Sung lines are short (5-6 syllables aimed, 8 at most), rhymed, with
-   hyphen-held vowels, after a wordless sung vocalise.
+   hyphen-held vowels. A wordless vocalise is OPTIONAL, never a forced
+   lead-in: a sheet may open with one short note (a brief lead-in, never
+   "two long held notes") or with no vocalise at all, and the opening
+   wordless span stays under the 3-second ceiling below.
 3. The hook is the payoff, never the opener: it comes after the build-up
    (a verse, plus a pre-chorus or build where the style and length plan
    have one), measured at or after the story beat where its words become
@@ -286,14 +289,18 @@ over the song, id `velvet_voiceover`), which keeps its own flow. Almost
 nobody asks for it. Every other style, including the All Suno voice default,
 uses the recipe.
 
-The Suno payload itself is assembled the same way: `prompt_templates.suno_parts(style_id, length_s, vocal_gender)` reads
-`references/prompt-templates/music/<style>.json` and `models/suno-v6.json`, so the style text,
+The Suno payload itself is assembled the same way: `suno_recipe.style_text(style_id, sheet, vocal_gender, pace_plan)` builds the style
+field from the style's own `style_parts`, and `suno_recipe.music_block` / `suno_recipe.model_block` read
+`references/prompt-templates/music/<style>.json` and `references/prompt-templates/models/suno-v6.json`, so the style text,
 the delivery cues, the negative tags and the caps are data and not constants; the caps are
-measured on the FINAL payload, after `ending_qc`. See "Prompt templates" above.
+measured on the FINAL payload, after `ending_qc`, and a style text over the 1000-character
+cap refuses `STYLE_TOO_LONG` rather than dropping a clause. See "Prompt templates" above.
 
 ## Story-first audio acceptance
 
 R&B Flow reserves at least max(8 seconds, 10% of the delivered runtime) of measured rhythmic rap before any intro/outro allocation, and each rap verse on the sheet must itself reach a real budget: at least 8 seconds and at least ceil(8 seconds × the style's rap rate) words. Story-bearing lexical content starts within 5 seconds, and no opening wordless span may exceed 3 seconds. Real lexical word timing covers at least 70% of the delivered runtime; vocalise and music-only time never count. Every approved plot beat must be heard, in order, and each take is bound to the exact approved sheet revision it was generated from. Two pace changes are ordered, each separately bound to its own story beat and never merged into one. The first, the problem shift, belongs to the beat where the story hits the problem: it must be written into the submitted music style and must then pass a measured onset and energy drop check. The second, the rise shift, belongs to the beat where the story reaches the solution, the rise: it must be written into the submitted music style and must then pass its own measured rise check. Each pace change must additionally pass an independent smooth-transition review. Required rap evidence that is unmeasured, unavailable or unknown cannot pass; only an independent timed listening review or a calibrated classifier may grant it. These are new acceptance rules; the owner's existing spoken/sung 5/10 band is unchanged. The recommended SONG APPROVAL answer is Yes and an explicit No stays one song, but no assistant may answer a card question on the client's behalf: an answer with no recorded author and no recorded authority is treated as unspecified and routes to the recommended Yes.
+
+**Reconciled music direction (WW-29).** Do not mandate wordless held-note openings or a premature hook; the vocalise is an OPTIONAL one-note lead-in, never a forced opening, and the hook-placement rule above — the hook is the payoff, measured at or after `true_at_beat` — is what the gate measures. R&B Flow consistently directs rhythmic speech-rhythm RAP verses contrasted with a fully sung melodic R&B hook (its own data: `references/prompt-templates/music/rnb-flow.json`, verses tagged rap, hook sung). Cast, pace, hook, ending and the exclusions (`negative_tags`) all survive into the exact serialized request — the createTask envelope's nested `input` — and are checked there by `song_dispatch.validate_request` from every entry path; a style text over the 1000-character cap REFUSES with `STYLE_TOO_LONG` rather than dropping a clause, and no required clause is ever trimmed to fit. Planning timestamps, stretched voice time and text labels never become measured audio. Delivered-audio acceptance has FIVE gates only (WW-21, `song_dispatch.accept_audio_results`): real rap, story start, both pace changes, three audibly different versions including an upbeat option, and multiple character voices — never a sixth. Preserve rejected paid files, there is no automatic paid retry, and nothing regenerates until Trevor approves. Evidence confidence: the adopted techniques are classed in the round-3 plan's citation map as DOCUMENTED (Suno/KIE docs), CONSISTENT (repeated measured runs) or LORE (experience only); no LORE technique grants a PASS without its named measured gate, and the newest individual V6 variant stays UNDETERMINED.
 
 ## Sung hook (I8)
 

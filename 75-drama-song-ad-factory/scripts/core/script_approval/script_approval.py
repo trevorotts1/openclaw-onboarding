@@ -24,6 +24,10 @@ import os
 
 TELEGRAM_LIMIT = 4000
 REASON = "SCRIPT_NOT_APPROVED"
+#: WW-28: the maker may not approve their own script. An approval whose
+#: approver is the same person as the maker is refused -- the review is
+#: independent or it did not happen.
+SELF_APPROVAL = "SELF_APPROVAL"
 _APPROVE = ("yes", "y", "approve", "approved", "go", "ok", "okay", "looks good", "start")
 RECORD_NAME = os.path.join("creative", "script-approval.json")
 INSTRUCTION = ('Reply "approve" to make the song, or tell me what to change '
@@ -111,15 +115,22 @@ def mark_sent(run_dir):
     return _save(run_dir, dict(rec, sent=True))
 
 
-def request_approval(run_dir, title, story, sheet, lyrics):
+def request_approval(run_dir, title, story, sheet, lyrics, maker=None):
     """Call AFTER the story and lyric sheet pass their checks. Records
-    pending (the pause) and returns the messages to send the client."""
-    _save(run_dir, {"required": True, "status": "pending", "lyrics_sha": lyrics_sha(lyrics),
-                    "sent": False})
+    pending (the pause) and returns the messages to send the client.
+
+    WW-28: ``maker`` is the party who authored the script. It is recorded so an
+    approval that names the maker as its own approver is refused by the gate."""
+    rec = {"required": True, "status": "pending", "lyrics_sha": lyrics_sha(lyrics),
+           "sent": False}
+    if maker is not None:
+        rec["maker"] = str(maker)
+    _save(run_dir, rec)
     return _split(render_script(title, story, sheet))
 
 
-def handle_reply(run_dir, reply, title, story, sheet, lyrics, apply_edit, recheck):
+def handle_reply(run_dir, reply, title, story, sheet, lyrics, apply_edit, recheck,
+                 approved_by=None):
     """Client reply -> {"status", "messages", "problems", ...}.
 
     approve -> status approved, bound to the current lyrics.
@@ -128,7 +139,15 @@ def handle_reply(run_dir, reply, title, story, sheet, lyrics, apply_edit, rechec
     Problems -> nothing sent, still pending (the caller fixes and calls again)."""
     sent = bool((record_for(run_dir) or {}).get("sent"))
     if reply.strip().lower() in _APPROVE:
-        _save(run_dir, {"required": True, "status": "approved", "lyrics_sha": lyrics_sha(lyrics)})
+        # WW-28: record who approved, and keep the maker, so the gate can refuse
+        # an approval the maker gave their own script.
+        prior = record_for(run_dir) or {}
+        rec = {"required": True, "status": "approved", "lyrics_sha": lyrics_sha(lyrics)}
+        if prior.get("maker") is not None:
+            rec["maker"] = prior["maker"]           # keep the maker the request recorded
+        if approved_by is not None:
+            rec["approved_by"] = str(approved_by)
+        _save(run_dir, rec)
         return {"status": "approved", "messages": ["Approved. Making the song now."], "problems": []}
     story, sheet, lyrics = apply_edit(reply, story, sheet)
     problems = list(recheck(story, sheet))
@@ -146,6 +165,14 @@ def check_script_approval(record, lyrics):
     = not asked for = today's behaviour. Required: approved for THESE lyrics only."""
     if not isinstance(record, dict) or not record.get("required"):
         return None
+    # WW-28: maker self-approval is refused -- an approval by the script's own
+    # author is not an independent review.
+    maker = str(record.get("maker") or "").strip().lower()
+    approver = str(record.get("approved_by") or "").strip().lower()
+    if record.get("status") == "approved" and maker and approver and maker == approver:
+        return {"reason_code": SELF_APPROVAL,
+                "detail": "the maker %r approved their own script; an independent reviewer must "
+                          "approve before the song is made" % maker}
     if record.get("status") == "approved" and record.get("lyrics_sha") == lyrics_sha(lyrics):
         return None
     return {"reason_code": REASON,

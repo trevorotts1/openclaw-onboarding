@@ -2050,7 +2050,1820 @@ def test_ww24_i_word_annotations_never_add_runtime():
     except SS.SpokenShareError as e:
         check(e.code == "MISSING_ACTUAL_DURATION",
               "WW-24: no measured duration BLOCKS (a plan is not physical runtime)")
+# ==== WW-25: copy-first archive (WWC-U25) ===================================
+#
+# WW-25 copy-first archive. The EXISTING shipping writer is
+# song_choices.deliver_choices (the production publish step reached through
+# fan_in and the factory's music stage): it ffmpeg-copies the approved takes
+# into <delivery>/SONG-CHOICES/ and rewrites README.txt and state.json, so a
+# re-run REPLACES those outputs. There is NO pre-existing archive helper in
+# skill 75 (resolved from disk: zero ``archive`` symbols anywhere under
+# 75-drama-song-ad-factory/scripts/, and no such module in this repo's git
+# history for skill 75) -- so the copy-first archive lives ON that shipping
+# writer, never in a new parallel module. The historical defective
+# qualification/.../WW-011-lane/build_restart2.py archive_replaced()
+# (os.remove on an existing archive then shutil.move) is EVIDENCE of the defect,
+# never the shipping destination. One delimited block; functions prefixed
+# test_ww25_. PROPOSED: the archive basename ``published`` and the -2/-3
+# collision bump are NEW ACCEPTANCE RULES added by WW-25, not a measured limit
+# and never a number Trevor set.
+#
+# Deleted-original recovery remains UNVERIFIED: this unit proves COPY-FIRST
+# preservation of originals and prior archives, never that a deleted original
+# can be recreated.
 
+WW25_RECEIPT = {"schema": "ww.constituent-evidence/1", "accepted": True}
+
+def _ww25_name(r):
+    """The published file name deliver_choices builds for a result (the same
+    _safe(label) rule the shipping writer uses)."""
+    return SC._safe("%d - %s (%s)" % (r["n"], r["variant"]["label"],
+                                      r["variant"]["description"])) + ".mp3"
+
+def _ww25_results(tmp):
+    out = []
+    for i, v in enumerate(("polished-modern", "warm-live-band", "cinematic-strings"), 1):
+        p = os.path.join(tmp, "takes", "%s.mp3" % v)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(("approved take bytes for %s" % v).encode("utf-8"))
+        out.append({"n": i, "variant": {"id": v, "label": v.upper(), "description": "d"},
+                    "status": "PASS", "attempt": 1, "attempts": 1, "receipts": [],
+                    "receipt": dict(WW25_RECEIPT),
+                    "take": {"audio_path": p, "duration_s": 58.0}})
+    return out
+
+def _ww25_runner():
+    """A fake ffmpeg: copy the -i source to the destination the argv names, the
+    way the real publish writes the titled file."""
+    def run(argv):
+        src = argv[argv.index("-i") + 1]
+        dst = argv[-1]
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        with open(src, "rb") as f:
+            data = f.read()
+        with open(dst, "wb") as f:
+            f.write(data)
+    return run
+
+def test_ww25_known_good_control_copies_verifies_then_publishes():
+    """POSITIVE CONTROL, before any negative. The shipping writer publishes the
+    three versions AND makes a fresh archive whose every copied hash equals its
+    source; the originals are copied, never deleted or moved."""
+    with tempfile.TemporaryDirectory() as tmp:
+        run, deliv = os.path.join(tmp, "run"), os.path.join(tmp, "D")
+        res = _ww25_results(tmp)
+        SC.deliver_choices(res, deliv, run, runner=_ww25_runner(), target="1",
+                           send=lambda *a: None)
+        folder = os.path.join(deliv, "SONG-CHOICES")
+        published = sorted(f for f in os.listdir(folder) if f.endswith(".mp3"))
+        check(published == sorted(_ww25_name(r) for r in res),
+              "WW-25: the known-good control publishes the three version files")
+        root = os.path.join(run, "song-choices", SC.ARCHIVE_DIRNAME)
+        dirs = sorted(os.listdir(root))
+        check(dirs == ["published"],
+              "WW-25: the copy-first archive is exactly one new folder (%r)" % (dirs,))
+        receipt = json.load(open(os.path.join(root, "published", "archive-receipt.json"),
+                                 encoding="utf-8"))
+        check(receipt["complete"] is True and len(receipt["files"]) == 3,
+              "WW-25: the archive receipt is complete for every copied file")
+        by_name = {_ww25_name(r): r["take"]["audio_path"] for r in res}
+        for row in receipt["files"]:
+            src = by_name.get(row["name"])
+            check(src is not None and row["sha256"] == SC._sha256_file(src),
+                  "WW-25: the copied hash matches its source for %s" % row["name"])
+        check(all(os.path.isfile(r["take"]["audio_path"]) for r in res),
+              "WW-25: the originals were COPIED, never deleted or moved")
+        print("  WW-25 known-good control: archive=%s files=%d"
+              % (dirs[0], len(receipt["files"])))
+
+def test_ww25_copy_failure_publishes_nothing_and_preserves_both_sides():
+    """A copy fault through the REAL delivery path refuses BEFORE publish: no
+    version file, every original hash unchanged, the prior archive unchanged."""
+    with tempfile.TemporaryDirectory() as tmp:
+        run, deliv = os.path.join(tmp, "run"), os.path.join(tmp, "D")
+        res = _ww25_results(tmp)
+        before = {r["take"]["audio_path"]: SC._sha256_file(r["take"]["audio_path"]) for r in res}
+        prior = os.path.join(run, "song-choices", SC.ARCHIVE_DIRNAME, "published")
+        os.makedirs(prior, exist_ok=True)
+        old = os.path.join(prior, "old.mp3")
+        with open(old, "wb") as f:
+            f.write(b"a prior archive that must never be touched")
+        prior_sha = SC._sha256_file(old)
+        orig = SC.shutil.copy2
+        def _boom(src, dst, *a, **k):
+            raise OSError("disk full (injected copy fault)")
+        SC.shutil.copy2 = _boom
+        try:
+            SC.deliver_choices(res, deliv, run, runner=_ww25_runner(), target="1",
+                               send=lambda *a: None)
+        except SC.ChoiceError as e:
+            print("  WW-25 copy failure refused: %s" % e)
+            check("copy failed" in str(e) and "nothing was published" in str(e),
+                  "WW-25: the copy fault refuses with the intended reason")
+        else:
+            check(False, "WW-25: a copy fault did not refuse the publish")
+        finally:
+            SC.shutil.copy2 = orig
+        check(not os.path.isdir(os.path.join(deliv, "SONG-CHOICES")),
+              "WW-25: a copy fault publishes no version file")
+        check(before == {p: SC._sha256_file(p) for p in before},
+              "WW-25: every original hash is unchanged after a copy fault")
+        check(SC._sha256_file(old) == prior_sha,
+              "WW-25: the prior archive is byte-unchanged after a copy fault")
+
+def test_ww25_missing_source_refuses_before_publish():
+    """A vanished original refuses through the real path (the plan's copy
+    failure): nothing is published and the surviving originals are intact."""
+    with tempfile.TemporaryDirectory() as tmp:
+        run, deliv = os.path.join(tmp, "run"), os.path.join(tmp, "D")
+        res = _ww25_results(tmp)
+        os.remove(res[1]["take"]["audio_path"])
+        keep = [r["take"]["audio_path"] for r in (res[0], res[2])]
+        before = {p: SC._sha256_file(p) for p in keep}
+        try:
+            SC.deliver_choices(res, deliv, run, runner=_ww25_runner(), target="1",
+                               send=lambda *a: None)
+        except SC.ChoiceError as e:
+            print("  WW-25 missing source refused: %s" % e)
+            check("source missing" in str(e), "WW-25: a missing source refuses before publish")
+        else:
+            check(False, "WW-25: a missing source did not refuse")
+        check(not os.path.isdir(os.path.join(deliv, "SONG-CHOICES")),
+              "WW-25: a missing source publishes no version file")
+        check(before == {p: SC._sha256_file(p) for p in before},
+              "WW-25: the surviving originals are unchanged")
+
+def test_ww25_noncolliding_dir_bumps_on_collision():
+    with tempfile.TemporaryDirectory() as tmp:
+        base = os.path.join(tmp, "published")
+        os.makedirs(base)
+        check(SC._noncolliding_dir(base) == base + "-2",
+              "WW-25: a folder collision bumps the archive name")
+        os.makedirs(base + "-2")
+        check(SC._noncolliding_dir(base) == base + "-3",
+              "WW-25: a second collision bumps again")
+
+def test_ww25_collision_and_rerun_never_overwrite_a_prior_archive():
+    """A re-run makes a NEW noncolliding archive; an earlier archive is never
+    overwritten to make the re-run succeed."""
+    with tempfile.TemporaryDirectory() as tmp:
+        run, deliv = os.path.join(tmp, "run"), os.path.join(tmp, "D")
+        res = _ww25_results(tmp)
+        SC.deliver_choices(res, deliv, run, runner=_ww25_runner(), target="1",
+                           send=lambda *a: None)
+        root = os.path.join(run, "song-choices", SC.ARCHIVE_DIRNAME)
+        first = os.path.join(root, "published", "archive-receipt.json")
+        first_sha = SC._sha256_file(first)
+        SC.deliver_choices(res, deliv, run, runner=_ww25_runner(), target="1",
+                           send=lambda *a: None)
+        dirs = sorted(os.listdir(root))
+        check(dirs == ["published", "published-2"],
+              "WW-25: a re-run makes a NEW noncolliding archive (%r)" % (dirs,))
+        check(SC._sha256_file(first) == first_sha,
+              "WW-25: the prior archive is byte-unchanged after a re-run")
+        print("  WW-25 re-run archives: %r" % (dirs,))
+
+def test_ww25_the_archive_guard_is_reachable_from_the_delivery_path():
+    """The guard is the CALL inside deliver_choices, not a hand-built helper.
+    Show deliver_choices calls it with the REAL take sources (printed), then
+    that removing the call publishes with no archive -- the guard is load-bearing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        run, deliv = os.path.join(tmp, "run"), os.path.join(tmp, "D")
+        res = _ww25_results(tmp)
+        seen = {}
+        orig = SC.archive_before_publish
+        def _rec(rd, items, **kw):
+            seen["items"] = list(items)
+            return orig(rd, items, **kw)
+        SC.archive_before_publish = _rec
+        try:
+            SC.deliver_choices(res, deliv, run, runner=_ww25_runner(), target="1",
+                               send=lambda *a: None)
+        finally:
+            SC.archive_before_publish = orig
+        got = sorted(s["source"] for s in seen.get("items", []))
+        want = sorted(r["take"]["audio_path"] for r in res)
+        print("  WW-25 call site sources: %r" % (got,))
+        check(got == want,
+              "WW-25: deliver_choices calls the archive with the REAL take sources")
+        with tempfile.TemporaryDirectory() as tmp2:
+            run2, deliv2 = os.path.join(tmp2, "run"), os.path.join(tmp2, "D")
+            res2 = _ww25_results(tmp2)
+            SC.archive_before_publish = lambda *a, **k: None      # MUTATION: remove the guard
+            try:
+                SC.deliver_choices(res2, deliv2, run2, runner=_ww25_runner(), target="1",
+                                   send=lambda *a: None)
+            finally:
+                SC.archive_before_publish = orig
+            check(not os.path.isdir(os.path.join(run2, "song-choices", SC.ARCHIVE_DIRNAME)),
+                  "WW-25: with the guard call removed no archive is made (the guard is load-bearing)")
+
+def test_ww25_no_parallel_archive_module_was_created():
+    """WW-25 fixes the EXISTING shipping writer; it never invents a second
+    module. Fail if any *archive*.py file appears under the core tree."""
+    hits = []
+    for root, _dirs, files in os.walk(CORE):
+        if "__pycache__" in root:
+            continue
+        hits += [os.path.join(root, f) for f in files
+                 if f.lower().endswith(".py") and "archive" in f.lower()]
+    check(hits == [], "WW-25: no parallel archive module was created (%r)" % (hits,))
+    check(hasattr(SC, "archive_before_publish") and hasattr(SC, "deliver_choices"),
+          "WW-25: the archive lives ON the existing shipping writer")
+
+def test_ww25_deleted_original_recovery_is_unverified():
+    undetermined("WW-25 deleted-original recovery",
+                 "WW-25 proves COPY-FIRST preservation (originals copied, never deleted; "
+                 "prior archives never overwritten); it does NOT prove a deleted original "
+                 "can be recovered. Reported UNVERIFIED, never a pass.")
+
+# =====================================================================
+# WWC-U26 (WW-26) -- three COMPLETE briefs, including the upbeat option.
+# Replaces the shared request plus a short appended ``clause`` with three
+# independently authored complete briefs, and gates the EXACT serialized
+# request["input"]["style"] before any generation. ONE delimited block.
+# =====================================================================
+
+_W26_CAP = getattr(R, "suno_recipe", R).SUNO_STYLE_FIELD_MAX
+
+def _w26_reqs():
+    return SC.build_requests("rnb-flow", SHEET_RNB, CLIENT, "T", 88, hook_plan=HOOK_PLAN)
+
+def _w26_shared_core_rows(base_brief):
+    """Three rows that are the DEFECT this unit replaces: one shared core and a
+    short appended suffix per variant. Complete brief fields everywhere except
+    the trailing arrangement, so only the identifiers differ. ``base_brief`` is
+    passed in so this helper never re-enters the patched production path."""
+    base = dict(base_brief)
+    rows = []
+    for vid in ("a", "b", "c"):
+        brief = dict(base, arrangement="variant %s arrangement line here" % vid)
+        rows.append({"id": vid, "label": vid.upper(), "genre": "rnb-flow",
+                     "role": "polished", "upbeat": vid == "b", "brief": brief})
+    return rows
+
+def test_ww26_three_complete_briefs_in_the_serialized_payload():
+    """A positive control first: the production path yields three DISTINCT
+    styles, each carrying all ten directions, exactly ONE upbeat, no genre
+    substitution, under the cap -- and no shared-core-plus-suffix shape."""
+    rows = _w26_reqs()
+    check(len(rows) == 3, "WW-26: three variant requests are built")
+    word = getattr(R, "suno_recipe", R).vocal_gender_word("f")
+    styles, up = [], 0
+    for v, rq in rows:
+        style = rq["input"]["style"]
+        styles.append(style)
+        for f in SC._BRIEF_FIELDS:
+            need = str(v["brief"][f]).replace("{gender}", word)
+            check(need in style, "WW-26: %s style carries the %s direction"
+                  % (v["id"], SC._DIRECTION_LABEL[f]))
+        check(v["genre"] == "rnb-flow", "WW-26: %s keeps the chosen genre (no substitution)" % v["id"])
+        if v.get("upbeat"):
+            up += 1
+        check(len(style) <= _W26_CAP, "WW-26: %s style is under the %d-char cap" % (v["id"], _W26_CAP))
+    check(up == 1, "WW-26: exactly ONE variant is the explicit upbeat role")
+    check(len(set(styles)) == 3, "WW-26: the three serialized styles are DISTINCT")
+    print("  WW-26 common prefix of the three real styles: %d chars (a shared core would be hundreds)"
+          % SC._common_prefix_len(styles))
+    check(SC._common_prefix_len(styles) < SC.SHARED_CORE_PREFIX_MIN,
+          "WW-26: the real briefs carry no shared core (common prefix %d < %d)"
+          % (SC._common_prefix_len(styles), SC.SHARED_CORE_PREFIX_MIN))
+
+def test_ww26_require_three_checks_treatments_not_identifiers():
+    """_require_three must check COMPLETE treatments, not identifiers only."""
+    rows = _w26_reqs()
+    check(SC._require_three(rows, key=lambda r: r[0]["id"]) is rows,
+          "WW-26 control: three complete briefs pass _require_three")
+    import copy
+    thin = copy.deepcopy(rows)
+    thin[1][0]["brief"]["scene_words"] = ""
+    try:
+        SC._require_three(thin, key=lambda r: r[0]["id"])
+    except SC.ChoiceError as e:
+        check("MISSING_DIRECTION" in str(e) and "immediate scene words" in str(e),
+              "WW-26: an incomplete treatment is refused (got %s)" % str(e)[:70])
+    else:
+        check(False, "WW-26: _require_three accepted an incomplete treatment")
+    no_up = copy.deepcopy(rows)
+    for v, _ in no_up:
+        v["upbeat"] = False
+    try:
+        SC._require_three(no_up, key=lambda r: r[0]["id"])
+    except SC.ChoiceError as e:
+        check("upbeat" in str(e), "WW-26: no upbeat role is refused")
+    else:
+        check(False, "WW-26: _require_three accepted zero upbeat roles")
+
+def test_ww26_serialized_payload_refuses_missing_shared_and_overflow():
+    """The gate reads the EXACT serialized input.style after every transform."""
+    rows = _w26_reqs()
+    check(SC._check_three_briefs(rows, "f") is rows,
+          "WW-26 control: the real serialized payloads pass the gate")
+    import copy
+    dropped = copy.deepcopy(rows)
+    f = SC._BRIEF_FIELDS[0]
+    need = dropped[0][0]["brief"][f]
+    dropped[0][1]["input"]["style"] = dropped[0][1]["input"]["style"].replace(need + " ", "")
+    try:
+        SC._check_three_briefs(dropped, "f")
+    except SC.ChoiceError as e:
+        check("MISSING_DIRECTION" in str(e), "WW-26: a dropped direction refuses (%s)" % str(e)[:60])
+    else:
+        check(False, "WW-26: the gate accepted a style missing its groove direction")
+    for f, label in (("vocals", "cast/vocals"), ("hook", "rap-vs-sung hook"),
+                     ("problem_shift", "problem shift"), ("solution_shift", "solution shift")):
+        hole = copy.deepcopy(rows)
+        need = str(hole[2][0]["brief"][f]).replace("{gender}", "female")
+        hole[2][1]["input"]["style"] = hole[2][1]["input"]["style"].replace(need + " ", "")
+        try:
+            SC._check_three_briefs(hole, "f")
+        except SC.ChoiceError as e:
+            check("MISSING_DIRECTION" in str(e) and label in str(e),
+                  "WW-26: a dropped %s direction refuses on the serialized payload" % label)
+        else:
+            check(False, "WW-26: the gate accepted a style missing the %s direction" % label)
+    no_up = copy.deepcopy(rows)
+    for v, _ in no_up:
+        v["upbeat"] = False
+    try:
+        SC._check_three_briefs(no_up, "f")
+    except SC.ChoiceError as e:
+        check("UPBEAT_DIRECTION" in str(e), "WW-26: a payload set with no upbeat role refuses")
+    else:
+        check(False, "WW-26: the gate accepted a payload set with no upbeat direction")
+    # shared core plus suffix: three near-identical serialized styles
+    core = "shared core text " * 20
+    shared = [({"id": vid, "genre": "rnb-flow", "upbeat": vid == "b",
+                "brief": {k: "same %s here" % k for k in SC._BRIEF_FIELDS}},
+               {"input": {"style": core + "suffix %s" % vid}}) for vid in ("a", "b", "c")]
+    try:
+        SC._check_three_briefs(shared, "f")
+    except SC.ChoiceError as e:
+        check("SHARED_CORE_PLUS_SUFFIX" in str(e),
+              "WW-26: a shared-core-plus-suffix payload refuses (%s)" % str(e)[:60])
+    else:
+        check(False, "WW-26: the gate accepted a shared core plus a short suffix")
+    # final overflow on the serialized style
+    big = copy.deepcopy(rows)
+    big[0][1]["input"]["style"] = big[0][1]["input"]["style"] + (" x" * 300)
+    try:
+        SC._check_three_briefs(big, "f")
+    except SC.ChoiceError as e:
+        check("STYLE_TOO_LONG" in str(e), "WW-26: a final over-cap style refuses (%s)" % str(e)[:60])
+    else:
+        check(False, "WW-26: the gate accepted an over-cap serialized style")
+
+def test_ww26_shared_core_guard_is_reachable_from_the_production_path():
+    """WIRING PROOF. The refusal must come from the REAL gate on the REAL
+    build_requests path: with a shared-core table, build_requests refuses; with
+    the gate call removed, the same build_requests no longer refuses."""
+    import copy
+    base_brief = copy.deepcopy(_w26_reqs()[0][0]["brief"])
+    real_variants, real_gate = SC.variants_for, SC._check_three_briefs
+    try:
+        SC.variants_for = lambda style_id: _w26_shared_core_rows(base_brief)
+        try:
+            SC.build_requests("rnb-flow", SHEET_RNB, CLIENT, "T", 88, hook_plan=HOOK_PLAN)
+        except SC.ChoiceError as e:
+            check("SHARED_CORE_PLUS_SUFFIX" in str(e),
+                  "WW-26: build_requests refuses a shared core plus suffix (%s)" % str(e)[:70])
+        else:
+            check(False, "WW-26: build_requests accepted a shared-core table")
+        # guard-removal: stub the gate and the SAME call no longer refuses
+        SC._check_three_briefs = lambda rows, vocal_gender="f": rows
+        built = SC.build_requests("rnb-flow", SHEET_RNB, CLIENT, "T", 88, hook_plan=HOOK_PLAN)
+        check(len(built) == 3,
+              "WW-26 gate-removal: with _check_three_briefs stubbed the same call builds (the guard is load-bearing)")
+    finally:
+        SC.variants_for, SC._check_three_briefs = real_variants, real_gate
+
+def test_ww26_pace_clause_stays_last_under_the_cap_on_all_three():
+    """WW-07 boundary kept: the approved pace clause is LAST within the cap on
+    ALL THREE variants, after the ending clause and the variant's own arrangement."""
+    pace = {"drop": "half-time drop, thin drums", "return": "turn and rise back to the groove"}
+    rows = SC.build_requests("rnb-flow", SHEET_RNB, CLIENT, "T", 88,
+                            hook_plan=HOOK_PLAN, pace_plan=pace)
+    ending = getattr(R, "suno_recipe", R)._EQ.STYLE_ENDING
+    drop = pace["drop"]
+    for v, rq in rows:
+        style = rq["input"]["style"]
+        check(style.index(ending) < style.index(drop) < style.index(pace["return"]),
+              "WW-26: %s APPROVED pace clause is last, after the ending" % v["id"])
+        check(style.index(v["clause"].rstrip(".")) < style.index(drop),
+              "WW-26: %s own arrangement clause sits before the approved pace clause" % v["id"])
+        check(style.rstrip().rstrip(".").endswith(pace["return"].rstrip(".")),
+              "WW-26: %s serialized style ENDS with the return" % v["id"])
+        check(len(style) <= _W26_CAP,
+              "WW-26: %s style stays under the cap with the pace clause (%d)" % (v["id"], len(style)))
+
+# <<< WWC-U27 BLOCK START -- WW-27: Ensemble character bible and distinct voices >>>
+#
+# WW-27 (2026-10-11): the CAST DECISION precedes drafting; multiple characters
+# are the DEFAULT and the count follows the conflict. Every character carries a
+# full treatment and a Suno voice of register / timbre / articulation /
+# delivery / emotional progression / version treatment. A villain or foil
+# SPEAKS and receives a consequential reply. The sheet's speakers must be
+# DECLARED, the FINAL style may not command one voice for an ensemble, and the
+# take stays ONE full-song track. Audio gate D5 alone confirms the delivered
+# voices -- this block measures no audio and adds NO sixth audio gate.
+#
+# Every numeric threshold here is a NEW ACCEPTANCE RULE, not a measured limit
+# and never a number Trevor set.
+
+import math                                     # noqa: E402  (WW-27 timbre fixtures)
+
+try:
+    import music_director as MD                  # noqa: E402  (WW-27 production seam)
+except Exception:                                # pragma: no cover
+    MD = None
+
+_R27 = getattr(R, "suno_recipe", R)         # noqa: E402  (WW-27: the bare recipe module)
+from character_bible import character_bible as CB          # noqa: E402  (WW-27 cast model)
+from qc_voice_match import line_voice_fit as LVF           # noqa: E402  (WW-27 identity, D5 input)
+from lyric_writer import lyric_writer as LW                # noqa: E402  (WW-27 drafting seam)
+
+WW27_SV_MARA = {"register": "warm alto", "timbre": "bright and open",
+                "articulation": "clear clipped consonants", "delivery": "belted and forward",
+                "emotional_progression": "guarded to soaring",
+                "version_treatment": "lead take, doubled on the hook"}
+WW27_SV_JONAS = {"register": "low bass-baritone", "timbre": "gravel and edge",
+                 "articulation": "hard clipped consonants", "delivery": "metered and cold",
+                 "emotional_progression": "cold to breaking",
+                 "version_treatment": "lead take, dry and close"}
+WW27_SV_FOIL = {"register": "mid tenor", "timbre": "reedy and thin",
+                "articulation": "soft consonants", "delivery": "plain and plainspoken",
+                "emotional_progression": "nervous to certain",
+                "version_treatment": "answering take, slightly behind the beat"}
+
+
+def _ww27_char(name, role, gender, sv, **over):
+    rec = {"name": name, "role": role, "want": "to be free of the door",
+           "wound": "a door closed on them young",
+           "relationships": "the other characters in this scene",
+           "consequential_action": "walks out and burns the list",
+           "voice": "speaks plain and low", "voice_direction": dict(sv),
+           "gender": gender}
+    rec.update(over)
+    return rec
+
+
+def _ww27_cast(**over):
+    """The KNOWN-GOOD ensemble: a protagonist, a speaking villain and a foil."""
+    c = {"cast_mode": "ensemble",
+         "characters": [_ww27_char("Mara", "protagonist", "female", WW27_SV_MARA),
+                        _ww27_char("Jonas", "villain", "male", WW27_SV_JONAS),
+                        _ww27_char("Tobin", "foil", "male", WW27_SV_FOIL)]}
+    c.update(over)
+    return c
+
+
+WW27_HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
+WW27_HOOK_PLAN = {"true_at_beat": "the_world"}
+
+
+def _ww27_sheet(opponent="Jonas", reply="Mara"):
+    """The R&B Flow 88 s sheet with its voiced sections TAGGED to the cast.
+
+    Same words and same shape as the fixture the rest of this battery proves at
+    88 s, so it clears the sung-share, per-verse rap and hook floors while the
+    traded reply (the villain's rap verse, then the protagonist's) is really in
+    the script."""
+    return [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
+            {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
+            {"tag": "Verse Mara", "delivery": "sung",
+             "lines": ["And I rise above the pa-a-ain,",
+                       "Through the dark I walk alo-o-one,"]},
+            {"tag": "Hook 1", "delivery": "sung", "lines": WW27_HOOK},
+            {"tag": "Verse Mara", "delivery": "sung",
+             "lines": ["One seed of truth made me stro-o-ong,", "I hold the light I found,",
+                       "I walk out free,", "I rise a-a-above,", "I am more than this,",
+                       "I am he-e-ere,", "I am not lost,", "I am still standing ta-a-all,"]},
+            {"tag": "Hook 2", "delivery": "sung", "lines": WW27_HOOK},
+            {"tag": "Hook 3", "delivery": "sung", "lines": WW27_HOOK},
+            {"tag": "Hook 4", "delivery": "sung", "lines": WW27_HOOK},
+            {"tag": "Rap Verse %s" % opponent, "delivery": "rap",
+             "lines": ["Backup shoes, backup jacket, but no backup plan,",
+                       "So I count what I make and not what they take today,"]},
+            {"tag": "Rap Verse %s" % reply, "delivery": "rap",
+             "lines": ["Every door they closed I opened with my own two hands,",
+                       "And I keep walking toward the morning light now,"]}]
+
+
+def _ww27_reqs(cast=None, sheet=None, **kw):
+    """The LIVE production build: song_choices.build_requests -> the real
+    suno_recipe.createTask builder, one request per arrangement variant."""
+    if cast is None:
+        cast = _ww27_cast()
+    return SC.build_requests("rnb-flow", sheet if sheet is not None else _ww27_sheet(),
+                             CLIENT, "T", 88, hook_plan=WW27_HOOK_PLAN, cast=cast, **kw)
+
+
+def _ww27_stub_cast_module(reasons=()):
+    """A stand-in for character_bible.character_bible whose gate never refuses --
+    how a test removes the real gate call without editing production code."""
+    class _S(object):
+        @staticmethod
+        def check_cast(*a, **k):
+            return {"reasons": list(reasons), "verdict": "FAIL" if reasons else "PASS"}
+    return _S
+
+
+def _ww27_sine(f, secs=0.4, amp=0.5, rate=16000):
+    n = int(rate * secs)
+    return {"samples": [amp * math.sin(2.0 * math.pi * f * i / rate) for i in range(n)],
+            "sample_rate": rate}
+
+
+def _ww27_rich(f, overtones=((2.0, 0.6),), secs=0.4, amp=0.5, rate=16000):
+    """One voice: a fundamental plus its overtones -- its TIMBRE, at any pitch."""
+    n = int(rate * secs)
+    out = []
+    for i in range(n):
+        x = math.sin(2.0 * math.pi * f * i / rate)
+        for mult, level in overtones:
+            x += level * math.sin(2.0 * math.pi * mult * f * i / rate)
+        out.append(amp * x)
+    return {"samples": out, "sample_rate": rate}
+
+
+def test_ww27_a_known_good_ensemble_control_passes():
+    """POSITIVE CONTROL, first. The cast decision defaults to an ensemble, the
+    complete cast passes, and the LIVE production builder accepts it at zero
+    spend while still refusing every one of the negatives below."""
+    d = CB.cast_decision({"characters": [_ww27_char("Mara", "protagonist", "female", WW27_SV_MARA)]})
+    print("  WW-27 cast decision -> mode=%r default=%r min=%d"
+          % (d["mode"], d["default"], d["min_characters"]))
+    check(d["mode"] == "ensemble" and d["default"] is True and d["min_characters"] == 2,
+          "WW-27: multiple characters are the DEFAULT; the count follows the conflict")
+    rc = CB.check_cast(_ww27_cast(), sheet_text=R.render_lyrics(_ww27_sheet(), "rnb-flow"),
+                       style_text="warm ensemble r&b, both voices in call and response")
+    print("  WW-27 known-good cast -> verdict=%r code=%r traded=%r"
+          % (rc["verdict"], rc["reason_code"], rc["traded_replies"]))
+    check(rc["verdict"] == "PASS" and rc["purchases"] == 0 and rc["measures_no_audio"] is True,
+          "WW-27: the complete ensemble cast PASSES with zero purchases")
+    check(rc["contrast"] == 3 and rc["characters_n"] == 3,
+          "WW-27: three contrasting vocal directions are recorded (%d)" % rc["contrast"])
+    check(bool(rc["traded_replies"]) and rc["traded_replies"]["opponent"].lower() == "jonas"
+          and rc["traded_replies"]["reply"].lower() == "mara",
+          "WW-27: the villain speaks and the protagonist answers it (traded replies)")
+    reqs = _ww27_reqs()
+    check(len(reqs) == 3 and all(r[1]["input"]["lyrics"] for r in reqs),
+          "WW-27: the live production builder builds all three variants with the cast")
+
+
+def test_ww27_b_no_sixth_audio_gate_is_added():
+    """WW-27 measures no audio and claims no audio-quality outcome: the five
+    delivered-audio gate names are unchanged and the cast receipt says so."""
+    if not gate(SD is not None, "WW-27 no-sixth-gate", "song_dispatch absent"):
+        return
+    check(SD.AUDIO_RESULTS == ("D1", "D2", "D3", "D4", "D5") and SD._MIN_AUDIO_RESULTS == 5,
+          "WW-27: the five delivered-audio results are unchanged (no sixth gate)")
+    check(CB.check_cast(_ww27_cast())["measures_no_audio"] is True,
+          "WW-27: the cast gate declares it measures no audio")
+    check(not [g for g in SD.GATES if "cast" in g or "ensemble" in g or "speaker" in g],
+          "WW-27: no cast/ensemble/speaker gate was added to the delivered-audio set")
+
+
+def test_ww27_c_the_cast_decision_precedes_drafting():
+    """The cast decision runs BEFORE the lines are judged: lyric_writer refuses a
+    declared-but-broken cast with the fields named, and never reports coverage
+    for lines it never reached."""
+    good = LW.validate_lyrics(
+        [{"line_id": "v1", "text": "I walk out free"}, {"line_id": "v2", "text": "I hold the light"}],
+        _ww27_cast())
+    print("  WW-27 lyric verdict with a complete cast -> %r cast=%r"
+          % (good["outcome"], (good.get("cast_decision") or {}).get("reason_code")))
+    check(good["cast_decision"] is not None
+          and good["cast_decision"]["reason_code"] == "ENSEMBLE_CAST_OK",
+          "WW-27: a complete cast is decided FIRST and rides every lyric verdict")
+    broken = LW.validate_lyrics(
+        [{"line_id": "v1", "text": "I walk out free"}],
+        {"cast_mode": "ensemble",
+         "characters": [{"name": "Mara", "role": "protagonist"}]})
+    first = broken["errors"][0] if broken["errors"] else {}
+    print("  WW-27 lyric verdict with a broken cast -> %r %r"
+          % (broken["outcome"], first.get("error")))
+    details = " ".join(e.get("detail", "") for e in broken["errors"])
+    check(broken["outcome"] == "rejected"
+          and broken["reason_code"] in (CB.CODE_CAST_NOT_ENSEMBLE, CB.CODE_CAST_INCOMPLETE)
+          and broken["coverage"]["covered"] == 0,
+          "WW-27: drafting is REFUSED before a line is judged (%r)" % (broken["reason_code"],))
+    check(CB.CODE_CAST_INCOMPLETE in details and "want" in details and "voice" in details,
+          "WW-27: the refusal names the missing treatment fields")
+    plain = LW.validate_lyrics([{"line_id": "v1", "text": "I walk out free"}], {"product_name": ""})
+    check(plain.get("cast_decision") is None and plain["outcome"] == "ok",
+          "WW-27: a brief that declares no cast is judged exactly as before")
+    legacy = LW.validate_lyrics(
+        [{"line_id": "v1", "text": "I walk out free"}],
+        {"characters": ["Mara"], "packet_lines": ["I walk out free"]})
+    check(legacy.get("cast_decision") is None and legacy["outcome"] == "ok",
+          "WW-27: a H7-style brief whose `characters` are names only is judged as before "
+          "(the gate fires on a WW-27 cast declaration, never on that list)")
+
+
+def test_ww27_d_incomplete_and_single_character_casts_refuse():
+    """Every cast-record refusal, each named: the ensemble floor, an incomplete
+    treatment, an incomplete Suno voice, an unknown role and a shared voice."""
+    one = {"characters": [_ww27_char("Mara", "protagonist", "female", WW27_SV_MARA)]}
+    check(CB.cast_reasons(one)[0].startswith(CB.CODE_CAST_NOT_ENSEMBLE),
+          "WW-27: one character under the ensemble default refuses (CAST_NOT_ENSEMBLE)")
+    thin = {"characters": [_ww27_char("Mara", "protagonist", "female", WW27_SV_MARA, voice=None),
+                           _ww27_char("Jonas", "villain", "male", WW27_SV_JONAS)]}
+    check(any(r.startswith(CB.CODE_CAST_INCOMPLETE) and "voice" in r
+              for r in CB.cast_reasons(thin)),
+          "WW-27: a character missing its treatment refuses (CAST_INCOMPLETE)")
+    novoice = {"characters": [_ww27_char("Mara", "protagonist", "female",
+                                         {"register": "alto"}),
+                              _ww27_char("Jonas", "villain", "male", WW27_SV_JONAS)]}
+    r = CB.cast_reasons(novoice)
+    print("  WW-27 thin Suno voice -> %r" % (r[0][:80],))
+    check(any(x.startswith(CB.CODE_CAST_VOICE_INCOMPLETE)
+              and "timbre" in x and "version_treatment" in x for x in r),
+          "WW-27: an incomplete Suno voice names register/timbre/articulation/delivery/"
+          "emotional_progression/version_treatment")
+    unknown = {"characters": [_ww27_char("Mara", "hero", "female", WW27_SV_MARA),
+                              _ww27_char("Jonas", "villain", "male", WW27_SV_JONAS)]}
+    check(any(x.startswith(CB.CODE_CAST_ROLE_UNKNOWN) for x in CB.cast_reasons(unknown)),
+          "WW-27: a role outside CAST_ROLES refuses (CAST_ROLE_UNKNOWN)")
+    twin = {"characters": [_ww27_char("Mara", "protagonist", "female", WW27_SV_MARA),
+                           _ww27_char("Jonas", "villain", "male", WW27_SV_MARA)]}
+    check(any(x.startswith(CB.CODE_CAST_VOICES_IDENTICAL)
+              for x in CB.cast_reasons(twin, sheet_text=R.render_lyrics(_ww27_sheet(), "rnb-flow"))),
+          "WW-27: two characters sharing ONE Suno voice direction refuse "
+          "(CAST_VOICES_IDENTICAL -- no contrasting vocal directions)")
+
+
+def test_ww27_e_undeclared_speaker_is_refused_reachable_from_check_sheet():
+    """A bracket naming a character the cast does not hold is refused, and the
+    refusal is REACHABLE from the production sheet contract."""
+    sheet = R.render_lyrics(_ww27_sheet(), "rnb-flow")
+    kade = sheet.replace("Jonas", "Kade")
+    reasons = CB.cast_reasons(_ww27_cast(), sheet_text=kade)
+    print("  WW-27 undeclared speaker -> %r" % (reasons[-1][:90],))
+    check(any(x.startswith(CB.CODE_SPEAKER_UNDECLARED) and "kade" in x for x in reasons),
+          "WW-27: an undeclared speaker in the script is REFUSED (SPEAKER_UNDECLARED)")
+    out = SCT.check_sheet(sheet, "rnb-flow", 88, "ensemble r&b, both voices", cast=_ww27_cast())
+    print("  WW-27 check_sheet cast receipt -> %r speakers=%r"
+          % (out["cast"]["reason_code"], out["cast"]["speakers"]))
+    check(out["cast"] is not None and out["cast"]["verdict"] == "PASS",
+          "WW-27: the known-good cast is carried on check_sheet's own context")
+    bad = SCT.check_sheet(kade, "rnb-flow", 88, "ensemble r&b", cast=_ww27_cast())
+    check(bad["verdict"] == "FAIL"
+          and any(CB.CODE_SPEAKER_UNDECLARED in r for r in bad["reasons"]),
+          "WW-27: check_sheet REFUSES the undeclared speaker (the gate is reachable)")
+    off = SCT.check_sheet(kade, "rnb-flow", 88, "ensemble r&b")
+    check(off["cast"] is None and not any(CB.CODE_SPEAKER_UNDECLARED in r for r in off["reasons"]),
+          "WW-27: with no cast declared the legacy sheet check is unchanged")
+
+
+def test_ww27_f_villain_speaks_and_receives_a_consequential_reply():
+    """The villain/foil rules: one must SPEAK and be ANSWERED; a NON-PERSON
+    antagonist is permitted, but only with a speaking foil."""
+    sheet = R.render_lyrics(_ww27_sheet(), "rnb-flow")
+    check(bool(CB.traded_replies(CB.speaker_turns(sheet), ["Jonas"])),
+          "WW-27 control: the script really trades a reply from the villain")
+    silent = _ww27_cast(characters=[_ww27_char("Mara", "protagonist", "female", WW27_SV_MARA),
+                                    _ww27_char("Jonas", "villain", "male", WW27_SV_JONAS)])
+    s2 = R.render_lyrics(_ww27_sheet(opponent="Mara", reply="Mara"), "rnb-flow")
+    reasons = CB.cast_reasons(silent, sheet_text=s2)
+    print("  WW-27 silent villain -> %r" % (reasons[0][:90],))
+    check(any(x.startswith(CB.CODE_CAST_OPPONENT_SILENT) for x in reasons),
+          "WW-27: a villain who never speaks is REFUSED (CAST_OPPONENT_SILENT)")
+    no_reply = R.render_lyrics(_ww27_sheet(opponent="Jonas", reply="Jonas"), "rnb-flow")
+    r2 = CB.cast_reasons(_ww27_cast(), sheet_text=no_reply)
+    print("  WW-27 unanswered villain -> %r" % (r2[0][:100],))
+    check(any(x.startswith(CB.CODE_CAST_NO_CONSEQUENTIAL_REPLY) for x in r2),
+          "WW-27: a villain nobody answers is REFUSED (CAST_NO_CONSEQUENTIAL_REPLY)")
+    nonperson = _ww27_cast(characters=[
+        _ww27_char("Mara", "protagonist", "female", WW27_SV_MARA),
+        _ww27_char("The Flood", "antagonist", None, WW27_SV_JONAS, person=False)])
+    r3 = CB.cast_reasons(nonperson, sheet_text=sheet)
+    print("  WW-27 non-person antagonist, no foil -> %r" % (r3[0][:90],))
+    check(any(x.startswith(CB.CODE_CAST_NO_OPPOSING_VOICE) for x in r3),
+          "WW-27: a NON-PERSON antagonist with no speaking foil is REFUSED")
+    withfoil = _ww27_cast(characters=[
+        _ww27_char("Mara", "protagonist", "female", WW27_SV_MARA),
+        _ww27_char("The Flood", "antagonist", None, WW27_SV_JONAS, person=False),
+        _ww27_char("Jonas", "villain", "male", WW27_SV_FOIL)])
+    ok = CB.check_cast(withfoil, sheet_text=sheet)
+    print("  WW-27 non-person antagonist WITH a speaking foil -> %r" % (ok["reason_code"],))
+    check(ok["verdict"] == "PASS",
+          "WW-27: a non-person antagonist IS permitted with a speaking foil")
+    check(any(x.startswith(CB.CODE_CAST_NO_OPPOSING_VOICE)
+              for x in CB.cast_reasons({"characters": [
+                  _ww27_char("Mara", "protagonist", "female", WW27_SV_MARA),
+                  _ww27_char("Tobin", "support", "male", WW27_SV_FOIL)]},
+                  sheet_text=sheet)),
+          "WW-27: an ensemble with NO villain or foil at all is REFUSED")
+
+
+def test_ww27_g_the_final_serialized_payload_refuses_a_single_voice_ensemble_style():
+    """The FIXED value the guard tests is read at the REAL call site: the FINAL
+    ``request["input"]["style"]`` the provider would receive. An ensemble style
+    commanding one voice refuses; removing the gate call stops the refusal."""
+    req = _ww27_reqs()[0][1]
+    style_ok = req["input"]["style"]
+    print("  WW-27 final payload style tail -> %r" % (style_ok[-70:],))
+    single = style_ok.rstrip() + " A single female voice."
+    print("  WW-27 single-voice value the guard tests -> %r" % (single[-40:],))
+    try:
+        R.guard_request(single, req["input"]["lyrics"], "rnb-flow", CLIENT, 88,
+                        hook_plan=WW27_HOOK_PLAN, cast=_ww27_cast())
+        check(False, "WW-27: an ensemble style commanding a single voice was accepted")
+    except R.RecipeError as e:
+        print("  WW-27 style refusal -> %s" % (str(e)[:110],))
+        check(CB.CODE_ENSEMBLE_SINGLE_VOICE_STYLE in str(e),
+              "WW-27: the FINAL serialized style refuses (ENSEMBLE_SINGLE_VOICE_STYLE)")
+    saved = _SCM._cast_model
+    _SCM._cast_model = _ww27_stub_cast_module()
+    try:
+        R.guard_request(single, req["input"]["lyrics"], "rnb-flow", CLIENT, 88,
+                        hook_plan=WW27_HOOK_PLAN, cast=_ww27_cast())
+        leaked = ""
+    except R.RecipeError as e:
+        leaked = str(e)
+    finally:
+        _SCM._cast_model = saved
+    print("  WW-27 gate removed from check_sheet -> %r" % (leaked[:80],))
+    check(CB.CODE_ENSEMBLE_SINGLE_VOICE_STYLE not in leaked,
+          "WW-27: removing the gate call removes the refusal (the guard is load-bearing)")
+    back = SCT.check_sheet(req["input"]["lyrics"], "rnb-flow", 88, single, cast=_ww27_cast())
+    check(back["verdict"] == "FAIL"
+          and any(CB.CODE_ENSEMBLE_SINGLE_VOICE_STYLE in r for r in back["reasons"]),
+          "WW-27: with the gate restored the single-voice style refuses again")
+
+
+def test_ww27_h_the_exact_payload_carries_the_cast_and_the_traded_reply():
+    """The exact serialized payload carries the developed cast: every voiced
+    section names its character AND its delivery, so the traded reply is read
+    from the payload's OWN lyrics -- and no provider field was invented."""
+    req = _ww27_reqs()[0][1]
+    payload = json.dumps(req, sort_keys=True)
+    lyrics = req["input"]["lyrics"]
+    turns = CB.speaker_turns(lyrics)
+    trade = CB.traded_replies(turns, ["Jonas"])
+    print("  WW-27 payload speakers -> %r traded=%r" % ([t["speaker"] for t in turns], trade))
+    check(sorted({t["speaker"] for t in turns}) == ["jonas", "mara"],
+          "WW-27: the serialized payload's lyrics name BOTH cast characters")
+    check(bool(trade) and trade["opponent_lines"] > 0 and trade["reply_lines"] > 0,
+          "WW-27: the traded reply is read from the payload's own lyric turns")
+    check("[Rap Verse Jonas (rap): rhythmic rap" in lyrics
+          and "[Verse Mara (sung):" in lyrics,
+          "WW-27: each character's vocal direction rides its own payload tag")
+    check("_cast" not in req
+          and sorted(req) == ["_hook_plan", "_style_id", "callBackUrl", "endpoint",
+                              "input", "model"],
+          "WW-27: no provider field was invented -- the cast rides the script, not a new key")
+    check("_cast" not in payload,
+          "WW-27: the serialized payload carries no internal cast key")
+
+
+def test_ww27_i_same_pitch_different_timbre_is_two_voices_and_a_pitch_shift_is_one():
+    """D5's input, BEYOND PITCH. Fixture 1: the SAME pitch with different timbre
+    is TWO identities. Fixture 2: a DIFFERENT pitch with the same timbre is ONE
+    performer pitch-shifted, and is NOT a second voice."""
+    a = LVF.identity_of(_ww27_sine(200.0))
+    b = LVF.identity_of(_ww27_rich(200.0))
+    c = LVF.identity_of(_ww27_rich(150.0))
+    d = LVF.identity_of(_ww27_rich(300.0))
+    print("  WW-27 same pitch/different timbre -> hz=%r/%r timbre=%r/%r"
+          % (a["median_hz"], b["median_hz"], a["timbre"], b["timbre"]))
+    check(a["median_hz"] == b["median_hz"] and LVF.distinct_identity(a, b),
+          "WW-27: SAME PITCH with different timbre is TWO audible identities")
+    print("  WW-27 different pitch/same identity -> hz=%r/%r sep=%r"
+          % (c["median_hz"], d["median_hz"], LVF.timbre_separation(c, d)))
+    check(c["median_hz"] != d["median_hz"] and not LVF.distinct_identity(c, d),
+          "WW-27: a DIFFERENT PITCH with the same timbre is ONE identity, not two voices")
+    check(LVF.timbre_separation(b, c) is not None and not LVF.distinct_identity(b, c),
+          "WW-27: the same voice at another pitch reads the SAME profile (pitch-invariant)")
+    rec = LVF.identity_receipt(
+        [{"line_id": "l1", "onscreen": "Mara"}, {"line_id": "l2", "onscreen": "Jonas"}],
+        {"mara": {"gender": "female"}, "jonas": {"gender": "male"}},
+        {"l1": _ww27_rich(150.0), "l2": _ww27_rich(300.0)})
+    print("  WW-27 identity receipt (pitch shift) -> %r %r"
+          % (rec["outcome"], rec["reason_code"]))
+    check(rec["outcome"] == "rejected" and rec["reason_code"] == LVF.CODE_SAME_IDENTITY_PITCH_SHIFT,
+          "WW-27: two characters one pitch-shift apart are REFUSED as ONE identity")
+    ok = LVF.identity_receipt(
+        [{"line_id": "l1", "onscreen": "Mara"}, {"line_id": "l2", "onscreen": "Jonas"}],
+        {"mara": {"gender": "female"}, "jonas": {"gender": "male"}},
+        {"l1": _ww27_sine(200.0), "l2": _ww27_rich(200.0)})
+    check(ok["outcome"] == "ok" and ok["identity_count"] == 2
+          and ok["pitch_alone_is_not_identity"] is True,
+          "WW-27: same pitch with different timbre PASSES the identity gate")
+
+
+def test_ww27_j_one_full_song_track_and_no_stitched_voice_pack():
+    """The take stays ONE full-song track: a stitched voice pack refuses."""
+    rec = LVF.identity_receipt(
+        [{"line_id": "l1", "onscreen": "Mara"}, {"line_id": "l2", "onscreen": "Jonas"}],
+        {}, {"l1": _ww27_sine(200.0), "l2": _ww27_rich(200.0)}, tracks=2)
+    print("  WW-27 stitched track count -> %r %r" % (rec["outcome"], rec["reason_code"]))
+    check(rec["outcome"] == "rejected" and rec["reason_code"] == LVF.CODE_VOICE_PACK_STITCHED,
+          "WW-27: a two-track take is REFUSED (VOICE_PACK_STITCHED)")
+    sheet = R.render_lyrics(_ww27_sheet(), "rnb-flow")
+    check(any(x.startswith(CB.CODE_VOICE_PACK_STITCHED)
+              for x in CB.cast_reasons(_ww27_cast(), sheet_text=sheet, take={"tracks": 3})),
+          "WW-27: the cast gate refuses a stitched pack on the take too")
+    check(CB.check_cast(_ww27_cast(), sheet_text=sheet, take={"tracks": 1})["verdict"] == "PASS",
+          "WW-27 control: one full-song track PASSES")
+
+
+def test_ww27_k_the_cast_gate_is_reachable_from_the_live_builder_and_load_bearing():
+    """The gate is REACHABLE from the live production builder, and removing its
+    call stops the refusal. No cast passed -> the builder is unchanged."""
+    good = _ww27_reqs()
+    check(len(good) == 3, "WW-27 control: the live builder accepts the good cast (3 variants)")
+    broken = {"characters": [_ww27_char("Mara", "protagonist", "female", WW27_SV_MARA)]}
+    try:
+        _ww27_reqs(cast=broken)
+        check(False, "WW-27: the live builder accepted a single-character cast")
+    except R.RecipeError as e:
+        print("  WW-27 live builder refusal -> %s" % (str(e)[:100],))
+        check(e.code == "CAST_REJECTED" and CB.CODE_CAST_NOT_ENSEMBLE in str(e),
+              "WW-27: the LIVE builder refuses a broken cast before any request exists")
+    saved = _R27._cast_model
+    _R27._cast_model = _ww27_stub_cast_module()
+    try:
+        _ww27_reqs(cast=broken)
+        leaked = True
+    except Exception:
+        leaked = False
+    finally:
+        _R27._cast_model = saved
+    check(leaked, "WW-27: removing the builder's gate call lets the broken cast through "
+                  "(the guard is load-bearing, not dead)")
+    plain = SC.build_requests("rnb-flow", SHEET_RNB, CLIENT, "T", 88, hook_plan=HOOK_PLAN)
+    check(len(plain) == 3 and plain[0][1]["input"]["style"],
+          "WW-27: with no cast passed the live builder is unchanged")
+
+
+def test_ww27_l_base_boundaries_stay_intact():
+    """WW-21's boundary, parse_lyrics' cue, the pace text LAST within the cap on
+    all three variants, and the createTask contract's LEGACY_FLAT_CONTRACT."""
+    if not gate(SD is not None, "WW-27 base boundaries", "song_dispatch absent"):
+        return
+    empty = SD._finish({})
+    check(empty["verdict"] != "PASS" and empty["blocked_by"],
+          "WW-27: WW-21's _finish({}) still BLOCKS an empty gate set")
+    sheet_text = ("[Verse Mara (sung): smooth r&b melody, clear diction]\nI rise\n\n[End]\n")
+    parsed = R.parse_lyrics(sheet_text)
+    check(parsed and parsed[0].get("cue") == "smooth r&b melody, clear diction",
+          "WW-27: parse_lyrics still stores the bracket cue under \"cue\"")
+    order = {"drop": "half-time drop, thin drums",
+             "return": "turn and rise back to the groove",
+             "boundary_s": 20.0, "return_boundary_s": 60.0}
+    _sr = getattr(R, "suno_recipe", R)
+    pace = _sr.pace_clause(order)
+    for variant, req in _ww27_reqs(pace_plan=order):
+        style = req["input"]["style"]
+        check(style.rstrip().endswith(pace.rstrip()) and len(style) <= _sr.SUNO_STYLE_FIELD_MAX,
+              "WW-27: the pace text stays LAST within the %d-char cap (variant %s)"
+              % (_sr.SUNO_STYLE_FIELD_MAX, variant["id"]))
+    flat = {"endpoint": R.KIE_LEGACY_GENERATE_ENDPOINT, "prompt": "x", "style": "y"}
+    errs = R.check_envelope(flat)
+    check(errs and errs[0].startswith("LEGACY_FLAT_CONTRACT"),
+          "WW-27: the retired flat payload is still REFUSED (LEGACY_FLAT_CONTRACT)")
+
+
+def test_ww27_n_every_sheet_side_cast_refusal_reaches_check_sheet():
+    """Every sheet/style-level cast refusal is REACHABLE from the production
+    sheet contract, not only from a hand-built receipt."""
+    good_sheet = R.render_lyrics(_ww27_sheet(), "rnb-flow")
+    cases = [
+        (CB.CODE_SPEAKER_UNDECLARED,
+         _ww27_cast(), good_sheet.replace("Jonas", "Kade"), "ensemble r&b"),
+        (CB.CODE_ENSEMBLE_SINGLE_VOICE_STYLE, _ww27_cast(), good_sheet,
+         "ensemble r&b. A single female voice."),
+        (CB.CODE_CAST_OPPONENT_SILENT, _ww27_cast(),
+         R.render_lyrics(_ww27_sheet(opponent="Mara", reply="Mara"), "rnb-flow"),
+         "ensemble r&b"),
+        (CB.CODE_CAST_NO_CONSEQUENTIAL_REPLY, _ww27_cast(),
+         R.render_lyrics(_ww27_sheet(opponent="Jonas", reply="Jonas"), "rnb-flow"),
+         "ensemble r&b"),
+        (CB.CODE_CAST_VOICES_IDENTICAL,
+         {"cast_mode": "ensemble", "characters": [
+             _ww27_char("Mara", "protagonist", "female", WW27_SV_MARA),
+             _ww27_char("Jonas", "villain", "male", WW27_SV_MARA)]},
+         good_sheet, "ensemble r&b"),
+        (CB.CODE_CAST_INCOMPLETE,
+         {"cast_mode": "ensemble", "characters": [
+             _ww27_char("Mara", "protagonist", "female", WW27_SV_MARA, want=None),
+             _ww27_char("Jonas", "villain", "male", WW27_SV_JONAS)]},
+         good_sheet, "ensemble r&b"),
+    ]
+    for code, cast, sheet, style in cases:
+        out = SCT.check_sheet(sheet, "rnb-flow", 88, style, cast=cast)
+        hit = [r for r in out["reasons"] if r.startswith(code)]
+        print("  WW-27 check_sheet reachability %-30s -> %s" % (code, bool(hit)))
+        check(out["verdict"] == "FAIL" and bool(hit),
+              "WW-27: %s is REACHABLE through song_contract.check_sheet" % code)
+
+
+def test_ww27_m_the_production_director_seam_enforces_the_cast():
+    """The other production builder (music_director.build_generate_request) runs
+    the same gate, BEFORE anything is built and again on the final payload."""
+    if not gate(MD is not None and hasattr(MD, "build_generate_request"), "WW-27 director seam",
+                "music_director absent"):
+        return
+    sheet = _ww27_sheet()
+    lyrics = R.render_lyrics(sheet, "rnb-flow")
+    style = _R27.style_text("rnb-flow", sheet, "f")
+
+    def build(**kw):
+        return MD.build_generate_request(lyrics, style, "T", style_id="rnb-flow",
+                                         client_text=CLIENT, length_s=88,
+                                         hook_plan=WW27_HOOK_PLAN, **kw)
+
+    try:
+        req = build(cast=_ww27_cast())
+        print("  WW-27 director payload -> style %d chars, rap tags %d"
+              % (len(req["input"]["style"]), req["input"]["lyrics"].count("(rap)")))
+        check(req["input"]["lyrics"].count("(rap)") == 2 and req["input"]["style"],
+              "WW-27: the director builds the payload with the cast's script")
+    except (ValueError, R.RecipeError) as e:
+        check(False, "WW-27: the director refused the known-good cast (%s)" % (str(e)[:90],))
+    try:
+        build(cast={"characters": [{"name": "Mara", "role": "protagonist"}]})
+        check(False, "WW-27: the director accepted a broken cast")
+    except (ValueError, R.RecipeError) as e:
+        print("  WW-27 director refusal -> %s" % (str(e)[:100],))
+        check(CB.CODE_CAST_INCOMPLETE in str(e) or CB.CODE_CAST_NOT_ENSEMBLE in str(e),
+              "WW-27: the director refuses the broken cast BEFORE any payload")
+    try:
+        check(bool(build()["input"]["lyrics"]),
+              "WW-27: with no cast the director is unchanged")
+    except (ValueError, R.RecipeError) as e:
+        check(False, "WW-27: the director refused with no cast passed (%s)" % (str(e)[:90],))
+
+# <<< WWC-U27 BLOCK END >>>
+# =====================================================================
+# WW-28 -- Causal plot and earned hook.
+#
+# New PROPOSED acceptance rules. The causal chain, the fiction/testimonial
+# split, the reconstruction from the EXACT lyrics, the hook line vs the
+# refrain and the closing commercial call are judged BEFORE budgeting, from
+# the exact approved script -- no delivered-audio craft gate is added (D1-D5
+# stay the only audio gates). Every guard below is fired through a
+# production function (story_arc.validate_story, script_approval.check_
+# script_approval, song_choices.build_requests) on a value the production
+# path produces, never on a hand-built dictionary the run never constructs.
+# =====================================================================
+
+#: WW-28: load the gate module by PATH, so the battery never depends on a
+#: package __init__ that exports a subset (SELF_APPROVAL is read off the module).
+SAP = _load_path("script_approval/script_approval.py")
+
+#: the exact approved lyrics: section tags, a cost line, an exchanged
+#: reply, an earned hook and a closing that carries the commercial call.
+WW28_LYRICS = """[Intro (spoken): no melody, cold open]
+She watched the shop sign come down.
+
+[Verse (sung): the wound]
+I lost the door I painted years ago.
+
+[Verse (rap): the turn]
+Sam: did you ever count what they took?
+Maya: every night, and then I built again.
+
+[Hook (sung): the payoff]
+I am not small
+
+[Outro (spoken): no melody, book your assessment call]
+Book your assessment call and start today.
+"""
+
+WW28_CAUSAL = {
+    "scene": "the shop on Mercer street",
+    "inciting_event": "the sign comes down",
+    "opposing_action": "the landlord takes the door",
+    "escalation": "she loses the second space too",
+    "cost": "she lost the door she painted herself",
+    "choice": "she rebuilds from the ledger",
+    "product_mechanism": "the book walks her through the six steps",
+    "consequence": "she opens the third space",
+    "commercial_action": "Book your assessment call",
+    "lyrics": WW28_LYRICS,
+}
+
+
+def _ww28_story(**over):
+    """A complete causal story record, exactly as the production path reads
+    creative/story.json. ``over`` overrides; ``causal_over`` patches the block."""
+    causal_over = over.pop("causal_over", {})
+    story = {"story_id": "ww28-causal-01", "beats": list(SA.BEATS), "product_reveal": 8,
+             "hook": {"line": "I am not small", "refrain": "not small",
+                      "declared_occurrences": 1},
+             "scenes": [{"kind": "fiction", "text": "the sign comes down",
+                         "cause": "the landlord calls the loan",
+                         "effect": "she rebuilds from the ledger"}]}
+    causal = dict(WW28_CAUSAL)
+    causal.update(causal_over)
+    story["causal"] = causal
+    story.update(over)
+    return story
+
+
+def _ww28_causal_reason(story):
+    r = SA.check_causal_story(story)
+    return r["reason_code"], r["errors"][0]["detail"] if r["errors"] else ""
+
+
+def test_ww28_causal_control_passes_then_every_field_is_required():
+    """Known-good control FIRST, then each of the nine causal fields removed in
+    turn must refuse with causal-incomplete, BEFORE budgeting."""
+    if not gate(SA is not None, "WW-28 causal control", "story_arc did not load"):
+        return
+    good = SA.validate_story(_ww28_story())
+    print("  WW-28 control: validate_story -> %r / %r" % (good["outcome"], good["reason_code"]))
+    check(good["outcome"] == "ok", "WW-28: the complete causal story passes validate_story")
+    assert SA.CAUSAL_FIELDS == ("scene", "inciting_event", "opposing_action", "escalation",
+                                "cost", "choice", "product_mechanism", "consequence",
+                                "commercial_action")
+    for field in SA.CAUSAL_FIELDS:
+        s = _ww28_story(causal_over={field: ""})
+        rc, detail = _ww28_causal_reason(s)
+        check(rc == "causal-incomplete" and field in detail,
+              "WW-28: missing %s is refused (%s)" % (field, rc))
+        r = SA.validate_story(s)
+        check(r["outcome"] == "rejected" and r["reason_code"] == "causal-incomplete",
+              "WW-28: validate_story refuses the story missing %s before budgeting" % field)
+
+
+def test_ww28_fiction_is_separated_from_testimonial_fact():
+    """A scene must declare fiction or testimonial; an undeclared kind is
+    refused. A declared testimonial scene alongside fiction is allowed."""
+    if not gate(SA is not None, "WW-28 fiction/testimonial", "story_arc did not load"):
+        return
+    s = _ww28_story(scenes=[{"text": "the shop", "cause": "a", "effect": "b"}])
+    rc, _ = _ww28_causal_reason(s)
+    check(rc == "scene-kind-undeclared", "WW-28: an undeclared scene kind is refused (%s)" % rc)
+    s = _ww28_story(scenes=[{"kind": "FICTION", "text": "the shop", "cause": "a", "effect": "b"},
+                            {"kind": "testimonial", "text": "the real second space",
+                             "cause": "c", "effect": "d"}])
+    check(SA.check_causal_story(s)["outcome"] == "ok",
+          "WW-28: fiction and testimonial facts are judged together, each named")
+
+
+def test_ww28_mood_board_and_causal_contradiction_are_refused():
+    """A flat list of scenes with no causal link is a mood board, not a plot;
+    and a closing that does not carry the declared commercial action is a
+    causal contradiction between the story and the payload."""
+    if not gate(SA is not None, "WW-28 mood board", "story_arc did not load"):
+        return
+    s = _ww28_story(scenes=[{"kind": "fiction", "text": "the shop"},
+                            {"kind": "fiction", "text": "the door"}])
+    rc, _ = _ww28_causal_reason(s)
+    check(rc == "mood-board-plot", "WW-28: a mood-board plot is refused (%s)" % rc)
+    s = _ww28_story(causal_over={"commercial_action": "Order your starter kit"})
+    rc, detail = _ww28_causal_reason(s)
+    check(rc == "causal-contradiction",
+          "WW-28: a closing that lacks the declared action is refused (%s)" % rc)
+    good = _ww28_story()
+    check(SA.check_causal_story(good)["outcome"] == "ok",
+          "WW-28: the matching closing is a positive control for the contradiction rule")
+
+
+def test_ww28_maker_self_approval_is_refused_at_the_music_gate():
+    """script_approval.check_script_approval -- called on the run_takes path
+    before any generation -- refuses an approval the maker gave their own
+    script, and accepts an independent one."""
+    if not gate(SAP is not None, "WW-28 maker self-approval",
+                "script_approval did not import"):
+        return
+    lyrics = "I am not small"
+    sha = SAP.lyrics_sha(lyrics)
+    self_approved = {"required": True, "status": "approved", "lyrics_sha": sha,
+                     "maker": "Agnes", "approved_by": "agnes"}
+    independent = dict(self_approved, approved_by="the client")
+    legacy = {"required": True, "status": "approved", "lyrics_sha": sha}
+    print("  WW-28 self-approval record: maker=%r approved_by=%r"
+          % (self_approved["maker"], self_approved["approved_by"]))
+    refusal = SAP.check_script_approval(self_approved, lyrics)
+    check(bool(refusal) and refusal["reason_code"] == SAP.SELF_APPROVAL,
+          "WW-28: maker self-approval is refused (%s)" % (refusal or {}).get("reason_code"))
+    check(SAP.check_script_approval(independent, lyrics) is None,
+          "WW-28: an independent approval passes (control)")
+    check(SAP.check_script_approval(legacy, lyrics) is None,
+          "WW-28: a record naming no maker keeps today's behaviour")
+    # reachability: the music gate itself consults this function.
+    if SD is not None and hasattr(SD, "run_takes"):
+        check("check_script_approval" in _inspect_source(SD.run_takes),
+              "WW-28: song_dispatch.run_takes consults check_script_approval (reachable)")
+
+
+def test_ww28_hook_line_is_defined_before_counting_and_companions_cannot_double_it():
+    """The EXACT hook line is counted, never the refrain or a companion line:
+    two declared occurrences can never be reported as four."""
+    if not gate(SA is not None, "WW-28 hook", "story_arc did not load"):
+        return
+    hook = {"line": "I am not small", "refrain": "not small", "declared_occurrences": 2}
+    sub = ("[Hook (sung)]\nI am not small\nI am not small, I am strong\n\n"
+           "[Hook (sung)]\nI am not small\nI am not small, I am strong\n\n[End]")
+    counts = SA.count_hook_occurrences(sub, hook)
+    print("  WW-28 hook counts: %r" % (counts,))
+    check(counts["counted_exact"] == 2 and counts["counted_with_companions"] == 4,
+          "WW-28: the exact hook line counts 2, companion lines would make 4")
+    out = SA.check_hook_declaration(sub, hook)
+    check(out["outcome"] == "rejected" and out["reason_code"] == "hook-companion-substitution",
+          "WW-28: companion-line substitution is refused (%s)" % out["reason_code"])
+    ok = ("[Hook (sung)]\nI am not small\n\n[Hook (sung)]\nI am not small\n\n[End]")
+    check(SA.check_hook_declaration(ok, hook)["outcome"] == "ok",
+          "WW-28: two real hook occurrences pass (control)")
+    check(SA.check_hook_declaration(ok, {"refrain": "not small"})["reason_code"]
+          == "hook-line-undefined",
+          "WW-28: no exact hook line is refused before any counting")
+
+
+def test_ww28_payload_closing_carries_the_approved_call_on_the_production_path():
+    """song_choices.build_requests -- the production builder -- refuses a closing
+    that promises but asks for nothing, and accepts one that carries the call."""
+    if not gate(SC is not None and R is not None, "WW-28 payload closing",
+                "song_choices/suno_recipe did not import"):
+        return
+    outro = {"tag": "Outro", "delivery": "spoken",
+             "cue": "no melody, book your assessment call",
+             "lines": ["Your life will change."]}
+    sheet = list(SHEET_RNB) + [outro]
+    print("  WW-28 closing cue: %r" % outro["cue"])
+    try:
+        SC.build_requests("rnb-flow", sheet, CLIENT, "T", 88, hook_plan=HOOK_PLAN)
+    except Exception as e:
+        check("summary-only-promise" in str(e),
+              "WW-28: the production builder refuses the summary-only closing (%s)" % str(e)[:70])
+    else:
+        check(False, "WW-28: the production builder accepted a summary-only closing")
+    other = dict(outro, lines=["Book your assessment call today."])
+    try:
+        SC.build_requests("rnb-flow", list(SHEET_RNB) + [other], CLIENT, "T", 88, hook_plan=HOOK_PLAN)
+        check(True, "WW-28: the production builder accepts a closing that carries the call")
+    except Exception as e:
+        check(False, "WW-28: a real closing call was refused (%s)" % str(e)[:90])
+    # a plain sheet (no call-tagged closing) is untouched
+    plain = SA.check_payload_closing("[Verse]\nhi\n\n[End]")
+    check(plain["outcome"] == "skipped",
+          "WW-28: a sheet with no call-tagged closing stands aside (%s)" % plain["reason_code"])
+
+
+def test_ww28_reconstruction_is_from_exact_lyrics_not_a_scene_summary():
+    """An independent non-maker reconstructs the causal story from the EXACT
+    lyrics; a scene summary is refused. Marked DEPENDS-ON-WW-27 for the full
+    ensemble-cast leg -- the base speaker structures are used here."""
+    if not gate(SA is not None, "WW-28 reconstruction", "story_arc did not load"):
+        return
+    rec = SA.reconstruct_causal_story(WW28_LYRICS, hook_line="I am not small")
+    print("  WW-28 reconstruction: %r stakes=%r replies=%r earned=%r cast=%r"
+          % (rec["reason_code"], rec["stakes"], rec["exchanged_replies"], rec["earned_hook"],
+             rec["cast_model"]))
+    check(rec["determined"] and rec["stakes"] and rec["exchanged_replies"] and rec["earned_hook"],
+          "WW-28: the causal story reconstructs from the exact lyrics")
+    summary = "A woman runs a shop. Things get hard. Then everything changes."
+    bad = SA.reconstruct_causal_story(summary)
+    check(not bad["determined"] and bad["reason_code"] == "SCENE_SUMMARY_NOT_LYRICS",
+          "WW-28: a scene summary is refused, not reconstructed (%s)" % bad["reason_code"])
+    no_stakes = "[Verse (sung)]\nla la\n\n[Hook (sung)]\nI am not small\n\n[End]"
+    r = SA.reconstruct_causal_story(no_stakes, hook_line="I am not small")
+    check(not r["determined"] and "stakes" in r["detail"],
+          "WW-28: lyrics with no stakes cannot be reconstructed")
+
+
+def test_ww28_mappings_are_preserved_twelve_eight_fifteen():
+    """The explicit mappings survive: twelve canonical beats, eight timing
+    stages, fifteen source-method stages, each mapped by name."""
+    if not gate(SA is not None, "WW-28 mappings", "story_arc did not load"):
+        return
+    report = SA.assert_mappings_intact()
+    print("  WW-28 mappings: %r" % (report["counts"],))
+    check(report["canonical_beat_count"] == 12 and len(report["canonical_beats"]) == 12,
+          "WW-28: twelve canonical beats preserved")
+    check(report["timing_stage_count"] == 8 and len(report["timing_stages"]) == 8,
+          "WW-28: eight timing stages preserved")
+    check(report["source_method_stage_count"] == 15, "WW-28: fifteen source-method stages preserved")
+    check(report["counts_are_distinct"] and report["mapped_by_name_not_by_count"],
+          "WW-28: the three counts stay distinct and mapped by name")
+
+
+def test_ww28_guards_are_reachable_and_no_sixth_audio_gate_is_added():
+    """The causal gate is INVOKED by validate_story of the production path:
+    removing the invocation lets a bad story through. And the story gate adds
+    no audio gate -- D1-D5 remain the only delivered-audio gates."""
+    if not gate(SA is not None, "WW-28 reachability", "story_arc did not load"):
+        return
+    src = _inspect_source(SA.validate_story)
+    check("check_causal_story" in src,
+          "WW-28: validate_story (the function script_approval.stage calls) invokes the causal gate")
+    bad = _ww28_story(causal_over={"cost": ""})
+    check(SA.validate_story(bad)["outcome"] == "rejected",
+          "WW-28: with the gate in place the bad story is refused (pre-mutation)")
+    original = SA.check_causal_story
+    try:
+        SA.check_causal_story = lambda *a, **k: {"errors": [], "outcome": "ok"}
+        after = SA.validate_story(bad)["outcome"]
+    finally:
+        SA.check_causal_story = original
+    check(after == "ok",
+          "WW-28: removing the causal-gate invocation lets the bad story through (gate is load-bearing)")
+    check(SA.validate_story(bad)["outcome"] == "rejected",
+          "WW-28: the gate is restored after the mutation proof")
+    check(hasattr(SD, "AUDIO_RESULTS") and SD.AUDIO_RESULTS == ("D1", "D2", "D3", "D4", "D5"),
+          "WW-28: no sixth audio gate -- the five delivered-audio results are unchanged")
+    check("WW28" not in _inspect_source(getattr(SD, "judge_take", lambda: None)),
+          "WW-28: the delivered-audio judge carries no WW-28 craft gate")
+
+
+# =====================================================================
+# WWC-U4 (integrator) -- finishes WW-28's DEPENDS-ON-WW-27 clause.
+#
+# WW-28's non-maker reconstruction judged its 'exchanged replies' leg only
+# against the base's speaker-prefix / quoted-reply structures and reported
+# cast_model="base-structures"; the full cast-model version was reported
+# DEPENDS-ON-WW-27 and NOT claimed met. WW-27's ensemble character bible now
+# sits BELOW this unit, so the leg is finished on THAT model: when the story
+# declares a cast, a villain or foil must SPEAK and receive a consequential
+# reply from another declared character (character_bible.traded_replies over
+# speaker_turns), and the receipt says cast_model="ww27-ensemble-cast".
+# Known-good control first, then negatives; the gate-removal mutation proves
+# the cast model -- not a hand-built dictionary -- is load-bearing. No new
+# audio gate: D1-D5 are untouched. One delimited block; tests test_wwcu4_*.
+# =====================================================================
+
+#: WW-27's ensemble cast record (the shape character_bible.resolve_cast reads).
+def _wwcu4_cast():
+    return {"cast_mode": "ensemble", "characters": [
+        {"name": "Mara", "role": "protagonist", "want": "her shop back",
+         "wound": "she lost the door she painted",
+         "relationships": "Jonas holds the lease",
+         "consequential_action": "she rebuilds from the ledger",
+         "voice": "warm alto",
+         "voice_direction": {"register": "alto", "timbre": "warm",
+                             "articulation": "clear", "delivery": "restrained",
+                             "emotional_progression": "wound to resolve",
+                             "version_treatment": "one take"}},
+        {"name": "Jonas", "role": "villain", "want": "the lease back",
+         "wound": "he was outbid once", "relationships": "Mara's landlord",
+         "consequential_action": "he takes the door",
+         "voice": "dry baritone",
+         "voice_direction": {"register": "baritone", "timbre": "dry",
+                             "articulation": "clipped", "delivery": "cold",
+                             "emotional_progression": "flat menace",
+                             "version_treatment": "one take"}}]}
+
+#: exact lyrics whose exchanged reply is a NAMED-CHARACTER turn (WW-27's
+#: bracket grammar), with a cost line, an earned hook and the closing call.
+WWCU4_LYRICS_REPLIED = """[Intro (spoken): no melody, cold open]
+She watched the shop sign come down.
+I lost the door I painted years ago.
+
+[Jonas (male): the opposing voice]
+You will never open that door again.
+
+[Mara (female): the reply]
+I rebuilt from the ledger and I open it today.
+
+[Hook (sung): the payoff]
+I am not small
+
+[Outro (spoken): no melody, book your assessment call]
+Book your assessment call and start today.
+"""
+
+#: the same shape with the villain LEFT UNANSWERED (no reply turn at all).
+WWCU4_LYRICS_SILENT = """[Intro (spoken): no melody, cold open]
+I lost the door I painted years ago.
+
+[Jonas (male): the opposing voice]
+You will never open that door again.
+
+[Hook (sung): the payoff]
+I am not small
+
+[Outro (spoken): no melody, book your assessment call]
+Book your assessment call and start today.
+"""
+
+def test_wwcu4_control_the_base_leg_still_reconstructs_without_a_cast():
+    if not gate(SA is not None, "WWC-U4 control", "story_arc did not load"):
+        return
+    rec = SA.reconstruct_causal_story(WW28_LYRICS)
+    print("  WWC-U4 control: base-structures -> determined=%r cast_model=%r"
+          % (rec["determined"], rec["cast_model"]))
+    check(rec["determined"] is True and rec["cast_model"] == "base-structures",
+          "WWC-U4: with no cast the base speaker-prefix leg still reconstructs (unchanged)")
+
+def test_wwcu4_cast_model_judges_the_exchanged_replies_leg():
+    if not gate(SA is not None and CB is not None, "WWC-U4 cast leg",
+                "story_arc or character_bible did not load"):
+        return
+    rec = SA.reconstruct_causal_story(WWCU4_LYRICS_REPLIED, cast=_wwcu4_cast())
+    print("  WWC-U4 cast leg: determined=%r cast_model=%r traded=%r"
+          % (rec["determined"], rec["cast_model"], rec.get("traded_reply")))
+    check(rec["determined"] is True and rec["cast_model"] == "ww27-ensemble-cast",
+          "WWC-U4: a declared cast judges the exchanged-replies leg on WW-27's model")
+    check((rec.get("traded_reply") or {}).get("opponent") == "jonas",
+          "WWC-U4: the villain's spoken turn is answered by another declared character")
+    base = SA.reconstruct_causal_story(WWCU4_LYRICS_REPLIED)
+    print("  WWC-U4 same lyrics, no cast -> %s: %s" % (base["reason_code"], base["detail"]))
+    check(base["determined"] is False and base["reason_code"] == "CAUSAL_CHAIN_INCOMPLETE"
+          and "exchanged replies" in base["detail"],
+          "WWC-U4: the SAME lyrics fail the base leg -- the cast model is the difference")
+
+def test_wwcu4_cast_model_refuses_an_unanswered_opponent():
+    if not gate(SA is not None and CB is not None, "WWC-U4 silent opponent",
+                "story_arc or character_bible did not load"):
+        return
+    rec = SA.reconstruct_causal_story(WWCU4_LYRICS_SILENT, cast=_wwcu4_cast())
+    print("  WWC-U4 silent opponent -> %s: %s" % (rec["reason_code"], rec["detail"]))
+    check(rec["determined"] is False and rec["reason_code"] == "CAUSAL_CHAIN_INCOMPLETE"
+          and "exchanged replies" in rec["detail"],
+          "WWC-U4: a villain who speaks but is never answered is refused (WW-27 traded replies)")
+
+def test_wwcu4_cast_model_reaches_the_production_gate():
+    if not gate(SA is not None and CB is not None, "WWC-U4 production gate",
+                "story_arc or character_bible did not load"):
+        return
+    good = SA.validate_story(_ww28_story(causal_over={"lyrics": WWCU4_LYRICS_REPLIED,
+                                                      "cast": _wwcu4_cast()}))
+    print("  WWC-U4 production gate (cast declared) -> %r / %r"
+          % (good["outcome"], good["reason_code"]))
+    check(good["outcome"] == "ok",
+          "WWC-U4: the production causal gate passes the cast-answered story")
+    bad = SA.validate_story(_ww28_story(causal_over={"lyrics": WWCU4_LYRICS_SILENT,
+                                                     "cast": _wwcu4_cast()}))
+    print("  WWC-U4 production gate (opponent unanswered) -> %r / %r"
+          % (bad["outcome"], bad["reason_code"]))
+    check(bad["outcome"] == "rejected" and bad["reason_code"] == "CAUSAL_CHAIN_INCOMPLETE",
+          "WWC-U4: the production causal gate refuses the unanswered opponent")
+
+def test_wwcu4_the_cast_model_call_is_load_bearing():
+    if not gate(SA is not None and CB is not None, "WWC-U4 mutation",
+                "story_arc or character_bible did not load"):
+        return
+    saved = SA._cast_model
+    try:
+        SA._cast_model = lambda: None
+        gone = SA.reconstruct_causal_story(WWCU4_LYRICS_REPLIED, cast=_wwcu4_cast())
+        print("  WWC-U4 with _cast_model stubbed -> %s: %s"
+              % (gone["reason_code"], gone["detail"]))
+        check(gone["determined"] is False and gone["reason_code"] == "CAUSAL_CHAIN_INCOMPLETE",
+              "WWC-U4: with the cast model removed the same story is refused again")
+    finally:
+        SA._cast_model = saved
+    back = SA.reconstruct_causal_story(WWCU4_LYRICS_REPLIED, cast=_wwcu4_cast())
+    check(back["determined"] is True,
+          "WWC-U4: restoring the cast model accepts it again (load-bearing, not dead)")
+
+# =====================================================================
+# WW-29: reconciled template data and recipe (WW29-U2)
+#
+# The model block (references/prompt-templates/models/suno-v6.json) no longer
+# mandates a long wordless opening or an early hook, and the vocalise is
+# OPTIONAL; the R&B Flow rap/sung direction is one decision in the data and in
+# the recipe; the required directions and `negative_tags` reach the EXACT final
+# `request["input"]` on every entry path; and an over-cap final style REFUSES
+# with a named reason, deleting no clause.
+#
+# Every threshold pinned below is a rule this unit states, not a measured limit
+# of an earlier run. Entry paths exercised: suno_recipe.build_request,
+# music_director.build_generate_request and song_choices.build_requests (the
+# three-complete-briefs path through suno_recipe.brief_style_text).
+# =====================================================================
+
+import copy                                                    # noqa: E402
+import io                                                      # noqa: E402
+import os                                                      # noqa: E402
+
+import ending_qc as _EQ29                                      # noqa: E402
+import music_director as _MD29                                 # noqa: E402
+import prompt_limits as _PL29                                  # noqa: E402
+from sung_hook import hook_placement as _HP29                  # noqa: E402
+from words_fit import words_fit as _WF29                       # noqa: E402
+
+#: The bare recipe module: is_rap_style/check_opening_vocalise_cue/
+#: _fewer_words_budget live outside the package re-export list.
+_R29 = getattr(R, "suno_recipe", R)
+_M29 = getattr(LF, "length_formula", LF)
+_SKILL29 = os.path.dirname(os.path.dirname(CORE))              # .../75-drama-song-ad-factory
+WW29_LENGTH_S = 88
+
+#: R&B Flow on the 88 s card WITHOUT its [Vocalise] section: the shipped sheet
+#: with one wordless line removed, so it still clears the per-verse rap floor.
+SHEET_NO_VOCALISE = [s for s in SHEET_RNB
+                     if not str(s["tag"]).lower().startswith("vocalise")]
+#: The same sheet with a DECLARED long opening cue (the WW-16 defect, verbatim).
+SHEET_LONG_VOCALISE = [
+    dict(s, cue="two very long held notes") if str(s["tag"]).lower().startswith("vocalise")
+    else s for s in SHEET_RNB]
+#: The retired rule's own shape: the hook is the very first section.
+SHEET_HOOK_FIRST = ([{"tag": "Hook", "delivery": "sung", "lines": list(HOOK)}]
+                    + SHEET_RNB[1:])
+
+def _ww29_build(sheet=None, **kw):
+    """ENTRY PATH 1: the recipe's own createTask builder."""
+    return R.build_request("rnb-flow", SHEET_RNB if sheet is None else sheet,
+                           CLIENT, "T", WW29_LENGTH_S, hook_plan=HOOK_PLAN, **kw)
+
+def _ww29_director(sheet=None):
+    """ENTRY PATH 2: the director seam that builds the same envelope."""
+    sh = SHEET_RNB if sheet is None else sheet
+    return _MD29.build_generate_request(
+        R.render_lyrics(sh, "rnb-flow"), R.style_text("rnb-flow", sh, "f"), "T",
+        style_id="rnb-flow", client_text=CLIENT, length_s=WW29_LENGTH_S,
+        hook_plan=HOOK_PLAN)
+
+def _ww29_choices(sheet=None):
+    """ENTRY PATH 3: the three independently authored complete briefs."""
+    return SC.build_requests("rnb-flow", SHEET_RNB if sheet is None else sheet,
+                             CLIENT, "T", WW29_LENGTH_S, hook_plan=HOOK_PLAN)
+
+def _ww29_final_inputs(sheet=None):
+    rows = [("build_request", _ww29_build(sheet)),
+            ("director", _ww29_director(sheet))]
+    rows += [("choices/%s" % v["id"], req) for v, req in _ww29_choices(sheet)]
+    return [(name, req["input"]) for name, req in rows]
+
+def _ww29_why(fn, *a, **kw):
+    try:
+        fn(*a, **kw)
+    except Exception as e:                                     # noqa: BLE001
+        return str(e)
+    return ""
+
+def test_ww29_a_required_directions_and_transmitted_negatives_on_every_path():
+    """The EXACT serialized input of every entry path carries every required
+    direction and the style's own `negative_tags`, not a trimmed one."""
+    need = set(R.REQUIRED_MUSIC_DIRECTIONS)
+    data_neg = R.negative_tags("rnb-flow")
+    print("  WW-29 rnb-flow negative_tags -> %r" % (data_neg,))
+    for name, inp in _ww29_final_inputs():
+        print("  WW-29 %s input keys -> %r" % (name, sorted(inp)))
+        check(need <= set(inp),
+              "WW-29: %s input carries every required direction" % name)
+        check(isinstance(inp.get("negative_tags"), str) and inp["negative_tags"].strip(),
+              "WW-29: %s transmits a non-empty negative_tags" % name)
+        check(inp["negative_tags"] == data_neg,
+              "WW-29: %s negative_tags is the data's own string, untouched" % name)
+        check(R.check_negatives(inp["negative_tags"], "rnb-flow") == [],
+              "WW-29: %s keeps every required negative clause" % name)
+        check(R.check_style_text(inp["style"]) == [],
+              "WW-29: %s final style passes the style rules" % name)
+
+def test_ww29_b_the_vocalise_is_optional_and_the_ceiling_still_refuses_a_long_cue():
+    """CONTROL first: the shipped sheet (which HAS a vocalise) builds. Then the
+    same sheet with no [Vocalise] builds on every entry path -- the base refused
+    it with "no sung vocalise lead-in". The WW-16 ceiling still refuses a
+    DECLARED long/held cue, and removing that one call drops the refusal."""
+    control = _ww29_build()
+    check("[Vocalise" in control["input"]["lyrics"],
+          "WW-29 control: the shipped sheet still renders its optional vocalise")
+    errs = R.check_lyric_sheet(SHEET_NO_VOCALISE, CLIENT, WW29_LENGTH_S, style_id="rnb-flow")
+    print("  WW-29 no-vocalise sheet errors -> %r" % (errs,))
+    check(not any("vocalise" in e.lower() for e in errs),
+          "WW-29: a sheet carrying no vocalise is not refused for that")
+    for name, inp in _ww29_final_inputs(SHEET_NO_VOCALISE):
+        check("[Vocalise" not in inp["lyrics"],
+              "WW-29: %s builds a payload with no vocalise section" % name)
+    # the ceiling guard the unit KEEPS, on the producing path
+    why = _ww29_why(_ww29_build, SHEET_LONG_VOCALISE)
+    print("  WW-29 declared long opening cue -> %r" % (why[:110],))
+    check("3.0 s ceiling" in why,
+          "WW-29: a DECLARED long opening vocalise cue is still refused by the ceiling")
+    saved = _R29.check_opening_vocalise_cue
+    try:
+        _R29.check_opening_vocalise_cue = lambda cue: None
+        gone = _ww29_why(_ww29_build, SHEET_LONG_VOCALISE)
+    finally:
+        _R29.check_opening_vocalise_cue = saved
+    print("  WW-29 with the ceiling call removed -> %r" % (gone[:80],))
+    check("3.0 s ceiling" not in gone,
+          "WW-29: removing the ceiling call removes the refusal (load-bearing, not dead)")
+    check("3.0 s ceiling" in _ww29_why(_ww29_build, SHEET_LONG_VOCALISE),
+          "WW-29: restoring the ceiling call refuses it again")
+
+def test_ww29_c_no_stale_early_hook_rule_and_the_payoff_doctrine_refuses():
+    """The retired rule is gone from the DATA and from the CODE (read on disk),
+    and what refuses a hook-first sheet is the current payoff doctrine."""
+    data = io.open(os.path.join(_SKILL29, "references", "prompt-templates", "models",
+                               "suno-v6.json"), encoding="utf-8").read()
+    src = io.open(os.path.join(_SKILL29, "scripts", "core", "suno_recipe",
+                               "suno_recipe.py"), encoding="utf-8").read()
+    check("first by 15% of runtime" not in data,
+          "WW-29: the data no longer mandates the first hook at 15% of runtime")
+    check("two very long held notes" not in data and "OPTIONAL" in data,
+          "WW-29: the data says the vocalise is OPTIONAL, not two long held notes")
+    check("a vocalise comes first" not in src and "no sung vocalise lead-in" not in src,
+          "WW-29: the retired vocalise/early-hook reasons are gone from the recipe")
+    why = "; ".join(R.check_lyric_sheet(SHEET_HOOK_FIRST, CLIENT, style_id="rnb-flow"))
+    print("  WW-29 hook-first sheet -> %r" % (why[:130],))
+    check("may not open" in why and "payoff" in why,
+          "WW-29: a hook-first sheet is refused by the payoff doctrine")
+    check("vocalise comes first" not in why,
+          "WW-29: the refusal no longer cites the retired vocalise rule")
+    check(_HP29.check_buildup(SHEET_HOOK_FIRST, "rnb-flow", WW29_LENGTH_S),
+          "WW-29: hook_placement.check_buildup holds the same rule on the same sheet")
+
+def test_ww29_d_required_clauses_survive_the_cap_and_an_overflow_refuses():
+    """The required clauses (delivery map, band wording, one clean ending, the
+    hook-order clause, the approved pace clause) are ON the exact final style,
+    and an over-cap final style REFUSES without deleting one."""
+    pace = {"drop": "half-time drop, thin drums", "return": "turn and rise back to the groove"}
+    req = _ww29_build(pace_plan=pace)
+    style, inp = req["input"]["style"], req["input"]
+    for clause, label in ((_EQ29.STYLE_ENDING, "clean ending"),
+                          (_HP29.PROMPT_CLAUSE, "hook-order"),
+                          ("RAPS the lines tagged Rap", "rap delivery map"),
+                          ("SINGS the lines tagged Sung", "sung delivery map")):
+        check(clause in style, "WW-29: the final style still carries the %s clause" % label)
+    check(style.rstrip().endswith(_R29.pace_clause(pace).rstrip()),
+          "WW-29: the approved pace clause is still LAST in the final style")
+    check(len(style) <= _R29.SUNO_STYLE_FIELD_MAX,
+          "WW-29: the final style is inside the cap (%d chars)" % len(style))
+    # the cap refuses rather than trimming the negative clause
+    over = dict(inp, negative_tags="x, " * 400)
+    why = _ww29_why(_PL29.check_request, "suno-generate", {"input": over})
+    print("  WW-29 over-cap negative clause -> %r" % (why[:110],))
+    check("negative_tags" in why,
+          "WW-29: an over-cap negative clause is REFUSED with the field named, never trimmed")
+    # the OVERFLOW on the real three-briefs path: the production builder refuses
+    real = SC.variants_for
+    try:
+        rows = copy.deepcopy(real("rnb-flow"))
+        for v in rows:
+            v["brief"]["arrangement"] = "x" * 400
+        SC.variants_for = lambda style_id: rows
+        why = _ww29_why(SC.build_requests, "rnb-flow", SHEET_RNB, CLIENT, "T",
+                        WW29_LENGTH_S, hook_plan=HOOK_PLAN)
+    finally:
+        SC.variants_for = real
+    print("  WW-29 over-cap final style -> %r" % (why[:150],))
+    check("STYLE_TOO_LONG" in why and "NO clause is deleted" in why
+          and "delivery map" in why,
+          "WW-29: an over-cap final style REFUSES and deletes no clause")
+    check(len(_ww29_choices()[0][1]["input"]["style"]) <= _R29.SUNO_STYLE_FIELD_MAX,
+          "WW-29: with the variant brief restored the same path builds inside the cap")
+
+def test_ww29_e_rnb_flow_rap_and_sung_direction_is_one_decision():
+    """The rap fact reads the STYLE'S OWN DATA, so the label and the id judge
+    the same style the same way; the final style directs both deliveries."""
+    rap_neg = "rap, choir, reverb, echo"
+    id_errs = R.check_negatives(rap_neg, "rnb-flow")
+    label_errs = R.check_negatives(rap_neg, "R&B Flow")
+    print("  WW-29 id/label rap-negative errors -> %r / %r" % (id_errs, label_errs))
+    check(id_errs == label_errs and id_errs,
+          "WW-29: the label and the id give the SAME rap-negatives verdict (the base gave [] for the label)")
+    check(_R29.is_rap_style("rnb-flow") and _R29.is_rap_style("R&B Flow"),
+          "WW-29: is_rap_style reads the data, so both spellings answer rap")
+    for other in ("soul-ballad", "soul-rise", "velvet_voiceover", "brand-new-style", None, ""):
+        check(_R29.is_rap_style(other) is False,
+              "WW-29: is_rap_style(%r) is False (fail closed)" % (other,))
+    check(R.negative_tags("R&B Flow") == R.negative_tags("rnb-flow"),
+          "WW-29: the fallback negatives agree for the label and the id")
+    style = _ww29_build()["input"]["style"]
+    check("RAPS the lines tagged Rap" in style and "SINGS the lines tagged Sung" in style,
+          "WW-29: the final R&B Flow style directs rhythmic rap verses AND the sung hook")
+    data = io.open(os.path.join(_SKILL29, "references", "prompt-templates", "models",
+                               "suno-v6.json"), encoding="utf-8").read()
+    check("speech-rhythm rap" in data and "fully sung melodic r&b hook" in data,
+          "WW-29: the data states the same rap-versus-sung direction once")
+    saved = _R29.is_rap_style
+    try:
+        _R29.is_rap_style = lambda style_id: style_id in _R29.RAP_STYLE_IDS
+        leaked = R.check_negatives(rap_neg, "R&B Flow")
+    finally:
+        _R29.is_rap_style = saved
+    print("  WW-29 with the hard-coded id list only -> %r" % (leaked,))
+    check(leaked == [],
+          "WW-29: the old hard-coded list silently drops the guard for the label (load-bearing)")
+
+def test_ww29_f_the_fewer_words_budget_agrees_with_the_length_plan():
+    """OPTION (ii). An R&B Flow card's "fewer words" budget IS the length plan's
+    own total (rap words at the rap rate, the per-verse floor reserved); a style
+    that delivers no rap keeps the base arithmetic unchanged."""
+    L, io_s = 90, _WF29.INTRO_OUTRO_S
+    rates = _WF29.rates_for("rnb-flow")
+    target = _WF29.style_sung_target_pct("rnb-flow", L)
+    budget = _WF29._fewer_words_budget(L, target, rates, io_s, style="rnb-flow")
+    plan = _M29.plan(L, style_id="rnb-flow")
+    print("  WW-29 R&B Flow L=%g target=%r budget=%r plan total=%r"
+          % (L, target, budget, plan["words"]["total"]))
+    check(budget == float(plan["words"]["total"]),
+          "WW-29: the reconciled budget EQUALS length_formula.plan on the same card")
+    check(_WF29._fewer_words_budget(L, target, rates, io_s, style="R&B Flow") == budget,
+          "WW-29: the label and the id give the same budget")
+    floor_words = _M29.rap_verse_min_words("rnb-flow") * _M29.MIN_RAP_VERSES
+    check(plan["words"]["rap"] >= floor_words,
+          "WW-29: the plan the budget reads reserves the two-verse rap floor (%d words)"
+          % floor_words)
+    # the base shape ignored rap: prove the OLD number is no longer offered
+    old = ((L - io_s) * target / 100.0 * rates["sung"]
+           + (L - io_s) * (1 - target / 100.0) * rates["spoken"])
+    check(old != budget,
+          "WW-29: the old rap-blind arithmetic (%r) is replaced by the plan's number" % old)
+    # a non-rap style is byte-identical to the base
+    for style in ("soul-ballad", "Soul Rise", None):
+        r = _WF29.DEFAULT_SUNG_TARGET_PCT if style is None else _WF29.style_sung_target_pct(style, L)
+        rates_s = _WF29.rates_for(style)
+        got = _WF29._fewer_words_budget(L, r, rates_s, io_s, style=style)
+        # the BASE expression, char for char, so "unchanged" is exact, not near
+        vb = L - io_s
+        f = max(0.0, min(1.0, r / 100.0))
+        want = vb * f * rates_s["sung"] + vb * (1.0 - f) * rates_s["spoken"]
+        check(got == want,
+              "WW-29: %r keeps the base budget arithmetic unchanged (%r == %r)"
+              % (style, got, want))
+    # the number the OPTION SHOWS is the number the GATE enforces
+    pf = _WF29.preflight(L, 200, 30, style="rnb-flow")
+    shown = (pf.get("options") or {}).get("fewer_words") or {}
+    print("  WW-29 fewer_words option -> %r" % (shown,))
+    check(pf["outcome"] == "waiting" and shown.get("max_total_words") == float(plan["words"]["total"]),
+          "WW-29: the option offers the plan's budget, not the rap-blind one")
+    over = [dict(s) for s in SHEET_RNB]
+    over[4]["lines"] = list(over[4]["lines"]) + ["filler words here now %d" % i for i in range(20)]
+    gate_errs = R.check_lyric_sheet(over, CLIENT, WW29_LENGTH_S, style_id="rnb-flow")
+    print("  WW-29 over-budget sheet -> %r" % (gate_errs,))
+    check(any("budget" in e for e in gate_errs),
+          "WW-29: the recipe's own word gate refuses over the plan's budget")
+
+def test_ww29_g_a_card_that_cannot_hold_the_two_verse_rap_floor_is_still_refused():
+    """CONTROL first: the shipped R&B Flow sheet builds. Then a sheet whose two
+    rap verses sit under the per-verse floor is refused on the production path
+    with the floor named -- the budget work lowers no rap floor."""
+    check(_ww29_director()["input"]["lyrics"],
+          "WW-29 control: the shipped two-verse R&B Flow sheet still builds")
+    thin = []
+    for s in SHEET_NO_VOCALISE:
+        if s["delivery"] == "rap" and len([x for x in thin if x["delivery"] == "rap"]) == 0:
+            thin.append(dict(s, lines=["too short a verse here"]))
+        elif s["delivery"] == "rap":
+            thin.append(dict(s, lines=["and one more short line"]))
+        else:
+            thin.append(dict(s))
+    print("  WW-29 thin sheet rap words -> %r" % (R.sheet_words(thin, "rap"),))
+    why = _ww29_why(_ww29_director, thin)
+    print("  WW-29 thin rap sheet -> %r" % (why[:150],))
+    check("RAP_VERSE_BELOW_FLOOR" in why and "floor 20 words / 8.0 s" in why,
+          "WW-29: a card that cannot hold the two-verse rap floor is REFUSED, floor named")
+    check(_M29.rap_verse_min_words("rnb-flow") == 20 and _M29.MIN_RAP_VERSES == 2,
+          "WW-29: the per-verse floor the refusal names is the unchanged 20 words x 2 verses")
+    check(_M29.rap_floor_s(88) == 8.8 and _M29.RAP_FLOOR_SHARE == 0.10,
+          "WW-29: the total rap floor is unchanged (max(8.0 s, 10% of D))")
+# <<< WW29-U2 BLOCK END >>>
+
+
+# =====================================================================
+# WW29-U3 (Builder c: music director) -- WW-29 on the music director.
+#
+# WW-29 removes the mandatory wordless held-note opening and the stale
+# hook-in-the-first-fifteen-percent rule, keeps the hook a MEASURED payoff
+# (``true_at_beat``), makes the opening vocalise OPTIONAL, and requires the
+# cast, pace/shift, hook, ending and negative clauses to survive into the
+# EXACT serialized ``request["input"]`` with an overflow REFUSING rather than
+# dropping a clause.
+#
+# The rule enforcement for the vocalise and the cue lives in the recipe/data
+# (``scripts/core/suno_recipe/suno_recipe.py`` + ``references/prompt-templates``,
+# builder b) and the doctrine text in the docs (builder a). THIS builder owns
+# ``scripts/core/music_director/__init__.py`` and proves the DIRECTOR:
+#   (a) adds no vocalise / early-hook direction of its own;
+#   (b) carries every required direction and its own clauses to the EXACT
+#       payload from every entry path (the R&B Flow rap card and a non-rap
+#       soul card, built the same way);
+#   (c) refuses an over-cap final payload through the LOAD-BEARING cap gate
+#       without truncating anything (the gate is removed and shown to matter).
+# =====================================================================
+
+#: A non-rap soul card that clears the recipe at its delivered length (58 s).
+SHEET_BAL = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
+             {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
+             {"tag": "Verse 1", "delivery": "sung",
+              "lines": ["One seed of truth made me stro-o-ong,"]},
+             {"tag": "Hook 1", "delivery": "sung", "lines": list(HOOK)},
+             {"tag": "Hook 2", "delivery": "sung", "lines": list(HOOK)},
+             {"tag": "Hook 3", "delivery": "sung", "lines": list(HOOK)},
+             {"tag": "Outro", "delivery": "spoken",
+              "lines": ["She Found Power in the Climb. Get the book. Link below."]}]
+
+REQUIRED_DIRECTIONS = ("custom_mode", "instrumental", "title", "lyrics", "style",
+                       "negative_tags", "duration")
+
+
+def _ww29_u3_md():
+    """The music director for this block, or None when it is not on the tree."""
+    return _load_path("music_director/__init__.py")
+
+
+def test_ww29_u3_exact_input_carries_every_required_direction():
+    MD = _ww29_u3_md()
+    if not gate(MD is not None and R is not None, "WW29-U3 directions",
+                "music_director or suno_recipe did not load"):
+        return
+    out = R.prepare("rnb-flow", SHEET_RNB, CLIENT, 88, hook_plan=HOOK_PLAN)
+    req = MD.build_generate_request(out["lyrics"], out["style"], "T",
+                                    style_id="rnb-flow", client_text=CLIENT,
+                                    length_s=88, true_at_beat="the_world")
+    inp = req["input"]
+    missing = [f for f in REQUIRED_DIRECTIONS if f not in inp]
+    print("  WW29-U3 exact request['input'] keys: %s" % sorted(inp))
+    check(not missing,
+          "WW29-U3: the exact request['input'] carries every required direction (missing=%r)" % missing)
+    check(bool(inp["negative_tags"]) and "rap" not in [t.strip() for t in inp["negative_tags"].split(",")],
+          "WW29-U3: negative_tags is transmitted, and the R&B Flow negatives keep rap (no rap exclusion)")
+    check("resolved ending" in inp["style"].lower(),
+          "WW29-U3: the ending clause survives into the exact request['input']['style']")
+    check("[End]" in inp["lyrics"] and ("[Outro" in inp["lyrics"] or "[Resolve" in inp["lyrics"]),
+          "WW29-U3: the exact serialized lyrics still ask for a real ending ([Outro] + end tag)")
+    check(inp["duration"] == 88,
+          "WW29-U3: the delivered length reaches the exact input.duration (%r)" % inp["duration"])
+
+
+def test_ww29_u3_director_adds_no_vocalise_or_early_hook_of_its_own():
+    MD = _ww29_u3_md()
+    if not gate(MD is not None and R is not None, "WW29-U3 no-vocalise",
+                "music_director or suno_recipe did not load"):
+        return
+    # (1) deterministically: the text the director appends to a caller style is
+    # the ending clause only -- no wordless-vocalise mandate, no early-hook rule.
+    exotic = "warm analog strings, dry close vocal, slow tempo, female lead"
+    req = MD.build_generate_request("la la", exotic, "T", style_id="velvet_voiceover")
+    added = req["input"]["style"][len(exotic):].lower()
+    print("  WW29-U3 text the director adds to a caller style: %r" % added)
+    check("wordless" not in added and "vocalise" not in added and "vocalize" not in added,
+          "WW29-U3: the director injects NO wordless-vocalise mandate of its own")
+    check("15%" not in added and "fifteen" not in added and "percent" not in added,
+          "WW29-U3: the director injects NO percent-of-runtime early-hook rule of its own")
+    # (2) the removed mandate lives in the RECIPE, never the director: a sheet
+    # with NO vocalise is judged by suno_recipe (after WW-29 it is accepted).
+    novoc = [s for s in SHEET_RNB if not s["tag"].lower().startswith("vocalise")]
+    try:
+        R.prepare("rnb-flow", novoc, CLIENT, 88, hook_plan=HOOK_PLAN)
+        check(True, "WW29-U3: the recipe accepts a sheet that opens WITHOUT a vocalise (lead-in is OPTIONAL)")
+    except R.RecipeError as e:
+        print("  WW29-U3 no-vocalise refusal (must be the recipe's): %s" % str(e)[:120])
+        check("vocalise" in str(e).lower(),
+              "WW29-U3: any vocalise requirement is the RECIPE's (suno_recipe), named in its refusal; the director adds none")
+
+
+def test_ww29_u3_pace_shift_clause_is_last_and_single():
+    MD = _ww29_u3_md()
+    if not gate(MD is not None and R is not None, "WW29-U3 pace",
+                "music_director or suno_recipe did not load"):
+        return
+    out = R.prepare("rnb-flow", SHEET_RNB, CLIENT, 88, hook_plan=HOOK_PLAN)
+    pp = {"drop": "at the lowest point the groove drops to half-time with thin, sparse drums",
+          "return": "then it turns and rises back to the full groove"}
+    req = MD.build_generate_request(out["lyrics"], out["style"], "T",
+                                    style_id="rnb-flow", client_text=CLIENT,
+                                    length_s=88, true_at_beat="the_world", pace_plan=pp)
+    st = req["input"]["style"]
+    clause = getattr(R, "suno_recipe", R).pace_clause(pp).rstrip()
+    check(st.rstrip().endswith(clause),
+          "WW29-U3: the approved pace/shift clause is LAST in the exact request['input']['style']")
+    check(st.count(clause) == 1,
+          "WW29-U3: the shift clause appears exactly once (never duplicated, never dropped)")
+
+
+def test_ww29_u3_over_cap_refuses_and_the_cap_gate_is_load_bearing():
+    import prompt_limits as PL
+    MD = _ww29_u3_md()
+    if not gate(MD is not None and R is not None, "WW29-U3 cap",
+                "music_director or suno_recipe did not load"):
+        return
+    out = R.prepare("soul-ballad", SHEET_BAL, CLIENT, 58, hook_plan=HOOK_PLAN)
+    big_title = "T" * 81
+    try:
+        MD.build_generate_request(out["lyrics"], out["style"], big_title,
+                                  style_id="soul-ballad", client_text=CLIENT,
+                                  length_s=58, true_at_beat="the_world")
+        check(False, "WW29-U3: an 81-char title must REFUSE (no silent truncation)")
+    except PL.PromptLimitError as e:
+        check(e.code == "PROMPT_OVER_CAP" and e.field == "title" and e.chars == 81 and e.cap == 80,
+              "WW29-U3: the final cap gate refuses the over-cap title, naming field/chars/cap/PROMPT_OVER_CAP")
+    # wiring: remove the DIRECTOR's real cap call; the over-cap payload must now build.
+    orig = MD.prompt_limits.check_request
+    MD.prompt_limits.check_request = lambda *a, **k: {"measured": []}
+    try:
+        loose = MD.build_generate_request(out["lyrics"], out["style"], big_title,
+                                          style_id="soul-ballad", client_text=CLIENT,
+                                          length_s=58, true_at_beat="the_world")
+        check(loose["input"]["title"] == big_title,
+              "WW29-U3: with the cap gate removed the over-cap title reaches the payload (the gate is load-bearing, not decorative)")
+    finally:
+        MD.prompt_limits.check_request = orig
+
+
+def test_ww29_u3_a_non_rap_variant_carries_the_same_clauses():
+    MD = _ww29_u3_md()
+    if not gate(MD is not None and R is not None, "WW29-U3 soul variant",
+                "music_director or suno_recipe did not load"):
+        return
+    out = R.prepare("soul-ballad", SHEET_BAL, CLIENT, 58, hook_plan=HOOK_PLAN)
+    req = MD.build_generate_request(out["lyrics"], out["style"], "T",
+                                    style_id="soul-ballad", client_text=CLIENT,
+                                    length_s=58, true_at_beat="the_world")
+    inp = req["input"]
+    missing = [f for f in REQUIRED_DIRECTIONS if f not in inp]
+    check(not missing and bool(inp["negative_tags"]) and "resolved ending" in inp["style"].lower(),
+          "WW29-U3: a non-rap soul card carries the same required directions, negatives and ending clause (missing=%r)" % missing)
 
 def main():
     for name, fn in sorted(globals().items()):
@@ -2065,6 +3878,110 @@ def main():
         return 0
     print("\nALL PASS")
     return 0
+
+
+# ===========================================================================
+# WW29-U1 (builder a: documents reconciliation) -- BEGIN delimited block.
+# Asserts the reconciled WW-29 doctrine is present in the three documents and
+# consistent with the style data. Known-good controls run before the negatives.
+# ===========================================================================
+
+def _ww29_u1_doc(rel):
+    """Read one skill-75 document from the tree (empty string if absent)."""
+    p = os.path.join(SKILL_ROOT, rel)
+    if not os.path.exists(p):
+        return ""
+    with open(p, "r", encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _ww29_u1_rule2_slice(text):
+    """The recipe's rule 2 only: from '2. Sung lines are short' to the next
+    numbered rule. Binds the assertion to rule 2 itself, never to a phrase
+    that survives elsewhere in the document."""
+    i = text.find("2. Sung lines are short")
+    if i < 0:
+        return ""
+    j = text.find("\n3.", i)
+    return text[i:(j if j > 0 else i + 600)]
+
+
+def _ww29_u1_rule2_ok(text):
+    """True when the rule-2 text states the wordless vocalise is OPTIONAL and
+    never a forced lead-in -- and the retired mandatory wording ("after a
+    wordless sung vocalise") is gone."""
+    t = text.lower()
+    return ("optional" in t and "never a forced" in t and "lead-in" in t
+            and "mandatory" not in t
+            and "after a wordless sung vocalise" not in t)
+
+
+def test_ww29_u1_vocalise_is_optional_not_a_forced_lead_in():
+    good = ("2. Sung lines are short, rhymed. A wordless vocalise is OPTIONAL, "
+            "never a forced\n   lead-in: one short note or none.")
+    check(_ww29_u1_rule2_ok(good),
+          "WW29-U1 control: the reconciled rule 2 wording passes the checker")
+    bad = ("2. Sung lines are short, rhymed, with hyphen-held vowels, "
+           "after a wordless sung vocalise.")
+    check(not _ww29_u1_rule2_ok(bad),
+          "WW29-U1 control: the retired mandatory-vocalise wording is rejected")
+    skill = _ww29_u1_doc("SKILL.md")
+    rule2 = _ww29_u1_rule2_slice(skill)
+    check(bool(rule2),
+          "WW29-U1: SKILL.md has the numbered recipe rule 2")
+    check(_ww29_u1_rule2_ok(rule2),
+          "WW29-U1: SKILL.md recipe rule 2 makes the vocalise optional, never a forced lead-in")
+    check("after a wordless sung vocalise" not in skill.lower(),
+          "WW29-U1: SKILL.md no longer mandates 'after a wordless sung vocalise' anywhere")
+    check("suno_parts" not in skill,
+          "WW29-U1: SKILL.md names no non-existent prompt_templates.suno_parts")
+    check("suno_recipe.style_text" in skill,
+          "WW29-U1: SKILL.md names the real style-text builder suno_recipe.style_text")
+
+
+def test_ww29_u1_three_docs_carry_the_reconciled_direction():
+    docs = {"SKILL.md": _ww29_u1_doc("SKILL.md"),
+            "INSTRUCTIONS.md": _ww29_u1_doc("INSTRUCTIONS.md"),
+            "references/stage-runbook.md": _ww29_u1_doc("references/stage-runbook.md")}
+    for name, text in docs.items():
+        low = text.lower()
+        check("five gates" in low,
+              "WW29-U1: %s states the five-gate delivered-audio boundary" % name)
+        check("optional" in low and "never a forced" in low,
+              "WW29-U1: %s states the vocalise is optional, never a forced opening" % name)
+        check("r&b flow" in low and "rap verses" in low and "sung" in low,
+              "WW29-U1: %s states the R&B Flow rap-versus-sung direction" % name)
+        check("negative_tags" in low,
+              "WW29-U1: %s carries the negative_tags transmission clause" % name)
+
+
+def test_ww29_u1_rnb_flow_data_matches_the_documented_direction():
+    rel = os.path.join("references", "prompt-templates", "music", "rnb-flow.json")
+    p = os.path.join(SKILL_ROOT, rel)
+    check(os.path.exists(p), "WW29-U1: the R&B Flow style data file exists")
+    if not os.path.exists(p):
+        return
+    with open(p, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    check(data.get("rap_allowed") is True,
+          "WW29-U1: the R&B Flow data allows rap")
+    check("rap" in (data.get("deliveries") or []),
+          "WW29-U1: the R&B Flow data lists rap as a delivery")
+    body = " ".join(data.get("style_parts") or []).lower()
+    check("rap" in body and "sung" in body,
+          "WW29-U1: the R&B Flow data contrasts rap verses with a sung hook")
+
+
+def test_ww29_u1_runbook_single_dispatch_is_the_one_song_case():
+    rb = _ww29_u1_doc("references/stage-runbook.md")
+    check("one-song case" in rb,
+          "WW29-U1: the runbook's single kie_dispatch row is the one-song case")
+    check("song_choices" in rb,
+          "WW29-U1: the runbook points the multi-version path at song_choices")
+
+# ===========================================================================
+# WW29-U1 -- END delimited block.
+# ===========================================================================
 
 
 if __name__ == "__main__":
