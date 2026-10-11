@@ -391,6 +391,34 @@ def _require_disjoint_partition(parsed_raw, duration_s):
     return D
 
 
+#: WW-24: a segment whose source marks it as word-alignment / annotation
+#: carries TIMING EVIDENCE over the returned audio -- it names WHERE a word
+#: landed, never how many seconds of audio there are. Word annotations never
+#: ADD physical runtime; the WW-04 one-timeline repair below is exactly what
+#: refuses a doubled (measured + aligned) denominator.
+ANNOTATION_SOURCES = ("aligned", "annotation", "annotations", "word", "words")
+
+
+def measured_runtime_s(segments, duration_s):
+    """WW-24: the ONE physical runtime of the returned audio, in seconds.
+
+    ``duration_s`` is the MEASURED returned-audio duration (the only admissible
+    runtime denominator). The segment list must be a single disjoint partition
+    of ``[0, duration_s]``: word annotations over the same audio are refused as
+    a doubled runtime by the SAME WW-04 repair ``measure_share`` uses -- never a
+    second partition rule -- and the measured duration itself is returned, not
+    the sum of segment lengths. A missing/zero duration is refused
+    (``MISSING_ACTUAL_DURATION``): a plan's or an annotation's seconds are never
+    physical runtime.
+    """
+    if duration_s is None:
+        raise SpokenShareError("MISSING_ACTUAL_DURATION",
+                               "no measured returned-audio duration was given; a "
+                               "planned or annotated timeline is not physical runtime")
+    D = _require_disjoint_partition(_segments(segments, dedupe=False), duration_s)
+    return round(D, 6)
+
+
 def measure_share(segments, basis=BASIS_MEASURED, style_id=None, duration_s=None):
     """Spoken-style share of runtime from timing segments (G8: AUDIO, never
     labels).
@@ -429,10 +457,11 @@ def measure_share(segments, basis=BASIS_MEASURED, style_id=None, duration_s=None
     """
     measured_duration = None
     if duration_s is not None:
-        # The partition is validated on the RAW segments (before de-duplication)
-        # so a doubled or overlapping timeline is REFUSED, never silently folded.
-        measured_duration = _require_disjoint_partition(
-            _segments(segments, dedupe=False), duration_s)
+        # WW-24: the ONE measured-runtime helper. It validates the partition on
+        # the RAW segments (before de-duplication) so a doubled or overlapping
+        # timeline -- a measured timeline concatenated with word annotations over
+        # the same audio -- is REFUSED, never silently folded.
+        measured_duration = measured_runtime_s(segments, duration_s)
     parsed = _segments(segments)
     _require_basis(segments, basis, "measure_share")
     t = style_targets(style_id)
