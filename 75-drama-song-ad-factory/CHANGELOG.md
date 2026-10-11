@@ -6,6 +6,45 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.19 - 2026-10-10 - U5 shared studio bridge: atomic claim, replay, Windows-safe lease, quiet board
+
+Unit U5 of the drama studio joint plan (row U5). Adds the box-side half of the
+drama studio as four new files under `75-drama-song-ad-factory/shared-bridge/`,
+one implementation shared by OpenClaw boxes and Claude Code computers. No file
+here edits another unit's path (U1/U11 own `choice_card/intake_card`, U2
+`mini-app/service/**`, U3 the mini-app UI, U4 `mini-app/deploy/**`, U12 the
+pairing/admin surface).
+
+- `studio_claim.py` — the ledger. Atomic single-winner order claim (`INSERT OR
+  IGNORE` against a `UNIQUE` order id, so the database arbitrates and the losing
+  racer exits `2`), a replay guard (`UNIQUE(run_id, message_id)`), a Windows-safe
+  lease (one `UPSERT ... WHERE` in SQLite, never a lock file named from a key), a
+  notice gate, and cleanup receipts.
+- `studio_bridge.py` — the bridge. Key handshake, status, delivery, photo
+  handling, the quiet board, the owned-run cleanup receipt, and the CLI.
+- `checks/run_checks.py` — the five runnable checks (A–E), each with a true exit
+  code and a control on the same instrument.
+- `README.md` — the shared-bridge contract, the service contract it speaks to U2,
+  the three guarantees, the notice discipline and the deliberate limits.
+
+- Notice discipline: exactly one approval nudge, then at most one reminder
+  (default 24 hours later), then silence — `ClaimLedger.notice_gate()` returns
+  `"nudge"`, `"reminder"` or `None`, and `None` stays silent rather than being
+  re-worded. Check D holds the guard load-bearing from both sides: the predicate
+  fails on an unguarded sequence, and clearing the guard re-opens a notice.
+- The Windows liveness probe never reaches `os.kill`, which on Windows
+  `terminates` the process it is asked about; it uses
+  `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` and fails closed. Check C
+  proves the probe answers alive/dead without touching `os.kill` or a
+  colon-named lock file.
+- The presented key is read from env `DS_KEY` only — never argv, never a file
+  named on the command line, never a log line. Check E proves nothing is printed
+  with a positive control showing the detector can see the sentinel when present.
+- Proof: `python3 75-drama-song-ad-factory/shared-bridge/checks/run_checks.py`
+  reports `ALL PASS` (checks A–E) with exit 0. This is the real-content commit of
+  PR #1820 (branch `unit/U5-U1`); the v2.9.18 -> v2.9.19 patch bump and the
+  SKILL.md frontmatter are bundled into that same commit per the bundle protocol.
+
 ## v2.9.18 - 2026-10-10 - PKG-11 attempt 4: twelve REAL `produce_delivery` paths, real-run e2e, no fixture bytes
 
 Released with onboarding v27.1.1 (same follow-up batch; attempt 3 only claimed the one naming scheme).
