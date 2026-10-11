@@ -17,6 +17,7 @@ No network, no browser: every browser touch is an injected fake.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -322,6 +323,10 @@ def test_builder_version_is_1_5_1():
 
 def test_skill_version_lockstep():
     sv = open(os.path.join(ROOT, "skill-version.txt"), encoding="utf-8").read().strip()
-    assert sv.startswith("v19."), f"unexpected skill version {sv!r}"
+    # skill-version.txt is REPO-LOCKED to /VERSION by scripts/bump-version.sh, so a
+    # hardcoded major ("v19.") pins the suite to one version line and rots on the
+    # next roll. Assert the shape (a real vX.Y.Z) instead; the ordering check below
+    # is the substantive lockstep invariant.
+    assert re.fullmatch(r"v\d+\.\d+\.\d+", sv), f"unexpected skill version {sv!r}"
     # must be > the current origin/main baseline (v19.19.0)
     assert sb._parse_semver(sv) > sb._parse_semver("v19.19.0")

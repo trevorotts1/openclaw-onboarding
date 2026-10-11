@@ -2,7 +2,7 @@
 """G9 words-fit suite (unit W-G-009).
 
 Proves, stdlib only and with zero paid calls:
-  1. LeAnne Dolce's ~220-word script at 90 s with 55% sung is flagged
+  1. the client's ~220-word script at 90 s with 55% sung is flagged
      infeasible with the three options and their numbers (review G7).
   2. The reference sheet (~65 words) at 300 s passes (review G7).
   3. Suno duration always carries >= 15% headroom over the plan.
@@ -47,7 +47,7 @@ def check(name, cond, detail=""):
 
 # ---- fixtures -------------------------------------------------------------
 
-# LeAnne Dolce: ~220 lyric words, 90 s card, 55% sung (review G7 / order 1150).
+# Client fixture: ~220 lyric words, 90 s card, 55% sung (review G7 / order 1150).
 # Split 55/45 of the WORDS (worst case for a ballad: the slow sung rate eats
 # the clock) -> 121 sung, 99 spoken.
 LEANNE_SUNG, LEANNE_SPOKEN = 121, 99
@@ -61,16 +61,16 @@ REF_SUNG, REF_SPOKEN = 56, 30
 def test_leanne_90s_infeasible_with_three_options():
     r = W.preflight(90, LEANNE_SUNG, LEANNE_SPOKEN,
                     sung_target_pct=55.0, style="Soul Ballad")
-    check("LeAnne 90s is waiting (not ok)",
+    check("client90s is waiting (not ok)",
           r["outcome"] == "waiting", r.get("outcome"))
-    check("LeAnne reason is WORDS_DO_NOT_FIT",
+    check("clientreason is WORDS_DO_NOT_FIT",
           r["reason_code"] == "WORDS_DO_NOT_FIT", r.get("reason_code"))
     # Calm spoken alone: 220 / 1.85 ~= 119s — cannot fit 90s even fully spoken.
     spoken_only = 220 / 1.85
     check("sanity: 220 words fully spoken needs ~119s",
           spoken_only > 90, "%.1f" % spoken_only)
     opts = r.get("options") or {}
-    check("LeAnne carries three options",
+    check("clientcarries three options",
           set(opts) == {"longer_ad", "lower_sung_target", "fewer_words"},
           sorted(opts))
     # longer_ad names a card length that fits the plan.

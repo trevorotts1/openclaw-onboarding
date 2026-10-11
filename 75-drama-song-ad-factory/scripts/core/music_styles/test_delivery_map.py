@@ -75,7 +75,7 @@ def raises(fn, exc):
     return None
 
 
-# The O3 style text (LeAnne Dolce Soul Ballad, take O3, 2026-10-08) -- the
+# The O3 style text (the client Soul Ballad, take O3, 2026-10-08) -- the
 # wording the 11:35 order banned. The amendment keeps it legal.
 O3_STYLE_TEXT = (
     "68 bpm slow soul ballad, unhurried sung phrasing with long held notes, "

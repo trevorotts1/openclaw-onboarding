@@ -1,6 +1,6 @@
 """face_emotion.py: face cues follow the line's emotion, never the light (Part G G6).
 
-Root cause (LeAnne O3, redo-v3-20261008): the "warm" brand rule (warm LIGHT,
+Root cause (client O3, redo-v3-20261008): the "warm" brand rule (warm LIGHT,
 no dark backgrounds) was written into face wording in every clip prompt
 ("professional smile", "small fading smile") under pain lines. "Warm" is a
 LIGHTING token only; a face's emotion comes from the story arc's emotional

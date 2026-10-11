@@ -141,7 +141,7 @@ class SongMp3DoneWhen(unittest.TestCase):
             root = Path(td)
             ads = []
             for author, title in (("Kiesett Parker", "Stop Stale"),
-                                  ("Maria Anderson", "Marico")):
+                                  ("Sample Client", "Marico")):
                 adir = root / "ads" / title
                 adir.mkdir(parents=True)
                 cap = adir / ("%s - Ad (captioned).mp4" % title)

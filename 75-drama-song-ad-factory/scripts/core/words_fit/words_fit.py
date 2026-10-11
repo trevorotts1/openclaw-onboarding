@@ -8,7 +8,7 @@ Owner order (2026-10-08 11:50, Part G, G9), verbatim:
    duration >= 15% headroom."
 
 Review item G7 (Opus audio review) done-when:
-  * LeAnne Dolce's ~220-word script at 90 s with 55% sung is flagged
+  * the client's ~220-word script at 90 s with 55% sung is flagged
     infeasible with the three options and their numbers;
   * the reference sheet (~65 words) at 300 s passes.
 

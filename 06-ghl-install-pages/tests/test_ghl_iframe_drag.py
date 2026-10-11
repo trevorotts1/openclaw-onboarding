@@ -1980,7 +1980,12 @@ def _pw_browser_installed() -> bool:
     try:
         from playwright.sync_api import sync_playwright  # type: ignore
         with sync_playwright() as pw:
-            return bool(pw.chromium.executable_path)
+            p = pw.chromium.executable_path
+            # executable_path returns a PATH STRING even when the browser binary
+            # was never downloaded (`playwright install`), so bool(p) alone is
+            # truthy and lets the live test HARD-FAIL instead of skipping. Check
+            # the file actually exists — the skip this guard documents.
+            return bool(p) and Path(p).exists()
     except Exception:  # noqa: BLE001
         return False
 

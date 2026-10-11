@@ -31,6 +31,11 @@ tmp/
 # consumed by ad_gate_integrity_check.py; regenerated in CI, never committed.
 48-facebook-ad-generator/scripts/working/
 
+# GHL Install Pages (Skill 06) runtime capability receipt — written by
+# tools/capability_probe.py (the QC script runs it with --out) and by the
+# dispatcher at run time; per-host run evidence, never a repo artifact.
+06-ghl-install-pages/working/
+
 .wrangler/
 
 # backup files from automated fixes
