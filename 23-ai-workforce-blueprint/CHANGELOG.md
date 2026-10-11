@@ -2,6 +2,15 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [Unreleased] - 2026-10-11 - docs(sop): drama-song SOP checks delivery against the twelve canonical arc beats and makes three labelled versions on a Yes
+
+The video SOP `templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md` no longer states a fifteen-beat arc scaled by length or that one generation covers every length.
+
+- **DS-4 step 1.** The fifteen-stage source method stays the authoring method; the delivered song is checked against the twelve canonical arc beats, with an explicit named mapping between the two counts. A summary count may never stand in for a performed beat.
+- **DS-5 step 1.** One generation covers the chosen length for a single song. When the card's SONG APPROVAL answer is Yes the music stage makes three labelled versions of the same approved sheet, and the rap-versus-sung budget, the story-start ceiling and the pace direction are checked on the returned audio before any later spend.
+
+Version: `27.1.9` -> `27.1.10`.
+
 ## [Unreleased] - 2026-10-06 - feat(kie): Presentations department integrated with Skill 74
 
 Every Presentations role, SOP and tool document now describes the deck image chain exactly as the shipped code runs it, and agrees with `07-kie-setup/references/kie-common-rules.md`.
