@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Your drama song video — the studio</title>
+<link rel="stylesheet" href="./studio.css">
+</head>
+<body>
+<!-- DRAMA SONG AD FACTORY MINI-APP :: U3 VERSION 0 (pages).
+     Self-contained: ES modules from this folder only. No CDN, no framework,
+     no service state. Client answers, uploads and the one-record-per-day
+     bookkeeping belong to the SERVICE (U2); this page only consumes the
+     entrypoints declared in api-client.js. -->
+<a class="skip-link" href="#main">Skip to the studio</a>
+<div class="shell">
+  <header class="chrome">
+    <span class="step" id="step-label">Step 1 of 5</span>
+    <div class="rail" role="progressbar" aria-labelledby="step-label" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="rail">
+      <span class="rail-fill" id="rail-fill"></span>
+    </div>
+  </header>
+  <nav class="steps-nav" id="steps-nav" aria-label="Studio sections"></nav>
+  <main id="main" tabindex="-1">
+    <noscript>
+      <div class="card">
+        <h1>This studio needs JavaScript</h1>
+        <p>Your producer will send you the recap and the approvals as messages while that is sorted out. Nothing is lost.</p>
+      </div>
+    </noscript>
+  </main>
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+  <div class="panel" aria-labelledby="save-head">
+    <h3 id="save-head">Your answers are safe</h3>
+    <p class="muted">The studio service keeps your work and your files. You can close this page and come back — nothing you answer is lost.</p>
+  </div>
+</div>
+<script type="module" src="./studio.js"></script>
+</body>
+</html>

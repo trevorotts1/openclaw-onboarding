@@ -14,6 +14,171 @@ frontmatter `version:` field).
 - `--dry-run` validates and plans every step with no wrangler and no API call, and is honest: unresolved ids report as unresolved and never as a pass; the guard still fails hard on a wrong zone.
 - `--self-test` is the offline proof (no token, no network): it demonstrates the guard refusing a wrong zone name, a foreign zone id and a wrong account (each a non-zero exit with the guard message), that an intended-zone `--dry-run` plans and the guard passes, and that `--dry-run` is PLAN-only and never fabricates a PASS. `bash 75-drama-song-ad-factory/mini-app/deploy/deploy.sh --self-test` exits 0 with `U4 deploy self-test: PASS`.
 - Version markers: `skill-version.txt` and the `SKILL.md` frontmatter `version:` land at v2.9.19 in this same commit, bundled with the real content (G3 gates a skill-content change on that bump, and the frontmatter is checked against `skill-version.txt`). The real deploy is a separate, later, Trevor-authorized step.
+## v2.9.19 - 2026-10-11 - U1: the studio-json export (question / price / example) from the intake card
+
+- `intake_card.py` gains `--format studio-json`: the Drama Studio renders one screen per intake question, and this export hands it exactly what a screen shows — the question text, the price line (when that screen carries one) and a "See a great answer" example read from the client guide (`references/CLIENT-GUIDE.md`, the first `**Great answer:**` line under the matching `## STEP n:` heading). New `studio_json` / `studio_questions` build every screen from the SAME question list the card asks, so the card and the studio cannot disagree about a question or a price; the envelope is `{"format": "studio-json", "version": 0, "question_count", "questions"}` and each option carries its number, label, one sentence, its own price and whether it is the recommended pick.
+- The two price surfaces read ONE sentence: new `_model_price_line(length_label)` is the single place the "Prices are for your <length> ad, with the song, pictures and a 20% redo allowance." line is built, and both the card's `ask` and the studio export's `price` read it. `spend_question` now carries the BUDGET screen's price line (`price` key: `$x` when a price is known, `up to $x` when only a limit is, `None` when neither), and `_model_question` carries its own price line beside the ask.
+- Fail closed: a screen with no question text, no example, or no options raises `StudioExportError` (a named `field=` and `id=` on stderr) and the CLI exits 1 — never a json file the studio would render half-empty (`STUDIO_JSON_FIELD_MISSING`, `STUDIO_JSON_GUIDE_UNREADABLE`).
+- New `test_studio_json_u1.py` (129 lines, 8 tests over the shared `python3 core/choice_card/intake_card/test_studio_json_u1.py` runner): every screen carries its question, price and example and the option keys are exactly `{n, text, detail, price, recommended}`; the model screen carries the live four model prices and the found example; the budget screen shows the card total when given; the CLI writes the export and exits 0; and three negative controls prove a missing question text or example refuses loudly with a real non-zero process exit and no degraded file on stdout. `__init__.py` re-exports `studio_json`, `studio_questions` and `StudioExportError`.
+- Proof: `python3 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_studio_json_u1.py` runs 8 tests green.
+- Version: `skill-version.txt` and the SKILL.md frontmatter land at v2.9.19 in this commit (G3 gate); the 999-setup twin takes its own train.
+## v2.9.19 - 2026-10-10 - Mini-app Studio UI (version 0): five pages, eight options, QR, accessibility floor, real-download proof
+
+Unit U3-U1. New client-facing Studio UI under `mini-app/ui/` (no service behaviour — the service is U2's).
+
+- Five pages — Start, Your eight answers, The recap, Your approvals, Your premiere — in `studio.js` + `index.html`, with a skip link, progress bar, section nav, focusable `<main>`, polite live region and `<noscript>` fallback.
+- The eight options (offer, audience, star, length, music, look, quality, budget) as native radio groups with real labels; the numbered recap card; the "Looks good — start my video" confirmation state; and a per-approval "Looks good" state (script, song 1-of-3, storyboard) that stays on the page once taken.
+- `qr.js`: a dependency-free QR generator (byte mode, EC level M, versions 1..10), inline SVG, no CDN. The QR is `role="img"` with an accessible name and the same link is written out in plain text underneath as the real alternative.
+- `download.js` is the one place that decides a delivery link is an ACTUAL download: HTTP 200 on the exact tapped URL, `Content-Disposition: attachment`, positive `Content-Length`, that many bytes arriving, and a binary `Content-Type`. A 3xx is refused outright (redirects are never followed) — a share link that bounces to a landing page is not a download and the button stays disabled with the reason shown.
+- `api-client.js` states the whole U2 service boundary as nine named entrypoints (`getSession`, `saveAnswer`, `getOptions`, `listInbox`, `postInbox`, `requestUpload`, `advance`, `getDelivery`, `verifyDeliveryLink`) and implements none of it; until U2 lands the page boots, draws every screen and says in words that nothing can be saved yet.
+- Accessibility asserted by `checks/a11y-check.mjs` (32 rules, light and dark): WCAG contrast computed from the real stylesheet tokens with every text pair clearing 4.5:1, a real `<label>` and `id` for every input, focus order = source order (no positive `tabindex`), a page change moving focus to the new page heading, a visible `:focus-visible` ring, every state announced in a polite live region and no state carried by motion or colour alone, and a `prefers-reduced-motion` guard. Not covered and said so in the same words: a real browser and a screen reader.
+- Proof: `cd 75-drama-song-ad-factory/mini-app/ui && bash checks/run-all.sh` runs four checks — `ui-contract.mjs` (the version-0 surface exists and imports cleanly), `a11y-check.mjs`, `qr-roundtrip.mjs` (the QR decoded by an independent decoder), and `download-bytes-check.mjs` (real bytes with the redirect-only negative control) — exit 0 = all pass, 2 = a check failed.
+- Version: `skill-version.txt` and the `SKILL.md` frontmatter land at v2.9.19 in this commit (G3 gate).
+## v2.9.20 - 2026-10-10 - U12: the pairing/admin surface behind the approval and QR gates
+
+The studio's pairing and admin surface at `mini-app/pairing`: the admin mints a
+client key and a single-use pairing code, the code burns on first use, wrong or
+absent admin keys are refused with nothing written, and the QR the machine scans
+is proved module-for-module identical to Apple's own `CIQRCodeGenerator`. Option 3
+is refused without a recorded approval naming the client, and nothing the browser
+loads persists anything. Seven files, disjoint from U2's `service/**`, U3's pages
+and U4's deploy files; it consumes U2's boundary prover, never copies it.
+
+Checks: 18 pairing tests exit 0; 17 pairing-guardrail checks exit 0; 14 QR cases
+module-for-module identical to Apple's encoder, exit 0.
+
+## v2.9.19 - 2026-10-10 - U2: the Drama Studio service foundation at mini-app/service
+
+The planned studio home (joint plan section 5.4) gets its service side: per-client
+keys and pairing codes, the inbox entry, direct uploads, retention, isolation, the
+option field and the real-wait line, and an approved lifecycle with one operator
+record per client per day. Service only — U3 owns the pages, U4 the deploy files,
+U12 the pairing/admin pages. Reuses the existing worker/media pattern; no new
+framework, scheduler or dashboard.
+
+Checks: 22 service tests exit 0; the boundary prover passes 9 cases exit 0.
+## v2.9.19 - 2026-10-10 - U5 shared studio bridge: atomic claim, replay, Windows-safe lease, quiet board
+
+Unit U5 of the drama studio joint plan (row U5). Adds the box-side half of the
+drama studio as four new files under `75-drama-song-ad-factory/shared-bridge/`,
+one implementation shared by OpenClaw boxes and Claude Code computers. No file
+here edits another unit's path (U1/U11 own `choice_card/intake_card`, U2
+`mini-app/service/**`, U3 the mini-app UI, U4 `mini-app/deploy/**`, U12 the
+pairing/admin surface).
+
+- `studio_claim.py` — the ledger. Atomic single-winner order claim (`INSERT OR
+  IGNORE` against a `UNIQUE` order id, so the database arbitrates and the losing
+  racer exits `2`), a replay guard (`UNIQUE(run_id, message_id)`), a Windows-safe
+  lease (one `UPSERT ... WHERE` in SQLite, never a lock file named from a key), a
+  notice gate, and cleanup receipts.
+- `studio_bridge.py` — the bridge. Key handshake, status, delivery, photo
+  handling, the quiet board, the owned-run cleanup receipt, and the CLI.
+- `checks/run_checks.py` — the five runnable checks (A–E), each with a true exit
+  code and a control on the same instrument.
+- `README.md` — the shared-bridge contract, the service contract it speaks to U2,
+  the three guarantees, the notice discipline and the deliberate limits.
+
+- Notice discipline: exactly one approval nudge, then at most one reminder
+  (default 24 hours later), then silence — `ClaimLedger.notice_gate()` returns
+  `"nudge"`, `"reminder"` or `None`, and `None` stays silent rather than being
+  re-worded. Check D holds the guard load-bearing from both sides: the predicate
+  fails on an unguarded sequence, and clearing the guard re-opens a notice.
+- The Windows liveness probe never reaches `os.kill`, which on Windows
+  `terminates` the process it is asked about; it uses
+  `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` and fails closed. Check C
+  proves the probe answers alive/dead without touching `os.kill` or a
+  colon-named lock file.
+- The presented key is read from env `DS_KEY` only — never argv, never a file
+  named on the command line, never a log line. Check E proves nothing is printed
+  with a positive control showing the detector can see the sentinel when present.
+- Proof: `python3 75-drama-song-ad-factory/shared-bridge/checks/run_checks.py`
+  reports `ALL PASS` (checks A–E) with exit 0. This is the real-content commit of
+  PR #1820 (branch `unit/U5-U1`); the v2.9.18 -> v2.9.19 patch bump and the
+  SKILL.md frontmatter are bundled into that same commit per the bundle protocol.
+## v2.9.19 - 2026-10-10 - Approvals layer and producer hand-off mini-app (U8-U1): first answer wins, version dedup, nudge -> reminder -> silence
+
+Adds seven new files under `mini-app/approvals/` and touches nothing else in the mini-app (no `mini-app/service/**`, `mini-app/ui/**`, `mini-app/deploy/**`, pairing surface or `intake_card` file).
+
+- `approvals.mjs` — the approvals layer, pure over an injected store: register/dedup an item, record an answer (first answer wins), the nudge -> reminder -> silence ladder, and the producer hand-off gate. The refusal dict and exit 5 reuse the skill's existing gate convention.
+- `ui.mjs` — the three approval cards and the studio-lines region; renders the service's lines verbatim (real `<button>`/`<h2>`, `textContent` never `innerHTML`, every state in words).
+- `producer-handoff.mjs` — the CLI that carries ONE approved item to the producer and refuses an unapproved one with a real non-zero exit (5).
+- `package.json` — `{"type":"module"}`, no dependencies.
+- Four behaviours, each with a runnable proof (`prove/approvals.prove.mjs`, exit 0/2) and a planted-bad control (`prove/planted-bad.sh`, mutates a LOCAL copy, shows red, restores, then the clean control): a competing answer is refused by name (`APPROVAL_ANSWER_TAKEN`) and the record is left untouched; the same version returns the existing item (`created:false`) while a genuinely new version creates a new item (`created:true`); exactly two notices, then silence; the hand-off refuses an unapproved item with exit 5.
+- Bundled in the same commit: `skill-version.txt` and the `SKILL.md` frontmatter land at v2.9.19 on this unit branch, so the G3 skill-content-without-version-bump gate passes on this head.
+## v2.9.19 - 2026-10-11 - U10-U1: video-link delivery — client-owned GHL-first verified link, R2 fallback
+
+- New `mini-app/video-link-delivery/` (joint plan section 5, row "U10 required", verbatim scope: "Only client-owned GHL-first verified video link and R2 fallback"; decision 5, answered by Trevor 2026-10-10). `video_link_delivery.py` answers one question — which link may be handed over, and is it really that link — under the order client-owned GoHighLevel (white label: Convert and Flow) FIRST, Cloudflare R2 (bucket `drama-studio`) only as the fallback, and it does not upload the video, message anyone, schedule anything or add a second control service or scheduler. It reuses the shape of the repo's proven `06-ghl-install-pages/tools/ghl_media.py`: bare `urllib` (no `requests`), a fail-loud `_require`, an injectable `fetcher` so every path is testable with no live call, and a single JSON envelope on stdout with a real exit code.
+- "Verified" is not a label: `verify_link()` FETCHES the URL and streams the bytes through sha256, so a link is deliverable only when it returns HTTP 200 **and** the bytes hash to the finished video's `expected_sha256`; a 200 that serves different media is refused exactly like a link that does not resolve.
+- The refuse rules, each exit 4: `cross-client-delivery` (the record and the delivery must be the same client), `token-in-url` (no candidate may embed a secret or be a signed/expiring link), `operator-owned-link` (an operator location id or operator host is refused outright, never silently skipped into the fallback), `ghl-candidate-not-client-media` / `ghl-candidate-not-client-owned`, `fallback-unverified`, and `no-verified-deliverable-link` (nothing verified ⇒ refuse rather than hand over anything unverified). The delivered record's `ownership` is derived from the source (`client-ghl` / `studio-r2-fallback`), never taken from the caller, so an operator-hosted upload can never be labelled as the client's.
+- CLI (repo envelope contract, `references/cli-contract.md`): `python3 mini-app/video-link-delivery/video_link_delivery.py deliver --request <path.json> [--out <record.json>]` — exactly one JSON object on stdout, no log noise; exit `0` ok / `1` error / `4` rejected.
+- Proof: `python3 75-drama-song-ad-factory/mini-app/video-link-delivery/checks/run_checks.py` exits 0 — six checks (A–F) pass and all six planted-bad copies are caught, so the check discriminates rather than rubber-stamping. Every URL is served by a local mock server on `127.0.0.1`: no live network call, no credential, no client message, no client-box write.
+- Version: `skill-version.txt` and the SKILL.md frontmatter land at v2.9.19 in this commit (G3 gate).
+## v2.9.19 - 2026-10-10 - U6: direct-shell persistent timer artifacts for macOS, Hostinger and Contabo (files only — nothing installed)
+
+Bundles the skill-version bump into the U6 real-content commit (G3: skill 75 content changed, so `skill-version.txt` and the `SKILL.md` frontmatter bump together on this one commit).
+
+- `timer-artifacts/run-timer.sh` — the direct-shell poller the scheduler runs; platform-aware, `exec`s the U5 `shared-bridge/studio_bridge.py handshake`. No idle model event, no interactive session, no model token on the exec line.
+- `timer-artifacts/install-timer.sh` — renders the platform definition into its install path. Files only: `--dry-run` is the default, `--register` is always refused. It never installs, loads, enables or schedules anything anywhere.
+- `timer-artifacts/mac/com.blackceo.drama-studio-bridge.plist.template` — macOS LaunchAgent, `ProgramArguments = [/bin/sh, run-timer.sh]`, `RunAtLoad` + `StartInterval 120`, no `KeepAlive`.
+- `timer-artifacts/hostinger/drama-studio-timer.cron.template` and `timer-artifacts/contabo/drama-studio-timer.cron.template` — `*/2` direct-shell poll on the persistent volume (state on the persistent root, never ephemeral `$HOME`).
+- `timer-artifacts/checks/run_checks.py` — the runnable checks A–G, each with a plantable negative control and a true exit code.
+- `timer-artifacts/README.md` — the mechanism and the install paths, stating nothing is installed, loaded, scheduled or registered.
+- No credential is embedded; `run-timer.sh` references the key from its 0600 store and exports `DS_KEY` in the environment only.
+- Proof: `python3 75-drama-song-ad-factory/timer-artifacts/checks/run_checks.py` is 22/22 green (exit 0) on the pristine tree; a lane-local copy with a planted credential literal in `run-timer.sh` fails `F no-secret` with a true non-zero exit (21/22), and that copy was deleted. No LaunchAgent, `launchctl` entry or crontab line for the timer exists on the build machine.
+## v2.9.19 - 2026-10-10 - HYBRIDDP-U1: dual-presence rule for hybrid ads (APPROVED 2026-10-11)
+
+Owner order 2026-10-11 (joint plan section 3.17). Every hybrid ad carries
+**exactly one** `DUAL_PRESENCE` shot: the photoreal lead and an opaque sketch
+twin visible together in one locked-off side-by-side two-shot, starting 45-75%
+of the ad (target 55-65%), held 3.0-6.0 s, photoreal 55-65% of width, twin
+35-45%, head heights within 15%, twin on the side opposite the lead. Two
+negative controls are required - the same shot with the twin removed, and the
+single-style "some time later" phone shot at 112.0-114.3 s - and both must
+return zero passing frames. It is a planned shot with its own storyboard field,
+never a patch.
+
+- `SKILL.md` gains the dual-presence bullet between the Five looks and Music
+  bullets; `INSTRUCTIONS.md` gains its own between Five looks and Music styles.
+- `scripts/core/style_bibles/hybrid/hybrid_bible.py` (stdlib only, never
+  renders, never calls a provider, never spends) gains the dual-presence
+  constants (commented STARTING values - calibrate on both controls),
+  `dual_presence_errors()` / `assert_dual_presence()` refusing each rule BY
+  NAME and never a bare boolean, `dual_presence_shot_list()` emitting the
+  single `DUAL-01` entry with `BASE_REAL` (photoreal clip) and `OVERLAY_SKETCH`
+  (alpha PNG, matched pose frame) and refusing to emit when the validator
+  refuses, `dual_presence_assembly()` (100% opacity alpha overlay on the
+  photoreal base, dissolve in 8 frames or fewer, hard cut out on 1 frame,
+  cross-blend refused by name) and the frame-level gate `qc_dual_presence()` /
+  `qc_dual_presence_window()`: sample at 4 fps, a frame passes when one half is
+  line art (low saturation, high edge density) and the other half is photoreal
+  colour, require `duration_s x 4` CONSECUTIVE passing frames with floor 12,
+  and run BOTH negative controls - a missing control is not a pass. Every
+  threshold comes from the constants, so calibration changes one place.
+- New colocated test `scripts/core/style_bibles/hybrid/test_hybrid_dual_presence.py`
+  (17 tests, stdlib, offline, $0): every named rule refused, one mutation per
+  rule; the shot list refusing to emit; the assembly refusals; the gate's OWN
+  known-good control FIRST - a synthetic frame pair it must PASS and a
+  synthetic single-style frame it must FAIL, so a gate that returns zero
+  passing frames on everything cannot read as a pass - then the positive
+  control and BOTH negative controls. Also proves a 17-frame run does not pass
+  an 18-frame requirement, and that the twin-removed clip used as the positive
+  control fails the gate.
+- MEASUREMENT, reported plainly (approved Spaulding 3V3 FIX2 video, sha256
+  `0213de02ff690bbb17d72a3171af432e6a2a36ee87409d4e341c70cf89503004`, read
+  from a read-only copy; the original was never edited, moved or re-encoded):
+  with the STARTING thresholds above and a 50/50 half split, the gate returns
+  ZERO passing frames on the real flagship beat window (88.292-93.792 s) - both
+  halves classify photoreal - while a real sketch window (2-6 s) classifies
+  SKETCH and real photoreal windows (100-104 s and the 112.0-114.3 s phone
+  control) classify PHOTOREAL. The instrument therefore discriminates, so this
+  is a real negative and not a broken check. The beat window does show elevated
+  low-saturation pixels (mean 8.3% of the frame vs 0.7% in plain photoreal) and
+  elevated edge density (0.20-0.29 vs 0.10-0.12), so the twin region is
+  plausibly present but smaller than, or positioned off, the 50/50 boundary.
+  NO real-video calibration was run: the bands ship as the plan's STARTING
+  values and calibrating them against both controls is the follow-up work the
+  plan itself calls for. Control one (twin removed) has no real-video
+  counterpart and is proven on synthetic frames only.
 
 ## v2.9.18 - 2026-10-10 - PKG-11 attempt 4: twelve REAL `produce_delivery` paths, real-run e2e, no fixture bytes
 

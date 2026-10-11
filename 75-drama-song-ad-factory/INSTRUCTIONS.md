@@ -274,6 +274,23 @@ card. The answers and the time answered go into the receipt
   lock identity across styles; golden realism carries the transformation.
   No lip-sync on sketch shots; Canvas to 3D lip-syncs only on lifelike 3D
   close-ups.
+- **Dual presence (hybrid ads, APPROVED 2026-10-11):** each hybrid ad carries
+  exactly one `DUAL_PRESENCE` shot - the photoreal lead and an opaque sketch
+  twin held together in one locked-off side-by-side two-shot, starting 45-75%
+  through the ad (target 55-65%) and held 3.0-6.0 s. Photoreal 55-65% of
+  width, twin 35-45%, head heights within 15%, twin on the side opposite the
+  lead. No split-screen, no picture-in-picture, no ghost blend, and never a
+  cross-blend of the two styles. Same identity in both; the sketch is pure
+  black-and-white line art, the base fully photoreal, exactly two figures; the
+  sketch eyeline lands on the photoreal lead. The storyboard field and the
+  shot list entry (`DUAL-01`, assets `BASE_REAL` plus `OVERLAY_SKETCH`) are
+  complete before any generation spend. Assembly is a 100% opacity alpha
+  overlay, dissolve in 8 frames or fewer, hard cut out 1 frame. QC samples the
+  window at 4 fps and needs `duration_s x 4` consecutive passing frames (floor
+  12), with two negative controls that must return zero passing frames - the
+  same shot with the twin removed, and the single-style "some time later"
+  phone shot at 112.0-114.3 s. It is a planned shot with its own storyboard
+  field, never a patch.
 - **Music styles:** Soul Ballad (default), R&B Flow, Soul Rise. The song
   brief, the Suno style prompt and the spoken/sung balance follow the choice.
 - **Voice (F1, one track):** ONE Suno generation makes the whole soundtrack.
