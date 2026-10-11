@@ -3984,5 +3984,59 @@ def test_ww29_u1_runbook_single_dispatch_is_the_one_song_case():
 # ===========================================================================
 
 
+
+# ===========================================================================
+# U9 (talk-to-a-person / send-a-question routing) -- BEGIN delimited block.
+# The U9 code path is present, routes a question to its epic, and records the
+# send at the stub boundary WITHOUT transmitting. A missing module is
+# UNDETERMINED, never a pass. Known-good controls run before the negatives.
+# ===========================================================================
+
+def _u9_pq():
+    """The U9 module, or None when it has not landed yet (UNDETERMINED, not pass)."""
+    try:
+        import choice_card.intake_card.person_question as PQ
+        return PQ
+    except Exception:
+        return None
+
+def test_u9_person_question_routes_and_stubs():
+    PQ = _u9_pq()
+    if not gate(PQ is not None,
+                "U9: choice_card.intake_card.person_question is present",
+                "U9 module has not landed on this tree"):
+        return
+    rec = PQ.deliver(PQ.build("question", "Can I get a refund on the price?", "a1b2c3d4e5f6"))
+    check(rec["epic"] == "billing" and rec["routed_by"] == "topic",
+          "U9: a billing question routes to the billing epic by topic")
+    handoff = PQ.route(PQ.build("talk-to-a-person", "please have someone reach out",
+                                "a1b2c3d4e5f6"))
+    check(handoff["epic"] == "handoff" and handoff["routed_by"] == "kind",
+          "U9: a talk-to-a-person request routes to the handoff epic by kind (negative control for topic routing)")
+    check(rec["sent"] is False and rec["stubbed"] is True,
+          "U9: the send is stubbed -- the record says sent=False and the sink was reached")
+    check(rec["argv"][:2] == ["openclaw", "message"],
+          "U9: the stub records the exact openclaw send argv that would have gone out")
+    check(rec["target"] == "inbox:billing",
+          "U9: the epic decides the target when the caller names none")
+
+def test_u9_person_question_refuses_an_invalid_payload():
+    PQ = _u9_pq()
+    if not gate(PQ is not None,
+                "U9: person_question is present (refusal arm)",
+                "U9 module has not landed on this tree"):
+        return
+    try:
+        PQ.build("question", "   ", "a1b2c3d4e5f6")
+    except PQ.QuestionError as e:
+        check(e.reason_code == "empty-text",
+              "U9: an empty question is refused with the empty-text reason code")
+    else:
+        check(False, "U9: an empty question was accepted (must be refused)")
+
+# ===========================================================================
+# U9 -- END delimited block.
+# ===========================================================================
+
 if __name__ == "__main__":
     raise SystemExit(main())

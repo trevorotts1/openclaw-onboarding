@@ -6,6 +6,31 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.33 - 2026-10-11 - U9: talk-to-a-person / send-a-question code path (no live send)
+
+ONE real-content commit whose parent is the live head of `main`
+(`0babaac8`, read at build time). Adds the version-1 client question path and
+bumps Skill 75 exactly once, inside this one commit; the repository root
+`/version` and root `CHANGELOG.md` are unchanged.
+
+- `scripts/core/choice_card/intake_card/person_question.py` - the U9 code path.
+  A client's free-text QUESTION or TALK-TO-A-PERSON request builds ONE payload,
+  is validated at the trust boundary (`unknown-kind`, `empty-text`,
+  `text-too-long`, `missing-run-id`, `unknown-channel`, `unknown-epic`), and is
+  ROUTED to an epic: an explicit epic wins, else the first topic keyword match
+  (billing / song / storyboard / delivery), else the talk-to-a-person KIND
+  (handoff), else the default intake epic. Routing is load-bearing -- the epic
+  decides the target when the caller names none.
+- NO live send. `deliver()` reuses the skill's ONE channel-neutral send path
+  (`choice_card.intake_card.channel_send`, U11) with a RECORDING sink, so the
+  stub records exactly what WOULD have been sent (the `openclaw message send`
+  argv) and the real transport is never reached; the record says `sent: false`.
+  With a run_dir it appends one JSON line per question to
+  `<run_dir>/control/person-question.jsonl`.
+- Fixtures: `person_question_fixtures.json`. Test:
+  `choice_card/intake_card/test_person_question_u9.py` (11 checks); one
+  delimited block joins the battery `music_qc/test_wwfix_u1.py`.
+
 ## v2.9.32 - 2026-10-11 - WW-29: optional vocalise, no stale early-hook rule, consistent R&B Flow direction, one reconciled fewer-words budget
 
 ONE real-content commit whose parent is the live head of `unit/WWC-U1`
