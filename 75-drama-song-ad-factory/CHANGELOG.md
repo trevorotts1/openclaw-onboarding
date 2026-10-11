@@ -6,6 +6,15 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.20 - 2026-10-10 - U11: channel-neutral send + requested-only device notice
+
+Unit U11 (joint plan section 5, wave 1b; second writer behind U1, built on U1's head 261d0e0fe). Not yet released: it rides in its own DRAFT unit PR and folds into a batch release later.
+
+- `scripts/core/choice_card/intake_card/channel_send.py` is the ONE channel-neutral send path. `app`, `terminal` and `storyboard` are channels, not senders: `CHANNEL_SEND[c].func is send` for all three, so they share one function object and the send rules cannot drift.
+- It reuses the existing send (`intake_card.openclaw_send_argv`, the same argv the choice card and the storyboard approval runner already build) and the existing gates: `send(..., gate=S)` runs the gate FIRST, and a refusal raises `SendRefused` before anything is built or sent (CLI exit 5, empty stdout). `song_pick_gate` is the existing `song_choices.refusal` reused verbatim; no gate is re-implemented, weakened or bypassed.
+- Requested-only device notice: `device_notice(requested=False)` sends NOTHING; only `requested=True` sends. With a run_dir the one nudge is recorded (`control/device-notice.json`) and every later call is silent - one nudge, then silence; the client is never spammed.
+- Docs: `README-channel-send.md` in the package. Proof: `python3 core/choice_card/intake_card/test_channel_send_u11.py` (10 checks green), including the negative control that removing the requested-only guard makes the unrequested check fail. Version marker `skill-version.txt` and the SKILL.md frontmatter v2.9.19 -> v2.9.20 (G3).
+
 ## v2.9.19 - 2026-10-10 - U1: the studio-json question/price/example export
 
 Unit U1 (joint plan section 5, wave 1b). Not yet released: it rides in its own DRAFT unit PR and folds into a batch release later.
