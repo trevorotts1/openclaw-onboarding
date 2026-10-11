@@ -21,13 +21,22 @@ CLIENT = "I am not small. I never was. One seed of truth made me strong. She Fou
 HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
 
 
-def sheet(hook=HOOK, repeats=3, vocalise=True):
+def sheet(hook=HOOK, repeats=3, vocalise=True, rap=False):
     s = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]}]
     if vocalise:
         s.append({"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,", "A-a-a-a-a-ah,"]})
     # FU-HOOK-PLACEMENT: the verse builds up to the hook; the hook never opens.
     s.append({"tag": "Verse", "delivery": "sung",
               "lines": ["One seed of truth made me stro-o-ong,", "One seed is a-all I ne-e-eed,"]})
+    if rap:
+        # WWFIX D1: R&B Flow DELIVERS rap, so its sheet must plan the rap floor
+        # (max(8 s, 10% of D) = 20 rap words at 58 s) and keep the sung share;
+        # the last sung section stays the hook (the chorus closes the song).
+        s.append({"tag": "Verse", "delivery": "sung",
+                  "lines": ["I hold the light I found,", "I walk free,", "I am more than this,"]})
+        s.append({"tag": "Verse", "delivery": "rap",
+                  "lines": ["Backup shoes, backup jacket, but no backup plan,",
+                            "So I count what I make and not what they take today,"]})
     for i in range(repeats):
         s.append({"tag": "Hook %d" % (i + 1), "delivery": "sung", "lines": list(hook)})
     s.append({"tag": "Outro", "delivery": "spoken",
@@ -144,7 +153,7 @@ class Recipe(unittest.TestCase):
         import suno_recipe as R        # same wave as MD: the collection drop (conftest) re-executes both
         if not MD.workcopy_paths()["models"].is_file():
             self.skipTest("68-kie-audio catalog not in this checkout")
-        out = R.prepare("rnb-flow", sheet(), CLIENT, 58, hook_plan=HOOK_PLAN)
+        out = R.prepare("rnb-flow", sheet(rap=True), CLIENT, 58, hook_plan=HOOK_PLAN)
         out["style"] = out["style"]
         req = MD.build_generate_request(out["lyrics"], out["style"], "T",
                                         style_id="rnb-flow", client_text=CLIENT,

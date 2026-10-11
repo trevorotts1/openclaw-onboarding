@@ -307,6 +307,52 @@ def cmd_script_reply(a):
                         _script_gate(run_dir, a, reply=a.reply))
 
 
+def _song_choices_next(run_dir, orchestrated=False):
+    """SONG APPROVAL = Yes -> the three-version music runner descriptors.
+
+    Exposes the canonical umbrella command AND the three owned unit
+    descriptors, with an EXPLICIT orchestrated-mode selection: exactly ONE of
+    them is ``selected`` and goes in ``command``; the other is listed only, so
+    the two are never emitted or executed together (an unqualified umbrella in
+    every unit prompt would fan out three each and pay for NINE generations).
+    ``None`` when this run did not answer Yes."""
+    try:
+        _c = str(Path(__file__).resolve().parent.parent)
+        if _c not in sys.path:
+            sys.path.insert(0, _c)
+        from song_choices import song_choices as _sc   # noqa: PLC0415
+        st = _sc._state(str(run_dir))
+    except Exception:  # noqa: BLE001 - a broken gate never silently opens the single row
+        return None
+    if not st or not st.get("required"):
+        return None
+    rd = str(run_dir)
+    units = _sc.plan_units(rd)["units"]
+    base = ("python3 scripts/core/song_choices/song_choices.py generate "
+            "--run-dir \"$RUN\" --request \"$RUN/music/req.json\" "
+            "--ledger \"$RUN/spend.sqlite3\" --run-id \"$RUN_ID\"")
+    umbrella = base
+    for u in units:
+        u["command"] = base + " --unit-id %s" % u["unit_id"]
+        u["selected"] = bool(orchestrated)
+    mode = "orchestrated" if orchestrated else "umbrella"
+    return {
+        "mode": mode,
+        "orchestrated": bool(orchestrated),
+        "umbrella_command": umbrella,
+        "command": "" if orchestrated else umbrella,
+        "units": units,
+        "selected_command": ((units[0]["command"] if units else umbrella)
+                             if orchestrated else umbrella),
+        "provider_slots": _sc.PROVIDER_SLOTS, "reserve": _sc.RESERVE,
+        "builder_agent_units": len(units), "media_concurrency": len(units),
+        "note": "Choose ONE: umbrella (3 provider jobs in 3 threads, ONE agent "
+                "unit) OR orchestrated (3 units, ONE variant each, 1 job per "
+                "unit). Never both: that pays for nine generations.",
+        "overlap_min_s": _sc.OVERLAP_MIN_S,
+    }
+
+
 def cmd_next(a):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
     run_dir = Path(a.run_dir or ".").expanduser().resolve()
@@ -382,6 +428,20 @@ def cmd_next(a):
         sa = _script_gate(run_dir, a, reply=None)
         if sa["outcome"] != "go":
             return _sa_envelope("next", str(sid), sa)
+        # D2 item 1: SONG APPROVAL = Yes routes HERE, to the three-version
+        # music runner, not the single dispatch runbook row.
+        sc = _song_choices_next(run_dir, orchestrated=bool(getattr(a, "orchestrated", False)))
+        if sc is not None:
+            lane = lane_size_payload()
+            return envelope(
+                "next", str(sid), "ok", "next-stage",
+                "SONG APPROVAL = Yes: run the three-version music runner (%s mode); "
+                "one submission pass, overlap receipt, no paid redo for a missing overlap."
+                % sc["mode"],
+                data={"stage": next_stage, "command": sc["command"],
+                      "produces": row.get("produces", ""), "lane_size": lane,
+                      "stages_source": stages_source, "song_choices": sc},
+                evidence=["%s" % db, runbook_path])
     lane = lane_size_payload()
     nxt = {"stage": next_stage, "command": row["command"],
            "produces": row.get("produces", ""), "lane_size": lane,
@@ -429,6 +489,10 @@ def main(argv=None):
                                     "how many lanes may run (manual 02 B1).")
     n.add_argument("--run-dir", required=True,
                    help="Run dir that holds control/state.sqlite3.")
+    n.add_argument("--orchestrated", action="store_true",
+                   help="With SONG APPROVAL = Yes, select the ORCHESTRATED mode "
+                        "(three units, one variant each) instead of the umbrella "
+                        "three-up runner. Exactly one mode is ever emitted.")
     sb = sub.add_parser("storyboard", help="Storyboard approval step: send cards + "
                         "stills, or apply the client's reply.")
     sb.add_argument("--run-dir", required=True)

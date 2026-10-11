@@ -6,7 +6,74 @@ frontmatter `version:` field).
 
 ---
 
-## v2.9.19 - 2026-10-10 - U4-U1: Drama Studio mini-app deploy files, dry-run path and a hard zone guard (files only, no deploy)
+## v2.9.21 - 2026-10-11 - WWFIX-U1: the rap floor, the story gates, the pace instrument and the three-version music trap
+
+Every threshold added below is a NEW ACCEPTANCE RULE set by this fix, not a measured limit of an
+earlier run; the two exceptions anchored to real measurements are the pace controls (fast 90.909 /
+half-time 44.776 bpm) and the rejection of the shipped takes (tempo ratio 1.0).
+
+- **D1 rap floor (NEW RULE).** `length_formula` gains `RAP_FLOOR_S = 8.0`, `RAP_FLOOR_SHARE = 0.10`,
+  `rap_floor_s(D)`, `rap_floor_words(style_id, D)`, `rap_gate`/`assert_rap_floor` and
+  `RapFloorError`. `rap_s >= max(8.0, 0.10 * D)` and `rap_words >= ceil(rap_s * the style's rap
+  rate)`; at D = 88 that is 8.8 s and 22 words. `plan()` always emits `words.rap`, `rap_s`,
+  `rap_floor_s` and the gate report for a rap style, and the opener keeps its cap while the closing
+  call to action YIELDS, so the spoken blocks can no longer carve the rap budget to zero. Before-fail
+  reproduced on origin/main: `plan(90, 'rnb-flow')` had NO `rap` key and `plan(180,'rnb-flow')`
+  reported `rap_s` 11.5 with no floor; `plan(90,'soul-ballad')` is byte-identical (word total 95).
+  `song_contract.check_sheet` refuses a rap sheet below the floor before any spend
+  (`RAP_PLANNED_ZERO_WORDS`); the previous behaviour on origin/main PASSED that sheet.
+- **D1 story gates (NEW RULES), `scripts/core/story_coverage/`.** `story_start_gate` measures the
+  approved PLOT LINE (a run of at least 4 consecutive plot words, never one stray word) against an
+  ABSOLUTE `FIRST_STORY_WORD_MAX_S = 5.0` and the opening wordless span against
+  `OPENING_NON_LEXICAL_MAX_SHARE = 0.15` of the delivered seconds; `lexical_coverage_gate` demands
+  `LEXICAL_COVERAGE_MIN = 0.70` of delivered time in real lexical words with NO vocalise counted;
+  `story_arc_gate` demands a measured lexical line in every story-arc window of at least 5 s.
+  `song_contract.check_returned_story` exposes the verdict to the take judge, and
+  `coverage_report()` keeps the words figure and the music-only figure under SEPARATE labels (the
+  58.4 s figure is 50.416 s of words + 8 s of music, never 58.4 s of words).
+- **D1 pace gate (NEW RULES), `scripts/core/music_qc/pace_change.py`.** Positive spectral flux with
+  local onset peaks, a fixed mean-plus-standard-deviation threshold and a >= 0.12 s peak spacing. A
+  gear change needs BOTH a >= 30% onset-rate reduction AND a >= 3 dB energy drop in the problem
+  window, the return to baseline within 20% and 3 dB, and an independent smooth-transition check.
+  bpm is reported and octave-folded but NEVER grants a PASS (85.2 and 181.5 bpm are the same beat an
+  octave apart, which is why the run's own `deliver.py` half-time rule was wrong). Missing evidence
+  is UNMEASURED, which blocks a take PASS.
+- **D1 rap on the audio stays UNMEASURED, fail-closed**, `scripts/core/music_qc/rap_check.py`. No
+  validated rap detector exists, so `gate`/`classify` return UNMEASURED until a labelled rap control
+  is present; no fabricated threshold ships.
+- **D2 the three-version music trap, `scripts/core/song_choices/`.** `one_variant` is the ONE
+  single-variant worker path; `run_unit(requests, unit_id=..., variant_id=...)` is the per-unit
+  selector and dispatches ONE variant; `generate_choices` is the umbrella and runs all three once in
+  three threads inside ONE agent unit. `cmd_generate` reports `dispatched: 1` for a unit and
+  `dispatched: 3, media_concurrency: 3, builder_agent_units: 1` for the umbrella, so three THREADS
+  are never relabelled as three visible agent units. `plan_units` names WW-001..WW-003, providerSlots
+  3, reserve 0, one owned folder and one owned request each; `_require_three` refuses a wrong or
+  repeated set before any spend; `fan_in`/`deliver_choices` take no generate callable at all, so
+  fan-in can only check and deliver. `factory._song_choices_next` exposes the umbrella command AND
+  the three unit descriptors with an EXPLICIT `--orchestrated` selection and selects exactly one:
+  never both, because an unqualified umbrella in every unit prompt pays for NINE generations.
+- **D2 provider-overlap receipt, ONE implementation** (`song_choices/overlap.py`): `overlap_s =
+  min(terminal_at) - max(submitted_at)` over exactly the THREE INITIAL attempts, PASS at >= 1.000 s,
+  FAIL at 0.999 s / zero / negative, UNAVAILABLE (never a pass) without labelled aware-UTC
+  timestamps; a regenerated attempt never counts and the gate never authorises a paid redo.
+  `kie_dispatch` stamps `accepted_submit_at` only after a VALID task id and `terminal_at` at the first
+  terminal provider response; both ride the ok envelope.
+- **New tests** `scripts/core/music_qc/test_wwfix_u1.py`: the four D2 tests plus the dispatch-count
+  test, `_require_three`/`_select_one`, the overlap boundary (1.000 PASS / 0.999 FAIL / zero FAIL /
+  UNAVAILABLE), the rap floor and the zero-rap refusal, the story start / lexical coverage / story
+  arc gates, the pace controls and the bpm-never-passes rule, the fail-closed rap check, the
+  words-versus-music labels, and a regression pin that the failed run's 58 s sheet parses as
+  69 sung + 13 spoken + 19 rap = 101 words, never as 101 words of one delivery.
+- **Existing fixtures updated to carry the rap the style delivers**: `song_choices` test sheets and
+  the `suno_recipe` seam sheet now use an R&B Flow sheet with a rap verse, and
+  `song_contract/fixtures/rnb-flow-150-pass.txt` (Verse 2) plus
+  `references/prompt-templates/fixtures/suno-sheets/suno-90s-rnb-flow.json` (Verse 2 line) were
+  extended to meet the floor. `song_choices` and `suno_recipe` suites are green (18 and 36 tests).
+- **Version**: `skill-version.txt` and the `SKILL.md` frontmatter `version:` land at v2.9.21 in this
+  same commit, bundled with the real content (G3 gates a skill-content change on that bump).
+
+---
+
 
 - New `mini-app/deploy/` (three deploy-side files): `deploy.sh`, `deploy.manifest.json` and `DEPLOY.md`. U2 owns `worker/` (the service) and U3 owns `pages/` (the UI); this unit owns `deploy/` only and ships no worker, no page and no deployment. Nothing is deployed by this commit: no `wrangler` call, no Cloudflare mutation, no bucket creation, no secret creation, no token use.
 - `deploy.sh` reuses the Book Writer deploy pattern (`53-book-writer/mini-app/deploy`). Real Cloudflare ids stay `<PLACEHOLDER>` in `worker/wrangler.toml`; the script resolves them into a THROWAWAY config in `$TMPDIR` (deleted on exit) passed to `npx wrangler --config`, so no real id ever lands in git. Token and secret VALUES are env-only (`CLOUDFLARE_DRAMA_STUDIO_API_TOKEN`, forwarded per call to wrangler's native `CLOUDFLARE_API_TOKEN`; secret values piped to wrangler stdin) and no value is ever printed.

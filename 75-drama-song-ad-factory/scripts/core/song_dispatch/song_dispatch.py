@@ -295,6 +295,15 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # _hook_plan; it moves into the judge's plan and never reaches KIE.
     plan = dict(plan, hook_plan=request.get("_hook_plan") or plan.get("hook_plan"))
     request = {k: v for k, v in request.items() if k != "_hook_plan"}
+    # WWFIX D1/F2: the ordered pace change rides the request the same way
+    # (_pace_plan). It moves into the judge's plan and NEVER reaches KIE.
+    plan = dict(plan, pace_change=request.get("_pace_plan") or plan.get("pace_change"))
+    request = {k: v for k, v in request.items() if k != "_pace_plan"}
+    # D2: when the run answered Yes to SONG APPROVAL the music stage runs as
+    # THREE variants, and each variant is generated per variant; the three
+    # variants run in PARALLEL lanes (song_choices.plan_units, providerSlots 3,
+    # reserve 0), so a variant is one lane's whole job, never a second take of
+    # the same arrangement.
     refuse_asr("faster-" + "wh" + "isper")
     plan = dict(plan, sheet_text=plan.get("sheet_text") or request.get("lyrics"))
     spent, receipts, best = 0, [], None
