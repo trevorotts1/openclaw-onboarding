@@ -71,6 +71,21 @@ OUTRO_MAX_WORDS = 30              # the CTA's own floor cap; it scales for long 
 #: opener and the closing call to action YIELD to them.
 RAP_FLOOR_S = 8.0          # absolute seconds of rap, whatever the length
 RAP_FLOOR_SHARE = 0.10     # and at least this share of the delivered seconds
+#: WW-01 item 2 (NEW PROPOSED 2026-10-11). The TOTAL rap floor above is about
+#: 11 words per verse at D 88 -- not a real rap budget, which is how a 19-word
+#: two-verse sheet shipped. So every DECLARED rap verse has its own floor, and a
+#: sheet must declare at least MIN_RAP_VERSES of them. Two verses at the floor
+#: give 16.0 s / 40 words, so the total floor (8.8 s / 22 words) still holds:
+#: the per-verse rule is strictly STRONGER than the total, never a replacement.
+RAP_VERSE_MIN_S = 8.0      # every declared rap verse, on its own
+MIN_RAP_VERSES = 2         # a sheet with fewer than this many rap verses refuses
+#: WW-01 item 3 (NEW PROPOSED). The plan the formula emits must itself satisfy
+#: the 70 % lexical floor, with the sung allocation re-priced at the STYLE's real
+#: rate instead of the generic SUNG_WPS. The shipped formula priced sung words at
+#: 1.07 words/s and emitted 15/2.0 + 23/2.5 + 67/1.9 = 51.9632 lexical seconds
+#: against the 61.6 owed at D = 88. ONE copy of the rule: story_coverage holds
+#: the same 0.70 for the delivered audio, and the two must agree.
+LEXICAL_COVERAGE_MIN = 0.70
 #: Block caps that keep a spoken block from turning the track into speech. The
 #: OPENER never passes OPENER_MAX_WORDS_*; the CTA may carry what the ad's own
 #: spoken target needs once the length is past the short classes, so the band is
@@ -206,6 +221,11 @@ class RapFloorError(LengthError):
     silent "no rap planned"."""
 
 
+class LexicalFloorError(LengthError):
+    """A plan that does not clear the 70 % lexical-completeness floor it is
+    judged on: the formula must never emit such a plan (WW-01 item 3)."""
+
+
 def rap_floor_s(delivered_s):
     """The rap floor in SECONDS: max(8.0, 10% of the delivered seconds).
 
@@ -224,19 +244,49 @@ def rap_floor_words(style_id, delivered_s=None):
     return int(math.ceil(secs * rate))
 
 
+def rap_verse_min_words(style_id):
+    """``ceil(RAP_VERSE_MIN_S * the style's rap rate)`` -- 20 words at the R&B
+    Flow rap rate of 2.5 words/s. NEW PROPOSED ACCEPTANCE RULE (WW-01)."""
+    return int(math.ceil(RAP_VERSE_MIN_S * _WF.rates_for(style_id)["rap"]))
+
+
+def rap_verse_budget_s(delivered_s):
+    """The rap budget the PLAN must reserve for the verses: the larger of the
+    total floor and MIN_RAP_VERSES verses at RAP_VERSE_MIN_S each. At D = 88
+    that is max(8.8, 16.0) = 16.0 s, so the plan emits the two verses a sheet is
+    required to declare. NEW PROPOSED ACCEPTANCE RULE (WW-01)."""
+    return max(rap_floor_s(delivered_s), MIN_RAP_VERSES * RAP_VERSE_MIN_S)
+
+
+def rap_verse_floor_for(style_id):
+    """The PER-VERSE rap floor for one style: seconds and words per verse, the
+    minimum verse count, and the rate the word floor is derived from.
+
+    NEW PROPOSED ACCEPTANCE RULE (WW-01 item 2): every declared rap verse must
+    reach ``RAP_VERSE_MIN_S`` seconds and ``ceil(RAP_VERSE_MIN_S * rap rate)``
+    words, and a sheet declaring fewer than ``MIN_RAP_VERSES`` rap verses is
+    refused before any spend."""
+    rate = _WF.rates_for(style_id)["rap"]
+    return {"min_s": RAP_VERSE_MIN_S, "min_words": rap_verse_min_words(style_id),
+            "min_verses": MIN_RAP_VERSES, "rate": rate,
+            "source": "WW-01 (NEW PROPOSED): every declared rap verse >= 8.0 s "
+                      "and >= ceil(8.0 * the style's rap rate) words"}
+
+
 def rap_floor_gate(plan, style_id=None):
     """The D1 rap gate: PASS / FAIL / N/A for one plan.
 
     FAILS whenever a RAP STYLE plans zero rap words, and also when it plans
-    fewer than the floor (RAP_FLOOR_S seconds / the derived word floor). A
-    style whose deliveries carry no rap is not applicable and PASSes. The gate
-    reads the plan, so it can run on the plan BEFORE any paid generation.
+    fewer than the floor (the per-verse reservation in seconds, and the word
+    floor at the style's own rap rate). A style whose deliveries carry no rap
+    is not applicable and PASSes. The gate reads the plan, so it can run on the
+    plan BEFORE any paid generation.
 
-    NEW ACCEPTANCE RULE: every threshold here comes from this fix."""
+    NEW PROPOSED ACCEPTANCE RULE: every threshold here comes from this fix."""
     sid = style_id or (plan or {}).get("style_id")
     D = (plan or {}).get("delivered_s")
-    floor_s = rap_floor_s(D) if isinstance(D, (int, float)) and not isinstance(D, bool) \
-        else RAP_FLOOR_S
+    floor_s = rap_verse_budget_s(D) if isinstance(D, (int, float)) \
+        and not isinstance(D, bool) else MIN_RAP_VERSES * RAP_VERSE_MIN_S
     if not _rap_style(sid):
         return {"verdict": "PASS", "applicable": False,
                 "detail": "style %r does not deliver rap" % (sid,),
@@ -244,7 +294,8 @@ def rap_floor_gate(plan, style_id=None):
     words = (plan or {}).get("words") or {}
     rap_words = words.get("rap", 0) or 0
     rap_s = (plan or {}).get("rap_s", 0.0) or 0.0
-    floor_words = rap_floor_words(sid, D)
+    floor_words = max(rap_floor_words(sid, D),
+                      rap_verse_min_words(sid) * MIN_RAP_VERSES)
     if not rap_words:
         verdict, code = "FAIL", "RAP_PLANNED_ZERO_WORDS"
     elif rap_words < floor_words or rap_s + 1e-9 < floor_s:
@@ -258,7 +309,7 @@ def rap_floor_gate(plan, style_id=None):
         "thresholds_are_new_acceptance_rules": True,
         "detail": ("%s planned %d rap words / %.1f s (floor %d words / %.1f s)"
                    % (sid, rap_words, rap_s, floor_words, floor_s)),
-        "source": "WWFIX D1: rap floor + the gate that FAILS on zero rap words",
+        "source": "WW-01: rap floor + the gate that FAILS on zero rap words",
     }
 
 
@@ -268,6 +319,59 @@ def assert_rap_floor(plan, style_id=None):
     gate = rap_floor_gate(plan, style_id)
     if gate["verdict"] != "PASS":
         raise RapFloorError("%s: %s" % (gate["reason_code"], gate["detail"]))
+    return gate
+
+
+# ---------------------------------------------------------------------------
+# WW-01 item 3: THE LEXICAL-COMPLETENESS ASSERTION. The plan the formula emits
+# must satisfy the 70 % lexical floor ITSELF, with the sung allocation priced at
+# the STYLE's real rate. The shipped formula priced sung words at the generic
+# SUNG_WPS (1.07) and the R&B Flow plan emitted 15/2.0 + 23/2.5 + 67/1.9 =
+# 51.9632 lexical seconds against the 61.6 owed at D = 88.
+
+def lexical_floor_s(delivered_s):
+    """The lexical seconds a delivered length owes: 70 % of D.
+
+    NEW PROPOSED ACCEPTANCE RULE (WW-01 item 3)."""
+    return LEXICAL_COVERAGE_MIN * float(delivered_s)
+
+
+def lexical_seconds(plan, style_id=None):
+    """Real lexical seconds of a plan: the sung, spoken and rap word counts at
+    the STYLE's own rates (words_fit), never the generic SUNG_WPS."""
+    sid = style_id or (plan or {}).get("style_id")
+    rates = _WF.rates_for(sid)
+    w = (plan or {}).get("words") or {}
+    return (w.get("sung", 0) / float(rates["sung"])
+            + w.get("spoken", 0) / float(rates["spoken"])
+            + w.get("rap", 0) / float(rates["rap"]))
+
+
+def lexical_gate(plan, style_id=None):
+    """PASS / FAIL for one plan against the 70 % lexical floor.
+
+    NEW PROPOSED ACCEPTANCE RULE (WW-01 item 3), derived from the same 0.70 the
+    delivered-audio lexical gate uses, re-priced at the plan's own style rates."""
+    D = (plan or {}).get("delivered_s")
+    owed = lexical_floor_s(D) if isinstance(D, (int, float)) \
+        and not isinstance(D, bool) else 0.0
+    have = lexical_seconds(plan, style_id)
+    ok = have + 1e-9 >= owed
+    return {"verdict": "PASS" if ok else "FAIL", "lexical_s": round(have, 4),
+            "owed_s": round(owed, 4), "floor_pct": LEXICAL_COVERAGE_MIN,
+            "thresholds_are_new_acceptance_rules": True,
+            "reason_code": "LEXICAL_FLOOR_MET" if ok else "LEXICAL_FLOOR_SHORT",
+            "detail": ("%.4f lexical seconds against the %.4f owed (%.0f%% of %s s)"
+                       % (have, owed, LEXICAL_COVERAGE_MIN * 100, D)),
+            "source": "WW-01 item 3: the plan must clear the 70 % lexical floor "
+                      "at the style's real rates"}
+
+
+def assert_lexical_floor(plan, style_id=None):
+    """Raise LexicalFloorError unless the plan clears the lexical floor."""
+    gate = lexical_gate(plan, style_id)
+    if gate["verdict"] != "PASS":
+        raise LexicalFloorError("%s: %s" % (gate["reason_code"], gate["detail"]))
     return gate
 
 
@@ -484,16 +588,19 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True):
         opener = min(opener_cap, max(min(wb["spoken_words"], opener_cap + OUTRO_MAX_WORDS) // 4, 1))
         cta_cap = OUTRO_MAX_WORDS
     spoken_words = min(wb["spoken_words"], opener + cta_cap)
+    sung_words = wb["sung_words"]
     planned_share = round(spoken_words / SPOKEN_WPS / D * 100.0, 1)
     rap_words, rap_s = 0, 0.0
     if _rap_style(style_id):
-        # WWFIX D1 (2026-10-11): THE RAP FLOOR. The spoken blocks may spend no
-        # more than (spoken_s - RAP_FLOOR_S) seconds, so the opener and the
-        # closing call to action YIELD to the rap verses. Without this, the
-        # caps above could spend the whole spoken allowance and the plan would
-        # silently report NO RAP (rap_s = 0, rap_words = 0, no ``rap`` key).
-        # This floor is a NEW ACCEPTANCE RULE; the gate below re-checks it.
-        rap_rate = _WF.rates_for(style_id)["rap"]
+        # WWFIX D1 (2026-10-11) x WW-01 (2026-10-11): THE RAP FLOOR. The spoken
+        # blocks may spend no more than (spoken_s - RAP_FLOOR_S) seconds, so the
+        # opener and the closing call to action YIELD to the rap verses. Without
+        # this, the caps above could spend the whole spoken allowance and the
+        # plan would silently report NO RAP (rap_s = 0, rap_words = 0, no
+        # ``rap`` key). These floors are NEW PROPOSED ACCEPTANCE RULES; the
+        # gates below re-check them.
+        rates = _WF.rates_for(style_id)
+        rap_rate = rates["rap"]
         # The floor is max(RAP_FLOOR_S, RAP_FLOOR_SHARE * D) -- one rule, read
         # from rap_floor_s() so the plan and the gate can never disagree. The
         # OPENER keeps the cap it always had; it is the CTA (and any other
@@ -501,20 +608,38 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True):
         # inside the same cap while the rap verses are guaranteed their floor.
         # rap_floor=False keeps the FU-U2 carve verbatim: no cap, rap rounded.
         if rap_floor:
+            # WW-01 item 2: the per-verse reservation. The plan must emit the
+            # MIN_RAP_VERSES verses a sheet is required to declare, each at
+            # RAP_VERSE_MIN_S, so the budget is max(total floor, 16.0 s) at
+            # D = 88 -- strictly stronger than the total floor, never a
+            # replacement for it.
             spoken_cap_words = int(max(wb["spoken_s"] - rap_floor_s(D), 0.0) * SPOKEN_WPS)
             spoken_words = min(spoken_words, spoken_cap_words)
         rap_s = max(wb["spoken_s"] - spoken_words / SPOKEN_WPS, 0.0)
         if rap_floor:
-            # ceil(rap_s * rate), and never below the word floor the gate reads
-            # -- the cap above is computed in floats, so this pins the invariant.
-            rap_words = max(int(math.ceil(rap_s * rap_rate)), rap_floor_words(style_id, D))
+            rap_s = max(rap_s, rap_verse_budget_s(D))
+            # ceil(rap_s * rate), and never below the per-verse word floor the
+            # gate reads -- the caps above are computed in floats, so this pins
+            # the invariant.
+            rap_words = max(int(math.ceil(rap_s * rap_rate)),
+                            rap_verse_min_words(style_id) * MIN_RAP_VERSES)
+            # WW-01 item 3: THE LEXICAL-COMPLETENESS ASSERTION. The plan must
+            # clear the 70 % lexical floor itself, so the sung allocation is
+            # re-priced at the STYLE's real sung rate (1.9 words/s for R&B Flow)
+            # instead of the generic SUNG_WPS -- the shipped formula emitted
+            # 51.9632 lexical seconds against the 61.6 owed at D = 88. The
+            # generic sung budget stays a FLOOR: more singing is never a fault.
+            lex_need_s = (lexical_floor_s(D)
+                          - spoken_words / float(rates["spoken"]) - rap_s)
+            if lex_need_s > 0:
+                sung_words = max(sung_words, int(math.ceil(lex_need_s * rates["sung"])))
         else:
             rap_words = int(round(rap_s * rap_rate))
         # the D15 share counts rap as spoken-style: the plan reaches the
         # requested target by construction, so the caps-bind note never fires.
         planned_share = round((spoken_words / SPOKEN_WPS + rap_s) / D * 100.0, 1)
-    words = {"total": spoken_words + wb["sung_words"] + rap_words,
-             "spoken": spoken_words, "sung": wb["sung_words"], "opener_max": opener,
+    words = {"total": spoken_words + sung_words + rap_words,
+             "spoken": spoken_words, "sung": sung_words, "opener_max": opener,
              "closing": max(spoken_words - opener, 0)}
     if _rap_style(style_id):
         # WWFIX D1: words.rap is ALWAYS emitted for a rap style, even at 0, so a
@@ -552,8 +677,12 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True):
         out["rap_s"] = round(rap_s, 1)
         if rap_floor:
             out["rap_floor_s"] = round(rap_floor_s(D), 3)
+            out["rap_verse_floor"] = rap_verse_floor_for(style_id)
             out["rap_gate"] = rap_floor_gate(out, style_id)
+            out["lexical_s"] = round(lexical_seconds(out, style_id), 4)
+            out["lexical_gate"] = lexical_gate(out, style_id)
             assert_rap_floor(out, style_id)
+            assert_lexical_floor(out, style_id)
     if planned_share + 1.0 < out["spoken_share_pct_requested"]:
         out["note"] = ("spoken block caps bind: set this ad's spoken target to %.1f%%"
                        % planned_share)
@@ -595,6 +724,30 @@ def class_check(chosen_length_s):
             for f, v in sorted(mine.items()) if row.get(f) != v]
 
 
-if __name__ == "__main__":  # python3 length_formula.py <chosen_s>
+def selfcheck():
+    """WW-01's own numbers, asserted: run ``python3 length_formula.py --selfcheck``.
+
+    The plan must reserve the two verses and clear the 70 % lexical floor, and
+    the non-rap control must stay byte-identical with no ``rap`` key (WW-01).
+    """
+    p = plan(90, style_id="rnb-flow")          # D_plan = 88
+    assert p["delivered_s"] == 88, p["delivered_s"]
+    assert p["words"]["rap"] >= 40, p["words"]         # 2 verses x 20 words
+    assert p["rap_s"] + 1e-9 >= 16.0, p["rap_s"]       # 2 verses x 8.0 s
+    assert p["lexical_gate"]["verdict"] == "PASS", p["lexical_gate"]
+    assert p["lexical_s"] + 1e-9 >= 0.70 * 88, p["lexical_s"]
+    assert p["rap_gate"]["verdict"] == "PASS", p["rap_gate"]
+    control = plan(90, style_id="soul-ballad")         # the unchanged control
+    assert "rap" not in control["words"] and "rap_s" not in control, control["words"]
+    assert control == plan(90, style_id="soul-ballad")
+    return {"rnb-flow": {"rap_s": p["rap_s"], "rap_words": p["words"]["rap"],
+                         "lexical_s": p["lexical_s"], "owed_s": p["lexical_gate"]["owed_s"]},
+            "soul-ballad": "byte-identical, no rap key", "ok": True}
+
+
+if __name__ == "__main__":  # python3 length_formula.py <chosen_s> | --selfcheck
     import json
-    print(json.dumps(plan(float(sys.argv[1])), indent=2))
+    if len(sys.argv) > 1 and sys.argv[1] == "--selfcheck":
+        print(json.dumps(selfcheck(), indent=2))
+    else:
+        print(json.dumps(plan(float(sys.argv[1])), indent=2))

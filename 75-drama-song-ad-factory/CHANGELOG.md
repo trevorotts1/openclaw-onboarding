@@ -6,6 +6,54 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.26 - 2026-10-11 - WW-01 / WW-06: the per-verse rap floor, the lexical-completeness assertion and the timed listening review that can ACCEPT
+
+Two fixes from the verified recurrence-prevention specification (`WW-PREVENT-RECURRENCE-SPEC.md`,
+section 3 WW-01 and WW-06, read against section 4 Unit U1). `origin/main` carried
+`skill-version.txt` at v2.9.25 when this was built; v2.9.26 is the next patch above that live
+value. No test assertion was weakened, skipped, deleted or relaxed, and no document was rewritten.
+
+- **WW-01 item 2 — the per-verse rap floor (NEW PROPOSED).** The total rap floor
+  `max(8.0 s, 10 % of D)` was about 11 words per verse at D 88, which is not a real rap budget:
+  the delivered payload carried 19 rap words over two verses (10 + 9) and nothing refused it.
+  `length_formula` now carries `RAP_VERSE_MIN_S = 8.0`, `MIN_RAP_VERSES = 2`,
+  `rap_verse_min_words()` = `ceil(8.0 x the style's rap rate)` (20 words at the R&B Flow rate of
+  2.5 words/s) and `rap_verse_budget_s()`, and `plan()` reserves
+  `max(total floor, MIN_RAP_VERSES x RAP_VERSE_MIN_S)` (16.0 s at D 88) BEFORE the
+  `[Intro]`/`[Outro]` spoken allocation, so the spoken blocks yield to the rap verses.
+  `song_contract.check_sheet` refuses a rap sheet whose declared rap verses are thin
+  (`RAP_VERSE_BELOW_FLOOR`) or that declares fewer than two of them
+  (`RAP_VERSE_COUNT_BELOW_MIN`), before any spend. Two verses at the floor give 16.0 s / 40 words,
+  so the per-verse rule is strictly stronger than the total floor and never replaces it.
+- **WW-01 item 3 — the lexical-completeness assertion (NEW PROPOSED).** The plan the formula emits
+  must itself clear the 70 % lexical floor. The shipped formula priced sung words at the generic
+  `SUNG_WPS` (1.07) and emitted `15/2.0 + 23/2.5 + 67/1.9 = 51.9632` lexical seconds against the
+  61.6 owed at D 88. `plan()` now re-prices the sung allocation at the STYLE's real rate
+  (`words_fit.rates_for`, 1.9 words/s for R&B Flow) until `lexical_gate` PASSes, and exposes
+  `lexical_s` / `lexical_gate` plus `rap_verse_floor` on the plan. `plan(90, 'rnb-flow')` now
+  emits rap_s 16.0 / 40 rap words / **61.9211** lexical seconds against the 61.6 owed.
+  `plan(90, 'soul-ballad')` is byte-identical and carries no `rap` key (the unchanged control);
+  `words_fit.style_sung_target_pct` still reads the plan with `rap_floor=False`, so every existing
+  sung-share FLOOR is untouched.
+- **WW-06 — the independent route that can ACCEPT a real rap measurement.** `music_qc/rap_check.py`
+  shipped a classifier that returned `UNMEASURED` in both branches and could therefore only
+  refuse. It now also carries a bounded TIMED LISTENING REVIEW
+  (`blackceo.rap-timed-review/v1`): a reviewer who is not the maker labels bounded windows of the
+  delivered audio as rap / sung / spoken_over_beat, each with its start and end seconds; the record
+  is bound to the audio `sha256`, the reviewer's identity, the session and the timestamp, and a
+  record whose binding does not match the take is REFUSED and never counted
+  (`RAP_REVIEW_BINDING_MISMATCH`, `RAP_REVIEW_UNBOUND`). The measured rap union is the review's rap
+  windows INTERSECTED with the measured voice and is judged against the plan's per-verse and total
+  budget (`RAP_MEASURED_VERSE_BELOW_FLOOR`, `RAP_MEASURED_BELOW_FLOOR`,
+  `RAP_MEASURED_VERSES_BELOW_MIN`). Maker self-approval is refused by name
+  (`RAP_REVIEW_MAKER_SELF`). The automatic classifier stays `UNMEASURED` and can never be the thing
+  that grants PASS: fixture existence, sheet tags, word counts, a rate estimate or a maker's own
+  verdict can never upgrade it, and no threshold is invented. `rap_check.py` runs its own
+  self-check (`python3 core/music_qc/rap_check.py`); `length_formula.py --selfcheck` prints the
+  WW-01 numbers.
+
+---
+
 ## v2.9.25 - 2026-10-11 - WWFIX-U1 gaps: the sung-share floor, markup-as-story, the unwired audio gates and the hardcoded dispatch count
 
 Four defects found in v2.9.22, fixed in the product. No test assertion was weakened, skipped,
