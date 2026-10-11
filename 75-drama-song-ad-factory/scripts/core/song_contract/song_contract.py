@@ -73,6 +73,7 @@ import spoken_share as _SS     # noqa: E402
 import sung_hook as _SH        # noqa: E402
 import words_fit as _WF        # noqa: E402
 import suno_recipe as _RP     # noqa: E402
+from story_coverage import story_coverage as _story   # noqa: E402  (WWFIX D1)
 #: the module itself whether core/suno_recipe/ is a package or on sys.path
 _R = getattr(_RP, "suno_recipe", _RP)
 try:   # FU-HOOK-PLACEMENT owns hook count and placement once it is installed
@@ -220,6 +221,22 @@ def sung_target(style_id, delivered_s):
     return _WF.style_sung_target_pct(_sid(style_id), delivered_s)
 
 
+def rap_floor_for(style_id, delivered_s):
+    """The rap sheet FLOOR for one style and ad length (WWFIX D1).
+
+    ONE rule, read from length_formula: ``max(8.0 s, 10% of D)`` and
+    ``ceil(floor_s * style_rap_rate)`` words, where D is the DELIVERED
+    seconds -- the same D ``length_formula.plan`` uses, so the plan and the
+    sheet gate can never disagree (at D = 88 the floor is 8.8 s / 22 words).
+    NEW ACCEPTANCE RULE."""
+    sid = _sid(style_id)
+    return {"style_id": sid, "delivered_s": delivered_s,
+            "floor_s": round(_LF.rap_floor_s(delivered_s), 3),
+            "rate": _WF.rates_for(sid)["rap"],
+            "floor_words": _LF.rap_floor_words(sid, delivered_s),
+            "source": "WWFIX D1: max(8 s, 10% of D) and ceil(seconds * rap rate)"}
+
+
 def _pct(part, whole):
     return round(100.0 * part / whole, 1) if whole else 0.0
 
@@ -268,7 +285,27 @@ def check_sheet(sheet_text, style_id, delivered_s, style_text=None):
     totals.update({"%s_s" % d: round(seconds[d], 1) for d in _R.DELIVERIES})
     totals.update({"%s_word_share_pct" % d: _pct(words[d], total_w) for d in _R.DELIVERIES})
     totals["total_words"] = total_w
+    # WWFIX D1: THE RAP SHEET FLOOR. A rap style whose sheet plans fewer rap
+    # words than the floor is refused HERE, before any spend. The failed run's
+    # sheet planned its rap to nothing and nothing refused it. NEW ACCEPTANCE
+    # RULE: the floor is length_formula.rap_floor_s (max 8 s, else 10% of D).
+    rap_floor = None
+    if _is_rap_style(sid):
+        rap_floor = rap_floor_for(sid, delivered_s)
+        totals["rap_floor_words"] = rap_floor["floor_words"]
+        totals["rap_floor_s"] = rap_floor["floor_s"]
+        if not words["rap"]:
+            reasons.append("RAP_PLANNED_ZERO_WORDS: %s delivers rap and the sheet "
+                           "carries no rap lines at all (floor %d rap words / %.1f s)"
+                           % (label, rap_floor["floor_words"], rap_floor["floor_s"]))
+        elif words["rap"] < rap_floor["floor_words"]:
+            reasons.append("the sheet plans %d rap words; the %g s %s floor is %d "
+                           "(%.1f s at %.1f words per second)"
+                           % (words["rap"], delivered_s, label,
+                              rap_floor["floor_words"], rap_floor["floor_s"],
+                              rap_floor["rate"]))
     out = {"verdict": "FAIL", "style_id": sid, "label": label, "delivered_s": delivered_s,
+           "rap_floor": rap_floor,
            "reasons": reasons, "flags": flags, "sections": rows, "totals": totals,
            "rap_vs_spoken": "planned from the sheet's tags; on the audio " + RAP_AUDIO_UNMEASURED}
     if not rows:
@@ -457,3 +494,32 @@ def check_returned_song(sheet_text, aligned_words, segments, style_id, delivered
                                        target))
     return {"verdict": "FAIL" if reasons else "PASS", "reasons": reasons, "numbers": nums,
             "style_id": sid}
+
+
+def check_returned_story(take, style_id, delivered_s, sheet_text=None, plan=None):
+    """WWFIX D1: the STORY gates on the RETURNED take, before any picture or
+    video spend -- a sibling gate to ``check_returned_song``, run by
+    ``song_dispatch.judge_take`` as gate ``story_coverage``.
+
+    All of these are NEW ACCEPTANCE RULES:
+      * ``story_start``      the approved PLOT line by an ABSOLUTE 5.0 s, plus
+                             an opening non-lexical span ceiling of 15% of D;
+      * ``lexical_coverage`` real lexical time over the delivered duration,
+                             0.70, with NO vocalise counted;
+      * ``story_arc``        every u16 beat of at least 5 s carries a measured
+                             lexical line;
+      * ``words_floor``      the words-versus-length floor (only when the plan
+                             carries its own word budget).
+    An UNAVAILABLE gate is reported as UNAVAILABLE, which blocks a take PASS.
+    Never a silent pass: a missing input fails closed."""
+    plan = dict(plan or {})
+    plan.setdefault("delivered_s", delivered_s)
+    plan.setdefault("beats_u16", len(_LF.STORY_ARC_U16))
+    sheet = sheet_text or plan.get("sheet_text")
+    story = _story.judge_returned_take({"aligned_words": (take or {}).get("aligned_words") or [],
+                                        "duration_s": (take or {}).get("duration_s"),
+                                        "delivered_words": (take or {}).get("delivered_words"),
+                                        "vocal_seconds": (take or {}).get("vocal_seconds")},
+                                       plan, sheet, delivered_s)
+    return {"verdict": "FAIL" if story["verdict"] in ("FAIL", "UNAVAILABLE") else "PASS",
+            "detail": story["detail"], "story_coverage": story}

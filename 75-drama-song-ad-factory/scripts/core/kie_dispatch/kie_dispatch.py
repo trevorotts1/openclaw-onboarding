@@ -47,6 +47,7 @@ Output: a single JSON object (the envelope) on stdout.
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -338,6 +339,13 @@ def book_shot_refusal(model, request):
                                "(book_shot.prompt_blocks + image_model_blocks), "
                                "then resubmit."}
     return None
+
+def utc_now():
+    """An aware-UTC ISO-8601 stamp (the only clock a provider-overlap receipt
+    may use; ``_wall_clock_s`` is a local dispatch clock and proves nothing)."""
+    return (datetime.datetime.now(datetime.timezone.utc)
+            .replace(microsecond=0).isoformat().replace("+00:00", "Z"))
+
 
 def _short(value, n=12):
     """A hash prefix for a refusal message. Never the secret, never a file."""
@@ -1242,6 +1250,10 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                         state_version=rs.get("state_version", 0))
     job_state = "reserved"
 
+    # D2 item 3: the two aware-UTC stamps a provider-overlap receipt binds.
+    # Envelope-level only: no ledger schema change.
+    stamps = {"accepted_submit_at": None}
+
     def stop(outcome, reason, next_action, evidence, final="failed", cost=0,
              settle=True):
         """Leave the ledger clean and return the envelope."""
@@ -1252,9 +1264,12 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                 outcome, reason = "error", "ledger-settle-failed"
                 next_action = rec.get("next_action", "") or next_action
                 evidence = dict(evidence or {}, ledger=rec)
+        ev = dict(evidence or {})
+        ev.setdefault("accepted_submit_at", stamps["accepted_submit_at"])
+        ev["terminal_at"] = utc_now()
         return envelope("dispatch", outcome, reason, next_action,
                         run_id=run_id, logical_key=logical_key,
-                        attempt_id=attempt_id, evidence=evidence or {},
+                        attempt_id=attempt_id, evidence=ev,
                         state_version=rec.get("state_version", 0)
                         if settle else rs.get("state_version", 0))
 
@@ -1443,6 +1458,7 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                                    task_id, owner=owner)
             if sub.get("outcome") == "ok":
                 job_state = "submitted"
+            stamps["accepted_submit_at"] = utc_now()
         elif s_state in RUN_PENDING:
             return _unknown_at("submit",
                                {"adapter_state": s_state,
@@ -1546,6 +1562,8 @@ def dispatch(*, model, request, save_dir, ledger_db, run_id, logical_key,
                       "credits_consumed": credits,
                       "actual_cost": actual, "warnings": warn,
                       "wait_timeout_s": wait_s, "retries": 0,
+                      "accepted_submit_at": stamps["accepted_submit_at"],
+                      "terminal_at": utc_now(),
                       "prompt_caps": prompt_caps},
             state_version=rec.get("state_version", 0))
     except Exception as e:                                  # noqa: BLE001

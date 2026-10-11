@@ -40,6 +40,8 @@ import suno_recipe as _R     # noqa: E402
 import sung_hook as _SH      # noqa: E402
 from sung_hook import hook_placement as _HP   # noqa: E402
 import words_fit as _WF      # noqa: E402
+import music_qc.pace_change as _PC   # noqa: E402
+import music_qc.rap_check as _RC     # noqa: E402
 
 TOOL_NAME = "song_dispatch"
 TOOL_VERSION = "1.1.0"
@@ -50,6 +52,10 @@ NEAR_SILENT_DBFS = -50.0         # RMS of the final 2 s below this = near silent
 SPEND_CAP_CENTS = 1000           # per author (Trevor 2026-10-08)
 GEN_COST_CENTS = 6
 GATES += ("song_contract",)      # FU-RNBFLOW-SONG: the style's own contract on every take
+# WWFIXGAPS U1 (defect 2): the two D1 audio gates were shipped but NEVER
+# CALLED by the pipeline, so "UNMEASURED blocks a take PASS" was only true of
+# the module in isolation. Both are now gates of the take judge.
+GATES += ("rap_audio", "pace_change")
 
 
 class DispatchError(ValueError):
@@ -224,6 +230,29 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
                                      take.get("aligned_words") or [], segs, sc_sid, D)
         put("song_contract", "FAIL" if sc["reasons"] else "PASS",
             "; ".join(sc["reasons"]) or ", ".join("%s %s" % kv for kv in sorted(sc["numbers"].items())))
+    # WWFIXGAPS U1 (defect 2): THE TWO D1 AUDIO GATES ARE WIRED IN HERE.
+    # Before this they were never called by the pipeline, so nothing made an
+    # UNMEASURED result block a take; `run_takes` could deliver a PASS on an
+    # unmeasured rap read or an unmeasured gear change.
+    # RAP (music_qc/rap_check): only a rap-delivering style carries rap, so
+    # the gate applies there and nowhere else; with no labelled rap control it
+    # returns UNMEASURED, and `_finish` never lets UNMEASURED reach PASS.
+    if t["rap_delivery"]:
+        rg = _RC.gate(segs)
+        put("rap_audio", rg["verdict"], rg["reason"])
+    else:
+        put("rap_audio", "PASS", "style %r delivers no rap" % (style_id,))
+    # PACE (music_qc/pace_change): the ordered gear change rides the plan; no
+    # order -> not applicable and it PASSes. An order with missing onset or
+    # energy evidence on the TAKE is UNMEASURED (blocks PASS); evidence that
+    # shows no gear change is FAIL. bpm is reported and never grants a PASS.
+    pg = _PC.judge_plan_pace(plan, take.get("pace_before"), take.get("pace_problem"),
+                             take.get("pace_after"),
+                             envelope=take.get("pace_envelope"),
+                             hop_s=take.get("pace_hop_s"),
+                             bpm_before=take.get("bpm_before"),
+                             bpm_after=take.get("bpm_after"))
+    put("pace_change", pg["verdict"], pg.get("detail") or pg.get("reason_code", ""))
     have = set(_w(" ".join(w.get("word", "") for w in take.get("aligned_words") or [])))
     missing = sorted(set(_w(script_words)) - have)
     put("script_words", "FAIL" if missing else "PASS", ("missing %s" % missing[:8]) if missing else "")
@@ -256,8 +285,15 @@ def judge_take(take, plan, script_words, hook_text, spoken_range_pct=None,
 
 
 def _finish(g):
+    """FAIL when a gate FAILs; otherwise FLAG when any gate FLAGs OR is
+    UNMEASURED; only an all-PASS take PASSes.
+
+    WWFIXGAPS U1 (defect 2): UNMEASURED counts as a flag, never as nothing --
+    a take carrying an unmeasured gate (no labelled rap control, no gear-change
+    evidence) cannot reach PASS. It is kept OUT of ``failed`` on purpose: it is
+    missing evidence, not a measured failure."""
     bad = [k for k, v in g.items() if v["verdict"] == "FAIL"]
-    flags = [k for k, v in g.items() if v["verdict"] == "FLAG"]
+    flags = [k for k, v in g.items() if v["verdict"] in ("FLAG", "UNMEASURED")]
     return {"verdict": "FAIL" if bad else ("FLAG" if flags else "PASS"), "gates": g,
             "failed": bad, "flagged": flags}
 
@@ -295,6 +331,15 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # _hook_plan; it moves into the judge's plan and never reaches KIE.
     plan = dict(plan, hook_plan=request.get("_hook_plan") or plan.get("hook_plan"))
     request = {k: v for k, v in request.items() if k != "_hook_plan"}
+    # WWFIX D1/F2: the ordered pace change rides the request the same way
+    # (_pace_plan). It moves into the judge's plan and NEVER reaches KIE.
+    plan = dict(plan, pace_change=request.get("_pace_plan") or plan.get("pace_change"))
+    request = {k: v for k, v in request.items() if k != "_pace_plan"}
+    # D2: when the run answered Yes to SONG APPROVAL the music stage runs as
+    # THREE variants, and each variant is generated per variant; the three
+    # variants run in PARALLEL lanes (song_choices.plan_units, providerSlots 3,
+    # reserve 0), so a variant is one lane's whole job, never a second take of
+    # the same arrangement.
     refuse_asr("faster-" + "wh" + "isper")
     plan = dict(plan, sheet_text=plan.get("sheet_text") or request.get("lyrics"))
     spent, receipts, best = 0, [], None
