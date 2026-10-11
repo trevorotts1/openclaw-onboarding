@@ -273,6 +273,35 @@ def rap_verse_floor_for(style_id):
                       "and >= ceil(8.0 * the style's rap rate) words"}
 
 
+def rap_reserve_s(delivered_s, spoken_allowance_s):
+    """The seconds a rap style keeps OUT of its spoken allowance for the rap
+    verses: ``max(rap_floor_s(D), rap_verse_budget_s(D))``, never more than the
+    allowance itself (WF1848F-U1 fix 3).
+
+    Where the ordered reservation is larger than the style's WHOLE spoken
+    allowance the style cannot fit at that length (D 60: 16.0 s asked of
+    13.5 s), so the reservation IS the allowance: the spoken words fall to zero
+    and the plan reports the rap seconds it can actually carve. The plan and the
+    gate both read this ONE function, so they can never disagree -- before this
+    the cap reserved ``rap_floor_s(D)`` while ``rap_s`` was raised to
+    ``rap_verse_budget_s(D)``, and spoken plus rap overspent the allowance at
+    every length (26.7143 s of 19.8 s at D 88)."""
+    ordered = max(rap_floor_s(delivered_s), rap_verse_budget_s(delivered_s))
+    return min(ordered, float(spoken_allowance_s))
+
+
+def spoken_allowance_s(plan):
+    """The spoken-style seconds a PLAN was built on: the ad's own spoken target
+    applied to its delivered length (the one number ``word_budget`` gives)."""
+    D = (plan or {}).get("delivered_s")
+    if isinstance(D, bool) or not isinstance(D, (int, float)):
+        return None
+    try:
+        return word_budget(D, (plan or {}).get("spoken_share_pct_requested"))["spoken_s"]
+    except (LengthError, TypeError, ValueError):
+        return None
+
+
 def rap_floor_gate(plan, style_id=None):
     """The D1 rap gate: PASS / FAIL / N/A for one plan.
 
@@ -282,11 +311,21 @@ def rap_floor_gate(plan, style_id=None):
     is not applicable and PASSes. The gate reads the plan, so it can run on the
     plan BEFORE any paid generation.
 
+    WF1848F-U1 fix 3: the seconds floor is ``rap_reserve_s(D, the plan's spoken
+    allowance)`` -- the SAME reservation plan() carves, for the same reason and
+    from the same one function. At D 88 and above nothing changes (the 16.0 s
+    reservation is below the allowance, so it stays 16.0 s); where the plan
+    cannot fit the full reservation the gate judges it against what it CAN
+    carve instead of refusing a plan the length makes impossible.
+
     NEW PROPOSED ACCEPTANCE RULE: every threshold here comes from this fix."""
     sid = style_id or (plan or {}).get("style_id")
     D = (plan or {}).get("delivered_s")
     floor_s = rap_verse_budget_s(D) if isinstance(D, (int, float)) \
         and not isinstance(D, bool) else MIN_RAP_VERSES * RAP_VERSE_MIN_S
+    allowance = spoken_allowance_s(plan)
+    if allowance is not None:
+        floor_s = rap_reserve_s(D, allowance)
     if not _rap_style(sid):
         return {"verdict": "PASS", "applicable": False,
                 "detail": "style %r does not deliver rap" % (sid,),
@@ -617,12 +656,12 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True):
             # held to below. It reserved only rap_floor_s(D) (8.8 s at D 88)
             # while rap_s was then raised to rap_verse_budget_s(D) (16.0 s), so
             # spoken + rap spent 26.7143 s of a 19.8 s spoken allowance and the
-            # words did not add up. A reservation can also never exceed the
-            # style's whole spoken allowance: where it does (D 60: 16.0 s asked
-            # of 13.5 s) the ordered style cannot fit, and assert_rap_floor below
-            # REFUSES the plan rather than emit seconds that do not add up.
-            reserve_s = min(max(rap_floor_s(D), rap_verse_budget_s(D)),
-                            wb["spoken_s"])
+            # words did not add up. At D 60 the ordered 16.0 s two-verse
+            # reservation is larger than the style's whole 13.5 s allowance:
+            # the reservation is then the allowance (rap_reserve_s), the spoken
+            # words fall to zero, and the plan reports the rap seconds it can
+            # actually carve instead of 16.0 s inside 13.5 s.
+            reserve_s = rap_reserve_s(D, wb["spoken_s"])
             spoken_cap_words = int(max(wb["spoken_s"] - reserve_s, 0.0) * SPOKEN_WPS)
             spoken_words = min(spoken_words, spoken_cap_words)
         rap_s = max(wb["spoken_s"] - spoken_words / SPOKEN_WPS, 0.0)

@@ -36,17 +36,24 @@ assertion was weakened, skipped, deleted or re-run to green.
   computed `spoken_cap_words` from `rap_floor_s(D)` (8.8 s at D 88) and then
   raised `rap_s` to `rap_verse_budget_s(D)` (16.0 s) without re-capping the
   spoken words: `plan(90, 'rnb-flow')` spent 26.7143 s of a 19.8 s spoken
-  allowance. The cap now reserves `max(rap_floor_s(D), rap_verse_budget_s(D))`
-  BEFORE the spoken words are capped, `rap_s` is held to that same reservation,
-  and the plan REPORTS `rap_s` floored to one decimal (16.4571 used to be
-  reported as 16.5 and read 0.0429 s over the allowance). Where the reservation
-  is larger than the style's whole spoken allowance the ordered style cannot fit
-  and `assert_rap_floor` REFUSES the plan rather than emit seconds that do not
-  add up: at D 60 the 16.0 s two-verse reservation is asked of a 13.5 s
-  allowance, so `plan(62, 'rnb-flow')` raises `RapFloorError` instead of
-  claiming 16.0 s of rap inside 13.5 s. At D 88 the plan now emits rap_s 16.2 /
-  41 rap words and 62.0579 lexical seconds against the 61.6 owed (v2.9.26
-  emitted 16.0 / 40 / 61.9211, which was over budget).
+  allowance. One function, `rap_reserve_s(D, allowance)` =
+  `min(max(rap_floor_s(D), rap_verse_budget_s(D)), allowance)`, now gives the
+  seconds the cap reserves BEFORE the spoken words are capped and the seconds
+  `rap_s` is held to, and the plan REPORTS `rap_s` floored to one decimal
+  (16.4571 used to be reported as 16.5 and read 0.0429 s over the allowance).
+  Where the ordered reservation is larger than the style's whole spoken
+  allowance the style cannot fit at that length, so the reservation IS the
+  allowance and the spoken words fall to zero: at D 60 the 16.0 s two-verse
+  reservation meets a 13.5 s allowance, `plan(62, 'rnb-flow')` emits rap_s 13.5
+  with 0 spoken words, and the invariant holds with zero slack
+  (13.5 + 0 = 13.5). `rap_floor_gate` reads the SAME `rap_reserve_s` through
+  `spoken_allowance_s(plan)`, so the plan and its gate still read one rule and
+  can never disagree; at D 88 and above nothing moves (16.0 s is below the
+  19.8 s allowance). Verified at D 60, 88, 90, 105, 120 and 150: 13.5 + 0,
+  5/1.4 + 16.2, 5/1.4 + 16.6, 10/1.4 + 16.4, 15/1.4 + 16.2 and 24/1.4 + 16.6 are
+  all at or under their allowances. At D 88 the plan emits rap_s 16.2 / 41 rap
+  words and 62.0579 lexical seconds against the 61.6 owed (v2.9.26 emitted
+  16.0 / 40 / 61.9211, which was over budget).
 - **Two verse labels could cover the same physical seconds.** One record could
   PASS on the SAME 16-second window labelled as both verse 1 and verse 2, so
   each verse cleared the per-verse floor off the same seconds. Two distinct
