@@ -1,0 +1,266 @@
+/* =============================================================================
+   Drama Song Ad Factory mini-app — U3 version-0 studio UI
+   -----------------------------------------------------------------------------
+   mini-app/ui/studio.css
+
+   Warm, low-overwhelm, single column, 16px gutter, no horizontal scroll.
+   Palette tokens are light-first with dark variants under BOTH the media query
+   and the explicit [data-theme] switch. Every foreground/background pair used
+   for text is asserted for WCAG contrast by checks/a11y-check.mjs.
+   ========================================================================== */
+
+:root {
+  /* surfaces + ink */
+  --bg:           #FBF6EE;   /* page */
+  --surface:      #FFFFFF;   /* card */
+  --surface-2:    #F3EADA;   /* quiet panel */
+  --ink:          #2E2419;   /* primary text on --bg / --surface */
+  --ink-soft:     #5F4E3C;   /* secondary text on --bg / --surface */
+  --line:         #D8C6A8;   /* borders */
+
+  /* action */
+  --primary:      #C96F4A;   /* terracotta */
+  --primary-ink:  #241B12;   /* text on --primary */
+  --primary-deep: #A9522F;   /* hover / pressed */
+
+  /* state */
+  --ok-ink:       #2F5D3C;   /* confirmation text */
+  --ok-bg:        #E8F1E4;
+  --warn-ink:     #7A3B12;   /* refusal text */
+  --warn-bg:      #FBEADF;
+  --focus:        #1C4E80;
+
+  --radius:       16px;
+  --shadow:       0 10px 30px rgba(90, 66, 40, 0.12);
+  --font: 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+  --font-ui: 'Avenir Next', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:          #211A12;
+    --surface:     #2E2419;
+    --surface-2:   #3A2E22;
+    --ink:         #F4EADA;
+    --ink-soft:    #D9C8AC;
+    --line:        #57462F;
+    --primary:     #D9855E;
+    --primary-ink: #241B12;
+    --primary-deep:#E9A07C;
+    --ok-ink:      #BFE0C4;
+    --ok-bg:       #2A3A2C;
+    --warn-ink:    #F6D3B4;
+    --warn-bg:     #432A1A;
+    --focus:       #9CC7F0;
+    --shadow:      0 10px 30px rgba(0, 0, 0, 0.45);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg:          #211A12;
+  --surface:     #2E2419;
+  --surface-2:   #3A2E22;
+  --ink:         #F4EADA;
+  --ink-soft:    #D9C8AC;
+  --line:        #57462F;
+  --primary:     #D9855E;
+  --primary-ink: #241B12;
+  --primary-deep:#E9A07C;
+  --ok-ink:      #BFE0C4;
+  --ok-bg:       #2A3A2C;
+  --warn-ink:    #F6D3B4;
+  --warn-bg:     #432A1A;
+  --focus:       #9CC7F0;
+  --shadow:      0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 17px;
+  line-height: 1.55;
+  padding: 0 16px 96px;          /* 16px side gutter, room for the footer bar */
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+h1, h2, h3 { font-family: var(--font); line-height: 1.2; color: var(--ink); }
+h1 { font-size: 30px; margin: 20px 0 8px; }
+h2 { font-size: 23px; margin: 0 0 10px; }
+h3 { font-size: 19px; margin: 20px 0 8px; }
+p  { margin: 0 0 14px; }
+
+/* Keyboard focus is always visible and never removed. */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 10px 14px;
+  border-radius: 0 0 var(--radius) 0;
+  z-index: 10;
+}
+.skip-link:focus { left: 0; }
+
+.shell { max-width: 680px; margin: 0 auto; }
+
+/* ── chrome ─────────────────────────────────────────────────────────────── */
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0 6px;
+  flex-wrap: wrap;
+}
+.chrome .step {
+  font-size: 15px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.rail {
+  flex: 1 1 140px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.rail-fill { display: block; height: 100%; width: 0; background: var(--primary); }
+@media (prefers-reduced-motion: no-preference) {
+  .rail-fill { transition: width 320ms ease; }
+}
+
+/* ── nav ────────────────────────────────────────────────────────────────── */
+.steps-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 18px; }
+.steps-nav button {
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.steps-nav button[aria-current="page"] {
+  background: var(--primary);
+  color: var(--primary-ink);
+  border-color: var(--primary-deep);
+  font-weight: 600;
+}
+
+/* ── cards ──────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  margin: 0 0 16px;
+}
+.panel { background: var(--surface-2); border-radius: var(--radius); padding: 14px 16px; }
+
+/* ── option groups (native radios: keyboard + screen-reader free) ────────── */
+.options { display: grid; gap: 10px; border: 0; padding: 0; margin: 0 0 8px; }
+.options legend { font-weight: 600; padding: 0; margin-bottom: 6px; }
+.option {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.option input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--primary); }
+.option .label { font-weight: 600; }
+.option .hint { color: var(--ink-soft); font-size: 15px; }
+.option:has(input:checked) {
+  border-color: var(--primary-deep);
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+
+/* ── buttons ────────────────────────────────────────────────────────────── */
+.btn {
+  font: inherit;
+  font-weight: 600;
+  padding: 13px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--primary-deep);
+  background: var(--primary);
+  color: var(--primary-ink);
+  cursor: pointer;
+}
+.btn:hover { background: var(--primary-deep); }
+.btn.secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line);
+}
+.btn[aria-disabled="true"], .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+
+/* ── confirmation ("Looks good") state ──────────────────────────────────── */
+.complete {
+  background: var(--ok-bg);
+  color: var(--ok-ink);
+  border: 1px solid var(--ok-ink);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+  font-weight: 600;
+}
+.refusal {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  border: 1px solid var(--warn-ink);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+}
+.complete::before { content: "✓ "; font-weight: 700; }
+.refusal::before { content: "! "; font-weight: 700; }
+
+/* ── QR surface ─────────────────────────────────────────────────────────── */
+.qr-surface { display: grid; gap: 12px; justify-items: center; text-align: center; }
+.qr-surface svg {
+  width: min(260px, 68vw);
+  height: auto;
+  background: #FFFFFF;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+}
+.qr-link { word-break: break-all; font-size: 15px; }
+.qr-steps { text-align: left; color: var(--ink-soft); font-size: 15px; margin: 0; padding-left: 20px; }
+
+/* ── status / help ──────────────────────────────────────────────────────── */
+.status { min-height: 24px; font-size: 15px; color: var(--ink-soft); }
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.muted { color: var(--ink-soft); font-size: 15px; }
+
+@media (max-width: 380px) {
+  body { font-size: 16px; padding-left: 16px; padding-right: 16px; }
+  h1 { font-size: 26px; }
+}

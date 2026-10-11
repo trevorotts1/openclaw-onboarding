@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- com.blackceo.drama-studio-bridge.plist.template
+     macOS client box: USER-LEVEL periodic Drama Studio bridge poller (no sudo).
+     install-timer.sh expands the placeholders and copies it to
+       ~/Library/LaunchAgents/com.blackceo.drama-studio-bridge.plist
+     The operator then registers it (install-timer.sh never registers anything):
+       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.blackceo.drama-studio-bridge.plist
+
+     DIRECT SHELL: ProgramArguments is [/bin/sh, run-timer.sh]. launchd runs the
+     shell script and nothing else — no Claude, no claude-nine, no model, no
+     interactive session, no idle/agent event. Restart state: RunAtLoad runs it
+     once at login/reboot, StartInterval re-fires every 120 s (matching the joint
+     plan's `StartInterval 120`). There is deliberately NO KeepAlive: this is a
+     short one-shot poll, and a KeepAlive would re-run it the instant it exits
+     and burn the box. A killed run is simply re-fired at the next interval; the
+     U5 claim ledger makes that idempotent.
+
+     Placeholders (expanded by install-timer.sh):
+       __SCRIPT_PATH__  -> <HOME>/.../timer-artifacts/run-timer.sh
+       __LOG_PATH__     -> <HOME>/Library/Logs/openclaw/drama-studio-timer.log
+       __HOME__         -> the client's HOME (/Users/<user>)
+       __USER__         -> the client's login user
+       __PATH__         -> the scheduler PATH (absolute bins only)
+       __STORE_DIR__    -> <HOME>/.drama-studio  (machine key/address/state)
+       __INTERVAL__     -> 120  (seconds)
+  -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.blackceo.drama-studio-bridge</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>__SCRIPT_PATH__</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>USER</key>
+    <string>__USER__</string>
+    <key>LOGNAME</key>
+    <string>__USER__</string>
+    <key>PATH</key>
+    <string>__PATH__</string>
+    <key>DS_PLATFORM</key>
+    <string>mac</string>
+    <key>DS_STATE_DIR</key>
+    <string>__STORE_DIR__</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>__INTERVAL__</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>__LOG_PATH__</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_PATH__</string>
+</dict>
+</plist>

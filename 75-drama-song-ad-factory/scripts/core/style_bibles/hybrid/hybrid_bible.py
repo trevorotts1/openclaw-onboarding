@@ -26,6 +26,12 @@ What this module does:
    realism segment of a realism or golden prompt IS the recipe block; the
    golden finale adds a separate `[FINALE]` block after it and never edits the
    recipe.
+5. Dual presence (plan 3.17, APPROVED 2026-10-11) -- the validator for the
+   storyboard's `DUAL_PRESENCE` field (refusing each rule by name),
+   `dual_presence_shot_list()` emitting the single `DUAL-01` entry,
+   `dual_presence_assembly()` (full-opacity alpha overlay, never a
+   cross-blend) and `qc_dual_presence()`, the 4 fps frame gate with both
+   negative controls.
 
 Flare rule and prompt caps belong to core/product_style_bible/bible.py; this
 module composes blocks only, it never renders, calls a provider or spends.
@@ -64,6 +70,61 @@ MODES = (MODE_SKETCH, MODE_REALISM, MODE_GOLDEN)
 
 SKETCH_STYLE_ID = "hybrid-sketch-bw-01"
 REALISM_STYLE_ID = "realism-cinematic-01"   # recipe style_id, from D19 look
+
+#: Plan 3.17 dual-presence rule, APPROVED 2026-10-11. Every hybrid ad carries
+#: exactly ONE `DUAL_PRESENCE` shot: the photoreal lead and an opaque sketch
+#: twin held together in one locked-off side-by-side two-shot. EVERY NUMBER
+#: BELOW IS A STARTING VALUE -- calibrate on BOTH negative controls before
+#: trusting it (plan rule 10).
+DUAL_PRESENCE_FIELD = "DUAL_PRESENCE"
+DUAL_PRESENCE_COMPOSITION = "TWO_SHOT_SIDE_BY_SIDE"
+DUAL_PRESENCE_EYELINE = "SKETCH-TO-REAL"
+DUAL_PRESENCE_SHOT_LIST_ID = "DUAL-01"
+DUAL_PRESENCE_BASE_ASSET = "BASE_REAL"          # photoreal clip
+DUAL_PRESENCE_OVERLAY_ASSET = "OVERLAY_SKETCH"  # alpha PNG, matched pose frame
+
+DUAL_PRESENCE_START_PCT = (45.0, 75.0)          # STARTING band (target band below)
+DUAL_PRESENCE_TARGET_PCT = (55.0, 65.0)         # STARTING target band
+DUAL_PRESENCE_HOLD_SECONDS = (3.0, 6.0)         # STARTING hold band
+DUAL_PRESENCE_REAL_WIDTH_PCT = (55.0, 65.0)     # STARTING photoreal width share
+DUAL_PRESENCE_TWIN_WIDTH_PCT = (35.0, 45.0)     # STARTING sketch-twin width share
+DUAL_PRESENCE_HEAD_HEIGHT_TOLERANCE_PCT = 15.0  # STARTING head-height tolerance
+
+DUAL_PRESENCE_DISSOLVE_IN_MAX_FRAMES = 8        # STARTING ceiling: 8 or fewer
+DUAL_PRESENCE_CUT_OUT_FRAMES = 1                # exactly one frame (not a band)
+
+DUAL_PRESENCE_QC_FPS = 4                        # STARTING sample rate
+DUAL_PRESENCE_QC_FLOOR_FRAMES = 12              # STARTING floor: 12 consecutive
+DUAL_PRESENCE_QC_SKETCH_MAX_SATURATION = 0.10   # STARTING line-art cue
+DUAL_PRESENCE_QC_SKETCH_MIN_EDGE_DENSITY = 0.20  # STARTING line-art cue
+DUAL_PRESENCE_QC_REAL_MIN_SATURATION = 0.15      # STARTING photoreal-colour cue
+
+#: The single-style "some time later" phone shot: negative control two.
+DUAL_PRESENCE_PHONE_CONTROL_SECONDS = (112.0, 114.3)
+
+#: The storyboard field keys; complete before ANY generation spend.
+DUAL_PRESENCE_FIELD_KEYS = ("shot_id", "start_pct", "duration_s",
+                            "composition", "sketch_character", "eyeline",
+                            "ad_card")
+
+#: Every rule the dual-presence validator can refuse on, by name.
+DUAL_PRESENCE_RULES = (
+    "DUAL_PRESENCE_FIELD_MISSING",
+    "DUAL_PRESENCE_FIELD_INCOMPLETE",
+    "DUAL_PRESENCE_MISSING",
+    "DUAL_PRESENCE_COUNT",
+    "DUAL_PRESENCE_START_PCT",
+    "DUAL_PRESENCE_DURATION",
+    "DUAL_PRESENCE_COMPOSITION",
+    "DUAL_PRESENCE_TWIN_SIDE",
+    "DUAL_PRESENCE_REAL_WIDTH",
+    "DUAL_PRESENCE_TWIN_WIDTH",
+    "DUAL_PRESENCE_HEAD_HEIGHT",
+    "DUAL_PRESENCE_FIGURES",
+    "DUAL_PRESENCE_EYELINE",
+    "DUAL_PRESENCE_AD_CARD",
+    "DUAL_PRESENCE_SPEND_BEFORE_FIELD",
+)
 
 #: The styles this bible compiles (decision D18 for the three-way menu; the
 #: plan 6.11 five-look card is core/choice_card/looks/, not this module).
@@ -512,6 +573,323 @@ def enforce_finale(plan):
     if errs:
         raise HybridError("FINALE_RULE_BROKEN", "; ".join(errs))
     return plan
+
+
+# -------------------------------------------------------- dual presence ----
+# Plan 3.17 (APPROVED 2026-10-11). A planned shot with its own storyboard
+# field, never a patch. This section validates, builds the shot list and
+# gates frames; it never renders, calls a provider or spends.
+
+HALF_SKETCH = "SKETCH"
+HALF_REAL = "PHOTOREAL"
+HALF_UNKNOWN = "UNKNOWN"
+
+
+def _num(value):
+    """float, or None. Booleans are NOT numbers here (fail closed)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _in_band(value, band):
+    v = _num(value)
+    return v is not None and band[0] <= v <= band[1]
+
+
+def dual_presence_entries(storyboard):
+    """The storyboard's dual-presence entries as a list, or None when absent.
+
+    A dict is one entry, a list is its own entries; anything else is an empty
+    list (fail closed -- the missing-field rule then names it).
+    """
+    if not isinstance(storyboard, dict) or DUAL_PRESENCE_FIELD not in storyboard:
+        return None
+    raw = storyboard[DUAL_PRESENCE_FIELD]
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        return [raw]
+    if isinstance(raw, list):
+        return list(raw)
+    return []
+
+
+def _dedupe(names):
+    out = []
+    for n in names:
+        if n not in out:
+            out.append(n)
+    return out
+
+
+def _dual_entry_errors(entry):
+    if not isinstance(entry, dict):
+        return ["DUAL_PRESENCE_FIELD_INCOMPLETE"]
+    errs = []
+    for key in DUAL_PRESENCE_FIELD_KEYS:
+        if key not in entry:
+            errs.append("DUAL_PRESENCE_FIELD_INCOMPLETE")
+    if not str(entry.get("shot_id") or "").strip():
+        errs.append("DUAL_PRESENCE_FIELD_INCOMPLETE")
+    if not str(entry.get("sketch_character") or "").strip():
+        errs.append("DUAL_PRESENCE_FIELD_INCOMPLETE")
+    if not _in_band(entry.get("start_pct"), DUAL_PRESENCE_START_PCT):
+        errs.append("DUAL_PRESENCE_START_PCT")
+    if not _in_band(entry.get("duration_s"), DUAL_PRESENCE_HOLD_SECONDS):
+        errs.append("DUAL_PRESENCE_DURATION")
+    if entry.get("composition") != DUAL_PRESENCE_COMPOSITION:
+        errs.append("DUAL_PRESENCE_COMPOSITION")
+    lead, twin = entry.get("lead_side"), entry.get("twin_side")
+    if lead is None or twin is None or str(lead).strip().lower() == \
+            str(twin).strip().lower():
+        errs.append("DUAL_PRESENCE_TWIN_SIDE")
+    if not _in_band(entry.get("real_width_pct"), DUAL_PRESENCE_REAL_WIDTH_PCT):
+        errs.append("DUAL_PRESENCE_REAL_WIDTH")
+    if not _in_band(entry.get("twin_width_pct"), DUAL_PRESENCE_TWIN_WIDTH_PCT):
+        errs.append("DUAL_PRESENCE_TWIN_WIDTH")
+    delta = _num(entry.get("head_height_delta_pct"))
+    if delta is None or abs(delta) > DUAL_PRESENCE_HEAD_HEIGHT_TOLERANCE_PCT:
+        errs.append("DUAL_PRESENCE_HEAD_HEIGHT")
+    if _num(entry.get("figures")) != 2:
+        errs.append("DUAL_PRESENCE_FIGURES")
+    if entry.get("eyeline") != DUAL_PRESENCE_EYELINE or \
+            entry.get("mirrored") is True:
+        errs.append("DUAL_PRESENCE_EYELINE")
+    if entry.get("ad_card") is not True:
+        errs.append("DUAL_PRESENCE_AD_CARD")
+    return _dedupe(errs)
+
+
+def dual_presence_errors(storyboard, spend_started=False):
+    """Rule names the storyboard's dual-presence entry violates. Empty = OK.
+
+    Never a bare boolean: each violation is named (DUAL_PRESENCE_RULES).
+    ``spend_started`` marks that generation spend has begun -- spend before
+    the field is complete refuses DUAL_PRESENCE_SPEND_BEFORE_FIELD first.
+    """
+    entries = dual_presence_entries(storyboard)
+    if entries is None:
+        head = ["DUAL_PRESENCE_SPEND_BEFORE_FIELD"] if spend_started else []
+        return head + ["DUAL_PRESENCE_FIELD_MISSING"]
+    if not entries:
+        errs = ["DUAL_PRESENCE_MISSING"]
+    elif len(entries) > 1:
+        errs = ["DUAL_PRESENCE_COUNT"]
+    else:
+        errs = _dual_entry_errors(entries[0])
+    if spend_started and errs:
+        return ["DUAL_PRESENCE_SPEND_BEFORE_FIELD"] + errs
+    return errs
+
+
+def assert_dual_presence(storyboard, spend_started=False):
+    """Raise HybridError naming the FIRST refused rule; else return storyboard."""
+    errs = dual_presence_errors(storyboard, spend_started)
+    if errs:
+        raise HybridError(errs[0],
+                          "dual-presence refused (%s)" % ", ".join(errs))
+    return storyboard
+
+
+def dual_presence_shot_list(storyboard, spend_started=False):
+    """The SINGLE shot-list entry DUAL-01, or a HybridError refusing it.
+
+    DUAL-01 carries BASE_REAL (the photoreal clip) and OVERLAY_SKETCH (the
+    alpha PNG sketch overlay on the matched pose frame). Refuses to emit when
+    the validator refuses, so a shot list can never exist without a complete,
+    in-band storyboard field.
+    """
+    assert_dual_presence(storyboard, spend_started)
+    entry = dual_presence_entries(storyboard)[0]
+    return [{
+        "shot_id": DUAL_PRESENCE_SHOT_LIST_ID,
+        "storyboard_shot_id": entry.get("shot_id"),
+        "composition": DUAL_PRESENCE_COMPOSITION,
+        "start_pct": _num(entry.get("start_pct")),
+        "duration_s": _num(entry.get("duration_s")),
+        "assets": [
+            {"asset": DUAL_PRESENCE_BASE_ASSET, "kind": "clip",
+             "note": "photoreal clip, matched pose frame"},
+            {"asset": DUAL_PRESENCE_OVERLAY_ASSET, "kind": "alpha_png",
+             "note": "sketch alpha PNG, matched pose frame"},
+        ],
+    }]
+
+
+#: The assembly spec as data: the sketch overlays the photoreal base at FULL
+#: opacity. Never a cross-blend of the two styles.
+DUAL_PRESENCE_ASSEMBLY = {
+    "base": DUAL_PRESENCE_BASE_ASSET,
+    "overlay": DUAL_PRESENCE_OVERLAY_ASSET,
+    "overlay_opacity_pct": 100,
+    "blend": "alpha_overlay",
+    "dissolve_in_max_frames": DUAL_PRESENCE_DISSOLVE_IN_MAX_FRAMES,
+    "cut_out_frames": DUAL_PRESENCE_CUT_OUT_FRAMES,
+    "cross_blend": False,
+}
+
+DUAL_PRESENCE_ASSEMBLY_RULES = (
+    "DUAL_PRESENCE_ASSEMBLY_OPACITY",
+    "DUAL_PRESENCE_ASSEMBLY_DISSOLVE_IN",
+    "DUAL_PRESENCE_ASSEMBLY_CUT_OUT",
+    "DUAL_PRESENCE_ASSEMBLY_CROSS_BLEND",
+)
+
+
+def assembly_errors(assembly):
+    """Rule names a proposed assembly violates. Empty = the approved assembly."""
+    if not isinstance(assembly, dict):
+        return ["DUAL_PRESENCE_ASSEMBLY_OPACITY"]
+    errs = []
+    if assembly.get("cross_blend"):
+        errs.append("DUAL_PRESENCE_ASSEMBLY_CROSS_BLEND")
+    if _num(assembly.get("overlay_opacity_pct")) != 100.0:
+        errs.append("DUAL_PRESENCE_ASSEMBLY_OPACITY")
+    dis = _num(assembly.get("dissolve_in_frames"))
+    if dis is not None and dis > DUAL_PRESENCE_DISSOLVE_IN_MAX_FRAMES:
+        errs.append("DUAL_PRESENCE_ASSEMBLY_DISSOLVE_IN")
+    cut = _num(assembly.get("cut_out_frames"))
+    if cut is not None and cut != DUAL_PRESENCE_CUT_OUT_FRAMES:
+        errs.append("DUAL_PRESENCE_ASSEMBLY_CUT_OUT")
+    return errs
+
+
+def assert_assembly(assembly):
+    """Raise HybridError naming the FIRST refused assembly rule."""
+    errs = assembly_errors(assembly)
+    if errs:
+        raise HybridError(errs[0], "assembly refused (%s)" % ", ".join(errs))
+    return assembly
+
+
+def dual_presence_assembly(entry, cross_blend=False):
+    """The assembly plan for one dual-presence entry, plus its plan string.
+
+    ``cross_blend=True`` is refused by name (DUAL_PRESENCE_ASSEMBLY_CROSS_BLEND)
+    -- the two styles are never blended into each other.
+    """
+    led = DUAL_PRESENCE_ASSEMBLY
+    if cross_blend:
+        raise HybridError(
+            "DUAL_PRESENCE_ASSEMBLY_CROSS_BLEND",
+            "the sketch overlay is never cross-blended with the photoreal "
+            "base: full-opacity alpha overlay, dissolve in <= %d frames, hard "
+            "cut out on %d frame"
+            % (DUAL_PRESENCE_DISSOLVE_IN_MAX_FRAMES,
+               DUAL_PRESENCE_CUT_OUT_FRAMES))
+    return {
+        "base": led["base"],
+        "overlay": led["overlay"],
+        "overlay_opacity_pct": led["overlay_opacity_pct"],
+        "blend": led["blend"],
+        "dissolve_in_max_frames": led["dissolve_in_max_frames"],
+        "cut_out_frames": led["cut_out_frames"],
+        "cross_blend": False,
+        "shot_id": DUAL_PRESENCE_SHOT_LIST_ID,
+        "storyboard_shot_id": (entry or {}).get("shot_id"),
+        "plan": ("alpha-overlay %s ON %s at %d%% opacity; dissolve in <= %d "
+                 "frames; hard cut out on %d frame; cross-blend REFUSED"
+                 % (led["overlay"], led["base"], led["overlay_opacity_pct"],
+                    led["dissolve_in_max_frames"], led["cut_out_frames"])),
+    }
+
+
+def classify_half(stats):
+    """SKETCH (line art), PHOTOREAL (colour) or UNKNOWN for one half.
+
+    Fail closed: an unreadable half is UNKNOWN, and UNKNOWN never passes.
+    """
+    if not isinstance(stats, dict):
+        return HALF_UNKNOWN
+    sat = _num(stats.get("saturation"))
+    edge = _num(stats.get("edge_density"))
+    if sat is None or edge is None:
+        return HALF_UNKNOWN
+    if sat <= DUAL_PRESENCE_QC_SKETCH_MAX_SATURATION and \
+            edge >= DUAL_PRESENCE_QC_SKETCH_MIN_EDGE_DENSITY:
+        return HALF_SKETCH
+    if sat >= DUAL_PRESENCE_QC_REAL_MIN_SATURATION:
+        return HALF_REAL
+    return HALF_UNKNOWN
+
+
+def frame_passes(frame):
+    """One half is line art and the other half is photoreal colour."""
+    if not isinstance(frame, dict):
+        return False
+    return sorted((classify_half(frame.get("left")),
+                   classify_half(frame.get("right")))) == [HALF_REAL, HALF_SKETCH]
+
+
+def required_passing_frames(duration_s, fps=DUAL_PRESENCE_QC_FPS,
+                            floor=DUAL_PRESENCE_QC_FLOOR_FRAMES):
+    """`duration_s x fps` consecutive passing frames, never below the floor."""
+    d = _num(duration_s)
+    if d is None or d <= 0:
+        return None
+    return max(int(d * fps + 0.5), int(floor))
+
+
+def qc_dual_presence_window(frames, duration_s, fps=DUAL_PRESENCE_QC_FPS,
+                            floor=DUAL_PRESENCE_QC_FLOOR_FRAMES):
+    """Sample the declared window and count CONSECUTIVE passing frames.
+
+    Returns {"required", "consecutive", "any_passing", "frames", "passing"}.
+    ``passing`` is the POSITIVE verdict. A negative control is read the other
+    way round: it must show ``any_passing == 0``.
+    """
+    need = required_passing_frames(duration_s, fps, floor)
+    best = run = passing = 0
+    seq = list(frames or [])
+    for f in seq:
+        if frame_passes(f):
+            run += 1
+            passing += 1
+            best = max(best, run)
+        else:
+            run = 0
+    return {
+        "required": need,
+        "consecutive": best,
+        "any_passing": passing,
+        "frames": len(seq),
+        "passing": need is not None and best >= need,
+    }
+
+
+def qc_dual_presence(frames, duration_s, twin_removed_frames=None,
+                     phone_frames=None, fps=DUAL_PRESENCE_QC_FPS,
+                     floor=DUAL_PRESENCE_QC_FLOOR_FRAMES):
+    """The full frame-level gate: positive control plus BOTH negative controls.
+
+    The flagship beat is the POSITIVE control (``frames``). Negative control
+    one is the SAME shot with the twin removed (the stronger control, a
+    single-style clip); negative control two is the single-style "some time
+    later" phone shot at 112.0-114.3 s. The gate FAILS when either control
+    yields ANY passing frame, and a missing control is not a pass (fail
+    closed).
+    """
+    out = {
+        "positive": qc_dual_presence_window(frames, duration_s, fps, floor),
+        "phone_window_seconds": DUAL_PRESENCE_PHONE_CONTROL_SECONDS,
+    }
+    ok = out["positive"]["passing"]
+    for key, ctl in (("negative_twin_removed", twin_removed_frames),
+                     ("negative_phone", phone_frames)):
+        if ctl is None:
+            out[key] = None
+            ok = False
+            continue
+        res = qc_dual_presence_window(ctl, duration_s, fps, floor)
+        res["control_passing"] = res["any_passing"] == 0
+        out[key] = res
+        ok = ok and res["control_passing"]
+    out["passing"] = ok
+    return out
 
 
 # -------------------------------------------------------------- compile ----
