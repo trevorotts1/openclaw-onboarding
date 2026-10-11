@@ -77,6 +77,14 @@ ALIAS_MAP: dict = {
     "mobile":               "app-development",
     "apps":                 "engineering",
 
+    # daily-briefing variants. The board workspace slug is "daily-briefings"
+    # (plural) while the live runtime folder / agents key is
+    # "daily-briefing-dept" (singular + folder "-dept" suffix). Both must fold
+    # onto the same bare slug. Mirrors the same two entries in the Command
+    # Center's src/lib/routing/canonical-slug.ts ALIAS_MAP.
+    "daily-briefings":      "daily-briefing",
+    "daily-briefing-dept":  "daily-briefing",
+
     # video variants
     "video-production":     "video",
 
@@ -193,6 +201,9 @@ if __name__ == "__main__":
         ("app-development",     "app-development"),
         ("apps",                "engineering"),
         ("engineering",         "engineering"),
+        # daily-briefing aliases (board plural vs runtime folder base)
+        ("daily-briefings",     "daily-briefing"),
+        ("daily-briefing-dept", "daily-briefing"),
     ]
     all_pass = True
     for raw, expected in cases:
