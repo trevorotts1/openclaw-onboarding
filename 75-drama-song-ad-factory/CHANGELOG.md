@@ -6,6 +6,19 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.19 - 2026-10-10 - U6: direct-shell persistent timer artifacts for macOS, Hostinger and Contabo (files only — nothing installed)
+
+Bundles the skill-version bump into the U6 real-content commit (G3: skill 75 content changed, so `skill-version.txt` and the `SKILL.md` frontmatter bump together on this one commit).
+
+- `timer-artifacts/run-timer.sh` — the direct-shell poller the scheduler runs; platform-aware, `exec`s the U5 `shared-bridge/studio_bridge.py handshake`. No idle model event, no interactive session, no model token on the exec line.
+- `timer-artifacts/install-timer.sh` — renders the platform definition into its install path. Files only: `--dry-run` is the default, `--register` is always refused. It never installs, loads, enables or schedules anything anywhere.
+- `timer-artifacts/mac/com.blackceo.drama-studio-bridge.plist.template` — macOS LaunchAgent, `ProgramArguments = [/bin/sh, run-timer.sh]`, `RunAtLoad` + `StartInterval 120`, no `KeepAlive`.
+- `timer-artifacts/hostinger/drama-studio-timer.cron.template` and `timer-artifacts/contabo/drama-studio-timer.cron.template` — `*/2` direct-shell poll on the persistent volume (state on the persistent root, never ephemeral `$HOME`).
+- `timer-artifacts/checks/run_checks.py` — the runnable checks A–G, each with a plantable negative control and a true exit code.
+- `timer-artifacts/README.md` — the mechanism and the install paths, stating nothing is installed, loaded, scheduled or registered.
+- No credential is embedded; `run-timer.sh` references the key from its 0600 store and exports `DS_KEY` in the environment only.
+- Proof: `python3 75-drama-song-ad-factory/timer-artifacts/checks/run_checks.py` is 22/22 green (exit 0) on the pristine tree; a lane-local copy with a planted credential literal in `run-timer.sh` fails `F no-secret` with a true non-zero exit (21/22), and that copy was deleted. No LaunchAgent, `launchctl` entry or crontab line for the timer exists on the build machine.
+
 ## v2.9.18 - 2026-10-10 - PKG-11 attempt 4: twelve REAL `produce_delivery` paths, real-run e2e, no fixture bytes
 
 Released with onboarding v27.1.1 (same follow-up batch; attempt 3 only claimed the one naming scheme).
