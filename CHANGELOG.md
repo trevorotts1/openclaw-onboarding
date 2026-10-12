@@ -1,3 +1,11 @@
+## [v27.1.17]  -  2026-10-12  -  SK6003: skill 06 reconcile-cron job on a throwaway $HOME path is repaired on Hostinger too
+
+QC of SK6002 found one gap. The repair only fired on Contabo (wanted folder under `~/.openclaw`). A Hostinger box that registered the nightly job under SK6001 still has `--sweep-base "$HOME/clawd/skill6-fix"` (a throwaway path there; only `/data` persists) and the installer said "already present, nothing to do".
+
+- `scripts/install-github-archive-reconcile-cron.sh`: a job under `$HOME` but outside both persistent roots (`~/.openclaw`, `/data`) is repaired with `openclaw cron edit` when the resolved folder is persistent; Mac is unchanged and healthy persistent jobs are left alone. On Hostinger `~/clawd/skill6-fix` is linked to `/data/clawd/skill6-fix` (same Command Center compatibility link Contabo already got).
+- Tests: `test_hostinger_job_on_throwaway_home_path_is_repaired`, `test_hostinger_command_center_path_links_to_data` (fail on v27.1.16).
+- Migration: none beyond the normal update. Risk: LOW.
+
 ## [v27.1.16]  -  2026-10-12  -  Merge train: #1899 D01: Command Center fast path fast-forwards only, never reset --hard…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
