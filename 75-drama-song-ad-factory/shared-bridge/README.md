@@ -19,7 +19,7 @@ new framework, scheduler, dashboard or management app.
 | --- | --- |
 | `studio_claim.py` | the ledger: atomic single-winner order claim, replay guard, Windows-safe lease, notice gate, receipts |
 | `studio_bridge.py` | the bridge: key handshake, status, delivery, photo handling, quiet board, owned-run cleanup receipt, CLI |
-| `checks/run_checks.py` | the five runnable checks (A–E), each with a true exit code and a control |
+| `checks/run_checks.py` | the six runnable checks (A–F), each with a true exit code and a control |
 
 This unit owns `75-drama-song-ad-factory/shared-bridge/**` only. U1/U11 own the
 `choice_card/intake_card` area, U2 owns `mini-app/service/**`, U3 the mini-app
@@ -66,11 +66,23 @@ The presented key is read from env `DS_KEY` only — never argv, never a file na
 on the command line, never a log line. Nothing here prints, echoes or receipts a
 key value; check E proves it with a positive control on the same detector.
 
+## The one explicit User-Agent (CHECKIN-UA)
+
+Cloudflare in front of the studio refuses Python's default User-Agent
+(`Python-urllib/3.x`) with HTTP 403 and the body `error code: 1010`; any
+explicit User-Agent gets 200. Every request `studio_bridge._http` sends
+therefore carries exactly
+`drama-studio-client/2.7.48 (+https://studio.zerohumanworkforce.com)`.
+Check F drives the real `_http` at a fake studio on `127.0.0.1` and requires
+both the 200 and that exact string on the wire, with two controls on the same
+server: bare urllib is refused 403/1010, and a planted-bad bridge copy with
+the header line removed is refused too.
+
 ## Run the checks
 
 ```bash
 python3 75-drama-song-ad-factory/shared-bridge/checks/run_checks.py
-# exit 0 = all five pass; 1 = a check failed (the failing check is named)
+# exit 0 = all six pass; 1 = a check failed (the failing check is named)
 ```
 
 ## Deliberate limits
