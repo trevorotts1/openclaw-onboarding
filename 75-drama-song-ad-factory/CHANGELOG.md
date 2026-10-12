@@ -4,6 +4,16 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.43 - 2026-10-12 - Direct client uploads
+
+- Sign links for zhw-drama-studio and derive SigV4 signing keys using raw HMAC bytes through aws4_request.
+- Send the first 16 bytes as an array and match the service's image/audio/video size limits.
+- Add a streaming bridge upload command with fake-transport tests and secret-free receipts.
+- Add the phone upload form at /uploads, with file bytes sent straight to R2.
+- Keep the browser PUT CORS rule on every deploy, preserve optional upload keys, and correct the runtime-secret comment.
+- Keep the existing projects/ retention rule. A clients/ prefix would also delete protected client files; intake-only retention needs a separate sweep or per-client rules.
+- Owner requested Codex perform implementation and verification directly, without DeepSeek or Opus.
+
 ## v2.9.42 - 2026-10-12 - OPTIONS-LASTCHECKIN: the option line shows the check-in the box actually made
 
 Fixes the live `Last check-in: not yet.` that `GET /api/studio/options`

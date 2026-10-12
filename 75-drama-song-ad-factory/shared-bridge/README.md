@@ -37,7 +37,7 @@ POST /api/studio/uploads              header x-ds-key   -> { ok, upload_id, uplo
 `event` is one of `claim | needs_you | answer | ready | deliver | done`. The
 presented key lives **only** in the `x-ds-key` header, never a query string.
 Photos go phone → storage DIRECT through the presigned PUT the worker returns;
-the bytes never pass through the bridge.
+the bytes never pass through the Worker. The bridge streams local files directly to R2.
 
 ## The three guarantees
 
@@ -93,3 +93,14 @@ python3 75-drama-song-ad-factory/shared-bridge/checks/run_checks.py
 - `cleanup-receipt` writes the receipt and plans the removal; it removes only
   the disposable entries, only inside the run dir, and only with `--apply`.
   Final media and the small receipts a completed run keeps are never touched.
+
+## Send a file
+
+1. Set `DS_KEY` in your environment using your studio connection key. Never put it in a command argument.
+2. Run `python3 studio_bridge.py upload /path/to/photo.png`. The bridge requests a one-hour link, then streams the file directly to storage.
+3. Audio and video use the same command. For a WebM voice note, add `--channel audio`.
+4. Success prints only `upload_id` and `object_path`. A refused upload exits 2. An unknown transport outcome exits 3; check storage before retrying.
+
+Photos and audio are limited to 25 MB, video to 200 MB. `photo --path` remains a request-building command. The phone upload form is at `https://studio.zerohumanworkforce.com/uploads`; it sends the same metadata request and direct PUT.
+
+Offline tests: `python3 -m unittest discover -s checks -p test_upload.py`.
