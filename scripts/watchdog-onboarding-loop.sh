@@ -262,11 +262,10 @@ if command -v lr_register >/dev/null 2>&1; then
     "${_self_uuid:-unknown}" "openclaw cron rm ${_self_uuid:-unknown}" 2>/dev/null || true
 fi
 
-# ── heal OpenClaw config ──────────────────────────────────────────────────────
-# v22.0.62: bound — an unbounded `doctor --fix` hung ~133s on Janet's box and
-# the cron runner killed the fire, freezing the cron queue. 45s is ample for a
-# real heal; a timeout still leaves the previous `|| true` semantics.
-timeout 45 openclaw doctor --fix >/dev/null 2>&1 || true
+# ── NO cron-time `openclaw doctor --fix` (D02) ────────────────────────────────
+# Removed: on OpenClaw 2026.10.x it takes the offline maintenance lock and
+# rewrites config (or refuses "state database is busy" while the gateway is up),
+# on every tick. tests/unit/no-cron-doctor-fix.test.sh guards this.
 
 # ── find the next incomplete wave ─────────────────────────────────────────────
 NEXT_WAVE="$(oc_next_incomplete_wave 2>/dev/null)"

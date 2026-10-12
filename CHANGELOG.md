@@ -1,3 +1,5 @@
+## [v27.1.17]  -  2026-10-12  -  D02: onboarding cron scripts no longer run openclaw doctor --fix every tick (resume-workforce-build.sh, watchdog-onboarding-loop.sh, resume-onboarding.sh); regression test tests/unit/no-cron-doctor-fix.test.sh
+
 ## [v27.1.16]  -  2026-10-12  -  Merge train: #1899 D01: Command Center fast path fast-forwards only, never reset --hard…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
