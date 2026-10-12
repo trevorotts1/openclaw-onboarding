@@ -6,6 +6,51 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.36 - 2026-10-11 - U17: the GoHighLevel text/e-mail sender (version 1, no live send)
+
+ONE new module, ONE delimited block in the ONE battery, and the single skill
+version bump that G3 requires for a skill-content change (this same commit).
+Nothing outside skill 75 changed; the repository root `/version` is untouched.
+
+- New `scripts/core/ghl_sender/` (module, package init, README): the version-1
+  GHL sender the studio uses to hand a finished video's LINK to a client and to
+  send the follow-up NUDGES over the client's own GoHighLevel rail. Two
+  channels, ONE endpoint: `text` -> `POST /conversations/messages` type `SMS`
+  (`contactId`, `locationId`, `message`) and `email` -> the same endpoint type
+  `Email` (`contactId`, `locationId`, `subject`, `html`, `emailFrom`,
+  `emailTo`), with `Version: 2021-04-15` and `Content-Type: application/json`.
+  This is the canonical shape the repo already documents
+  (`38-conversational-ai-system/references/ghl-api-quick-reference.md`) — no
+  second endpoint, sender, proxy, adapter or dashboard was added.
+- TOKEN-PRESENCE GATING: `token_present()` checks the location-token env NAMES
+  and returns a boolean; a send with no token REFUSES with
+  `AF-U17-TOKEN-MISSING` BEFORE anything is built or transmitted, and the
+  transport is never called. ONLY the presence check exists — the token VALUE is
+  never read into a variable this module returns, stores or prints;
+  `Authorization: Bearer <token>` is attached by the injected transport from the
+  runtime's own secret store, so a secret never enters this module's request
+  bytes, receipts or output.
+- NO LIVE SEND, NO TEST SEND: the module opens no socket. The wire call is a
+  TRANSPORT the runtime injects, and there is no default live transport — a send
+  with none injected REFUSES with `AF-U17-TRANSPORT-MISSING`. `build_request()`
+  produces the exact non-secret request bytes (compact JSON, deterministic) and
+  `build_receipt()` returns ONE receipt per message (channel, type, purpose,
+  contact/location, url, the request `body_sha256`, the rail's `messageId` /
+  `conversationId`, `sent_at`) — never a secret, never the body verbatim.
+- The CLI `build` verb prints the exact request it would send; the `send` verb
+  refuses with exit 5 (there is no live transport here).
+- Proof: `HOME=$(mktemp -d) python3 75-drama-song-ad-factory/scripts/core/music_qc/test_wwfix_u1.py </dev/null`
+  — 30 new U17 checks, all green, inside the one existing battery (no second
+  suite). Positives: the text and e-mail bodies are byte-exactly canonical; a
+  token-present send calls the injected stub exactly once and returns one
+  receipt. Negative controls: no token sends nothing and never calls the
+  transport; a request carrying the secret is flagged by the same detector that
+  clears a real one; a built request and a receipt both carry no Authorization
+  header and no token value.
+- Version markers: `skill-version.txt` and the `SKILL.md` frontmatter `version:`
+  land at v2.9.36 in this same commit, bundled with the real content (G3 gates a
+  skill-content change on that bump).
+
 ## v2.9.35 - 2026-10-11 - U10-EXTRAS-U1: optional Telegram button, card link and measurement view, native fields first, OFF by default
 
 Joint plan section 5, row **U10 extras** (verbatim: "Optional Telegram
