@@ -1,3 +1,5 @@
+## [v27.1.17]  -  2026-10-12  -  D11: Early Warning System no longer treats Ollama Cloud (:cloud, a subscription) as a paid-tier P1 and reports no tunnel-down on boxes without cloudflared (skill 60 v1.2.3)
+
 ## [v27.1.16]  -  2026-10-12  -  Merge train: #1899 D01: Command Center fast path fast-forwards only, never reset --hard…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

@@ -14,8 +14,9 @@
   "anthropic_family_deny_note": "S1/S2 flag a model/provider id beginning with any of these prefixes as an Anthropic-family change; on a CLIENT box that is P1 (client skills never use Anthropic models). These are deny-list prefixes, not runtime ids.",
   "paid_tier_markers": {
     "suffix_deny": [":cloud"],
+    "suffix_deny_note": "D11: a :cloud suffix is Ollama Cloud, a SUBSCRIPTION (config/billing-models.json). It counts as a billable tier for S5 only (furnace wastes allowance); S1/S2 raise P1 on a client box for metered_provider_slugs alone.",
     "metered_provider_slugs": ["openrouter", "openai", "fish_audio", "kie"],
-    "note": "S1/S5 treat a model/provider carrying one of these markers on a client box as a paid tier worth a P1/P2 depending on signal. A :cloud suffix on a heartbeat model is the classic idle-burn furnace."
+    "note": "S1/S2 treat a metered slug on a client box as a paid tier worth a P1; S5 treats any marker as billable. A :cloud suffix on a heartbeat model is the classic idle-burn furnace."
   },
   "known_writer_argv_tokens": [
     "openclaw",
