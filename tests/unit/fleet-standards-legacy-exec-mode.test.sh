@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 # tests/unit/fleet-standards-legacy-exec-mode.test.sh
 # -----------------------------------------------------------------------------
-# CI guard: scripts/apply-fleet-standards.sh must TRANSLATE a legacy
-# tools.exec.mode key instead of merging a combination the OpenClaw validator
-# rejects and then rolling the WHOLE fleet-standards write back.
+# CI guard: scripts/apply-fleet-standards.sh must never merge a combination the
+# OpenClaw validator rejects (mode + security/ask) and must never UNDO the
+# OpenClaw 2026.10.x doctor migration of {security, ask} -> tools.exec.mode.
+#
+# D23 (2026-10-12) REVERSED THE DIRECTION of the 2026-09-17 fix. That fix
+# translated tools.exec.mode DOWN to the legacy {security, ask} pair on every
+# roll, which undid `openclaw doctor --fix` on OpenClaw 2026.10.1 (Dr. Stephanie
+# Brown's box). Now: a box that has tools.exec.mode keeps it (set to the fleet
+# standard "full") and gets NO legacy security/ask; only a legacy-schema box (no
+# mode key) still gets security=full / ask=off.
+#
+# BACKGROUND (the original 2026-09-17 defect, still guarded):
 #
 # THE DEFECT THIS GUARDS AGAINST (reproduced on two client Macs on 2026-09-15
 # and again on 2026-09-17). apply-fleet-standards.sh deep-merges
@@ -32,17 +41,18 @@
 #       full -> security=full, ask=off
 #
 # WHAT THIS TEST PROVES.
-#   T1  a legacy mode="full" box: the merged tools.exec carries NO mode key and
-#       carries the fleet standard security=full / ask=off.
-#   T2  the translation table matches resolveExecPolicyForMode EXACTLY, for all
-#       five schema modes, including case/whitespace-insensitive input.
+#   T1  a mode="full" box (the doctor-migrated shape): tools.exec.mode stays
+#       "full" and NO legacy security/ask key is written. Also a box with a
+#       non-full mode and a validator-rejected mode+security+ask mix.
+#   T2  every one of the five schema modes is recognised (kept, set to "full",
+#       security/ask dropped), including case/whitespace-insensitive input.
 #   T3  the other standards survive a legacy-mode box (toolSearch directory
 #       mode, the WhatsApp ban, the subagent ungate) -- the rollback is gone.
 #   T4  an UNTRANSLATABLE mode value: we never guess and never delete it, the
 #       tools.exec sub-block is skipped, and EVERY OTHER standard is still
 #       applied (the "never roll back everything" contract).
-#   T5  a box with no mode key is untouched by the translation and still gets
-#       the standard exec ungate (no regression for the healthy majority).
+#   T5  a LEGACY-schema box (no mode key) is unchanged: it still gets the
+#       standard exec ungate security=full / ask=off and never gains a mode.
 #   T6  ANTI-VACUITY: the same fixture run through the PRE-FIX merge (canonical
 #       deep-merged with no translation) DOES produce the forbidden
 #       mode+security+ask combination. If this test cannot show the old code
@@ -117,7 +127,7 @@ if end is None:
 
 block = "".join(lines[start:end + 1])
 
-for needed in ("def translate_legacy_exec_mode(", "EXEC_MODE_TO_POLICY",
+for needed in ("def keep_exec_mode(", "EXEC_MODES",
                "CANONICAL_TO_MERGE"):
     if needed not in block:
         sys.exit("FATAL: extracted block is missing %r" % needed)
@@ -164,12 +174,12 @@ else:
 result = {"cfg": cfg, "stdout": buf.getvalue()}
 
 if mode == "table":
-    # Call the live translator directly, once per schema mode, and report what
+    # Call the live function directly, once per schema mode, and report what
     # it produced. This is the table check, not the merge check.
     table = {}
     for m in ["deny", "allowlist", "ask", "auto", "full", "  FULL  ", "bogus", 7, None]:
         probe = {"tools": {"exec": {"mode": m}}}
-        status, detail = ns["translate_legacy_exec_mode"](probe)
+        status, detail = ns["keep_exec_mode"](probe)
         table[repr(m)] = {
             "status": status,
             "detail": detail if isinstance(detail, str) else repr(detail),
@@ -182,7 +192,7 @@ if mode == "table":
         ("no-tools", {}),
         ("exec-not-a-dict", {"tools": {"exec": "full"}}),
     ]:
-        status, detail = ns["translate_legacy_exec_mode"](probe)
+        status, detail = ns["keep_exec_mode"](probe)
         table[label] = {"status": status, "detail": repr(detail), "exec": None}
     result["table"] = table
 
@@ -198,6 +208,25 @@ cat > "$SANDBOX/fixture-legacy-full.json" <<'EOF'
     "exec": {
       "mode": "full",
       "timeoutSeconds": 900
+    }
+  },
+  "agents": {
+    "defaults": {}
+  },
+  "plugins": {
+    "entries": {}
+  },
+  "channels": {}
+}
+EOF
+
+cat > "$SANDBOX/fixture-mode-ask-mix.json" <<'EOF'
+{
+  "tools": {
+    "exec": {
+      "mode": "ask",
+      "security": "allowlist",
+      "ask": "on-miss"
     }
   },
   "agents": {
@@ -275,37 +304,47 @@ JGETEOF
 }
 
 # -----------------------------------------------------------------------------
-hdr "T1 -- legacy mode=\"full\": mode removed, fleet standard applied"
+hdr "T1 -- mode=\"full\" (doctor-migrated): mode kept, NO legacy keys written"
 # -----------------------------------------------------------------------------
 run_driver "$SANDBOX/fixture-legacy-full.json" merge > "$SANDBOX/out-full.json" 2>"$SANDBOX/err-full.txt"
 if [ $? -ne 0 ]; then
   bad "T1: driver crashed: $(head -3 "$SANDBOX/err-full.txt")"
 else
-  if [ "$(jget "$SANDBOX/out-full.json" cfg.tools.exec.mode)" = "__MISSING__" ]; then
-    ok "T1a: tools.exec.mode was removed"
+  if [ "$(jget "$SANDBOX/out-full.json" cfg.tools.exec.mode)" = "full" ]; then
+    ok "T1a: tools.exec.mode is still \"full\" (the doctor migration is not undone)"
   else
-    bad "T1a: tools.exec.mode SURVIVED the merge (this is the defect)"
+    bad "T1a: tools.exec.mode was removed or changed (this is the D23 defect)"
   fi
-  if [ "$(jget "$SANDBOX/out-full.json" cfg.tools.exec.security)" = "full" ] \
-     && [ "$(jget "$SANDBOX/out-full.json" cfg.tools.exec.ask)" = "off" ]; then
-    ok "T1b: fleet standard security=full ask=off applied"
+  if [ "$(jget "$SANDBOX/out-full.json" cfg.tools.exec.security)" = "__MISSING__" ] \
+     && [ "$(jget "$SANDBOX/out-full.json" cfg.tools.exec.ask)" = "__MISSING__" ]; then
+    ok "T1b: no legacy security/ask key was written"
   else
-    bad "T1b: fleet exec ungate not applied"
+    bad "T1b: legacy security/ask were written onto a mode-schema box"
   fi
   if [ "$(jget "$SANDBOX/out-full.json" cfg.tools.exec.timeoutSeconds)" = "900" ]; then
     ok "T1c: unrelated per-box exec tuning (timeoutSeconds) preserved"
   else
     bad "T1c: unrelated exec keys were clobbered"
   fi
-  if jget "$SANDBOX/out-full.json" stdout | grep -q 'translated'; then
-    ok "T1d: the translation is announced on stdout (operator-visible)"
+  if jget "$SANDBOX/out-full.json" stdout | grep -q 'kept'; then
+    ok "T1d: the decision is announced on stdout (operator-visible)"
   else
-    bad "T1d: silent translation -- no log line"
+    bad "T1d: silent -- no log line"
   fi
+fi
+run_driver "$SANDBOX/fixture-mode-ask-mix.json" merge > "$SANDBOX/out-askmix.json" 2>"$SANDBOX/err-askmix.txt"
+if [ $? -ne 0 ]; then
+  bad "T1e: driver crashed: $(head -3 "$SANDBOX/err-askmix.txt")"
+elif [ "$(jget "$SANDBOX/out-askmix.json" cfg.tools.exec.mode)" = "full" ] \
+     && [ "$(jget "$SANDBOX/out-askmix.json" cfg.tools.exec.security)" = "__MISSING__" ] \
+     && [ "$(jget "$SANDBOX/out-askmix.json" cfg.tools.exec.ask)" = "__MISSING__" ]; then
+  ok "T1e: mode=ask + security/ask mix -> mode=full, the rejected pair dropped"
+else
+  bad "T1e: mixed mode+security/ask not resolved to mode=full alone"
 fi
 
 # -----------------------------------------------------------------------------
-hdr "T2 -- translation table matches resolveExecPolicyForMode exactly"
+hdr "T2 -- every schema mode is kept as mode=full, never rewritten to security/ask"
 # -----------------------------------------------------------------------------
 run_driver "$SANDBOX/fixture-legacy-full.json" table > "$SANDBOX/out-table.json" 2>"$SANDBOX/err-table.txt"
 if [ $? -ne 0 ]; then
@@ -318,33 +357,26 @@ import sys
 
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 t = d["table"]
-expected = {
-    "'deny'":      ("deny",      "off"),
-    "'allowlist'": ("allowlist", "off"),
-    "'ask'":       ("allowlist", "on-miss"),
-    "'auto'":      ("allowlist", "on-miss"),
-    "'full'":      ("full",      "off"),
-}
 problems = []
-for key, (sec, ask) in expected.items():
+for key in ["'deny'", "'allowlist'", "'ask'", "'auto'", "'full'"]:
     row = t.get(key)
     if row is None:
         problems.append("%s missing from table" % key)
         continue
-    if row["status"] != "translated":
-        problems.append("%s status=%s, expected translated" % (key, row["status"]))
+    if row["status"] != "kept":
+        problems.append("%s status=%s, expected kept" % (key, row["status"]))
         continue
     e = row["exec"]
-    if "mode" in e:
-        problems.append("%s still carries mode" % key)
-    if e.get("security") != sec or e.get("ask") != ask:
-        problems.append("%s -> security=%r ask=%r, expected %r/%r"
-                        % (key, e.get("security"), e.get("ask"), sec, ask))
+    if e.get("mode") != "full":
+        problems.append("%s -> mode=%r, expected the fleet standard full"
+                        % (key, e.get("mode")))
+    if "security" in e or "ask" in e:
+        problems.append("%s gained a legacy security/ask key: %r" % (key, e))
 
 # Case / whitespace tolerance: a hand-edited config is not guaranteed tidy.
 row = t.get("'  FULL  '")
-if row is None or row["status"] != "translated" or row["exec"].get("security") != "full":
-    problems.append("'  FULL  ' not normalised and translated")
+if row is None or row["status"] != "kept" or row["exec"].get("mode") != "full":
+    problems.append("'  FULL  ' not normalised and kept")
 
 # Untranslatable values must be left ALONE, never guessed, never deleted.
 for key in ["'bogus'", "7", "None"]:
@@ -368,7 +400,7 @@ print("OK" if not problems else "; ".join(problems))
 T2EOF
 )"
   if [ "$T2_RESULT" = "OK" ]; then
-    ok "T2: all five modes, case tolerance, untranslatable and absent shapes"
+    ok "T2: all five modes, case tolerance, uninterpretable and absent shapes"
   else
     bad "T2: $T2_RESULT"
   fi
@@ -501,7 +533,7 @@ fi
 # -----------------------------------------------------------------------------
 hdr "T7 -- conflict-free invariant over every produced config"
 # -----------------------------------------------------------------------------
-T7_RESULT="$(python3 - "$SANDBOX/out-full.json" "$SANDBOX/out-bogus.json" "$SANDBOX/out-nomode.json" <<'T7EOF'
+T7_RESULT="$(python3 - "$SANDBOX/out-full.json" "$SANDBOX/out-askmix.json" "$SANDBOX/out-bogus.json" "$SANDBOX/out-nomode.json" <<'T7EOF'
 import json
 import sys
 

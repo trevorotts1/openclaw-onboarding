@@ -179,15 +179,12 @@ def dept_of_agent(agent_id):
     return aid[5:] if aid.startswith("dept-") else aid
 
 
-MAX_DEPTH = 3
-
 openclaw_fixes = []   # PRIMARY re-resolutions we apply to openclaw.json on this box
 cc_payload = {        # what the CC repair driver must rewrite in the CC DB
     "agent_settings_dept_defaults": [],   # offending dept defaults to re-resolve
     "tasks_model_id": [],                 # offending tasks to re-resolve (CC-side only)
 }
 fallback_scrubs = []  # [{location, removed:[...]}] — forbidden/preview/free pruned from fallbacks[]
-depth_caps = []       # [{location, from, to}]      — runaway cascades capped to MAX_DEPTH
 strip_actions = {     # provider/plugin BLOCK strip
     "providers_removed": [],       # models.providers.* keys removed
     "plugin_entries_removed": [],  # plugins.entries.* keys removed
@@ -213,9 +210,9 @@ def _scrub_fallbacks(fb, location):
 
 def _process_model_field(holder, key, location, dept_hint,
                          agent_id=None, null_is_offense=False):
-    """Strip/scrub/cap/re-resolve one model field at holder[key] (mutates in place
+    """Strip/scrub/re-resolve one model field at holder[key] (mutates in place
     only when APPLY). Handles PRIMARY (offender → re-resolve from the box's own
-    inventory) and fallbacks[] (scrub forbidden/preview/free, then cap depth).
+    inventory) and fallbacks[] (scrub forbidden/preview/free; NEVER truncate).
 
     `agent_id` is the BARE receipt identity that the original sweep + the CI
     smoke-test key on (e.g. `dept-graphics`); the full JSON path is kept
@@ -292,11 +289,14 @@ def _process_model_field(holder, key, location, dept_hint,
         scrubbed_fb = [x for x in scrubbed_fb
                        if not (isinstance(x, str) and x.strip().lower() == np)]
 
-    # (4) cap runaway cascades to MAX_DEPTH
-    if len(scrubbed_fb) > MAX_DEPTH:
-        depth_caps.append({"location": location,
-                           "from": len(scrubbed_fb), "to": MAX_DEPTH})
-        scrubbed_fb = scrubbed_fb[:MAX_DEPTH]
+    # (4) NO depth cap (D23). This used to truncate fallbacks[] to 3 entries on
+    #     every roll, which silently deleted operator-ordered outage backups (the
+    #     4th entry, an OpenRouter model, on Dr. Stephanie Brown's box). The
+    #     runaway 33-deep cascades it was written for were forbidden/preview
+    #     slugs, which step (1) already scrubs. This script never ADDS a
+    #     fallback, so there is nothing of its own to cap: a roll may only
+    #     remove an entry that is forbidden / preview / free / equal to the
+    #     primary, never a legitimate one.
 
     primary_changed = (code is not None) and (not needs_owner) and (new_primary != primary)
     fb_changed = (scrubbed_fb != orig_fb)
@@ -365,7 +365,7 @@ def _strip_provider_and_plugins():
 # ── (a) provider/plugin block strip ──
 _strip_provider_and_plugins()
 
-# ── (b)/(c)/(d) primary re-resolve + fallback scrub + depth cap across
+# ── (b)/(c)/(d) primary re-resolve + fallback scrub across
 #     agents.defaults.model, agents.defaults.subagents.model, every
 #     agents.list[*].model AND its subagents.model ──
 agents = cfg.setdefault("agents", {})
@@ -374,7 +374,7 @@ if isinstance(agents, dict):
     if isinstance(defaults, dict):
         # defaults + subagents: an ABSENT model legitimately inherits, and the
         # gate only scans a TRUTHY defaults.model — so a null there is NOT an
-        # offender (null_is_offense stays False). fallback scrub/cap still apply.
+        # offender (null_is_offense stays False). fallback scrub still applies.
         _process_model_field(defaults, "model", "agents.defaults.model", "",
                              agent_id="agents.defaults")
         _sub = defaults.get("subagents")
@@ -416,7 +416,7 @@ offenders_after, scanned = gate.scan_config(CONFIG)
 
 _planned = (len(openclaw_fixes)
             + sum(len(v) for v in strip_actions.values())
-            + len(fallback_scrubs) + len(depth_caps))
+            + len(fallback_scrubs))
 
 receipt = {
     "box": BOX,
@@ -427,7 +427,6 @@ receipt = {
     "openclaw_fixes_planned": openclaw_fixes,
     "strip_actions": strip_actions,
     "fallback_scrubs": fallback_scrubs,
-    "depth_caps": depth_caps,
     "cc_repair_payload": cc_payload,
     "gate_scanned": len(scanned),
     "gate_offenders_after": offenders_after,
@@ -441,7 +440,7 @@ print(f"[repair] receipt -> {RECEIPT} (clean={not offenders_after}, "
       f"planned_actions={_planned}, primary_fixes={len(openclaw_fixes)}, "
       f"providers_stripped={len(strip_actions['providers_removed'])}, "
       f"plugin_entries_stripped={len(strip_actions['plugin_entries_removed'])}, "
-      f"fallback_scrubs={len(fallback_scrubs)}, depth_caps={len(depth_caps)}, "
+      f"fallback_scrubs={len(fallback_scrubs)}, "
       f"cc_dept_defaults={len(cc_payload['agent_settings_dept_defaults'])})", file=sys.stderr)
 
 sys.exit(0 if not offenders_after else 3)
