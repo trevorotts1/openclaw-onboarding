@@ -4,6 +4,47 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.42 - 2026-10-12 - OPTIONS-LASTCHECKIN: the option line shows the check-in the box actually made
+
+Fixes the live `Last check-in: not yet.` that `GET /api/studio/options`
+returned to a client that had just checked in. ORCHESTRATOR-MEASURED,
+2026-10-12 00:04:30-00:06:23: `POST /api/studio/checkin` with the paired key
+returned 200 and stored `checkin:<client_id>` in KV, and `GET
+/api/studio/options` with the same key returned 200 with
+`Last check-in: not yet.`. Root cause, confirmed in code: `inbox.checkIn`
+writes ONE record under `checkin:<client_id>`, while `options.optionLine` read
+`record.last_check_in` off the `client:<id>` record - a field nothing writes
+after the record is created (`keys.buildKeyRecord` and the service's own
+`clientRecord` default both set it to `null`) - and the options route passed
+only the client record.
+
+- ONE shared key helper, `ids.checkinKey`, is now the only spelling of
+  `checkin:<id>`: `inbox.js` writes through it, `options.js` reads through it.
+  No other spelling of the key exists anywhere in the service.
+- `options.lastCheckIn(store, clientId)` is the ONE reader of the stored
+  check-in (moved there from `inbox.js`, next to the line that shows it, and
+  built on that helper). `inbox.checkIn` keeps writing the same record through
+  the same helper.
+- `options.optionLine(record, nowMs, lastCheckMs)` now takes that value and
+  falls back to `record.last_check_in` only for a record that already carries
+  one, so the four approved strings are unchanged.
+- Every `optionLine` caller uses that one source: `GET /api/studio/options`,
+  `POST /api/studio/options` (admin) and `POST /api/studio/orders`
+  (`option_line`). The orders route's `staleVerdict` caller already read the
+  stored check-in and is unchanged, so the page line and the staleness clock
+  can no longer disagree.
+- Two tests added in `test/service.test.mjs`: after a check-in the page shows
+  the real time and never `not yet` (and still says `not yet` for a client that
+  has never checked in), and the check-in key has ONE producer that the page
+  reads (aging the stored check-in through that key moves the page line).
+  RED on main's `src` - the failing assertion is the literal
+  `Last check-in: not yet.` after a check-in - GREEN on this head. Service
+  suite 27/27; `prove/prove_service_boundaries.mjs` and
+  `prove/prove_push_optional.mjs` both exit 0 before and after.
+- No deploy and no Cloudflare write in this unit.
+
+---
+
 ## v2.9.39 - 2026-10-11 - CHECKIN-UA: the shared bridge sends the studio's one explicit User-Agent
 
 Cloudflare in front of `https://studio.zerohumanworkforce.com` refuses Python's

@@ -19,10 +19,13 @@
 //      "Your computer has not checked in since 2:14 PM. Your order is safe and
 //       starts when it is back." plus ONE quiet line in the operator inbox.
 //
-// PURE, apart from nothing: no bindings, no I/O, no clock.
+// PURE apart from lastCheckIn, the ONE store read this surface needs: the store
+// is injected, there are no bindings, and the clock is always passed in.
 // ============================================================================
 
 'use strict';
+
+import { checkinKey } from './ids.js';
 
 export const OPTIONS = [1, 2, 3];
 export const DEFAULT_OPTION = 1;
@@ -68,10 +71,27 @@ export function clockText(ms, timezone) {
   }
 }
 
-/** The line the studio page shows under the option. */
-export function optionLine(record, nowMs) {
+/**
+ * The stored check-in for a client, in ms, or null when it has never checked
+ * in. Read through the ONE shared key helper the check-in is written with
+ * (ids.checkinKey, written by inbox.checkIn), so the page can never report a
+ * different record from the one the box's check-in landed in.
+ */
+export async function lastCheckIn(store, clientId) {
+  const raw = await store.kvGet(checkinKey(clientId));
+  const n = raw === null || raw === undefined ? NaN : Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * The line the studio page shows under the option. `lastCheckMs` is the stored
+ * check-in (lastCheckIn); `record.last_check_in` is only a fallback for a
+ * record that already carries one — nothing in this service writes it after
+ * the record is created.
+ */
+export function optionLine(record, nowMs, lastCheckMs) {
   const option = OPTIONS.includes(record && record.option) ? record.option : DEFAULT_OPTION;
-  const last = record ? record.last_check_in : null;
+  const last = typeof lastCheckMs === 'number' ? lastCheckMs : (record ? record.last_check_in : null);
   return `${PENNY[option]} Last check-in: ${ageText(nowMs, last)}.`;
 }
 

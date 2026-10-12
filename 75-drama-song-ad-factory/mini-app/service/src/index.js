@@ -30,10 +30,10 @@
 import { AF_ID_INVALID, isClientId } from './ids.js';
 import { AF_ISO_CROSS, authorizeClient, enrollClient } from './isolation.js';
 import { attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
-import { checkIn, lastCheckIn, writeInbox } from './inbox.js';
+import { checkIn, writeInbox } from './inbox.js';
 import { acceptUpload, pollUpload } from './uploads.js';
 import { resolveOrderState, transition, writeOperatorRecord } from './lifecycle.js';
-import { AF_OPT_APPROVAL, optionLine, setOption, staleVerdict } from './options.js';
+import { AF_OPT_APPROVAL, lastCheckIn, optionLine, setOption, staleVerdict } from './options.js';
 import { listKeys, randomConnectHex } from './support.js';
 import { AF_PUSH_DISABLED, pushEnabled, registerSubscription, revokeSubscription, sendPush } from './push.js';
 
@@ -186,7 +186,7 @@ export async function handle(request, env, store, objects, deps = {}) {
     const set = setOption(record, body.option, { nowMs, approval: body.approval });
     if (!set.ok) return fail(set.code === AF_OPT_APPROVAL ? 403 : 400, set.code, set.message);
     await store.kvPut(`client:${target}`, JSON.stringify(set.record));
-    return ok({ option: set.record.option, line: optionLine(set.record, nowMs) });
+    return ok({ option: set.record.option, line: optionLine(set.record, nowMs, await lastCheckIn(store, target)) });
   }
 
   // POST /api/studio/admin/push/send — operator-triggered, explicitly opt-in (U20)
@@ -264,7 +264,10 @@ export async function handle(request, env, store, objects, deps = {}) {
     await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(order));
     const waiting = await waitingList(store, clientId);
     await writeInbox(objects, { clientId, orders: waiting, nowMs });
-    return ok({ order: project(order, nowMs), option_line: optionLine(await clientRecord(store, clientId), nowMs) }, 201);
+    return ok({
+      order: project(order, nowMs),
+      option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(store, clientId)),
+    }, 201);
   }
 
   // /api/studio/orders/<id> and /api/studio/orders/<id>/<verb>
@@ -309,7 +312,7 @@ export async function handle(request, env, store, objects, deps = {}) {
   // GET /api/studio/options — the real-wait line for the client's record
   if (request.method === 'GET' && url.pathname === '/api/studio/options') {
     const record = await clientRecord(store, clientId);
-    return ok({ option: record.option || 1, line: optionLine(record, nowMs) });
+    return ok({ option: record.option || 1, line: optionLine(record, nowMs, await lastCheckIn(store, clientId)) });
   }
 
   // POST /api/studio/uploads/<id>/complete — the poll view for a phone
