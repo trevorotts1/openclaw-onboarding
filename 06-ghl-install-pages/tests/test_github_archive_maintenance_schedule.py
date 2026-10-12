@@ -165,6 +165,102 @@ exit 1
         assert "openclaw" in (result.stdout + result.stderr).lower()
 
 
+class TestInstallerFlagParsingSK6001:
+    """SK6001 regression. update-skills.sh runs the first scripts/install-*.sh
+    of a skill as `bash <installer> --idempotent`; the installer used to take
+    that flag as the evidence directory and register
+    `--sweep-base "--idempotent"` (argparse exit 2 every night on every box).
+    Mutation-proof: restoring `EVIDENCE_BASE="${1:-...}"` fails every test here
+    that passes a flag."""
+
+    def _fake(self, tmp_path, jobs):
+        bin_dir = tmp_path / "fakebin"
+        bin_dir.mkdir()
+        state = tmp_path / "state.json"
+        state.write_text(json.dumps({"jobs": jobs}))
+        log = tmp_path / "calls.log"
+        (bin_dir / "openclaw").write_text(f"""#!/usr/bin/env bash
+if [[ "$1 $2" == "cron list" ]]; then cat "{state}"; exit 0; fi
+printf '%s\\n' "$*" >> "{log}"
+if [[ "$1 $2" == "cron add" ]]; then
+  python3 - "{state}" <<'PYEOF'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["jobs"].append({{"id": "new1", "name": "skill6-github-archive-reconcile-sweep", "payload": {{"command": "x"}}}})
+json.dump(d, open(sys.argv[1], "w"))
+PYEOF
+fi
+exit 0
+""")
+        (bin_dir / "openclaw").chmod(0o755)
+        return str(bin_dir), log
+
+    def _run(self, tmp_path, fake_bin, *args, extra_env=None):
+        home = tmp_path / "home"
+        home.mkdir(exist_ok=True)
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("SKILL6_EVIDENCE_BASE")}
+        env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
+        env["HOME"] = str(home)
+        env.update(extra_env or {})
+        r = subprocess.run(["bash", INSTALLER, *args], env=env,
+                           capture_output=True, text=True)
+        return r, home
+
+    def test_idempotent_flag_is_never_the_directory(self, tmp_path):
+        fake_bin, log = self._fake(tmp_path, [])
+        r, home = self._run(tmp_path, fake_bin, "--idempotent")
+        assert r.returncode == 0, r.stdout + r.stderr
+        added = log.read_text()
+        assert '--sweep-base "--idempotent"' not in added
+        assert f'--sweep-base "{home}/clawd/skill6-fix"' in added
+        assert (home / "clawd" / "skill6-fix").is_dir(), "evidence dir not created"
+
+    def test_flag_then_explicit_directory(self, tmp_path):
+        fake_bin, log = self._fake(tmp_path, [])
+        target = tmp_path / "ev"
+        r, _ = self._run(tmp_path, fake_bin, "--idempotent", str(target))
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert f'--sweep-base "{target}"' in log.read_text()
+        assert target.is_dir()
+
+    def test_evidence_base_flag_and_env_precedence(self, tmp_path):
+        fake_bin, log = self._fake(tmp_path, [])
+        env_dir = tmp_path / "from-env"
+        r, _ = self._run(tmp_path, fake_bin, "--idempotent",
+                         extra_env={"SKILL6_EVIDENCE_BASE_DIR": str(env_dir)})
+        assert f'--sweep-base "{env_dir}"' in log.read_text()
+
+    def test_unknown_flag_ignored_and_dash_directory_refused(self, tmp_path):
+        fake_bin, log = self._fake(tmp_path, [])
+        r, _ = self._run(tmp_path, fake_bin, "--whatever")
+        assert r.returncode == 0 and '--sweep-base "--whatever"' not in log.read_text()
+        r2, _ = self._run(tmp_path, fake_bin, "--evidence-base", "-bad")
+        assert r2.returncode == 2
+
+    def test_broken_existing_job_is_repaired_in_place(self, tmp_path):
+        broken = {"id": "job-bad", "name": "skill6-github-archive-reconcile-sweep",
+                  "payload": {"command": "python3 x/ghl_github_reconcile.py "
+                              '--sweep-base "--idempotent" --retry --json'}}
+        fake_bin, log = self._fake(tmp_path, [broken])
+        r, home = self._run(tmp_path, fake_bin, "--idempotent")
+        assert r.returncode == 0, r.stdout + r.stderr
+        calls = log.read_text()
+        assert "cron edit job-bad --command" in calls
+        assert '--sweep-base "--idempotent"' not in calls
+        assert f'--sweep-base "{home}/clawd/skill6-fix"' in calls
+        assert "cron add" not in calls
+
+    def test_healthy_existing_job_is_left_alone(self, tmp_path):
+        ok = {"id": "job-ok", "name": "skill6-github-archive-reconcile-sweep",
+              "payload": {"command": 'python3 x/ghl_github_reconcile.py '
+                          '--sweep-base "/data/clawd/skill6-fix" --retry --json'}}
+        fake_bin, log = self._fake(tmp_path, [ok])
+        r, _ = self._run(tmp_path, fake_bin, "--idempotent")
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert not log.exists(), "touched a healthy job"
+
+
 if __name__ == "__main__":
     import sys
     sys.exit(pytest.main([__file__, "-v"]))
