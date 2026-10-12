@@ -4,6 +4,50 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.41 - 2026-10-12 - DEPLOY-2TOKEN: the deploy probes every step's scope before it writes, on a per-step token
+
+The live Drama Studio deploy died mid-write. From main `5f321a96c`, `deploy.sh
+deploy` had already run `ensure_bucket` and `ensure_retention` (a lifecycle PUT)
+when the KV step failed with `FATAL Cloudflare API GET
+/accounts/<acct>/storage/kv/namespaces?per_page=100 returned HTTP 401 ...
+Authentication error` - a PARTIAL WRITE, with the secrets, the Worker deploy and
+the DNS step never reached.
+
+Read-only HTTP probes on 2026-10-12 (codes only, no value, no mutation) show the
+split: the operator's Workers/R2 token = Workers scripts 200, Worker secrets 200,
+R2 buckets 200, R2 lifecycle 200, KV namespaces 401, zone DNS records 403; the
+operator's KV/DNS token = KV namespaces 200, zone DNS records 200, R2 buckets 403.
+
+- **(1) Per-step token.** `CLOUDFLARE_DRAMA_STUDIO_API_TOKEN` stays the deploy
+  token (account/zone resolution, the zone guard, R2, the secrets, the Worker
+  deploy). A new OPTIONAL `STUDIO_KV_DNS_API_TOKEN` (manifest
+  `env.kv_dns_token_var`) covers `ensure_kv_namespace` and `ensure_dns`; unset or
+  empty it FALLS BACK to the deploy token. `cf_api` now authenticates with the
+  variable named by `CF_TOKEN_VAR`, and the `cf_api_kvdns` wrapper repoints it for
+  those two steps. No token value is printed anywhere.
+- **(2) Read-only preflight.** Before the first write, `preflight()` probes every
+  step's scope with its ASSIGNED token, GET only: Workers scripts list, Worker
+  secrets list (when the Worker exists), R2 buckets list and the R2 lifecycle GET
+  (when the bucket exists) on the deploy token; KV namespaces list and zone DNS
+  records list on the KV/DNS token. Any non-200 fails the deploy BEFORE any
+  mutation, in one line naming the step and the variable (for example
+  `FATAL preflight: kv-namespace needs a token with KV namespaces read/write;
+  STUDIO_KV_DNS_API_TOKEN (falling back to CLOUDFLARE_DRAMA_STUDIO_API_TOKEN) got
+  HTTP 401`). `--dry-run` with a deploy token runs the same probe; without one it
+  plans it, still making no call.
+- **(3) Three new `--self-test` cases**, each RED without its part of the fix and
+  GREEN with it: PT-a (a KV probe answering 401 fails in preflight, naming
+  `kv-namespace` and `STUDIO_KV_DNS_API_TOKEN`, with ZERO write calls recorded),
+  PT-b (KV/DNS variable unset: the KV and DNS probes fall back to the deploy
+  token), PT-c (both set: KV and DNS use the KV/DNS token and every other probe
+  uses the deploy token). Every existing case stays green.
+- `deploy.manifest.json` records `env.kv_dns_token_var` with its fallback note;
+  `DEPLOY.md` documents both variables by NAME, the step-to-token table, the
+  preflight and the operator recipe. No token was created, rotated or modified by
+  this unit, and it made no Cloudflare write and no real deploy.
+
+---
+
 ## v2.9.39 - 2026-10-11 - CHECKIN-UA: the shared bridge sends the studio's one explicit User-Agent
 
 Cloudflare in front of `https://studio.zerohumanworkforce.com` refuses Python's
