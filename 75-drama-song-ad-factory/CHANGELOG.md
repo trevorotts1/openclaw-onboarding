@@ -30,6 +30,43 @@ A bridge or pairing script shipped without the header cannot check in at all.
   removed must be refused too. Red on main, green on this head.
 ---
 
+## v2.9.40 - 2026-10-11 - CHECKIN-500: a non-studio client_id is refused, never a Worker crash
+
+Fixes the live `AF-DS-ID-INVALID` crash on `POST /api/studio/checkin`. Live
+evidence (ORCHESTRATOR-MEASURED, `wrangler tail drama-studio-mini-app`,
+2026-10-12T02:31:51Z, one POST with the paired operator key): HTTP 500
+`error code: 1101`, outcome `exception`, name `Error`, message
+`AF-DS-ID-INVALID`, stack `scopePath <- inboxPath <- readInbox <- checkIn <-
+handle`. Root cause, confirmed in code: `POST /api/studio/admin/pairing-code`
+stored ANY `client_id` string, so the operator pairing stored a non-studio
+client id such as a human-readable name — not a studio-invented id (`ids.js`
+`CLIENT_ID_RE` `^c-[0-9a-f]{32}$`). `POST /api/studio/pair` copied it into the
+machine key record, `authorizeClient` returned it unchanged, and `readInbox ->
+inboxPath -> scopePath` threw; nothing caught it and the Worker crashed. `GET
+/api/studio/options` "worked" with the same key only because it builds no
+scoped path.
+
+- **(a) the admin door refuses a non-studio id.** `POST
+  /api/studio/admin/pairing-code` now checks `isClientId(body.client_id)` and
+  returns `400 AF-DS-ADMIN-INVALID` before minting — no code is created and
+  nothing is stored.
+- **(b) one refusal point on the key path.** `authorizeClient` (`isolation.js`)
+  now refuses a stored key whose `client_id` fails `isClientId`, in ONE place,
+  returning `AF-DS-ID-INVALID`; `index.js` answers it as a structured `401`
+  JSON error ("This key is not bound to a studio client id. Pair this computer
+  again.") instead of throwing from `scopePath`. Every key-authorized route is
+  covered, so a pre-existing bad-id key (the operator Mac's current key) can no
+  longer crash any route.
+- **(c) a missing inbox object is an empty inbox.** `checkIn` with a valid
+  `c-<32 hex>` client and no inbox object returns `200`, `line: null`, and
+  records the check-in.
+- **Tests** (`mini-app/service/test/service.test.mjs`): the live failure
+  reproduced (admin refusal + a pre-seeded bad-id key refused on check-in and on
+  another key route), missing-inbox `200`, and the one-waiting-order
+  `DRAMA_ORDER` line. Suite 25/25 green; `prove_service_boundaries.mjs` and
+  `prove_push_optional.mjs` green. `skill-version.txt`, SKILL.md frontmatter and
+  this entry land in ONE commit (G3).
+
 ## v2.9.37 - 2026-10-11 - OB-KIE-2: kie-rate-limit.md records the recordInfo and discovery limits
 
 Joint-plan OB-KIE-2 (line 1066) paired change. The parity doc
