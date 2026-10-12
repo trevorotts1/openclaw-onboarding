@@ -13,16 +13,25 @@ SAME instrument, so a green run means the check discriminates.
      and clearing the guard re-opens a notice (so the guard is load-bearing)
   E  no key value is ever printed — with a positive control proving the
      detector can see the sentinel when it is present
+  F  every request the bridge sends carries the one explicit User-Agent, with
+     two controls on the same server: bare urllib is refused 403/1010, and a
+     planted-bad bridge copy with the header removed is refused too
 
 Run: python3 checks/run_checks.py
 Exit: 0 all pass · 1 at least one failed
 """
+import http.server
+import importlib.util
+import json
 import os
 import pathlib
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import urllib.error
+import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 BRIDGE_DIR = HERE.parent
@@ -169,12 +178,108 @@ def check_e_no_secret_printed():
         found, control_seen, codes)
 
 
+
+# --- F: the one explicit User-Agent ------------------------------------------
+# Cloudflare in front of the studio refuses Python's default User-Agent
+# ("Python-urllib/3.x") with HTTP 403 and the body "error code: 1010". A bridge
+# shipped without the header cannot check in at all. This check drives the REAL
+# `studio_bridge._http` at a fake studio on 127.0.0.1 and requires both the 200
+# and the exact string on the wire. Controls on the SAME server: bare urllib must
+# be refused 403/1010 (the instrument discriminates), and a planted-bad copy of
+# the bridge with the header line removed must NOT get 200.
+
+EXPECTED_USER_AGENT = "drama-studio-client/2.7.48 (+https://studio.zerohumanworkforce.com)"
+_UA_SEEN = []
+
+class _FakeStudio(http.server.BaseHTTPRequestHandler):
+    def _serve(self):
+        try:
+            n = int(self.headers.get("content-length") or 0)
+        except ValueError:
+            n = 0
+        if n:
+            self.rfile.read(n)
+        ua = self.headers.get("User-Agent") or ""
+        _UA_SEEN.append(ua)
+        if not ua or ua.startswith("Python-urllib") or ua != EXPECTED_USER_AGENT:
+            body = b"error code: 1010\n"
+            self.send_response(403)
+            self.send_header("content-type", "text/plain")
+        else:
+            body = json.dumps({"ok": True}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = _serve
+
+    def log_message(self, *a):
+        pass
+
+def _planted_bad_bridge():
+    """A copy of the bridge with exactly the User-Agent header line removed."""
+    d = WORK / "bad-bridge"
+    d.mkdir(parents=True, exist_ok=True)
+    shutil.copy(BRIDGE_DIR / "studio_claim.py", d / "studio_claim.py")
+    src = (BRIDGE_DIR / "studio_bridge.py").read_text(encoding="utf-8")
+    line = '    req.add_header("User-Agent", STUDIO_USER_AGENT)\n'
+    if src.count(line) != 1:
+        raise AssertionError("plant anchor %r appears %d times in studio_bridge.py"
+                             % (line, src.count(line)))
+    (d / "studio_bridge.py").write_text(src.replace(line, ""), encoding="utf-8")
+    return d / "studio_bridge.py"
+
+def check_f_user_agent():
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _FakeStudio)
+    base = "http://127.0.0.1:%d" % srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        # control 1: the instrument discriminates — bare urllib is refused, with the body
+        bare = None
+        try:
+            urllib.request.urlopen(base + "/api/studio/health", timeout=10)
+        except urllib.error.HTTPError as e:
+            bare = (e.code, e.read().decode("utf-8", "replace").strip())
+        control_ok = bare == (403, "error code: 1010")
+
+        # the real bridge
+        status, body = SB._http("GET", base + "/api/studio/health", timeout=10)
+        real_ua = _UA_SEEN[-1]
+        constant_ok = getattr(SB, "STUDIO_USER_AGENT", None) == EXPECTED_USER_AGENT
+        real_ok = (status == 200 and getattr(body, "get", None) and body.get("ok") is True
+                   and real_ua == EXPECTED_USER_AGENT and constant_ok)
+
+        # control 2: the planted-bad copy (header line removed) must not get 200
+        bad_status = None
+        try:
+            bad_path = _planted_bad_bridge()
+            spec = importlib.util.spec_from_file_location("bad_bridge", bad_path)
+            bad = importlib.util.module_from_spec(spec)
+            sys.modules["bad_bridge"] = bad
+            spec.loader.exec_module(bad)
+            bad_status, _ = bad._http("GET", base + "/api/studio/health", timeout=10)
+            plant_caught = bad_status != 200
+        except AssertionError:
+            # the bridge under test carries no User-Agent line to plant against
+            # (a pre-change copy). Nothing to plant, so the control cannot pass;
+            # the real request above already records what it sends instead.
+            plant_caught = False
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    ok = control_ok and real_ok and plant_caught
+    return ok, ("instrument_control=%s constant=%s status=%s ua_seen=%r planted_bad_status=%s"
+                % (control_ok, constant_ok, status, real_ua, bad_status))
+
 CHECKS = (
     ("A double-claim single winner", check_a_double_claim),
     ("B replay refused", check_b_replay_refused),
     ("C Windows-safe lease", check_c_windows_safe_lease),
     ("D nudge/reminder/silence", check_d_notice_discipline),
     ("E no secret printed", check_e_no_secret_printed),
+    ("F one explicit User-Agent", check_f_user_agent),
 )
 
 

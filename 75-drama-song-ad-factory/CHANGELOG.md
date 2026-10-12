@@ -4,6 +4,30 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.39 - 2026-10-11 - CHECKIN-UA: the shared bridge sends the studio's one explicit User-Agent
+
+Cloudflare in front of `https://studio.zerohumanworkforce.com` refuses Python's
+default User-Agent (`Python-urllib/3.x`) with HTTP 403 and the body
+`error code: 1010`; the same request with an explicit User-Agent gets 200.
+Measured read-only on 2026-10-11 (`GET /api/studio/health`, no key): bare
+`urllib.request.urlopen` -> 403 `error code: 1010`, the same call with an explicit
+User-Agent -> 200 `{"ok":true,"service":"drama-studio-service","version":"0.1.0"}`.
+A bridge or pairing script shipped without the header cannot check in at all.
+
+- `shared-bridge/studio_bridge.py` now defines ONE constant,
+  `STUDIO_USER_AGENT = "drama-studio-client/2.7.48 (+https://studio.zerohumanworkforce.com)"`,
+  and `_http` sends it on every request it builds. No other behaviour change.
+- Paired 999 commit: `.claude/skills/drama-studio/studio_bridge.py` carries these
+  exact bytes (sha256 equal on both sides, recorded in the twin fingerprints), and
+  `studio.py` / `studio_check.py` in that repo carry an identical literal constant
+  at their own request sites; the 999 prover `prove/prove_user_agent.py` asserts all
+  three strings are equal before it drives a request.
+- `shared-bridge/checks/run_checks.py` gains check F. It starts a fake studio on
+  `127.0.0.1` (localhost only: no key, no live host, no client box) and drives the
+  real `studio_bridge._http` at it, requiring both the 200 and the exact string on
+  the wire. Two controls on the same server: bare urllib must be refused 403/1010
+  (the instrument discriminates), and a planted-bad bridge copy with the header line
+  removed must be refused too. Red on main, green on this head.
 ---
 
 ## v2.9.37 - 2026-10-11 - OB-KIE-2: kie-rate-limit.md records the recordInfo and discovery limits
