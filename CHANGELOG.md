@@ -1,3 +1,16 @@
+## [v27.1.17]  -  2026-10-12  -  Merge train: #1900 D02: onboarding cron scripts no longer run openclaw doctor --fix…; #1901 D12: operator Telegram account never gets the box's own client bot…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1900 — [v27.1.17]  -  2026-10-12  -  D02: onboarding cron scripts no longer run openclaw doctor --fix every tick (resume-workforce-build.sh, watchdog-onboarding-loop.sh, resume-onboarding.sh); regression test tests/unit/no-cron-doctor-fix.test.sh
+
+### #1901 — [v27.1.17]  -  2026-10-12  -  D12: configure-operator-telegram.sh refuses an operator bot token that is the box's own client bot (REFUSED_SAME_AS_CLIENT_BOT)
+
+`scripts/configure-operator-telegram.sh` now compares the bot id (digits before the colon, never the secret half) of the operator token with this box's own client bot (`accounts.default.botToken` and the legacy `channels.telegram.botToken`). Equal: the operator `botToken` is written as `""`, no operator binding is added, an already-present duplicate operator token is blanked, and the script prints `STATUS: operator-telegram=REFUSED_SAME_AS_CLIENT_BOT`. OpenClaw 2026.10.1 rejects the duplicate ("Duplicate Telegram bot token"), seen on 4 client boxes. Routing of operator-bot messages is unchanged.
+
+- Regression test: `scripts/test-operator-telegram-same-as-client-bot.sh` (7 of 13 checks fail on the old script), run by `config-injection-shapes-guard`.
+- Migration: none beyond the normal update; an affected box shows the REFUSED status until a separate operator bot token is provisioned. Risk: LOW.
+
 ## [v27.1.16]  -  2026-10-12  -  Merge train: #1899 D01: Command Center fast path fast-forwards only, never reset --hard…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
