@@ -754,6 +754,24 @@ _ensure_closeout_watchdog() {
 #    cron script regardless of owner-chat resolution. This is the fix that makes
 #    closeout fire even on boxes where Step 13's message-mode cron was skipped.
 _ensure_closeout_resume() {
+  # D25: never (re-)register on a box whose closeout is already complete or whose
+  # resume budget (resume-closeout-cron.sh run-count file) is already spent. Same
+  # state the job reads. Otherwise every update-skills run re-adds a job whose
+  # first fire only self-removes (and used to Telegram "exhausted").
+  if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
+    local _cs; _cs=$(jq -r '.closeoutStatus // empty' "$STATE_FILE" 2>/dev/null)
+    if [[ "$_cs" == "done" || "$_cs" == "sent" ]]; then
+      _log "SKIP closeout-resume — closeoutStatus=${_cs}; lifecycle cron not needed"
+      return 0
+    fi
+  fi
+  local _rc_file _rc
+  _rc_file="$(dirname "$STATE_FILE")/.closeout-resume-runs.count"
+  _rc=$(tr -d '[:space:]' < "$_rc_file" 2>/dev/null || true)
+  if [[ "$_rc" =~ ^[0-9]+$ ]] && (( _rc > ${ZHC_CLOSEOUT_MAX_CRON_RUNS:-48} )); then
+    _log "SKIP closeout-resume — resume budget exhausted (${_rc} runs); NOT re-registering. Reset: rm $_rc_file"
+    return 0
+  fi
   if oc_cron_tombstoned "closeout-resume"; then
     _log "SKIP closeout-resume — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove closeout-resume"
     return 0
@@ -770,6 +788,7 @@ _ensure_closeout_resume() {
   fi
   chmod +x "$script" 2>/dev/null || true
   if _register_command_cron "closeout-resume" "*/15 * * * *" "$script" closeoutResumeUuid closeoutResumeRegisteredAt; then
+    rm -f "$_rc_file"  # D25: a fresh registration starts a fresh run budget
     _log "DONE closeout-resume cron registered (*/15, $(_cli_supports_command && echo 'command mode' || echo 'agent-message fallback') — REDUNDANT trigger, no owner chat required)"
     return 0
   fi
