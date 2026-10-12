@@ -12,6 +12,19 @@ Released by the merge train as one batch. Each merged pull request's own CHANGEL
 - Migration: none beyond the normal update; an affected box shows the REFUSED status until a separate operator bot token is provisioned. Risk: LOW.
 ## [v27.1.17]  -  2026-10-12  -  D13: skill 18 heartbeat checklist is bounded and report-only (command cap, no investigating, fixing or messaging, one log line)
 ## [v27.1.17]  -  2026-10-12  -  D17: closeout watchdog Rescue Rangers escalation carries the box identity (boxName/box from FLEET_STANDING_BOX_SLUG)
+## [v27.1.17]  -  2026-10-12  -  D03+D07: GHL MCP autostart never calls the openclaw CLI while the gateway is down; Contabo probe log dir is on the persistent volume and the probe cron creates it
+
+#### What Changed
+- **D03 (`scripts/ghl-mcp-autostart.sh`):** new `gw_up` helper (reads `gateway.port` from `openclaw.json`, default 18789, `GET http://127.0.0.1:<port>/healthz`, true only on HTTP 200, never the CLI). `deregister_tier2` returns 0 before any CLI call when the gateway is not up; `install_periodic_probe` skips its `openclaw cron list/add` fallback the same way (the launchd and crontab installs need no gateway and still run). Cause: on OpenClaw 2026.10.1 a CLI call made while the gateway is down takes the offline maintenance lock and kills the gateway at bootstrap; the script ran `openclaw config set` / `mcp list` even on its healthy no-op path, in parallel with gateway start on Contabo (Beverly Grandison crash loop, RestartCount 13, about 15 minutes down for the client).
+- **D07 (`scripts/lib/ghl-mcp-paths.sh`, `scripts/ghl-mcp-autostart.sh`):** on `linux-home` boxes the GHL MCP log dir is `<OpenClaw root>/logs/ghl-mcp` (persistent) instead of `$HOME/logs` (thrown away on a Contabo recreate). Both probe cron commands (crontab line and openclaw cron store) now start with `mkdir -p <log dir> &&`, because the shell opens the `>>probe.log` redirect before the probe's own `mkdir -p` runs (Donna Izzard: ghl-mcp-probe failed 10 runs after a recreate, `cannot create /data/logs/probe.log: Directory nonexistent`). A stored cron line with the old path is replaced on the next run (tagged upsert).
+- **Tests:** new `tests/unit/ghl-mcp-gateway-guard.test.sh` (fake `openclaw` plus closed port asserts 0 CLI calls, fake `/healthz` 200 server asserts calls happen, persistent log dir, cron command creates the dir). `ghl-mcp-paths-lib.test.sh` (1c) now expects the persistent path; `ghl-mcp-autostart-idempotent-write.test.sh` stubs `gw_up` as up. New step in `ghl-mcp-supervised-guard.yml`.
+
+#### Migration Notes
+- Risk: LOW. No gateway restart is triggered. The Contabo container start-up template ordering is a separate change (D08), not edited here.
+- Existing boxes keep logging to the old folder until update-skills re-runs the autostart, which rewrites the probe cron line.
+
+#### Files Changed
+- `scripts/ghl-mcp-autostart.sh`, `scripts/lib/ghl-mcp-paths.sh`, `tests/unit/ghl-mcp-gateway-guard.test.sh` (new), `tests/unit/ghl-mcp-paths-lib.test.sh`, `tests/unit/ghl-mcp-autostart-idempotent-write.test.sh`, `.github/workflows/ghl-mcp-supervised-guard.yml`.
 
 ## [v27.1.16]  -  2026-10-12  -  Merge train: #1899 D01: Command Center fast path fast-forwards only, never reset --hard…
 
