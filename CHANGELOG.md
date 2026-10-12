@@ -1,3 +1,5 @@
+## [v27.1.19]  -  2026-10-12  -  D10: cron presence checks return 2 (unknown) on a failed or non-JSON openclaw cron list and every registrar skips registration, so a CLI hiccup no longer adds duplicate crons
+
 ## [v27.1.18]  -  2026-10-12  -  Merge train: #1902 D13: skill 18 heartbeat checklist is bounded and report-only…; #1903 D17: closeout watchdog Rescue Rangers escalation carries the box…; #1905 D03+D07: GHL MCP autostart never calls the openclaw CLI while the…; #1907 D18+D19+D20: CC npm ci uses the Command Center node; skill 38…; #1908 D04+D05+D06: Contabo master files, rollback backups, skill 41…; #1909 D11: EWS Ollama Cloud (:cloud) is a subscription not a paid-tier P1;…; #1910 SK6003: skill 06 reconcile-cron job on a throwaway $HOME path is…; #1911 D08: VPS start-up templates are gateway-first, wait out the owner…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

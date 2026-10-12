@@ -205,7 +205,13 @@ for i in "${!CRON_NAMES[@]}"; do
   fi
   # JSON exact-name match (truncation-safe) — see cron-lib.sh header for why a
   # text-table grep here re-introduces the 6x-duplicate bug on long names.
-  if oc_cron_present "$name"; then
+  oc_cron_present "$name" && _pr=0 || _pr=$?
+  if [ "$_pr" -eq 2 ]; then
+    # D10: cron list unreadable = presence UNKNOWN, never "absent" (would add a duplicate)
+    echo "$P cron '$name' presence unknown (openclaw cron list --json failed or unparseable) — NOT registering; re-run to backfill"
+    continue
+  fi
+  if [ "$_pr" -eq 0 ]; then
     # REPAIR: a copy registered before the path substitution still carries the literal
     # placeholder — rewrite its message in place (same id, schedule and state).
     _fixed=0
