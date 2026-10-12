@@ -16,7 +16,7 @@
 
 'use strict';
 
-import { scopePath } from './ids.js';
+import { checkinKey, scopePath } from './ids.js';
 
 export const MAX_WAITING_ORDERS = 50;
 export const INBOX_LINE_PREFIX = 'DRAMA_ORDER';
@@ -24,10 +24,6 @@ export const INBOX_LINE_PREFIX = 'DRAMA_ORDER';
 /** clients/<id>/inbox.json — the one small file per box. */
 export function inboxPath(clientId) {
   return scopePath(clientId, 'inbox.json');
-}
-
-export function checkinKey(clientId) {
-  return `checkin:${clientId}`;
 }
 
 /** The waiting orders only, newest last, capped so the file stays small. */
@@ -77,10 +73,4 @@ export async function checkIn(store, objectStore, { clientId, nowMs, orders }) {
   await store.kvPut(checkinKey(clientId), String(nowMs));
   const inbox = orders ? { waiting: waitingOrders(orders) } : await readInbox(objectStore, clientId);
   return { ok: true, checked_in_at: nowMs, line: inboxLine(inbox.waiting) };
-}
-
-export async function lastCheckIn(store, clientId) {
-  const raw = await store.kvGet(checkinKey(clientId));
-  const n = raw === null || raw === undefined ? NaN : Number(raw);
-  return Number.isFinite(n) ? n : null;
 }

@@ -12,7 +12,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isClientId, ownsPath, randomClientId, scopePath } from '../src/ids.js';
+import { checkinKey, isClientId, ownsPath, randomClientId, scopePath } from '../src/ids.js';
 import {
   AF_PAIR_EXPIRED, AF_PAIR_LOCKED, AF_PAIR_WRONG, attemptPairing, buildKeyRecord,
   mintKey, mintPairingCode,
@@ -541,4 +541,63 @@ test('CHECKIN-500: a valid client with one waiting order still prints the DRAMA_
   const res = await handle(post('/api/studio/checkin', {}, key), GOOD_ENV, store, objects);
   assert.equal(res.status, 200);
   assert.equal((await res.json()).line, `DRAMA_ORDER ${orderId} "Spring Sale"`);
+});
+
+// ---------------------------------------------------------------------------
+// OPTIONS-LASTCHECKIN — the page must show the check-in the box actually made.
+//
+// checkIn writes ONE record, under checkin:<client_id>. The option line read a
+// DIFFERENT field (client:<id>.last_check_in) that nothing ever wrote after the
+// record was created, so a client who had just checked in was told
+// "Last check-in: not yet." — a live defect, 2026-10-12.
+// ---------------------------------------------------------------------------
+
+test('OPTIONS-LASTCHECKIN: after a check-in the option line shows the real time, never "not yet"', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const { key } = await clientWithKey(store);
+
+  // A client that has NEVER checked in still reads "not yet" — the fix must
+  // not invent a time for it.
+  const before = await handle(get('/api/studio/options', key), GOOD_ENV, store, objects);
+  assert.equal(before.status, 200);
+  assert.match((await before.json()).line, /Last check-in: not yet\.$/, 'no check-in yet means not yet');
+
+  const checked = await handle(post('/api/studio/checkin', {}, key), GOOD_ENV, store, objects);
+  assert.equal(checked.status, 200);
+
+  const after = await handle(get('/api/studio/options', key), GOOD_ENV, store, objects);
+  assert.equal(after.status, 200);
+  const line = (await after.json()).line;
+  assert.doesNotMatch(line, /not yet/, 'the page must show the check-in the box just made');
+  assert.match(line, /Last check-in: just now\.$/);
+});
+
+test('OPTIONS-LASTCHECKIN: one shared key helper, and the page reads the record the check-in wrote', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const { clientId, key } = await clientWithKey(store);
+
+  const checked = await handle(post('/api/studio/checkin', {}, key), GOOD_ENV, store, objects);
+  assert.equal(checked.status, 200);
+
+  // The route wrote the check-in under the key the shared helper builds, and
+  // that key is the ONLY check-in key in the store.
+  assert.ok(Number.isFinite(Number(await store.kvGet(checkinKey(clientId)))), 'the check-in is stored under checkinKey(clientId)');
+  assert.deepEqual(
+    [...store._mem.keys()].filter((k) => k.startsWith('checkin:')),
+    [checkinKey(clientId)],
+    'one shared helper is the only producer of the check-in key',
+  );
+
+  // Age the check-in through that same key. The page can only follow it by
+  // reading the record checkIn wrote.
+  await store.kvPut(checkinKey(clientId), String(Date.now() - 60 * 60 * 1000));
+  const aged = await handle(get('/api/studio/options', key), GOOD_ENV, store, objects);
+  assert.match((await aged.json()).line, /Last check-in: 1 hour ago\.$/);
+
+  // The orders route serves the same line from the same source.
+  const created = await handle(post('/api/studio/orders', { title: 'Spring Sale' }, key), GOOD_ENV, store, objects);
+  assert.equal(created.status, 201);
+  assert.match((await created.json()).option_line, /Last check-in: 1 hour ago\.$/);
 });
