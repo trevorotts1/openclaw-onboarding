@@ -1,3 +1,18 @@
+## [v27.1.13]  -  2026-10-12  -  RRS001: skill 15 seeds the remote-rescue workspace (identity, main-workspace pointer, TOOLS.md, no birth script); link_shared_core_files creates TOOLS.md for registered agents; skill 14 teaches the service-account Gmail send path and a send-readiness check; shared AGENTS.md Core-File Claims doctrine (N44)
+
+### What Changed
+- **Skill 15 (v7.1.6): the remote-rescue workspace is seeded.** `install-remote-rescue.sh` / `rr-config-transaction.py` `seed_workspace()` now writes a fixed operator-support `IDENTITY.md`, `SOUL.md`, `AGENTS.md` and `TOOLS.md` (from `templates/remote-rescue/`) into a workspace that is new, empty or still OpenClaw's starter text. The `AGENTS.md` and `IDENTITY.md` name the owner's main workspace by absolute path (resolved like skill 70 `pr_workspace()`: `$OPENCLAW_WORKSPACE`, then `agents.entries.main.workspace`, then `agents.defaults.workspace`, then `<root>/workspace`) and say the folder is NOT the owner's workspace. An untouched OpenClaw `BOOTSTRAP.md` birth script is removed. A file a box already filled in is never overwritten. New QC gate in `qc-blackceo-team-management.sh` and `QC.md` 7C2. Cause: the folder was created empty, OpenClaw filled it with blank starter files and a birth script on the first operator DM, and the agent told the operator the owner's workspace was unconfigured.
+- **`install.sh` and `update-skills.sh` `link_shared_core_files`:** creates `TOOLS.md` (create-only) for registered `agents.entries` / `agents.list` workspaces that have none, so newer agents get the box's tool notes. A file seeded from the skill 15 templates is no longer appended into the agent's `IDENTITY.md` when canonical replaces it.
+- **Skill 14 (v7.0.1):** `CORE_UPDATES.md` TOOLS.md block now teaches the Google service-account + domain-wide-delegation send path and a credential-safe send-readiness check (gws OAuth OR the service-account path, never a bare headless `gws auth status`). `INSTALL.md` no longer claims the path is documented in TOOLS.md when the shipped block did not contain it. `qc-google-workspace-integration.sh` gains a send-path-ready check.
+- **Shared AGENTS.md doctrine N44 (`CORE_FILE_CLAIMS_V1`):** before saying a core file is missing, an agent names the absolute paths it checked, follows symlinks (`find -L`), and never judges the owner's files from a secondary agent's own folder. Stamped by `scripts/apply-fleet-standards.sh`.
+
+### Migration Notes
+- Risk: LOW. Seeding and TOOLS.md creation are create-only. Boxes whose remote-rescue folder already holds real files (for example a seeded `IDENTITY.md` with appended starter text) are NOT rewritten by this release: skill 15 QC gate 7C2 will FAIL on them until the folder is cleaned up (box clean-up is a separate step). Existing users should re-run skill 14 core updates (CORE_UPDATES.md changed) to get the send-path text in TOOLS.md.
+- Upstream note: OpenClaw 2026.10 documents `TOOLS.md` as retired and `openclaw doctor --fix` can archive it. This release still creates it, as the box's tool notes file, per the owner's order.
+
+### Files Changed
+- `15-blackceo-team-management/` (installer, engine, templates, QC), `14-google-workspace-integration/` (CORE_UPDATES.md, INSTALL.md, QC), `install.sh`, `update-skills.sh`, `AGENTS.md`, `scripts/apply-fleet-standards.sh`, four new `tests/unit/*.test.sh`.
+
 ## [v27.1.12]  -  2026-10-12  -  Enable direct Drama Studio uploads from phone and bridge
 
 ## [v27.1.11]  -  2026-10-11  -  Merge train: #1859 WW30R: carry PR 1856's createTask migration onto unit/WWR3INT-U2…; #1861 WWB-U1: join WW-22, WW-23 and WW-24 (skill 75 v2.9.30)
