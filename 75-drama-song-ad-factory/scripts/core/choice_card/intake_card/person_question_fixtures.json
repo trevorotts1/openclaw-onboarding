@@ -1,0 +1,177 @@
+{
+  "schema_version": "blackceo.person-question-fixtures/v1",
+  "note": "U9 routing fixtures: the input a client sends, and the epic it must reach. topic cases carry the keyword that matched; kind cases carry no topic keyword on purpose so the KIND decides.",
+  "valid": [
+    {
+      "name": "plain-question-defaults-to-intake",
+      "input": {
+        "kind": "question",
+        "text": "When will my video be ready to watch?",
+        "run_id": "a1b2c3d4e5f6",
+        "target": "555"
+      },
+      "expected": {
+        "epic": "intake",
+        "routed_by": "default",
+        "target": "555"
+      }
+    },
+    {
+      "name": "billing-question-routes-to-billing",
+      "input": {
+        "kind": "question",
+        "text": "Can I get a refund on the price?",
+        "run_id": "a1b2c3d4e5f6",
+        "target": "555"
+      },
+      "expected": {
+        "epic": "billing",
+        "routed_by": "topic",
+        "matched": "price",
+        "target": "555"
+      }
+    },
+    {
+      "name": "song-question-routes-to-song",
+      "input": {
+        "kind": "question",
+        "text": "Could we change a lyric in the song?",
+        "run_id": "a1b2c3d4e5f6",
+        "target": "555"
+      },
+      "expected": {
+        "epic": "song",
+        "routed_by": "topic",
+        "matched": "song",
+        "target": "555"
+      }
+    },
+    {
+      "name": "storyboard-question-routes-to-storyboard",
+      "input": {
+        "kind": "question",
+        "text": "Can I swap one shot in the storyboard?",
+        "run_id": "a1b2c3d4e5f6",
+        "target": "555"
+      },
+      "expected": {
+        "epic": "storyboard",
+        "routed_by": "topic",
+        "matched": "storyboard",
+        "target": "555"
+      }
+    },
+    {
+      "name": "delivery-question-routes-to-delivery",
+      "input": {
+        "kind": "question",
+        "text": "I did not get the download link yet.",
+        "run_id": "a1b2c3d4e5f6",
+        "target": "555"
+      },
+      "expected": {
+        "epic": "delivery",
+        "routed_by": "topic",
+        "matched": "download",
+        "target": "555"
+      }
+    },
+    {
+      "name": "talk-to-a-person-routes-to-handoff-by-kind",
+      "input": {
+        "kind": "talk-to-a-person",
+        "text": "Please have a teammate reach back out to me.",
+        "run_id": "a1b2c3d4e5f6",
+        "target": "555"
+      },
+      "expected": {
+        "epic": "handoff",
+        "routed_by": "kind",
+        "target": "555"
+      }
+    },
+    {
+      "name": "explicit-epic-wins",
+      "input": {
+        "kind": "question",
+        "text": "Anything at all.",
+        "run_id": "a1b2c3d4e5f6",
+        "target": "555",
+        "epic": "delivery"
+      },
+      "expected": {
+        "epic": "delivery",
+        "routed_by": "explicit",
+        "target": "555"
+      }
+    },
+    {
+      "name": "no-target-resolves-to-the-epic-inbox",
+      "input": {
+        "kind": "question",
+        "text": "Can I get a refund?",
+        "run_id": "a1b2c3d4e5f6",
+        "target": ""
+      },
+      "expected": {
+        "epic": "billing",
+        "routed_by": "topic",
+        "target": "inbox:billing"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "empty-text",
+      "input": {
+        "kind": "question",
+        "text": "    ",
+        "run_id": "a1b2c3d4e5f6",
+        "target": "555"
+      },
+      "reason_code": "empty-text"
+    },
+    {
+      "name": "unknown-kind",
+      "input": {
+        "kind": "complaint",
+        "text": "hi",
+        "run_id": "a1b2c3d4e5f6",
+        "target": "555"
+      },
+      "reason_code": "unknown-kind"
+    },
+    {
+      "name": "missing-run-id",
+      "input": {
+        "kind": "question",
+        "text": "hi",
+        "run_id": "",
+        "target": "555"
+      },
+      "reason_code": "missing-run-id"
+    },
+    {
+      "name": "unknown-channel",
+      "input": {
+        "kind": "question",
+        "text": "hi",
+        "run_id": "a1b2c3d4e5f6",
+        "target": "555",
+        "channel": "email"
+      },
+      "reason_code": "unknown-channel"
+    },
+    {
+      "name": "unknown-epic",
+      "input": {
+        "kind": "question",
+        "text": "hi",
+        "run_id": "a1b2c3d4e5f6",
+        "target": "555",
+        "epic": "sales"
+      },
+      "reason_code": "unknown-epic"
+    }
+  ]
+}
