@@ -10,7 +10,7 @@
 #   Self-removes when closeoutStatus == "done" OR partial with no resumable legs,
 #   OR when all 7 closeoutDeliverables are done|waived.
 #   Also self-removes after ZHC_CLOSEOUT_MAX_CRON_RUNS (default 48, i.e. 12h at
-#   15-min intervals). After exhaustion, escalates to operator and stops.
+#   15-min intervals). After exhaustion, removes itself and logs (no message).
 #   This prevents an unbounded loop if something is fundamentally broken.
 #
 # NO-PROGRESS GIVE-UP PAUSE (v11.11.0 / fix/cron-nudge-sweep-selfheal):
@@ -213,15 +213,10 @@ fi
 # Kill condition 3: max runs cap
 if (( run_count > MAX_RUNS )); then
   reason="closeout did not complete after $MAX_RUNS cron fires (${MAX_RUNS}×15min = $((MAX_RUNS*15/60))h)"
-  log "MAX RUNS EXCEEDED ($run_count > $MAX_RUNS): $reason -- removing cron + escalating"
-  operator_chat=$(resolve_operator_chat_id)
-  if [[ -n "$operator_chat" ]] && command -v openclaw >/dev/null 2>&1; then
-    openclaw message send --channel telegram --target "$operator_chat" \
-      --message "🚨 Closeout resume cron exhausted ($run_count runs). closeoutStatus=${closeout_status:-unset}. State: $STATE_FILE" \
-      >/dev/null 2>&1 || true
-  else
-    log "operator escalation chat not configured -- skipping operator notify (state already logged)"
-  fi
+  log "MAX RUNS EXCEEDED ($run_count > $MAX_RUNS): $reason -- removing cron (log only, no message)"
+  # D25: log only, never Telegram. This fires through the client's own bot and a
+  # routine budget expiry is not an operator emergency (silent-updates rule). The
+  # stall/pause escalations below still cover a genuinely wedged closeout.
   self_remove_cron "max-runs-exceeded ($run_count)"
   exit 0
 fi

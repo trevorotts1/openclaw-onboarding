@@ -56,8 +56,27 @@ if ! command -v openclaw >/dev/null 2>&1; then
   exit 0
 fi
 
-# Already present? idempotent no-op.
-if openclaw cron list 2>/dev/null | grep -qi "closeout-resume"; then
+# D25: closeout already complete, or resume budget already spent -> do not register.
+if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
+  _cs="$(jq -r '.closeoutStatus // empty' "$STATE_FILE" 2>/dev/null)"
+  if [[ "$_cs" == "done" || "$_cs" == "sent" ]]; then
+    _log "closeoutStatus=$_cs — closeout-resume cron not needed; skipping."
+    exit 0
+  fi
+fi
+_RC_FILE="$(dirname "$STATE_FILE")/.closeout-resume-runs.count"
+_rc="$(tr -d '[:space:]' < "$_RC_FILE" 2>/dev/null || true)"
+if [[ "$_rc" =~ ^[0-9]+$ ]] && (( _rc > ${ZHC_CLOSEOUT_MAX_CRON_RUNS:-48} )); then
+  _log "resume budget exhausted ($_rc runs) — not registering. Reset: rm $_RC_FILE"
+  exit 0
+fi
+
+# Already present? idempotent no-op. D10: a failed cron list is UNKNOWN, never "absent".
+if ! _cron_list="$(openclaw cron list 2>/dev/null)"; then
+  _log "openclaw cron list failed (rc!=0) — presence UNKNOWN; not registering (D10)."
+  exit 0
+fi
+if printf '%s' "$_cron_list" | grep -qi "closeout-resume"; then
   _log "closeout-resume cron already installed — skipping (idempotent)."
   exit 0
 fi
@@ -114,6 +133,7 @@ fi
 
 # Verify the job actually landed (assert delivery mode + payload via cron list).
 if [[ -n "$OUT" ]] && openclaw cron list 2>/dev/null | grep -qi "closeout-resume"; then
+  rm -f "$_RC_FILE"  # D25: fresh registration, fresh run budget
   UUID=$(printf '%s' "$OUT" | jq -r '.uuid // .id // empty' 2>/dev/null || true)
   if [[ -n "$UUID" && "$UUID" != "null" ]] && [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
     _TMP=$(mktemp)
