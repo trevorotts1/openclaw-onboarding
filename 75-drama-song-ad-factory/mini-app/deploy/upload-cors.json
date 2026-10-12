@@ -1,0 +1,11 @@
+{
+  "rules": [{
+    "allowed": {
+      "origins": ["https://studio.zerohumanworkforce.com"],
+      "methods": ["PUT"],
+      "headers": ["Content-Type"]
+    },
+    "exposeHeaders": ["ETag"],
+    "maxAgeSeconds": 3600
+  }]
+}

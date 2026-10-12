@@ -58,6 +58,16 @@ preview_id = "<PLACEHOLDER_KV_NAMESPACE_PREVIEW_ID_DS_STUDIO>"
 [observability]
 enabled = true
 
+[vars]
+DRAMA_STUDIO_BUCKET = "zhw-drama-studio"
+
+# Only the direct-upload page and its script. The Worker controls routing.
+[assets]
+directory = "../ui/upload"
+binding = "DS_UPLOAD_ASSETS"
+run_worker_first = true
+html_handling = "none"
+
 # Secrets (NEVER in this file — set via `wrangler secret put`, see U4 deploy.sh):
 #   R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY
 # No client GHL keys, no PITs — the box poller owns any GHL write.

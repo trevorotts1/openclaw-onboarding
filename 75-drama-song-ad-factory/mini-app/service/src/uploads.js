@@ -163,7 +163,7 @@ export async function presignPut(env, objectPath, contentType) {
   const accountId = e.R2_ACCOUNT_ID || '<PLACEHOLDER>';
   const accessKeyId = e.R2_ACCESS_KEY_ID || '<PLACEHOLDER>';
   const secretAccessKey = e.R2_SECRET_ACCESS_KEY || '<PLACEHOLDER>';
-  const bucket = e.DRAMA_STUDIO_BUCKET || 'drama-studio';
+  const bucket = e.DRAMA_STUDIO_BUCKET || 'zhw-drama-studio';
   if ([accountId, accessKeyId, secretAccessKey].some((v) => String(v).startsWith('<'))) {
     return { ok: false, error: 'storage credentials not set' };
   }
@@ -182,10 +182,13 @@ export async function presignPut(env, objectPath, contentType) {
   ].sort().join('&');
   const canonicalRequest = ['PUT', path, query, `host:${host}`, '', 'host', payloadHash].join('\n');
   const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await hexSha256(canonicalRequest)].join('\n');
-  const signature = await hmacHex(
-    await hmacHex(await hmacHex(await hmacHex(`AWS4${secretAccessKey}`, dateStamp), 'auto'), 's3'),
-    stringToSign,
-  );
+  // SigV4 derives each signing key from RAW HMAC bytes, never their hex text.
+  const dateKey = await hmac(`AWS4${secretAccessKey}`, dateStamp);
+  const regionKey = await hmac(dateKey, 'auto');
+  const serviceKey = await hmac(regionKey, 's3');
+  const signingKey = await hmac(serviceKey, 'aws4_request');
+  const signature = [...await hmac(signingKey, stringToSign)]
+    .map((b) => b.toString(16).padStart(2, '0')).join('');
   return {
     ok: true,
     upload: {
@@ -203,9 +206,9 @@ async function hexSha256(input) {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function hmacHex(key, input) {
+async function hmac(key, input) {
   const enc = new TextEncoder();
-  const k = await crypto.subtle.importKey('raw', enc.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const k = await crypto.subtle.importKey('raw', typeof key === 'string' ? enc.encode(key) : key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign('HMAC', k, enc.encode(input));
-  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return new Uint8Array(sig);
 }

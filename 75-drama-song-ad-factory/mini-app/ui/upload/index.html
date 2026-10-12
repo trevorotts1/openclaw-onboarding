@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Send a file | Drama Studio</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #111827; color: #f9fafb; }
+    main { max-width: 36rem; margin: 3rem auto; padding: 1.5rem; }
+    label, input, select, button { display: block; width: 100%; box-sizing: border-box; }
+    label { margin-top: 1.5rem; margin-bottom: .5rem; font-weight: 600; }
+    input, select, button { padding: .9rem; border-radius: .5rem; font: inherit; }
+    input, select { background: #1f2937; color: #f9fafb; border: 1px solid #9ca3af; }
+    button { margin-top: 1.5rem; background: #fbbf24; color: #111827; border: 0; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .65; cursor: wait; }
+    :focus-visible { outline: 3px solid #fbbf24; outline-offset: 3px; }
+    p { line-height: 1.6; }
+    #status { min-height: 3rem; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Send a file to your studio</h1>
+  <p>Choose a photo, voice note or video for your ad. Photos and audio can be up to 25 MB. Videos can be up to 200 MB.</p>
+  <form id="upload-form">
+    <label for="studio-key">Your studio access key</label>
+    <input id="studio-key" type="password" autocomplete="off" required aria-describedby="key-help">
+    <p id="key-help">Use the key from your studio connection. It stays in this page while it is open.</p>
+    <label for="channel">File type</label>
+    <select id="channel"><option value="image">Photo</option><option value="audio">Voice note or audio</option><option value="video">Video</option></select>
+    <label for="file">Choose your file</label>
+    <input id="file" type="file" required accept=".jpg,.jpeg,.png,.heic,.webp">
+    <button id="send" type="submit">Send file</button>
+  </form>
+  <p id="status" role="status" aria-live="polite"></p>
+  <noscript><p>Turn on JavaScript to send a file from this page.</p></noscript>
+</main>
+<script type="module" src="/upload.js"></script>
+</body>
+</html>
