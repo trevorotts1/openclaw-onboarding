@@ -48,6 +48,22 @@ Common commands:
 MCP server mode: gws mcp -s drive,gmail,calendar
 Token refresh: gws auth login (when tokens expire)
 
+Service-account send path (Workspace accounts, domain-wide delegation) [PRIORITY: CRITICAL]:
+- Works WITHOUT gws OAuth. It is what sends Gmail and uploads to Drive on a Workspace box.
+- GOOGLE_APPLICATION_CREDENTIALS = the full path of the service-account key file
+  (default location: ~/clawd/secrets/gcp-service-account.json). GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE is the same idea for gws.
+- GCP_IMPERSONATE_USER = the mailbox it acts as (GWS_ACCOUNT also works). Both halves are required.
+- Domain-wide delegation must be authorized for the gmail.send scope (already inside the 81-scope paste).
+
+SEND READINESS CHECK. Run this BEFORE you ever say "there is no way to send email" or "Gmail is not set up".
+The box can send if EITHER path is ready. Check both, name the paths you checked, and never print file contents:
+1. gws OAuth path: test -s ~/.config/gws/credentials.enc && echo "gws OAuth credentials present"
+   (Do NOT run a bare "gws auth status" from a headless session: it can wipe the stored login.)
+2. Service-account path: test -s "$GOOGLE_APPLICATION_CREDENTIALS" && echo "key file present"; echo "${GCP_IMPERSONATE_USER:-${GWS_ACCOUNT:-unset}}"
+   (the key file must exist AND the impersonated user must not say unset)
+3. If neither path is ready, say which of the two checks failed and the exact path you looked at. Check the
+   main workspace TOOLS.md and MEMORY.md by absolute path too: another agent folder may hold only a short copy.
+
 Full guide: ~/Downloads/openclaw-master-files/OpenClaw Onboarding/14-google-workspace-integration/google-workspace-integration-full.md
 ```
 
