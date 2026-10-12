@@ -24,11 +24,14 @@ grep -q "This path is documented in TOOLS.md and is what" "$S/INSTALL.md" && fai
 grep -q "SEND READINESS CHECK" "$S/INSTALL.md" && pass "INSTALL.md points at the real TOOLS.md block" || fail "INSTALL.md does not point at the block"
 
 # QC gate behavior
-T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT; mkdir -p "$T/h/.config/gws"; echo '{}' > "$T/key.json"
+T="$(mktemp -d)"
+trap 'rm -rf "$T"' EXIT
+GWSDIR="$T/h/.config/gws"
+mkdir -p "$GWSDIR"; echo '{}' > "$T/key.json"
 qc() { env -u GOOGLE_APPLICATION_CREDENTIALS -u GCP_IMPERSONATE_USER -u GWS_ACCOUNT -u GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE HOME="$T/h" "$@" bash "$S/qc-google-workspace-integration.sh" </dev/null 2>&1 | grep -i "send path" | head -1; }
 L="$(qc)";                                        [[ "$L" == *WARN* ]] && pass "gate WARNs with neither path" || fail "gate neither: '$L'"
 L="$(qc GOOGLE_APPLICATION_CREDENTIALS=$T/key.json GCP_IMPERSONATE_USER=a@b.c)"; [[ "$L" == *PASS* ]] && pass "gate PASSes on service-account key + impersonated user" || fail "gate SA: '$L'"
 L="$(qc GOOGLE_APPLICATION_CREDENTIALS=$T/key.json)";   [[ "$L" == *WARN* ]] && pass "gate WARNs on a key with no impersonated user" || fail "gate key-only: '$L'"
-echo x > "$T/h/.config/gws/credentials.enc"
+echo x > "$GWSDIR/credentials.enc"
 L="$(qc)";                                        [[ "$L" == *PASS* ]] && pass "gate PASSes on gws OAuth credentials alone" || fail "gate oauth: '$L'"
 echo "$P Results: $PASS passed, $FAIL failed"; [ "$FAIL" -eq 0 ]
