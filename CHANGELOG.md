@@ -1,3 +1,10 @@
+## [v27.1.22]  -  2026-10-12  -  D25: closeout-resume is not re-registered on a box whose closeout is complete or whose run budget is spent, a fresh registration resets the run counter, and an exhausted job removes itself silently (no Telegram)
+
+##### What Changed
+- `scripts/ensure-pipeline-crons.sh` (`_ensure_closeout_resume`) and `37-zhc-closeout/scripts/install-closeout-resume-cron.sh` skip registration when `closeoutStatus` is `done`/`sent` or `.closeout-resume-runs.count` is already above `ZHC_CLOSEOUT_MAX_CRON_RUNS` (default 48); a successful fresh registration deletes the stale counter. The installer also treats a failed `openclaw cron list` as unknown (D10) instead of absent.
+- `37-zhc-closeout/scripts/resume-closeout-cron.sh`: the max-runs branch logs and self-removes; it no longer sends "Closeout resume cron exhausted" through the client's bot (Beverly Sanders, openclaw-0ht9: every update-skills run re-added the job against a stale counter and its first fire messaged the operator chat).
+- Test: `tests/unit/closeout-resume-exhausted-silent-d25.test.sh` (14 checks; 10 fail on the old scripts), wired into `cron-announce-fail-closed-guard.yml` C5.
+
 ## [v27.1.21]  -  2026-10-12  -  D24: every Command Center npm/node step in run-full-install.sh (npm ci, db:push, db:seed, build, contract check) runs on the Command Center node via cc_with_node; --update-only no longer fails db:push with NODE_MODULE_VERSION 137 vs 147
 
 ##### What Changed
