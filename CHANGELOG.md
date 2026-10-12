@@ -1,3 +1,9 @@
+## [v27.1.16]  -  2026-10-12  -  Merge train: #1899 D01: Command Center fast path fast-forwards only, never reset --hard…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1899 — [v27.1.15]  -  2026-10-12  -  D01: Command Center fast path fast-forwards only, never reset --hard (a diverged checkout keeps its local commits)
+
 ## [v27.1.15]  -  2026-10-12  -  Merge train: #1897 SK6002: skill 06 reconcile-cron evidence folder lives on the…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
@@ -11,8 +17,6 @@ update-skills.sh runs `install-github-archive-reconcile-cron.sh --idempotent` on
 - `tools/ghl_github_reconcile.py --sweep-base`: the sweep creates the folder if missing and never fails on one it cannot create.
 - Tests: `TestPersistentPathSK6002` (Mac, Hostinger, Contabo defaults, repair, left-alone, link, copy, overrides), `TestResolveEvidenceBase` platform cases, and the sweep creates-folder tests; 7 fail on the SK6001 code.
 - Migration: none beyond the normal update. Risk: LOW. Follow-up outside this repo: Command Center `resolveSkill6EvidenceBaseDir()` can adopt the same per-platform default so the Contabo link is no longer needed.
-## [v27.1.15]  -  2026-10-12  -  D01: Command Center fast path fast-forwards only, never reset --hard (a diverged checkout keeps its local commits)
-
 ## [v27.1.14]  -  2026-10-12  -  Merge train: #1894 RRS001: remote-rescue workspace seed, TOOLS.md for registered agents,…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
