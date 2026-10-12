@@ -91,6 +91,16 @@ expect "missing OpenRouter fallback degrades to no fallback (UPF002/U3)" 0 "fall
 grep -q -- '--fallbacks' "$FAKE_CALLS_FILE" && bad "--fallbacks was passed" || ok "no --fallbacks flag passed"
 expect "fallback id forced but absent still refuses" 4 "MISSING_FALLBACK" -- --apply --fallback openrouter/deepseek/made-up
 
+# D20: no OpenRouter twin, but the box has its own default fallbacks -> use them
+# (listed ids only; the Claude id, the primary itself and an unlisted id are dropped).
+reset; models '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud"},{"key":"agnes/agnes-2.5"},{"key":"zai/glm-5.3"},{"key":"anthropic/claude-opus-4"}]}'
+mkdir -p "$ROOT/oc"
+echo '{"agents":{"defaults":{"model":{"fallbacks":["anthropic/claude-opus-4","ollama/deepseek-v4.1-flash:cloud","agnes/agnes-2.5","not/on-the-list","zai/glm-5.3"]}}}}' > "$ROOT/oc/openclaw.json"
+expect "missing twin uses the box default fallbacks (D20)" 0 "fallback model: agnes/agnes-2.5,zai/glm-5.3" -- --apply
+[ "$(job_field payload.fallbacks)" = "['agnes/agnes-2.5', 'zai/glm-5.3']" ] && ok "box default fallbacks stored on the job" || bad "fallbacks wrong: $(job_field payload.fallbacks)"
+expect "re-apply with box fallbacks is a no-op (D20)" 0 "job is current; nothing changed" -- --apply
+rm -f "$ROOT/oc/openclaw.json"
+
 reset; models '{"models":[{"key":"agnes/agnes-2.5","tags":["default","configured"]},{"key":"anthropic/claude-opus-4"}]}'
 expect "non-DeepSeek box uses its default model (UPF002/U3)" 0 "primary model:  agnes/agnes-2.5" -- --apply
 [ "$(job_field count)" = "1" ] && ok "job created on a non-DeepSeek box" || bad "no job on non-DeepSeek box"

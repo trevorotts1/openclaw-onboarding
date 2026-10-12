@@ -102,6 +102,37 @@ if [ "${#SILENCE_ARGS[@]}" -eq 0 ]; then
   echo "WARN: this openclaw CLI exposes neither --no-deliver nor --session — registered crons may fallback-deliver their output to the last (client) chat. Upgrade the CLI to honor the silence doctrine." >&2
 fi
 
+# D19: "already registered - skipping" by name used to leave a job bound to an
+# agent that is no longer configured (Monique Tucker: every fire failed with
+# "agent is unavailable: main"). If the existing job's agentId is not in the
+# box's agents.entries / agents.list, re-bind it to $ROUTING_AGENT_ID in place.
+# Never fails the install: no jq, no config, an unreadable list or a refused
+# edit only warns.
+_rebind_cron_agent_if_orphaned() {
+  local name="$1" cfg flags="" raw row id cur
+  command -v jq >/dev/null 2>&1 || return 0
+  cfg="$(s38_config_path)"; [ -f "$cfg" ] || return 0
+  if [ "$(type -t oc_cron_list_json_flags)" = "function" ]; then
+    flags="$(oc_cron_list_json_flags 2>/dev/null || true)"
+  fi
+  # shellcheck disable=SC2086
+  raw="$(openclaw cron list --json $flags 2>/dev/null)" || return 0
+  row="$(printf '%s' "$raw" | jq -r --arg n "$name" --slurpfile c "$cfg" '
+    ($c[0].agents // {}) as $a
+    | ([($a.entries // {} | keys[]), (($a.list // [])[] | .id? // empty)]) as $ids
+    | ((if type == "array" then . else .jobs // [] end) | map(select(.name == $n))[0] // empty) as $j
+    | select(($ids | length) > 0 and (($ids | index($j.agentId // "main")) == null))
+    | "\($j.id)\t\($j.agentId // "main")"' 2>/dev/null)" || return 0
+  [ -n "$row" ] || return 0
+  id="${row%%$'\t'*}"; cur="${row#*$'\t'}"
+  if openclaw cron edit "$id" --agent "$ROUTING_AGENT_ID" >&2; then
+    echo "re-bound cron $name from removed agent '$cur' to '$ROUTING_AGENT_ID'" >&2
+  else
+    echo "WARN: cron $name is bound to removed agent '$cur'; 'openclaw cron edit $id --agent $ROUTING_AGENT_ID' failed - re-bind it manually" >&2
+  fi
+  return 0
+}
+
 # Register an AGENT-MESSAGE cron, silenced when the CLI supports it, with a
 # no-flag retry if the CLI rejects the silence flags outright. Returns the add rc.
 # NOTE: ${SILENCE_ARGS[@]+"${SILENCE_ARGS[@]}"} is the stock-bash-3.2 safe empty-
@@ -153,6 +184,7 @@ register_cron() {
   fi
   if oc_cron_present "$name"; then
     echo "cron $name already registered — skipping" >&2
+    _rebind_cron_agent_if_orphaned "$name"
     return 0
   fi
   if _add_agent_cron "$name" "$cron_expr" "$message"; then
