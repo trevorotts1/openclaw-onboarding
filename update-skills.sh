@@ -5540,10 +5540,9 @@ except Exception:
   #
   # SELF-CONTAINED BY DESIGN -- NOT a call into shared-utils/cron-lib.sh's
   # oc_cron_present/oc_cron_tombstoned:
-  #   * oc_cron_present deliberately FAILS OPEN (treats an unreadable
-  #     `cron list --json` as "absent") because ITS caller's asymmetry favors
-  #     attempting a redundant, idempotent registration over silently never
-  #     registering. THIS probe's asymmetry is the opposite: forcing a full
+  #   * oc_cron_present returns 2 (UNKNOWN, D10) on an unreadable
+  #     `cron list --json`, so its registrars skip rather than add a duplicate.
+  #     THIS probe's asymmetry is different: forcing a full
   #     pass on a transient CLI hiccup means a full pass on every one of 38
   #     boxes on a bad network day. So a genuine parse failure here is
   #     advisory (return 0), never "treat as absent".
@@ -9988,14 +9987,14 @@ PY
   }
   command -v oc_cron_present >/dev/null 2>&1 || oc_cron_present() {
     local _name="$1" _raw
-    _raw=$(openclaw cron list --json 2>/dev/null) || _raw=""
-    if [ -n "$_raw" ] && command -v jq >/dev/null 2>&1; then
+    _raw=$(openclaw cron list --json 2>/dev/null) || return 2
+    if command -v jq >/dev/null 2>&1; then
       printf '%s' "$_raw" | jq -e --arg n "$_name" '
         ( if type == "array" then . else .jobs // [] end ) | map(select(.name == $n)) | length > 0
       ' >/dev/null 2>&1
-      return $?
+      case $? in 0) return 0;; 1) return 1;; *) return 2;; esac
     fi
-    if [ -n "$_raw" ] && command -v python3 >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1; then
       OC_CRON_RAW="$_raw" python3 - "$_name" 2>/dev/null <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
@@ -10003,13 +10002,13 @@ raw = os.environ.get("OC_CRON_RAW", "")
 try:
     data = json.loads(raw)
 except Exception:
-    sys.exit(1)
+    sys.exit(2)
 jobs = data if isinstance(data, list) else data.get("jobs", [])
 sys.exit(0 if any(j.get("name") == name for j in jobs) else 1)
 PYEOF
       return $?
     fi
-    return 1
+    return 2
   }
   # DURABLE TOMBSTONE fallback (fix/industry-gate-and-idempotent-crons,
   # live-VPS finding): fail OPEN (never tombstoned) if shared-utils/cron-lib.sh
@@ -10178,7 +10177,8 @@ PYEOF
       fi
     fi
     # Create cron only when it is absent (never existed, or just deleted above)
-    if ! oc_cron_present "weekly-onboarding-update"; then
+    # D10: register only on a definite "absent" (rc 1); rc 2 = cron list unreadable -> unknown, skip
+    if oc_cron_present "weekly-onboarding-update"; [ $? -eq 1 ]; then
       # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ───────────
       # weekly-onboarding-update is a MAINTENANCE/update-check cron, NOT an
       # owner-facing announcement. The old form registered it

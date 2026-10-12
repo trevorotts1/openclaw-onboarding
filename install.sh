@@ -170,14 +170,14 @@ if [ -f "$_lib_cron_present_self" ]; then
 fi
 command -v oc_cron_present >/dev/null 2>&1 || oc_cron_present() {
     local _name="$1" _raw
-    _raw=$(openclaw cron list --json 2>/dev/null) || _raw=""
-    if [ -n "$_raw" ] && command -v jq >/dev/null 2>&1; then
+    _raw=$(openclaw cron list --json 2>/dev/null) || return 2
+    if command -v jq >/dev/null 2>&1; then
         printf '%s' "$_raw" | jq -e --arg n "$_name" '
           ( if type == "array" then . else .jobs // [] end ) | map(select(.name == $n)) | length > 0
         ' >/dev/null 2>&1
-        return $?
+        case $? in 0) return 0;; 1) return 1;; *) return 2;; esac
     fi
-    if [ -n "$_raw" ] && command -v python3 >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1; then
         OC_CRON_RAW="$_raw" python3 - "$_name" 2>/dev/null <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
@@ -185,13 +185,13 @@ raw = os.environ.get("OC_CRON_RAW", "")
 try:
     data = json.loads(raw)
 except Exception:
-    sys.exit(1)
+    sys.exit(2)
 jobs = data if isinstance(data, list) else data.get("jobs", [])
 sys.exit(0 if any(j.get("name") == name for j in jobs) else 1)
 PYEOF
         return $?
     fi
-    return 1
+    return 2
 }
 # DURABLE TOMBSTONE fallback (fix/industry-gate-and-idempotent-crons, live-VPS
 # finding): if shared-utils/cron-lib.sh wasn't found above, oc_cron_tombstoned
@@ -4807,7 +4807,7 @@ REASSERT_EOF
         # sweep): "reassert-presentation-deps" is 26 chars — over the ~22-char
         # threshold at which `openclaw cron list`'s text table truncates names
         # — the same defect that caused the Skill 39/38 6x-duplicate incident.
-        if oc_cron_present "reassert-presentation-deps"; then
+        if oc_cron_present "reassert-presentation-deps" || [ $? -eq 2 ]; then  # rc 2 = cron list unreadable: unknown, never add (D10)
             success "Presentation-deps re-assert cron already installed — skipping"
             return 0
         fi
@@ -7015,7 +7015,7 @@ install_workforce_resume_cron() {
         warn "workforce-build-resume is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove workforce-build-resume"
         return 0
     fi
-    if oc_cron_present "workforce-build-resume"; then
+    if oc_cron_present "workforce-build-resume" || [ $? -eq 2 ]; then  # rc 2 = cron list unreadable: unknown, never add (D10)
         success "Workforce-build resume cron already installed"
         return 0
     fi
@@ -7124,7 +7124,7 @@ install_watchdog_loop_cron() {
         warn "watchdog-onboarding-loop is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove watchdog-onboarding-loop"
         return 0
     fi
-    if oc_cron_present "watchdog-onboarding-loop"; then
+    if oc_cron_present "watchdog-onboarding-loop" || [ $? -eq 2 ]; then  # rc 2 = cron list unreadable: unknown, never add (D10)
         success "watchdog-onboarding-loop cron already installed"
         return 0
     fi
@@ -7311,7 +7311,7 @@ install_closeout_watchdog_cron() {
         warn "closeout-readiness-watchdog is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove closeout-readiness-watchdog"
         return 0
     fi
-    if oc_cron_present "closeout-readiness-watchdog"; then
+    if oc_cron_present "closeout-readiness-watchdog" || [ $? -eq 2 ]; then  # rc 2 = cron list unreadable: unknown, never add (D10)
         success "closeout-readiness-watchdog cron already installed"
         return 0
     fi

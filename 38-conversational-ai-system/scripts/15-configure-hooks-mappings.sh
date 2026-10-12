@@ -383,14 +383,14 @@ command -v oc_cron_present >/dev/null 2>&1 || {
 }
 command -v oc_cron_present >/dev/null 2>&1 || oc_cron_present() {
   local _name="$1" _raw
-  _raw=$(openclaw cron list --json 2>/dev/null) || _raw=""
-  if [ -n "$_raw" ] && command -v jq >/dev/null 2>&1; then
+  _raw=$(openclaw cron list --json 2>/dev/null) || return 2
+  if command -v jq >/dev/null 2>&1; then
     printf '%s' "$_raw" | jq -e --arg n "$_name" '
       ( if type == "array" then . else .jobs // [] end ) | map(select(.name == $n)) | length > 0
     ' >/dev/null 2>&1
-    return $?
+    case $? in 0) return 0;; 1) return 1;; *) return 2;; esac
   fi
-  return 1
+  return 2
 }
 # DURABLE TOMBSTONE fallback (fix/industry-gate-and-idempotent-crons, live-VPS
 # finding): fail OPEN (never tombstoned) if the shared lib wasn't found above.
@@ -398,8 +398,9 @@ command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1
 if command -v openclaw >/dev/null 2>&1; then
   if oc_cron_tombstoned "system-health-heartbeat"; then
     echo "cron system-health-heartbeat is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove system-health-heartbeat" >&2
-  elif oc_cron_present "system-health-heartbeat"; then
-    echo "cron system-health-heartbeat already registered — skipping" >&2
+  elif oc_cron_present "system-health-heartbeat" || [ $? -eq 2 ]; then
+    # rc 0 = present; rc 2 = cron list unreadable (D10: unknown is NOT absent, never add a duplicate)
+    echo "cron system-health-heartbeat already registered or cron list unreadable — skipping" >&2
   else
     # SILENCE DOCTRINE (FIX-XC-08b): 2026.6.8+ `cron add` fallback-delivers the
     # job's final text to the last (client) chat every fire. This monthly review

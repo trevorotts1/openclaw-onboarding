@@ -35,8 +35,12 @@ ensure_cron() { # ensure_cron <name> <schedule> <script>
   local name="$1" expr="$2" cmd="bash $HERE/scripts/$3"
   if oc_cron_tombstoned "$name"; then
     echo "$TAG SKIP $name is tombstoned on this box"
-  elif oc_cron_present "$name"; then
+  elif oc_cron_present "$name" && _pr=0 || _pr=$?; [ "$_pr" -eq 0 ]; then
     echo "$TAG OK   $name already scheduled"
+  elif [ "$_pr" -eq 2 ]; then
+    # D10: cron list unreadable = presence UNKNOWN, never "absent" (would add a duplicate)
+    echo "$TAG FAIL $name presence unknown (openclaw cron list --json failed or unparseable); not adding, re-run later"
+    rc=3
   elif openclaw cron add --name "$name" --cron "$expr" --no-deliver --command "$cmd" >/dev/null 2>&1 \
        && oc_cron_present "$name"; then
     echo "$TAG DONE $name scheduled ($expr)"
