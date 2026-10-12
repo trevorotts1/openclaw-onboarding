@@ -1114,8 +1114,6 @@ PYEOF
 #   OPENCLAW_PODCAST_CLIENT_FIRST_NAME is optional (display/email text only).
 inject_shared_operator_secrets() {
     local injected_count=0
-    local mode_oc_json_ready="no"
-    [ -f "$OC_JSON" ] && mode_oc_json_ready="yes"
 
     # Ensure secrets/.env exists with safe perms BEFORE we write to it
     mkdir -p "$(dirname "$OC_SECRETS_ENV")" 2>/dev/null || true
@@ -1162,7 +1160,9 @@ inject_shared_operator_secrets() {
     # Helper: write to openclaw.json env.vars block (if openclaw.json exists)
     _shared_write_ocjson() {
         local var="$1"; local val="$2"
-        [ "$mode_oc_json_ready" != "yes" ] && return 0
+        # Checks the file itself (not a caller local): FIX 71 calls this helper
+        # after inject_shared_operator_secrets has returned, under set -u.
+        [ -f "${OC_JSON:-}" ] || return 0
         # Use python to safely merge into env.vars (preserves other keys)
         VAR="$var" VAL="$val" OC_JSON="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null || true
 import json, os
