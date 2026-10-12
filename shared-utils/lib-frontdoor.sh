@@ -108,7 +108,9 @@ print("[front-door] stage status: %s" % d.get("status","failed"), file=sys.stder
 #     installed skill-link parents). Clean ones are pulled --ff-only. Dirty or
 #     diverged ones are left UNTOUCHED (the owner's work is never overwritten)
 #     and named in one log line.
-#  2. If no clean checkout exists, clone one to $HOME/999-setup (never the full
+#  2. If no clean checkout exists, clone one to $HOME/999-setup (Contabo:
+#     <openclaw-root>/persist-home/999-setup plus a $HOME/999-setup symlink,
+#     because $HOME is thrown away on a recreate) (never the full
 #     installer; never 9Router config/models/credentials/.env/providers).
 #  3. Link the skills from the clean checkout, per skill: a hand-managed real
 #     directory is skipped alone, every other skill is linked; symlinks that
@@ -119,6 +121,21 @@ frontdoor_update_999() {
   _home="$HOME"
   [ -d /data/.openclaw ] && _home="/data"
   canon="$_home/999-setup"
+  # D06: on Contabo $HOME is the throwaway container layer and only the OpenClaw
+  # root is a volume, so the checkout lives at <root>/persist-home/999-setup and
+  # $HOME/999-setup is a symlink to it. oc_persist_root: platform/common.sh.
+  local _proot=""
+  if ! declare -F oc_persist_root >/dev/null 2>&1; then
+    local _fd_d _fd_c
+    _fd_d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    for _fd_c in "$_fd_d/../platform/common.sh" "$_fd_d/../../platform/common.sh"; do
+      [ -r "$_fd_c" ] && { . "$_fd_c"; break; }
+    done
+  fi
+  if declare -F oc_persist_root >/dev/null 2>&1 && _proot="$(oc_persist_root 2>/dev/null)"; then
+    canon="$_proot/persist-home/999-setup"
+    mkdir -p "$_proot/persist-home" 2>/dev/null || true
+  fi
   local _cands link
   _cands="$canon
 $HOME/999-setup
@@ -184,6 +201,11 @@ FDEOF
       echo "[front-door] 999-setup: clone FAILED — 999 not refreshed this roll" >&2
       return 1
     fi
+  fi
+  # D06: keep $HOME/999-setup pointing at the persistent checkout (a recreate wipes the link).
+  if [ -n "$_proot" ] && [ "$repo" = "$(cd "$canon" 2>/dev/null && pwd -P)" ] \
+     && [ ! -e "$HOME/999-setup" ] && [ ! -L "$HOME/999-setup" ]; then
+    ln -s "$canon" "$HOME/999-setup" 2>/dev/null && echo "[front-door] 999-setup: linked $HOME/999-setup -> $canon"
   fi
   [ -z "$_untouched" ] || echo "[front-door] 999-setup: UNTOUCHED (owner's work kept):$_untouched — using clean copy $repo for skill links"
   # A box that already runs 9Router NEVER takes the link/installer path below

@@ -1399,6 +1399,40 @@
   }
  },
  {
+  "name": "persistent-paths-contabo-guard",
+  "was": "persistent-paths-contabo-guard.yml",
+  "script": "scripts/ci/fast-guards.d/persistent-paths-contabo-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "platform/common.sh",
+     "scripts/lib-bootstrap-pointer.sh",
+     "shared-utils/lib-frontdoor.sh",
+     "update-skills.sh",
+     "70-lean-core-file-system/scripts/lib-paths.sh",
+     "41-build-with-ai-playbook/scripts/lib-master-files.sh",
+     "41-build-with-ai-playbook/scripts/04-update-core-files.sh",
+     "tests/unit/persistent-paths-contabo.test.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "platform/common.sh",
+     "scripts/lib-bootstrap-pointer.sh",
+     "shared-utils/lib-frontdoor.sh",
+     "update-skills.sh",
+     "70-lean-core-file-system/scripts/lib-paths.sh",
+     "41-build-with-ai-playbook/scripts/lib-master-files.sh",
+     "41-build-with-ai-playbook/scripts/04-update-core-files.sh",
+     "tests/unit/persistent-paths-contabo.test.sh"
+    ]
+   }
+  }
+ },
+ {
   "name": "persona-blend-match-quality-guard",
   "was": "persona-blend-match-quality-guard.yml",
   "script": "scripts/ci/fast-guards.d/persona-blend-match-quality-guard.sh",

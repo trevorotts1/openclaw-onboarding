@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.16"
+ONBOARDING_VERSION="v27.1.17"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2024,7 +2024,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.16 - safe_json_edit
+# v27.1.17 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -6158,7 +6158,12 @@ print(state + " " + str(len(headers)))
   # records exactly that (restore: `skills-rollback.sh restore <dir>`). Only a box with no
   # recorded commit at all (exit 3: fresh or pre-manifest install) or a failed record falls
   # back to the old one-time copy, so an update is never left with no way back.
-  _SKILLS_BACKUP_ROOT="$HOME/Downloads/openclaw-backups"
+  # D04: on Contabo $HOME is the throwaway container layer; the backups live on the volume.
+  if _SKILLS_BACKUP_ROOT="$(oc_persist_root 2>/dev/null)"; then
+    _SKILLS_BACKUP_ROOT="$_SKILLS_BACKUP_ROOT/backups"
+  else
+    _SKILLS_BACKUP_ROOT="$HOME/Downloads/openclaw-backups"
+  fi
   if [ -d "$SKILLS_DIR" ] && [ "$(ls -A "$SKILLS_DIR" 2>/dev/null)" ]; then
     ROLLBACK_DIR="$_SKILLS_BACKUP_ROOT/skills-rollback-$(date +%Y%m%d-%H%M%S)"
     _RB_GITDIR=""; [ -d "$EXTRACTED_DIR/.git" ] && _RB_GITDIR="$EXTRACTED_DIR/.git"
@@ -7641,10 +7646,13 @@ sys.exit(0 if (isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()) 
     # is written. An unfilled variable shipped to a live box as the literal text
     # `[MASTER_FILES_FOLDER]/64-agnes-video/agnes-video-full.md` — a pointer to a
     # path that exists nowhere. Same platform rule the skill installers use.
-    local CU_MASTER_FILES_DIR="${OPENCLAW_MASTER_FILES_DIR:-}"
+    local _cu_proot="" CU_MASTER_FILES_DIR="${OPENCLAW_MASTER_FILES_DIR:-${MASTER_FILES_DIR:-}}"
     if [ -z "$CU_MASTER_FILES_DIR" ]; then
       if [ -f /data/.openclaw/openclaw.json ]; then
         CU_MASTER_FILES_DIR="/data/.openclaw/master-files"
+      elif _cu_proot="$(oc_persist_root 2>/dev/null)"; then
+        # D04: Contabo -- the OpenClaw root is the only volume, $HOME is throwaway.
+        CU_MASTER_FILES_DIR="$_cu_proot/openclaw-master-files"
       else
         CU_MASTER_FILES_DIR="$HOME/Downloads/openclaw-master-files"
       fi
