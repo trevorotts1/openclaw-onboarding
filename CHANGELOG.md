@@ -1,3 +1,13 @@
+## [v27.1.21]  -  2026-10-12  -  D24: every Command Center npm/node step in run-full-install.sh (npm ci, db:push, db:seed, build, contract check) runs on the Command Center node via cc_with_node; --update-only no longer fails db:push with NODE_MODULE_VERSION 137 vs 147
+
+##### What Changed
+- **D24 (`32-command-center-setup/scripts/run-full-install.sh`):** the D18 fix put the Command Center node on PATH for `npm ci` only, so on a box whose PATH node differs (Hostinger: `/data/.npm-global` node 26.7, ABI 147, vs the Command Center's node 24, ABI 137) `--update-only` then failed at `npm run db:push` with `ERR_DLOPEN_FAILED NODE_MODULE_VERSION 137 vs 147` ("db:push failed", `commandCenterStatus=failed`, `update-skills.sh` exit 2 before presentation converge, the UPDATE PENDING lifecycle, qc-completeness, the onboarding-resume cron and registry-parity). New helper `cc_with_node` now wraps `npm ci`, `npm run db:push` (update and full path), `npm run db:seed`, `npm run build` and the contract-check node call. It puts only a `node` symlink on PATH (a one-file temp dir, removed after the step), never the node's own directory, because `/usr/local/bin` also holds the image's old `openclaw` 2026.7.1-2 that reports the 2026.10.1 config invalid. No resolver (older checkout) or a resolver failure keeps the ambient node with a WARN.
+- **Test:** `scripts/test-d18-d19-npm-ci-node-and-cron-agent-rebind.sh` now uses a fake ambient node and a fake Command Center node and asserts every npm step sees the Command Center node and the ambient (not the node dir's) `openclaw`, plus a static guard that no bare `npm ci/run` or `node` call remains in the installer.
+- **Reviewed, no change:** the `.onboarding-version` stamp and manifest are written before the Command Center step by design (U005 exit-code contract: stamp = skills content current; Command Center failure is exit 2, advisory).
+
+##### Migration Notes
+- Risk: LOW. Fleet boxes pick this up on their next update-skills run. Boxes where the ambient node already equals the Command Center node behave as before.
+
 ## [v27.1.20]  -  2026-10-12  -  D23: the roll never truncates fallback chains (MAX_DEPTH 3 removed) and keeps tools.exec.mode instead of rewriting legacy security/ask
 
 ##### What Changed

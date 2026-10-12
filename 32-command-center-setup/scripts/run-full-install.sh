@@ -1125,7 +1125,7 @@ cc_ensure_fresh_build() {
 
   local build_start; build_start="$(date +%s)"
   log "INFO" "cc-build: running 'npm run build' (next build) in $dir"
-  if ( cd "$dir" && npm run build >>"$LOG_FILE" 2>&1 ); then
+  if ( cd "$dir" && cc_with_node npm run build >>"$LOG_FILE" 2>&1 ); then
     # Verify a FRESH BUILD_ID landed (mtime >= build start) — guards against a
     # build that exits 0 yet produced no new output.
     if [[ -f "$nextid" ]] && [[ "$(_cc_mtime "$nextid")" -ge "$build_start" ]]; then
@@ -1561,28 +1561,41 @@ cc_security_preflight() {
     fail_install "CC compatibility preflight failed; requires Node ^20.19.0 || ^22.13.0 || >=24 and checkout >=v7.1.0. See $LOG_FILE."
 }
 
+# D18/D24: run a Command Center npm/node step with the node the Command Center
+# RUNS on (its own scripts/lib/node-runtime.sh), not whatever node is first on this
+# shell's PATH. better-sqlite3 is a native addon: npm ci builds it for one node ABI
+# and db:push/db:seed/build load it, so EVERY such step must use the same node (a
+# Hostinger box's /data/.npm-global node 26 vs the server's node 24 gave
+# ERR_DLOPEN_FAILED NODE_MODULE_VERSION 137 vs 147 and "db:push failed").
+# Only `node` is overridden: a one-entry temp dir holding a symlink to the resolved
+# node leads PATH. The node's own directory is NEVER put on PATH, because
+# /usr/local/bin also holds the image's old `openclaw`, which must not shadow the
+# box's openclaw. No resolver (older checkout) or a resolver failure keeps the
+# ambient node, with a WARN. Usage: ( cd "$DASHBOARD_DIR" && cc_with_node npm run db:push )
+cc_with_node() {
+  local bin="" shim="" rc
+  if [[ -f "$DASHBOARD_DIR/scripts/lib/node-runtime.sh" ]]; then
+    bin="$(bash "$DASHBOARD_DIR/scripts/lib/node-runtime.sh" 2>>"$LOG_FILE")" || bin=""
+  fi
+  if [[ -n "$bin" && -x "$bin" ]] && shim="$(mktemp -d "${TMPDIR:-/tmp}/cc-node.XXXXXX" 2>/dev/null)" \
+     && ln -s "$bin" "$shim/node"; then
+    log "INFO" "cc-node: '$*' uses the Command Center node $bin"
+    PATH="$shim:$PATH" "$@"; rc=$?
+    rm -rf "$shim"
+    return "$rc"
+  fi
+  [[ -n "$shim" ]] && rm -rf "$shim"
+  log "WARN" "cc-node: Command Center node-runtime.sh unavailable; '$*' uses the node on PATH"
+  "$@"
+}
+
 # CC >=7.1.0 ships an audited lockfile. Never resolve a replacement graph,
 # including after a failed clean install; failure must stop before migrations.
 cc_install_locked_dependencies() {
   [[ -f "$DASHBOARD_DIR/package-lock.json" ]] || \
     fail_install "phase=6: package-lock.json missing; CC >=v7.1.0 requires its reviewed dependency lock"
-  # D18: build better-sqlite3 with the node the Command Center RUNS on (its own
-  # scripts/lib/node-runtime.sh), not whatever node is first on this shell's PATH
-  # (a Hostinger box's /data/.npm-global node 26 vs the server's node 24/25 gave
-  # NODE_MODULE_VERSION errors at the next restart). An older checkout without
-  # the resolver keeps the ambient node.
-  local cc_node_bin="" cc_node_path="$PATH"
-  if [[ -f "$DASHBOARD_DIR/scripts/lib/node-runtime.sh" ]]; then
-    cc_node_bin="$(bash "$DASHBOARD_DIR/scripts/lib/node-runtime.sh" 2>>"$LOG_FILE")" || cc_node_bin=""
-  fi
-  if [[ -n "$cc_node_bin" && -x "$cc_node_bin" ]]; then
-    cc_node_path="$(dirname "$cc_node_bin"):$PATH"
-    log "INFO" "phase=6: npm ci uses the Command Center node $cc_node_bin"
-  else
-    log "WARN" "phase=6: Command Center node-runtime.sh unavailable; npm ci uses the node on PATH"
-  fi
   log "INFO" "phase=6: npm ci from reviewed package-lock.json in $DASHBOARD_DIR"
-  if ! ( cd "$DASHBOARD_DIR" && PATH="$cc_node_path" npm ci --engine-strict --no-audit --no-fund >>"$LOG_FILE" 2>&1 ); then
+  if ! ( cd "$DASHBOARD_DIR" && cc_with_node npm ci --engine-strict --no-audit --no-fund >>"$LOG_FILE" 2>&1 ); then
     fail_install "phase=6: npm ci failed; dependencies were not installed successfully; refusing migrations/deployment"
   fi
 }
@@ -2240,7 +2253,7 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
     cc_load_launch_environment
   fi
   cc_prepare_database_environment
-  if ! ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ); then
+  if ! ( cd "$DASHBOARD_DIR" && cc_with_node npm run db:push >>"$LOG_FILE" 2>&1 ); then
     fail_install "phase=6: db:push failed; migration incomplete, deployment stopped"
   fi
   log "INFO" "phase=6: db:push done (runs migrations via getDb(); no demo seeding on client boxes)"
@@ -2303,14 +2316,14 @@ else
   fi
 
   log "INFO" "phase=6: npm run db:push (runs migrations via getDb())"
-  if ! ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ); then
+  if ! ( cd "$DASHBOARD_DIR" && cc_with_node npm run db:push >>"$LOG_FILE" 2>&1 ); then
     fail_install "phase=6: npm run db:push failed"
   fi
 
   # db:seed initializes structural rows only; demo seeding is disabled by default
   # (DEMO_SEED is left unset, so seed.ts uses the no-demo default on client boxes)
   log "INFO" "phase=6: npm run db:seed (no demo content injected)"
-  if ! ( cd "$DASHBOARD_DIR" && npm run db:seed >>"$LOG_FILE" 2>&1 ); then
+  if ! ( cd "$DASHBOARD_DIR" && cc_with_node npm run db:seed >>"$LOG_FILE" 2>&1 ); then
     log "WARN" "phase=6: npm run db:seed failed — dashboard will still start but workspace selector may be empty"
   fi
 
@@ -2819,7 +2832,7 @@ fi
 # is a code-only roll and must not be blocked by it.
 CC_CONTRACT_CHECK="$DASHBOARD_DIR/scripts/openclaw-contract-check.mjs"
 if [[ -f "$CC_CONTRACT_CHECK" ]] && command -v node >/dev/null 2>&1; then
-  if ( cd "$DASHBOARD_DIR" && bash "$(dirname "${BASH_SOURCE[0]}")/run-bounded.sh" 120 node "$CC_CONTRACT_CHECK" >>"$LOG_FILE" 2>&1 ); then
+  if ( cd "$DASHBOARD_DIR" && cc_with_node bash "$(dirname "${BASH_SOURCE[0]}")/run-bounded.sh" 120 node "$CC_CONTRACT_CHECK" >>"$LOG_FILE" 2>&1 ); then
     log "INFO" "contract-check: PASS"
     if [[ -f "$STATE_FILE" ]]; then state_set '.commandCenterContractCheck = true'; fi
   else
