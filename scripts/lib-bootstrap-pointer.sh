@@ -27,8 +27,9 @@
 # MASTER-FILES ROOT
 #   bp_master_files_dir() follows the convention every skill installer in this
 #   repo already uses:
-#     $OPENCLAW_MASTER_FILES_DIR                    (explicit override)
+#     $OPENCLAW_MASTER_FILES_DIR, then $MASTER_FILES_DIR (explicit override)
 #     /data/.openclaw/master-files                  (VPS: /data/.openclaw/openclaw.json exists)
+#     <openclaw-root>/openclaw-master-files         (Contabo: root is the only mount; D04)
 #     $HOME/Downloads/openclaw-master-files         (Mac default)
 #
 # SAFETY
@@ -40,13 +41,22 @@
 
 _BP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BP_ENGINE="${BP_ENGINE:-$_BP_LIB_DIR/bootstrap-pointerize.py}"
+# oc_persist_root (the one durable-storage rule) lives in platform/common.sh.
+declare -F oc_persist_root >/dev/null 2>&1 || [ ! -r "$_BP_LIB_DIR/../platform/common.sh" ] \
+  || . "$_BP_LIB_DIR/../platform/common.sh"
+declare -F oc_persist_root >/dev/null 2>&1 || oc_persist_root() { return 1; }
 
 # ── Where this box keeps its reference corpus ────────────────────────────────
 bp_master_files_dir() {
+  local _bp_proot=""
   if [ -n "${OPENCLAW_MASTER_FILES_DIR:-}" ]; then
     printf '%s' "${OPENCLAW_MASTER_FILES_DIR%/}"
+  elif [ -n "${MASTER_FILES_DIR:-}" ]; then
+    printf '%s' "${MASTER_FILES_DIR%/}"
   elif [ -f /data/.openclaw/openclaw.json ]; then
     printf '%s' "/data/.openclaw/master-files"
+  elif _bp_proot="$(oc_persist_root 2>/dev/null)"; then
+    printf '%s' "$_bp_proot/openclaw-master-files"
   else
     printf '%s' "$HOME/Downloads/openclaw-master-files"
   fi

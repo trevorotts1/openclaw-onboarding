@@ -3,6 +3,13 @@
 All notable changes to this skill. Dates are UTC. This skill's version lives in
 `skill-version.txt` and the SKILL.md frontmatter `version:` field, kept in lockstep.
 
+## [1.2.3] - 2026-10-12
+
+D11: no more permanent false alarms from Ollama Cloud or from a box with no tunnel.
+
+- **S1/S2 treated Ollama Cloud as a paid tier.** `config/signatures.json` `paid_tier_markers.suffix_deny` carried `:cloud`, so a client box whose approved fallback chain contained an Ollama Cloud model (a subscription per `config/billing-models.json`) got a P1 "paid tier" alert after any baseline drift. `ews_common.model_id_flags()` now returns a third flag, `metered` (metered provider slugs only: openrouter, openai, fish_audio, kie). S1 and S2 raise the client-box P1 on `metered`, not `paid`. S5 (furnace) still uses `paid`, because idle burn wastes allowance in every billing model. OpenRouter stays a metered P1, as before.
+- **S7 reported "tunnel down" on boxes that never had a tunnel.** `probe_surfaces()` returned `down` whenever `pgrep` found no cloudflared. New `tunnel_configured()` requires a tunnel token file (`~/.openclaw/secrets/tunnel-*.token`), a `~/.cloudflared/*.yml` config, a pm2 dump naming cloudflare, or a cloudflared LaunchDaemon; otherwise the tunnel is `unknown` and no finding is raised.
+
 ## [1.2.1] - 2026-09-17
 
 ISSUE-07: the tick cron no longer auto-disables itself the moment the sentinel

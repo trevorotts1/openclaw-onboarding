@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [1.0.3] - 2026-10-12 - D04
+
+- `lib-paths.sh`: `pr_master_files` also honours `MASTER_FILES_DIR`; on Contabo (OpenClaw root is a mount, `$HOME` is not) `pr_master_files` and `pr_backup_root` are `<root>/openclaw-master-files` and `<root>/backups`, not the throwaway `$HOME/Downloads`. Mac and Hostinger unchanged.
+
 ## [1.0.2] - 2026-10-08 - INF002
 
 - Weekly cron installer uses agent main when the box has one, otherwise the box's primary agent (default flag, else first listed); never fails for a missing main (INF002 B).

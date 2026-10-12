@@ -1399,6 +1399,40 @@
   }
  },
  {
+  "name": "persistent-paths-contabo-guard",
+  "was": "persistent-paths-contabo-guard.yml",
+  "script": "scripts/ci/fast-guards.d/persistent-paths-contabo-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "platform/common.sh",
+     "scripts/lib-bootstrap-pointer.sh",
+     "shared-utils/lib-frontdoor.sh",
+     "update-skills.sh",
+     "70-lean-core-file-system/scripts/lib-paths.sh",
+     "41-build-with-ai-playbook/scripts/lib-master-files.sh",
+     "41-build-with-ai-playbook/scripts/04-update-core-files.sh",
+     "tests/unit/persistent-paths-contabo.test.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "platform/common.sh",
+     "scripts/lib-bootstrap-pointer.sh",
+     "shared-utils/lib-frontdoor.sh",
+     "update-skills.sh",
+     "70-lean-core-file-system/scripts/lib-paths.sh",
+     "41-build-with-ai-playbook/scripts/lib-master-files.sh",
+     "41-build-with-ai-playbook/scripts/04-update-core-files.sh",
+     "tests/unit/persistent-paths-contabo.test.sh"
+    ]
+   }
+  }
+ },
+ {
   "name": "persona-blend-match-quality-guard",
   "was": "persona-blend-match-quality-guard.yml",
   "script": "scripts/ci/fast-guards.d/persona-blend-match-quality-guard.sh",
@@ -3267,6 +3301,40 @@
      "tests/unit/closeout-resume-cron-routing.test.sh",
      "tests/fixtures/fake-openclaw-cron.py",
      ".github/workflows/workforce-build-pipeline-guard.yml"
+    ]
+   }
+  }
+ },
+ {
+  "name": "d18-d19-npm-ci-node-and-cron-agent-rebind-guard",
+  "was": "(new, D18/D19/D20)",
+  "script": "scripts/ci/fast-guards.d/d18-d19-npm-ci-node-and-cron-agent-rebind-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "38-conversational-ai-system/scripts/04-register-crons.sh",
+     "70-lean-core-file-system/scripts/install-weekly-cron.sh",
+     "70-lean-core-file-system/tests/test-install-weekly-cron.sh",
+     "70-lean-core-file-system/tests/fake-openclaw.py",
+     "scripts/test-d18-d19-npm-ci-node-and-cron-agent-rebind.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "38-conversational-ai-system/scripts/04-register-crons.sh",
+     "70-lean-core-file-system/scripts/install-weekly-cron.sh",
+     "70-lean-core-file-system/tests/test-install-weekly-cron.sh",
+     "70-lean-core-file-system/tests/fake-openclaw.py",
+     "scripts/test-d18-d19-npm-ci-node-and-cron-agent-rebind.sh"
     ]
    }
   }

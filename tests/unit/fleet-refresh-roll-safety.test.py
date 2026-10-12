@@ -1100,7 +1100,7 @@ class ContaboStartupTemplate(unittest.TestCase):
             for f in bin_.iterdir():
                 f.chmod(0o755)
             env = {"HOME": str(home), "OPENCLAW_ROOT": str(oc), "PATH": f"{bin_}:/usr/bin:/bin",
-                   "PM2_RESURRECT_DELAY": "0"}
+                   "GW_READY_CAP": "0"}
             r = subprocess.run(["bash", str(REPO / "platform/vps/contabo/container-startup.sh")],
                                env=env, capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 0, r.stderr)
@@ -1129,7 +1129,7 @@ class ContaboStartupTemplate(unittest.TestCase):
             for f in (bin_ / "node", oc / "npm-global/bin/pm2"):
                 f.chmod(0o755)
             env = {"HOME": str(home), "OPENCLAW_ROOT": str(oc), "PATH": f"{bin_}:/usr/bin:/bin",
-                   "PM2_RESURRECT_DELAY": "0"}
+                   "GW_READY_CAP": "0"}
             for _ in range(2):
                 r = subprocess.run(["bash", str(REPO / "platform/vps/contabo/container-startup.sh")],
                                    env=env, capture_output=True, text=True, timeout=30)
@@ -1167,7 +1167,7 @@ class HostingerStartupTemplate(unittest.TestCase):
             (data / "projects/command-center/ecosystem.config.cjs").write_text("")
             bin_ = self.fake_bin(td)
             env = {"HOME": str(data), "OPENCLAW_DATA": str(data), "PATH": f"{bin_}:/usr/bin:/bin",
-                   "PM2_RESURRECT_DELAY": "0"}
+                   "GW_READY_CAP": "0"}
             r = subprocess.run(["bash", str(REPO / "platform/vps/hostinger/container-startup.sh")],
                                env=env, capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 0, r.stderr)
@@ -1199,7 +1199,7 @@ class HostingerStartupTemplate(unittest.TestCase):
             for f in bin_.iterdir():
                 f.chmod(0o755)
             env = {"HOME": "/root", "OPENCLAW_DATA": str(data), "PATH": f"{bin_}:/usr/bin:/bin",
-                   "PM2_RESURRECT_DELAY": "0"}
+                   "GW_READY_CAP": "0"}
             r = subprocess.run(["bash", str(REPO / "platform/vps/hostinger/container-startup.sh")],
                                env=env, capture_output=True, text=True, timeout=30)
             self.assertEqual(r.returncode, 0, r.stderr)

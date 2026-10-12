@@ -7,9 +7,21 @@
 #   running OpenClaw in Docker; everything else is a Mac.
 #     Mac:    ~/.openclaw/  ~/Downloads/openclaw-master-files/  ~/Downloads/openclaw-backups/
 #     Server: /data/.openclaw/  /data/.openclaw/master-files/   /data/.openclaw/backups/
+#     Contabo (OpenClaw root is a mount, $HOME is not): <root>/openclaw-master-files/  <root>/backups/
 # Every value can be overridden by an environment variable (used by the tests).
 #
 # Compatible with macOS bash 3.2 and Linux bash.
+
+# oc_persist_root (Contabo: only the OpenClaw root is a volume, $HOME is throwaway)
+# lives in platform/common.sh: next to the repo root, or beside the installed skills.
+if ! declare -F oc_persist_root >/dev/null 2>&1; then
+  _PR_D="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  for _PR_C in "$_PR_D/../../platform/common.sh" "$_PR_D/../../../platform/common.sh"; do
+    [ -r "$_PR_C" ] && { . "$_PR_C"; break; }
+  done
+  unset _PR_D _PR_C
+fi
+declare -F oc_persist_root >/dev/null 2>&1 || oc_persist_root() { return 1; }
 
 pr_is_server() { [ -f /data/.openclaw/openclaw.json ]; }
 
@@ -20,12 +32,19 @@ pr_ocroot() {
 
 pr_master_files() {
   if [ -n "${OPENCLAW_MASTER_FILES_DIR:-}" ]; then printf '%s' "$OPENCLAW_MASTER_FILES_DIR"; return 0; fi
-  if pr_is_server; then printf '%s' "/data/.openclaw/master-files"; else printf '%s' "$HOME/Downloads/openclaw-master-files"; fi
+  if [ -n "${MASTER_FILES_DIR:-}" ]; then printf '%s' "$MASTER_FILES_DIR"; return 0; fi
+  local p
+  if pr_is_server; then printf '%s' "/data/.openclaw/master-files"
+  elif p="$(oc_persist_root "$(pr_ocroot)" 2>/dev/null)"; then printf '%s' "$p/openclaw-master-files"
+  else printf '%s' "$HOME/Downloads/openclaw-master-files"; fi
 }
 
 pr_backup_root() {
   if [ -n "${OPENCLAW_BACKUP_DIR:-}" ]; then printf '%s' "$OPENCLAW_BACKUP_DIR"; return 0; fi
-  if pr_is_server; then printf '%s' "/data/.openclaw/backups"; else printf '%s' "$HOME/Downloads/openclaw-backups"; fi
+  local p
+  if pr_is_server; then printf '%s' "/data/.openclaw/backups"
+  elif p="$(oc_persist_root "$(pr_ocroot)" 2>/dev/null)"; then printf '%s' "$p/backups"
+  else printf '%s' "$HOME/Downloads/openclaw-backups"; fi
 }
 
 # The main agent's workspace (where AGENTS.md, MEMORY.md and the other core

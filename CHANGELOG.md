@@ -1,3 +1,61 @@
+## [v27.1.18]  -  2026-10-12  -  Merge train: #1902 D13: skill 18 heartbeat checklist is bounded and report-only…; #1903 D17: closeout watchdog Rescue Rangers escalation carries the box…; #1905 D03+D07: GHL MCP autostart never calls the openclaw CLI while the…; #1907 D18+D19+D20: CC npm ci uses the Command Center node; skill 38…; #1908 D04+D05+D06: Contabo master files, rollback backups, skill 41…; #1909 D11: EWS Ollama Cloud (:cloud) is a subscription not a paid-tier P1;…; #1910 SK6003: skill 06 reconcile-cron job on a throwaway $HOME path is…; #1911 D08: VPS start-up templates are gateway-first, wait out the owner…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1902 — [v27.1.17]  -  2026-10-12  -  D13: skill 18 heartbeat checklist is bounded and report-only (command cap, no investigating, fixing or messaging, one log line)
+
+### #1903 — [v27.1.17]  -  2026-10-12  -  D17: closeout watchdog Rescue Rangers escalation carries the box identity (boxName/box from FLEET_STANDING_BOX_SLUG)
+
+### #1905 — [v27.1.17]  -  2026-10-12  -  D03+D07: GHL MCP autostart never calls the openclaw CLI while the gateway is down; Contabo probe log dir is on the persistent volume and the probe cron creates it
+
+##### What Changed
+- **D03 (`scripts/ghl-mcp-autostart.sh`):** new `gw_up` helper (reads `gateway.port` from `openclaw.json`, default 18789, `GET http://127.0.0.1:<port>/healthz`, true only on HTTP 200, never the CLI). `deregister_tier2` returns 0 before any CLI call when the gateway is not up; `install_periodic_probe` skips its `openclaw cron list/add` fallback the same way (the launchd and crontab installs need no gateway and still run). Cause: on OpenClaw 2026.10.1 a CLI call made while the gateway is down takes the offline maintenance lock and kills the gateway at bootstrap; the script ran `openclaw config set` / `mcp list` even on its healthy no-op path, in parallel with gateway start on Contabo (Beverly Grandison crash loop, RestartCount 13, about 15 minutes down for the client).
+- **D07 (`scripts/lib/ghl-mcp-paths.sh`, `scripts/ghl-mcp-autostart.sh`):** on `linux-home` boxes the GHL MCP log dir is `<OpenClaw root>/logs/ghl-mcp` (persistent) instead of `$HOME/logs` (thrown away on a Contabo recreate). Both probe cron commands (crontab line and openclaw cron store) now start with `mkdir -p <log dir> &&`, because the shell opens the `>>probe.log` redirect before the probe's own `mkdir -p` runs (Donna Izzard: ghl-mcp-probe failed 10 runs after a recreate, `cannot create /data/logs/probe.log: Directory nonexistent`). A stored cron line with the old path is replaced on the next run (tagged upsert).
+- **Tests:** new `tests/unit/ghl-mcp-gateway-guard.test.sh` (fake `openclaw` plus closed port asserts 0 CLI calls, fake `/healthz` 200 server asserts calls happen, persistent log dir, cron command creates the dir). `ghl-mcp-paths-lib.test.sh` (1c) now expects the persistent path; `ghl-mcp-autostart-idempotent-write.test.sh` stubs `gw_up` as up. New step in `ghl-mcp-supervised-guard.yml`.
+
+##### Migration Notes
+- Risk: LOW. No gateway restart is triggered. The Contabo container start-up template ordering is a separate change (D08), not edited here.
+- Existing boxes keep logging to the old folder until update-skills re-runs the autostart, which rewrites the probe cron line.
+
+##### Files Changed
+- `scripts/ghl-mcp-autostart.sh`, `scripts/lib/ghl-mcp-paths.sh`, `tests/unit/ghl-mcp-gateway-guard.test.sh` (new), `tests/unit/ghl-mcp-paths-lib.test.sh`, `tests/unit/ghl-mcp-autostart-idempotent-write.test.sh`, `.github/workflows/ghl-mcp-supervised-guard.yml`.
+
+### #1907 — [v27.1.17]  -  2026-10-12  -  D18 + D19 + D20: Command Center npm ci uses the Command Center node; skill 38 re-binds crons whose agent was removed; skill 70 weekly cron falls back to the box's own default fallbacks
+
+Three small fleet fixes, each at its root cause.
+
+- **D18 (skill 32 `run-full-install.sh`):** `cc_install_locked_dependencies` ran `npm ci` with whatever node was first on PATH, so `better-sqlite3` could be built for the wrong module ABI (Dr. Tola, Lyric Hawkins, Corey Sams: built for Node 26 while the server runs Node 24/25, database dead at the next restart). It now resolves node through `$DASHBOARD_DIR/scripts/lib/node-runtime.sh` and leads PATH with that node's directory for the `npm ci` subshell only. A checkout without the resolver, or a resolver failure, keeps the ambient node and logs a WARN.
+- **D19 (skill 38 `04-register-crons.sh`):** "already registered, skipping" never looked at the job's agent. An existing agent-message cron whose `agentId` is not in `agents.entries` / `agents.list` (a missing `agentId` counts as `main`) is now re-bound with `openclaw cron edit <id> --agent $ROUTING_AGENT_ID`. Healthy jobs and boxes with no readable roster are untouched. Seen on Monique Tucker: `agent is unavailable: main`.
+- **D20 (skill 70 `install-weekly-cron.sh`):** when the box has no OpenRouter twin, the weekly job was created with no `--fallbacks`. It now uses the box's own `agents.defaults.model.fallbacks` (only ids on the box's model list, never Anthropic/Claude, never the primary); with none, behavior is unchanged. Drift detection compares the full fallback list.
+
+Tests: `scripts/test-d18-d19-npm-ci-node-and-cron-agent-rebind.sh` (8 cases) and 3 new cases in `70-lean-core-file-system/tests/test-install-weekly-cron.sh`; wired as the `d18-d19-npm-ci-node-and-cron-agent-rebind-guard` fast guard. The new tests fail on the old scripts.
+
+Migration: none beyond the normal update. Risk: LOW.
+
+### #1908 — [v27.1.17]  -  2026-10-12  -  D04/D05/D06: on Contabo, master files, rollback backups, the Skill 41 core-file writer and the 999-setup checkout use the persistent volume, not the throwaway $HOME
+
+On Contabo the node user's `$HOME` is the container image's temporary layer and only the OpenClaw root (`~/.openclaw`) is a mounted volume. Several bash readers resolved durable data under `$HOME` anyway, so every container recreate wiped it (Janet Pinkney lost every bootstrap reference file the AGENTS.md and TOOLS.md pointers name, plus 633 MB of skills-rollback backups; Donna Izzard's Skill 41 wrote the core-file blocks into stray `~/clawd` copies; 999-setup needed hand-made relinks on three boxes). The Python side (`shared-utils/detect_platform.py`) already had the right rule; the bash side did not, and the Contabo template exports `MASTER_FILES_DIR` while the bash libraries only read `OPENCLAW_MASTER_FILES_DIR`.
+
+- **One shared rule, `oc_persist_root` in `platform/common.sh`** (with `oc_is_mount`): when the OpenClaw root is a mount point and `$HOME` is not (Linux only), durable data lives at `<root>/openclaw-master-files`, `<root>/backups` and `<root>/persist-home/999-setup`. Mac (no `mountpoint`, `uname` Darwin) and Hostinger (`$HOME` is `/data`, itself the volume; and the `/data/.openclaw/openclaw.json` branch is still checked first) resolve exactly as before.
+- **D04:** `scripts/lib-bootstrap-pointer.sh` `bp_master_files_dir`, `update-skills.sh` (the CORE_UPDATES master-files variable and `_SKILLS_BACKUP_ROOT`), `platform/common.sh` (`OC_DOWNLOADS` is the root on Contabo, so `install.sh` and `lib-shared.sh` create and use `<root>/openclaw-master-files`) and skill 70 `lib-paths.sh` (`pr_master_files`, `pr_backup_root`) use the rule. Explicit `OPENCLAW_MASTER_FILES_DIR`, then `MASTER_FILES_DIR`, still win everywhere.
+- **D05:** skill 41 `04-update-core-files.sh` resolves its workspace with skill 70 `pr_workspace` (the configured `agents.defaults.workspace`) instead of `$HOME/clawd`; `$HOME/clawd` remains the answer only for a box with no `openclaw.json` at all, and an explicit `WORKSPACE_ROOT` still wins. `lib-master-files.sh` uses the rule instead of the hardcoded `/data/openclaw-master-files` on Contabo.
+- **D06:** `shared-utils/lib-frontdoor.sh` `frontdoor_update_999` clones 999-setup to `<root>/persist-home/999-setup` on Contabo and keeps `$HOME/999-setup` as a symlink to it, re-creating the link after a recreate.
+- Tests: `tests/unit/persistent-paths-contabo.test.sh` (stubbed `mountpoint` and `uname`, temp HOME and OpenClaw root per platform: every path lands under the root on Contabo; Mac and Hostinger unchanged; 21 assertions fail on the old code). Registered in `scripts/ci/fast-guards.json`.
+- Skill versions: skill 41 v2.0.2, skill 70 v1.0.3.
+- Migration: none beyond the normal update; an existing Contabo box's old `~/Downloads/openclaw-master-files` is not moved (it is already gone after a recreate); the next roll re-seeds `<root>/openclaw-master-files`. Risk: LOW. Follow-up: add the `persist-home` relink block to the Contabo `container-startup.sh` template (D08).
+
+### #1909 — [v27.1.17]  -  2026-10-12  -  D11: Early Warning System no longer treats Ollama Cloud (:cloud, a subscription) as a paid-tier P1 and reports no tunnel-down on boxes without cloudflared (skill 60 v1.2.3)
+
+### #1910 — [v27.1.17]  -  2026-10-12  -  SK6003: skill 06 reconcile-cron job on a throwaway $HOME path is repaired on Hostinger too
+
+QC of SK6002 found one gap. The repair only fired on Contabo (wanted folder under `~/.openclaw`). A Hostinger box that registered the nightly job under SK6001 still has `--sweep-base "$HOME/clawd/skill6-fix"` (a throwaway path there; only `/data` persists) and the installer said "already present, nothing to do".
+
+- `scripts/install-github-archive-reconcile-cron.sh`: a job under `$HOME` but outside both persistent roots (`~/.openclaw`, `/data`) is repaired with `openclaw cron edit` when the resolved folder is persistent; Mac is unchanged and healthy persistent jobs are left alone. On Hostinger `~/clawd/skill6-fix` is linked to `/data/clawd/skill6-fix` (same Command Center compatibility link Contabo already got).
+- Tests: `test_hostinger_job_on_throwaway_home_path_is_repaired`, `test_hostinger_command_center_path_links_to_data` (fail on v27.1.16).
+- Migration: none beyond the normal update. Risk: LOW.
+
+### #1911 — [v27.1.18]  -  2026-10-12  -  D08: VPS container-startup templates are gateway-first (pm2 and GHL MCP autostart only after /healthz 200), wait out the owner heartbeat before exec, relink persist-home (Contabo) and call the wrapper boot patcher (Hostinger)
+
 ## [v27.1.17]  -  2026-10-12  -  Merge train: #1900 D02: onboarding cron scripts no longer run openclaw doctor --fix…; #1901 D12: operator Telegram account never gets the box's own client bot…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
@@ -10,7 +68,6 @@ Released by the merge train as one batch. Each merged pull request's own CHANGEL
 
 - Regression test: `scripts/test-operator-telegram-same-as-client-bot.sh` (7 of 13 checks fail on the old script), run by `config-injection-shapes-guard`.
 - Migration: none beyond the normal update; an affected box shows the REFUSED status until a separate operator bot token is provisioned. Risk: LOW.
-
 ## [v27.1.16]  -  2026-10-12  -  Merge train: #1899 D01: Command Center fast path fast-forwards only, never reset --hard…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
