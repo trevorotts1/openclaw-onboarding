@@ -37,8 +37,21 @@ SKILL_VERSION="$(tr -d '[:space:]' < "$SKILL_DIR/skill-version.txt")"
 
 echo "[skill 41] Updating core files (AGENTS.md, MEMORY.md, TOOLS.md) [skill v${SKILL_VERSION}]..."
 
-# Find workspace root (where AGENTS.md lives)
-WORKSPACE_ROOT="${WORKSPACE_ROOT:-${HOME}/clawd}"
+# Find workspace root (where AGENTS.md lives): the box's configured workspace
+# (skill 70's pr_workspace: $OPENCLAW_WORKSPACE, openclaw.json, <root>/workspace),
+# never a stray $HOME/clawd copy. $HOME/clawd stays the answer only for a Mac with
+# no openclaw.json at all (legacy layout), so that case behaves as before.
+if [[ -z "${WORKSPACE_ROOT:-}" ]]; then
+  WORKSPACE_ROOT="${HOME}/clawd"
+  _PR_LIB="$SKILL_DIR/../70-lean-core-file-system/scripts/lib-paths.sh"
+  if [[ -r "$_PR_LIB" ]]; then
+    # shellcheck source=/dev/null
+    . "$_PR_LIB"
+    if [[ -f "$(pr_ocroot)/openclaw.json" || -n "${OPENCLAW_WORKSPACE:-}" ]]; then
+      WORKSPACE_ROOT="$(pr_workspace)"
+    fi
+  fi
+fi
 if [[ ! -f "$WORKSPACE_ROOT/AGENTS.md" ]]; then
   echo "[skill 41] WARNING: AGENTS.md not found at $WORKSPACE_ROOT/AGENTS.md -- skipping core file updates"
   exit 0

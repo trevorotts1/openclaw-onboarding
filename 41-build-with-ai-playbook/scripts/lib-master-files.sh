@@ -3,6 +3,17 @@
 # Resolution precedence matches 01-locate: env > skill-41 pointer > skill-38 pointer > OS default.
 # Pointers are READ (head/cat), never sourced.
 
+# oc_persist_root (Contabo: only the OpenClaw root is a volume, $HOME is throwaway)
+# lives in platform/common.sh: next to the repo root, or beside the installed skills.
+if ! declare -F oc_persist_root >/dev/null 2>&1; then
+  _LMF_D="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  for _LMF_C in "$_LMF_D/../../platform/common.sh" "$_LMF_D/../../../platform/common.sh"; do
+    [ -r "$_LMF_C" ] && { . "$_LMF_C"; break; }
+  done
+  unset _LMF_D _LMF_C
+fi
+declare -F oc_persist_root >/dev/null 2>&1 || oc_persist_root() { return 1; }
+
 resolve_master_files_dir() {
   if [[ -n "${MASTER_FILES_DIR:-}" && -d "${MASTER_FILES_DIR:-}" ]]; then
     echo "$MASTER_FILES_DIR"; return 0
@@ -20,6 +31,8 @@ resolve_master_files_dir() {
   fi
   if [[ "$(uname -s)" == "Darwin" ]]; then
     echo "$HOME/Downloads/OpenClaw Master Files"
+  elif d="$(oc_persist_root 2>/dev/null)"; then
+    echo "$d/openclaw-master-files"   # Contabo: the volume is the OpenClaw root (D05)
   else
     echo "/data/openclaw-master-files"
   fi
