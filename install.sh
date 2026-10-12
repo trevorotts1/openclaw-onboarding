@@ -65,7 +65,7 @@ set -euo pipefail
 # Provides detect_platform(), find_master_files(), and other helpers
 # used by update-skills.sh / check-updates.sh / skills' QC scripts.
 # ----------------------------------------------------------
-_lib_shared_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-shared.sh"
+_lib_shared_self="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/lib-shared.sh"
 if [ -f "$_lib_shared_self" ]; then
   # shellcheck source=/dev/null
   source "$_lib_shared_self"
@@ -76,7 +76,7 @@ fi
 # Onboarding state-machine (v10.16.48 — FIX 1 ONBOARDING HONESTY).
 # Canonical file: lib-onboarding-state.sh (sourced by both platforms).
 # ----------------------------------------------------------
-_lib_onboarding_state_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-onboarding-state.sh"
+_lib_onboarding_state_self="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/lib-onboarding-state.sh"
 if [ -f "$_lib_onboarding_state_self" ]; then
   # shellcheck source=/dev/null
   source "$_lib_onboarding_state_self"
@@ -107,7 +107,7 @@ command -v oc_state_summary       >/dev/null 2>&1 || oc_state_summary()       { 
 # so the roll/hot-patch path installs the SAME SILENT, bounded, self-removing
 # resume cron with no copy-paste drift. Best-effort source.
 # ----------------------------------------------------------
-_lib_resume_cron_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-onboarding-resume-cron.sh"
+_lib_resume_cron_self="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/lib-onboarding-resume-cron.sh"
 if [ -f "$_lib_resume_cron_self" ]; then
   # shellcheck source=/dev/null
   source "$_lib_resume_cron_self"
@@ -163,7 +163,7 @@ command -v _oc_cron_silent_main >/dev/null 2>&1 || _oc_cron_silent_main() {
 # closeout-readiness-watchdog=28), so this helper is sourced/defined here once
 # and reused by every Step-13.x installer below instead of each re-doing its own
 # (buggy) text-table grep.
-_lib_cron_present_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/shared-utils/cron-lib.sh"
+_lib_cron_present_self="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/shared-utils/cron-lib.sh"
 if [ -f "$_lib_cron_present_self" ]; then
   # shellcheck source=/dev/null
   source "$_lib_cron_present_self"
@@ -209,7 +209,7 @@ command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1
 # with no copy-paste drift. Sourced AFTER the cron helpers above on purpose:
 # the lib guards its own fallbacks with `command -v`, so this file's richer
 # definitions win. Best-effort source, fail-closed fallbacks below.
-_lib_pres_sched_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-presentation-schedules.sh"
+_lib_pres_sched_self="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/lib-presentation-schedules.sh"
 if [ -f "$_lib_pres_sched_self" ]; then
   # shellcheck source=/dev/null
   source "$_lib_pres_sched_self"
@@ -3586,7 +3586,7 @@ success "Canonical sub-agent + bootstrap config applied"
 # LATER in this script, so it must never be referenced here. Both expansions are
 # written :-safe anyway, so a reordering upstream can't turn this into an
 # unbound-variable abort of the whole install.
-_WIRE_RUN_RETRIES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/wire-run-retries.sh"
+_WIRE_RUN_RETRIES="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/scripts/wire-run-retries.sh"
 [ -f "$_WIRE_RUN_RETRIES" ] || _WIRE_RUN_RETRIES="${ONBOARDING_DIR:-}/scripts/wire-run-retries.sh"
 if [ -f "$_WIRE_RUN_RETRIES" ]; then
     note "Wiring agents.defaults.runRetries ceiling (set-if-absent, schema-gated)..."
@@ -3777,6 +3777,74 @@ cp -r "$TEMP_EXTRACT/openclaw-onboarding-main/"* "$ONBOARDING_DIR/"
 rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
 
 success "Extracted to $ONBOARDING_DIR"
+
+# ----------------------------------------------------------
+# LIBRARY REHYDRATION — the curl|bash / bare-copy install path (fix, 2026-10-12)
+# ----------------------------------------------------------
+# The five libraries sourced at the TOP of this file resolve themselves next to
+# this script: $(dirname "${BASH_SOURCE[0]:-$0}")/lib-*.sh. The documented
+# install command is
+#     curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+# and there is no script file at all: $0 is `bash`, the sibling path collapses
+# onto $PWD/<lib>, nothing is found there, and every fail-closed fallback from
+# the top of this file (`command -v f || f() { return 1; }`) stays in force.
+# Step 6.6b then aborts the WHOLE install with
+#     ERROR: FIX 61: intake-poll schedule install FAILED (rc=1)
+#     Presentations scripts dir resolved to: <UNRESOLVED>
+# because install_intake_poll_schedule() is still the stub. Seen live
+# 2026-10-12 on a fresh client Mac, onboarding v27.1.19, on BOTH a
+# `curl | bash` run and a copy downloaded to /tmp. The bash 3.2 that ships with
+# macOS additionally prints `BASH_SOURCE[0]: unbound variable` at every one of
+# those sites (it carries on with an empty expansion, which is why the live log
+# shows the error at 68, 79, 110, 166, 212 AND 3589 and still reaches Step 6.6b);
+# bash 5 aborts outright on the first one instead, so on a bash 5 box the very
+# same `curl | bash` never reaches Step 4 at all.
+#
+# Step 4 has just merged the FULL package — these libraries included — into
+# $ONBOARDING_DIR, so this is the first moment they exist on disk. Re-source
+# ONLY what never loaded, gated per library on the same OPENCLAW_LIB_*_SOURCED
+# sentinel the top-of-file blocks export (a blind re-source would be worse: a
+# lib sourced late finds install.sh's `command -v` stubs already defined and
+# skips its own definitions). shared-utils/cron-lib.sh exports no sentinel, so it
+# is probed by oc_cron_tombstone_dir — a symbol only it defines.
+#
+# ORDER MATTERS: cron-lib.sh first. lib-presentation-schedules.sh guards its own
+# oc_cron_present / oc_cron_tombstoned copies on `command -v`, so sourcing the
+# canonical cron lib first is what leaves the real durable-tombstone check in
+# place instead of install.sh's fail-open `{ return 1; }` stub — the difference
+# between respecting an operator's tombstone and resurrecting the cron at
+# 4 call sites below (reassert-presentation-deps, workforce-build-resume,
+# watchdog-onboarding-loop, closeout-readiness-watchdog).
+#
+# FAIL-CLOSED IS PRESERVED: if a library is genuinely absent from $ONBOARDING_DIR
+# as well, nothing is sourced, the stubs stay, and Step 6.6b still aborts loudly
+# exactly as before. This block can only add a real definition; it never
+# suppresses an error.
+if ! command -v oc_cron_tombstone_dir >/dev/null 2>&1 \
+   && [ -f "$ONBOARDING_DIR/shared-utils/cron-lib.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ONBOARDING_DIR/shared-utils/cron-lib.sh"
+fi
+if [ "${OPENCLAW_LIB_SHARED_SOURCED:-0}" != "1" ] && [ -f "$ONBOARDING_DIR/lib-shared.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ONBOARDING_DIR/lib-shared.sh"
+    export OPENCLAW_LIB_SHARED_SOURCED=1
+fi
+if [ "${OPENCLAW_LIB_ONBOARDING_STATE_SOURCED:-0}" != "1" ] && [ -f "$ONBOARDING_DIR/lib-onboarding-state.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ONBOARDING_DIR/lib-onboarding-state.sh"
+    export OPENCLAW_LIB_ONBOARDING_STATE_SOURCED=1
+fi
+if [ "${OPENCLAW_LIB_RESUME_CRON_SOURCED:-0}" != "1" ] && [ -f "$ONBOARDING_DIR/lib-onboarding-resume-cron.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ONBOARDING_DIR/lib-onboarding-resume-cron.sh"
+    export OPENCLAW_LIB_RESUME_CRON_SOURCED=1
+fi
+if [ "${OPENCLAW_LIB_PRESENTATION_SCHEDULES_SOURCED:-0}" != "1" ] && [ -f "$ONBOARDING_DIR/lib-presentation-schedules.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ONBOARDING_DIR/lib-presentation-schedules.sh"
+    export OPENCLAW_LIB_PRESENTATION_SCHEDULES_SOURCED=1
+fi
 
 # ----------------------------------------------------------
 # RETIRED-LIBRARY-FILE RECONCILE (2026-07-21) -- the ROOT-CAUSE surface.
@@ -5877,7 +5945,7 @@ note "Wrote local transcription wrapper: $FW_WRAPPER (model: medium)"
 # cron calls, and (3) writes an off-box encrypted snapshot of the default
 # credential store so a wipe is always recoverable. Best-effort (never fatal);
 # runs as the box user (the hardener refuses/re-drops if invoked as root).
-_HARDEN_GWS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/harden-gws-credential-resilience.sh"
+_HARDEN_GWS="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/scripts/harden-gws-credential-resilience.sh"
 [ -f "$_HARDEN_GWS" ] || _HARDEN_GWS="$ONBOARDING_DIR/scripts/harden-gws-credential-resilience.sh"
 [ -f "$_HARDEN_GWS" ] || _HARDEN_GWS="$SCRIPTS_DIR/harden-gws-credential-resilience.sh"
 if [ -f "$_HARDEN_GWS" ]; then
@@ -7215,7 +7283,7 @@ install_interview_nudge_cron() {
     for _candidate in \
         "${HOME}/.openclaw/skills/23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh" \
         "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh" \
-        "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh"; do
+        "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh"; do
         if [ -f "$_candidate" ]; then
             _NUDGE_SCRIPT="$_candidate"
             break
@@ -7320,7 +7388,7 @@ install_closeout_watchdog_cron() {
     for _cand in \
         "${HOME}/.openclaw/skills/23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh" \
         "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh" \
-        "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh"; do
+        "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh"; do
         if [[ -f "$_cand" ]]; then
             _WATCHDOG_SCRIPT="$_cand"
             break
