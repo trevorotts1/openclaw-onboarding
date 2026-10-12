@@ -67,7 +67,7 @@ _ABS_PATH_RE = re.compile(r"`((?:/Users/|/data/|/root/|/opt/|/home/)[^`]+)`")
 # stamper REFUSES to write a relative pointer, so every pointer is absolute by
 # construction, and a prefix list would only create silent blind spots on any
 # box whose master-files root sits somewhere the list did not anticipate.
-_POINTER_RE = re.compile(r"\*\*Full text:\*\*\s+(/\S+)")
+_POINTER_RE = re.compile(r"\*\*Full text:\*\*\s+(/.+?)(?:\s+§([^\s—]+))?\s+—\s")
 _MARKER_RE = re.compile(r"<!--\s*(?:(BEGIN|END)\s+)?([A-Za-z][A-Za-z0-9_:\-. ]*?)\s*-->")
 
 # A path that is a TEMPLATE or a prose example, not a literal target to check.
@@ -181,7 +181,8 @@ def validate(workspace: Path, budget: dict[str, int], require_policy: bool) -> d
         # Every pointer must resolve, with no suffix filter and no placeholder
         # escape hatch: a pointer is a literal promise that this exact file is
         # readable right now.
-        for raw in _POINTER_RE.findall(text):
+        for match in _POINTER_RE.findall(text):
+            raw = match[0] if isinstance(match, tuple) else match
             ref = Path(raw.split("#", 1)[0].rstrip("/"))
             checked.add(str(ref))
             if not ref.exists():

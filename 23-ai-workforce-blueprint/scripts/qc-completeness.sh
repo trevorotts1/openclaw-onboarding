@@ -593,6 +593,15 @@ for d in sorted(DEPARTMENTS_DIR.iterdir()):
         continue
     on_disk_depts.append(d)
 
+# departments.json roster ids (operator-selected departments) — used by the
+# personal-workspace guard: an on-disk dir absent from BOTH the role library and
+# this roster is an agent's private workspace, not a real department.
+_departments_roster_ids = set(selected_depts.keys())
+def _in_departments_roster(dept_id, roster_ids):
+    if dept_id in roster_ids:
+        return True
+    return any(cand.replace("-", "") == dept_id.replace("-", "") for cand in roster_ids)
+
 # Per-dept analysis
 dept_reports = []
 overall_status = "PASS"
@@ -885,6 +894,41 @@ for dept_dir in on_disk_depts:
     identity_pct = (identity_count / role_count * 100.0) if role_count else 0.0
     avg_sop_per_role = (sop_total / role_count) if role_count else 0.0
     avg_substantive_sop_per_role = (substantive_sop_total / role_count) if role_count else 0.0
+    # A dir with 0 role folders that is in NEITHER the role library NOR the
+    # departments.json roster is a personal/agent workspace (e.g. sir-jordan-staff,
+    # Jordan's own task desk bound in openclaw.json) — skip it, not a real dept.
+    # Requires BOTH absences so a real dept missing from only one source still FAILs.
+    if role_count == 0 and not expected:
+        _personal_ws = (
+            library_lookup not in library_depts
+            and not bool(_in_departments_roster(dept_id, _departments_roster_ids))
+        )
+        if _personal_ws:
+            dept_reports.append({
+                "dept_id": dept_id,
+                "expected_roles": 0,
+                "role_folders": 0,
+                "library_filled": 0,
+                "identity_md": 0,
+                "sop_files_total": 0,
+                "avg_sop_per_role": 0.0,
+                "sop_stubs_remaining": 0,
+                "substantive_sop_count": 0,
+                "avg_substantive_sop_per_role": 0.0,
+                "min_sop_per_role": None,
+                "sop_floor": SOP_FLOOR,
+                "roles_with_min_sops": 0,
+                "sop_floor_applicable": 0,
+                "roles_below_min_sops": 0,
+                "embedded_model_roles": 0,
+                "materialized_pct": 100.0,
+                "library_pct": 100.0,
+                "identity_pct": 100.0,
+                "has_governing_personas": False,
+                "personal_workspace": True,
+                "status": "SKIPPED",
+            })
+            continue
     # Per-dept status
     if role_count == 0:
         dept_status = "FAIL"
@@ -1021,7 +1065,7 @@ for d in dept_reports:
     emit(f"{d['dept_id']:<26} {d['role_folders']:>5} {d['expected_roles']:>4} "
          f"{d['library_pct']:>5.1f} {d['identity_pct']:>5.1f} "
          f"{d['avg_sop_per_role']:>6.2f} {d.get('substantive_sop_count', 0):>6} "
-         f"{d.get('min_sop_per_role', 0):>6} {d.get('roles_below_min_sops', 0):>5} {personas_flag:>8} {d['status']:>8}")
+         f"{(d.get('min_sop_per_role') if d.get('min_sop_per_role') is not None else 0):>6} {d.get('roles_below_min_sops', 0):>5} {personas_flag:>8} {d['status']:>8}")
 if legacy_detected:
     emit("")
     emit(f"LEGACY TREE PRESENT (legacy-tree pattern):")
