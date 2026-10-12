@@ -202,6 +202,10 @@ exit 0
                if not k.startswith("SKILL6_EVIDENCE_BASE")}
         env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
         env["HOME"] = str(home)
+        # hermetic: never see the real /data or /home/node of the machine running CI
+        env["SKILL6_DATA_ROOT"] = str(tmp_path / "no-data-root")
+        env["SKILL6_CONTABO_HOME"] = str(tmp_path / "no-contabo-home")
+        env.pop("SKILL6_EVIDENCE_BASE_DIR", None)
         env.update(extra_env or {})
         r = subprocess.run(["bash", INSTALLER, *args], env=env,
                            capture_output=True, text=True)
@@ -259,6 +263,117 @@ exit 0
         r, _ = self._run(tmp_path, fake_bin, "--idempotent")
         assert r.returncode == 0, r.stdout + r.stderr
         assert not log.exists(), "touched a healthy job"
+
+
+class TestPersistentPathSK6002:
+    """SK6002. Docker $HOME is not always persistent: on Contabo only
+    ~/.openclaw survives a container recreate, on Hostinger /data is the
+    volume. The default evidence folder must live on the persistent side, an
+    old non-persistent job must be repaired, a healthy persistent job must be
+    left alone, and Mac must not change."""
+
+    _fake = TestInstallerFlagParsingSK6001._fake
+    _run = TestInstallerFlagParsingSK6001._run
+
+    @staticmethod
+    def _job(path, jid="job-1"):
+        return {"id": jid, "name": "skill6-github-archive-reconcile-sweep",
+                "payload": {"command": 'python3 x/ghl_github_reconcile.py '
+                            f'--sweep-base "{path}" --retry --json'}}
+
+    def _hostinger(self, tmp_path):
+        data = tmp_path / "data"
+        (data / ".openclaw").mkdir(parents=True)
+        return data, {"SKILL6_DATA_ROOT": str(data)}
+
+    def _contabo(self, tmp_path):
+        home = tmp_path / "home"
+        (home / ".openclaw").mkdir(parents=True)
+        return home, {"SKILL6_CONTABO_HOME": str(home)}
+
+    def test_mac_default_unchanged(self, tmp_path):
+        fake_bin, log = self._fake(tmp_path, [])
+        r, home = self._run(tmp_path, fake_bin, "--idempotent")
+        assert f'--sweep-base "{home}/clawd/skill6-fix"' in log.read_text()
+
+    def test_hostinger_default_is_data_clawd(self, tmp_path):
+        fake_bin, log = self._fake(tmp_path, [])
+        data, env = self._hostinger(tmp_path)
+        r, home = self._run(tmp_path, fake_bin, "--idempotent", extra_env=env)
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert f'--sweep-base "{data}/clawd/skill6-fix"' in log.read_text()
+        assert (data / "clawd" / "skill6-fix").is_dir()
+        assert not (home / "clawd").exists(), "Hostinger must not touch $HOME/clawd"
+
+    def test_contabo_default_is_under_dot_openclaw_and_legacy_path_links(self, tmp_path):
+        fake_bin, log = self._fake(tmp_path, [])
+        home, env = self._contabo(tmp_path)
+        r, _ = self._run(tmp_path, fake_bin, "--idempotent", extra_env=env)
+        assert r.returncode == 0, r.stdout + r.stderr
+        want = home / ".openclaw" / "clawd" / "skill6-fix"
+        assert f'--sweep-base "{want}"' in log.read_text()
+        assert want.is_dir()
+        legacy = home / "clawd" / "skill6-fix"   # what Command Center reads
+        assert legacy.is_symlink() and legacy.resolve() == want.resolve()
+
+    def test_contabo_existing_real_legacy_folder_is_copied_not_destroyed(self, tmp_path):
+        fake_bin, log = self._fake(tmp_path, [])
+        home, env = self._contabo(tmp_path)
+        legacy = home / "clawd" / "skill6-fix" / "v2-run1"
+        legacy.mkdir(parents=True)
+        (legacy / "keep.txt").write_text("evidence")
+        r, _ = self._run(tmp_path, fake_bin, "--idempotent", extra_env=env)
+        assert r.returncode == 0, r.stdout + r.stderr
+        want = home / ".openclaw" / "clawd" / "skill6-fix"
+        assert (want / "v2-run1" / "keep.txt").read_text() == "evidence"
+        assert (legacy / "keep.txt").read_text() == "evidence"
+        assert not (home / "clawd" / "skill6-fix").is_symlink()
+
+    def test_contabo_job_on_throwaway_home_path_is_repaired(self, tmp_path):
+        home, env = self._contabo(tmp_path)
+        fake_bin, log = self._fake(tmp_path, [self._job(f"{home}/clawd/skill6-fix")])
+        r, _ = self._run(tmp_path, fake_bin, "--idempotent", extra_env=env)
+        assert r.returncode == 0, r.stdout + r.stderr
+        calls = log.read_text()
+        assert "cron edit job-1 --command" in calls
+        assert f'--sweep-base "{home}/.openclaw/clawd/skill6-fix"' in calls
+        assert "cron add" not in calls
+
+    def test_contabo_healthy_persistent_job_is_left_alone(self, tmp_path):
+        home, env = self._contabo(tmp_path)
+        fake_bin, log = self._fake(
+            tmp_path, [self._job(f"{home}/.openclaw/clawd/skill6-fix")])
+        r, _ = self._run(tmp_path, fake_bin, "--idempotent", extra_env=env)
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert not log.exists(), "touched a healthy persistent job"
+
+    def test_hostinger_healthy_job_is_left_alone(self, tmp_path):
+        data, env = self._hostinger(tmp_path)
+        fake_bin, log = self._fake(tmp_path, [self._job(f"{data}/clawd/skill6-fix")])
+        r, _ = self._run(tmp_path, fake_bin, "--idempotent", extra_env=env)
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert not log.exists()
+
+    def test_mac_job_under_home_is_left_alone(self, tmp_path):
+        fake_bin, log = self._fake(tmp_path, [self._job(f"{tmp_path}/home/clawd/skill6-fix")])
+        r, _ = self._run(tmp_path, fake_bin, "--idempotent")
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert not log.exists(), "Mac job must not be repaired"
+
+    def test_explicit_argument_beats_platform_default(self, tmp_path):
+        fake_bin, log = self._fake(tmp_path, [])
+        _, env = self._contabo(tmp_path)
+        target = tmp_path / "chosen"
+        r, _ = self._run(tmp_path, fake_bin, "--idempotent", str(target), extra_env=env)
+        assert f'--sweep-base "{target}"' in log.read_text()
+
+    def test_env_dir_beats_platform_default(self, tmp_path):
+        fake_bin, log = self._fake(tmp_path, [])
+        _, env = self._contabo(tmp_path)
+        env_dir = tmp_path / "from-env"
+        r, _ = self._run(tmp_path, fake_bin, "--idempotent",
+                         extra_env={**env, "SKILL6_EVIDENCE_BASE_DIR": str(env_dir)})
+        assert f'--sweep-base "{env_dir}"' in log.read_text()
 
 
 if __name__ == "__main__":

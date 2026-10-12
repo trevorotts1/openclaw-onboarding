@@ -9,5 +9,5 @@
   "command": "python3 ~/.openclaw/skills/06-ghl-install-pages/tools/ghl_github_reconcile.py --sweep-base \"${SKILL6_EVIDENCE_BASE}\" --retry --json",
   "description": "Daily maintenance-window sweep of the Skill-6 GitHub archival rail. Confirms every VERCEL_EMBED page's source code actually landed in GitHub (D6/B-D2 non-blocking archival doctrine) and retries any missing/failed archive from its staged source. Never blocks or rolls back a live page -- this is a reconcile/retry pass only.",
   "evidence_base_env_var": "SKILL6_EVIDENCE_BASE",
-  "evidence_base_default": "$HOME/clawd/skill6-fix"
+  "evidence_base_default": "per platform, resolved by tools/cc_board.py evidence-base: Mac $HOME/clawd/skill6-fix; Hostinger /data/clawd/skill6-fix; Contabo $HOME/.openclaw/clawd/skill6-fix"
 }

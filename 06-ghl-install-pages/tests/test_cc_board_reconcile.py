@@ -43,11 +43,45 @@ class TestResolveEvidenceBase:
         assert cc_board.resolve_evidence_base(env) == "/custom/base"
 
     def test_falls_back_to_home_clawd_skill6_fix(self, tmp_path):
-        env = {"HOME": str(tmp_path)}
+        env = {"HOME": str(tmp_path), "SKILL6_DATA_ROOT": str(tmp_path / "nodata")}
         assert cc_board.resolve_evidence_base(env) == os.path.join(str(tmp_path), "clawd", "skill6-fix")
 
     def test_no_home_no_override_returns_empty(self):
         assert cc_board.resolve_evidence_base({}) == ""
+
+    # SK6002 -- per-platform persistent default.
+    def test_hostinger_uses_data_volume(self, tmp_path):
+        data = tmp_path / "data"
+        (data / ".openclaw").mkdir(parents=True)
+        env = {"HOME": str(data), "SKILL6_DATA_ROOT": str(data)}
+        assert cc_board.resolve_evidence_base(env) == str(data / "clawd" / "skill6-fix")
+
+    def test_contabo_uses_dot_openclaw(self, tmp_path):
+        home = tmp_path / "node"
+        (home / ".openclaw").mkdir(parents=True)
+        env = {"HOME": str(home), "SKILL6_CONTABO_HOME": str(home),
+               "SKILL6_DATA_ROOT": str(tmp_path / "nodata")}
+        assert cc_board.resolve_evidence_base(env) == str(home / ".openclaw" / "clawd" / "skill6-fix")
+
+    def test_contabo_with_data_symlinked_to_home_is_still_contabo(self, tmp_path):
+        home = tmp_path / "node"
+        (home / ".openclaw").mkdir(parents=True)
+        (tmp_path / "data").symlink_to(home)
+        env = {"HOME": str(home), "SKILL6_CONTABO_HOME": str(home),
+               "SKILL6_DATA_ROOT": str(tmp_path / "data")}
+        assert cc_board.resolve_evidence_base(env) == str(home / ".openclaw" / "clawd" / "skill6-fix")
+
+    def test_mac_with_dot_openclaw_is_unchanged(self, tmp_path):
+        (tmp_path / ".openclaw").mkdir()
+        env = {"HOME": str(tmp_path), "SKILL6_DATA_ROOT": str(tmp_path / "nodata"),
+               "SKILL6_CONTABO_HOME": str(tmp_path / "other")}
+        assert cc_board.resolve_evidence_base(env) == str(tmp_path / "clawd" / "skill6-fix")
+
+    def test_env_override_beats_platform(self, tmp_path):
+        (tmp_path / "data" / ".openclaw").mkdir(parents=True)
+        env = {"HOME": str(tmp_path), "SKILL6_DATA_ROOT": str(tmp_path / "data"),
+               "SKILL6_EVIDENCE_BASE_DIR": "/custom/base"}
+        assert cc_board.resolve_evidence_base(env) == "/custom/base"
 
 
 class TestListEvidenceRuns:

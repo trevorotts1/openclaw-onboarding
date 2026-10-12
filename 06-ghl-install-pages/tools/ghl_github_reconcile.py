@@ -337,6 +337,12 @@ def main(argv: Optional[list] = None) -> int:
         return 0 if result["match"] else 1
 
     if args.sweep_base:
+        # SK6002: a recreated Docker box can lose the folder; the nightly job
+        # must not depend on it existing. Best effort, never fatal.
+        try:
+            os.makedirs(args.sweep_base, exist_ok=True)
+        except OSError:
+            pass
         sweep = sweep_base(args.sweep_base, retry=args.retry, write_log=not args.no_log)
         d = sweep.as_dict()
         if args.json:

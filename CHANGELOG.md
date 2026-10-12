@@ -1,3 +1,17 @@
+## [v27.1.15]  -  2026-10-12  -  Merge train: #1897 SK6002: skill 06 reconcile-cron evidence folder lives on the…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1897 — [v27.1.14]  -  2026-10-12  -  SK6002: skill 06 reconcile-cron evidence folder lives on the persistent volume on Docker boxes
+
+update-skills.sh runs `install-github-archive-reconcile-cron.sh --idempotent` on every box. SK6001 fixed the flag bug but defaulted the evidence folder to `$HOME/clawd/skill6-fix` everywhere. On Contabo Docker boxes `/home/node` is thrown away on every container recreate (only `/home/node/.openclaw` persists), so the nightly sweep folder could vanish and the job fail again. Hostinger keeps `/data`; its healthy job already uses `/data/clawd/skill6-fix`.
+
+- `tools/cc_board.py`: `resolve_evidence_base()` now picks the persistent default per platform after the `SKILL6_EVIDENCE_BASE_DIR` override: Hostinger (`/data/.openclaw` exists, `/data` not a symlink) `/data/clawd/skill6-fix`; Contabo (`$HOME` is `/home/node` and `~/.openclaw` exists) `~/.openclaw/clawd/skill6-fix`; Mac and everything else `$HOME/clawd/skill6-fix` (unchanged). New `cc_board.py evidence-base` prints it.
+- `scripts/install-github-archive-reconcile-cron.sh`: argument and `SKILL6_EVIDENCE_BASE` still win; otherwise it asks the one resolver above. An existing job pointing at a non-persistent `$HOME` path on Docker is repaired to the persistent path (`openclaw cron edit`); a healthy persistent job is left alone. On Contabo `~/clawd/skill6-fix` is linked (or its contents copied once, originals kept) to the persistent folder because the Command Center health probe still reads that path.
+- `tools/ghl_github_reconcile.py --sweep-base`: the sweep creates the folder if missing and never fails on one it cannot create.
+- Tests: `TestPersistentPathSK6002` (Mac, Hostinger, Contabo defaults, repair, left-alone, link, copy, overrides), `TestResolveEvidenceBase` platform cases, and the sweep creates-folder tests; 7 fail on the SK6001 code.
+- Migration: none beyond the normal update. Risk: LOW. Follow-up outside this repo: Command Center `resolveSkill6EvidenceBaseDir()` can adopt the same per-platform default so the Contabo link is no longer needed.
+
 ## [v27.1.14]  -  2026-10-12  -  Merge train: #1894 RRS001: remote-rescue workspace seed, TOOLS.md for registered agents,…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
@@ -16,7 +30,6 @@ Released by the merge train as one batch. Each merged pull request's own CHANGEL
 
 #### Files Changed
 - `15-blackceo-team-management/` (installer, engine, templates, QC), `14-google-workspace-integration/` (CORE_UPDATES.md, INSTALL.md, QC), `install.sh`, `update-skills.sh`, `AGENTS.md`, `scripts/apply-fleet-standards.sh`, four new `tests/unit/*.test.sh`.
-
 ## [v27.1.13]  -  2026-10-12  -  Merge train: #1892 SK6001: skill 06 reconcile-cron installer never takes a --flag as the…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

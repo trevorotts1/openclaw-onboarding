@@ -36,13 +36,19 @@
 #   -h | --help                       usage, exit 0
 #   --                                end of flags
 #   any other --flag                  logged and ignored (never the directory)
-# Directory precedence: positional/--evidence-base, $SKILL6_EVIDENCE_BASE,
-# $SKILL6_EVIDENCE_BASE_DIR (what tools/cc_board.py reads), then
-# $HOME/clawd/skill6-fix -- which is /data/clawd/skill6-fix on Hostinger
-# (HOME=/data), /home/node/clawd/skill6-fix on Contabo, ~/clawd/skill6-fix on a
-# Mac: the same place the builds write and the sweep reads. The directory is
-# created if missing. An existing job whose command carries a flag (or nothing)
-# after --sweep-base is repaired in place with `openclaw cron edit`.
+# Directory precedence: positional/--evidence-base, $SKILL6_EVIDENCE_BASE, then
+# tools/cc_board.py `evidence-base` (SK6002 -- the one resolver Command Center
+# reconcile also uses): $SKILL6_EVIDENCE_BASE_DIR, else the PERSISTENT path for
+# the platform: Mac $HOME/clawd/skill6-fix; Hostinger Docker
+# /data/clawd/skill6-fix; Contabo Docker $HOME/.openclaw/clawd/skill6-fix
+# (/home/node is thrown away on a container recreate, only ~/.openclaw
+# survives). The directory is created if missing (the sweep itself also
+# creates it). An existing job whose command carries a flag (or nothing) after
+# --sweep-base, or on Docker a non-persistent $HOME path, is repaired in place
+# with `openclaw cron edit`; a healthy persistent job is left alone. On Contabo
+# $HOME/clawd/skill6-fix is pointed at the persistent folder (symlink, or a
+# one-time non-destructive copy if it is already a real folder) because the
+# Command Center health probe still reads that path.
 #
 # EXIT CODES
 #   0  cron already present, or registered this run
@@ -100,12 +106,29 @@ CRON_TZ="$(printf '%s\n' "$ENTRY_JSON" | sed -n '3p')"
 CRON_COMMAND_TEMPLATE="$(printf '%s\n' "$ENTRY_JSON" | sed -n '4p')"
 
 # Substitute the evidence-base dir (precedence in the CLI header above).
-EVIDENCE_BASE="${EVIDENCE_ARG:-${SKILL6_EVIDENCE_BASE:-${SKILL6_EVIDENCE_BASE_DIR:-${HOME:+$HOME/clawd/skill6-fix}}}}"
+EVIDENCE_BASE="${EVIDENCE_ARG:-${SKILL6_EVIDENCE_BASE:-}}"
+if [[ -z "$EVIDENCE_BASE" ]]; then
+  EVIDENCE_BASE="$(python3 "$ROOT/tools/cc_board.py" evidence-base 2>/dev/null | tail -n 1)"
+  [[ -n "$EVIDENCE_BASE" ]] || EVIDENCE_BASE="${HOME:+$HOME/clawd/skill6-fix}"
+fi
 if [[ -z "$EVIDENCE_BASE" || "$EVIDENCE_BASE" == -* || "$EVIDENCE_BASE" == *[\"\$\`]* ]]; then
   _log "FAIL no usable evidence directory (got '${EVIDENCE_BASE}'; need a path with no quote, dollar or backtick that does not start with '-')"
   exit 2
 fi
 mkdir -p "$EVIDENCE_BASE" 2>/dev/null || _log "WARN could not create $EVIDENCE_BASE (the sweep treats a missing directory as nothing to do)"
+
+# SK6002 Contabo compatibility: Command Center reads $HOME/clawd/skill6-fix.
+# When the persistent folder lives under ~/.openclaw, make that path reach it.
+_legacy="${HOME:-}/clawd/skill6-fix"
+if [[ -n "${HOME:-}" && "$EVIDENCE_BASE" == "$HOME/.openclaw/"* && "$_legacy" != "$EVIDENCE_BASE" ]]; then
+  if [[ -L "$_legacy" ]]; then
+    :
+  elif [[ -d "$_legacy" ]]; then
+    cp -Rn "$_legacy/." "$EVIDENCE_BASE/" 2>/dev/null && _log "copied existing $_legacy into $EVIDENCE_BASE (originals kept)"
+  elif mkdir -p "$HOME/clawd" 2>/dev/null && ln -s "$EVIDENCE_BASE" "$_legacy" 2>/dev/null; then
+    _log "linked $_legacy -> $EVIDENCE_BASE"
+  fi
+fi
 CRON_COMMAND="${CRON_COMMAND_TEMPLATE//\$\{SKILL6_EVIDENCE_BASE\}/$EVIDENCE_BASE}"
 
 if ! command -v openclaw >/dev/null 2>&1; then
@@ -138,13 +161,15 @@ sys.exit(0 if any(j.get("name") == name for j in jobs) else 1)
 PYEOF
 }
 
-# SK6001 repair: print the id of an existing job whose command has a missing
-# or flag-shaped --sweep-base value (the "--idempotent" defect). Shape-agnostic:
-# scans every string in the job object. Prints nothing for a healthy job.
+# SK6001/SK6002 repair: print the id of an existing job that needs fixing:
+# its --sweep-base is missing or flag-shaped (the "--idempotent" defect), or it
+# points at a non-persistent $HOME path while the resolved folder lives under
+# $HOME/.openclaw (Contabo). Shape-agnostic: scans every string in the job
+# object. Prints nothing for a healthy job.
 _broken_job_id() {
-  OC_CRON_RAW="$(openclaw cron list --json 2>/dev/null)" python3 - "$CRON_NAME" <<'PYEOF' 2>/dev/null
+  OC_CRON_RAW="$(openclaw cron list --json 2>/dev/null)" python3 - "$CRON_NAME" "${HOME:-}" "$EVIDENCE_BASE" <<'PYEOF' 2>/dev/null
 import json, os, re, sys
-name = sys.argv[1]
+name, home, want = sys.argv[1], sys.argv[2].rstrip("/"), sys.argv[3]
 try:
     data = json.loads(os.environ.get("OC_CRON_RAW", ""))
 except Exception:
@@ -159,12 +184,18 @@ def strings(o):
     elif isinstance(o, list):
         for v in o:
             yield from strings(v)
+def stale(v):
+    if not v or v.startswith("-"):
+        return True
+    persist = home + "/.openclaw/"
+    return bool(home) and want.startswith(persist) and v != want \
+        and v.startswith(home + "/") and not v.startswith(persist)
 for j in jobs:
     if j.get("name") != name:
         continue
     for s in strings(j):
         m = re.search(r'--sweep-base(?:\s+|=)(\S*)', s)
-        if m and (not m.group(1).strip('"\'') or m.group(1).strip('"\'').startswith("-")):
+        if m and stale(m.group(1).strip('"\'')):
             print(j.get("id") or j.get("jobId") or "")
             sys.exit(0)
 PYEOF
