@@ -27,8 +27,14 @@ three things.
 
 2. **Compose `command: [bash, /home/node/.openclaw/scripts/container-startup.sh]`**, with
    [`container-startup.sh`](container-startup.sh) copied to
-   `<volume>/scripts/container-startup.sh`. It links `$HOME/.pm2` to `PM2_HOME` (moving a
-   stray folder aside), resurrects the saved pm2 list, then exec's the gateway.
+   `<volume>/scripts/container-startup.sh`. Copy [`../wait-gateway-owner-stale.sh`](../wait-gateway-owner-stale.sh)
+   beside it. The script links `$HOME/.pm2` to `PM2_HOME` (moving a stray folder aside), links
+   `$HOME/999-setup`, `$HOME/.claude` and `$HOME/.local` into `<volume>/persist-home/` (so a
+   recreate keeps them), waits for a dead gateway's owner heartbeat to go stale, then exec's the
+   gateway. In the background, only after the gateway answers `/healthz` 200 (cap
+   `GW_READY_CAP`, default 180 s), it resurrects the saved pm2 list and runs
+   `ghl-mcp-autostart.sh`: on openclaw 2026.10.1 an `openclaw` CLI call made while no gateway is
+   running takes the offline maintenance lock and the gateway dies at bootstrap.
 
 3. **`pm2 save` after the Command Center is started**, so `dump.pm2` in `PM2_HOME` lists
    `blackceo-command-center`. The Skill 32 installer does this. On an existing box, check

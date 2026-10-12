@@ -86,7 +86,9 @@ Order of operations inside the startup script:
 
 1. persistent roots ensured (section 2) and the recorded Headquarters flag
    echoed to `/data/.openclaw/logs/container-startup.log`;
-2. after `PM2_RESURRECT_DELAY` (default 45 s, so the gateway is warm),
+2. the boot patcher `hostinger-wrapper-patch.py` (if present) and
+   `wait-gateway-owner-stale.sh` (if present) run; then, in the background, once the
+   gateway answers `/healthz` 200 (cap `GW_READY_CAP`, default 180 s),
    `pm2 resurrect`;
 3. if `blackceo-command-center` is still absent from pm2 **and**
    `ecosystem.config.cjs` exists, `pm2 start ecosystem.config.cjs && pm2 save`;
