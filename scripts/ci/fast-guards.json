@@ -3270,5 +3270,39 @@
     ]
    }
   }
+ },
+ {
+  "name": "d18-d19-npm-ci-node-and-cron-agent-rebind-guard",
+  "was": "(new, D18/D19/D20)",
+  "script": "scripts/ci/fast-guards.d/d18-d19-npm-ci-node-and-cron-agent-rebind-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "38-conversational-ai-system/scripts/04-register-crons.sh",
+     "70-lean-core-file-system/scripts/install-weekly-cron.sh",
+     "70-lean-core-file-system/tests/test-install-weekly-cron.sh",
+     "70-lean-core-file-system/tests/fake-openclaw.py",
+     "scripts/test-d18-d19-npm-ci-node-and-cron-agent-rebind.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "32-command-center-setup/scripts/run-full-install.sh",
+     "38-conversational-ai-system/scripts/04-register-crons.sh",
+     "70-lean-core-file-system/scripts/install-weekly-cron.sh",
+     "70-lean-core-file-system/tests/test-install-weekly-cron.sh",
+     "70-lean-core-file-system/tests/fake-openclaw.py",
+     "scripts/test-d18-d19-npm-ci-node-and-cron-agent-rebind.sh"
+    ]
+   }
+  }
  }
 ]

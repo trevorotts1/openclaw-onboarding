@@ -1,3 +1,15 @@
+## [v27.1.17]  -  2026-10-12  -  D18 + D19 + D20: Command Center npm ci uses the Command Center node; skill 38 re-binds crons whose agent was removed; skill 70 weekly cron falls back to the box's own default fallbacks
+
+Three small fleet fixes, each at its root cause.
+
+- **D18 (skill 32 `run-full-install.sh`):** `cc_install_locked_dependencies` ran `npm ci` with whatever node was first on PATH, so `better-sqlite3` could be built for the wrong module ABI (Dr. Tola, Lyric Hawkins, Corey Sams: built for Node 26 while the server runs Node 24/25, database dead at the next restart). It now resolves node through `$DASHBOARD_DIR/scripts/lib/node-runtime.sh` and leads PATH with that node's directory for the `npm ci` subshell only. A checkout without the resolver, or a resolver failure, keeps the ambient node and logs a WARN.
+- **D19 (skill 38 `04-register-crons.sh`):** "already registered, skipping" never looked at the job's agent. An existing agent-message cron whose `agentId` is not in `agents.entries` / `agents.list` (a missing `agentId` counts as `main`) is now re-bound with `openclaw cron edit <id> --agent $ROUTING_AGENT_ID`. Healthy jobs and boxes with no readable roster are untouched. Seen on Monique Tucker: `agent is unavailable: main`.
+- **D20 (skill 70 `install-weekly-cron.sh`):** when the box has no OpenRouter twin, the weekly job was created with no `--fallbacks`. It now uses the box's own `agents.defaults.model.fallbacks` (only ids on the box's model list, never Anthropic/Claude, never the primary); with none, behavior is unchanged. Drift detection compares the full fallback list.
+
+Tests: `scripts/test-d18-d19-npm-ci-node-and-cron-agent-rebind.sh` (8 cases) and 3 new cases in `70-lean-core-file-system/tests/test-install-weekly-cron.sh`; wired as the `d18-d19-npm-ci-node-and-cron-agent-rebind-guard` fast guard. The new tests fail on the old scripts.
+
+Migration: none beyond the normal update. Risk: LOW.
+
 ## [v27.1.16]  -  2026-10-12  -  Merge train: #1899 D01: Command Center fast path fast-forwards only, never reset --hard…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

@@ -1566,8 +1566,23 @@ cc_security_preflight() {
 cc_install_locked_dependencies() {
   [[ -f "$DASHBOARD_DIR/package-lock.json" ]] || \
     fail_install "phase=6: package-lock.json missing; CC >=v7.1.0 requires its reviewed dependency lock"
+  # D18: build better-sqlite3 with the node the Command Center RUNS on (its own
+  # scripts/lib/node-runtime.sh), not whatever node is first on this shell's PATH
+  # (a Hostinger box's /data/.npm-global node 26 vs the server's node 24/25 gave
+  # NODE_MODULE_VERSION errors at the next restart). An older checkout without
+  # the resolver keeps the ambient node.
+  local cc_node_bin="" cc_node_path="$PATH"
+  if [[ -f "$DASHBOARD_DIR/scripts/lib/node-runtime.sh" ]]; then
+    cc_node_bin="$(bash "$DASHBOARD_DIR/scripts/lib/node-runtime.sh" 2>>"$LOG_FILE")" || cc_node_bin=""
+  fi
+  if [[ -n "$cc_node_bin" && -x "$cc_node_bin" ]]; then
+    cc_node_path="$(dirname "$cc_node_bin"):$PATH"
+    log "INFO" "phase=6: npm ci uses the Command Center node $cc_node_bin"
+  else
+    log "WARN" "phase=6: Command Center node-runtime.sh unavailable; npm ci uses the node on PATH"
+  fi
   log "INFO" "phase=6: npm ci from reviewed package-lock.json in $DASHBOARD_DIR"
-  if ! ( cd "$DASHBOARD_DIR" && npm ci --engine-strict --no-audit --no-fund >>"$LOG_FILE" 2>&1 ); then
+  if ! ( cd "$DASHBOARD_DIR" && PATH="$cc_node_path" npm ci --engine-strict --no-audit --no-fund >>"$LOG_FILE" 2>&1 ); then
     fail_install "phase=6: npm ci failed; dependencies were not installed successfully; refusing migrations/deployment"
   fi
 }
