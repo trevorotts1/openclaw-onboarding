@@ -61,3 +61,16 @@ export function ownsPath(clientId, path) {
   const parts = path.replace(/^\/+/, '').split('/');
   return parts[0] === 'clients' && parts[1] === clientId;
 }
+
+// ---------------------------------------------------------------------------
+// The stored last-check-in key (section 3.10: "Last check-in")
+// ---------------------------------------------------------------------------
+
+/**
+ * THE one spelling of the check-in record's key. inbox.js writes it (checkIn),
+ * options.js reads it (lastCheckIn), and nothing else may spell `checkin:<id>`
+ * by hand — that is what keeps the page and the check-in on the same record.
+ */
+export function checkinKey(clientId) {
+  return `checkin:${clientId}`;
+}

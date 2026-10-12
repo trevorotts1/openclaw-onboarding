@@ -16,9 +16,14 @@
 #       THROWAWAY temp config in $TMPDIR (deleted on exit) and passes it to
 #       npx wrangler via --config. The toml itself is never rewritten; nothing
 #       real ever lands in git.
-#     - The token VALUE is env-only (CLOUDFLARE_DRAMA_STUDIO_API_TOKEN). It is
-#       forwarded to CLOUDFLARE_API_TOKEN (wrangler's native auth var) per
-#       call. No token value is ever printed.
+#     - The token VALUE is env-only. CLOUDFLARE_DRAMA_STUDIO_API_TOKEN is the
+#       DEPLOY token: forwarded to CLOUDFLARE_API_TOKEN (wrangler's native auth
+#       var) per call, it covers account/zone resolution, the zone guard, R2,
+#       the secrets and the Worker deploy. A SECOND, optional token
+#       STUDIO_KV_DNS_API_TOKEN (manifest env.kv_dns_token_var) covers the KV
+#       namespace and the DNS steps; unset or empty it FALLS BACK to the deploy
+#       token. No token value is ever printed - only variable NAMES and HTTP
+#       status codes.
 #     - Secret values are read from the environment ONLY and piped to wrangler
 #       stdin. They are never echoed.
 #
@@ -35,21 +40,36 @@
 #   No real zone/account id is committed; the intended-account pin is supplied
 #   by the operator at deploy time (ids are public, secrets are not).
 #
+#   PREFLIGHT (DEPLOY-2TOKEN, READ-ONLY, runs before ANY write): every step is
+#   probed with ITS ASSIGNED token, GET only -
+#     Workers scripts list, Worker secrets list (when the Worker exists),
+#     R2 buckets list, R2 lifecycle GET (when the bucket exists)
+#       -> the DEPLOY token;
+#     KV namespaces list, zone DNS records list
+#       -> the KV/DNS token (or the deploy token when it falls back).
+#   Any non-200 FAILS the deploy before any mutation, with ONE line naming the
+#   step and the variable. --dry-run with a token runs the same probe.
+#
 #   OPERATIONS:
-#     deploy [VERSION]  resolve account+zone, run the zone guard, ensure the R2
-#                       bucket, resolve/create the DS_STUDIO KV namespace, set
-#                       45-day lifecycle retention on the project prefix, set the
-#                       required secrets, deploy the Worker, ensure the proxied
-#                       CNAME for the route host.
+#     deploy [VERSION]  resolve account+zone, run the zone guard, run the
+#                       read-only PREFLIGHT, ensure the R2 bucket, resolve/create
+#                       the DS_STUDIO KV namespace, set 45-day lifecycle
+#                       retention on the project prefix, set the required
+#                       secrets, deploy the Worker, ensure the proxied CNAME for
+#                       the route host.
 #     status            show the resolved config (no mutations).
-#     --dry-run         validate + plan every step WITHOUT any wrangler or API
-#                       call. Honest: each step prints PLAN, the guard still
-#                       fails hard on a wrong zone, unresolved ids report as
-#                       unresolved and never as a pass.
+#     --dry-run         plan every step: no wrangler call and no mutation, ever.
+#                       With a token set it runs the SAME read-only preflight and
+#                       prints its result; with no token it plans the preflight.
+#                       Honest: each step prints PLAN, the guard still fails hard
+#                       on a wrong zone, unresolved ids report as unresolved and
+#                       never as a pass.
 #     --self-test       offline proof (no token, no network): the guard refuses
-#                       a wrong zone/account, --dry-run is PLAN-only, and each
-#                       fixed deploy defect (absolute main, KV id, account
-#                       resolution, required secrets, DNS) has a case.
+#                       a wrong zone/account, --dry-run is PLAN-only, each fixed
+#                       deploy defect (absolute main, KV id, account resolution,
+#                       required secrets, DNS) has a case, and each DEPLOY-2TOKEN
+#                       case (wrong KV token fails in preflight with zero write
+#                       calls; fallback; split token) has a case.
 #
 # USAGE:
 #   ./deploy.sh --dry-run deploy
@@ -80,6 +100,13 @@ REQUIRED_SECRET_NAMES=""
 OPTIONAL_SECRET_NAMES=""
 WRANGLER_TOML_REL=""
 TOKEN_VAR=""
+# DEPLOY-2TOKEN. KV_DNS_TOKEN_VAR is the VARIABLE NAME (manifest
+# env.kv_dns_token_var, default STUDIO_KV_DNS_API_TOKEN) that the KV namespace
+# and the DNS steps authenticate with; unset or empty it falls back to
+# TOKEN_VAR. CF_TOKEN_VAR names the variable the CURRENT cf_api call uses;
+# cf_api_kvdns repoints it for its two steps.
+KV_DNS_TOKEN_VAR=""
+CF_TOKEN_VAR=""
 
 # Zone-guard inputs. Target values come from the environment when testing the
 # guard offline; a live run resolves them from the Cloudflare API.
@@ -90,15 +117,18 @@ INTENDED_ACCOUNT_ID="${STUDIO_INTENDED_ACCOUNT_ID:-}"
 FOREIGN_ZONE_ID="${STUDIO_FOREIGN_ZONE_ID:-}"
 
 DRY_RUN=0
+PREFLIGHT_PLANNED=0
 R_ZONE_ID=""
 R_ACCOUNT_ID=""
 R_KV_ID=""
 TMP_CONFIG=""
 TMP_DIR=""
+PROBE_BODY_FILE=""
 
 cleanup() {
   if [ -n "$TMP_CONFIG" ] && [ -f "$TMP_CONFIG" ]; then rm -f "$TMP_CONFIG"; fi
   if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then rmdir "$TMP_DIR" 2>/dev/null || true; fi
+  if [ -n "$PROBE_BODY_FILE" ] && [ -f "$PROBE_BODY_FILE" ]; then rm -f "$PROBE_BODY_FILE"; fi
   return 0
 }
 trap cleanup EXIT
@@ -135,6 +165,7 @@ load_manifest() {
       secrets_optional)    OPTIONAL_SECRET_NAMES="$v" ;;
       wrangler_toml)       WRANGLER_TOML_REL="$v" ;;
       token_var)           TOKEN_VAR="$v" ;;
+      kv_dns_token_var)    KV_DNS_TOKEN_VAR="$v" ;;
     esac
   done < <(node -e '
     const fs = require("fs");
@@ -157,6 +188,7 @@ load_manifest() {
       ["secrets_optional",   names(secrets.filter(s => s && !s.required))],
       ["wrangler_toml",      (m.env && m.env.wrangler_toml) || ""],
       ["token_var",          (m.env && m.env.token_var) || ""],
+      ["kv_dns_token_var",   (m.env && m.env.kv_dns_token_var) || ""],
     ];
     for (const [k, v] of rows) process.stdout.write(k + "\t" + v + "\n");
   ' "$MANIFEST")
@@ -164,6 +196,10 @@ load_manifest() {
   [ -n "$WORKER_NAME" ]         || die "manifest missing worker.name"
   [ -n "$INTENDED_ZONE_NAME" ]  || die "manifest missing cloudflare.intended_zone_name"
   [ -n "$TOKEN_VAR" ]           || die "manifest missing env.token_var"
+  # DEPLOY-2TOKEN: the KV/DNS token is OPTIONAL. The manifest names it; when it
+  # names none the documented default stands. Either way an unset or empty
+  # VALUE falls back to the deploy token - see kv_dns_token_var.
+  [ -n "$KV_DNS_TOKEN_VAR" ]    || KV_DNS_TOKEN_VAR="STUDIO_KV_DNS_API_TOKEN"
   # Default the target zone name to the intended one (an operator may override
   # it only to prove the guard refuses a different name).
   [ -n "$TARGET_ZONE_NAME" ] || TARGET_ZONE_NAME="$INTENDED_ZONE_NAME"
@@ -213,19 +249,23 @@ wr() {
 # ---------------------------------------------------------------------------
 cf_api() {
   # cf_api <method> <path> [<json-body>]  -> prints JSON body; dies on non-200.
+  # It authenticates with the variable named by $CF_TOKEN_VAR (the deploy token
+  # by default); cf_api_kvdns repoints that at the KV/DNS variable.
   # Dry-run is strictly offline: no curl, no token.
   local method="$1" path="$2" body="${3:-}"
+  local tvar="${CF_TOKEN_VAR:-$TOKEN_VAR}"
+  [ -n "$tvar" ] || die "cf_api: no token variable resolved (internal error)"
   if [ "$DRY_RUN" -eq 1 ]; then return 0; fi
   local code out
   out="$(mktemp "${TMPDIR:-/tmp}/studio-cf.XXXXXX")"
   if [ -n "$body" ]; then
     code="$(curl -sS -o "$out" -w '%{http_code}' -X "$method" \
-      -H "Authorization: Bearer ${!TOKEN_VAR:-}" \
+      -H "Authorization: Bearer ${!tvar:-}" \
       -H "Content-Type: application/json" \
       --data "$body" "$CF_API$path" 2>/dev/null || echo 000)"
   else
     code="$(curl -sS -o "$out" -w '%{http_code}' -X "$method" \
-      -H "Authorization: Bearer ${!TOKEN_VAR:-}" \
+      -H "Authorization: Bearer ${!tvar:-}" \
       -H "Content-Type: application/json" \
       "$CF_API$path" 2>/dev/null || echo 000)"
   fi
@@ -234,6 +274,15 @@ cf_api() {
     die "Cloudflare API $method $path returned HTTP $code: $resp"
   fi
   printf '%s\n' "$resp"
+}
+
+# Same call, authenticated with the KV/DNS token variable. Used by the KV
+# namespace and the DNS steps only. Prints no value.
+cf_api_kvdns() {
+  local saved="${CF_TOKEN_VAR:-}"
+  CF_TOKEN_VAR="$(kv_dns_token_var)"
+  cf_api "$@"
+  CF_TOKEN_VAR="$saved"
 }
 
 json_field() {
@@ -338,6 +387,120 @@ require_guarded_zone() {
 }
 
 # ---------------------------------------------------------------------------
+# DEPLOY-2TOKEN: per-step token + READ-ONLY preflight
+# ---------------------------------------------------------------------------
+# The KV-namespace and DNS steps need KV namespaces read/write and zone DNS
+# records read/write. The deploy token may not carry those scopes, so a SECOND,
+# optional variable (manifest env.kv_dns_token_var, default
+# STUDIO_KV_DNS_API_TOKEN) may cover them. Unset or empty, both steps FALL BACK
+# to the deploy token. Only variable NAMES and HTTP codes are ever printed.
+kv_dns_token_var() {
+  # Prints the variable NAME the KV/DNS steps authenticate with.
+  if [ -n "$KV_DNS_TOKEN_VAR" ] && [ -n "${!KV_DNS_TOKEN_VAR:-}" ]; then
+    printf '%s' "$KV_DNS_TOKEN_VAR"
+  else
+    printf '%s' "$TOKEN_VAR"
+  fi
+}
+
+kv_dns_token_label() {
+  # The name an error line shows; it says when the deploy token was used, so the
+  # operator knows which variable to fix.
+  if [ -n "$KV_DNS_TOKEN_VAR" ] && [ -n "${!KV_DNS_TOKEN_VAR:-}" ]; then
+    printf '%s' "$KV_DNS_TOKEN_VAR"
+  else
+    printf '%s (falling back to %s)' "$KV_DNS_TOKEN_VAR" "$TOKEN_VAR"
+  fi
+}
+
+# GET only. Prints the HTTP status code; the body lands in $PROBE_BODY_FILE.
+# Never mutates anything and never prints a token value.
+cf_probe_get() {
+  local tvar="$1" path="$2"
+  local code
+  code="$(curl -sS -o "$PROBE_BODY_FILE" -w '%{http_code}' -X GET \
+    -H "Authorization: Bearer ${!tvar:-}" \
+    -H "Content-Type: application/json" \
+    "$CF_API$path" 2>/dev/null || echo 000)"
+  printf '%s' "$code"
+}
+
+probe() {
+  # probe <step-name> <token-var> <token-label> <path> <needs>
+  # Read-only. Dies - before any write - on a non-200, with ONE line naming the
+  # step and the variable. In --dry-run with no token at all it only plans.
+  local stepname="$1" tvar="$2" label="$3" path="$4" need="$5"
+  if [ "$PREFLIGHT_PLANNED" -eq 1 ]; then
+    say "PLAN  preflight: $stepname GET $path (token $tvar)"
+    return 0
+  fi
+  local code
+  code="$(cf_probe_get "$tvar" "$path")"
+  if [ "$code" != "200" ]; then
+    die "preflight: $stepname needs a token with $need; $label got HTTP $code"
+  fi
+  say "preflight: $stepname GET $path -> 200 (token $tvar)"
+}
+
+preflight() {
+  # Read-only probe of every step's scope, with each step's ASSIGNED token,
+  # before ANY write. Fails the deploy on the first scope that is missing.
+  step "preflight: read-only scope probe (GET only), before any write"
+  local acct="${R_ACCOUNT_ID:-<account>}" zoneid="${R_ZONE_ID:-<zone>}"
+  local scripts="" buckets="" kvtvar kvlabel
+  kvtvar="$(kv_dns_token_var)"
+  kvlabel="$(kv_dns_token_label)"
+  PREFLIGHT_PLANNED=0
+  # No deploy token and a dry-run: there is nothing to authenticate with, so the
+  # preflight is PLANNED, never faked. Keyed on the DEPLOY token only - it is the
+  # token every non-KV/DNS step and the fallback need.
+  if [ "$DRY_RUN" -eq 1 ] && [ -z "${!TOKEN_VAR:-}" ]; then
+    PREFLIGHT_PLANNED=1
+  fi
+  [ -n "$PROBE_BODY_FILE" ] || PROBE_BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/studio-probe.XXXXXX")"
+
+  # 1. Workers scripts list (deploy token) - also says whether the Worker exists.
+  probe "worker-deploy" "$TOKEN_VAR" "$TOKEN_VAR" \
+    "/accounts/$acct/workers/scripts?per_page=100" "Workers scripts read/write"
+  scripts="$(cat "$PROBE_BODY_FILE" 2>/dev/null || true)"
+
+  # 2. Worker secrets list (deploy token) - only when the Worker exists.
+  if [ "$PREFLIGHT_PLANNED" -eq 1 ] || printf '%s' "$scripts" | grep -q "\"$WORKER_NAME\""; then
+    probe "worker-secrets" "$TOKEN_VAR" "$TOKEN_VAR" \
+      "/accounts/$acct/workers/scripts/$WORKER_NAME/secrets" "Worker secrets read/write"
+  else
+    say "preflight: worker-secrets not probed - Worker '$WORKER_NAME' is not deployed yet; the scripts probe covers this token's scope"
+  fi
+
+  # 3. R2 buckets list (deploy token) - also says whether the bucket exists.
+  probe "r2-bucket" "$TOKEN_VAR" "$TOKEN_VAR" \
+    "/accounts/$acct/r2/buckets" "R2 buckets read/write"
+  buckets="$(cat "$PROBE_BODY_FILE" 2>/dev/null || true)"
+
+  # 4. R2 lifecycle GET (deploy token) - only when the bucket exists.
+  if [ "$PREFLIGHT_PLANNED" -eq 1 ] || printf '%s' "$buckets" | grep -q "\"$BUCKET_NAME\""; then
+    probe "r2-lifecycle" "$TOKEN_VAR" "$TOKEN_VAR" \
+      "/accounts/$acct/r2/buckets/$BUCKET_NAME/lifecycle" "R2 lifecycle read/write"
+  else
+    say "preflight: r2-lifecycle not probed - bucket '$BUCKET_NAME' does not exist yet; the buckets probe covers this token's scope"
+  fi
+
+  # 5. KV namespaces list (KV/DNS token, or the deploy token when it falls back).
+  probe "kv-namespace" "$kvtvar" "$kvlabel" \
+    "/accounts/$acct/storage/kv/namespaces?per_page=100" "KV namespaces read/write"
+
+  # 6. Zone DNS records list (KV/DNS token, or the deploy token when it falls back).
+  probe "dns" "$kvtvar" "$kvlabel" \
+    "/zones/$zoneid/dns_records?per_page=1" "zone DNS records read/write"
+
+  if [ "$PREFLIGHT_PLANNED" -eq 1 ]; then
+    say "preflight: PLANNED (--dry-run with no token; no probe performed, no write, no token value printed)"
+  else
+    say "preflight: PASS (read-only; no write performed, no token value printed)"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Provision: R2 bucket + KV namespace + 45-day project-object retention
 # ---------------------------------------------------------------------------
 ensure_bucket() {
@@ -383,7 +546,7 @@ ensure_kv_namespace() {
   [ -n "$R_ACCOUNT_ID" ] || die "kv-namespace: no resolved account id — cannot resolve '$KV_BINDING'"
   local id
   # Find by title via the API (idempotent).
-  id="$(cf_api GET "/accounts/$R_ACCOUNT_ID/storage/kv/namespaces?per_page=100" | node -e '
+  id="$(cf_api_kvdns GET "/accounts/$R_ACCOUNT_ID/storage/kv/namespaces?per_page=100" | node -e '
     let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
       let j; try { j = JSON.parse(s); } catch { process.stdout.write(""); process.exit(0); }
       if (!j || !Array.isArray(j.result)) { process.stdout.write(""); process.exit(0); }
@@ -398,7 +561,7 @@ ensure_kv_namespace() {
   fi
   # Create only if absent.
   say "kv-namespace: creating '$KV_BINDING'"
-  id="$(cf_api POST "/accounts/$R_ACCOUNT_ID/storage/kv/namespaces" \
+  id="$(cf_api_kvdns POST "/accounts/$R_ACCOUNT_ID/storage/kv/namespaces" \
         "$(node -e 'process.stdout.write(JSON.stringify({title: process.argv[1]}))' "$KV_TITLE")" \
       | json_field "result.id")"
   [ -n "$id" ] || die "kv-namespace: could not resolve a namespace id for '$KV_BINDING' (empty)"
@@ -422,7 +585,7 @@ ensure_dns() {
   # Hard gate: this step writes only into the guarded BlackCEO zone.
   require_guarded_zone "dns"
   local existing
-  existing="$(cf_api GET "/zones/$R_ZONE_ID/dns_records?type=CNAME&name=$ROUTE_HOST&per_page=1" \
+  existing="$(cf_api_kvdns GET "/zones/$R_ZONE_ID/dns_records?type=CNAME&name=$ROUTE_HOST&per_page=1" \
               | json_field "result.0.id")"
   if [ -n "$existing" ]; then
     say "dns: CNAME $ROUTE_HOST already exists — skipping create"
@@ -431,7 +594,7 @@ ensure_dns() {
   local body
   body="$(node -e 'process.stdout.write(JSON.stringify({type:"CNAME",name:process.argv[1],content:process.argv[2],proxied:true}))' \
           "$ROUTE_HOST" "$INTENDED_ZONE_NAME")"
-  cf_api POST "/zones/$R_ZONE_ID/dns_records" "$body" >/dev/null
+  cf_api_kvdns POST "/zones/$R_ZONE_ID/dns_records" "$body" >/dev/null
   say "dns: created proxied CNAME $ROUTE_HOST -> $INTENDED_ZONE_NAME"
 }
 
@@ -760,6 +923,129 @@ self_test() {
     pass=0
   fi
 
+
+  # ── DEPLOY-2TOKEN: per-step token + READ-ONLY preflight ────────────────────
+
+  # PT-a: a KV probe that answers 401 fails the run IN PREFLIGHT, names the step
+  #       and the KV/DNS variable, and records ZERO write calls.
+  local wfile abody; wfile="$(mktemp "${TMPDIR:-/tmp}/studio-pt-a.XXXXXX")"
+  abody="$(mktemp "${TMPDIR:-/tmp}/studio-pt-a-body.XXXXXX")"
+  _t_pt_a() {
+    cf_probe_get() {
+      case "$2" in
+        */storage/kv/namespaces*)
+          printf '{"success":false,"errors":[{"code":10000,"message":"Authentication error"}]}' > "$PROBE_BODY_FILE"
+          printf '401' ;;
+        *)
+          printf '{"success":true,"result":[{"id":"drama-studio-mini-app","name":"zhw-drama-studio"}]}' > "$PROBE_BODY_FILE"
+          printf '200' ;;
+      esac
+    }
+    cf_api() { printf 'WRITE %s %s\n' "$1" "$2" >> "$ST_WRITE_FILE"; printf '{}'; }
+    wr()     { printf 'WRITE wrangler %s\n' "$*" >> "$ST_WRITE_FILE"; return 0; }
+    PROBE_BODY_FILE="$ST_BODY_FILE"
+    DRY_RUN=0
+    TOKEN_VAR="CLOUDFLARE_DRAMA_STUDIO_API_TOKEN"
+    KV_DNS_TOKEN_VAR="STUDIO_KV_DNS_API_TOKEN"
+    STUDIO_KV_DNS_API_TOKEN="stub-wrong-kv-token"
+    R_ACCOUNT_ID="acct-st"; R_ZONE_ID="zone-st"
+    WORKER_NAME="drama-studio-mini-app"; BUCKET_NAME="zhw-drama-studio"
+    preflight
+    # Only reached when the preflight WRONGLY passed: these are the steps that
+    # must never run once a scope probe has failed.
+    ensure_bucket
+    ensure_retention
+    ensure_kv_namespace
+    set_secrets
+    deploy_worker
+    ensure_dns
+  }
+  ST_WRITE_FILE="$wfile"; ST_BODY_FILE="$abody"
+  if ( _t_pt_a ) >"$out" 2>&1; then
+    warn "SELFTEST FAIL (PT-a): a wrong KV token did not fail the deploy in preflight"
+    pass=0
+  elif ! grep -q "preflight: kv-namespace" "$out"; then
+    warn "SELFTEST FAIL (PT-a): the failure line does not name the kv-namespace step"
+    pass=0
+  elif ! grep -q "STUDIO_KV_DNS_API_TOKEN" "$out" || ! grep -q "HTTP 401" "$out"; then
+    warn "SELFTEST FAIL (PT-a): the failure line does not name the token variable and the HTTP code"
+    pass=0
+  elif [ -s "$wfile" ]; then
+    warn "SELFTEST FAIL (PT-a): a write call was recorded around a failed preflight (see $wfile)"
+    pass=0
+  else
+    say "SELFTEST OK (PT-a): a wrong KV token fails in preflight naming kv-namespace and STUDIO_KV_DNS_API_TOKEN, with zero write calls"
+  fi
+  rm -f "$wfile" "$abody"
+
+  # Shared green probe stub for PT-b/PT-c: records the token VARIABLE, its
+  # (stub) value and the path of every probe, and answers 200 with a body that
+  # says both the Worker and the bucket already exist.
+  _t_pt_green() {
+    cf_probe_get() {
+      printf '%s %s %s\n' "$1" "${!1:-}" "$2" >> "$ST_PROBE_FILE"
+      printf '{"success":true,"result":[{"id":"drama-studio-mini-app","name":"zhw-drama-studio"}]}' > "$PROBE_BODY_FILE"
+      printf '200'
+    }
+    PROBE_BODY_FILE="$ST_BODY_FILE"
+    DRY_RUN=0
+    TOKEN_VAR="CLOUDFLARE_DRAMA_STUDIO_API_TOKEN"
+    KV_DNS_TOKEN_VAR="STUDIO_KV_DNS_API_TOKEN"
+    R_ACCOUNT_ID="acct-st"; R_ZONE_ID="zone-st"
+    WORKER_NAME="drama-studio-mini-app"; BUCKET_NAME="zhw-drama-studio"
+  }
+
+  # PT-b: STUDIO_KV_DNS_API_TOKEN unset -> the KV and DNS probes FALL BACK to
+  #       the deploy token; every probe uses it.
+  local pfile bfile; pfile="$(mktemp "${TMPDIR:-/tmp}/studio-pt-b.XXXXXX")"
+  bfile="$(mktemp "${TMPDIR:-/tmp}/studio-pt-b-body.XXXXXX")"
+  _t_pt_b() {
+    _t_pt_green
+    unset STUDIO_KV_DNS_API_TOKEN
+    CLOUDFLARE_DRAMA_STUDIO_API_TOKEN="stub-deploy-token"
+    preflight
+  }
+  ST_PROBE_FILE="$pfile"; ST_BODY_FILE="$bfile"
+  if ( _t_pt_b ) >"$out" 2>&1 \
+     && [ "$(grep -c . "$pfile")" = "6" ] \
+     && [ "$(grep -c '^CLOUDFLARE_DRAMA_STUDIO_API_TOKEN stub-deploy-token ' "$pfile")" = "6" ] \
+     && grep -q '/storage/kv/namespaces' "$pfile" \
+     && grep -q '/dns_records' "$pfile"; then
+    say "SELFTEST OK (PT-b): with STUDIO_KV_DNS_API_TOKEN unset, all six probes (KV namespace and DNS included) used CLOUDFLARE_DRAMA_STUDIO_API_TOKEN"
+  else
+    warn "SELFTEST FAIL (PT-b): the KV/DNS steps did not fall back to CLOUDFLARE_DRAMA_STUDIO_API_TOKEN (see $pfile)"
+    pass=0
+  fi
+  rm -f "$pfile" "$bfile"
+
+  # PT-c: both tokens set -> the KV namespace and the DNS probes use
+  #       STUDIO_KV_DNS_API_TOKEN; every other probe uses the deploy token.
+  local sfile cbody; sfile="$(mktemp "${TMPDIR:-/tmp}/studio-pt-c.XXXXXX")"
+  cbody="$(mktemp "${TMPDIR:-/tmp}/studio-pt-c-body.XXXXXX")"
+  _t_pt_c() {
+    _t_pt_green
+    unset STUDIO_KV_DNS_API_TOKEN
+    # These two are read through indirect expansion (${!KV_DNS_TOKEN_VAR}); they
+    # are exported so their "external input" nature is explicit.
+    export STUDIO_KV_DNS_API_TOKEN="stub-kv-token"
+    export CLOUDFLARE_DRAMA_STUDIO_API_TOKEN="stub-deploy-token"
+    preflight
+  }
+  ST_PROBE_FILE="$sfile"; ST_BODY_FILE="$cbody"
+  if ( _t_pt_c ) >"$out" 2>&1 \
+     && [ "$(grep -c '^STUDIO_KV_DNS_API_TOKEN stub-kv-token ' "$sfile")" = "2" ] \
+     && grep -q '^STUDIO_KV_DNS_API_TOKEN stub-kv-token /accounts/acct-st/storage/kv/namespaces' "$sfile" \
+     && grep -q '^STUDIO_KV_DNS_API_TOKEN stub-kv-token /zones/zone-st/dns_records' "$sfile" \
+     && [ "$(grep -c '^CLOUDFLARE_DRAMA_STUDIO_API_TOKEN stub-deploy-token ' "$sfile")" -ge 2 ] \
+     && ! grep -q '^CLOUDFLARE_DRAMA_STUDIO_API_TOKEN stub-deploy-token /accounts/acct-st/storage/kv' "$sfile" \
+     && ! grep -q '^CLOUDFLARE_DRAMA_STUDIO_API_TOKEN stub-deploy-token /zones/' "$sfile"; then
+    say "SELFTEST OK (PT-c): with both tokens set, the KV namespace and DNS probes used STUDIO_KV_DNS_API_TOKEN and every other probe used the deploy token"
+  else
+    warn "SELFTEST FAIL (PT-c): the step-to-token split is wrong (see $sfile)"
+    pass=0
+  fi
+  rm -f "$sfile" "$cbody"
+
   rm -f "$out"
   if [ "$pass" -eq 1 ]; then say "U4 deploy self-test: PASS"; exit 0; fi
   die "U4 deploy self-test: FAIL"
@@ -775,13 +1061,25 @@ USAGE:
   ./deploy.sh [--dry-run] status
   ./deploy.sh --self-test
 
-  deploy      resolve account+zone, run the zone guard, ensure the R2 bucket,
-              set 45-day project-object retention, set the two secrets, deploy
-              the Worker. (The real deploy is a separate, authorized step.)
+  deploy      resolve account+zone, run the zone guard, run the READ-ONLY
+              preflight (one GET per step, each with that step's own token),
+              then ensure the R2 bucket, set 45-day project-object retention,
+              set the secrets, deploy the Worker and ensure the DNS record.
+              (The real deploy is a separate, authorized step.)
   status      show the resolved config. No mutations.
-  --dry-run   validate + plan WITHOUT any wrangler or API call. Honest: PLAN
-              per step, guards still fail hard on a wrong zone.
-  --self-test offline guard proof (no token, no network).
+  --dry-run   plan WITHOUT any wrangler call and without any mutation. With a
+              token set it also runs the read-only preflight; without one it
+              plans the preflight. Honest: PLAN per step, guards still fail
+              hard on a wrong zone.
+  --self-test offline guard + preflight proof (no token, no network).
+
+TOKENS (names only, never values):
+  CLOUDFLARE_DRAMA_STUDIO_API_TOKEN  the deploy token: account/zone resolution,
+                                     the zone guard, R2, the secrets and the
+                                     Worker deploy.
+  STUDIO_KV_DNS_API_TOKEN            OPTIONAL. Covers the KV namespace and the
+                                     DNS steps. Unset or empty it falls back to
+                                     the deploy token.
 
 ZONE GUARD: refuses any zone that is not the intended BlackCEO zone
 (zerohumanworkforce.com by name, plus a foreign-zone-id landmine and an
@@ -803,6 +1101,7 @@ main() {
   [ -n "$cmd" ] || { usage; exit 1; }
 
   load_manifest
+  CF_TOKEN_VAR="$TOKEN_VAR"
   require_files
   require_wrangler
   if [ "$DRY_RUN" -eq 0 ]; then require_token; fi
@@ -814,6 +1113,7 @@ main() {
     status) cmd_status ;;
     deploy)
       say "deploy: worker=$WORKER_NAME route=$ROUTE_HOST"
+      preflight
       ensure_bucket
       ensure_retention
       ensure_kv_namespace

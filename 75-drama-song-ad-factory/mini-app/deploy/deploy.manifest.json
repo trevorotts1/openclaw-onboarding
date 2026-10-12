@@ -32,6 +32,10 @@
   ],
   "env": {
     "token_var": "CLOUDFLARE_DRAMA_STUDIO_API_TOKEN",
+    "token_var_note": "The DEPLOY token: account/zone resolution, the zone guard, R2, the secret puts and the Worker deploy. Read from the environment only; no value belongs in this file.",
+    "kv_dns_token_var": "STUDIO_KV_DNS_API_TOKEN",
+    "kv_dns_token_fallback": "env.token_var",
+    "kv_dns_token_note": "OPTIONAL. Covers the KV-namespace and the DNS steps (they need KV namespaces read/write and zone DNS records read/write, which the deploy token may not carry). Unset or empty it FALLS BACK to env.token_var. Names and HTTP codes are printed; values never are.",
     "wrangler_toml": "worker/wrangler.toml",
     "schema_sql": "worker/schema.sql"
   }
