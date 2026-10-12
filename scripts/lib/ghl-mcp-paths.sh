@@ -165,7 +165,9 @@ ghl_mcp_log_dir() {
   case "${1:-}" in
     vps) printf '%s' "$(ghl_mcp_data_parent)/logs" ;;
     mac) printf '%s' "${HOME:-}/Library/Logs/ghl-mcp" ;;
-    *)   printf '%s' "${HOME:-}/logs" ;;
+    # linux-home (Contabo container): $HOME is thrown away on a recreate, the
+    # OpenClaw root is the persisted bind mount. Logs live under it.
+    *)   printf '%s' "$(ghl_mcp_openclaw_root)/logs/ghl-mcp" ;;
   esac
 }
 

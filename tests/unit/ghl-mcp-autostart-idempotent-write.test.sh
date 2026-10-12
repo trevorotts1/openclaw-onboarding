@@ -80,6 +80,9 @@ fi
 
 GUARD_FN="$TMP/guard-fn.sh"
 {
+  # gw_up is the D03 gateway-up gate; this test is about the write guard, so
+  # the gateway is "up" here. tests/unit/ghl-mcp-gateway-guard.test.sh owns gw_up.
+  echo 'gw_up() { return 0; }'
   echo 'guard_under_test() {'
   cat "$GUARD_BODY"
   echo '}'

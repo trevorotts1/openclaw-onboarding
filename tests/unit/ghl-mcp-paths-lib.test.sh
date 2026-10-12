@@ -111,8 +111,8 @@ _stamp "$BOX1/.openclaw/mcp-servers/ghl-community-mcp"
 _eq "(1a) a HOME-layout Linux box is linux-home, never mac" "linux-home" "$(sed -n 1p "$TMP_ROOT/out1")"
 _eq "(1b) the install resolves under the OpenClaw root (survives a container recreate)" \
     "$BOX1/.openclaw/mcp-servers/ghl-community-mcp" "$(sed -n 2p "$TMP_ROOT/out1")"
-_eq "(1c) linux-home logs go to \$HOME/logs, not \$HOME/Library/Logs" \
-    "$BOX1/logs" "$(sed -n 3p "$TMP_ROOT/out1")"
+_eq "(1c) linux-home logs go under the persistent OpenClaw root (D07), not throwaway \$HOME/logs" \
+    "$BOX1/.openclaw/logs/ghl-mcp" "$(sed -n 3p "$TMP_ROOT/out1")"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. A pre-existing box whose ONLY install is the legacy $HOME/mcp-servers tree.

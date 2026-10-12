@@ -319,6 +319,13 @@ jobs:
           chmod +x tests/unit/ghl-mcp-paths-lib.test.sh
           bash tests/unit/ghl-mcp-paths-lib.test.sh
 
+      # D03 + D07: no openclaw CLI call while the gateway is down; persistent
+      # probe log dir and a probe cron that creates it.
+      - name: Run gateway-up guard and persistent log dir test (D03, D07)
+        run: |
+          chmod +x tests/unit/ghl-mcp-gateway-guard.test.sh
+          bash tests/unit/ghl-mcp-gateway-guard.test.sh
+
       # v21.6.0 / R4. Mutation proof in BOTH directions: a correct installed
       # service must PASS and each single misconfiguration must FAIL. A gate
       # that only ever passes is what shipped in v21.5.0.
