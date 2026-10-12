@@ -13,7 +13,7 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
-## v27.1.14 - 2026-10-12 - fix: reconcile-cron evidence folder lives on the persistent volume on Docker boxes (SK6002)
+## v27.1.15 - 2026-10-12 - fix: reconcile-cron evidence folder lives on the persistent volume on Docker boxes (SK6002)
 
 - Per-platform persistent default via `tools/cc_board.py resolve_evidence_base()` / `cc_board.py evidence-base`: Mac `$HOME/clawd/skill6-fix`, Hostinger `/data/clawd/skill6-fix`, Contabo `$HOME/.openclaw/clawd/skill6-fix`. Installer repairs a job on a non-persistent Docker `$HOME` path, leaves healthy persistent jobs alone, links `~/clawd/skill6-fix` on Contabo for Command Center; the sweep creates a missing folder. Tests: `TestPersistentPathSK6002`.
 

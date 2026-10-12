@@ -250,6 +250,12 @@ by a per-agent field. This step achieves that by:
   the DM. Verified against the shipped resolver in OpenClaw 2026.9.2 (3928bad).
 - Giving `remote-rescue` its own `workspace` directory (physically separate
   session storage from `main`).
+- Seeding that `workspace` directory (v7.1.6) with a fixed operator-support
+  `IDENTITY.md`, `SOUL.md`, `AGENTS.md` and `TOOLS.md` that name the owner's main
+  workspace by absolute path, and removing OpenClaw's untouched `BOOTSTRAP.md`
+  birth script, so the first operator message never starts a blank agent. Only
+  absent, empty or starter-text files are written; a file the box already filled
+  in is never overwritten.
 - Adding operator IDs to `channels.telegram.allowFrom` (the bot must accept their
   messages) but NOT to `channels.telegram.groupAllowFrom` (the owner's Command
   Center group stays owner-only).

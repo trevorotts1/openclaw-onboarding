@@ -103,6 +103,47 @@ else:
 assert rr and rr.get('workspace'), 'no workspace'
 \""
 
+# RRS001: the remote-rescue workspace must hold a real operator-support identity,
+# no leftover "you were just born" BOOTSTRAP.md, and the OWNER's main workspace
+# path. Without these, the first operator DM starts a blank agent that reads its
+# own empty folder and tells the operator the owner's files are missing.
+SEED_RESULT=$(python3 - "$CFG_PATH" "$_QC_DIR/scripts/lib/rr-config-transaction.py" <<'PYEOF'
+import importlib.util, json, os, sys
+cfg_path, engine = sys.argv[1], sys.argv[2]
+spec = importlib.util.spec_from_file_location("rr_engine", engine)
+eng = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(eng)
+cfg = json.load(open(cfg_path))
+root = os.path.dirname(os.path.abspath(cfg_path))
+ws = eng.existing_agent_workspace(cfg) or eng.default_workspace(root)
+main_ws = eng.main_workspace(cfg, root)
+problems = []
+ident = os.path.join(ws, "IDENTITY.md")
+if not os.path.isfile(ident) or eng.is_starter_or_empty(ident, "IDENTITY.md"):
+    problems.append("IDENTITY.md is missing or still the OpenClaw starter text")
+boot = os.path.join(ws, "BOOTSTRAP.md")
+if os.path.isfile(boot) and eng.is_starter_or_empty(boot, "BOOTSTRAP.md"):
+    problems.append("BOOTSTRAP.md (OpenClaw birth script) is still present")
+if not os.path.isfile(os.path.join(ws, "TOOLS.md")):
+    problems.append("TOOLS.md is missing")
+texts = [eng._read_text(os.path.join(ws, n)) or "" for n in ("IDENTITY.md", "SOUL.md", "AGENTS.md")]
+if not any(main_ws in t for t in texts):
+    problems.append("no file names the main workspace path " + main_ws)
+if problems:
+    print("FAIL: " + "; ".join(problems) + " [workspace " + ws + "]")
+    sys.exit(1)
+print("PASS")
+PYEOF
+)
+if [[ "$SEED_RESULT" == PASS ]]; then
+  green "  PASS -- remote-rescue workspace has its identity, no birth script, and the main-workspace pointer"
+  PASS=$((PASS+1))
+else
+  red "  FAIL -- remote-rescue workspace not seeded: ${SEED_RESULT:-engine could not run}"
+  red "         Run: bash scripts/install-remote-rescue.sh --repair"
+  FAIL=$((FAIL+1))
+fi
+
 GATE4_RESULT=$(python3 - "$CFG_PATH" <<'PYEOF'
 import json, sys
 cfg = json.load(open(sys.argv[1]))

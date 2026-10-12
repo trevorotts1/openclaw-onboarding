@@ -4,6 +4,16 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [7.1.6] - 2026-10-12
+
+### Fixed - REMOTE RESCUE WORKSPACE SEED (RRS001)
+
+- The installer created `workspaces/remote-rescue` empty. OpenClaw then filled it with blank starter files and a `BOOTSTRAP.md` birth script on the first operator DM, and the agent reported the owner's workspace as unconfigured because it only looked in its own folder.
+- `seed_workspace()` in `scripts/lib/rr-config-transaction.py` seeds `IDENTITY.md`, `SOUL.md`, `AGENTS.md`, `TOOLS.md` from `templates/remote-rescue/` when the file is absent, empty or still OpenClaw starter text, names the owner's main workspace by absolute path, and removes an untouched template `BOOTSTRAP.md`. Never overwrites a file with real content. `--check` is read-only and reports `seed-needed`.
+- New QC gate (`qc-blackceo-team-management.sh`, `QC.md` 7C2). Test: `tests/unit/skill15-workspace-seed.test.sh`.
+
+---
+
 ## [7.1.1] - 2026-09-17
 
 ### Fixed - DOCS (roster key naming)
