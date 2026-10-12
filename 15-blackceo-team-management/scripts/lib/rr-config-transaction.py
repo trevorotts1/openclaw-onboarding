@@ -223,6 +223,162 @@ def ensure_workspace(path, explicit, flavors):
     return state, False
 
 
+# ---------------------------------------------------------------------------
+# RRS001: operator-support seed for the remote-rescue workspace.
+#
+# OpenClaw treats an empty workspace as a brand-new agent: it writes blank
+# starter files plus a BOOTSTRAP.md "you were just born" script on the first
+# message. A support agent must arrive with a fixed identity and a pointer to the
+# OWNER's workspace instead, or it reads its own near-empty folder and reports
+# that the owner's files are missing. The seed content lives in
+# templates/remote-rescue/ (placeholders @@MAIN_WORKSPACE@@, @@RR_WORKSPACE@@).
+# Rules: create or replace ONLY a file that is absent, empty, or still OpenClaw's
+# starter text. A file a box already has with real content is never overwritten.
+# ---------------------------------------------------------------------------
+SEED_MARK = "rr-operator-support:v1"
+SEED_FILES = ("IDENTITY.md", "SOUL.md", "AGENTS.md")
+# ponytail: signature + size, not a byte compare against every OpenClaw release's
+# template. A starter file edited by a human to still contain the signature AND
+# stay under the size cap is treated as starter text; raise the caps or switch
+# to a per-release template hash list if that ever bites.
+STARTER_SIGNATURES = {
+    "IDENTITY.md": ("Fill this in during your first conversation", "(pick something you like)"),
+    "SOUL.md": ("You're not a chatbot. You're becoming someone.",),
+    "AGENTS.md": ("# AGENTS.md - Your Workspace", "If `BOOTSTRAP.md` exists, follow it"),
+    "BOOTSTRAP.md": ("Birth Sequence", "You just woke up"),
+}
+STARTER_MAX_BYTES = {"IDENTITY.md": 2600, "SOUL.md": 2600, "AGENTS.md": 8000, "BOOTSTRAP.md": 12000}
+
+
+def seed_template_dir():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.normpath(os.path.join(here, "..", "..", "templates", "remote-rescue"))
+
+
+def main_workspace(obj, root, owner_agent_id="main"):
+    """Absolute path of the OWNER's workspace, resolved like skill 70 pr_workspace():
+    $OPENCLAW_WORKSPACE, then agents.entries.<owner>.workspace (or the legacy list
+    entry), then agents.defaults.workspace, then <root>/workspace."""
+    env = os.environ.get("OPENCLAW_WORKSPACE")
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+    agents = obj.get("agents") if isinstance(obj, dict) else None
+    ws = None
+    if isinstance(agents, dict):
+        ent = agents.get("entries") if isinstance(agents.get("entries"), dict) else {}
+        lst = agents.get("list") if isinstance(agents.get("list"), list) else []
+        owner = ent.get(owner_agent_id)
+        defaults = agents.get("defaults") if isinstance(agents.get("defaults"), dict) else {}
+        ws = (owner.get("workspace") if isinstance(owner, dict) else None) \
+            or next((e.get("workspace") for e in lst
+                     if isinstance(e, dict) and e.get("id") == owner_agent_id and e.get("workspace")), None) \
+            or defaults.get("workspace")
+    if not ws:
+        ws = os.path.join(root or os.path.join(os.path.expanduser("~"), ".openclaw"), "workspace")
+    return os.path.abspath(os.path.expanduser(str(ws)))
+
+
+def _read_text(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def is_starter_or_empty(path, name):
+    """True when `path` is absent, empty, or still OpenClaw's untouched starter text.
+    A symlink is never starter text (a box wired it on purpose)."""
+    if os.path.islink(path):
+        return False
+    if not os.path.lexists(path):
+        return True
+    if not os.path.isfile(path):
+        return False
+    text = _read_text(path)
+    if text is None:
+        return False
+    if not text.strip():
+        return True
+    if SEED_MARK in text:
+        return False
+    if len(text.encode("utf-8")) > STARTER_MAX_BYTES.get(name, 0):
+        return False
+    return any(sig in text for sig in STARTER_SIGNATURES.get(name, ()))
+
+
+def _write_atomic(path, text):
+    tmp = "%s.rrs001-tmp-%d" % (path, os.getpid())
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
+def seed_workspace(ws, main_ws, check_only=False):
+    """Seed the remote-rescue workspace. Returns a report dict; never raises."""
+    res = {"state": "seeded", "main_workspace": main_ws, "written": [], "removed": [],
+           "kept": [], "needed": []}
+    try:
+        tdir = seed_template_dir()
+        if os.path.realpath(ws) == os.path.realpath(main_ws):
+            res["state"] = "skipped-is-main-workspace"
+            return res
+        if not os.path.isdir(tdir):
+            res["state"] = "skipped-no-templates"
+            return res
+        subs = {"@@MAIN_WORKSPACE@@": main_ws, "@@RR_WORKSPACE@@": ws}
+
+        def render(name):
+            text = _read_text(os.path.join(tdir, name)) or ""
+            for k, v in subs.items():
+                text = text.replace(k, v)
+            return text
+
+        for name in SEED_FILES:
+            path = os.path.join(ws, name)
+            if not is_starter_or_empty(path, name):
+                res["kept"].append(name)
+                continue
+            res["needed"].append(name)
+            if not check_only:
+                _write_atomic(path, render(name))
+                res["written"].append(name)
+
+        tools = os.path.join(ws, "TOOLS.md")
+        if not os.path.lexists(tools) or (os.path.isfile(tools) and not os.path.islink(tools)
+                                          and not (_read_text(tools) or "").strip()):
+            res["needed"].append("TOOLS.md")
+            if not check_only:
+                # The box's real tool notes win over the placeholder.
+                main_tools = _read_text(os.path.join(main_ws, "TOOLS.md"))
+                _write_atomic(tools, main_tools if (main_tools or "").strip() else render("TOOLS.md"))
+                res["written"].append("TOOLS.md")
+        else:
+            res["kept"].append("TOOLS.md")
+
+        # BOOTSTRAP.md goes only when it is OpenClaw's untouched starter AND this
+        # workspace now has a real identity (never strand a half-seeded folder).
+        boot = os.path.join(ws, "BOOTSTRAP.md")
+        ident_ok = not is_starter_or_empty(os.path.join(ws, "IDENTITY.md"), "IDENTITY.md")
+        if os.path.isfile(boot) and not os.path.islink(boot) and is_starter_or_empty(boot, "BOOTSTRAP.md") \
+                and (_read_text(boot) or "").strip():
+            if check_only:
+                res["needed"].append("BOOTSTRAP.md:remove")
+            elif ident_ok:
+                os.remove(boot)
+                res["removed"].append("BOOTSTRAP.md")
+            else:
+                res["kept"].append("BOOTSTRAP.md")
+        if check_only:
+            res["state"] = "seed-needed" if res["needed"] else "seed-complete"
+        elif not res["written"] and not res["removed"]:
+            res["state"] = "seed-complete"
+    except Exception as exc:  # a seed problem must never abort the config transaction
+        res["state"] = "seed-error"
+        res["error"] = "%s: %s" % (type(exc).__name__, exc)
+    return res
+
+
 def apply_keys(obj, action, destination):
     """Return a NEW object. Never mutates the caller's document."""
     env = obj.get("env")
@@ -564,6 +720,17 @@ def run(req):
     else:
         ws_state, ws_created = ensure_workspace(ws, ws_explicit, req["flavors"])
     report["mount_state"] = ws_state
+    report["seed"] = None
+    if ws_state != "invalid-file":
+        main_ws = main_workspace(obj, root, req.get("owner_agent_id") or "main")
+        report["seed"] = seed_workspace(ws, main_ws, check_only=check_only)
+        seed_note = report["seed"]
+        if seed_note.get("written") or seed_note.get("removed"):
+            report["notes"].append("workspace seeded: wrote %s, removed %s (main workspace: %s)" % (
+                ",".join(seed_note["written"]) or "none", ",".join(seed_note["removed"]) or "none", main_ws))
+        elif seed_note.get("state") in ("seed-needed", "seed-error"):
+            report["notes"].append("workspace seed %s: %s" % (
+                seed_note["state"], ",".join(seed_note.get("needed") or []) or seed_note.get("error", "")))
     if ws_state == "invalid-file":
         t.append({"from": state, "to": "refused", "cause": "workspace-path-is-not-a-directory"})
         report["state"] = "refused"
