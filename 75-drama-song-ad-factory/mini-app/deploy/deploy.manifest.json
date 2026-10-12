@@ -13,6 +13,9 @@
     "name": "drama-studio-mini-app",
     "route_host": "studio.zerohumanworkforce.com",
     "main": "src/index.js",
+    "service_entry": "service/src/index.js",
+    "kv_binding": "DS_STUDIO",
+    "kv_title": "DS_STUDIO",
     "compatibility_date": "2024-09-23"
   },
   "bucket": {
@@ -21,8 +24,11 @@
     "retention_prefix": "projects/"
   },
   "secrets": [
-    { "name": "R2_ACCESS_KEY_ID", "value_source": "env" },
-    { "name": "R2_SECRET_ACCESS_KEY", "value_source": "env" }
+    { "name": "DS_ENROLLMENT_SECRET", "value_source": "env", "required": true },
+    { "name": "DS_ADMIN_KEY",         "value_source": "env", "required": true },
+    { "name": "R2_ACCOUNT_ID",        "value_source": "env", "required": true },
+    { "name": "R2_ACCESS_KEY_ID",     "value_source": "env", "required": false },
+    { "name": "R2_SECRET_ACCESS_KEY", "value_source": "env", "required": false }
   ],
   "env": {
     "token_var": "CLOUDFLARE_DRAMA_STUDIO_API_TOKEN",
