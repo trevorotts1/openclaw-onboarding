@@ -1,3 +1,5 @@
+## [v27.1.15]  -  2026-10-12  -  D01: Command Center fast path fast-forwards only, never reset --hard (a diverged checkout keeps its local commits)
+
 ## [v27.1.14]  -  2026-10-12  -  Merge train: #1894 RRS001: remote-rescue workspace seed, TOOLS.md for registered agents,…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

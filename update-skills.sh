@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.14"
+ONBOARDING_VERSION="v27.1.15"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2024,7 +2024,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.14 - safe_json_edit
+# v27.1.15 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5938,7 +5938,7 @@ print(state + " " + str(len(headers)))
         _FAST_CONVERGED=0
       else
         # --- CC currency (state=behind or state=dirty on a CC checkout) ----
-        # Repair: fetch + fast-forward reset to origin/main — but ONLY when
+        # Repair: fetch + fast-forward (merge --ff-only) to origin/main — but ONLY when
         # the checkout is clean (no uncommitted client work). A dirty checkout
         # is load-bearing (the probe's own comment: "uncommitted work on a
         # client box is load-bearing") — do NOT reset it; report and let the
@@ -5959,7 +5959,11 @@ print(state + " " + str(len(headers)))
           # `reset --hard` does not touch untracked files, so stray `??`
           # entries are no reason to refuse the repair.
           _fast_dirty="$(git -C "$_fast_p" status --porcelain 2>/dev/null | grep -v '^??' || true)"
-          _fast_sync="reset --hard"
+          # ALWAYS fast-forward only. `reset --hard origin/main` threw away local
+          # commits on a diverged checkout (D01: 14 and 8 commits on two boxes);
+          # `merge --ff-only` is identical when HEAD is behind origin/main and
+          # refuses when it is diverged, so the full pass handles that case.
+          _fast_sync="merge --ff-only"
           if [ -n "$_fast_dirty" ]; then
             # Dirty is fine when upstream did not touch the edited files:
             # merge --ff-only keeps them. Never reset a dirty tree.
