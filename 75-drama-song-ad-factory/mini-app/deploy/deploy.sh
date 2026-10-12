@@ -37,16 +37,19 @@
 #
 #   OPERATIONS:
 #     deploy [VERSION]  resolve account+zone, run the zone guard, ensure the R2
-#                       bucket, set 45-day lifecycle retention on the project
-#                       prefix, set the two secrets, deploy the Worker.
+#                       bucket, resolve/create the DS_STUDIO KV namespace, set
+#                       45-day lifecycle retention on the project prefix, set the
+#                       required secrets, deploy the Worker, ensure the proxied
+#                       CNAME for the route host.
 #     status            show the resolved config (no mutations).
 #     --dry-run         validate + plan every step WITHOUT any wrangler or API
 #                       call. Honest: each step prints PLAN, the guard still
 #                       fails hard on a wrong zone, unresolved ids report as
 #                       unresolved and never as a pass.
-#     --self-test       offline proof (no token, no network) that the guard
-#                       refuses a wrong zone/account and that --dry-run is
-#                       PLAN-only.
+#     --self-test       offline proof (no token, no network): the guard refuses
+#                       a wrong zone/account, --dry-run is PLAN-only, and each
+#                       fixed deploy defect (absolute main, KV id, account
+#                       resolution, required secrets, DNS) has a case.
 #
 # USAGE:
 #   ./deploy.sh --dry-run deploy
@@ -69,7 +72,12 @@ RETENTION_DAYS=""
 RETENTION_PREFIX=""
 INTENDED_ZONE_NAME=""
 SERVICE_HOME=""
+SERVICE_ENTRY=""
+KV_BINDING=""
+KV_TITLE=""
 SECRET_NAMES=""
+REQUIRED_SECRET_NAMES=""
+OPTIONAL_SECRET_NAMES=""
 WRANGLER_TOML_REL=""
 TOKEN_VAR=""
 
@@ -84,10 +92,13 @@ FOREIGN_ZONE_ID="${STUDIO_FOREIGN_ZONE_ID:-}"
 DRY_RUN=0
 R_ZONE_ID=""
 R_ACCOUNT_ID=""
+R_KV_ID=""
 TMP_CONFIG=""
+TMP_DIR=""
 
 cleanup() {
   if [ -n "$TMP_CONFIG" ] && [ -f "$TMP_CONFIG" ]; then rm -f "$TMP_CONFIG"; fi
+  if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then rmdir "$TMP_DIR" 2>/dev/null || true; fi
   return 0
 }
 trap cleanup EXIT
@@ -116,13 +127,20 @@ load_manifest() {
       retention_prefix)    RETENTION_PREFIX="$v" ;;
       intended_zone_name)  INTENDED_ZONE_NAME="$v" ;;
       service_home)        SERVICE_HOME="$v" ;;
+      service_entry)       SERVICE_ENTRY="$v" ;;
+      kv_binding)          KV_BINDING="$v" ;;
+      kv_title)            KV_TITLE="$v" ;;
       secrets)             SECRET_NAMES="$v" ;;
+      secrets_required)    REQUIRED_SECRET_NAMES="$v" ;;
+      secrets_optional)    OPTIONAL_SECRET_NAMES="$v" ;;
       wrangler_toml)       WRANGLER_TOML_REL="$v" ;;
       token_var)           TOKEN_VAR="$v" ;;
     esac
   done < <(node -e '
     const fs = require("fs");
     const m = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const secrets = m.secrets || [];
+    const names = (arr) => arr.map(s => (s && s.name) || s).join(" ");
     const rows = [
       ["worker_name",        (m.worker && m.worker.name) || ""],
       ["route_host",         (m.worker && m.worker.route_host) || ""],
@@ -131,7 +149,12 @@ load_manifest() {
       ["retention_prefix",   (m.bucket && m.bucket.retention_prefix) || ""],
       ["intended_zone_name", (m.cloudflare && m.cloudflare.intended_zone_name) || ""],
       ["service_home",       m.service_home || ""],
-      ["secrets",            (m.secrets || []).map(s => (s && s.name) || s).join(" ")],
+      ["service_entry",      (m.worker && m.worker.service_entry) || ""],
+      ["kv_binding",         (m.worker && m.worker.kv_binding) || ""],
+      ["kv_title",           (m.worker && m.worker.kv_title) || ""],
+      ["secrets",            names(secrets)],
+      ["secrets_required",   names(secrets.filter(s => s && s.required))],
+      ["secrets_optional",   names(secrets.filter(s => s && !s.required))],
       ["wrangler_toml",      (m.env && m.env.wrangler_toml) || ""],
       ["token_var",          (m.env && m.env.token_var) || ""],
     ];
@@ -242,11 +265,17 @@ resolve_account_and_zone() {
     return 0
   fi
 
+  # Zone id: resolve by NAME only when the operator did not supply one.
   if [ -z "$R_ZONE_ID" ]; then
-    local zdata
-    zdata="$(cf_api GET "/zones?name=$TARGET_ZONE_NAME&per_page=1")"
-    R_ZONE_ID="$(printf '%s' "$zdata" | json_field "result.0.id")"
-    [ -n "$R_ACCOUNT_ID" ] || R_ACCOUNT_ID="$(printf '%s' "$zdata" | json_field "result.0.account.id")"
+    R_ZONE_ID="$(cf_api GET "/zones?name=$TARGET_ZONE_NAME&per_page=1" | json_field "result.0.id")"
+  fi
+
+  # Account id: resolved INDEPENDENTLY of the zone. A supplied STUDIO_ZONE_ID
+  # must never skip account resolution — the live G4 guard needs a real account
+  # id — so fetch the zone by id and read the account it belongs to. An empty
+  # result is left empty, so G4 still fails hard.
+  if [ -z "$R_ACCOUNT_ID" ] && [ -n "$R_ZONE_ID" ]; then
+    R_ACCOUNT_ID="$(cf_api GET "/zones/$R_ZONE_ID" | json_field "result.0.account.id")"
   fi
 }
 
@@ -291,7 +320,25 @@ assert_zone_guard() {
 }
 
 # ---------------------------------------------------------------------------
-# Provision: R2 bucket + 45-day project-object retention
+# Guarded-zone re-check — used by the DNS step, which writes a record into a
+# zone. It may only ever write into the guarded BlackCEO zone; it refuses any
+# other zone NAME, the known foreign zone ID, and an unresolved zone id.
+# ---------------------------------------------------------------------------
+require_guarded_zone() {
+  local who="$1"
+  if [ -n "$TARGET_ZONE_NAME" ] && [ "$TARGET_ZONE_NAME" != "$INTENDED_ZONE_NAME" ]; then
+    die "$who: refuse — target zone '$TARGET_ZONE_NAME' is not the guarded zone '$INTENDED_ZONE_NAME'"
+  fi
+  if [ -n "$FOREIGN_ZONE_ID" ] && [ -n "$R_ZONE_ID" ] && [ "$R_ZONE_ID" = "$FOREIGN_ZONE_ID" ]; then
+    die "$who: refuse — target zone id is the known foreign zone id"
+  fi
+  if [ -z "$R_ZONE_ID" ]; then
+    die "$who: refuse — no guarded zone id resolved (empty)"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Provision: R2 bucket + KV namespace + 45-day project-object retention
 # ---------------------------------------------------------------------------
 ensure_bucket() {
   step "r2-bucket: ensure bucket '$BUCKET_NAME' exists"
@@ -326,16 +373,94 @@ ensure_retention() {
 }
 
 # ---------------------------------------------------------------------------
+# KV namespace: resolve DS_STUDIO by title, create it only if absent. Its id is
+# resolved into the throwaway wrangler config so no <PLACEHOLDER_KV_*> id ever
+# reaches wrangler.
+# ---------------------------------------------------------------------------
+ensure_kv_namespace() {
+  step "kv-namespace: ensure '$KV_BINDING' exists (title '$KV_TITLE')"
+  if [ "$DRY_RUN" -eq 1 ]; then return 0; fi
+  [ -n "$R_ACCOUNT_ID" ] || die "kv-namespace: no resolved account id — cannot resolve '$KV_BINDING'"
+  local id
+  # Find by title via the API (idempotent).
+  id="$(cf_api GET "/accounts/$R_ACCOUNT_ID/storage/kv/namespaces?per_page=100" | node -e '
+    let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+      let j; try { j = JSON.parse(s); } catch { process.stdout.write(""); process.exit(0); }
+      if (!j || !Array.isArray(j.result)) { process.stdout.write(""); process.exit(0); }
+      const ns = j.result.find(n => n.title === process.argv[1]);
+      process.stdout.write(ns ? (ns.id || "") : "");
+    });
+  ' "$KV_TITLE")"
+  if [ -n "$id" ]; then
+    R_KV_ID="$id"
+    say "kv-namespace: '$KV_BINDING' already exists (id ${id:0:8}...)"
+    return 0
+  fi
+  # Create only if absent.
+  say "kv-namespace: creating '$KV_BINDING'"
+  id="$(cf_api POST "/accounts/$R_ACCOUNT_ID/storage/kv/namespaces" \
+        "$(node -e 'process.stdout.write(JSON.stringify({title: process.argv[1]}))' "$KV_TITLE")" \
+      | json_field "result.id")"
+  [ -n "$id" ] || die "kv-namespace: could not resolve a namespace id for '$KV_BINDING' (empty)"
+  R_KV_ID="$id"
+  say "kv-namespace: created '$KV_BINDING' (id ${id:0:8}...)"
+}
+
+# ---------------------------------------------------------------------------
+# DNS: ensure a PROXIED CNAME for the route host exists in the GUARDED zone,
+# creating it only if absent. Refuses any zone but the guarded one.
+# ---------------------------------------------------------------------------
+ensure_dns() {
+  step "dns: ensure proxied CNAME $ROUTE_HOST -> $INTENDED_ZONE_NAME (guarded zone only)"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    # No write in dry-run; a wrong zone NAME is still refused, never planned.
+    if [ -n "$TARGET_ZONE_NAME" ] && [ "$TARGET_ZONE_NAME" != "$INTENDED_ZONE_NAME" ]; then
+      die "dns: refuse — target zone '$TARGET_ZONE_NAME' is not the guarded zone '$INTENDED_ZONE_NAME'"
+    fi
+    return 0
+  fi
+  # Hard gate: this step writes only into the guarded BlackCEO zone.
+  require_guarded_zone "dns"
+  local existing
+  existing="$(cf_api GET "/zones/$R_ZONE_ID/dns_records?type=CNAME&name=$ROUTE_HOST&per_page=1" \
+              | json_field "result.0.id")"
+  if [ -n "$existing" ]; then
+    say "dns: CNAME $ROUTE_HOST already exists — skipping create"
+    return 0
+  fi
+  local body
+  body="$(node -e 'process.stdout.write(JSON.stringify({type:"CNAME",name:process.argv[1],content:process.argv[2],proxied:true}))' \
+          "$ROUTE_HOST" "$INTENDED_ZONE_NAME")"
+  cf_api POST "/zones/$R_ZONE_ID/dns_records" "$body" >/dev/null
+  say "dns: created proxied CNAME $ROUTE_HOST -> $INTENDED_ZONE_NAME"
+}
+
+# ---------------------------------------------------------------------------
 # Secrets (values from env, never echoed) + Worker deploy
 # ---------------------------------------------------------------------------
 set_secrets() {
-  step "secrets: set $SECRET_NAMES (names from manifest, values from env)"
+  step "secrets: set (required) $REQUIRED_SECRET_NAMES (values from env, never echoed)"
+  step "secrets: set (optional) $OPTIONAL_SECRET_NAMES (values from env, never echoed)"
   if [ "$DRY_RUN" -eq 1 ]; then return 0; fi
   local name val
-  for name in $SECRET_NAMES; do
+  # Required secrets (the service README bindings). A missing one FAILS the
+  # deploy — the Worker fails closed without them.
+  for name in $REQUIRED_SECRET_NAMES; do
     val="${!name:-}"
     if [ -z "$val" ]; then
-      warn "secret $name not set in env — skipping (the Worker fails closed until it is set)"
+      die "secrets: required secret $name is not set in the environment (source the operator env file); no value is ever printed"
+    fi
+    printf '%s\n' "$val" | wr secret put "$name" --name "$WORKER_NAME" >/dev/null
+    say "secret $name: set (value never echoed)"
+    unset val
+  done
+  # Optional secrets: the R2 S3 presign keys are deferred until presign ships
+  # (the service does not read them at runtime). They stay optional so their
+  # absence never fails the deploy.
+  for name in $OPTIONAL_SECRET_NAMES; do
+    val="${!name:-}"
+    if [ -z "$val" ]; then
+      warn "secret $name not set in env — optional, skipping (R2 S3 presign keys are deferred until presign ships)"
       continue
     fi
     printf '%s\n' "$val" | wr secret put "$name" --name "$WORKER_NAME" >/dev/null
@@ -344,17 +469,39 @@ set_secrets() {
   done
 }
 
+# Build the THROWAWAY wrangler config from the committed toml. The toml keeps
+# every real id as <PLACEHOLDER>; here they are resolved, and — because the
+# config is written into $TMPDIR — the `main` entrypoint is rewritten to the
+# ABSOLUTE path of the service entrypoint, so wrangler can find it regardless
+# of the config file's directory. Pure text transform: no network, no wrangler.
+#   write_resolved_config <src_toml> <dst_toml> <account_id> <kv_id> <main_abs>
+write_resolved_config() {
+  local src="$1" dst="$2" acct="$3" kv="$4" main_abs="$5"
+  [ -f "$src" ] || die "config: missing $src"
+  sed -E \
+    -e "s#<PLACEHOLDER_CF_ACCOUNT_ID>#${acct}#g" \
+    -e "s#<PLACEHOLDER_KV_NAMESPACE_ID_DS_STUDIO>#${kv}#g" \
+    -e "s#<PLACEHOLDER_KV_NAMESPACE_PREVIEW_ID_DS_STUDIO>#${kv}#g" \
+    -e "s#^(main[[:space:]]*=[[:space:]]*).*#\1\"${main_abs}\"#" \
+    "$src" > "$dst"
+}
+
 deploy_worker() {
   step "deploy: npx wrangler deploy (zone-guard already passed)"
   if [ "$DRY_RUN" -eq 1 ]; then return 0; fi
   local worker_toml="$MINI_APP_DIR/$WRANGLER_TOML_REL"
   [ -f "$worker_toml" ] || die "deploy: missing $worker_toml"
-  TMP_CONFIG="$(mktemp "${TMPDIR:-/tmp}/studio-wrangler.XXXXXX.toml")"
-  # Resolve <PLACEHOLDER> ids into a THROWAWAY config; the toml is untouched.
-  sed -E \
-    -e "s#<PLACEHOLDER_CF_ACCOUNT_ID>#$R_ACCOUNT_ID#g" \
-    "$worker_toml" > "$TMP_CONFIG"
-  say "deploy: temp config written (deleted on exit) — $WRANGLER_TOML_REL untouched"
+  [ -n "$R_KV_ID" ] || die "deploy: no KV namespace id resolved for '$KV_BINDING'"
+  local main_abs="$MINI_APP_DIR/$SERVICE_ENTRY"
+  [ -f "$main_abs" ] || die "deploy: service entrypoint $main_abs not found (U2 service contract)"
+  # BSD mktemp substitutes only TRAILING X's, so make a temp DIR and write a
+  # config named wrangler.toml inside it (wrangler keys format off the .toml
+  # extension). A literal "…XXXXXX.toml" would collide on the second deploy.
+  TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/studio-wrangler.XXXXXX")"
+  TMP_CONFIG="$TMP_DIR/wrangler.toml"
+  # Resolve <PLACEHOLDER> ids AND make `main` absolute; the toml is untouched.
+  write_resolved_config "$worker_toml" "$TMP_CONFIG" "$R_ACCOUNT_ID" "$R_KV_ID" "$main_abs"
+  say "deploy: temp config written (main + ids resolved; deleted on exit) — $WRANGLER_TOML_REL untouched"
   wr deploy --config "$TMP_CONFIG"
 }
 
@@ -444,6 +591,175 @@ self_test() {
     say "SELFTEST OK: --dry-run is PLAN-only, no fabricated PASS"
   fi
 
+  # ── DEPLOY-FIX: one case per fixed deploy defect (RED without its fix) ─────
+
+  # F1: deploy_worker's temp config must carry an ABSOLUTE `main`. The temp
+  #     config is written into $TMPDIR, so the committed relative main could
+  #     not resolve ("entry-point file at \"src/index.js\" was not found").
+  local fcfg; fcfg="$(mktemp "${TMPDIR:-/tmp}/studio-f1.XXXXXX")"
+  write_resolved_config "$MINI_APP_DIR/$WRANGLER_TOML_REL" "$fcfg" \
+    "acct-selftest" "kv-selftest" "$MINI_APP_DIR/service/src/index.js" 2>/dev/null || true
+  if grep -qE "^main[[:space:]]*=[[:space:]]*\"$MINI_APP_DIR/service/src/index.js\"" "$fcfg"; then
+    say "SELFTEST OK (F1): temp config main is the absolute service entrypoint"
+  else
+    warn "SELFTEST FAIL (F1): temp config main is not the absolute service entrypoint"
+    pass=0
+  fi
+  rm -f "$fcfg"
+
+  # F3: the KV namespace id must be resolved INTO the config with no
+  #     <PLACEHOLDER> left for wrangler to choke on.
+  local kcfg; kcfg="$(mktemp "${TMPDIR:-/tmp}/studio-f3.XXXXXX")"
+  write_resolved_config "$MINI_APP_DIR/$WRANGLER_TOML_REL" "$kcfg" \
+    "acct-selftest" "kv-selftest" "$MINI_APP_DIR/service/src/index.js" 2>/dev/null || true
+  if grep -qE '<PLACEHOLDER_[A-Z0-9_]+>' "$kcfg"; then
+    warn "SELFTEST FAIL (F3): a <PLACEHOLDER_id> survived into the config"
+    pass=0
+  elif grep -qE "^[[:space:]]*id[[:space:]]*=[[:space:]]*\"kv-selftest\"" "$kcfg"; then
+    say "SELFTEST OK (F3): KV namespace id resolved into the config, no placeholder left"
+  else
+    warn "SELFTEST FAIL (F3): KV namespace id not resolved into the config"
+    pass=0
+  fi
+  rm -f "$kcfg"
+
+  # F3b: ensure_kv_namespace resolves an EXISTING namespace by title (no create).
+  _t_f3_existing() {
+    cf_api() { printf '{"success":true,"result":[{"title":"DS_STUDIO","id":"kv-existing-id"}]}'; }
+    DRY_RUN=0; R_ACCOUNT_ID="acct"; KV_BINDING="DS_STUDIO"; KV_TITLE="DS_STUDIO"; R_KV_ID=""
+    ensure_kv_namespace >/dev/null 2>&1
+    printf '%s' "$R_KV_ID"
+  }
+  if [ "$( ( _t_f3_existing ) 2>/dev/null )" = "kv-existing-id" ]; then
+    say "SELFTEST OK (F3): ensure_kv_namespace finds an existing DS_STUDIO by title"
+  else
+    warn "SELFTEST FAIL (F3): ensure_kv_namespace did not resolve the existing namespace"
+    pass=0
+  fi
+
+  # F3c: ensure_kv_namespace CREATES the namespace only when absent.
+  _t_f3_create() {
+    cf_api() { case "$1" in
+      GET)  printf '{"result":[]}' ;;
+      POST) printf '{"result":{"id":"kv-created-id"}}' ;;
+    esac; }
+    DRY_RUN=0; R_ACCOUNT_ID="acct"; KV_BINDING="DS_STUDIO"; KV_TITLE="DS_STUDIO"; R_KV_ID=""
+    ensure_kv_namespace >/dev/null 2>&1
+    printf '%s' "$R_KV_ID"
+  }
+  if [ "$( ( _t_f3_create ) 2>/dev/null )" = "kv-created-id" ]; then
+    say "SELFTEST OK (F3): ensure_kv_namespace creates DS_STUDIO only when absent"
+  else
+    warn "SELFTEST FAIL (F3): ensure_kv_namespace did not create/parse the namespace id"
+    pass=0
+  fi
+
+  # F2: a supplied STUDIO_ZONE_ID must still resolve the account — the live G4
+  #     guard needs a real account id. Stub the API; assert the account.
+  _t_f2() {
+    cf_api() { printf '{"result":[{"id":"zone-xyz","account":{"id":"acct-live"}}]}'; }
+    DRY_RUN=0; R_ZONE_ID=""; R_ACCOUNT_ID=""
+    TARGET_ZONE_ID="zone-xyz"; TARGET_ACCOUNT_ID=""; TARGET_ZONE_NAME="zerohumanworkforce.com"
+    TOKEN_VAR="SELFTEST_DUMMY_VAR"
+    resolve_account_and_zone >/dev/null 2>&1
+    printf '%s' "$R_ACCOUNT_ID"
+  }
+  if [ "$( ( _t_f2 ) 2>/dev/null )" = "acct-live" ]; then
+    say "SELFTEST OK (F2): account resolved even though STUDIO_ZONE_ID was supplied"
+  else
+    warn "SELFTEST FAIL (F2): a supplied STUDIO_ZONE_ID skipped account resolution"
+    pass=0
+  fi
+
+  # F4: the service secret NAMES (DS_ENROLLMENT_SECRET, DS_ADMIN_KEY,
+  #     R2_ACCOUNT_ID) come from the manifest's required list; a missing
+  #     REQUIRED secret fails the deploy; a missing OPTIONAL one only warns.
+  _t_has() { case " $1 " in *" $2 "*) return 0 ;; *) return 1 ;; esac; }
+  if _t_has "$REQUIRED_SECRET_NAMES" "DS_ENROLLMENT_SECRET" \
+     && _t_has "$REQUIRED_SECRET_NAMES" "DS_ADMIN_KEY" \
+     && _t_has "$REQUIRED_SECRET_NAMES" "R2_ACCOUNT_ID"; then
+    say "SELFTEST OK (F4): the service secret names are in the manifest's required list"
+  else
+    warn "SELFTEST FAIL (F4): DS_ENROLLMENT_SECRET / DS_ADMIN_KEY / R2_ACCOUNT_ID missing from the required secrets"
+    pass=0
+  fi
+  _t_f4_required_missing() {
+    DRY_RUN=0; WORKER_NAME="w"; REQUIRED_SECRET_NAMES="ST_REQ_MISSING"; OPTIONAL_SECRET_NAMES=""
+    set_secrets
+  }
+  if ( _t_f4_required_missing ) >"$out" 2>&1; then
+    warn "SELFTEST FAIL (F4): a missing required secret did not fail the deploy"
+    pass=0
+  elif grep -q "required secret ST_REQ_MISSING" "$out"; then
+    say "SELFTEST OK (F4): a missing required secret fails the deploy (fail closed, no value printed)"
+  else
+    warn "SELFTEST FAIL (F4): required-secret failure not detected"
+    pass=0
+  fi
+  _t_f4_optional_missing() {
+    DRY_RUN=0; WORKER_NAME="w"; REQUIRED_SECRET_NAMES=""; OPTIONAL_SECRET_NAMES="ST_OPT_MISSING"
+    wr() { return 0; }
+    set_secrets
+  }
+  if ( _t_f4_optional_missing ) >"$out" 2>&1; then
+    say "SELFTEST OK (F4): a missing OPTIONAL secret (R2 S3) does not fail the deploy"
+  else
+    warn "SELFTEST FAIL (F4): a missing optional secret failed the deploy"
+    pass=0
+  fi
+
+  # F5: the DNS step refuses any zone but the guarded one, creates the proxied
+  #     CNAME only when absent, and skips when it already exists.
+  _t_f5_refuse() {
+    DRY_RUN=0; R_ZONE_ID="zone-xyz"; FOREIGN_ZONE_ID=""
+    TARGET_ZONE_NAME="elsewhere.example"; INTENDED_ZONE_NAME="zerohumanworkforce.com"
+    ROUTE_HOST="studio.zerohumanworkforce.com"; R_ACCOUNT_ID="acct"
+    ensure_dns
+  }
+  if ( _t_f5_refuse ) >"$out" 2>&1; then
+    warn "SELFTEST FAIL (F5): the DNS step did not refuse a non-guarded zone"
+    pass=0
+  elif grep -q "dns: refuse" "$out"; then
+    say "SELFTEST OK (F5): the DNS step refuses any zone but the guarded one"
+  else
+    warn "SELFTEST FAIL (F5): zone refusal not detected"
+    pass=0
+  fi
+  local dnsbody; dnsbody="$(mktemp "${TMPDIR:-/tmp}/studio-f5.XXXXXX")"
+  _t_f5_create() {
+    cf_api() { case "$1" in
+      GET)  printf '{"result":[]}' ;;
+      POST) printf '%s' "$3" > "$ST_DNS_BODY_FILE"; printf '{"result":{"id":"rec-new"}}' ;;
+    esac; }
+    DRY_RUN=0; R_ZONE_ID="zone-xyz"; FOREIGN_ZONE_ID=""
+    TARGET_ZONE_NAME="zerohumanworkforce.com"; INTENDED_ZONE_NAME="zerohumanworkforce.com"
+    ROUTE_HOST="studio.zerohumanworkforce.com"; R_ACCOUNT_ID="acct"
+    ensure_dns
+  }
+  ST_DNS_BODY_FILE="$dnsbody"
+  if ( _t_f5_create ) >"$out" 2>&1 \
+     && grep -q '"proxied":true' "$dnsbody" \
+     && grep -q 'studio.zerohumanworkforce.com' "$dnsbody"; then
+    say "SELFTEST OK (F5): the DNS step creates a proxied CNAME for the route host when absent"
+  else
+    warn "SELFTEST FAIL (F5): the DNS step did not create the proxied CNAME body"
+    pass=0
+  fi
+  rm -f "$dnsbody"
+  _t_f5_skip() {
+    cf_api() { printf '{"result":[{"id":"rec-existing"}]}'; }
+    DRY_RUN=0; R_ZONE_ID="zone-xyz"; FOREIGN_ZONE_ID=""
+    TARGET_ZONE_NAME="zerohumanworkforce.com"; INTENDED_ZONE_NAME="zerohumanworkforce.com"
+    ROUTE_HOST="studio.zerohumanworkforce.com"; R_ACCOUNT_ID="acct"
+    ensure_dns
+  }
+  if ( _t_f5_skip ) >"$out" 2>&1 && grep -q "already exists" "$out"; then
+    say "SELFTEST OK (F5): the DNS step skips when the CNAME already exists"
+  else
+    warn "SELFTEST FAIL (F5): the DNS step did not skip an existing CNAME"
+    pass=0
+  fi
+
   rm -f "$out"
   if [ "$pass" -eq 1 ]; then say "U4 deploy self-test: PASS"; exit 0; fi
   die "U4 deploy self-test: FAIL"
@@ -500,8 +816,10 @@ main() {
       say "deploy: worker=$WORKER_NAME route=$ROUTE_HOST"
       ensure_bucket
       ensure_retention
+      ensure_kv_namespace
       set_secrets
       deploy_worker
+      ensure_dns
       if [ "$DRY_RUN" -eq 1 ]; then
         say "DRY-RUN COMPLETE: no mutations performed. No deploy happened."
       else
