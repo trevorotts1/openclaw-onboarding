@@ -541,13 +541,10 @@ else
   rm -f "$STUCK_COUNT_FILE" "$PROGRESS_FP_FILE" "$PROGRESS_HWM_FILE" 2>/dev/null || true
 fi
 
-# ---- v10.14.20: heal config before any gateway interaction ----
-# v22.0.62: bound — an unbounded `doctor --fix` hung ~133s on Janet's box and
-# the cron runner killed the fire, freezing the cron queue. 45s is ample for a
-# real heal; a timeout still leaves the previous `|| true` semantics.
-if command -v openclaw >/dev/null 2>&1; then
-  timeout 45 openclaw doctor --fix >/dev/null 2>&1 || true
-fi
+# ---- NO cron-time `openclaw doctor --fix` (D02) ----
+# Removed: on OpenClaw 2026.10.x it takes the offline maintenance lock and
+# rewrites config (or refuses "state database is busy" while the gateway is up),
+# on a 15-minute tick. tests/unit/no-cron-doctor-fix.test.sh guards this.
 
 # ---- preconditions ----
 if [[ ! -f "$STATE_FILE" ]]; then
