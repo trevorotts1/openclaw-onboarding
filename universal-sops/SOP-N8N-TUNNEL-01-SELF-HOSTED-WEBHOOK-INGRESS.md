@@ -343,11 +343,12 @@ tunnel TOKEN instead of an ingress-merge-only response.
 Store the token exactly the way Command Center's own install does. Environment variable name:
 `CLOUDFLARE_TUNNEL_TOKEN`. Canonical location: `~/.openclaw/secrets/.env`, `chmod 600`. **Never TYPE
 or echo the token value directly** — that is what lands it in interactive shell history. Reading it
-out of `~/.openclaw/secrets/.env` into a variable (below) is the fleet's own proven pattern (mirrors
-`32-command-center-setup/scripts/create-tunnel.sh` lines 66-79). Note this does not make the token
-invisible everywhere: `pm2 start "cloudflared tunnel run --token $TUNNEL_TOKEN"` still persists the
-expanded value as a process argument, visible in `ps` output and in `~/.pm2/dump.pm2` — that is the
-same tradeoff `create-tunnel.sh` itself makes fleet-wide, not a new exposure introduced here:
+out of `~/.openclaw/secrets/.env` is the fleet's own proven pattern (mirrors
+`32-command-center-setup/scripts/create-tunnel.sh`). The token must also never reach a command line:
+passing it to cloudflared with the inline `--token` flag under pm2 would persist the expanded value as a
+process argument, visible in `ps` output and in `~/.pm2/dump.pm2` and its backups. The fleet's
+`create-tunnel.sh` avoids that by writing the token to a mode-600 file and starting cloudflared with
+`--token-file`; do the same here:
 
 ```bash
 mkdir -p ~/.openclaw/secrets
@@ -359,9 +360,11 @@ chmod 600 ~/.openclaw/secrets/.env
 Start the connector under PM2 — the fleet's pattern on every box, Mac and VPS alike:
 
 ```bash
-TUNNEL_TOKEN="$(grep '^CLOUDFLARE_TUNNEL_TOKEN=' ~/.openclaw/secrets/.env | cut -d= -f2-)"
+TOKEN_FILE="$HOME/.openclaw/secrets/tunnel-command-center.token"
+( umask 077; grep '^CLOUDFLARE_TUNNEL_TOKEN=' ~/.openclaw/secrets/.env | cut -d= -f2- | tr -d '\n' > "$TOKEN_FILE" )
+chmod 600 "$TOKEN_FILE"
 pm2 delete cloudflare-tunnel 2>/dev/null || true
-pm2 start "cloudflared tunnel run --token $TUNNEL_TOKEN" --name cloudflare-tunnel
+pm2 start "cloudflared tunnel run --token-file $TOKEN_FILE" --name cloudflare-tunnel
 pm2 save
 pm2 status cloudflare-tunnel   # confirm "online"
 ```
