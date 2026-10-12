@@ -1,3 +1,17 @@
+## [v27.1.20]  -  2026-10-12  -  D23: the roll never truncates fallback chains (MAX_DEPTH 3 removed) and keeps tools.exec.mode instead of rewriting legacy security/ask
+
+##### What Changed
+- **Fallbacks are never truncated (`scripts/repair-model-sovereignty.sh`):** `MAX_DEPTH = 3` cut `agents.defaults.model.fallbacks`, `agents.defaults.subagents.model.fallbacks` and every `agents.list[*]` chain to 3 entries on every roll. It was added in v16.2.17 to stop 33-deep cascades, but those were forbidden / `-preview` slugs that the same script already scrubs. It silently deleted operator-ordered outage backups: Dr. Stephanie Brown's box (openclaw-a3go) lost its 4th fallback `openrouter/z-ai/glm-5.3-flash` at 13:17Z, and Corey Sams' 4-entry chain ending in OpenRouter was next. The cap is removed (no documented hard cap exists in AGENTS.md or FLEET-STANDARDS.md; this script never adds fallbacks, so there is nothing of its own to cap). A roll now removes a fallback only when it is forbidden, `-preview`, a free sentinel, or equal to the primary. The receipt no longer carries `depth_caps`.
+- **`tools.exec.mode` is kept (`scripts/apply-fleet-standards.sh`):** the 2026-09-17 fix translated `tools.exec.mode` down to legacy `security` / `ask` on every roll. OpenClaw 2026.10.1's `openclaw doctor --fix` migrates those legacy keys up to `mode`, so each roll undid the migration. A box that has a recognised `tools.exec.mode` now gets `mode: "full"` (the fleet standard; the gateway resolves it to security full / ask off) and NO legacy key; a `security` / `ask` pair left beside a mode (the validator-rejected combination) is dropped. A box with no `mode` key (legacy schema) still gets `security: full`, `ask: off`. An uninterpretable mode is still skipped, not guessed.
+- **Tests:** new `tests/unit/repair-model-sovereignty-no-truncate.test.sh` (4 default fallbacks ending in OpenRouter untouched byte for byte; 6-entry `agents.list` chain kept; scrub still removes only Anthropic and `-preview`). `tests/unit/fleet-standards-legacy-exec-mode.test.sh` rewritten for the new direction (mode kept, no legacy keys; legacy-schema fixture unchanged). Both run in `hardening-and-fleet-standards-exec-guard.yml`.
+
+##### Migration Notes
+- Risk: LOW. The repair script now only removes fewer things. Boxes already truncated are NOT restored by this change (a roll cannot know what was lost); Dr. Brown's list was restored by hand.
+- Known, not changed here: the repair script and the apply-fleet-standards steps read `agents.list` only; `agents.entries` (2026.9.x+) pins are not scrubbed.
+
+##### Files Changed
+- `scripts/repair-model-sovereignty.sh`, `scripts/apply-fleet-standards.sh`, `tests/unit/repair-model-sovereignty-no-truncate.test.sh` (new), `tests/unit/fleet-standards-legacy-exec-mode.test.sh`, `.github/workflows/hardening-and-fleet-standards-exec-guard.yml`.
+
 ## [v27.1.19]  -  2026-10-12  -  Merge train: #1904 D16: tunnel install docs and SOP use cloudflared --token-file, never…; #1912 D10: cron presence checks return 2 (unknown) on a failed or non-JSON…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
