@@ -144,7 +144,7 @@ class Recovery(unittest.TestCase):
     def test_migration_gets_literal_pinned_db_and_failure_stops(self):
         target=self.root/'custom data'/'a$b.db';target.parent.mkdir()
         (self.app/'.env.local').write_text("DATABASE_PATH='"+str(target).replace('$','\\$')+"'\n")
-        funcs=self.function('cc_env_get')+self.function('cc_prepare_database_environment')
+        funcs=self.function('cc_env_get')+self.function('cc_prepare_database_environment')+self.function('cc_with_node')
         start=self.source.index('  cc_prepare_database_environment\n  if ! ( cd')
         end=self.source.index('  # DATA-08',start)
         block=self.source[start:end]
