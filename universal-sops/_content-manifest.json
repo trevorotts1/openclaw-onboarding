@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-08T15:28:03Z",
+  "generated_at": "2026-10-12T16:49:14Z",
   "file_count": 115,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -17,8 +17,8 @@
       "bytes": 9146
     },
     "SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md": {
-      "sha256": "01952bb2d3067cbf67f195473bd8aef1a88b9663e06546fb796ea72fdd8fdd2c",
-      "bytes": 43202
+      "sha256": "e17f39b4fc2d894954aebf58e3186a4794aad1322f39e3d705bce840911412b9",
+      "bytes": 43337
     },
     "SOP-RR-LOOP-TRIAGE.md": {
       "sha256": "b67c2bbdf6518f787e41e5787efadcfd019a26dd19857c15283db8fa80889d95",

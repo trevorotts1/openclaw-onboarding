@@ -56,6 +56,8 @@ on:
       - 'tests/unit/test_contabo_docker_topology.py'
       - 'shared-utils/resolve-oc-root.sh'
       - 'shared-utils/cc-tunnel-ingress.sh'
+      - '32-command-center-setup/INSTALL.md'
+      - 'universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md'
       - 'tests/unit/engine-bootstrap-real-db.test.py'
       - 'docs/interview-launch-recovery.md'
       - 'docs/portable-onboarding-platforms.md'

@@ -1771,7 +1771,14 @@ EOF
     # crash-only supervisor unwatched.
     _OC_BIN="$(command -v openclaw || true)"
     [ -n "$_OC_BIN" ] || { log "no crontab AND no openclaw CLI — periodic probe NOT installed"; return 0; }
-    if "$_OC_BIN" cron list --json 2>/dev/null | grep -q '"name": *"ghl-mcp-probe"'; then
+    # D10: a failed/non-JSON `cron list` (gateway down at container boot) is UNKNOWN, not
+    # "absent" - adding on it registered ghl-mcp-probe x4. Add only after a good list.
+    _OC_LIST="$("$_OC_BIN" cron list --json 2>/dev/null)" || _OC_LIST=""
+    case "$(printf '%s' "$_OC_LIST" | tr -d '[:space:]' | cut -c1)" in '['|'{') ;; *)
+      log "openclaw cron list unreadable (gateway down?) - ghl-mcp-probe presence unknown, NOT registering; next run retries"
+      return 0 ;;
+    esac
+    if printf '%s' "$_OC_LIST" | grep -q '"name": *"ghl-mcp-probe"'; then
       log "periodic liveness probe already registered in the openclaw cron store"
       return 0
     fi

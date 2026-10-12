@@ -48,11 +48,12 @@ else
   echo "WARN: shared-utils/cron-lib.sh not found — falling back to an inline exact-JSON-match (no text-table grep)." >&2
   oc_cron_present() {
     local name="$1" raw
-    raw=$(openclaw cron list --json 2>/dev/null) || raw=""
-    [ -n "$raw" ] && command -v jq >/dev/null 2>&1 || return 1
+    raw=$(openclaw cron list --json 2>/dev/null) || return 2
+    command -v jq >/dev/null 2>&1 || return 2
     printf '%s' "$raw" | jq -e --arg n "$name" '
       ( if type == "array" then . else .jobs // [] end ) | map(select(.name == $n)) | length > 0
     ' >/dev/null 2>&1
+    case $? in 0) return 0;; 1) return 1;; *) return 2;; esac
   }
   # No shared lib -> no durable-tombstone dir resolution either. Fail OPEN
   # (never tombstoned) rather than block ALL registration on a missing lib.
@@ -182,8 +183,9 @@ register_cron() {
     echo "cron $name is TOMBSTONED (deliberately removed) — skipping, NOT re-registering" >&2
     return 0
   fi
-  if oc_cron_present "$name"; then
-    echo "cron $name already registered — skipping" >&2
+  # D10: rc 2 = cron list unreadable -> presence unknown -> do NOT add a duplicate
+  if oc_cron_present "$name" || [ $? -eq 2 ]; then
+    echo "cron $name already registered (or cron list unreadable) — skipping" >&2
     _rebind_cron_agent_if_orphaned "$name"
     return 0
   fi
@@ -219,8 +221,9 @@ register_command_cron() {
     echo "cron $name is TOMBSTONED (deliberately removed) — skipping, NOT re-registering" >&2
     return 0
   fi
-  if oc_cron_present "$name"; then
-    echo "cron $name already registered — skipping" >&2
+  # D10: rc 2 = cron list unreadable -> presence unknown -> do NOT add a duplicate
+  if oc_cron_present "$name" || [ $? -eq 2 ]; then
+    echo "cron $name already registered (or cron list unreadable) — skipping" >&2
     return 0
   fi
   if [ ! -f "$script" ]; then

@@ -59,7 +59,10 @@
 #
 # USAGE: `source` this file, then call `oc_cron_present "<name>"` in place of
 #   `openclaw cron list | grep -q "<name>"`. Returns 0 = present, 1 = absent
-#   (or list unreadable — callers should then attempt registration). Callers
+#   (list read and parsed, name not in it), 2 = UNKNOWN (CLI failed or output
+#   not parseable JSON). On 2 callers must NOT register (D10: failed list ->
+#   "absent" -> duplicate crons); use `oc_cron_present X || [ $? -eq 2 ]` to
+#   mean "present or unknown: skip registration". Callers
 #   that manage a durable cron's lifecycle should ALSO check
 #   `oc_cron_tombstoned "<name>"` before registering.
 #
@@ -97,9 +100,9 @@ oc_cron_list_json_flags() {
 #   1. jq      — exact match against `--json` output.
 #   2. python3 — same, via json.load (no jq dependency).
 #   3. NEVER falls back to a positive text-table match — that is the root-cause
-#      path. If neither JSON parser is available, fails OPEN (returns 1 =
-#      "treat as absent") so callers re-attempt registration rather than
-#      silently claiming false presence off a possibly-truncated table.
+#      path. If neither JSON parser is available, returns 2 (UNKNOWN) so
+#      callers neither claim false presence off a possibly-truncated table nor
+#      register a duplicate.
 #
 # NOTE: this alone does NOT guarantee visibility of a disabled-and-invisible
 # job on a CLI with no full-visibility flag (see header). Callers that need a
@@ -117,45 +120,47 @@ oc_cron_present() {
   # NOTE: `${extra_flags[@]+"${extra_flags[@]}"}` — safe empty-array expansion
   # under `set -u` on stock bash 3.2 (macOS default); a bare "${extra_flags[@]}"
   # on an empty array is an "unbound variable" error there.
-  raw=$(openclaw cron list --json ${extra_flags[@]+"${extra_flags[@]}"} 2>/dev/null) || raw=""
+  # D10: a failed CLI call is UNKNOWN (2), never "absent" — a slow/restarting
+  # gateway used to read as "job absent" and every caller registered a duplicate.
+  raw=$(openclaw cron list --json ${extra_flags[@]+"${extra_flags[@]}"} 2>/dev/null) || return 2
+  [[ -n "$raw" ]] || return 2
 
-  if [[ -n "$raw" ]] && command -v jq >/dev/null 2>&1; then
-    if printf '%s' "$raw" | jq -e --arg n "$name" '
-        ( if type == "array" then . else .jobs // [] end )
+  if command -v jq >/dev/null 2>&1; then
+    # Prints true/false only for an array or {jobs:[...]}; anything else (log
+    # noise, an error object, truncated JSON) prints nothing -> UNKNOWN.
+    local verdict
+    verdict=$(printf '%s' "$raw" | jq -r --arg n "$name" '
+        ( if type == "array" then . elif (type == "object" and (.jobs | type) == "array") then .jobs else empty end )
         | map(select(.name == $n))
         | length > 0
-      ' >/dev/null 2>&1; then
-      return 0
-    else
-      return 1
-    fi
+      ' 2>/dev/null) || return 2
+    [[ "$verdict" == "true" ]] && return 0
+    [[ "$verdict" == "false" ]] && return 1
+    return 2
   fi
 
-  if [[ -n "$raw" ]] && command -v python3 >/dev/null 2>&1; then
+  if command -v python3 >/dev/null 2>&1; then
     # NOTE: JSON is passed via env var, not a pipe — `python3 -` already reads
     # its OWN script text from stdin via the heredoc below, so a pipe feeding
     # the SAME stdin would be silently overridden (shellcheck SC2259) and
     # `sys.stdin.read()` inside the script would see EOF, not the JSON.
-    if OC_CRON_RAW="$raw" python3 - "$name" 2>/dev/null <<'PYEOF'
+    OC_CRON_RAW="$raw" python3 - "$name" 2>/dev/null <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
-raw = os.environ.get("OC_CRON_RAW", "")
 try:
-    data = json.loads(raw)
+    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+    jobs = data if isinstance(data, list) else data["jobs"]
+    if not isinstance(jobs, list):
+        raise ValueError
 except Exception:
-    sys.exit(1)
-jobs = data if isinstance(data, list) else data.get("jobs", [])
-sys.exit(0 if any(j.get("name") == name for j in jobs) else 1)
+    sys.exit(2)
+sys.exit(0 if any(isinstance(j, dict) and j.get("name") == name for j in jobs) else 1)
 PYEOF
-    then
-      return 0
-    else
-      return 1
-    fi
+    return $?
   fi
 
-  echo "[cron-lib] WARN oc_cron_present($name): jq and python3 both unavailable — cannot do a JSON exact-name match; failing OPEN (treat as absent) rather than risk a truncation false-positive from text-table grep." >&2
-  return 1
+  echo "[cron-lib] WARN oc_cron_present($name): jq and python3 both unavailable — cannot do a JSON exact-name match; returning UNKNOWN (2) so callers do not register a duplicate." >&2
+  return 2
 }
 
 # ---------------------------------------------------------------------------

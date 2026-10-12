@@ -25,6 +25,10 @@ RESOLVER = REPO / "shared-utils/resolve-oc-root.sh"
 CREATE_TUNNEL = REPO / "32-command-center-setup/scripts/create-tunnel.sh"
 RUN_FULL_INSTALL = REPO / "32-command-center-setup/scripts/run-full-install.sh"
 INGRESS_LIB = REPO / "shared-utils/cc-tunnel-ingress.sh"
+TUNNEL_DOCS = [
+    REPO / "32-command-center-setup/INSTALL.md",
+    REPO / "universal-sops/SOP-N8N-TUNNEL-01-SELF-HOSTED-WEBHOOK-INGRESS.md",
+]
 
 
 class ShellFixture(unittest.TestCase):
@@ -112,6 +116,14 @@ class DockerTopologyTests(ShellFixture):
         self.assertIn("chmod 600", text)
         self.assertNotIn("tunnel run --token $TUNNEL_TOKEN", text)
         self.assertNotIn("tunnel run --token ${TUNNEL_TOKEN", text)
+
+    def test_tunnel_docs_never_put_token_on_argv(self):
+        """The manual install steps and the tunnel SOP teach --token-file, never a pm2/ps-visible --token."""
+        for doc in TUNNEL_DOCS:
+            text = doc.read_text()
+            self.assertIn("--token-file", text, doc.name)
+            self.assertNotRegex(text, r"tunnel run --token(?!-file)", doc.name)
+            self.assertNotIn("same tradeoff", text, doc.name)
 
     def test_tunnel_port_uses_ingress_lib(self):
         """create-tunnel sources cc-tunnel-ingress.sh; the 4000 literal stays single-sourced."""
