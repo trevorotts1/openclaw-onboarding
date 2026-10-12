@@ -96,7 +96,7 @@ def _family_or_paid(value, sig):
     for s in _strings_in(value):
         f = C.model_id_flags(s, sig)
         fam = fam or f["family"]
-        paid = paid or f["paid"]
+        paid = paid or f["metered"]  # D11: subscription (:cloud) is not a P1 paid tier
     return fam, paid
 
 
@@ -209,7 +209,7 @@ def sig_s2(model_allowlist, traj_events, role, sig):
     count = len(out)
     # classify the worst
     worst_fam = any(C.model_id_flags(e.get("modelId"), sig)["family"] for e in out)
-    worst_paid = any(C.model_id_flags(e.get("modelId"), sig)["paid"] for e in out)
+    worst_paid = any(C.model_id_flags(e.get("modelId"), sig)["metered"] for e in out)
     sev = "P2"
     detail = "%d runtime event(s) on a model outside the baseline allowlist" % count
     if role == "client" and (worst_fam or worst_paid):
@@ -332,6 +332,21 @@ def sig_s7(probe):
     return findings
 
 
+def tunnel_configured(home=None, daemon_glob="/Library/LaunchDaemons/*cloudflared*"):
+    """True only when this box was set up with a cloudflared tunnel: a token file
+    (~/.openclaw/secrets/tunnel-*.token), a ~/.cloudflared/*.yml config, a pm2 dump
+    naming cloudflare/cloudflared, or a cloudflared LaunchDaemon (skill 32 layouts)."""
+    h = home or os.path.expanduser("~")
+    if (glob.glob(os.path.join(h, ".openclaw", "secrets", "tunnel-*.token"))
+            or glob.glob(os.path.join(h, ".cloudflared", "*.yml"))
+            or glob.glob(daemon_glob)):
+        return True
+    try:
+        return "cloudflare" in Path(h, ".pm2", "dump.pm2").read_text(errors="replace").lower()
+    except OSError:
+        return False
+
+
 def probe_surfaces():
     """Best-effort LOCAL probes (no network beyond localhost). Returns up/down/unknown
     per surface. Conservative: only 'down' when a probe DEFINITIVELY fails, so a probe
@@ -348,7 +363,8 @@ def probe_surfaces():
             pass
         return "unknown"
     gw = proc_running("openclaw")
-    tun = proc_running("cloudflared")
+    # D11: a box with no cloudflared token / config / pm2 app / daemon never had a tunnel
+    tun = proc_running("cloudflared") if tunnel_configured() else "unknown"
     return {"gateway": gw, "tunnel": tun, "dashboard": "unknown"}
 
 
@@ -861,6 +877,12 @@ def self_test():
     f1b = sig_s1([{**diffs_model[0], "live_value": "glm-5.2"}], "client", sig)
     assert f1b[0]["severity"] == "P2"
     print("  S1 case: PASS (family on client=P1, benign=P2)")
+    # D11: Ollama Cloud (:cloud, subscription) fallback is NOT a paid-tier P1; metered openrouter still is
+    f1c = sig_s1([{**diffs_model[0], "live_value": ["glm-5.2", "ollama-cloud/glm-5.3:cloud"]}], "client", sig)
+    assert f1c[0]["severity"] == "P2" and "paid" not in f1c[0]["detail"], f1c
+    f1d = sig_s1([{**diffs_model[0], "live_value": ["glm-5.2", "openrouter/glm-5.2"]}], "client", sig)
+    assert f1d[0]["severity"] == "P1" and "paid" in f1d[0]["detail"], f1d
+    print("  S1 D11 case: PASS (:cloud fallback=P2, metered openrouter fallback=P1)")
 
     # S4 with a ledger (stamped raise is silent)
     import tempfile
@@ -1058,6 +1080,20 @@ def self_test():
     # S7
     assert sig_s7({"gateway": "down"})[0]["severity"] == "P1"
     assert sig_s7({"gateway": "up", "tunnel": "down"})[0]["key_path"] == "surface.tunnel"
+    # D11: no cloudflared token/config/pm2 app/daemon -> not configured -> never 'down'
+    import tempfile
+    with tempfile.TemporaryDirectory() as h:
+        nodaemon = os.path.join(h, "no-such-dir", "*cloudflared*")
+        assert tunnel_configured(h, nodaemon) is False
+        assert sig_s7({"gateway": "up", "tunnel": "unknown"}) == []
+        os.makedirs(os.path.join(h, ".openclaw", "secrets"))
+        open(os.path.join(h, ".openclaw", "secrets", "tunnel-command-center.token"), "w").close()
+        assert tunnel_configured(h, nodaemon) is True
+    with tempfile.TemporaryDirectory() as h:
+        os.makedirs(os.path.join(h, ".pm2"))
+        open(os.path.join(h, ".pm2", "dump.pm2"), "w").write('[{"name":"cloudflare-tunnel"}]')
+        assert tunnel_configured(h, os.path.join(h, "x*")) is True
+    print("  S7 D11 case: PASS (tunnel unknown without cloudflared setup)")
     print("  S7 case: PASS (gateway down=P1)")
 
     # S8 value-free secret catch. The synthetic key is ASSEMBLED from fragments at

@@ -47,6 +47,7 @@ On Contabo the node user's `$HOME` is the container image's temporary layer and 
 - Tests: `tests/unit/persistent-paths-contabo.test.sh` (stubbed `mountpoint` and `uname`, temp HOME and OpenClaw root per platform: every path lands under the root on Contabo; Mac and Hostinger unchanged; 21 assertions fail on the old code). Registered in `scripts/ci/fast-guards.json`.
 - Skill versions: skill 41 v2.0.2, skill 70 v1.0.3.
 - Migration: none beyond the normal update; an existing Contabo box's old `~/Downloads/openclaw-master-files` is not moved (it is already gone after a recreate); the next roll re-seeds `<root>/openclaw-master-files`. Risk: LOW. Follow-up: add the `persist-home` relink block to the Contabo `container-startup.sh` template (D08).
+## [v27.1.17]  -  2026-10-12  -  D11: Early Warning System no longer treats Ollama Cloud (:cloud, a subscription) as a paid-tier P1 and reports no tunnel-down on boxes without cloudflared (skill 60 v1.2.3)
 
 ## [v27.1.16]  -  2026-10-12  -  Merge train: #1899 D01: Command Center fast path fast-forwards only, never reset --hard…
 
