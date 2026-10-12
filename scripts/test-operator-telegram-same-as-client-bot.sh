@@ -33,6 +33,8 @@ optok() { python3 -c "import json,sys;print(json.load(open('$CFG'))['channels'][
 has_binding() { python3 -c "import json;print(any(b.get('match',{}).get('accountId')=='operator' for b in json.load(open('$CFG')).get('bindings',[])))"; }
 leaks() { printf '%s' "$OUT" | grep -q 'secretA\|secretB'; }
 
+[ -x /bin/bash ] && { /bin/bash -n "$OPTG" 2>/dev/null && ok "parses under /bin/bash (3.2 on macOS)" || nope "does not parse under /bin/bash"; }
+
 echo "== equal bot id (env token == accounts.default) =="
 run_case eq 111:secretA "" 111:secretA ""
 [ "$(optok)" = "" ] && ok "operator botToken empty" || nope "operator botToken not empty"

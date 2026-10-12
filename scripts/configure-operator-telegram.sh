@@ -204,7 +204,7 @@ op_acct = accounts.setdefault("operator", {})
 # D12: OpenClaw 2026.10.1 rejects two telegram accounts that hold the same bot
 # ("Duplicate Telegram bot token"), which also takes the operator account down.
 # Compare the bot id (digits before the colon, public, never the secret half)
-# against this box's own client bot; if equal, the operator account gets "".
+# against the client bot of this box; if equal, the operator account gets "".
 def _bot_id(t):
     return t.split(":", 1)[0].strip() if isinstance(t, str) else ""
 
