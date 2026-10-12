@@ -383,16 +383,26 @@ escalate_class() {
 
   # ── Rescue Rangers n8n webhook ─────────────────────────────────────────────
   if command -v curl >/dev/null 2>&1 && [[ -n "${RESCUE_RANGERS_WEBHOOK_URL:-}" && "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
-    _payload=$(_OC_RR_CLIENT="${company_name}" _OC_RR_AGENT="${agent_name}" \
-      _OC_RR_CLASS="${_class}" _OC_RR_MSG="${_reason}" _OC_RR_IDLE="${_idle}" \
-      python3 -c 'import json, os
-print(json.dumps({"action": "escalate", "client": os.environ["_OC_RR_CLIENT"], "agent": os.environ["_OC_RR_AGENT"], "class": os.environ["_OC_RR_CLASS"], "message": os.environ["_OC_RR_MSG"], "idle": os.environ["_OC_RR_IDLE"]}))' 2>/dev/null)
-    log "posting to Rescue Rangers webhook"
-    curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
-      -H "Content-Type: application/json" \
-      ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
-      -d "${_payload}" >>"${LOG_FILE}" 2>&1 \
-      || log "WARN: Rescue Rangers webhook POST failed (non-fatal)"
+    # D17: the RR-01 intake answers 400 invalid_payload "unresolvable box" to a post with
+    # no box identity (Lyric Hawkins: every weekly escalation rejected since Sep 6). Send
+    # the canonical fleet slug as boxName/box, same as scripts/disk-usage-alert.sh and
+    # rescue_admission.build_payload. No slug = nothing the intake can accept, so say so
+    # instead of posting a request that is rejected and hidden.
+    if [[ -z "${FLEET_STANDING_BOX_SLUG:-}" ]]; then
+      log "WARN: FLEET_STANDING_BOX_SLUG is not set - Rescue Rangers escalation NOT sent (the intake rejects a post with no boxName)"
+    else
+      _payload=$(_OC_RR_BOX="${FLEET_STANDING_BOX_SLUG}" _OC_RR_CLIENT="${company_name}" _OC_RR_AGENT="${agent_name}" \
+        _OC_RR_CLASS="${_class}" _OC_RR_MSG="${_reason}" _OC_RR_IDLE="${_idle}" \
+        python3 -c 'import json, os
+e = os.environ
+print(json.dumps({"action": "escalate", "box": e["_OC_RR_BOX"], "boxName": e["_OC_RR_BOX"], "client": e["_OC_RR_CLIENT"], "clientName": e["_OC_RR_CLIENT"], "agent": e["_OC_RR_AGENT"], "agentName": e["_OC_RR_AGENT"], "class": e["_OC_RR_CLASS"], "message": e["_OC_RR_MSG"], "idle": e["_OC_RR_IDLE"]}))' 2>/dev/null)
+      log "posting to Rescue Rangers webhook"
+      curl -s -X POST "${RESCUE_RANGERS_WEBHOOK_URL}" \
+        -H "Content-Type: application/json" \
+        ${RESCUE_RANGERS_WEBHOOK_SECRET:+-H X-Rescue-Secret:${RESCUE_RANGERS_WEBHOOK_SECRET}} \
+        -d "${_payload}" >>"${LOG_FILE}" 2>&1 \
+        || log "WARN: Rescue Rangers webhook POST failed (non-fatal)"
+    fi
   fi
 
   log "watchdog escalation complete: ${_class} for ${company_name}/${agent_name}"
