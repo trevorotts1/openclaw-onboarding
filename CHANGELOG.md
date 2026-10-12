@@ -1,3 +1,5 @@
+## [v27.1.18]  -  2026-10-12  -  D13: skill 18 heartbeat checklist is bounded and report-only (command cap, no investigating, fixing or messaging, one log line)
+
 ## [v27.1.17]  -  2026-10-12  -  Merge train: #1900 D02: onboarding cron scripts no longer run openclaw doctor --fix…; #1901 D12: operator Telegram account never gets the box's own client bot…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
