@@ -689,7 +689,10 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > (`tests/test_github_archive_maintenance_schedule.py` drives it against a
 > fake `openclaw` CLI and pins its exact registered argv) and a doc snippet is
 > not. Run once per box, after Skill 06 is installed:
-> `bash scripts/install-github-archive-reconcile-cron.sh [evidence-base-dir]`
+> `bash scripts/install-github-archive-reconcile-cron.sh [--idempotent] [evidence-base-dir]`
+> (a leading `--flag` is never the directory; the directory defaults to
+> `$HOME/clawd/skill6-fix`, is created if missing, and an existing job whose
+> `--sweep-base` is a flag is repaired in place).
 > Verify with `openclaw cron list | grep skill6-github-archive-reconcile-sweep`;
 > fire it once by hand (`openclaw cron run <id>`) to confirm the first dated
 > log lands under `github-archive-reconcile-logs/`.
