@@ -462,3 +462,83 @@ test('isolation: readOwnObject refuses a path outside the caller scope', async (
   assert.equal(attempt.ok, false);
   assert.equal(attempt.code, AF_ISO_SCOPE);
 });
+
+// ---------------------------------------------------------------------------
+// CHECKIN-500 — the live AF-DS-ID-INVALID crash (HTTP 500 / error code 1101).
+// Live stack: scopePath <- inboxPath <- readInbox <- checkIn <- handle.
+// A client_id the studio never invented must be REFUSED, never crash a route.
+// ---------------------------------------------------------------------------
+
+/** A stored key record for ANY client_id, including one the studio never issued. */
+async function seedKey(store, clientId, kind = 'machine') {
+  const minted = await mintKey();
+  const record = await buildKeyRecord({ clientId, kind, secret: minted.secret, nowMs: T0 });
+  await store.kvPut(`key:${record.fingerprint}`, JSON.stringify(record));
+  return { clientId, key: minted.secret, record };
+}
+
+test('CHECKIN-500: a non-studio client_id is refused at the admin door and never crashes a route', async () => {
+  const store = memStore();
+  const objects = memObjects();
+
+  // (a) the studio INVENTS ids: admin refuses 'operator-mac-canary' and stores nothing.
+  const refused = await handle(
+    post('/api/studio/admin/pairing-code', { admin_key: GOOD_ENV.DS_ADMIN_KEY, client_id: 'operator-mac-canary' }),
+    GOOD_ENV, store, objects,
+  );
+  assert.equal(refused.status, 400);
+  const refusedBody = await refused.json();
+  assert.equal(refusedBody.ok, false);
+  assert.equal(refusedBody.code, 'AF-DS-ADMIN-INVALID');
+  assert.equal(
+    [...store._mem.keys()].filter((k) => k.startsWith('pair:')).length, 0,
+    'no pairing code is minted for a non-studio id',
+  );
+
+  // A studio-issued id is still accepted.
+  const minted = await handle(
+    post('/api/studio/admin/pairing-code', { admin_key: GOOD_ENV.DS_ADMIN_KEY, client_id: randomClientId() }),
+    GOOD_ENV, store, objects,
+  );
+  assert.equal(minted.status, 201);
+
+  // (b) a key record ALREADY STORED with a bad id (the operator Mac's live key) is
+  //     refused with structured JSON on the check-in route — never the throw.
+  const bad = await seedKey(store, 'operator-mac-canary');
+  const checkin = await handle(post('/api/studio/checkin', {}, bad.key), GOOD_ENV, store, objects);
+  assert.equal(checkin.status, 401);
+  const checkinBody = await checkin.json();
+  assert.equal(checkinBody.ok, false);
+  assert.equal(checkinBody.code, 'AF-DS-ID-INVALID');
+  assert.match(checkinBody.message, /pair this computer again/i);
+
+  // ...and on at least one OTHER key-authorized route (no route may crash).
+  const orders = await handle(post('/api/studio/orders', { title: 'x' }, bad.key), GOOD_ENV, store, objects);
+  assert.equal(orders.status, 401);
+  assert.equal((await orders.json()).code, 'AF-DS-ID-INVALID');
+});
+
+test('CHECKIN-500: a missing inbox object is an empty inbox — 200, line null, check-in recorded', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const { clientId, key } = await clientWithKey(store);
+
+  const res = await handle(post('/api/studio/checkin', {}, key), GOOD_ENV, store, objects);
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).line, null);
+  assert.ok(Number.isFinite(Number(await store.kvGet(`checkin:${clientId}`))), 'the check-in is recorded');
+});
+
+test('CHECKIN-500: a valid client with one waiting order still prints the DRAMA_ORDER line', async () => {
+  const store = memStore();
+  const objects = memObjects();
+  const { clientId, key } = await clientWithKey(store);
+
+  const created = await handle(post('/api/studio/orders', { title: 'Spring Sale' }, key), GOOD_ENV, store, objects);
+  assert.equal(created.status, 201);
+  const orderId = (await created.json()).order.order_id;
+
+  const res = await handle(post('/api/studio/checkin', {}, key), GOOD_ENV, store, objects);
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).line, `DRAMA_ORDER ${orderId} "Spring Sale"`);
+});

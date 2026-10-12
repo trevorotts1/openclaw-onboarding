@@ -18,7 +18,7 @@
 
 'use strict';
 
-import { ownsPath, randomClientId } from './ids.js';
+import { AF_ID_INVALID, isClientId, ownsPath, randomClientId } from './ids.js';
 import { AF_KEY_MALFORMED, AF_KEY_REVOKED, AF_KEY_UNKNOWN, fingerprintOf, keyRecordKey } from './keys.js';
 
 export const AF_ISO_CROSS = 'AF-DS-ISO-CROSS';
@@ -59,6 +59,13 @@ export async function authorizeClient(store, presentedKey, claimedClientId) {
   const resolved = await resolveKey(store, presentedKey);
   if (!resolved.ok) return resolved;
   const own = resolved.record.client_id;
+  if (!isClientId(own)) {
+    // A key record whose client_id is not a studio-issued id (e.g. one paired
+    // before the admin surface validated it) can never open a scoped path.
+    // Refuse it HERE, in ONE place, so no key-authorized route throws
+    // AF-DS-ID-INVALID out of scopePath and crashes the Worker (CHECKIN-500).
+    return { ok: false, code: AF_ID_INVALID };
+  }
   if (claimedClientId !== undefined && claimedClientId !== null && claimedClientId !== own) {
     return { ok: false, code: AF_ISO_CROSS };
   }

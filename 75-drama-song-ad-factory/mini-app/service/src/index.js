@@ -27,7 +27,8 @@
 
 'use strict';
 
-import { authorizeClient, enrollClient } from './isolation.js';
+import { AF_ID_INVALID, isClientId } from './ids.js';
+import { AF_ISO_CROSS, authorizeClient, enrollClient } from './isolation.js';
 import { attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
 import { checkIn, lastCheckIn, writeInbox } from './inbox.js';
 import { acceptUpload, pollUpload } from './uploads.js';
@@ -155,6 +156,12 @@ export async function handle(request, env, store, objects, deps = {}) {
   if (request.method === 'POST' && url.pathname === '/api/studio/admin/pairing-code') {
     if (!isAdmin(env, body.admin_key)) return fail(403, 'AF-DS-ADMIN-REFUSED', 'Not the admin.');
     if (!body.client_id) return fail(400, 'AF-DS-ADMIN-INVALID', 'client_id is required.');
+    if (!isClientId(body.client_id)) {
+      // The studio INVENTS the identifier (ids.js) — never a name or a slug.
+      // Refuse BEFORE minting: no code is created and nothing is stored, so a
+      // bad id can never reach a key record and crash a later route.
+      return fail(400, 'AF-DS-ADMIN-INVALID', 'client_id must be a studio-issued id (c-<32 hex>).');
+    }
     const code = await mintPairingCode();
     await store.kvPut(
       `pair:${code.fingerprint}`,
@@ -197,7 +204,17 @@ export async function handle(request, env, store, objects, deps = {}) {
 
   // Everything below needs a key.
   const auth = await authorizeClient(store, key, body.client_id);
-  if (!auth.ok) return fail(auth.code === 'AF-DS-ISO-CROSS' ? 403 : 401, auth.code, 'That key cannot open this.');
+  if (!auth.ok) {
+    if (auth.code === AF_ISO_CROSS) return fail(403, auth.code, 'That key cannot open this.');
+    if (auth.code === AF_ID_INVALID) {
+      // The key is known but its client_id is not a studio-issued id, so no
+      // scoped path can be built. A structured refusal here — instead of
+      // scopePath throwing deeper in the route — is what stops the Worker
+      // returning 500 / error code 1101 (CHECKIN-500).
+      return fail(401, auth.code, 'This key is not bound to a studio client id. Pair this computer again.');
+    }
+    return fail(401, auth.code, 'That key cannot open this.');
+  }
   const clientId = auth.client_id;
 
   // POST /api/studio/push/subscribe — a browser registers its OWN subscription.
