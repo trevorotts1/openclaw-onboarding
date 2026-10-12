@@ -11,6 +11,7 @@ Released by the merge train as one batch. Each merged pull request's own CHANGEL
 - Regression test: `scripts/test-operator-telegram-same-as-client-bot.sh` (7 of 13 checks fail on the old script), run by `config-injection-shapes-guard`.
 - Migration: none beyond the normal update; an affected box shows the REFUSED status until a separate operator bot token is provisioned. Risk: LOW.
 ## [v27.1.17]  -  2026-10-12  -  D13: skill 18 heartbeat checklist is bounded and report-only (command cap, no investigating, fixing or messaging, one log line)
+## [v27.1.17]  -  2026-10-12  -  D17: closeout watchdog Rescue Rangers escalation carries the box identity (boxName/box from FLEET_STANDING_BOX_SLUG)
 
 ## [v27.1.16]  -  2026-10-12  -  Merge train: #1899 D01: Command Center fast path fast-forwards only, never reset --hard…
 
