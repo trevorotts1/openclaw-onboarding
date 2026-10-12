@@ -1,5 +1,8 @@
-## [v27.1.12]  -  2026-10-12  -  Enable direct Drama Studio uploads from phone and bridge
-## [v27.1.12]  -  2026-10-12  -  SK6001: skill 06 GitHub-archive reconcile cron installer never takes a --flag as the evidence directory
+## [v27.1.13]  -  2026-10-12  -  Merge train: #1892 SK6001: skill 06 reconcile-cron installer never takes a --flag as the…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1892 — [v27.1.12]  -  2026-10-12  -  SK6001: skill 06 GitHub-archive reconcile cron installer never takes a --flag as the evidence directory
 
 update-skills.sh runs the first scripts/install-*.sh of a skill as `bash <installer> --idempotent`. For skill 06 that is `install-github-archive-reconcile-cron.sh`, whose `${1:-...}` treated `--idempotent` as the evidence directory and registered `--sweep-base "--idempotent"`; argparse rejected it (exit 2) every night on every box that rolled (seen on 6 boxes, silent because delivery is none).
 
@@ -9,6 +12,7 @@ update-skills.sh runs the first scripts/install-*.sh of a skill as `bash <instal
 - Regression tests: `TestInstallerFlagParsingSK6001` in `06-ghl-install-pages/tests/test_github_archive_maintenance_schedule.py` (5 of 6 new tests fail on the old installer).
 - Migration: none beyond the normal update. Risk: LOW.
 
+## [v27.1.12]  -  2026-10-12  -  Enable direct Drama Studio uploads from phone and bridge
 ## [v27.1.11]  -  2026-10-11  -  Merge train: #1859 WW30R: carry PR 1856's createTask migration onto unit/WWR3INT-U2…; #1861 WWB-U1: join WW-22, WW-23 and WW-24 (skill 75 v2.9.30)
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
