@@ -12,6 +12,9 @@
 
 'use strict';
 
+/** The one code for "this is not a studio-issued client id". */
+export const AF_ID_INVALID = 'AF-DS-ID-INVALID';
+
 const CLIENT_ID_RE = /^c-[0-9a-f]{32}$/;
 
 /** Cryptographically random lowercase hex. */
@@ -38,7 +41,7 @@ export function isClientId(value) {
  * Traversal segments throw rather than resolve outside the scope.
  */
 export function scopePath(clientId, ...segments) {
-  if (!isClientId(clientId)) throw new Error('AF-DS-ID-INVALID');
+  if (!isClientId(clientId)) throw new Error(AF_ID_INVALID);
   const tail = segments
     .map((s) => String(s).replace(/^\/+|\/+$/g, ''))
     .filter(Boolean);
