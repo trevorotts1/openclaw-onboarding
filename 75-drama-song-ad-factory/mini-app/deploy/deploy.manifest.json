@@ -13,7 +13,7 @@
     "name": "drama-studio-mini-app",
     "route_host": "studio.zerohumanworkforce.com",
     "main": "src/index.js",
-    "service_entry": "service/src/index.js",
+    "service_entry": "service/src/worker.js",
     "kv_binding": "DS_STUDIO",
     "kv_title": "DS_STUDIO",
     "compatibility_date": "2024-09-23"

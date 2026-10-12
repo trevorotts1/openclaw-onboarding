@@ -37,6 +37,7 @@ import pathlib
 import sys
 import urllib.error
 import urllib.request
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from studio_claim import ClaimLedger, LedgerError, message_id  # noqa: E402
@@ -52,9 +53,19 @@ STATUS_EVENTS = ("claim", "needs_you", "answer", "ready", "deliver", "done")
 # asserts all three strings are equal before it drives a request.
 STUDIO_USER_AGENT = "drama-studio-client/2.7.48 (+https://studio.zerohumanworkforce.com)"
 
-#: U2 schema.sql: upload channels and the plan's 50 MB client cap.
+#: Same per-channel caps and extensions as service/src/uploads.js.
 CHANNELS = ("audio", "image", "video")
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+MAX_UPLOAD_BYTES = {"image": 25 * 1024 * 1024, "audio": 25 * 1024 * 1024,
+                    "video": 200 * 1024 * 1024}
+UPLOAD_TYPES = {
+    "jpg": ("image", "image/jpeg"), "jpeg": ("image", "image/jpeg"),
+    "png": ("image", "image/png"), "heic": ("image", "image/heic"),
+    "webp": ("image", "image/webp"), "mp3": ("audio", "audio/mpeg"),
+    "m4a": ("audio", "audio/mp4"), "wav": ("audio", "audio/wav"),
+    "ogg": ("audio", "audio/ogg"), "mp4": ("video", "video/mp4"),
+    "mov": ("video", "video/quicktime"), "webm": ("video", "video/webm"),
+}
+STUDIO_BASE_URL = "https://studio.zerohumanworkforce.com"
 HEADER_SNIFF_BYTES = 512
 
 IMAGE_MAGIC = (
@@ -138,28 +149,104 @@ def photo_request(path):
     Refusals are loud and non-zero — an unsupported or oversized file is named,
     never silently downgraded.
     """
+    return upload_request(path, channel="image")
+
+
+def upload_request(path, channel=None):
+    """Build the service request, checking file bytes, extension and channel cap."""
     p = pathlib.Path(path)
     if not p.is_file():
         raise LedgerError("NO_FILE", "photo not found: %s" % p.name)
     size = p.stat().st_size
     if size <= 0:
         raise LedgerError("EMPTY_FILE", "photo is empty: %s" % p.name)
-    if size > MAX_UPLOAD_BYTES:
+    ext = p.suffix.lower().lstrip(".")
+    kind = UPLOAD_TYPES.get(ext)
+    if kind is None or (channel is not None and channel != kind[0]
+                        and not (ext == "webm" and channel == "audio")):
+        raise LedgerError("UNSUPPORTED_TYPE", "file format is not accepted for this channel")
+    channel = channel or kind[0]
+    ctype = "audio/webm" if ext == "webm" and channel == "audio" else kind[1]
+    cap = MAX_UPLOAD_BYTES[channel]
+    if size > cap:
         raise LedgerError("TOO_BIG", "%s is %d bytes; cap is %d"
-                          % (p.name, size, MAX_UPLOAD_BYTES))
+                          % (p.name, size, cap))
     with p.open("rb") as fh:
         header = fh.read(HEADER_SNIFF_BYTES)
-    ctype = sniff_image(header)
-    if ctype is None:
+    signatures = {"png": (b"\x89PNG",), "jpg": (b"\xff\xd8\xff",),
+                  "jpeg": (b"\xff\xd8\xff",), "webp": (b"RIFF",),
+                  "wav": (b"RIFF",), "ogg": (b"OggS",),
+                  "webm": (b"\x1a\x45\xdf\xa3",),
+                  "mp3": (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")}
+    matches = (header[4:8] == b"ftyp" if ext in ("heic", "m4a", "mov", "mp4")
+               else any(header.startswith(sig) for sig in signatures.get(ext, ())))
+    if len(header) < 4 or not matches:
         raise LedgerError("UNSUPPORTED_TYPE",
                           "%s is not a recognised photo format" % p.name)
     return {
-        "channel": "image",
+        "channel": channel,
         "filename": p.name,
         "size_bytes": size,
         "content_type": ctype,
-        "header_bytes": len(header),
+        "header_bytes": list(header[:16]),
     }
+
+
+def _put_file(url, file_handle, content_type, size, *, timeout=120):
+    """Stream file bytes directly to R2; no presented key is forwarded."""
+    req = urllib.request.Request(url, data=file_handle, method="PUT",
+                                 headers={"Content-Type": content_type,
+                                          "Content-Length": str(size),
+                                          "User-Agent": STUDIO_USER_AGENT})
+    # A redirect must never forward the file to another destination.
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+    try:
+        with urllib.request.build_opener(NoRedirect()).open(req, timeout=timeout) as resp:
+            return resp.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return 0
+
+
+def upload_file(path, *, channel=None, env=None, post=None, put=None):
+    """POST metadata then PUT bytes. Returns identifiers only, never a signed URL."""
+    key = load_key(env)
+    if not key:
+        raise LedgerError("NO_KEY", "DS_KEY not set in env")
+    body = upload_request(path, channel)
+    status, result = (post or _http)("POST", STUDIO_BASE_URL + "/api/studio/uploads",
+                                    key=key, body=body)
+    if status == 0:
+        raise LedgerError("TRANSPORT_UNKNOWN", "upload request outcome is unknown")
+    if status != 201 or not result.get("ok"):
+        raise LedgerError("UPLOAD_REFUSED", "upload request refused (HTTP %d)" % status)
+    upload = result.get("upload") or {}
+    object_path = result.get("object_path", "")
+    upload_id = result.get("upload_id", "")
+    parts = urllib.parse.urlsplit(upload.get("url", ""))
+    # Validate the destination before sending any file bytes; no redirects.
+    import re
+    if (parts.scheme != "https" or parts.username or parts.password or parts.port
+            or not re.fullmatch(r"[a-f0-9]{32}\.r2\.cloudflarestorage\.com", parts.hostname or "")
+            or not re.fullmatch(r"clients/c-[a-f0-9]{32}/intake/u_[a-f0-9]{24}\.[a-z0-9]+", object_path)
+            or parts.path != "/zhw-drama-studio/" + object_path
+            or upload_id != object_path.rsplit("/", 1)[-1].split(".")[0]
+            or upload.get("content_type") != body["content_type"]):
+        raise LedgerError("UPLOAD_RESPONSE_INVALID", "storage upload response is invalid")
+    with pathlib.Path(path).open("rb") as fh:
+        if (os.fstat(fh.fileno()).st_size != body["size_bytes"]
+                or list(fh.read(16)) != body["header_bytes"]):
+            raise LedgerError("FILE_CHANGED", "file changed before upload")
+        fh.seek(0)
+        put_status = (put or _put_file)(upload["url"], fh, upload["content_type"], body["size_bytes"])
+    if put_status == 0:
+        raise LedgerError("TRANSPORT_UNKNOWN", "storage upload outcome is unknown")
+    if put_status // 100 != 2:
+        raise LedgerError("UPLOAD_PUT_REFUSED", "storage upload refused (HTTP %d)" % put_status)
+    return {"upload_id": upload_id, "object_path": object_path}
 
 
 # --- delivery ----------------------------------------------------------------
@@ -358,6 +445,15 @@ def cmd_photo(args):
     return EXIT["ok"]
 
 
+def cmd_upload(args):
+    try:
+        _emit(upload_file(args.path, channel=args.channel))
+        return EXIT["ok"]
+    except LedgerError as exc:
+        _emit({"code": exc.code, "message": str(exc)})
+        return EXIT["undefined"] if exc.code == "TRANSPORT_UNKNOWN" else EXIT["refused"]
+
+
 def cmd_cleanup_receipt(args):
     try:
         receipt = write_cleanup_receipt(args.run_dir, args.out)
@@ -413,6 +509,11 @@ def main(argv=None):
     p = sub.add_parser("photo", help="build the direct-upload request for a photo")
     p.add_argument("--path", required=True)
     p.set_defaults(func=cmd_photo)
+
+    u = sub.add_parser("upload", help="send a photo, audio or video directly to storage")
+    u.add_argument("path")
+    u.add_argument("--channel", choices=CHANNELS)
+    u.set_defaults(func=cmd_upload)
 
     r = sub.add_parser("cleanup-receipt", help="write the owned-run cleanup receipt")
     r.add_argument("--run-dir", required=True)
