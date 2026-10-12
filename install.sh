@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v27.1.13"
+ONBOARDING_VERSION="v27.1.14"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2354,7 +2354,9 @@ discover_skills() {
 # (internal workflow micro-agents) is NEVER touched.
 #
 # Idempotent: a file that already byte-matches canonical is a no-op; an absent
-# file stays absent; a second run produces no new backups and no churn. A
+# file stays absent (one exception, RRS001: a REGISTERED agents.entries /
+# agents.list workspace with no TOOLS.md at all gets the box's TOOLS.md created);
+# a second run produces no new backups and no churn. A
 # pre-existing SYMLINK (relic of the pre-amendment behavior) is MIGRATED to a
 # real copy, unconditionally. Every action logs with the [link-shared] prefix.
 # A divergent real file is BACKED UP (never deleted) to <file>.bak-unify-<ts>,
@@ -2689,6 +2691,27 @@ except Exception:
   local WS_LIST_FILE
   WS_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-ws-$$.txt")"
   : > "$WS_LIST_FILE"
+  # RRS001: registered workspaces (entries{} map AND legacy list[]), used ONLY by
+  # the create-only TOOLS.md pass below. Kept apart from WS_LIST_FILE so that
+  # registering a workspace never widens which files the unify loop rewrites.
+  local REG_LIST_FILE
+  REG_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-reg-$$.txt")"
+  : > "$REG_LIST_FILE"
+  if [ -f "$_OCJSON" ] && command -v python3 >/dev/null 2>&1; then
+    OC_JSON="$_OCJSON" python3 - >> "$REG_LIST_FILE" 2>/dev/null <<'PYEOF' || true
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    ag = cfg.get("agents", {}) or {}
+    ent = ag.get("entries") if isinstance(ag.get("entries"), dict) else {}
+    lst = ag.get("list") if isinstance(ag.get("list"), list) else []
+    for e in list(ent.values()) + lst:
+        if isinstance(e, dict) and e.get("workspace"):
+            print(os.path.expanduser(e["workspace"]))
+except Exception:
+    pass
+PYEOF
+  fi
 
   if [ -f "$_OCJSON" ] && command -v python3 >/dev/null 2>&1; then
     OC_JSON="$_OCJSON" python3 - >> "$WS_LIST_FILE" 2>/dev/null <<'PYEOF' || true
@@ -2721,7 +2744,7 @@ PYEOF
         done >> "$WS_LIST_FILE" 2>/dev/null || true
   done
 
-  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0
+  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0 CREATED_TOOLS=0
 
   local W
   while IFS= read -r W; do
@@ -2857,6 +2880,11 @@ for line in src_text.splitlines():
 if cur:
     blocks.append("\n".join(cur))
 unique = [b for b in blocks if b.strip() and b.strip() not in canon_text]
+# RRS001: a file seeded from skill 15's templates (marker below) is reproducible, so
+# there is nothing unique to preserve into IDENTITY.md; appending it would duplicate
+# the identity text that is already there.
+if "rr-operator-support:v1" in src_text:
+    unique = []
 if unique:
     with open(idf, "a", encoding="utf-8") as fh:
         fh.write("\n\n" + mark + "\n")
@@ -2889,9 +2917,40 @@ PYEOF
     done
   done < <(sort -u "$WS_LIST_FILE")
 
-  rm -f "$WS_LIST_FILE" 2>/dev/null || true
+  # RRS001: a REGISTERED agent workspace (agents.entries{} or legacy agents.list[])
+  # that has NO TOOLS.md at all gets the box's TOOLS.md. OpenClaw 2026.10.x no
+  # longer seeds TOOLS.md, so an agent created after that change (remote-rescue
+  # was the first to show it) never had the box's tool notes and could not know
+  # a send path existed. This is CREATE-ONLY: an existing TOOLS.md (file, empty
+  # file or symlink) is handled by the loop above and never touched here, and
+  # AGENTS.md / USER.md stay "absent stays absent". Fail-open like the loop
+  # above: an empty canonical TOOLS.md creates nothing.
+  if [ -n "$CANON_HASH_TOOLS" ] && [ -f "$REG_LIST_FILE" ]; then
+    local RW RW_REAL
+    while IFS= read -r RW; do
+      [ -n "$RW" ] || continue
+      RW="$(printf '%s' "$RW" | sed 's:/*$::')"
+      [ -d "$RW" ] || continue
+      RW_REAL="$(cd "$RW" 2>/dev/null && pwd -P || echo "$RW")"
+      [ "$RW_REAL" = "$CANON_REAL" ] && continue
+      case "$RW_REAL/" in */workflows/*/agents/*) continue ;; esac
+      if [ -e "$RW_REAL/TOOLS.md" ] || [ -L "$RW_REAL/TOOLS.md" ]; then continue; fi
+      local RMO RM_MODE RM_OWNER
+      RMO="$(_lsc_mode_owner "$CANON_REAL/TOOLS.md")"
+      RM_MODE="${RMO%%|*}"; RM_OWNER="${RMO#*|}"
+      if [ "$(_lsc_write_copy "$CANON_REAL/TOOLS.md" "$RW_REAL/TOOLS.md" "$RM_MODE" "$RM_OWNER")" = "OK" ]; then
+        note "[link-shared] CREATE $RW_REAL/TOOLS.md <- $CANON_REAL/TOOLS.md (registered agent had none)"
+        CREATED_TOOLS=$((CREATED_TOOLS + 1))
+      else
+        echo "  WARN: [link-shared] verified create FAILED for $RW_REAL/TOOLS.md" >&2
+        FAILED=$((FAILED + 1))
+      fi
+    done < <(sort -u "$REG_LIST_FILE")
+  fi
 
-  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED already-ok=$NOOP failed=$FAILED"
+  rm -f "$WS_LIST_FILE" "$REG_LIST_FILE" 2>/dev/null || true
+
+  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED tools-created=$CREATED_TOOLS already-ok=$NOOP failed=$FAILED"
   note "[link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 
   if [ "$FAILED" -gt 0 ]; then

@@ -31,6 +31,13 @@
 # 5. Authorized operator identities are preserved; owner and operator sessions
 #    stay separate (agent:remote-rescue:direct:<id> vs agent:main:main).
 #
+# 6. WORKSPACE SEED (RRS001). A new, empty or starter-text-only remote-rescue
+#    workspace is seeded with a fixed operator-support IDENTITY.md / SOUL.md /
+#    AGENTS.md / TOOLS.md that names the OWNER's main workspace by absolute path,
+#    and OpenClaw's "you were just born" BOOTSTRAP.md is removed. A file a box
+#    already has with real content is never overwritten. See
+#    templates/remote-rescue/ and seed_workspace() in lib/rr-config-transaction.py.
+#
 # Modes: (default) interactive; --repair non-interactive re-apply; --check
 # read-only, writes nothing and reports the state it found.
 
@@ -197,6 +204,12 @@ print("  candidate       : %s (%s)" % (rep.get("validation"), rep.get("validatio
 print("  promote         : %s" % rep.get("promote"))
 print("  rollback        : %s" % rep.get("rollback"))
 print("  workspace       : %s [%s]" % (rep.get("workspace"), rep.get("mount_state")))
+seed = rep.get("seed") or {}
+if seed:
+    print("  workspace seed  : %s (wrote: %s; removed: %s; kept: %s; main workspace: %s)" % (
+        seed.get("state"), ",".join(seed.get("written") or []) or "none",
+        ",".join(seed.get("removed") or []) or "none",
+        ",".join(seed.get("kept") or []) or "none", seed.get("main_workspace")))
 for note in rep.get("notes") or []:
     print("  note            : %s" % note)
 for tr in rep.get("transitions") or []:

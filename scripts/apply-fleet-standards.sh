@@ -3772,6 +3772,40 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
 fi
 
+# ─── 5f. Inject CORE_FILE_CLAIMS_V1 into workspace/AGENTS.md (RRS001) ───────
+# A helper agent (remote-rescue) with its own near-empty folder told an operator the
+# owner's workspace was fresh and its identity blank, and a second agent said Gmail
+# had no send path. Both judged the owner's box from a folder that was never the
+# owner's. AGENTS.md is injected into the system prompt every turn, so the rule
+# lives here. Idempotent: guarded by <!-- CORE_FILE_CLAIMS_V1 -->.
+CORE_FILE_CLAIMS_MARKER="<!-- CORE_FILE_CLAIMS_V1 -->"
+
+if grep -qF "$CORE_FILE_CLAIMS_MARKER" "$AGENTS_FILE"; then
+  echo "[apply-fleet-standards] CORE_FILE_CLAIMS_V1 already present in $AGENTS_FILE - no-op"
+else
+  cat >> "$AGENTS_FILE" <<'CFCEOF'
+
+<!-- CORE_FILE_CLAIMS_V1 -->
+## Core-File Claims: name the paths, follow symlinks, never judge the owner from your own folder (stamped by apply-fleet-standards.sh, do NOT edit manually)
+
+> Marker: `CORE_FILE_CLAIMS_V1`. Idempotent. Re-stamped on every install/update.
+
+Real incident (2026-10-11): a helper agent with its own small folder told an operator that the owner's workspace was "fresh" and its identity "blank". It had only looked inside its own folder. The owner's real files were untouched, in the main workspace, the whole time.
+
+Before you say a core file (`AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `MEMORY.md`) or a download is missing, blank or unconfigured:
+
+1. **Name the absolute path of every place you checked.** "Not found in A, B and C" is a report. "Not found" is a guess. Also say what you did NOT check.
+2. **Follow symlinks.** Use `find -L` and `ls -L`. A plain `find` does not follow a link, so a file reached through one looks absent.
+3. **Never judge the owner's files from a secondary agent's own folder.** Your folder is yours. It is normally smaller than the owner's workspace. The owner's (main) workspace is `$OPENCLAW_WORKSPACE`, else `agents.entries.main.workspace`, else `agents.defaults.workspace`, else `<openclaw root>/workspace`. Look there by absolute path before you claim anything about the owner.
+4. **Check the tools notes before you say a tool has no way to work.** For example, email can send through gws OAuth OR the Google service-account path. Read the main `TOOLS.md` first.
+CFCEOF
+  echo "[apply-fleet-standards] CORE_FILE_CLAIMS_V1 injected into $AGENTS_FILE"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
+fi
+
 # ─── 6. Inject PRIME DIRECTIVE into workspace/SOUL.md (v11.3.2 G5-FIX) ───────
 # The gateway injects bootstrap files from the main agent's workspace path
 # (agents.list[main].workspace → agents.defaults.workspace → ~/.openclaw/workspace).
