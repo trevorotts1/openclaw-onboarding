@@ -4,8 +4,12 @@
 #
 #   D18  32-command-center-setup/scripts/run-full-install.sh cc_install_locked_dependencies
 #        ran `npm ci` with whatever node was first on PATH, so better-sqlite3 was
-#        built for the wrong ABI. It must lead PATH with the node that
+#        built for the wrong ABI. It must use the node that
 #        $DASHBOARD_DIR/scripts/lib/node-runtime.sh resolves.
+#   D24  the D18 fix covered npm ci only; db:push/db:seed/build/contract-check still
+#        ran on the PATH node (ERR_DLOPEN_FAILED 137 vs 147). cc_with_node now wraps
+#        every such step, and puts ONLY a `node` symlink on PATH, so the image's old
+#        /usr/local/bin/openclaw (same dir as the node) never shadows the box's.
 #   D19  38-conversational-ai-system/scripts/04-register-crons.sh skipped an
 #        existing cron by name and never looked at its agentId, so jobs stayed bound
 #        to a removed agent ("agent is unavailable: main"). It must re-bind them
@@ -20,28 +24,41 @@ ok()  { PASS=$((PASS+1)); echo "  ok   $1"; }
 bad() { FAIL=$((FAIL+1)); echo "  FAIL $1"; }
 extract() { awk -v pat="^$1\\\\(\\\\) \\\\{" '$0 ~ pat {p=1} p {print} p && /^}/ {exit}' "$2"; }
 
-# ---------------------------------------------------------------- D18
-echo "D18 - npm ci uses the Command Center node"
+# ---------------------------------------------------------------- D18 / D24
+echo "D18/D24 - every Command Center npm/node step uses the Command Center node"
 mkdir -p "$T/decoy" "$T/pinned" "$T/dash/scripts/lib"
 for d in decoy pinned; do   # fake node: answers the resolver probe, names itself
   printf '#!/bin/sh\n[ "$1" = "-p" ] && { echo 127; exit 0; }\necho %s\n' "$d" > "$T/$d/node"; chmod +x "$T/$d/node"
+  # fake openclaw in BOTH dirs: the pinned dir stands for /usr/local/bin (image's old openclaw)
+  printf '#!/bin/sh\necho %s\n' "$d" > "$T/$d/openclaw"; chmod +x "$T/$d/openclaw"
 done
-# fake npm: records which node it would run (first node on its PATH)
-printf '#!/bin/sh\ncommand -v node > "%s/npm-saw-node"\n' "$T" > "$T/decoy/npm"; chmod +x "$T/decoy/npm"
+# fake npm (ambient only): records which node and which openclaw its PATH resolves
+printf '#!/bin/sh\necho "$(node) $(openclaw) $*" > "%s/npm-saw"\n' "$T" > "$T/decoy/npm"; chmod +x "$T/decoy/npm"
 echo '{}' > "$T/dash/package-lock.json"
 printf '#!/usr/bin/env bash\necho "%s/pinned/node"\n' "$T" > "$T/dash/scripts/lib/node-runtime.sh"
 FRAG="$T/frag.sh"
-{ extract log "$INSTALLER"; extract cc_install_locked_dependencies "$INSTALLER"; } > "$FRAG"
-grep -q cc_install_locked_dependencies "$FRAG" || { echo "FATAL: cannot extract cc_install_locked_dependencies"; exit 2; }
-run_ci() { ( LOG_FILE="$T/log"; DASHBOARD_DIR="$T/dash"; PATH="$T/decoy:/usr/bin:/bin"
+{ extract log "$INSTALLER"; extract cc_with_node "$INSTALLER"; extract cc_install_locked_dependencies "$INSTALLER"; } > "$FRAG"
+grep -q cc_with_node "$FRAG" || { echo "FATAL: cannot extract cc_with_node"; exit 2; }
+run_step() { ( LOG_FILE="$T/log"; DASHBOARD_DIR="$T/dash"; PATH="$T/decoy:/usr/bin:/bin"
              fail_install() { echo "fail_install: $1" >&2; exit 1; }
-             . "$FRAG"; cc_install_locked_dependencies >/dev/null 2>&1 ); }
-rm -f "$T/npm-saw-node"; run_ci
-[ "$(cat "$T/npm-saw-node" 2>/dev/null)" = "$T/pinned/node" ] && ok "resolver's node leads PATH for npm ci" || bad "npm ci saw: $(cat "$T/npm-saw-node" 2>/dev/null)"
-rm -f "$T/dash/scripts/lib/node-runtime.sh" "$T/npm-saw-node"; run_ci
-[ "$(cat "$T/npm-saw-node" 2>/dev/null)" = "$T/decoy/node" ] && ok "older checkout without the resolver keeps the ambient node" || bad "fallback broken"
-printf '#!/usr/bin/env bash\nexit 2\n' > "$T/dash/scripts/lib/node-runtime.sh"; rm -f "$T/npm-saw-node"; run_ci
-[ "$(cat "$T/npm-saw-node" 2>/dev/null)" = "$T/decoy/node" ] && ok "resolver failure keeps the ambient node (does not abort)" || bad "resolver failure handling broken"
+             . "$FRAG"; "$@" >/dev/null 2>&1 ); }
+saw() { cat "$T/npm-saw" 2>/dev/null; }
+rm -f "$T/npm-saw"; run_step cc_install_locked_dependencies
+[ "$(saw | cut -d' ' -f1,2)" = "pinned decoy" ] && ok "npm ci: Command Center node, ambient (not image) openclaw" || bad "npm ci saw: $(saw)"
+for step in "run db:push" "run db:seed" "run build"; do
+  rm -f "$T/npm-saw"; run_step cc_with_node npm $step
+  [ "$(saw)" = "pinned decoy $step" ] && ok "npm $step: Command Center node, ambient openclaw" || bad "npm $step saw: $(saw)"
+done
+[ "$( PATH="$T/decoy:/usr/bin:/bin"; LOG_FILE="$T/log"; DASHBOARD_DIR="$T/dash"; . "$FRAG"; cc_with_node node 2>/dev/null | tail -1 )" = "pinned" ] && ok "bare node step (contract check): Command Center node" || bad "bare node step used the wrong node"
+leak="$(ls -d "${TMPDIR:-/tmp}"/cc-node.* 2>/dev/null | wc -l | tr -d ' ')"
+[ "$leak" = 0 ] && ok "no temp shim dir left behind" || bad "$leak temp shim dirs leaked"
+rm -f "$T/dash/scripts/lib/node-runtime.sh" "$T/npm-saw"; run_step cc_with_node npm run db:push
+[ "$(saw | cut -d' ' -f1,2)" = "decoy decoy" ] && ok "older checkout without the resolver keeps the ambient node" || bad "fallback broken: $(saw)"
+printf '#!/usr/bin/env bash\nexit 2\n' > "$T/dash/scripts/lib/node-runtime.sh"; rm -f "$T/npm-saw"; run_step cc_with_node npm run db:push
+[ "$(saw | cut -d' ' -f1,2)" = "decoy decoy" ] && ok "resolver failure keeps the ambient node (does not abort)" || bad "resolver failure handling broken"
+# static guard: every Command Center npm/node call in the installer goes through cc_with_node
+bare="$(grep -nE '(\( *cd [^)]*&& *|^ *)(npm (ci|run) |node |bash [^ ]*run-bounded.sh [0-9]+ node )' "$INSTALLER" | grep -vE '^[0-9]+: *#|cc_with_node|log "' || true)"
+[ -z "$bare" ] && ok "no bare npm ci/run or node call left in run-full-install.sh" || bad "bare call(s): $bare"
 
 # ---------------------------------------------------------------- D19
 echo "D19 - existing cron bound to a removed agent is re-bound"
