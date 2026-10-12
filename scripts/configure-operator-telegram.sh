@@ -200,6 +200,21 @@ default_acct.setdefault("dmPolicy", "pairing")
 
 # 2. operator account — SEPARATE bot, allowlist of operator IDs ONLY.
 op_acct = accounts.setdefault("operator", {})
+
+# D12: OpenClaw 2026.10.1 rejects two telegram accounts that hold the same bot
+# ("Duplicate Telegram bot token"), which also takes the operator account down.
+# Compare the bot id (digits before the colon, public, never the secret half)
+# against this box's own client bot; if equal, the operator account gets "".
+def _bot_id(t):
+    return t.split(":", 1)[0].strip() if isinstance(t, str) else ""
+
+client_ids = {_bot_id(default_acct.get("botToken")), _bot_id(tg.get("botToken"))} - {""}
+refused = False
+if op_token and _bot_id(op_token) in client_ids:
+    op_token, refused = "", True
+if _bot_id(op_acct.get("botToken")) in client_ids:
+    op_acct["botToken"], refused = "", True
+
 # additive: set token only if we have one and it is not already set
 if op_token and not op_acct.get("botToken"):
     op_acct["botToken"] = op_token
@@ -265,10 +280,12 @@ else:
 
 # report token state for the honesty contract of the caller
 print("TOKEN_PRESENT:" + ("yes" if op_acct.get("botToken") else "no"))
+if refused:
+    print("REFUSED_SAME_AS_CLIENT_BOT")
 PYEOF
 )"
 
-printf '%s\n' "$RESULT" | grep -v '^TOKEN_PRESENT:' | sed 's/^/  [operator-telegram] /'
+printf '%s\n' "$RESULT" | grep -v -e '^TOKEN_PRESENT:' -e '^REFUSED_SAME_AS_CLIENT_BOT$' | sed 's/^/  [operator-telegram] /'
 TOKEN_STATE="$(printf '%s\n' "$RESULT" | grep '^TOKEN_PRESENT:' | cut -d: -f2)"
 
 case "$RESULT" in
@@ -311,7 +328,11 @@ if command -v openclaw >/dev/null 2>&1; then
 fi
 
 # ── Honest STATUS ────────────────────────────────────────────────────────────
-if [ "$TOKEN_STATE" = "yes" ]; then
+if printf '%s\n' "$RESULT" | grep -qx 'REFUSED_SAME_AS_CLIENT_BOT'; then
+  log "operator bot id equals this box's own client bot id — operator botToken left EMPTY."
+  log "  Create a SEPARATE operator bot in BotFather and set OPERATOR_TELEGRAM_BOT_TOKEN to it."
+  printf 'STATUS: operator-telegram=REFUSED_SAME_AS_CLIENT_BOT (operator token would duplicate the client bot; operator botToken left empty)\n'
+elif [ "$TOKEN_STATE" = "yes" ]; then
   log "operator account + binding configured WITH a bot token — operator/rescue traffic now routes through the operator bot, NOT the client's chat."
   printf 'STATUS: operator-telegram=CONFIGURED (operator account + binding live; token present)\n'
 else
