@@ -6,6 +6,54 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.38 - 2026-10-11 - DEPLOY-FIX: the Drama Studio deploy runs as ONE command
+
+Fixes the five `mini-app/deploy/deploy.sh` defects the live Drama Studio deploy
+found (evidence: `finish/DEPLOY/lanes/DEPLOY-U1-lane/DEPLOY-U1-evidence.md`,
+"Exact repository fix needed"). The live Worker was already up (version
+`588491b2-...`) via a hand-built lane config; these fixes make the committed
+`deploy.sh` reproduce that deploy in one command. `deploy.sh` and
+`deploy.manifest.json` and `DEPLOY.md` changed; the U2-owned `worker/wrangler.toml`
+is untouched.
+
+- **(1) `main` did not resolve.** `deploy_worker()` wrote the throwaway config
+  into `$TMPDIR`, but the committed `main = "src/index.js"` is relative to the
+  config's own directory, so `wrangler deploy` failed with *"The entry-point file
+  at \"src/index.js\" was not found."* The temp config is now built by a pure
+  `write_resolved_config()` helper that rewrites `main` to the **absolute** path
+  of `mini-app/service/src/index.js`. The committed toml is never touched.
+- **(2) account skipped when the zone id was supplied.** `resolve_account_and_zone()`
+  only called the API inside `if [ -z "$R_ZONE_ID" ]`, so a supplied
+  `STUDIO_ZONE_ID` left the account unresolved and the live G4 guard failed. The
+  account is now resolved **independently** of the zone (fetch the zone by id and
+  read its `account.id`); an empty result still fails G4 hard.
+- **(3) `DS_STUDIO` KV namespace never resolved.** The toml's
+  `<PLACEHOLDER_KV_NAMESPACE_ID_DS_STUDIO>` (and its preview id) reached wrangler
+  unresolved. New `ensure_kv_namespace()` finds the namespace **by title** via the
+  Cloudflare API and **creates it only if absent**, then resolves its id into the
+  temp config — no `<PLACEHOLDER_*>` id is left.
+- **(4) incomplete secret list.** `set_secrets()` set only the manifest's
+  `R2_*` names, so the service's real bindings were never set. The manifest now
+  marks `DS_ENROLLMENT_SECRET`, `DS_ADMIN_KEY` and `R2_ACCOUNT_ID` **required**
+  (the service README bindings) and `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`
+  **optional**. A missing required secret fails the deploy closed; a missing
+  optional one only warns — the R2 S3 keys are **deferred until presign ships**
+  (the service does not read them at runtime) and are documented as needing a
+  token with *API Tokens Write*. No value is ever printed.
+- **(5) no DNS step.** The route host had no record. New `ensure_dns()` ensures a
+  **proxied CNAME** `studio.zerohumanworkforce.com -> zerohumanworkforce.com`,
+  created only if absent, and **refuses any zone but the guarded one**
+  (`require_guarded_zone`).
+
+Each defect has a `--self-test` case that is RED without its fix and GREEN with
+it (absolute `main`; KV id resolved into the config and created-only-if-absent;
+account resolved with a supplied zone id; required-vs-optional secrets; DNS
+refuse/create/skip). `--self-test` and `--dry-run` stay offline — no token, no
+curl, no wrangler mutation (the API and wrangler are stubbed/plan-only). No
+Cloudflare write and no real deploy in this unit.
+
+---
+
 ## v2.9.36 - 2026-10-11 - U17: the GoHighLevel text/e-mail sender (version 1, no live send)
 
 ONE new module, ONE delimited block in the ONE battery, and the single skill
