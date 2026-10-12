@@ -52,6 +52,17 @@ else
 fi
 warn_only "GOOGLE_APPLICATION_CREDENTIALS OR plain credentials present" \
   "[ -n \"$GOOGLE_APPLICATION_CREDENTIALS\" ] || ls $HOME/.config/gws/credentials* 2>/dev/null | head -1 | grep -q ."
+# RRS001: Gmail send readiness = gws OAuth OR the service-account + domain-wide-delegation
+# path. File-existence checks only (never a bare `gws auth status`, see the probe note above).
+gmail_send_ready() {
+  ls "$HOME"/.config/gws/credentials* >/dev/null 2>&1 && return 0
+  local _k
+  for _k in "${GOOGLE_APPLICATION_CREDENTIALS:-}" "${GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE:-}"; do
+    if [ -n "$_k" ] && [ -s "$_k" ] && [ -n "${GCP_IMPERSONATE_USER:-${GWS_ACCOUNT:-}}" ]; then return 0; fi
+  done
+  return 1
+}
+warn_only "Gmail send path ready (gws OAuth credentials OR service-account key + impersonated user)" "gmail_send_ready"
 warn_only "SKILL.md uses 'gws' not legacy 'google-api.js'" "grep -qi 'gws' \"$SKILLS_DIR_DEFAULT/14-google-workspace-integration/SKILL.md\" 2>/dev/null"
 assert "Node.js installed" "command -v node"
 echo ""
