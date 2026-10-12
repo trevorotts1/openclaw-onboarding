@@ -150,7 +150,7 @@ BIN="$TMP/bin"; mkdir -p "$BIN"
 printf '%s\n' '#!/bin/sh' 'echo "$@" > "'"$TMP"'/node-args"' > "$BIN/node"
 printf '%s\n' '#!/bin/sh' 'echo "$@" >> "'"$TMP"'/pm2-calls"' '[ "$1" = describe ] && exit 1' 'exit 0' > "$BIN/pm2"
 chmod +x "$BIN/node" "$BIN/pm2"
-env -u HEADQUARTERS_ENABLED HOME="$DATA" OPENCLAW_DATA="$DATA" PM2_RESURRECT_DELAY=0 \
+env -u HEADQUARTERS_ENABLED HOME="$DATA" OPENCLAW_DATA="$DATA" GW_READY_CAP=0 \
   PATH="$BIN:/usr/bin:/bin" bash "$STARTUP" > "$TMP/startup.out" 2>&1
 rc=$?
 [[ "$rc" -eq 0 ]] && ok "container-startup runs clean (rc=0)" || bad "container-startup rc=$rc: $(cat "$TMP/startup.out")"
@@ -170,20 +170,20 @@ case "$calls" in
 esac
 # A re-run must not disturb what is already there.
 touch "$DATA/.openclaw/workspace/hq-telemetry/outbox/keep.json"
-env HOME="$DATA" OPENCLAW_DATA="$DATA" PM2_RESURRECT_DELAY=0 PATH="$BIN:/usr/bin:/bin" bash "$STARTUP" >/dev/null 2>&1
+env HOME="$DATA" OPENCLAW_DATA="$DATA" GW_READY_CAP=0 PATH="$BIN:/usr/bin:/bin" bash "$STARTUP" >/dev/null 2>&1
 [[ -f "$DATA/.openclaw/workspace/hq-telemetry/outbox/keep.json" ]] && ok "re-run preserves existing persistent content (mkdir -p only, never delete)" || bad "existing content removed on re-run"
 
 # --- 6. the flag is read, not invented ------------------------------------
 printf '%s\n' 'HEADQUARTERS_ENABLED=1' > "$DATA/.openclaw/.env"
-env HOME="$DATA" OPENCLAW_DATA="$DATA" PM2_RESURRECT_DELAY=0 PATH="$BIN:/usr/bin:/bin" bash "$STARTUP" >/dev/null 2>&1
+env HOME="$DATA" OPENCLAW_DATA="$DATA" GW_READY_CAP=0 PATH="$BIN:/usr/bin:/bin" bash "$STARTUP" >/dev/null 2>&1
 grep -q 'HEADQUARTERS_ENABLED=1' "$DATA/.openclaw/logs/container-startup.log" \
   && ok "startup reports the box's recorded HEADQUARTERS_ENABLED=1" || bad "flag=1 not reported"
 printf '%s\n' 'HEADQUARTERS_ENABLED=0' > "$DATA/.openclaw/.env"
-env HOME="$DATA" OPENCLAW_DATA="$DATA" PM2_RESURRECT_DELAY=0 PATH="$BIN:/usr/bin:/bin" bash "$STARTUP" >/dev/null 2>&1
+env HOME="$DATA" OPENCLAW_DATA="$DATA" GW_READY_CAP=0 PATH="$BIN:/usr/bin:/bin" bash "$STARTUP" >/dev/null 2>&1
 grep -q 'HEADQUARTERS_ENABLED=0' "$DATA/.openclaw/logs/container-startup.log" \
   && ok "startup reports HEADQUARTERS_ENABLED=0 (a disabled box says so)" || bad "flag=0 not reported"
 rm -f "$DATA/.openclaw/.env"
-env HOME="$DATA" OPENCLAW_DATA="$DATA" PM2_RESURRECT_DELAY=0 PATH="$BIN:/usr/bin:/bin" bash "$STARTUP" >/dev/null 2>&1
+env HOME="$DATA" OPENCLAW_DATA="$DATA" GW_READY_CAP=0 PATH="$BIN:/usr/bin:/bin" bash "$STARTUP" >/dev/null 2>&1
 grep -q 'HEADQUARTERS_ENABLED unset' "$DATA/.openclaw/logs/container-startup.log" \
   && ok "absent flag reported as unset, never as enabled" || bad "absent flag misreported"
 
