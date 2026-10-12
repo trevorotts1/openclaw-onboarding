@@ -6,6 +6,111 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.36 - 2026-10-11 - U17: the GoHighLevel text/e-mail sender (version 1, no live send)
+
+ONE new module, ONE delimited block in the ONE battery, and the single skill
+version bump that G3 requires for a skill-content change (this same commit).
+Nothing outside skill 75 changed; the repository root `/version` is untouched.
+
+- New `scripts/core/ghl_sender/` (module, package init, README): the version-1
+  GHL sender the studio uses to hand a finished video's LINK to a client and to
+  send the follow-up NUDGES over the client's own GoHighLevel rail. Two
+  channels, ONE endpoint: `text` -> `POST /conversations/messages` type `SMS`
+  (`contactId`, `locationId`, `message`) and `email` -> the same endpoint type
+  `Email` (`contactId`, `locationId`, `subject`, `html`, `emailFrom`,
+  `emailTo`), with `Version: 2021-04-15` and `Content-Type: application/json`.
+  This is the canonical shape the repo already documents
+  (`38-conversational-ai-system/references/ghl-api-quick-reference.md`) — no
+  second endpoint, sender, proxy, adapter or dashboard was added.
+- TOKEN-PRESENCE GATING: `token_present()` checks the location-token env NAMES
+  and returns a boolean; a send with no token REFUSES with
+  `AF-U17-TOKEN-MISSING` BEFORE anything is built or transmitted, and the
+  transport is never called. ONLY the presence check exists — the token VALUE is
+  never read into a variable this module returns, stores or prints;
+  `Authorization: Bearer <token>` is attached by the injected transport from the
+  runtime's own secret store, so a secret never enters this module's request
+  bytes, receipts or output.
+- NO LIVE SEND, NO TEST SEND: the module opens no socket. The wire call is a
+  TRANSPORT the runtime injects, and there is no default live transport — a send
+  with none injected REFUSES with `AF-U17-TRANSPORT-MISSING`. `build_request()`
+  produces the exact non-secret request bytes (compact JSON, deterministic) and
+  `build_receipt()` returns ONE receipt per message (channel, type, purpose,
+  contact/location, url, the request `body_sha256`, the rail's `messageId` /
+  `conversationId`, `sent_at`) — never a secret, never the body verbatim.
+- The CLI `build` verb prints the exact request it would send; the `send` verb
+  refuses with exit 5 (there is no live transport here).
+- Proof: `HOME=$(mktemp -d) python3 75-drama-song-ad-factory/scripts/core/music_qc/test_wwfix_u1.py </dev/null`
+  — 30 new U17 checks, all green, inside the one existing battery (no second
+  suite). Positives: the text and e-mail bodies are byte-exactly canonical; a
+  token-present send calls the injected stub exactly once and returns one
+  receipt. Negative controls: no token sends nothing and never calls the
+  transport; a request carrying the secret is flagged by the same detector that
+  clears a real one; a built request and a receipt both carry no Authorization
+  header and no token value.
+- Version markers: `skill-version.txt` and the `SKILL.md` frontmatter `version:`
+  land at v2.9.36 in this same commit, bundled with the real content (G3 gates a
+  skill-content change on that bump).
+
+## v2.9.35 - 2026-10-11 - U10-EXTRAS-U1: optional Telegram button, card link and measurement view, native fields first, OFF by default
+
+Joint plan section 5, row **U10 extras** (verbatim: "Optional Telegram
+button/card link/measurement view, native fields first"; version table line
+832). One new module and its own suite; nothing existing is edited, so the
+required version-0 delivery is untouched.
+
+- New `scripts/core/choice_card/intake_card/optional_extras.py` — the optional
+  surface, OFF by default. `extras_enabled` is true only for the exact
+  on-values `"true"` / `"1"` (unset, empty, `"false"`, `"yes"`, `"TRUE"` all
+  stay off). With extras off every function returns its input UNCHANGED, so the
+  required GHL-first delivery and every required message/card/status path are
+  byte-identical; the module imports the required delivery nowhere.
+- Native fields first: the **Telegram button** is the native Bot API
+  `reply_markup.inline_keyboard` field appended to the payload the existing
+  message pattern already builds (`intake_card.telegram_payload`); the **card
+  link** is one `Open in Drama Studio: <url>` line reading the card's OWN
+  native `studio_url` first, the environment only as a fallback; the
+  **measurement view** renders ONLY the status counts a caller already has —
+  no store, no page, no scheduler, no network call. No link or button is ever
+  invented (extras on + no URL -> nothing added).
+- A caller that DEMANDS an extra while extras are off gets a refusal with the
+  named code `AF-DS-EXTRAS-DISABLED` and zero side effects; the CLI exit code
+  is `4` (ok `0`, error `1`), the same non-zero exit the skill's other gates
+  use. No send, no credential, fixture-only.
+- Proof: new `scripts/core/choice_card/intake_card/test_optional_extras_u10x.py`
+  (40 checks green) proves the off-by-default truth table, the native-field
+  additions, the append/no-op card link with native-first URL, the
+  counts-only measurement view, no input mutation, the named refusal, that the
+  module never imports the required delivery, and four real CLI subprocess
+  legs with true exit codes (0 ok, 4 refused).
+- Version: `skill-version.txt` and the `SKILL.md` frontmatter `version:` land
+  at v2.9.35 in this same commit (G3 gate). The repository root `/version` is
+  unchanged.
+
+## v2.9.34 - 2026-10-11 - U9: talk-to-a-person / send-a-question code path (no live send)
+
+ONE real-content commit whose parent is the live head of `main`
+(`0f6e6a8b`, read at build time). Adds the version-1 client question path and
+bumps Skill 75 exactly once, inside this one commit; the repository root
+`/version` and root `CHANGELOG.md` are unchanged.
+
+- `scripts/core/choice_card/intake_card/person_question.py` - the U9 code path.
+  A client's free-text QUESTION or TALK-TO-A-PERSON request builds ONE payload,
+  is validated at the trust boundary (`unknown-kind`, `empty-text`,
+  `text-too-long`, `missing-run-id`, `unknown-channel`, `unknown-epic`), and is
+  ROUTED to an epic: an explicit epic wins, else the first topic keyword match
+  (billing / song / storyboard / delivery), else the talk-to-a-person KIND
+  (handoff), else the default intake epic. Routing is load-bearing -- the epic
+  decides the target when the caller names none.
+- NO live send. `deliver()` reuses the skill's ONE channel-neutral send path
+  (`choice_card.intake_card.channel_send`, U11) with a RECORDING sink, so the
+  stub records exactly what WOULD have been sent (the `openclaw message send`
+  argv) and the real transport is never reached; the record says `sent: false`.
+  With a run_dir it appends one JSON line per question to
+  `<run_dir>/control/person-question.jsonl`.
+- Fixtures: `person_question_fixtures.json`. Test:
+  `choice_card/intake_card/test_person_question_u9.py` (11 checks); one
+  delimited block joins the battery `music_qc/test_wwfix_u1.py`.
+
 ## v2.9.33 - 2026-10-11 - WORKER-CFG: ship mini-app/worker/wrangler.toml (closes the U2/U4 config gap)
 
 ONE real-content commit whose parent is the live main head

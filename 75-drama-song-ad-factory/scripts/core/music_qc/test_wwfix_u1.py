@@ -3983,6 +3983,217 @@ def test_ww29_u1_runbook_single_dispatch_is_the_one_song_case():
 # WW29-U1 -- END delimited block.
 # ===========================================================================
 
+# ===========================================================================
+# U17 (GHL text/e-mail sender, no live send) -- BEGIN delimited block.
+# One delimited block, in the ONE battery (this file): message construction,
+# token-presence gating (no token -> refuse, never send) and per-message
+# receipts, proven on a recording transport stub so nothing is transmitted.
+# ===========================================================================
+import subprocess  # noqa: E402
+
+from ghl_sender import ghl_sender as GLS  # noqa: E402
+
+_U17_ENV_TOKEN = {"GHL_PRIVATE_INTEGRATION_TOKEN": "SECRET-XYZZY-TOKEN-VALUE"}
+_U17_LINK = "Your drama song video is ready: https://cdn.example.test/v/abc123"
+_U17_NUDGE = "Just checking in - your video is waiting at the link I sent."
+
+def _u17_stub(seen):
+    """A recording transport: appends the request and returns the rail ids. It
+    proves what WOULD be sent without opening a socket."""
+    def _transport(request):
+        seen.append(request)
+        return {"messageId": "msg_1", "conversationId": "con_1"}
+    return _transport
+
+def _u17_request_bytes(request):
+    """Every non-secret byte this module contributes to the wire call."""
+    return request["body"] + json.dumps(request["headers"]).encode("utf-8") \
+        + json.dumps({k: v for k, v in request.items() if k != "body"},
+                     default=str).encode("utf-8")
+
+def _u17_carries_secret(request):
+    """True when a request carries an Authorization header or a Bearer/secret
+    string. A control request WITH a secret proves this detector can fail."""
+    blob = _u17_request_bytes(request).lower()
+    return (b"authorization" in blob or b"bearer" in blob
+            or b"secret-xy" in blob or b"private_integration_token" in blob)
+
+def test_u17_text_request_bytes_are_the_canonical_shape():
+    r = GLS.build_request("text", "C1", "L1", text=_U17_LINK)
+    check(r["method"] == "POST", "U17: a text message is a POST")
+    check(r["url"] == GLS.GHL_API_URL, "U17: text uses the one canonical endpoint")
+    check(r["type"] == "SMS", "U17: text maps to the SMS type")
+    check(r["headers"] == {"Version": "2021-04-15", "Content-Type": "application/json"},
+          "U17: the two canonical headers are exact")
+    check(r["body"] == ("{\"type\":\"SMS\",\"contactId\":\"C1\",\"locationId\":\"L1\","
+                        "\"message\":\"%s\"}" % _U17_LINK).encode("utf-8"),
+          "U17: the text body bytes are exactly the canonical shape")
+
+def test_u17_email_request_bytes_are_the_canonical_shape():
+    r = GLS.build_request("email", "C1", "L1", subject="Your video",
+                          html="<p>ready</p>", email_from="a@x.test", email_to="b@y.test")
+    check(r["url"] == GLS.GHL_API_URL, "U17: e-mail uses the same one endpoint")
+    check(r["type"] == "Email", "U17: e-mail maps to the Email type")
+    expected = ("{\"type\":\"Email\",\"contactId\":\"C1\",\"locationId\":\"L1\","
+                "\"subject\":\"Your video\",\"html\":\"<p>ready</p>\","
+                "\"emailFrom\":\"a@x.test\",\"emailTo\":\"b@y.test\"}").encode("utf-8")
+    check(r["body"] == expected, "U17: the e-mail body bytes are exactly the canonical shape")
+
+def test_u17_request_never_carries_the_secret():
+    r = GLS.build_request("text", "C1", "L1", text=_U17_NUDGE)
+    check(not _u17_carries_secret(r),
+          "U17: a built request carries no Authorization header and no token value")
+    planted = {"body": b'{"Authorization":"Bearer SECRET-XYZZY-TOKEN-VALUE"}', "headers": {}}
+    check(_u17_carries_secret(planted),
+          "U17 control: the same detector DOES flag a request that carries the secret")
+
+def test_u17_no_token_refuses_and_never_calls_the_transport():
+    seen = []
+    try:
+        GLS.send("text", "C1", "L1", text=_U17_LINK,
+                 transport=_u17_stub(seen), env={})
+    except GLS.SendRefused as e:
+        check(e.reason_code == GLS.AF_TOKEN_MISSING,
+              "U17: no token refuses with AF-U17-TOKEN-MISSING")
+    else:
+        check(False, "U17: a send with no token should have been refused")
+    check(seen == [], "U17: no token -> the transport was NEVER called (nothing sent)")
+
+def test_u17_token_present_positive_control_sends_once():
+    seen = []
+    receipt = GLS.send("text", "C1", "L1", text=_U17_LINK, purpose="link",
+                       transport=_u17_stub(seen), env=_U17_ENV_TOKEN)
+    check(len(seen) == 1, "U17 control: with a token the transport is called exactly once")
+    check(receipt["delivered"] is True and receipt["purpose"] == "link",
+          "U17: the send returns ONE receipt labelled for the link")
+
+def test_u17_no_transport_refuses_even_with_a_token():
+    try:
+        GLS.send("text", "C1", "L1", text=_U17_LINK, env=_U17_ENV_TOKEN)
+    except GLS.SendRefused as e:
+        check(e.reason_code == GLS.AF_TRANSPORT_MISSING,
+              "U17: no injected transport refuses with AF-U17-TRANSPORT-MISSING")
+    else:
+        check(False, "U17: a live send must be impossible without an injected transport")
+
+def test_u17_receipt_is_per_message_and_never_carries_the_secret():
+    seen = []
+    receipt = GLS.send("email", "C1", "L1", subject="s", html="<p>h</p>",
+                       email_from="a@x.test", email_to="b@y.test", purpose="nudge",
+                       transport=_u17_stub(seen), env=_U17_ENV_TOKEN)
+    check(receipt["message_id"] == "msg_1" and receipt["conversation_id"] == "con_1",
+          "U17: the receipt carries the rail's message and conversation ids")
+    check(receipt["body_sha256"] == hashlib.sha256(seen[0]["body"]).hexdigest(),
+          "U17: the receipt pins the exact request bytes by sha256")
+    check(receipt["type"] == "Email" and receipt["purpose"] == "nudge",
+          "U17: the receipt names the channel type and the purpose")
+    check("SECRET-XYZZY-TOKEN-VALUE" not in json.dumps(receipt),
+          "U17: the token value never appears in a receipt")
+
+def test_u17_both_link_and_nudge_ride_the_one_endpoint():
+    seen = []
+    for purpose, text in (("link", _U17_LINK), ("nudge", _U17_NUDGE)):
+        GLS.send("text", "C1", "L1", text=text, purpose=purpose,
+                 transport=_u17_stub(seen), env=_U17_ENV_TOKEN)
+    check(len(seen) == 2, "U17: the link and the nudge are two messages, two receipts")
+    check(all(r["url"] == GLS.GHL_API_URL and r["type"] == "SMS" for r in seen),
+          "U17: both the link and the nudge ride the one canonical endpoint")
+
+def test_u17_malformed_requests_are_refused():
+    for call, label in (
+            (lambda: GLS.build_body("text", "C1", "L1", text=""),
+             "U17: a text with no message is refused"),
+            (lambda: GLS.build_body("email", "C1", "L1", subject="s", html="h",
+                                    email_from="a", email_to=""),
+             "U17: an e-mail with no recipient is refused"),
+            (lambda: GLS.build_body("whatsapp", "C1", "L1", text="x"),
+             "U17: a channel outside text/e-mail is refused")):
+        try:
+            call()
+        except GLS.SenderError:
+            check(True, label)
+        else:
+            check(False, label)
+
+def test_u17_cli_build_prints_the_request_and_sends_nothing():
+    p = subprocess.run(
+        [sys.executable, os.path.join(CORE, "ghl_sender", "ghl_sender.py"), "build",
+         "--channel", "text", "--contact-id", "C1", "--location-id", "L1",
+         "--text", _U17_LINK, "--purpose", "link"],
+        capture_output=True, text=True)
+    check(p.returncode == 0, "U17: the build CLI exits 0")
+    check(GLS.GHL_API_URL in p.stdout and '"type": "SMS"' in p.stdout,
+          "U17: the build CLI prints the exact request it would send")
+    check("authorization" not in p.stdout.lower() and "bearer" not in p.stdout.lower(),
+          "U17: the build CLI prints no secret and no Authorization header")
+
+def test_u17_cli_send_refuses_with_no_live_transport():
+    p = subprocess.run(
+        [sys.executable, os.path.join(CORE, "ghl_sender", "ghl_sender.py"), "send",
+         "--channel", "text", "--contact-id", "C1", "--location-id", "L1",
+         "--text", _U17_LINK],
+        capture_output=True, text=True)
+    check(p.returncode == 5, "U17: the send CLI refuses with exit 5 (no live transport)")
+    check("REFUSED" in p.stderr, "U17: the refusal names itself on stderr")
+    check(p.stdout.strip() == "", "U17: a refused send prints nothing to stdout")
+
+# ===========================================================================
+# U17 -- END delimited block.
+# ===========================================================================
+
+
+# ===========================================================================
+# U9 (talk-to-a-person / send-a-question routing) -- BEGIN delimited block.
+# The U9 code path is present, routes a question to its epic, and records the
+# send at the stub boundary WITHOUT transmitting. A missing module is
+# UNDETERMINED, never a pass. Known-good controls run before the negatives.
+# ===========================================================================
+
+def _u9_pq():
+    """The U9 module, or None when it has not landed yet (UNDETERMINED, not pass)."""
+    try:
+        import choice_card.intake_card.person_question as PQ
+        return PQ
+    except Exception:
+        return None
+
+def test_u9_person_question_routes_and_stubs():
+    PQ = _u9_pq()
+    if not gate(PQ is not None,
+                "U9: choice_card.intake_card.person_question is present",
+                "U9 module has not landed on this tree"):
+        return
+    rec = PQ.deliver(PQ.build("question", "Can I get a refund on the price?", "a1b2c3d4e5f6"))
+    check(rec["epic"] == "billing" and rec["routed_by"] == "topic",
+          "U9: a billing question routes to the billing epic by topic")
+    handoff = PQ.route(PQ.build("talk-to-a-person", "please have someone reach out",
+                                "a1b2c3d4e5f6"))
+    check(handoff["epic"] == "handoff" and handoff["routed_by"] == "kind",
+          "U9: a talk-to-a-person request routes to the handoff epic by kind (negative control for topic routing)")
+    check(rec["sent"] is False and rec["stubbed"] is True,
+          "U9: the send is stubbed -- the record says sent=False and the sink was reached")
+    check(rec["argv"][:2] == ["openclaw", "message"],
+          "U9: the stub records the exact openclaw send argv that would have gone out")
+    check(rec["target"] == "inbox:billing",
+          "U9: the epic decides the target when the caller names none")
+
+def test_u9_person_question_refuses_an_invalid_payload():
+    PQ = _u9_pq()
+    if not gate(PQ is not None,
+                "U9: person_question is present (refusal arm)",
+                "U9 module has not landed on this tree"):
+        return
+    try:
+        PQ.build("question", "   ", "a1b2c3d4e5f6")
+    except PQ.QuestionError as e:
+        check(e.reason_code == "empty-text",
+              "U9: an empty question is refused with the empty-text reason code")
+    else:
+        check(False, "U9: an empty question was accepted (must be refused)")
+
+# ===========================================================================
+# U9 -- END delimited block.
+# ===========================================================================
 
 if __name__ == "__main__":
     raise SystemExit(main())
