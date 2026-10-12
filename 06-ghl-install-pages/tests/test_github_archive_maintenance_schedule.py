@@ -303,7 +303,8 @@ class TestPersistentPathSK6002:
         assert r.returncode == 0, r.stdout + r.stderr
         assert f'--sweep-base "{data}/clawd/skill6-fix"' in log.read_text()
         assert (data / "clawd" / "skill6-fix").is_dir()
-        assert not (home / "clawd").exists(), "Hostinger must not touch $HOME/clawd"
+        assert not (home / "clawd" / "skill6-fix").is_dir() or (home / "clawd" / "skill6-fix").is_symlink(), \
+            "Hostinger must not create a real folder under $HOME/clawd"
 
     def test_contabo_default_is_under_dot_openclaw_and_legacy_path_links(self, tmp_path):
         fake_bin, log = self._fake(tmp_path, [])
@@ -353,6 +354,24 @@ class TestPersistentPathSK6002:
         r, _ = self._run(tmp_path, fake_bin, "--idempotent", extra_env=env)
         assert r.returncode == 0, r.stdout + r.stderr
         assert not log.exists()
+
+    def test_hostinger_job_on_throwaway_home_path_is_repaired(self, tmp_path):
+        # SK6003: the SK6001 default left $HOME/clawd/skill6-fix jobs on Hostinger
+        data, env = self._hostinger(tmp_path)
+        fake_bin, log = self._fake(tmp_path, [self._job(f"{tmp_path}/home/clawd/skill6-fix")])
+        r, _ = self._run(tmp_path, fake_bin, "--idempotent", extra_env=env)
+        assert r.returncode == 0, r.stdout + r.stderr
+        calls = log.read_text()
+        assert "cron edit job-1 --command" in calls
+        assert f'--sweep-base "{data}/clawd/skill6-fix"' in calls
+        assert "cron add" not in calls
+
+    def test_hostinger_command_center_path_links_to_data(self, tmp_path):
+        fake_bin, log = self._fake(tmp_path, [])
+        data, env = self._hostinger(tmp_path)
+        r, home = self._run(tmp_path, fake_bin, "--idempotent", extra_env=env)
+        legacy = home / "clawd" / "skill6-fix"
+        assert legacy.is_symlink() and legacy.resolve() == (data / "clawd" / "skill6-fix").resolve()
 
     def test_mac_job_under_home_is_left_alone(self, tmp_path):
         fake_bin, log = self._fake(tmp_path, [self._job(f"{tmp_path}/home/clawd/skill6-fix")])

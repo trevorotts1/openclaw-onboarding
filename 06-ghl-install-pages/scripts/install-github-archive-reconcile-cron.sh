@@ -45,7 +45,8 @@
 # survives). The directory is created if missing (the sweep itself also
 # creates it). An existing job whose command carries a flag (or nothing) after
 # --sweep-base, or on Docker a non-persistent $HOME path, is repaired in place
-# with `openclaw cron edit`; a healthy persistent job is left alone. On Contabo
+# with `openclaw cron edit` (Contabo ~/.openclaw and Hostinger /data alike, SK6003);
+# a healthy persistent job is left alone. On Contabo and Hostinger
 # $HOME/clawd/skill6-fix is pointed at the persistent folder (symlink, or a
 # one-time non-destructive copy if it is already a real folder) because the
 # Command Center health probe still reads that path.
@@ -118,9 +119,10 @@ fi
 mkdir -p "$EVIDENCE_BASE" 2>/dev/null || _log "WARN could not create $EVIDENCE_BASE (the sweep treats a missing directory as nothing to do)"
 
 # SK6002 Contabo compatibility: Command Center reads $HOME/clawd/skill6-fix.
-# When the persistent folder lives under ~/.openclaw, make that path reach it.
+# When the persistent folder lives under ~/.openclaw (Contabo) or /data
+# (Hostinger, SK6003), make that path reach it.
 _legacy="${HOME:-}/clawd/skill6-fix"
-if [[ -n "${HOME:-}" && "$EVIDENCE_BASE" == "$HOME/.openclaw/"* && "$_legacy" != "$EVIDENCE_BASE" ]]; then
+if [[ -n "${HOME:-}" && ( "$EVIDENCE_BASE" == "$HOME/.openclaw/"* || "$EVIDENCE_BASE" == "${SKILL6_DATA_ROOT:-/data}/"* ) && "$_legacy" != "$EVIDENCE_BASE" ]]; then
   if [[ -L "$_legacy" ]]; then
     :
   elif [[ -d "$_legacy" ]]; then
@@ -164,12 +166,12 @@ PYEOF
 # SK6001/SK6002 repair: print the id of an existing job that needs fixing:
 # its --sweep-base is missing or flag-shaped (the "--idempotent" defect), or it
 # points at a non-persistent $HOME path while the resolved folder lives under
-# $HOME/.openclaw (Contabo). Shape-agnostic: scans every string in the job
+# $HOME/.openclaw (Contabo) or /data (Hostinger). Shape-agnostic: scans every string in the job
 # object. Prints nothing for a healthy job.
 _broken_job_id() {
-  OC_CRON_RAW="$(openclaw cron list --json 2>/dev/null)" python3 - "$CRON_NAME" "${HOME:-}" "$EVIDENCE_BASE" <<'PYEOF' 2>/dev/null
+  OC_CRON_RAW="$(openclaw cron list --json 2>/dev/null)" python3 - "$CRON_NAME" "${HOME:-}" "$EVIDENCE_BASE" "${SKILL6_DATA_ROOT:-/data}" <<'PYEOF' 2>/dev/null
 import json, os, re, sys
-name, home, want = sys.argv[1], sys.argv[2].rstrip("/"), sys.argv[3]
+name, home, want, droot = sys.argv[1], sys.argv[2].rstrip("/"), sys.argv[3], sys.argv[4].rstrip("/")
 try:
     data = json.loads(os.environ.get("OC_CRON_RAW", ""))
 except Exception:
@@ -187,7 +189,10 @@ def strings(o):
 def stale(v):
     if not v or v.startswith("-"):
         return True
-    persist = home + "/.openclaw/"
+    # SK6003: persistent = ~/.openclaw (Contabo) or the /data volume (Hostinger).
+    # A job under $HOME but outside both is thrown away on recreate, but only
+    # when the wanted folder is itself persistent (Mac stays untouched).
+    persist = (home + "/.openclaw/", droot + "/")
     return bool(home) and want.startswith(persist) and v != want \
         and v.startswith(home + "/") and not v.startswith(persist)
 for j in jobs:

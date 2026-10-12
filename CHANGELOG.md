@@ -48,6 +48,13 @@ On Contabo the node user's `$HOME` is the container image's temporary layer and 
 - Skill versions: skill 41 v2.0.2, skill 70 v1.0.3.
 - Migration: none beyond the normal update; an existing Contabo box's old `~/Downloads/openclaw-master-files` is not moved (it is already gone after a recreate); the next roll re-seeds `<root>/openclaw-master-files`. Risk: LOW. Follow-up: add the `persist-home` relink block to the Contabo `container-startup.sh` template (D08).
 ## [v27.1.17]  -  2026-10-12  -  D11: Early Warning System no longer treats Ollama Cloud (:cloud, a subscription) as a paid-tier P1 and reports no tunnel-down on boxes without cloudflared (skill 60 v1.2.3)
+## [v27.1.17]  -  2026-10-12  -  SK6003: skill 06 reconcile-cron job on a throwaway $HOME path is repaired on Hostinger too
+
+QC of SK6002 found one gap. The repair only fired on Contabo (wanted folder under `~/.openclaw`). A Hostinger box that registered the nightly job under SK6001 still has `--sweep-base "$HOME/clawd/skill6-fix"` (a throwaway path there; only `/data` persists) and the installer said "already present, nothing to do".
+
+- `scripts/install-github-archive-reconcile-cron.sh`: a job under `$HOME` but outside both persistent roots (`~/.openclaw`, `/data`) is repaired with `openclaw cron edit` when the resolved folder is persistent; Mac is unchanged and healthy persistent jobs are left alone. On Hostinger `~/clawd/skill6-fix` is linked to `/data/clawd/skill6-fix` (same Command Center compatibility link Contabo already got).
+- Tests: `test_hostinger_job_on_throwaway_home_path_is_repaired`, `test_hostinger_command_center_path_links_to_data` (fail on v27.1.16).
+- Migration: none beyond the normal update. Risk: LOW.
 
 ## [v27.1.16]  -  2026-10-12  -  Merge train: #1899 D01: Command Center fast path fast-forwards only, never reset --hard…
 
