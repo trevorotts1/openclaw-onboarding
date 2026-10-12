@@ -45,6 +45,13 @@ EXIT = {"ok": 0, "error": 1, "refused": 2, "undefined": 3}
 
 STATUS_EVENTS = ("claim", "needs_you", "answer", "ready", "deliver", "done")
 
+# The studio sits behind Cloudflare, which refuses Python's default User-Agent
+# ("Python-urllib/3.x") with HTTP 403 "error code: 1010". Every request from this
+# module therefore carries this ONE explicit User-Agent. Keep it identical in
+# studio_bridge.py, studio.py and studio_check.py; prove/prove_user_agent.py
+# asserts all three strings are equal before it drives a request.
+STUDIO_USER_AGENT = "drama-studio-client/2.7.48 (+https://studio.zerohumanworkforce.com)"
+
 #: U2 schema.sql: upload channels and the plan's 50 MB client cap.
 CHANNELS = ("audio", "image", "video")
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -89,6 +96,7 @@ def _http(method, url, *, key=None, body=None, timeout=20):
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("content-type", "application/json")
+    req.add_header("User-Agent", STUDIO_USER_AGENT)
     if key:
         for h, v in key_headers(key).items():
             req.add_header(h, v)
