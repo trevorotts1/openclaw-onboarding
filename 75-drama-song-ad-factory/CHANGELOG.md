@@ -6,6 +6,27 @@ frontmatter `version:` field).
 
 ---
 
+## v2.9.37 - 2026-10-11 - OB-KIE-2: kie-rate-limit.md records the recordInfo and discovery limits
+
+Joint-plan OB-KIE-2 (line 1066) paired change. The parity doc
+`references/kie-rate-limit.md` gains the two limits KIE's official `kie-models`
+skill "Rate limits" section names alongside the createTask cap. The doc change,
+the SKILL.md frontmatter version, `skill-version.txt` (G3), and this entry land in
+ONE commit - no bump-only commit.
+
+- `references/kie-rate-limit.md` now states all three limits with a per-number
+  source: `createTask` 20 per 10 seconds per account (KIE docs "Rate Limit"),
+  `recordInfo` **10 per second per task**, and discovery (`models`, `schema`,
+  `price`, `success-rate`) **1 per second shared**. Both new numbers come from KIE's
+  `kie-models` "Rate limits" section (fetched 2026-10-09), already recorded in this
+  repo at `07-kie-setup/references/kie-official-agent-docs-digest.md` rule 9 and
+  `07-kie-setup/references/kie-common-rules.md` rule 3. No number was invented.
+- The stale bullet "Status polls are not named in the limit" is replaced by the
+  `recordInfo` 10-per-second-per-task rule, so the doc no longer contradicts itself.
+- Paired change: the 999 twin
+  `.claude/skills/drama-song-ad-factory/references/kie-rate-limit.md` is byte-identical
+  to this file (sha256 `e15a7592e5dff36bb032519c5f25decd7cc54628d3c0edca392cf4dd814df3aa`).
+
 ## v2.9.36 - 2026-10-11 - U17: the GoHighLevel text/e-mail sender (version 1, no live send)
 
 ONE new module, ONE delimited block in the ONE battery, and the single skill
