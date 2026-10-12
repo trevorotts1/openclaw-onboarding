@@ -2343,25 +2343,44 @@ def _ingest_persona_selftest() -> int:
 def resolve_evidence_base(env: Optional[dict] = None) -> str:
     """Resolve the Skill-6 evidence-root base directory to sweep.
 
-    Resolution order (mirrors the Command Center's
-    ``resolveSkill6EvidenceBaseDir()`` in ``src/lib/health/deep-checks.ts``
-    EXACTLY so both sides of the reconcile agree on where the evidence lives):
+    Resolution order:
       1. ``SKILL6_EVIDENCE_BASE_DIR`` env override (explicit, highest precedence).
-      2. ``$HOME/clawd/skill6-fix`` — the operator-box convention documented in
-         ``v2-autonomous-build-sop.md`` (``<OPERATOR_HOME>/clawd/skill6-fix/``).
-      3. ``""`` — no resolvable base (CI / a bare checkout with no HOME); callers
+      2. Per-platform persistent default (SK6002). Docker ``$HOME`` is not
+         always persistent, so the default follows the volume:
+           * Hostinger Docker (``/data/.openclaw`` exists, ``/data`` is not a
+             symlink): ``/data/clawd/skill6-fix`` (``/data`` is the volume).
+           * Contabo Docker (``$HOME`` is ``/home/node`` and ``$HOME/.openclaw``
+             exists): ``$HOME/.openclaw/clawd/skill6-fix`` -- only
+             ``~/.openclaw`` survives a container recreate.
+           * Mac and anything else: ``$HOME/clawd/skill6-fix`` (the convention in
+             ``v2-autonomous-build-sop.md``).
+         ``SKILL6_DATA_ROOT`` / ``SKILL6_CONTABO_HOME`` replace ``/data`` and
+         ``/home/node`` (tests only).
+      3. ``""`` -- no resolvable base (CI / a bare checkout with no HOME); callers
          treat this as "not applicable", never as an error.
 
-    Never raises; never touches the network; does no I/O beyond the env read.
+    The Command Center's ``resolveSkill6EvidenceBaseDir()``
+    (``src/lib/health/deep-checks.ts``) still reads env then
+    ``$HOME/clawd/skill6-fix``; on Contabo the reconcile-cron installer leaves
+    ``$HOME/clawd/skill6-fix`` pointing at the persistent folder so both agree.
+
+    Never raises; never touches the network; does no I/O beyond env reads and
+    directory existence checks.
     """
     env = env if env is not None else os.environ
     explicit = (env.get("SKILL6_EVIDENCE_BASE_DIR") or "").strip()
     if explicit:
         return explicit
     home = (env.get("HOME") or "").strip()
-    if home:
-        return os.path.join(home, "clawd", "skill6-fix")
-    return ""
+    if not home:
+        return ""
+    data = (env.get("SKILL6_DATA_ROOT") or "/data").strip()
+    if os.path.isdir(os.path.join(data, ".openclaw")) and not os.path.islink(data):
+        return os.path.join(data, "clawd", "skill6-fix")
+    contabo_home = (env.get("SKILL6_CONTABO_HOME") or "/home/node").strip()
+    if os.path.normpath(home) == os.path.normpath(contabo_home) and os.path.isdir(os.path.join(home, ".openclaw")):
+        return os.path.join(home, ".openclaw", "clawd", "skill6-fix")
+    return os.path.join(home, "clawd", "skill6-fix")
 
 
 def list_evidence_runs(base_dir: str) -> List[str]:
@@ -2483,7 +2502,7 @@ def _reconcile_cli(argv: Optional[list] = None) -> int:
     )
     p.add_argument("--base-dir", default="",
                     help="Evidence-root base directory to sweep "
-                         "(default: SKILL6_EVIDENCE_BASE_DIR env, else $HOME/clawd/skill6-fix).")
+                         "(default: SKILL6_EVIDENCE_BASE_DIR env, else the per-platform persistent path from resolve_evidence_base).")
     p.add_argument("--json", action="store_true", help="Print the report as JSON.")
     args = p.parse_args(argv)
 
@@ -2541,6 +2560,12 @@ if __name__ == "__main__":
     # "reconcile" first positional arg routes to its own small parser instead.
     if len(sys.argv) > 1 and sys.argv[1] == "reconcile":
         sys.exit(_reconcile_cli(sys.argv[2:]))
+    # SK6002 -- ``cc_board.py evidence-base`` prints the resolved evidence base
+    # (one line, no newline games) so shell callers (the reconcile-cron
+    # installer) share this one resolver instead of re-implementing it.
+    if len(sys.argv) > 1 and sys.argv[1] == "evidence-base":
+        print(resolve_evidence_base())
+        sys.exit(0)
 
     import argparse
 
