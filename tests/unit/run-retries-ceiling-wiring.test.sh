@@ -146,7 +146,7 @@ mk_block() {
         echo "OCJSON=\"$ocjson\""
         sed -n '/^# 0\.3b — runRetries ceiling/,/^# 0\.4 — Model selection/p' "$INSTALL_SH" \
             | sed '$d' \
-            | sed 's|\${BASH_SOURCE\[0\]}|$BASH_SOURCE_SHIM|g'
+            | sed -E 's|\$\{BASH_SOURCE\[0\](:-[^}]*)?\}|$BASH_SOURCE_SHIM|g'
         echo 'echo "BLOCK_REACHED_END"'
     } > "$out"
     printf '%s\n' "$out"
