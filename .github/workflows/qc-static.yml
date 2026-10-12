@@ -1835,6 +1835,13 @@ jobs:
         run: |
           python3 tests/unit/fleet-refresh-roll-safety.test.py
 
+      # D08: VPS start-up templates are gateway-first, wait out the owner heartbeat,
+      # relink persist-home (Contabo) and call the wrapper patcher (Hostinger).
+      - name: "VPS container-startup templates (gateway-first, owner wait, persist-home, wrapper patcher)"
+        shell: bash
+        run: |
+          bash tests/unit/vps-startup-gateway-first.test.sh
+
       - name: "verify-routing G1 counts the ROLE_DISCIPLINE_V1 marker, not pointer mentions"
         shell: bash
         run: |

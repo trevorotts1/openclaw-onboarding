@@ -22,7 +22,8 @@ MODE="${2:-install}"
 [[ -n "$PROJECT" && -d "$PROJECT" ]] || { echo "usage: $0 /docker/<project> [--check]" >&2; exit 2; }
 COMPOSE="$PROJECT/docker-compose.yml"
 [[ -f "$COMPOSE" ]] || { echo "no $COMPOSE" >&2; exit 2; }
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/container-startup.sh"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$HERE/container-startup.sh"
 HOOK_LINE='    command: ["bash", "/data/.openclaw/scripts/container-startup.sh"]'
 
 if grep -q "pm2 resurrect\|/data/.openclaw/scripts/container-startup.sh" "$COMPOSE"; then
@@ -48,6 +49,11 @@ DATA="$PROJECT/data"
 mkdir -p "$DATA/.openclaw/scripts" || exit 1
 cp "$SRC" "$DATA/.openclaw/scripts/container-startup.sh" || exit 1
 chown 1000:1000 "$DATA/.openclaw/scripts/container-startup.sh" 2>/dev/null || true
+# The two scripts container-startup.sh calls if present: the owner-heartbeat wait and the wrapper boot patcher.
+for _f in "$HERE/../wait-gateway-owner-stale.sh" "$HERE/hostinger-wrapper-patch.py"; do
+  cp "$_f" "$DATA/.openclaw/scripts/" && chmod 755 "$DATA/.openclaw/scripts/$(basename "$_f")" || exit 1
+  chown 1000:1000 "$DATA/.openclaw/scripts/$(basename "$_f")" 2>/dev/null || true
+done
 
 BACKUP="$COMPOSE.bak-startup-hook-$(date -u +%Y%m%dT%H%M%SZ)"
 cp -p "$COMPOSE" "$BACKUP" || exit 1

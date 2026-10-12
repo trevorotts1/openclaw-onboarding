@@ -1,3 +1,5 @@
+## [v27.1.18]  -  2026-10-12  -  D08: VPS container-startup templates are gateway-first (pm2 and GHL MCP autostart only after /healthz 200), wait out the owner heartbeat before exec, relink persist-home (Contabo) and call the wrapper boot patcher (Hostinger)
+
 ## [v27.1.16]  -  2026-10-12  -  Merge train: #1899 D01: Command Center fast path fast-forwards only, never reset --hard…
 
 Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.

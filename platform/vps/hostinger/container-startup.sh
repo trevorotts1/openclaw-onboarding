@@ -10,10 +10,16 @@
 # down (seen 2026-09-28), and nothing inside the container brings them back.
 # Contabo parity: platform/vps/contabo/container-startup.sh.
 #
-#   1. after the gateway has warmed up, `pm2 resurrect` restores the saved list;
+#   0. the boot patcher hostinger-wrapper-patch.py (if present in
+#      $DATA/.openclaw/scripts) neutralises the wrapper's harmful boot writes, including the
+#      re-created legacy agents/main/agent/auth-profiles.json (fail-soft);
+#   1. once the gateway answers /healthz 200, `pm2 resurrect` restores the saved list
+#      (nothing that may call the openclaw CLI runs before that);
 #   2. if the Command Center is still not in pm2 (no saved list, or a list that
 #      lacks it), it is started from its own ecosystem file and the list saved;
-#   3. ends by exec'ing the image's own server (Hostinger's gateway wrapper).
+#   3. wait-gateway-owner-stale.sh runs right before the exec (a fast `docker restart`
+#      otherwise leaves the gateway dead: "cannot verify Gateway ownership");
+#   4. ends by exec'ing the image's own server (Hostinger's gateway wrapper).
 # Never touches, restarts or signals the gateway.
 #
 # pm2 runs as node, NEVER root, with a node-owned PM2_HOME (2026-09-29): a pm2
@@ -74,9 +80,37 @@ case "$_HQ_FLAG" in
   *) echo "[hq] HEADQUARTERS_ENABLED unset — capability check has not run on this box" >> "$LOGS/container-startup.log" ;;
 esac
 
+
+# GATEWAY-FIRST (2026-10-12): on openclaw 2026.10.1 an `openclaw` CLI call made while NO gateway
+# owns the state database takes the offline "sqlite-maintenance" lock, and the gateway then dies
+# at bootstrap ("state ... is undergoing offline maintenance"; seen on Beverly Grandison, a
+# crash loop). So nothing that may call the CLI starts until the gateway answers /healthz 200.
+# Pure bash (no curl, no openclaw CLI). GW_READY_CAP seconds (default 180) bounds the wait.
+GW_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
+gw_healthz_200() {
+  ( exec 3<>"/dev/tcp/127.0.0.1/$GW_PORT" \
+    && printf 'GET /healthz HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n' >&3 \
+    && IFS= read -r -t 5 _line <&3 && case "$_line" in HTTP/*" 200"*) exit 0 ;; esac; exit 1 ) 2>/dev/null
+}
+gw_wait_ready() {
+  local end=$((SECONDS + ${GW_READY_CAP:-180}))
+  until gw_healthz_200; do
+    [ "$SECONDS" -ge "$end" ] && return 1
+    sleep 2
+  done
+}
+
+# Boot patcher, fail-soft. install-startup-hook.sh copies it to $DATA/.openclaw/scripts/.
+HWP="$DATA/.openclaw/scripts/hostinger-wrapper-patch.py"
+[ -f "$HWP" ] && { python3 "$HWP" >> "$LOGS/hostinger-wrapper-patch.boot.log" 2>&1 || true; }
+
+# The wait runs first so its (up to 120 s) delay is not charged to the gateway-ready cap.
+WAIT_SCRIPT="${GW_WAIT_SCRIPT:-$DATA/.openclaw/scripts/wait-gateway-owner-stale.sh}"
+[ -f "$WAIT_SCRIPT" ] && { OPENCLAW_DATA="$DATA" bash "$WAIT_SCRIPT" >> "$LOGS/wait-gateway-owner-stale.boot.log" 2>&1 || true; }
+
 if command -v pm2 >/dev/null 2>&1; then
   (
-    sleep "${PM2_RESURRECT_DELAY:-45}"
+    gw_wait_ready || true   # cap passed: pm2 needs no CLI, so the Command Center still comes up
     pm2 resurrect >> "$LOGS/pm2-resurrect.log" 2>&1 || true
     if ! pm2 describe blackceo-command-center >/dev/null 2>&1 && [ -f "$CC_DIR/ecosystem.config.cjs" ]; then
       { cd "$CC_DIR" && pm2 start ecosystem.config.cjs && pm2 save; } >> "$LOGS/pm2-resurrect.log" 2>&1 || true
