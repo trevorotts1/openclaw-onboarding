@@ -1,8 +1,12 @@
-## [v27.1.19]  -  2026-10-12  -  D16: the Command Center manual install and the tunnel SOP start cloudflared with a mode-600 --token-file, never the token on the pm2 command line
+## [v27.1.19]  -  2026-10-12  -  Merge train: #1904 D16: tunnel install docs and SOP use cloudflared --token-file, never…; #1912 D10: cron presence checks return 2 (unknown) on a failed or non-JSON…
+
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #1904 — [v27.1.19]  -  2026-10-12  -  D16: the Command Center manual install and the tunnel SOP start cloudflared with a mode-600 --token-file, never the token on the pm2 command line
 
 The tunnel connector token is a bearer credential. `32-command-center-setup/INSTALL.md` (Phase 6b.5) and `universal-sops/SOP-N8N-TUNNEL-01` told agents to run `pm2 start "cloudflared tunnel run --token $TUNNEL_TOKEN"`, which stores the expanded token in `~/.pm2/dump.pm2`, its backups and `ps`. Both now write the token to a mode-600 file and use `--token-file`; the SOP no longer claims `create-tunnel.sh` makes that tradeoff (it already used `--token-file`). Regression test: `tests/unit/test_contabo_docker_topology.py::test_tunnel_docs_never_put_token_on_argv`.
 
-## [v27.1.19]  -  2026-10-12  -  D10: cron presence checks return 2 (unknown) on a failed or non-JSON openclaw cron list and every registrar skips registration, so a CLI hiccup no longer adds duplicate crons
+### #1912 — [v27.1.19]  -  2026-10-12  -  D10: cron presence checks return 2 (unknown) on a failed or non-JSON openclaw cron list and every registrar skips registration, so a CLI hiccup no longer adds duplicate crons
 
 ## [v27.1.18]  -  2026-10-12  -  Merge train: #1902 D13: skill 18 heartbeat checklist is bounded and report-only…; #1903 D17: closeout watchdog Rescue Rangers escalation carries the box…; #1905 D03+D07: GHL MCP autostart never calls the openclaw CLI while the…; #1907 D18+D19+D20: CC npm ci uses the Command Center node; skill 38…; #1908 D04+D05+D06: Contabo master files, rollback backups, skill 41…; #1909 D11: EWS Ollama Cloud (:cloud) is a subscription not a paid-tier P1;…; #1910 SK6003: skill 06 reconcile-cron job on a throwaway $HOME path is…; #1911 D08: VPS start-up templates are gateway-first, wait out the owner…
 
