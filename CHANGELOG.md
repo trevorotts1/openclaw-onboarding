@@ -1,3 +1,5 @@
+## [v27.1.25]  -  2026-10-13  -  D26b QC: diagnose-telegram-config.sh masks bot tokens in its channels.telegram block dump (the token was printed to the terminal); regression check added to test-diagnose-telegram-operator-optional.sh
+
 ## [v27.1.24]  -  2026-10-13  -  D26b: diagnose-telegram-config.sh and telegram-offset-healthcheck.sh agree with D26 (operator account optional, no top-level botToken required)
 
 ##### What Changed
