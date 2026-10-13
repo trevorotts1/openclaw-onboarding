@@ -145,6 +145,8 @@ Two different refusals look alike in a log and need different repairs.
 
 Filling the registry does not fix an edge redirect, and adding Access does not fix an unregistered identity. An authenticated readiness answer that still carries `missing_registry_identity` is not permission to attempt issuance: readiness must report the invitation as not issuable, and the sender must refuse before minting.
 
+Origin resolution is `CC_PUBLIC_URL`-first on both sides — the app's `configuredPublicOrigin` and the sender's pinned environment and candidates take the same name first, then `MC_TENANT_PUBLIC_URL`, the verified receipt, `commandCenterUrl` and `OPENCLAW_DASHBOARD_URL`. Every candidate must agree: a genuine origin conflict refuses rather than silently picking a winner.
+
 For a public origin protected by Cloudflare Access, supply both `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` in the selected client's bootstrap-pinned service environment or explicit sender environment. The service environment must match the stored company, tenant and installation. The sender passes this pair and `MC_API_TOKEN` as curl configuration through stdin for both readiness and ticket issuance. A partial pair is rejected before the request. Redirects to an Access sign-in page mean public authentication is required; they do not count as a readiness receipt. Never place credential values in command arguments, logs or client chat.
 
 If Access permits email sign-in only and no service token is configured, an operator can use the Command Center's authenticated local recovery endpoint for a **pre-dispatch** public-readiness failure:

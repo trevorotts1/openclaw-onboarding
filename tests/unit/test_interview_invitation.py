@@ -204,6 +204,28 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_missing_and_conflicting_origins_are_pending(self):
         for state,env in [(dict(self.state,commandCenterUrl=None),self.env),(self.state,dict(self.env,OPENCLAW_DASHBOARD_URL='https://other.example.com')),(self.state,dict(self.env,INTERVIEW_GATE_URL='https://other.example.com')),(self.state,dict(self.env,MC_COMPANY_ID='foreign'))]:
             with self.subTest(state=state,env=env),self.assertRaises(m.Pending):self.resolve(state=state,env=env)
+    def test_cc_public_url_only_origin_resolves(self):
+        # Item 12: CC_PUBLIC_URL-only (the name the app's configuredPublicOrigin
+        # prioritizes) resolves — the sender and the app never disagree about
+        # which host is self.
+        state=dict(self.state,commandCenterUrl=None)
+        env=dict(self.env,CC_PUBLIC_URL='https://client.example.com/')
+        result=self.resolve(state=state,env=env)
+        self.assertEqual(result['origin'],'https://client.example.com')
+        self.assertEqual(result['host'],'client.example.com')
+    def test_conflicting_cc_public_url_refuses(self):
+        # A genuine origin conflict never silently picks a winner.
+        env=dict(self.env,CC_PUBLIC_URL='https://other.example.com')
+        with self.assertRaises(m.Pending) as caught:
+            self.resolve(env=env)
+        self.assertIn('origin configuration conflict',str(caught.exception))
+    def test_pinned_service_env_may_carry_cc_public_url(self):
+        # The pinned service environment accepts the same origin name the app
+        # prioritizes, and the resolver actually reads it.
+        source=(ROOT/'shared-utils'/'interview_invitation.py').read_text()
+        self.assertIn("allowed={'MC_TENANT_ID','MC_COMPANY_ID','MC_INSTALLATION_ID','CC_PUBLIC_URL'",source)
+        self.assertIn("env.get('CC_PUBLIC_URL')",source)
+
     def test_canonical_origin_must_match_state_identity(self):
         record=dict(self.context,verified=True);record['installationId']='foreign'
         with self.assertRaises(m.Pending):self.resolve(state=dict(self.state,commandCenterPublicOrigin=record))
