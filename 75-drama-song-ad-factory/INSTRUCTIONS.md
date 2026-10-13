@@ -166,10 +166,13 @@ guard that already failed.
     `parked / resume-approval-invalidated`; outstanding decisions ->
     `waiting / resume-outstanding-decisions` (questions not rerun).
 
-11. **Deliver the final package (step 11).** `delivery/final.mp4`,
-    `campaign-manifest.json`, `cost-report.json`, `provenance.json`,
-    plus `variants/` outputs, through the stage manifest's delivery
-    step; queue the board event and await acknowledgement.
+11. **Deliver the final package (step 11).** Deliver the contract folder
+    `<run>/delivery` (the 12-item contract in
+    `scripts/core/delivery_package/contract.py`), and write
+    `campaign-manifest.json`, `cost-report.json` and `provenance.json`
+    to `<run>/receipts/` — a cost report is internal, never a client
+    deliverable — through the stage manifest's delivery step; queue the
+    board event and await acknowledgement.
 
 ## STUDIO ORDERS (THE STUDIO PAGE -> THIS BOX)
 
@@ -243,9 +246,9 @@ python3 shared-bridge/studio_bridge.py link --new      # new one; the old link s
 openclaw message send --channel telegram --target <chat id> --message "<the link>"
 ```
 
-**7. Delivery goes to the page.** When `delivery/final.mp4` exists, record the
-deliverable and post the event with its link (GHL library link first, the R2
-copy as fallback):
+**7. Delivery goes to the page.** When `delivery/05 - Video Captioned.mp4`
+exists, record the deliverable and post the event with its link (GHL library
+link first, the R2 copy as fallback):
 
 ```bash
 python3 shared-bridge/studio_bridge.py status --base-url "$DS_BASE_URL" \
