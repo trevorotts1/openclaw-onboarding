@@ -87,10 +87,19 @@ for f in stage_files:
 try:
     ver_txt = io.open(p("skill-version.txt"), encoding="utf-8").read().strip()
     skill_md = io.open(p("SKILL.md"), encoding="utf-8").read()
-    m = re.search(r"(?m)^version:\s*([0-9][0-9A-Za-z.\-]*)\s*$", skill_md)
+    # The frontmatter ships the 'v' prefix ("version: v1.0.12") while
+    # skill-version.txt may or may not carry one, so the pattern accepts an
+    # optional 'v'/'V' AND both sides are normalized before comparing. It stays
+    # STRICT against garbage: after the optional prefix the value must still
+    # START WITH A DIGIT, so an empty, blank or non-numeric version line still
+    # fails as "no 'version:' line" rather than silently passing.
+    m = re.search(r"(?m)^[ \t]*version:[ \t]*v?([0-9][0-9A-Za-z.\-]*)[ \t]*$", skill_md)
     need(m is not None, "SKILL.md frontmatter has no 'version:' line")
     if m:
-        need(m.group(1) == ver_txt, "version mismatch: skill-version.txt=%r SKILL.md=%r" % (ver_txt, m.group(1)))
+        def _norm_ver(v):
+            v = v.strip()
+            return v[1:] if v[:1] in ("v", "V") else v
+        need(_norm_ver(m.group(1)) == _norm_ver(ver_txt), "version mismatch: skill-version.txt=%r SKILL.md=%r" % (ver_txt, m.group(1)))
     man = json.load(io.open(p("ENGINE-MANIFEST.json"), encoding="utf-8"))
     man_ver = man.get("skill_version", "")
     need(man_ver == ver_txt, "version mismatch: ENGINE-MANIFEST skill_version=%r skill-version.txt=%r" % (man_ver, ver_txt))
@@ -237,12 +246,27 @@ if not cli_missing:
             fp = os.path.join(cli_copy, "scripts", f)
             rc = subprocess.call([sys.executable, "-m", "py_compile", fp])
             need(rc == 0, "tooling CLI does not byte-compile: %s" % f)
-            rc = subprocess.call([sys.executable, fp, "--self-test"],
-                                 stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL,
-                                 timeout=600, cwd=cli_copy)
-            need(rc == 0, "tooling CLI --self-test failed (rc=%d): %s"
-                 % (rc, f))
+            # stderr is CAPTURED and carried into the DRIFT line (truncated):
+            # sending both streams to DEVNULL and reporting only the exit code
+            # hid the real cause -- an ImportError traceback and a clean
+            # self-test refusal looked identical. Fail-closed behavior is
+            # unchanged (any nonzero rc is still DRIFT, exit 4).
+            try:
+                _r = subprocess.run([sys.executable, fp, "--self-test"],
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.PIPE,
+                                    timeout=600, cwd=cli_copy)
+                _rc = _r.returncode
+                _err = (_r.stderr or b"").decode("utf-8", "replace").strip()
+            except Exception as _e:
+                _rc, _err = -1, "%s: %s" % (type(_e).__name__, _e)
+            if _rc != 0:
+                _lines = [l for l in _err.splitlines() if l.strip()]
+                _tail = _lines[-1] if _lines else "(no stderr captured)"
+                if len(_tail) > 400:
+                    _tail = "..." + _tail[-400:]
+                fails.append("tooling CLI --self-test failed (rc=%d): %s -- stderr tail: %s"
+                             % (_rc, f, _tail))
     finally:
         if cli_copy:
             shutil.rmtree(cli_copy, ignore_errors=True)

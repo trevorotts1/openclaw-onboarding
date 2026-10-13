@@ -43,11 +43,22 @@ if command -v python3 >/dev/null 2>&1 && ! python3 -c "import fitz" >/dev/null 2
         || python3 -m pip install --user --quiet PyMuPDF >/dev/null 2>&1 \
         || echo "  (PyMuPDF install attempt failed; verify-deps.sh will name it as a hard prerequisite)"
 fi
+# pytest is a HARD dependency of the shipped tooling CLIs' OFFLINE --self-test
+# batteries (each assembler imports its u0N_modules/test_*.py modules, which
+# `import pytest` at module scope). Installed best-effort into the SAME
+# interpreter BEFORE verify-deps.sh, which then HARD-asserts it.
+if command -v python3 >/dev/null 2>&1 && ! python3 -c "import pytest" >/dev/null 2>&1; then
+    note "installing pytest (the shipped CLIs' self-test batteries import it)"
+    python3 -m pip install --user --break-system-packages --quiet pytest >/dev/null 2>&1 \
+        || python3 -m pip install --user --quiet pytest >/dev/null 2>&1 \
+        || echo "  (pytest install attempt failed; verify-deps.sh will name it as a hard prerequisite)"
+fi
 if [ -f "$SELF_DIR/verify-deps.sh" ]; then
-    bash "$SELF_DIR/verify-deps.sh" || { echo "MISSING PREREQUISITE: python3 and/or PyMuPDF/fitz (see verify-deps.sh)"; exit 2; }
+    bash "$SELF_DIR/verify-deps.sh" || { echo "MISSING PREREQUISITE: python3 and/or PyMuPDF/fitz and/or pytest (see verify-deps.sh)"; exit 2; }
 else
     command -v python3 >/dev/null 2>&1 || { echo "MISSING PREREQUISITE: python3"; exit 2; }
     python3 -c "import fitz" >/dev/null 2>&1 || { echo "MISSING PREREQUISITE: PyMuPDF/fitz (the font-floor gate cannot run)"; exit 2; }
+    python3 -c "import pytest" >/dev/null 2>&1 || { echo "MISSING PREREQUISITE: pytest (the shipped CLIs' --self-test batteries import it)"; exit 2; }
 fi
 
 note "STEP 2/4 -- resolve the engine tier map (preflight.sh)"
