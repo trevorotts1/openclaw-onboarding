@@ -1,3 +1,13 @@
+## [v27.1.23]  -  2026-10-13  -  D26: configure-operator-telegram.sh drops the legacy top-level telegram botToken/tokenFile once default holds it and no longer writes an empty-token operator account
+
+##### What Changed
+- `scripts/configure-operator-telegram.sh` (embedded python): OpenClaw 2026.10.1 resolves a Telegram account token as `accounts.<id>.botToken`, then falls back to the channel-level `channels.telegram.botToken` for ANY account. The script migrated the legacy top-level token into `accounts.default` but left it, and wrote `accounts.operator` with an empty `botToken`, so `operator` resolved to the client bot: "Duplicate Telegram bot token: operator shares a token with account default ... stopped" (measured 2026-10-13 on Beverly Grandison, Corey Sams, Dr. Evelyn Bethune; client chat unaffected, operator line dead).
+- Now, on every run (so boxes repair themselves on their next update-skills pass): the top-level `botToken` / `tokenFile` is removed when it equals the `accounts.default` value (a differing top-level value is kept and reported as `TOP_LEVEL_<KEY>_DIFFERS_FROM_DEFAULT_KEPT`, never printed); an `accounts.operator` with no `botToken` and no `tokenFile` is not created and an existing one is removed (STATUS stays `STRUCTURE_ONLY_NEEDS_TOKEN`). The REFUSED_SHARED_BOT_TOKEN / REFUSED_SAME_AS_CLIENT_BOT guards, operator allowFrom/dmPolicy, bindings and the chat id handling are unchanged; `accounts.default` and every other channel setting are untouched.
+- Test: `scripts/test-operator-telegram-same-as-client-bot.sh` extended (32 checks; 6 fail on the old script): measured shape, legacy-only migration, differing top-level kept, tokenFile, distinct operator token, second-run idempotence. Already wired into `config-injection-shapes-guard.yml`.
+
+##### Migration Notes
+- Risk: LOW. An operator account is created only once `OPERATOR_TELEGRAM_BOT_TOKEN` is provisioned (distinct from the client bot).
+
 ## [v27.1.22]  -  2026-10-12  -  D25: closeout-resume is not re-registered on a box whose closeout is complete or whose run budget is spent, a fresh registration resets the run counter, and an exhausted job removes itself silently (no Telegram)
 
 ##### What Changed
