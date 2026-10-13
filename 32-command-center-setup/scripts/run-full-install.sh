@@ -2557,6 +2557,20 @@ if [[ "$SP_ACTIVE" != "true" && ( "$UPDATE_ONLY" != "true" || ( -n "$(state_get 
       log "WARN" "Interview invitation pending: no acknowledged delivery; see the scoped invitation receipt and install log"
       exit 8
     fi
+    # Startability gate (item 04): a successful invitation stage used to be the
+    # end of the proof, and the guide could sign off with the Command Center
+    # down. This re-checks the CURRENT state — canonical process online,
+    # exact local health, authenticated public readiness with a registered
+    # Access identity, and a real minted invitation — instead of trusting a
+    # historic ledger flag. It mints nothing new here beyond the mint-only
+    # smoke (ticket discarded) and it sends nothing: --no-send is mandatory.
+    if ! python3 "$SKILL_DIR/scripts/verify-tenant-readiness.py" "$STATE_FILE" --startability --no-send \
+        --app-dir "$DASHBOARD_DIR" --pm2-app "$CC_PM2_NAME" --port "$DASHBOARD_PORT" >>"$LOG_FILE" 2>&1; then
+      state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "startability-pending"'
+      log "WARN" "Interview startability pending: online process, local health, authenticated public readiness or a real invitation proof failed; see $LOG_FILE"
+      exit 8
+    fi
+    log "INFO" "startability gate: canonical process online, local health exact, authenticated public readiness with registered Access identity, invitation minted and ticket discarded (nothing sent)"
     log "INFO" "interview-gate: interviewComplete=${INTERVIEW_COMPLETE:-<unset>} — REPORTING 'interview not completed yet' and exiting clean. NOT seeding/scaffolding the real workforce."
     state_set '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = "AI Workforce interview not completed (interviewComplete != true) — real-workforce materialization is gated until the owner finishes their interview. The CC stays in locked interview-mode (P0-5 middleware 302s to /interview) by design until buildCompletedAt at closeout."'
     echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview not completed yet. Real workforce NOT materialized (expected, not an error). The authenticated public interview prerequisites passed; provider liveness remains separately unverified. The shell remains in locked interview-mode by design until closeout." >&2
