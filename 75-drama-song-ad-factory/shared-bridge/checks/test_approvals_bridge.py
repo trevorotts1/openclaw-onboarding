@@ -11,12 +11,17 @@ Proves, per SPEC.md §4 / BUILD-PLAN W1-box-bridge-U2:
   4  the key never reaches stdout/stderr, with a positive control proving the
      detector can see the sentinel when it is present
   5  the User-Agent is studio_bridge's own constant, and the server saw it
+  6  the box-side publish gate is image/*, audio/*, video/* and application/pdf:
+     those four pass, while a .json/.log/.py or an unknown extension is
+     refused LOCALLY -- zero requests made -- and the refusal names the file
+     and its content type
 
 Run: python3 checks/test_approvals_bridge.py
 """
 import contextlib
 import io
 import json
+import mimetypes
 import pathlib
 import re
 import sys
@@ -252,6 +257,50 @@ class ApprovalsBridgeTests(unittest.TestCase):
         self.publish()
         AB.answer(self.st.base_url, KEY, ORDER, "song", 1)
         self.assertEqual(self.st.seen_ua, {SB.STUDIO_USER_AGENT})
+
+    # 6 ------------------------------------------------------------------
+    def test_image_audio_video_and_pdf_pass_the_local_gate(self):
+        for name, data in {"pick1.mp3": b"ID3\x03\x00\x00\x00song-bytes",
+                           "shot-1.png": b"\x89PNG\r\n\x1a\nstill-bytes",
+                           "clip.mp4": b"\x00\x00\x00\x18ftypmp42vid-bytes",
+                           "score.pdf": b"%PDF-1.4\npdf-bytes"}.items():
+            f = pathlib.Path(self.tmp.name) / name
+            f.write_bytes(data)
+            spec = AB._file_spec(f)
+            self.assertEqual(spec["name"], name)
+            self.assertEqual(spec["content_type"], mimetypes.guess_type(name)[0])
+            self.assertEqual(spec["bytes"], len(data))
+        # png and mp3 also survive the WHOLE publish, file and all
+        item = self.publish()
+        self.assertEqual(item["files"], ["pick1.mp3", "shot-1.png"])
+        self.assertEqual(set(self.st.puts), {"pick1.mp3", "shot-1.png"})
+
+    def test_video_is_stopped_by_the_service_not_by_the_local_gate(self):
+        f = pathlib.Path(self.tmp.name) / "clip.mp4"
+        f.write_bytes(b"\x00\x00\x00\x18ftypmp42vid-bytes")
+        with self.assertRaises(LedgerError) as caught:
+            self.publish(files=[f])
+        # the SERVICE only takes audio/image, so the code is the service's --
+        # proof the local gate let the mp4 through instead of refusing it
+        self.assertEqual(caught.exception.code, "APPROVAL_PUBLISH_REFUSED")
+        self.assertEqual(self.st.puts, {})
+
+    def test_non_media_files_are_refused_locally_with_zero_requests(self):
+        for name, data in {"config.json": b"{}", "run.log": b"one\n",
+                           "tool.py": b"print(1)\n", "mystery.zzz": b"\x00"}.items():
+            f = pathlib.Path(self.tmp.name) / name
+            f.write_bytes(data)
+            with self.assertRaises(LedgerError) as caught:
+                self.publish(files=[f])
+            err = caught.exception
+            # a typed file hits the allow-list; an unknown extension has no
+            # type to check and stops one step earlier -- both are LOCAL
+            self.assertIn(err.code, ("BAD_FILE_TYPE", "UNSUPPORTED_FILE"), name)
+            self.assertIn(name, str(err))            # the refusal names the file
+            if err.code == "BAD_FILE_TYPE":
+                self.assertIn(mimetypes.guess_type(name)[0], str(err))
+        self.assertEqual(self.st.published, [])      # zero requests made
+        self.assertEqual(self.st.puts, {})
 
 
 if __name__ == "__main__":
