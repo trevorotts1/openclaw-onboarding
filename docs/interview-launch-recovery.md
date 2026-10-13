@@ -126,6 +126,36 @@ export. A successful manual POST from browser developer tools proves only that
 the endpoint works; it does not prove that the page automatically redeems the
 link or that the interview UI works without manual intervention.
 
+## What the invitation actually authenticates
+
+Four distinct facts, never one. Correct them separately:
+
+- **Access identity registration is a PROVISIONING prerequisite.** The host's
+  registry entry must carry `issuer`, `audience` and the exact `subjects`
+  before an invitation can be minted at all; the issuer refuses with
+  `409 access_identity_unregistered` without it. It is not, by itself, proof
+  that any particular human opened the link.
+- **The full-host Cloudflare Access application supplies the owner login** at
+  the edge (with this client's own service-token policy for same-client
+  automation). Edge acceptance is a separate fact from app-side redemption and
+  is verified separately.
+- **The private signed ticket grants the app session.** Redemption in
+  `interview-session` authenticates a signed, host/company/installation-scoped
+  enrollment grant in-process — a bearer capability — and the middleware
+  exempts that route from the generic outer-edge Access check. No Access
+  identity is re-proven in the redemption route. Tampered or foreign tickets
+  fail signature or scope; completing the interview is the one thing that ends
+  the ticket.
+- **`recipientHash` binds the intended DELIVERY DESTINATION** (a hash of the
+  resolved owner chat), not an independently proven Telegram identity of the
+  person who opens the link. Anyone holding the ticket text can redeem it
+  until the interview completes — that is the forwarding exposure, and why
+  delivery is an acknowledged gateway send to the resolved owner rather than a
+  claim about the opener.
+
+Never add a surprise login gate to the redemption path, and never remove the
+registration gate: both halves of the contract above are load-bearing.
+
 ## Empty closeout state and bounded installation checks
 
 Resume/closeout verification must not create a build before client identity exists. The launcher recognizes only the exact historical empty pending-verification receipt (matching UUID, empty-input digest, unmet requirements and null ownership/artifact fields), preserves its build ID and initializes the actual client once. Any answers, identity or unknown fields retain the existing-state guard. Do not delete state or replace a UUID with a company name to get past verification.
