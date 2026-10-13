@@ -86,7 +86,13 @@ class T2KeptBest(unittest.TestCase):
 
 class T3MouthStrips(unittest.TestCase):
     def test_path(self):
-        self.assertEqual(P.strip_path("/d", "Perm_5-v2"), "/d/mouth-strips/Perm_5-v2.png")
+        self.assertEqual(P.strip_path("/d", "Perm_5-v2"),
+                         "/d/qc/mouth-strips/Perm_5-v2.png")
+
+    def test_delivery_folder_is_derived_to_its_run(self):
+        # a caller holding only <run>/delivery still lands in <run>/qc
+        self.assertEqual(P.strip_path("/r/delivery", "s1"),
+                         "/r/qc/mouth-strips/s1.png")
 
     def test_argv_is_bounded_eight_frame_tile(self):
         a = P.mouth_strip_argv("c.mp4", "o.png", 4.0)
