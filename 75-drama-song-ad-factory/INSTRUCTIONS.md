@@ -171,6 +171,90 @@ guard that already failed.
     plus `variants/` outputs, through the stage manifest's delivery
     step; queue the board event and await acknowledgement.
 
+## STUDIO ORDERS (THE STUDIO PAGE -> THIS BOX)
+
+A client taps **Order a new video** on their personal studio page, answers the
+same questions the choice card asks (one per screen, with the examples) and taps
+**Lock it in**. The order is stored on the service with the answers. On an
+OpenClaw box this skill is what turns that order into a run.
+
+**1. Poll for it.** The box timer (`timer-artifacts/run-timer.sh`, every 120 s)
+runs the bridge; one JSON line means one order is waiting:
+
+```bash
+python3 shared-bridge/studio_bridge.py poll --base-url "$DS_BASE_URL" \
+  --skill-root "$SKILL_ROOT" --runs "<platform runs dir>"
+# no line = nothing waiting (exit 0); otherwise exactly one line:
+# {"order_id": "…", "run_dir": "…", "next": "python3 … factory.py next --run-dir …"}
+```
+
+`<platform runs dir>` is the persistent one for the platform: Mac
+`~/.openclaw/drama-runs`, Hostinger `/data/.openclaw/drama-runs`, Contabo
+`/home/node/.openclaw/drama-runs`. Nothing on this path opens an interactive
+shell.
+
+**2. The run folder already holds the replayed answers.** Before it prints,
+`poll` claims the order (one winner; the loser exits 2), creates
+`<runs>/<order_id>/` and replays the client's answers through
+`factory.py card --step --reply … --run-dir`, so `card-answers.json`, the recap
+and `control/` are already in the run folder. Never restart intake and never
+ask those questions again.
+
+**3. Wake the agent with the line.** One order, one instruction:
+
+```bash
+"$SKILL_ROOT/shared-bridge/wake_agent.sh" '<the one JSON line>'
+# -> openclaw agent --message "A Drama Studio order is ready: order <id>, run dir <dir>. Run skill 75 from `<next command>` to the first approval stop. Approvals for this run also publish to the studio page."
+```
+
+`openclaw agent --message` is the command OpenClaw already documents for
+starting an agent turn ("Run an agent turn via the Gateway"; `openclaw agent
+--help`). The wake script builds nothing else: exit 64 when the line is missing,
+65 when it is not JSON or lacks `order_id` / `run_dir` / `next`, otherwise the
+agent command's own exit code. `OPENCLAW_BIN=<path>` swaps the binary (tests
+point it at a recording stub).
+
+**4. Continue from `next`.** Run what the poll line printed - or the same
+command by hand - and keep the normal stage loop going until the first approval
+stop:
+
+```bash
+python3 scripts/core/intake_preflight/factory.py next --run-dir "$RUN"
+# exit 0 = next stage handed out; 2 = waiting on the client's answer
+```
+
+**5. Approvals publish to the studio page too.** The script, song pick and
+storyboard approvals are sent on the `studio` channel (the run's
+`control/studio-order.json` names the order and base URL) as well as on the
+client's normal chat; both stay open and the first answer wins. Read the answer
+on the next `factory.py next`, or directly:
+
+```bash
+python3 shared-bridge/studio_bridge.py approval-answer --order "$ORDER" --stage script --version 1
+# prints the answer value; exit 3 = not answered yet
+```
+
+**6. Send the personal link.** On the first drama order (and whenever the client
+asks), send the one personal link, printed by the bridge:
+
+```bash
+python3 shared-bridge/studio_bridge.py link            # prints the stored link
+python3 shared-bridge/studio_bridge.py link --new      # new one; the old link stops working
+openclaw message send --channel telegram --target <chat id> --message "<the link>"
+```
+
+**7. Delivery goes to the page.** When `delivery/final.mp4` exists, record the
+deliverable and post the event with its link (GHL library link first, the R2
+copy as fallback):
+
+```bash
+python3 shared-bridge/studio_bridge.py status --base-url "$DS_BASE_URL" \
+  --order "$ORDER" --event deliver --delivery-url "$URL" --delivery-kind ghl
+```
+
+The page then shows the video link, and the board (when a Command Center is
+configured) carries the one epic card and the stage cards for this run.
+
 ## CONTROL ENTRYPOINT, ENVELOPE AND EXIT CODES
 
 `scripts/core/intake_preflight/factory.py` is the single entrypoint
