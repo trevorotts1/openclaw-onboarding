@@ -52,6 +52,11 @@ mkcfg notop '{"channels":{"telegram":{"defaultAccount":"default","accounts":{"de
 diag
 [ "$(nfail)" = "0" ] && ok "no FAIL line" || nope "FAIL lines when only the top-level token is absent"
 
+echo "== diagnostic never prints a bot token =="
+mkcfg leak '{"channels":{"telegram":{"botToken":"111:secretAAA","allowFrom":["42"],"accounts":{"default":{"botToken":"111:secretAAA"},"operator":{"botToken":"999:secretBBB"}}}}}'
+diag
+printf '%s' "$OUT" | grep -qE 'secretAAA|secretBBB' && nope "bot token printed" || ok "no bot token in output"
+
 echo "== telegram-offset-healthcheck.sh finds the token in accounts.default =="
 mkdir -p "$TMP/bin"; printf '#!/bin/sh\nexit 7\n' > "$TMP/bin/curl"; chmod +x "$TMP/bin/curl"
 mkcfg hc '{"channels":{"telegram":{"accounts":{"default":{"botToken":"111:secretA"}}}}}'

@@ -120,16 +120,21 @@ if agent_hits:
 else:
     print(f"    ✗ no agents.entries/agents.list bindings.telegram blocks found")
 
-# Also dump any 'telegram' block at unknown nesting
+# Also dump any 'telegram' block at unknown nesting. Secrets are masked: the bot
+# token must never reach a terminal or transcript (D26b QC).
+def _mask(v):
+    if isinstance(v, dict):
+        return {k: ("***" if isinstance(x, str) and x and any(w in k.lower() for w in ("token", "secret", "apikey")) and not k.lower().endswith("file") else _mask(x)) for k, x in v.items()}
+    return [_mask(x) for x in v] if isinstance(v, list) else v
 print()
 print("=== Full channels.telegram block ===")
-print(json.dumps(cfg.get("channels", {}).get("telegram", {}), indent=2)[:800])
+print(json.dumps(_mask(cfg.get("channels", {}).get("telegram", {})), indent=2)[:800])
 print()
 print("=== Full plugins.entries.telegram block (if present) ===")
-print(json.dumps(cfg.get("plugins", {}).get("entries", {}).get("telegram", {}), indent=2)[:800])
+print(json.dumps(_mask(cfg.get("plugins", {}).get("entries", {}).get("telegram", {})), indent=2)[:800])
 print()
 print("=== Top-level 'telegram' block (if present) ===")
-print(json.dumps(cfg.get("telegram", {}), indent=2)[:800])
+print(json.dumps(_mask(cfg.get("telegram", {})), indent=2)[:800])
 
 # ── v10.15.48 (FIX 2): assert OPERATOR channel separation ────────────────────
 print()
