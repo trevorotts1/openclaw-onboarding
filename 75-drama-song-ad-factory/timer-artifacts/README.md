@@ -26,7 +26,7 @@ It reuses existing installer shapes, not a new framework:
 
 | File | What it is |
 | --- | --- |
-| `run-timer.sh` | The direct-shell poller the scheduler runs. Platform-aware; execs the U5 bridge. |
+| `run-timer.sh` | The direct-shell poller the scheduler runs. Platform-aware; runs the U5 bridge's `poll`. |
 | `install-timer.sh` | Renders the platform definition into its install path. Files only — never registers. Modes: `--dry-run` (default), `--apply`, `--check-identity`, `--register` (always refused). |
 | `mac/com.blackceo.drama-studio-bridge.plist.template` | macOS LaunchAgent definition. |
 | `hostinger/drama-studio-timer.cron.template` | Hostinger container crontab definition. |
@@ -41,17 +41,28 @@ The scheduler runs a shell program and nothing else.
 - **Hostinger / Contabo** — cron runs `/bin/sh .../run-timer.sh` with an explicit
   minimal environment.
 
-`run-timer.sh` then `exec`s the U5 bridge directly:
+`run-timer.sh` then runs the U5 bridge's `poll` with absolute paths, exporting
+`DRAMA_STUDIO_STATE` so the bridge finds its key and address:
 
 ```
-python3 <skill>/shared-bridge/studio_bridge.py handshake --base-url "$DS_BASE_URL"
+python3 <skill>/shared-bridge/studio_bridge.py poll --base-url "$DS_BASE_URL" \
+  --skill-root <skill> --runs <platform runs dir>
 ```
 
-`handshake` is `POST /api/studio/checkin` — the joint plan's "direct bridge inbox
-check". There is **no model call, no Claude, no claude-nine, no 9Router launch,
-no prompt and no interactive TTY** anywhere on the path. The timer is not gated
-on an idle/agent event: its only triggers are the wall-clock interval
-(`StartInterval 120` / `*/2 * * * *`) and load/login (`RunAtLoad`).
+The runs directory is the platform's persistent one: `~/.openclaw/drama-runs`
+(macOS), `/data/.openclaw/drama-runs` (Hostinger), `/home/node/.openclaw/drama-runs`
+(Contabo).
+
+`poll` is the direct inbox check of SPEC §6: check-in, claim, fetch, replay the
+phone's answers, print **one JSON line** `{order_id, run_dir, next}` when an order
+was waiting, nothing and exit 0 when none waited. When that one line is printed
+and `<skill>/shared-bridge/wake_agent.sh` exists, the timer hands the line to it
+as its single argument; when there is no line, or no wake script, it simply
+exits with `poll`'s own exit code. There is **no model call, no Claude, no
+claude-nine, no 9Router launch, no prompt and no interactive TTY** anywhere on
+the path, and no shell is left behind. The timer is not gated on an idle/agent
+event: its only triggers are the wall-clock interval (`StartInterval 120` /
+`*/2 * * * *`) and load/login (`RunAtLoad`).
 
 ## Per-platform contract
 
@@ -130,7 +141,9 @@ systemd, pm2 or Task Scheduler surface was written.
 ## Deliberate limits
 
 - macOS Task Scheduler / Windows is U15's (999-setup) path, not this unit.
-- The poll runs `handshake` (check-in). Wiring a claimed order into a run is the
-  U5 bridge's and the flow units' job, not the timer's.
+- The timer runs `poll` and, at most, hands its one JSON line to `wake_agent.sh`.
+  Deciding what the agent then does with `run_dir` and `next` is the bridge's and
+  the flow units' job, not the timer's. With no JSON line the timer prints
+  nothing and exits with `poll`'s code.
 - The bridge itself ships in U5 (`75-drama-song-ad-factory/shared-bridge/`); this
   timer resolves its path at runtime and fails cleanly when it is absent.

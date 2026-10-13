@@ -142,7 +142,27 @@ BRIDGE="$SKILL_ROOT/shared-bridge/studio_bridge.py"
 PYTHON="$(command -v python3 2>/dev/null || true)"
 [ -n "$PYTHON" ] || die "python3 not found on PATH ($PATH)" 1
 
-# ---- 6) Direct bridge inbox check. exec: no shell left, no interactive TTY ---
-# handshake = POST /api/studio/checkin: the direct inbox check (U5 contract,
-# branch unit/U5-U1). No model call, no Claude, no prompt, nothing to answer.
-exec "$PYTHON" "$BRIDGE" handshake --base-url "$DS_BASE_URL"
+# ---- 6) Order poll: check-in, claim, replay, one JSON line if one waited -----
+# poll = SPEC §6. No model call, no Claude, no prompt, no interactive TTY.
+# Exports the state root the bridge uses for its key/address fallback.
+export DRAMA_STUDIO_STATE="$STATE_DIR"
+
+case "$PLATFORM" in
+  mac)       RUNS_DIR="$HOME/.openclaw/drama-runs" ;;
+  hostinger) RUNS_DIR="/data/.openclaw/drama-runs" ;;
+  contabo)   RUNS_DIR="/home/node/.openclaw/drama-runs" ;;
+esac
+
+WAKE="$SKILL_ROOT/shared-bridge/wake_agent.sh"
+if [ -f "$WAKE" ]; then
+  # An order waited and the bridge printed its JSON line: hand that one line to
+  # the wake script, then leave with the POLL's exit code — never the wake's.
+  POLL_OUT="$("$PYTHON" "$BRIDGE" poll --base-url "$DS_BASE_URL" --skill-root "$SKILL_ROOT" --runs "$RUNS_DIR")"
+  POLL_RC=$?
+  [ -z "$POLL_OUT" ] || "$WAKE" "$POLL_OUT"
+  exit "$POLL_RC"
+fi
+
+# No wake script yet: hand the process straight to the poll, so its exit code is
+# ours and no shell is left behind.
+exec "$PYTHON" "$BRIDGE" poll --base-url "$DS_BASE_URL" --skill-root "$SKILL_ROOT" --runs "$RUNS_DIR"
