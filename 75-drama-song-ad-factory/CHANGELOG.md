@@ -4,6 +4,21 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.48 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #4: the client-facing folder holds deliverables only
+
+Batch `BATCH-DSF-4` — six client-folder units merged together (one version bump
+and one entry for the whole batch, per the swarm plan):
+
+- `DSF-201` (CF-1) the delivery folder refuses extra files (`DELIVERY_FOLDER_NOT_CLEAN`) and the lip-sync mouth strips move to `<run>/qc/mouth-strips/`.
+- `DSF-202` (CF-2) the studio page serves an allow-list of assets only (`.assetsignore` plus the allow-list in the Worker).
+- `DSF-203` (CF-3) the Ready-to-Post kit JSON is written to `<run>/qc/`, never beside the PDF in the delivery folder.
+- `DSF-204` (CF-4) delivery receipts go to `<run>/receipts/` and the runbook no longer names a `final.mp4` nobody writes.
+- `DSF-205` (CF-5) a failed render deletes the captioned and any partial files instead of leaving them in the delivery folder.
+- `DSF-206` (CF-6) approvals publish image, audio, video and PDF files only.
+
+No behaviour outside SPEC.md was added; every unit's own tests and the area
+regressions pass on this batch head.
+
 ## v2.9.45 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #1: the studio page, service routes and personal links
 
 Batch `BATCH-DSF-1` — nine Drama Fixes units merged together (one version bump
