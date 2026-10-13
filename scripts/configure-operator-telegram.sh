@@ -198,8 +198,28 @@ if legacy_allow and not default_acct.get("allowFrom"):
     default_acct["allowFrom"] = list(legacy_allow)
 default_acct.setdefault("dmPolicy", "pairing")
 
+# D26: OpenClaw 2026.10.1 resolves a telegram account token as
+# accounts.<id>.botToken, then falls back to the channel-level botToken for ANY
+# account. Leaving the legacy top-level botToken/tokenFile in place after it was
+# migrated into `default` makes every token-less named account (operator)
+# resolve to the CLIENT bot -> "Duplicate Telegram bot token" -> operator dead.
+# So drop the top-level copy once `default` holds the same value. A top-level
+# value that differs from default is kept (never drop a token that is not also
+# in default) and reported without printing it.
+legacy_file = tg.get("tokenFile", "")
+if legacy_file and not default_acct.get("botToken") and not default_acct.get("tokenFile"):
+    default_acct["tokenFile"] = legacy_file
+for _k in ("botToken", "tokenFile"):
+    if _k in tg:
+        if tg[_k] and tg[_k] == default_acct.get(_k):
+            del tg[_k]
+        elif tg[_k]:
+            print("TOP_LEVEL_" + _k.upper() + "_DIFFERS_FROM_DEFAULT_KEPT")
+
 # 2. operator account — SEPARATE bot, allowlist of operator IDs ONLY.
-op_acct = accounts.setdefault("operator", {})
+# D26: never create (and remove an existing) operator account that has no token
+# of its own; an empty-token operator inherits the client bot (see above).
+op_acct = accounts.get("operator") or {}
 
 # D12: OpenClaw 2026.10.1 rejects two telegram accounts that hold the same bot
 # ("Duplicate Telegram bot token"), which also takes the operator account down.
@@ -218,16 +238,18 @@ if _bot_id(op_acct.get("botToken")) in client_ids:
 # additive: set token only if we have one and it is not already set
 if op_token and not op_acct.get("botToken"):
     op_acct["botToken"] = op_token
-elif "botToken" not in op_acct:
-    # leave an explicit empty token + TODO so this box is flagged for provisioning
-    op_acct["botToken"] = ""
-op_acct["dmPolicy"] = "allowlist"
-# allowFrom = operator IDs ONLY; merge-in (never include the client id)
-existing_allow = [str(x) for x in (op_acct.get("allowFrom") or [])]
-for oid in OPERATOR_IDS:
-    if oid not in existing_allow:
-        existing_allow.append(oid)
-op_acct["allowFrom"] = existing_allow
+if op_acct.get("botToken") or op_acct.get("tokenFile"):
+    accounts["operator"] = op_acct
+    op_acct["dmPolicy"] = "allowlist"
+    # allowFrom = operator IDs ONLY; merge-in (never include the client id)
+    existing_allow = [str(x) for x in (op_acct.get("allowFrom") or [])]
+    for oid in OPERATOR_IDS:
+        if oid not in existing_allow:
+            existing_allow.append(oid)
+    op_acct["allowFrom"] = existing_allow
+else:
+    accounts.pop("operator", None)
+    op_acct = {}
 
 # v16.1.4 — helpChatId is NOT a valid telegram-account schema key
 # (channels.telegram.accounts.<id> is additionalProperties:false → the gateway
