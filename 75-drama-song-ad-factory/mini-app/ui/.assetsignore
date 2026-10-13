@@ -1,0 +1,16 @@
+# Drama Studio mini-app — assets the Worker must NEVER upload.
+#
+# mini-app/ui is the whole assets directory (worker/wrangler.toml [assets]
+# directory = "../ui"), so anything here would otherwise be deployed into the
+# bundle and, before this unit, be reachable on the client's studio domain as
+# https://<studio>/checks/run-all.sh and friends. The service now also refuses
+# every path outside its allow-list (service/src/index.js staticAssetPath);
+# this file is the second lock, so the bytes never leave the machine.
+#
+# gitignore-style patterns, relative to mini-app/ui.
+checks/
+admin/test/
+admin/prove/
+upload/fragment-check.mjs
+package.json
+README.md

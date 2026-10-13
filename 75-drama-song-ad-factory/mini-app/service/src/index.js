@@ -86,9 +86,14 @@ export default {
     const path = new URL(request.url).pathname;
     // The whole studio page, the admin page and the upload page are static
     // files under the assets dir (ui/); every JSON route starts with /api/.
+    // A GET outside /api/ is served ONLY if staticAssetPath's allow-list names
+    // it. Anything else — the bundle also carries checks/, admin/test/,
+    // admin/prove/, package.json and README.md — is a 404 here and never
+    // reaches the assets binding or the API dispatch (SPEC §4).
     if (request.method === 'GET' && !path.startsWith('/api/')) {
       const assetPath = staticAssetPath(path);
       if (assetPath) return serveAsset(request, env, assetPath);
+      return fail(404, 'AF-DS-ASSET-NOT-ALLOWED', `No page file at ${path}.`);
     }
     const store = kvStore(env.DS_STUDIO);
     const objects = r2Store(env.DRAMA_STUDIO);
@@ -393,15 +398,54 @@ export function isAdmin(env, presented) {
   return typeof expected === 'string' && expected.length > 0 && presented === expected;
 }
 
+/** Every page file the studio domain may serve (SPEC §4). The assets directory
+ *  is the WHOLE ui/ folder, so the bundle also carries checks/, admin/test/,
+ *  admin/prove/, upload/fragment-check.mjs, package.json and README.md. None of
+ *  those belongs on the client's domain, so this list — and nothing else — is
+ *  what a GET outside /api/ can ever reach. */
+const ASSET_ALLOW_LIST = new Set([
+  '/index.html',
+  '/studio.js',
+  '/studio.css',
+  '/qr.js',
+  '/download.js',
+  '/api-client.js',
+  '/service-client.js',
+  '/approvals-view.js',
+  '/questions.json',
+  '/upload/index.html',
+  '/upload/upload.js',
+]);
+
 /** The one place that maps a public GET path onto a file inside the assets
- *  directory (ui/). Everything that is not /api/ is a page file (SPEC §4). */
+ *  directory (ui/). An allow-list, not a pass-through: anything not named here
+ *  returns null and index.js answers 404 (SPEC §4). */
 function staticAssetPath(path) {
-  if (path === '/' || path === '/index.html') return '/index.html';
-  if (path === '/admin' || path === '/admin/') return '/admin/index.html';
-  if (path === '/uploads' || path === '/uploads/') return '/upload/index.html';
-  if (path === '/upload.js') return '/upload/upload.js';
-  if (path.startsWith('/api/')) return null;
-  return path;
+  if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('/api/')) return null;
+  let decoded;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    return null; // A malformed escape never reaches the assets binding.
+  }
+  if (decoded.includes('\\') || decoded.includes('\0')) return null;
+  const segments = decoded.split('/').filter((s) => s !== '');
+  // Refuse every dot segment: `.`, `..`, and any dotfile (.assetsignore, .env).
+  // A traversal attempt therefore never resolves to a file outside the list.
+  if (segments.some((s) => s === '.' || s === '..' || s.startsWith('.'))) return null;
+  const clean = `/${segments.join('/')}`;
+
+  if (clean === '/' || clean === '/index.html') return '/index.html';
+  // The admin page and its own scripts — lib/*.js only, never admin/test or
+  // admin/prove.
+  if (clean === '/admin' || clean === '/admin/index.html') return '/admin/index.html';
+  if (/^\/admin\/lib\/[^/]+\.js$/.test(clean)) return clean;
+  // The phone page keeps its two SPEC §4 aliases; both resolve to ui/upload/.
+  if (clean === '/uploads') return '/upload/index.html';
+  if (clean === '/upload.js') return '/upload/upload.js';
+  if (ASSET_ALLOW_LIST.has(clean)) return clean;
+  return null; // /checks/**, /admin/test/**, /admin/prove/**, /package.json,
+  // /README.md, /upload/fragment-check.mjs and every other path: 404.
 }
 
 /** Serve one file from the assets binding with the service's own headers.
