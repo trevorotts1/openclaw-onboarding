@@ -5714,15 +5714,18 @@ configure_dreaming
 # after N hours of idle, so any fix deployed to disk is guaranteed to reach
 # the model context within the next half-day at most.
 #
-# IMPORTANT — schema confirmation note:
-# The key agents.defaults.session.idleResetMinutes is written using the
-# direct JSON deep-merge pattern (NOT `openclaw config set`) per the
-# memory-activation rule — nested `agents.defaults.*` keys fail with
-# "Invalid input" via openclaw config set on 2026.5.20+.
-# The key name and unit were checked against CHANGELOG v11.3.2 and
-# the existing agents.defaults.timeoutSeconds pattern (same schema level).
-# If this key is invalid for the installed gateway version, `openclaw config validate`
-# will catch it below and the section will be logged as a warning, not a fatal.
+# IMPORTANT — schema confirmation note (re-verified 2026-10-13 on 2026.10.x):
+# The idle window MOVED. OpenClaw 2026.10.x removed `agents.defaults.session`
+# entirely (the key is absent from `openclaw config schema`, and writing it makes
+# `openclaw config validate` fail) and now exposes the root key
+# `session.reset.idleMinutes` (integer, >0) alongside `session.reset.mode`.
+# The key is written with the direct JSON deep-merge pattern (NOT `openclaw
+# config set`) per the memory-activation rule — nested `agents.defaults.*` keys
+# fail with "Invalid input" via openclaw config set on 2026.5.20+.
+# The caller probes the schema and sets IDLE_KEY_STYLE=modern (root
+# session.reset.idleMinutes) or legacy (agents.defaults.session.idleResetMinutes
+# for pre-2026.10 gateways), so the retired key is never written on a current box
+# — writing it used to fail validation and silently revert this whole section.
 #
 # Default: 720 minutes (12 hours). Long enough to survive a conversation pause
 # or overnight idle; short enough that a deployed fix reaches context by morning.
@@ -5737,7 +5740,14 @@ configure_idle_session_reset() {
     fi
     backup_config_file "$OPENCLAW_JSON"
     local IDLE_MINUTES="${IDLE_RESET_MINUTES:-720}"
-    OPENCLAW_JSON="$OPENCLAW_JSON" IDLE_MINUTES="$IDLE_MINUTES" python3 << 'PYEOF_IDLE'
+    # Pick the key layout the INSTALLED gateway actually validates.
+    local IDLE_KEY_STYLE="modern"
+    if command -v openclaw >/dev/null 2>&1; then
+        if ! openclaw config schema 2>/dev/null | grep -q '"resetTriggers"'; then
+            IDLE_KEY_STYLE="legacy"
+        fi
+    fi
+    OPENCLAW_JSON="$OPENCLAW_JSON" IDLE_MINUTES="$IDLE_MINUTES" IDLE_KEY_STYLE="$IDLE_KEY_STYLE" python3 << 'PYEOF_IDLE'
 import json, os, sys
 path = os.environ['OPENCLAW_JSON']
 idle_minutes = int(os.environ.get('IDLE_MINUTES', '720'))
@@ -5745,18 +5755,36 @@ try:
     with open(path, 'r') as f:
         config = json.load(f)
 
-    agents = config.setdefault('agents', {})
-    defaults = agents.setdefault('defaults', {})
-    session = defaults.setdefault('session', {})
+    style = os.environ.get('IDLE_KEY_STYLE', 'modern')
 
-    # Only set if not already configured (idempotent)
-    if session.get('idleResetMinutes') != idle_minutes:
-        session['idleResetMinutes'] = idle_minutes
-        with open(path, 'w') as f:
-            json.dump(config, f, indent=2)
-        print(f"  ✓ agents.defaults.session.idleResetMinutes = {idle_minutes} (12-hour idle rebuild)")
+    if style == 'modern':
+        # 2026.10.x root key: session.reset = {mode, idleMinutes, atHour}
+        reset = config.setdefault('session', {}).setdefault('reset', {})
+        changed = False
+        if reset.get('idleMinutes') != idle_minutes:
+            reset['idleMinutes'] = idle_minutes
+            changed = True
+        if reset.get('mode') != 'idle':
+            reset.setdefault('mode', 'idle')   # never overwrite an owner setting
+            changed = True
+        if changed:
+            with open(path, 'w') as f:
+                json.dump(config, f, indent=2)
+            print(f"  ✓ session.reset.idleMinutes = {idle_minutes} (mode=idle; 12-hour idle rebuild)")
+        else:
+            print(f"  ✓ session.reset.idleMinutes already {idle_minutes} — no-op")
     else:
-        print(f"  ✓ agents.defaults.session.idleResetMinutes already {idle_minutes} — no-op")
+        # Pre-2026.10 layout, kept for old gateways only.
+        agents = config.setdefault('agents', {})
+        defaults = agents.setdefault('defaults', {})
+        session = defaults.setdefault('session', {})
+        if session.get('idleResetMinutes') != idle_minutes:
+            session['idleResetMinutes'] = idle_minutes
+            with open(path, 'w') as f:
+                json.dump(config, f, indent=2)
+            print(f"  ✓ agents.defaults.session.idleResetMinutes = {idle_minutes} (12-hour idle rebuild; legacy layout)")
+        else:
+            print(f"  ✓ agents.defaults.session.idleResetMinutes already {idle_minutes} — no-op")
 except Exception as e:
     print(f"  ✗ Could not configure idle-session reset: {e}", file=sys.stderr)
 PYEOF_IDLE
@@ -5767,7 +5795,7 @@ PYEOF_IDLE
             echo "  ✓ openclaw config validate passed after idle-session reset config"
         else
             warn "  openclaw config validate FAILED after idle-session reset config"
-            warn "  agents.defaults.session.idleResetMinutes may not be supported on this version"
+            warn "  the idle-reset key was rejected by this gateway version (style=${IDLE_KEY_STYLE})"
             warn "  Reverting to pre-config backup..."
             if [ -f "${OPENCLAW_JSON}.bak" ]; then
                 cp "${OPENCLAW_JSON}.bak" "$OPENCLAW_JSON"
