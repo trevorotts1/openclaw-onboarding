@@ -6345,8 +6345,8 @@ PYEOF
     # updater could not write must never take down the whole update.
     if [ -f "$SKILLS_DIR/$SKILL_NAME/verify.sh" ] \
        && [ -f "$SKILLS_DIR/$SKILL_NAME/ENGINE-PIN.sha256" ]; then
-      if ! bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" stamp-pin >>"$LOG_FILE" 2>&1; then
-        echo "    [stamp-pin] WARN: $SKILL_NAME ENGINE-PIN.sha256 re-stamp FAILED -- continuing (the pin may be stale; see $LOG_FILE)"
+      if ! bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" stamp-pin >>"${LOG_FILE:-/dev/null}" 2>&1; then
+        echo "    [stamp-pin] WARN: $SKILL_NAME ENGINE-PIN.sha256 re-stamp FAILED -- continuing (the pin may be stale; run '$SKILLS_DIR/$SKILL_NAME/verify.sh stamp-pin' by hand)"
       fi
     fi
 
