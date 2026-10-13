@@ -5,7 +5,11 @@ One client-facing PDF per delivered ad, written into that ad's delivery
 folder next to the files it talks about:
 
     07 - Ready-to-Post Kit.pdf     the kit (bright page, every glyph >= 12 pt)
-    07 - Ready-to-Post Kit.json    the same kit as data (QC / manifests)
+
+The kit's own data copy is QC material, not a deliverable, so it never
+lands beside the PDF. It goes to the run's QC folder:
+
+    <run>/qc/07 - Ready-to-Post Kit.json    the same kit as data (QC / manifests)
 
 What the kit holds:
 
@@ -68,6 +72,10 @@ TOOL_VERSION = "1.0.0"
 PDF_NAME = "07 - Ready-to-Post Kit.pdf"
 JSON_NAME = "07 - Ready-to-Post Kit.json"
 KIT_NUMBER = "07"
+
+#: The run's QC folder (``<run>/qc``) -- the JSON is QC / manifest data, so it
+#: lives here and NEVER in the client-facing delivery folder.
+QC_NAME = "qc"
 
 #: The floor law: nothing on the page may be smaller than this (points).
 MIN_PT = 12.0
@@ -1060,17 +1068,27 @@ def floor_sizes(pages):
 
 
 # --------------------------------------------------------------------------- #
-# Write the kit into the delivery folder
+# Write the kit: the PDF into the delivery folder, the JSON into <run>/qc
 # --------------------------------------------------------------------------- #
 
-def write_kit(kit, out_dir):
-    """Write the numbered PDF + JSON into the delivery folder. Returns paths."""
+def write_kit(kit, out_dir, data_dir=None):
+    """Write the numbered PDF into ``out_dir`` and the JSON into ``data_dir``.
+
+    The PDF is the client-facing deliverable (the delivery folder). The JSON
+    is "the same kit as data" -- QC / manifest material -- so it goes to the
+    run's QC folder and never sits beside the PDF in the client's folder.
+    ``data_dir`` defaults to ``<run>/qc`` where ``<run>`` is the parent of
+    ``out_dir`` (the delivery folder's run), and is created if missing.
+    Returns ``(pdf_path, json_path, pdf_bytes)``.
+    """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    data_out = Path(data_dir) if data_dir else out.resolve().parent / QC_NAME
+    data_out.mkdir(parents=True, exist_ok=True)
     pages, _ = layout(kit)
     data = render_pdf(pages)
     pdf_path = out / PDF_NAME
-    json_path = out / JSON_NAME
+    json_path = data_out / JSON_NAME
     pdf_path.write_bytes(data)
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(kit, f, indent=2, ensure_ascii=False, sort_keys=True)
@@ -1086,16 +1104,22 @@ def main(argv=None):
                    help="the run folder (brief, card answers, script, gates)")
     p.add_argument("--delivery", required=True,
                    help="the ad's delivery folder (reads the receipt, writes "
-                        "the kit)")
+                        "the kit PDF)")
     p.add_argument("--client-dir", default=None,
                    help="client data folder, for a saved character's name")
     p.add_argument("--out", default=None,
-                   help="where to write (default: the delivery folder)")
+                   help="where to write the PDF (default: the delivery folder)")
+    p.add_argument("--qc-dir", default=None,
+                   help="where to write the kit JSON (default: <run>/qc, the "
+                        "run folder's QC folder; never the delivery folder)")
     p.add_argument("--quiet", action="store_true")
     a = p.parse_args(argv)
     try:
         kit = prepare(a.run_dir, a.delivery, a.client_dir)
-        pdf_path, json_path, data = write_kit(kit, a.out or a.delivery)
+        qc = a.qc_dir
+        if qc is None and a.run_dir:
+            qc = str(Path(a.run_dir) / QC_NAME)
+        pdf_path, json_path, data = write_kit(kit, a.out or a.delivery, qc)
     except KitError as e:
         sys.stderr.write("REFUSED %s: %s\n" % (e.code, e.message))
         return 2
@@ -1114,7 +1138,8 @@ def produce_delivery(run_dir, item):
     Calls ``prepare`` + ``write_kit`` -- the same entry the CLI runs: the
     run's brief, card answers, approved script and storyboard gate, plus the
     delivery folder the earlier items have already built (receipt and
-    README), audited and rendered to the numbered PDF and its JSON. Every
+    README), audited and rendered to the numbered PDF. The kit's data copy
+    (JSON) goes to the run's QC folder, never to the delivery folder. Every
     refusal (no link, no receipt, a measured no) comes through unchanged.
     Fixture bytes are never written: ``contract.produce_item`` is test-only
     and no deliver path imports it. Signature: produce_delivery(run_dir,
@@ -1123,7 +1148,9 @@ def produce_delivery(run_dir, item):
     from delivery_package import run_inputs as RI
     out = RI.delivery_dir(run_dir)
     kit = prepare(str(run_dir), str(out))
-    write_kit(kit, str(out))
+    # The PDF is the deliverable; the JSON is QC / manifest data, so it goes
+    # to <run>/qc and never into the client-facing delivery folder.
+    write_kit(kit, str(out), str(Path(run_dir) / QC_NAME))
     return RI.stage(item, out)
 
 
