@@ -28,7 +28,7 @@ scripts/ensure-heartbeat-defaults.sh::openclaw config set "agents.list[$PRIMARY_
 scripts/ensure-heartbeat-defaults.sh::openclaw config set agents.defaults.heartbeat.every 6h 2>>"$LOG_FILE" || _iv=0	1
 scripts/ensure-heartbeat-defaults.sh::openclaw config set agents.defaults.heartbeat.maxTokens 2000 2>>"$LOG_FILE" || true	1
 scripts/ghl-mcp-autostart.sh::openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "$_ghl_want" >/dev/null 2>&1 || true	1
-scripts/telegram-offset-healthcheck.sh::BOT_TOKEN=$(jq -r '.channels.telegram.botToken // .channels.telegram.token // empty' "$CONFIG_FILE" 2>/dev/null)	1
+scripts/telegram-offset-healthcheck.sh::BOT_TOKEN=$(jq -r '.channels.telegram.botToken // .channels.telegram.accounts.default.botToken // .channels.telegram.token // empty' "$CONFIG_FILE" 2>/dev/null)	1
 scripts/test-ceo-tool-gate.sh::|| _bad "B: L5 NOT idempotent — re-run changed openclaw.json ($_B_BEFORE -> $_B_AFTER)"	1
 scripts/test-ceo-tool-gate.sh::cat > "$HOME/.openclaw/openclaw.json" <<'JSON'	9
 scripts/test-ceo-tool-gate.sh::cat > "$HOME/.openclaw/openclaw.json" <<JSON	1
