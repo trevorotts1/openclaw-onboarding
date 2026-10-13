@@ -4,6 +4,22 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.46 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #2: the box bridge runs studio orders
+
+Batch `BATCH-DSF-2` — the eight `O-bridge` units merged together (one version
+bump and one entry for the whole batch):
+
+- `W1-box-bridge-U1` bridge `enroll`, `link [--new]`, `poll` and `machine.key` fallback.
+- `W1-box-bridge-U2` `approvals_bridge.py`: publish approvals and read the client's answer back.
+- `W1-box-bridge-U3` `factory.py`: `card --format studio-json`, a storyboard sender that works
+  without OpenClaw, and `next` turning a studio answer into the apply command.
+- `W1-box-bridge-U4` `channel_send.py` gains the `studio` channel (publishes approvals to the page).
+- `W1-box-bridge-U5` the box timer runs `poll` on Mac, Hostinger and Contabo.
+- `W1-box-bridge-U6` `cc_sync.py`: a url deliverable on the stage card before `review`,
+  deliverable reconciliation routing, and `CC_BASE_URL`/`COMMAND_CENTER_URL` fallback.
+- `W1-box-bridge-U7` `wake_agent.sh` plus the "Studio orders" section in INSTRUCTIONS.md.
+- `W1-box-bridge-U8` the character-bible refuse-before-write fix ported from 999.
+
 ## v2.9.45 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #1: the studio page, service routes and personal links
 
 Batch `BATCH-DSF-1` — nine Drama Fixes units merged together (one version bump
