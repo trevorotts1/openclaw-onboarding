@@ -501,14 +501,20 @@ mv /tmp/openclaw-env.tmp ~/.openclaw/.env
 💬 Send Telegram message: "⏳ [Phase 6b] Connecting to the Cloudflare tunnel... this may take 15-30 seconds."
 
 ```bash
-cloudflared tunnel run --token "$TUNNEL_TOKEN"
+# The connector token is a bearer credential: never put it on a command line.
+# A token in the pm2 command lands in ~/.pm2/dump.pm2, its backups and `ps`.
+# Write it to a mode-600 file and let cloudflared read it with --token-file.
+TOKEN_FILE="$HOME/.openclaw/secrets/tunnel-command-center.token"
+( umask 077; mkdir -p "$(dirname "$TOKEN_FILE")"; printf '%s' "$TUNNEL_TOKEN" > "$TOKEN_FILE" )
+chmod 600 "$TOKEN_FILE"
+cloudflared tunnel run --token-file "$TOKEN_FILE"
 ```
 
 Run this in a background process or via PM2:
 
 ```bash
 pm2 delete cloudflare-tunnel 2>/dev/null || true
-pm2 start "cloudflared tunnel run --token $TUNNEL_TOKEN" --name cloudflare-tunnel
+pm2 start "cloudflared tunnel run --token-file $TOKEN_FILE" --name cloudflare-tunnel
 pm2 save
 ```
 

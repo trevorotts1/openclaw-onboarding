@@ -319,11 +319,10 @@ if [[ "$_interview_complete_pre" != "true" ]]; then
   log "NUDGE-LIFECYCLE: pre-interview nudge DUE (attempt $(( $(nudge_get nudge_attempts) + 1 ))/${MAX_NUDGE_ATTEMPTS})"
 fi
 
-# ── heal config before any gateway interaction ──────────────────────────────
-# v22.0.62: bound — an unbounded `doctor --fix` hung ~133s on Janet's box and
-# the cron runner killed the fire, freezing the cron queue. 45s is ample for a
-# real heal; a timeout still leaves the previous `|| true` semantics.
-timeout 45 openclaw doctor --fix >/dev/null 2>&1 || true
+# ── NO cron-time `openclaw doctor --fix` (D02) ──────────────────────────────
+# Removed: on OpenClaw 2026.10.x it takes the offline maintenance lock and
+# rewrites config (or refuses "state database is busy" while the gateway is up),
+# on every tick. tests/unit/no-cron-doctor-fix.test.sh guards this.
 
 # ── FURNACE GATE: check interview state before any model call ────────────────
 # If the interview hasn't started yet (Skill 23 is still pending/not reached),

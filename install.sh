@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v27.1.11"
+ONBOARDING_VERSION="v27.1.22"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -65,7 +65,7 @@ set -euo pipefail
 # Provides detect_platform(), find_master_files(), and other helpers
 # used by update-skills.sh / check-updates.sh / skills' QC scripts.
 # ----------------------------------------------------------
-_lib_shared_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-shared.sh"
+_lib_shared_self="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/lib-shared.sh"
 if [ -f "$_lib_shared_self" ]; then
   # shellcheck source=/dev/null
   source "$_lib_shared_self"
@@ -76,7 +76,7 @@ fi
 # Onboarding state-machine (v10.16.48 — FIX 1 ONBOARDING HONESTY).
 # Canonical file: lib-onboarding-state.sh (sourced by both platforms).
 # ----------------------------------------------------------
-_lib_onboarding_state_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-onboarding-state.sh"
+_lib_onboarding_state_self="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/lib-onboarding-state.sh"
 if [ -f "$_lib_onboarding_state_self" ]; then
   # shellcheck source=/dev/null
   source "$_lib_onboarding_state_self"
@@ -107,7 +107,7 @@ command -v oc_state_summary       >/dev/null 2>&1 || oc_state_summary()       { 
 # so the roll/hot-patch path installs the SAME SILENT, bounded, self-removing
 # resume cron with no copy-paste drift. Best-effort source.
 # ----------------------------------------------------------
-_lib_resume_cron_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-onboarding-resume-cron.sh"
+_lib_resume_cron_self="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/lib-onboarding-resume-cron.sh"
 if [ -f "$_lib_resume_cron_self" ]; then
   # shellcheck source=/dev/null
   source "$_lib_resume_cron_self"
@@ -163,21 +163,21 @@ command -v _oc_cron_silent_main >/dev/null 2>&1 || _oc_cron_silent_main() {
 # closeout-readiness-watchdog=28), so this helper is sourced/defined here once
 # and reused by every Step-13.x installer below instead of each re-doing its own
 # (buggy) text-table grep.
-_lib_cron_present_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/shared-utils/cron-lib.sh"
+_lib_cron_present_self="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/shared-utils/cron-lib.sh"
 if [ -f "$_lib_cron_present_self" ]; then
   # shellcheck source=/dev/null
   source "$_lib_cron_present_self"
 fi
 command -v oc_cron_present >/dev/null 2>&1 || oc_cron_present() {
     local _name="$1" _raw
-    _raw=$(openclaw cron list --json 2>/dev/null) || _raw=""
-    if [ -n "$_raw" ] && command -v jq >/dev/null 2>&1; then
+    _raw=$(openclaw cron list --json 2>/dev/null) || return 2
+    if command -v jq >/dev/null 2>&1; then
         printf '%s' "$_raw" | jq -e --arg n "$_name" '
           ( if type == "array" then . else .jobs // [] end ) | map(select(.name == $n)) | length > 0
         ' >/dev/null 2>&1
-        return $?
+        case $? in 0) return 0;; 1) return 1;; *) return 2;; esac
     fi
-    if [ -n "$_raw" ] && command -v python3 >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1; then
         OC_CRON_RAW="$_raw" python3 - "$_name" 2>/dev/null <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
@@ -185,13 +185,13 @@ raw = os.environ.get("OC_CRON_RAW", "")
 try:
     data = json.loads(raw)
 except Exception:
-    sys.exit(1)
+    sys.exit(2)
 jobs = data if isinstance(data, list) else data.get("jobs", [])
 sys.exit(0 if any(j.get("name") == name for j in jobs) else 1)
 PYEOF
         return $?
     fi
-    return 1
+    return 2
 }
 # DURABLE TOMBSTONE fallback (fix/industry-gate-and-idempotent-crons, live-VPS
 # finding): if shared-utils/cron-lib.sh wasn't found above, oc_cron_tombstoned
@@ -209,7 +209,7 @@ command -v oc_cron_tombstoned >/dev/null 2>&1 || oc_cron_tombstoned() { return 1
 # with no copy-paste drift. Sourced AFTER the cron helpers above on purpose:
 # the lib guards its own fallbacks with `command -v`, so this file's richer
 # definitions win. Best-effort source, fail-closed fallbacks below.
-_lib_pres_sched_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-presentation-schedules.sh"
+_lib_pres_sched_self="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/lib-presentation-schedules.sh"
 if [ -f "$_lib_pres_sched_self" ]; then
   # shellcheck source=/dev/null
   source "$_lib_pres_sched_self"
@@ -1114,8 +1114,6 @@ PYEOF
 #   OPENCLAW_PODCAST_CLIENT_FIRST_NAME is optional (display/email text only).
 inject_shared_operator_secrets() {
     local injected_count=0
-    local mode_oc_json_ready="no"
-    [ -f "$OC_JSON" ] && mode_oc_json_ready="yes"
 
     # Ensure secrets/.env exists with safe perms BEFORE we write to it
     mkdir -p "$(dirname "$OC_SECRETS_ENV")" 2>/dev/null || true
@@ -1162,7 +1160,9 @@ inject_shared_operator_secrets() {
     # Helper: write to openclaw.json env.vars block (if openclaw.json exists)
     _shared_write_ocjson() {
         local var="$1"; local val="$2"
-        [ "$mode_oc_json_ready" != "yes" ] && return 0
+        # Checks the file itself (not a caller local): FIX 71 calls this helper
+        # after inject_shared_operator_secrets has returned, under set -u.
+        [ -f "${OC_JSON:-}" ] || return 0
         # Use python to safely merge into env.vars (preserves other keys)
         VAR="$var" VAL="$val" OC_JSON="$OC_JSON" python3 - <<'PYEOF' 2>/dev/null || true
 import json, os
@@ -2354,7 +2354,9 @@ discover_skills() {
 # (internal workflow micro-agents) is NEVER touched.
 #
 # Idempotent: a file that already byte-matches canonical is a no-op; an absent
-# file stays absent; a second run produces no new backups and no churn. A
+# file stays absent (one exception, RRS001: a REGISTERED agents.entries /
+# agents.list workspace with no TOOLS.md at all gets the box's TOOLS.md created);
+# a second run produces no new backups and no churn. A
 # pre-existing SYMLINK (relic of the pre-amendment behavior) is MIGRATED to a
 # real copy, unconditionally. Every action logs with the [link-shared] prefix.
 # A divergent real file is BACKED UP (never deleted) to <file>.bak-unify-<ts>,
@@ -2689,6 +2691,27 @@ except Exception:
   local WS_LIST_FILE
   WS_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-ws-$$.txt")"
   : > "$WS_LIST_FILE"
+  # RRS001: registered workspaces (entries{} map AND legacy list[]), used ONLY by
+  # the create-only TOOLS.md pass below. Kept apart from WS_LIST_FILE so that
+  # registering a workspace never widens which files the unify loop rewrites.
+  local REG_LIST_FILE
+  REG_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-reg-$$.txt")"
+  : > "$REG_LIST_FILE"
+  if [ -f "$_OCJSON" ] && command -v python3 >/dev/null 2>&1; then
+    OC_JSON="$_OCJSON" python3 - >> "$REG_LIST_FILE" 2>/dev/null <<'PYEOF' || true
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    ag = cfg.get("agents", {}) or {}
+    ent = ag.get("entries") if isinstance(ag.get("entries"), dict) else {}
+    lst = ag.get("list") if isinstance(ag.get("list"), list) else []
+    for e in list(ent.values()) + lst:
+        if isinstance(e, dict) and e.get("workspace"):
+            print(os.path.expanduser(e["workspace"]))
+except Exception:
+    pass
+PYEOF
+  fi
 
   if [ -f "$_OCJSON" ] && command -v python3 >/dev/null 2>&1; then
     OC_JSON="$_OCJSON" python3 - >> "$WS_LIST_FILE" 2>/dev/null <<'PYEOF' || true
@@ -2721,7 +2744,7 @@ PYEOF
         done >> "$WS_LIST_FILE" 2>/dev/null || true
   done
 
-  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0
+  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0 CREATED_TOOLS=0
 
   local W
   while IFS= read -r W; do
@@ -2857,6 +2880,11 @@ for line in src_text.splitlines():
 if cur:
     blocks.append("\n".join(cur))
 unique = [b for b in blocks if b.strip() and b.strip() not in canon_text]
+# RRS001: a file seeded from skill 15's templates (marker below) is reproducible, so
+# there is nothing unique to preserve into IDENTITY.md; appending it would duplicate
+# the identity text that is already there.
+if "rr-operator-support:v1" in src_text:
+    unique = []
 if unique:
     with open(idf, "a", encoding="utf-8") as fh:
         fh.write("\n\n" + mark + "\n")
@@ -2889,9 +2917,40 @@ PYEOF
     done
   done < <(sort -u "$WS_LIST_FILE")
 
-  rm -f "$WS_LIST_FILE" 2>/dev/null || true
+  # RRS001: a REGISTERED agent workspace (agents.entries{} or legacy agents.list[])
+  # that has NO TOOLS.md at all gets the box's TOOLS.md. OpenClaw 2026.10.x no
+  # longer seeds TOOLS.md, so an agent created after that change (remote-rescue
+  # was the first to show it) never had the box's tool notes and could not know
+  # a send path existed. This is CREATE-ONLY: an existing TOOLS.md (file, empty
+  # file or symlink) is handled by the loop above and never touched here, and
+  # AGENTS.md / USER.md stay "absent stays absent". Fail-open like the loop
+  # above: an empty canonical TOOLS.md creates nothing.
+  if [ -n "$CANON_HASH_TOOLS" ] && [ -f "$REG_LIST_FILE" ]; then
+    local RW RW_REAL
+    while IFS= read -r RW; do
+      [ -n "$RW" ] || continue
+      RW="$(printf '%s' "$RW" | sed 's:/*$::')"
+      [ -d "$RW" ] || continue
+      RW_REAL="$(cd "$RW" 2>/dev/null && pwd -P || echo "$RW")"
+      [ "$RW_REAL" = "$CANON_REAL" ] && continue
+      case "$RW_REAL/" in */workflows/*/agents/*) continue ;; esac
+      if [ -e "$RW_REAL/TOOLS.md" ] || [ -L "$RW_REAL/TOOLS.md" ]; then continue; fi
+      local RMO RM_MODE RM_OWNER
+      RMO="$(_lsc_mode_owner "$CANON_REAL/TOOLS.md")"
+      RM_MODE="${RMO%%|*}"; RM_OWNER="${RMO#*|}"
+      if [ "$(_lsc_write_copy "$CANON_REAL/TOOLS.md" "$RW_REAL/TOOLS.md" "$RM_MODE" "$RM_OWNER")" = "OK" ]; then
+        note "[link-shared] CREATE $RW_REAL/TOOLS.md <- $CANON_REAL/TOOLS.md (registered agent had none)"
+        CREATED_TOOLS=$((CREATED_TOOLS + 1))
+      else
+        echo "  WARN: [link-shared] verified create FAILED for $RW_REAL/TOOLS.md" >&2
+        FAILED=$((FAILED + 1))
+      fi
+    done < <(sort -u "$REG_LIST_FILE")
+  fi
 
-  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED already-ok=$NOOP failed=$FAILED"
+  rm -f "$WS_LIST_FILE" "$REG_LIST_FILE" 2>/dev/null || true
+
+  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED tools-created=$CREATED_TOOLS already-ok=$NOOP failed=$FAILED"
   note "[link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 
   if [ "$FAILED" -gt 0 ]; then
@@ -3527,7 +3586,7 @@ success "Canonical sub-agent + bootstrap config applied"
 # LATER in this script, so it must never be referenced here. Both expansions are
 # written :-safe anyway, so a reordering upstream can't turn this into an
 # unbound-variable abort of the whole install.
-_WIRE_RUN_RETRIES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/wire-run-retries.sh"
+_WIRE_RUN_RETRIES="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/scripts/wire-run-retries.sh"
 [ -f "$_WIRE_RUN_RETRIES" ] || _WIRE_RUN_RETRIES="${ONBOARDING_DIR:-}/scripts/wire-run-retries.sh"
 if [ -f "$_WIRE_RUN_RETRIES" ]; then
     note "Wiring agents.defaults.runRetries ceiling (set-if-absent, schema-gated)..."
@@ -3718,6 +3777,74 @@ cp -r "$TEMP_EXTRACT/openclaw-onboarding-main/"* "$ONBOARDING_DIR/"
 rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
 
 success "Extracted to $ONBOARDING_DIR"
+
+# ----------------------------------------------------------
+# LIBRARY REHYDRATION — the curl|bash / bare-copy install path (fix, 2026-10-12)
+# ----------------------------------------------------------
+# The five libraries sourced at the TOP of this file resolve themselves next to
+# this script: $(dirname "${BASH_SOURCE[0]:-$0}")/lib-*.sh. The documented
+# install command is
+#     curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+# and there is no script file at all: $0 is `bash`, the sibling path collapses
+# onto $PWD/<lib>, nothing is found there, and every fail-closed fallback from
+# the top of this file (`command -v f || f() { return 1; }`) stays in force.
+# Step 6.6b then aborts the WHOLE install with
+#     ERROR: FIX 61: intake-poll schedule install FAILED (rc=1)
+#     Presentations scripts dir resolved to: <UNRESOLVED>
+# because install_intake_poll_schedule() is still the stub. Seen live
+# 2026-10-12 on a fresh client Mac, onboarding v27.1.19, on BOTH a
+# `curl | bash` run and a copy downloaded to /tmp. The bash 3.2 that ships with
+# macOS additionally prints `BASH_SOURCE[0]: unbound variable` at every one of
+# those sites (it carries on with an empty expansion, which is why the live log
+# shows the error at 68, 79, 110, 166, 212 AND 3589 and still reaches Step 6.6b);
+# bash 5 aborts outright on the first one instead, so on a bash 5 box the very
+# same `curl | bash` never reaches Step 4 at all.
+#
+# Step 4 has just merged the FULL package — these libraries included — into
+# $ONBOARDING_DIR, so this is the first moment they exist on disk. Re-source
+# ONLY what never loaded, gated per library on the same OPENCLAW_LIB_*_SOURCED
+# sentinel the top-of-file blocks export (a blind re-source would be worse: a
+# lib sourced late finds install.sh's `command -v` stubs already defined and
+# skips its own definitions). shared-utils/cron-lib.sh exports no sentinel, so it
+# is probed by oc_cron_tombstone_dir — a symbol only it defines.
+#
+# ORDER MATTERS: cron-lib.sh first. lib-presentation-schedules.sh guards its own
+# oc_cron_present / oc_cron_tombstoned copies on `command -v`, so sourcing the
+# canonical cron lib first is what leaves the real durable-tombstone check in
+# place instead of install.sh's fail-open `{ return 1; }` stub — the difference
+# between respecting an operator's tombstone and resurrecting the cron at
+# 4 call sites below (reassert-presentation-deps, workforce-build-resume,
+# watchdog-onboarding-loop, closeout-readiness-watchdog).
+#
+# FAIL-CLOSED IS PRESERVED: if a library is genuinely absent from $ONBOARDING_DIR
+# as well, nothing is sourced, the stubs stay, and Step 6.6b still aborts loudly
+# exactly as before. This block can only add a real definition; it never
+# suppresses an error.
+if ! command -v oc_cron_tombstone_dir >/dev/null 2>&1 \
+   && [ -f "$ONBOARDING_DIR/shared-utils/cron-lib.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ONBOARDING_DIR/shared-utils/cron-lib.sh"
+fi
+if [ "${OPENCLAW_LIB_SHARED_SOURCED:-0}" != "1" ] && [ -f "$ONBOARDING_DIR/lib-shared.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ONBOARDING_DIR/lib-shared.sh"
+    export OPENCLAW_LIB_SHARED_SOURCED=1
+fi
+if [ "${OPENCLAW_LIB_ONBOARDING_STATE_SOURCED:-0}" != "1" ] && [ -f "$ONBOARDING_DIR/lib-onboarding-state.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ONBOARDING_DIR/lib-onboarding-state.sh"
+    export OPENCLAW_LIB_ONBOARDING_STATE_SOURCED=1
+fi
+if [ "${OPENCLAW_LIB_RESUME_CRON_SOURCED:-0}" != "1" ] && [ -f "$ONBOARDING_DIR/lib-onboarding-resume-cron.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ONBOARDING_DIR/lib-onboarding-resume-cron.sh"
+    export OPENCLAW_LIB_RESUME_CRON_SOURCED=1
+fi
+if [ "${OPENCLAW_LIB_PRESENTATION_SCHEDULES_SOURCED:-0}" != "1" ] && [ -f "$ONBOARDING_DIR/lib-presentation-schedules.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ONBOARDING_DIR/lib-presentation-schedules.sh"
+    export OPENCLAW_LIB_PRESENTATION_SCHEDULES_SOURCED=1
+fi
 
 # ----------------------------------------------------------
 # RETIRED-LIBRARY-FILE RECONCILE (2026-07-21) -- the ROOT-CAUSE surface.
@@ -4748,7 +4875,7 @@ REASSERT_EOF
         # sweep): "reassert-presentation-deps" is 26 chars — over the ~22-char
         # threshold at which `openclaw cron list`'s text table truncates names
         # — the same defect that caused the Skill 39/38 6x-duplicate incident.
-        if oc_cron_present "reassert-presentation-deps"; then
+        if oc_cron_present "reassert-presentation-deps" || [ $? -eq 2 ]; then  # rc 2 = cron list unreadable: unknown, never add (D10)
             success "Presentation-deps re-assert cron already installed — skipping"
             return 0
         fi
@@ -5818,7 +5945,7 @@ note "Wrote local transcription wrapper: $FW_WRAPPER (model: medium)"
 # cron calls, and (3) writes an off-box encrypted snapshot of the default
 # credential store so a wipe is always recoverable. Best-effort (never fatal);
 # runs as the box user (the hardener refuses/re-drops if invoked as root).
-_HARDEN_GWS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/harden-gws-credential-resilience.sh"
+_HARDEN_GWS="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/scripts/harden-gws-credential-resilience.sh"
 [ -f "$_HARDEN_GWS" ] || _HARDEN_GWS="$ONBOARDING_DIR/scripts/harden-gws-credential-resilience.sh"
 [ -f "$_HARDEN_GWS" ] || _HARDEN_GWS="$SCRIPTS_DIR/harden-gws-credential-resilience.sh"
 if [ -f "$_HARDEN_GWS" ]; then
@@ -6956,7 +7083,7 @@ install_workforce_resume_cron() {
         warn "workforce-build-resume is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove workforce-build-resume"
         return 0
     fi
-    if oc_cron_present "workforce-build-resume"; then
+    if oc_cron_present "workforce-build-resume" || [ $? -eq 2 ]; then  # rc 2 = cron list unreadable: unknown, never add (D10)
         success "Workforce-build resume cron already installed"
         return 0
     fi
@@ -7065,7 +7192,7 @@ install_watchdog_loop_cron() {
         warn "watchdog-onboarding-loop is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove watchdog-onboarding-loop"
         return 0
     fi
-    if oc_cron_present "watchdog-onboarding-loop"; then
+    if oc_cron_present "watchdog-onboarding-loop" || [ $? -eq 2 ]; then  # rc 2 = cron list unreadable: unknown, never add (D10)
         success "watchdog-onboarding-loop cron already installed"
         return 0
     fi
@@ -7156,7 +7283,7 @@ install_interview_nudge_cron() {
     for _candidate in \
         "${HOME}/.openclaw/skills/23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh" \
         "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh" \
-        "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh"; do
+        "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/23-ai-workforce-blueprint/scripts/interview-nudge-cron.sh"; do
         if [ -f "$_candidate" ]; then
             _NUDGE_SCRIPT="$_candidate"
             break
@@ -7252,7 +7379,7 @@ install_closeout_watchdog_cron() {
         warn "closeout-readiness-watchdog is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove closeout-readiness-watchdog"
         return 0
     fi
-    if oc_cron_present "closeout-readiness-watchdog"; then
+    if oc_cron_present "closeout-readiness-watchdog" || [ $? -eq 2 ]; then  # rc 2 = cron list unreadable: unknown, never add (D10)
         success "closeout-readiness-watchdog cron already installed"
         return 0
     fi
@@ -7261,7 +7388,7 @@ install_closeout_watchdog_cron() {
     for _cand in \
         "${HOME}/.openclaw/skills/23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh" \
         "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh" \
-        "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh"; do
+        "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh"; do
         if [[ -f "$_cand" ]]; then
             _WATCHDOG_SCRIPT="$_cand"
             break

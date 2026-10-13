@@ -238,8 +238,28 @@ class TestSweepBase:
         assert rc == 0
         out = capsys.readouterr().out
         data = json.loads(out)
-        assert data["applicable"] is False
+        # SK6002: the CLI creates a missing base (a recreated Docker box can
+        # lose it), so the sweep is applicable-and-empty, still clean.
         assert data["all_clean"] is True
+        assert data["total_runs"] == 0
+
+    def test_cli_sweep_base_creates_missing_folder_and_writes_log(self, tmp_path, capsys):
+        """SK6002 -- the nightly job must not fail or skip because the folder
+        vanished: the CLI recreates it (nested) and still writes its dated log."""
+        base = tmp_path / "gone" / "clawd" / "skill6-fix"
+        rc = rec.main(["--sweep-base", str(base), "--json"])
+        assert rc == 0
+        assert base.is_dir()
+        logs = list((base / "github-archive-reconcile-logs").glob("*.json"))
+        assert len(logs) == 1
+        assert json.loads(capsys.readouterr().out)["all_clean"] is True
+
+    def test_cli_sweep_base_uncreatable_folder_still_exits_zero(self, tmp_path, capsys):
+        blocker = tmp_path / "file"
+        blocker.write_text("x")
+        rc = rec.main(["--sweep-base", str(blocker / "sub"), "--json", "--no-log"])
+        assert rc == 0
+        assert json.loads(capsys.readouterr().out)["applicable"] is False
 
     def test_empty_base_dir_no_runs_is_clean(self, tmp_path):
         base = str(tmp_path)

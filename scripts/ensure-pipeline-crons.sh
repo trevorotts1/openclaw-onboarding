@@ -212,20 +212,28 @@ _cron_present() {
     _extra_flags=( $_detected )
   fi
   local raw
-  raw=$(openclaw cron list --json ${_extra_flags[@]+"${_extra_flags[@]}"} 2>/dev/null) || raw=""
+  # D10: a failed CLI call or non-JSON output is UNKNOWN (rc 2), never "absent"
+  # (rc 1). Callers that register on absence must register ONLY on rc 1; a slow
+  # or restarting gateway used to read as "absent" and added a duplicate cron.
+  if ! raw=$(openclaw cron list --json ${_extra_flags[@]+"${_extra_flags[@]}"} 2>/dev/null) || [[ -z "$raw" ]]; then
+    _log "WARN _cron_present($name): 'openclaw cron list --json' failed or was empty — presence UNKNOWN (rc 2), not 'absent'"
+    return 2
+  fi
 
   # Strategy 1: jq exact match
-  if [[ -n "$raw" ]] && command -v jq >/dev/null 2>&1; then
-    if printf '%s' "$raw" | jq -e --arg n "$name" '
-        # Accept both array-at-root and {jobs:[...]} wrapper shapes
-        ( if type == "array" then . else .jobs // [] end )
+  if command -v jq >/dev/null 2>&1; then
+    # Accept both array-at-root and {jobs:[...]} wrapper shapes; anything else
+    # (log noise, error object, truncated JSON) prints nothing -> UNKNOWN.
+    local verdict
+    verdict=$(printf '%s' "$raw" | jq -r --arg n "$name" '
+        ( if type == "array" then . elif (type == "object" and (.jobs | type) == "array") then .jobs else empty end )
         | map(select(.name == $n))
         | length > 0
-      ' >/dev/null 2>&1; then
-      return 0
-    else
-      return 1
-    fi
+      ' 2>/dev/null) || verdict=""
+    [[ "$verdict" == "true" ]] && return 0
+    [[ "$verdict" == "false" ]] && return 1
+    _log "WARN _cron_present($name): 'openclaw cron list --json' output is not a job list — presence UNKNOWN (rc 2), not 'absent'"
+    return 2
   fi
 
   # Strategy 2: python3 exact match (no jq required)
@@ -236,25 +244,20 @@ _cron_present() {
   # OVERRIDDEN (the heredoc wins) and `sys.stdin.read()` inside the script would
   # see EOF, not the JSON — the exact same pattern already used two screens down
   # in _reconcile_rows() (OC_CRON_RAW env var), applied here for consistency.
-  if [[ -n "$raw" ]] && command -v python3 >/dev/null 2>&1; then
-    if OC_CRON_RAW="$raw" python3 - "$name" 2>/dev/null <<'PYEOF'
+  if command -v python3 >/dev/null 2>&1; then
+    OC_CRON_RAW="$raw" python3 - "$name" 2>/dev/null <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
-raw = os.environ.get("OC_CRON_RAW", "")
 try:
-    data = json.loads(raw)
+    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+    jobs = data if isinstance(data, list) else data["jobs"]
+    if not isinstance(jobs, list):
+        raise ValueError
 except Exception:
-    sys.exit(1)
-jobs = data if isinstance(data, list) else data.get("jobs", [])
-if any(j.get("name") == name for j in jobs):
-    sys.exit(0)
-sys.exit(1)
+    sys.exit(2)
+sys.exit(0 if any(isinstance(j, dict) and j.get("name") == name for j in jobs) else 1)
 PYEOF
-    then
-      return 0
-    else
-      return 1
-    fi
+    return $?
   fi
 
   # Strategy 3: --json flag not supported or both parsers absent.
@@ -264,7 +267,10 @@ PYEOF
   # we may still false-negative here.  This path is logged as a warning so the
   # operator can see it.
   _log "WARN _cron_present: jq and python3 unavailable — falling back to text-table grep (truncation risk!)"
-  openclaw cron list 2>/dev/null | grep -Fq "$name"
+  # A text match is trustworthy only when positive (a truncated name can only
+  # false-NEGATIVE), so a miss is UNKNOWN (2), not "absent".
+  openclaw cron list 2>/dev/null | grep -Fq "$name" && return 0
+  return 2
 }
 
 # ---------------------------------------------------------------------------
@@ -399,7 +405,7 @@ _register_command_cron() {
     # registered (a build that rejects --json registers the cron and prints
     # nothing). Retrying blind would then add a SECOND copy — the 6x-duplicate
     # class tests/unit/pipeline-cron-idempotency.test.sh exists to prevent.
-    if [[ -z "$out" ]] && ! _cron_present "$name"; then
+    if [[ -z "$out" ]] && { _cron_present "$name"; [[ $? -eq 1 ]]; }; then
       out=$(openclaw cron add --name "$name" --cron "$schedule" \
               ${_tz_flags[@]+"${_tz_flags[@]}"} \
               --command "bash $script" --json 2>/dev/null) || out=""
@@ -504,7 +510,7 @@ _ensure_health_cron() {
     _log "SKIP $name — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove $name"
     return 0
   fi
-  if _cron_present "$name"; then
+  if _cron_present "$name" || [[ $? -eq 2 ]]; then  # rc 2 = unknown (cron list unreadable): never add (D10)
     _log "OK  $name cron already present"
     return 0
   fi
@@ -635,7 +641,7 @@ _ensure_workforce_build_resume() {
     _log "SKIP workforce-build-resume — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove workforce-build-resume"
     return 0
   fi
-  if _cron_present "workforce-build-resume"; then
+  if _cron_present "workforce-build-resume" || [[ $? -eq 2 ]]; then  # rc 2 = unknown (cron list unreadable): never add (D10)
     _log "OK  workforce-build-resume cron already present"
     return 0
   fi
@@ -691,7 +697,7 @@ _ensure_interview_nudge() {
     _log "SKIP interview-nudge — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove interview-nudge"
     return 0
   fi
-  if _cron_present "interview-nudge"; then
+  if _cron_present "interview-nudge" || [[ $? -eq 2 ]]; then  # rc 2 = unknown (cron list unreadable): never add (D10)
     _log "OK  interview-nudge cron already present"
     return 0
   fi
@@ -724,7 +730,7 @@ _ensure_closeout_watchdog() {
     _log "SKIP closeout-readiness-watchdog — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove closeout-readiness-watchdog"
     return 0
   fi
-  if _cron_present "closeout-readiness-watchdog"; then
+  if _cron_present "closeout-readiness-watchdog" || [[ $? -eq 2 ]]; then  # rc 2 = unknown (cron list unreadable): never add (D10)
     _log "OK  closeout-readiness-watchdog cron already present"
     return 0
   fi
@@ -748,11 +754,29 @@ _ensure_closeout_watchdog() {
 #    cron script regardless of owner-chat resolution. This is the fix that makes
 #    closeout fire even on boxes where Step 13's message-mode cron was skipped.
 _ensure_closeout_resume() {
+  # D25: never (re-)register on a box whose closeout is already complete or whose
+  # resume budget (resume-closeout-cron.sh run-count file) is already spent. Same
+  # state the job reads. Otherwise every update-skills run re-adds a job whose
+  # first fire only self-removes (and used to Telegram "exhausted").
+  if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
+    local _cs; _cs=$(jq -r '.closeoutStatus // empty' "$STATE_FILE" 2>/dev/null)
+    if [[ "$_cs" == "done" || "$_cs" == "sent" ]]; then
+      _log "SKIP closeout-resume — closeoutStatus=${_cs}; lifecycle cron not needed"
+      return 0
+    fi
+  fi
+  local _rc_file _rc
+  _rc_file="$(dirname "$STATE_FILE")/.closeout-resume-runs.count"
+  _rc=$(tr -d '[:space:]' < "$_rc_file" 2>/dev/null || true)
+  if [[ "$_rc" =~ ^[0-9]+$ ]] && (( _rc > ${ZHC_CLOSEOUT_MAX_CRON_RUNS:-48} )); then
+    _log "SKIP closeout-resume — resume budget exhausted (${_rc} runs); NOT re-registering. Reset: rm $_rc_file"
+    return 0
+  fi
   if oc_cron_tombstoned "closeout-resume"; then
     _log "SKIP closeout-resume — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove closeout-resume"
     return 0
   fi
-  if _cron_present "closeout-resume"; then
+  if _cron_present "closeout-resume" || [[ $? -eq 2 ]]; then  # rc 2 = unknown (cron list unreadable): never add (D10)
     _log "OK  closeout-resume cron already present"
     return 0
   fi
@@ -764,6 +788,7 @@ _ensure_closeout_resume() {
   fi
   chmod +x "$script" 2>/dev/null || true
   if _register_command_cron "closeout-resume" "*/15 * * * *" "$script" closeoutResumeUuid closeoutResumeRegisteredAt; then
+    rm -f "$_rc_file"  # D25: a fresh registration starts a fresh run budget
     _log "DONE closeout-resume cron registered (*/15, $(_cli_supports_command && echo 'command mode' || echo 'agent-message fallback') — REDUNDANT trigger, no owner chat required)"
     return 0
   fi
@@ -781,7 +806,7 @@ _ensure_ghl_token_liveness() {
     _log "SKIP ghl-token-liveness — TOMBSTONED (deliberately removed). NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove ghl-token-liveness"
     return 0
   fi
-  if _cron_present "ghl-token-liveness"; then
+  if _cron_present "ghl-token-liveness" || [[ $? -eq 2 ]]; then  # rc 2 = unknown (cron list unreadable): never add (D10)
     _log "OK  ghl-token-liveness cron already present"
     return 0
   fi

@@ -30,6 +30,7 @@ on:
       - "scripts/update-skills.sh"
       - "scripts/fix-active-memory-bug.sh"
       - "scripts/test-config-injection-shapes.sh"
+      - "scripts/test-operator-telegram-same-as-client-bot.sh"
       - "install.sh"
       - "update-skills.sh"
       - ".github/workflows/config-injection-shapes-guard.yml"
@@ -41,6 +42,7 @@ on:
       - "scripts/update-skills.sh"
       - "scripts/fix-active-memory-bug.sh"
       - "scripts/test-config-injection-shapes.sh"
+      - "scripts/test-operator-telegram-same-as-client-bot.sh"
       - "install.sh"
       - "update-skills.sh"
       - ".github/workflows/config-injection-shapes-guard.yml"
@@ -67,4 +69,5 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/test-config-injection-shapes.sh
+          bash scripts/test-operator-telegram-same-as-client-bot.sh
           echo "config-injection-shapes-guard: PASS"

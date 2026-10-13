@@ -617,13 +617,12 @@ set_secrets() {
     say "secret $name: set (value never echoed)"
     unset val
   done
-  # Optional secrets: the R2 S3 presign keys are deferred until presign ships
-  # (the service does not read them at runtime). They stay optional so their
-  # absence never fails the deploy.
+  # uploads.js reads these R2 S3 keys at runtime to sign direct upload links.
+  # They stay optional so a deploy without uploads enabled still succeeds.
   for name in $OPTIONAL_SECRET_NAMES; do
     val="${!name:-}"
     if [ -z "$val" ]; then
-      warn "secret $name not set in env — optional, skipping (R2 S3 presign keys are deferred until presign ships)"
+      warn "secret $name not set in env: optional, skipping (uploads require both R2 S3 keys)"
       continue
     fi
     printf '%s\n' "$val" | wr secret put "$name" --name "$WORKER_NAME" >/dev/null
@@ -646,7 +645,15 @@ write_resolved_config() {
     -e "s#<PLACEHOLDER_KV_NAMESPACE_ID_DS_STUDIO>#${kv}#g" \
     -e "s#<PLACEHOLDER_KV_NAMESPACE_PREVIEW_ID_DS_STUDIO>#${kv}#g" \
     -e "s#^(main[[:space:]]*=[[:space:]]*).*#\1\"${main_abs}\"#" \
+    -e "s#^directory[[:space:]]*=[[:space:]]*.*#directory = \"${MINI_APP_DIR}/ui/upload\"#" \
     "$src" > "$dst"
+}
+
+ensure_cors() {
+  step "r2-cors: allow browser PUT from https://$ROUTE_HOST"
+  if [ "$DRY_RUN" -eq 1 ]; then return 0; fi
+  wr r2 bucket cors set "$BUCKET_NAME" --file "$SCRIPT_DIR/upload-cors.json" >/dev/null
+  say "r2-cors: browser upload rule set on '$BUCKET_NAME'"
 }
 
 deploy_worker() {
@@ -1046,6 +1053,31 @@ self_test() {
   fi
   rm -f "$sfile" "$cbody"
 
+  # Direct uploads: CORS configuration is valid, dry-run is inert, and live
+  # execution targets only this bucket using the committed Wrangler schema.
+  local cors_calls; cors_calls="$(mktemp "${TMPDIR:-/tmp}/studio-cors-test.XXXXXX")"
+  _t_cors() {
+    wr() { printf '%s\n' "$*" >> "$ST_CORS_CALLS"; }
+    DRY_RUN=1; ensure_cors
+    [ ! -s "$ST_CORS_CALLS" ] || return 1
+    DRY_RUN=0; ensure_cors
+    node -e '
+      const fs = require("fs");
+      const c = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      const r = c.rules[0];
+      if (c.rules.length !== 1 || JSON.stringify(r.allowed.origins) !== JSON.stringify(["https://studio.zerohumanworkforce.com"]) || JSON.stringify(r.allowed.methods) !== JSON.stringify(["PUT"]) || JSON.stringify(r.allowed.headers) !== JSON.stringify(["Content-Type"]) || r.maxAgeSeconds !== 3600) process.exit(1);
+    ' "$SCRIPT_DIR/upload-cors.json"
+  }
+  ST_CORS_CALLS="$cors_calls"
+  if ( _t_cors ) >"$out" 2>&1 \
+     && grep -q "^r2 bucket cors set zhw-drama-studio --file " "$cors_calls" \
+     && [ "$(wc -l < "$cors_calls" | tr -d ' ')" = "1" ]; then
+    say "SELFTEST OK (uploads): exact bucket CORS rule, dry-run makes zero writes"
+  else
+    warn "SELFTEST FAIL (uploads): CORS rule or dry-run changed"
+    pass=0
+  fi
+  rm -f "$cors_calls"
   rm -f "$out"
   if [ "$pass" -eq 1 ]; then say "U4 deploy self-test: PASS"; exit 0; fi
   die "U4 deploy self-test: FAIL"
@@ -1116,6 +1148,7 @@ main() {
       preflight
       ensure_bucket
       ensure_retention
+      ensure_cors
       ensure_kv_namespace
       set_secrets
       deploy_worker

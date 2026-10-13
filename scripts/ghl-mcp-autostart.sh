@@ -1481,7 +1481,7 @@ _pm2_registration_mismatch() {
 start_service_vps() {
   local NODE_PATH; NODE_PATH="$(command -v node)"
   # $LOG_DIR follows the platform shape (/data/logs on data-rooted boxes,
-  # $HOME/logs on HOME-layout Linux containers). Never assume /data exists.
+  # <OpenClaw root>/logs/ghl-mcp on HOME-layout Linux containers). Never assume /data exists.
   mkdir -p "$LOG_DIR" 2>/dev/null || true
   write_vps_ecosystem
 
@@ -1668,6 +1668,24 @@ install_log_rotation() {
   fi
 }
 
+# gw_up: rc 0 ONLY when the OpenClaw gateway answers GET /healthz with 200.
+# NEVER uses the openclaw CLI. On 2026.10.1 a CLI call while the gateway is down
+# takes the offline sqlite-maintenance lock and the gateway dies at bootstrap
+# (Beverly Grandison crash loop, RestartCount 13). Every CLI call in this script
+# is gated on it. Port = gateway.port from openclaw.json (default 18789).
+gw_up() {
+  command -v curl >/dev/null 2>&1 || return 1
+  local _cfg _port _code
+  _cfg="${OPENCLAW_CONFIG:-${OC_JSON:-$HOME/.openclaw/openclaw.json}}"
+  _port="$(OC_CFG="$_cfg" python3 -c 'import json,os
+try:
+    print(int((json.load(open(os.environ["OC_CFG"])).get("gateway") or {}).get("port") or 18789))
+except Exception:
+    print(18789)' 2>/dev/null)"
+  _code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${_port:-18789}/healthz" 2>/dev/null || true)"
+  [ "$_code" = "200" ]
+}
+
 # ── 7. Periodic liveness probe (D5) — every 15 minutes, self-healing once ────
 install_periodic_probe() {
   [ -n "${PROBE:-}" ] || { log "ghl-mcp-probe.sh not co-located — periodic liveness probe NOT installed"; return 0; }
@@ -1740,23 +1758,32 @@ EOF
     log "periodic liveness probe installed (com.clawd.ghl-mcp-probe, every 900s)"
   else
     if command -v crontab >/dev/null 2>&1; then
-      local LINE="*/15 * * * * GHL_MCP_LOG_DIR=${LOG_DIR} /bin/bash ${PROBE} --once --heal >>${LOG_DIR}/probe.log 2>&1 ${CRON_TAG_PROBE}"
+      local LINE="*/15 * * * * mkdir -p ${LOG_DIR} && GHL_MCP_LOG_DIR=${LOG_DIR} /bin/bash ${PROBE} --once --heal >>${LOG_DIR}/probe.log 2>&1 ${CRON_TAG_PROBE}"
       upsert_cron_line "$CRON_TAG_PROBE" "$LINE" \
         && log "periodic liveness probe cron installed/refreshed (*/15)" \
         && return 0
     fi
+    # The CLI fallbacks below are the only CLI use here: never while the gateway is down.
+    gw_up || { log "gateway not up (no /healthz 200) — openclaw CLI not called, periodic probe registration deferred to the next run"; return 0; }
     # HOME-layout containers may have no crontab at all (oc-fixture-client-i).
     # Fall back to the openclaw cron STORE — the gateway runs it, no OS cron
     # needed. A silent return here would leave the probe uninstalled and the
     # crash-only supervisor unwatched.
     _OC_BIN="$(command -v openclaw || true)"
     [ -n "$_OC_BIN" ] || { log "no crontab AND no openclaw CLI — periodic probe NOT installed"; return 0; }
-    if "$_OC_BIN" cron list --json 2>/dev/null | grep -q '"name": *"ghl-mcp-probe"'; then
+    # D10: a failed/non-JSON `cron list` (gateway down at container boot) is UNKNOWN, not
+    # "absent" - adding on it registered ghl-mcp-probe x4. Add only after a good list.
+    _OC_LIST="$("$_OC_BIN" cron list --json 2>/dev/null)" || _OC_LIST=""
+    case "$(printf '%s' "$_OC_LIST" | tr -d '[:space:]' | cut -c1)" in '['|'{') ;; *)
+      log "openclaw cron list unreadable (gateway down?) - ghl-mcp-probe presence unknown, NOT registering; next run retries"
+      return 0 ;;
+    esac
+    if printf '%s' "$_OC_LIST" | grep -q '"name": *"ghl-mcp-probe"'; then
       log "periodic liveness probe already registered in the openclaw cron store"
       return 0
     fi
     if "$_OC_BIN" cron add --name "ghl-mcp-probe" --cron "*/15 * * * *" \
-         --command "GHL_MCP_LOG_DIR=${LOG_DIR} /bin/bash ${PROBE} --once --heal >>${LOG_DIR}/probe.log 2>&1" >&2; then
+         --command "mkdir -p ${LOG_DIR} && GHL_MCP_LOG_DIR=${LOG_DIR} /bin/bash ${PROBE} --once --heal >>${LOG_DIR}/probe.log 2>&1" >&2; then
       log "periodic liveness probe registered in the openclaw cron store (*/15)"
     else
       log "openclaw cron add FAILED for ghl-mcp-probe — periodic probe NOT installed"
@@ -1811,6 +1838,7 @@ oc_mcp_unset_verb_supported() {
 
 deregister_tier2() {
   command -v openclaw >/dev/null 2>&1 || return 0
+  gw_up || { log "gateway not up (no /healthz 200) — skipping openclaw CLI calls in deregister_tier2 (a CLI call now can kill the gateway at bootstrap)"; return 0; }
   # IDEMPOTENCY GUARD. A single-key `openclaw config set` does NOT rewrite one path:
   # measured changedPathCount was 10-103 depending on the box. When that rewrite lands
   # on plugins.allow the gateway logs "config change requires gateway restart

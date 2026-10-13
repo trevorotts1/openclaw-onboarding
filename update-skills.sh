@@ -14,7 +14,7 @@
 
 # Platform detection + bootstrap (MUST run before set -euo pipefail -- VPS container
 # re-exec uses conditional commands that may fail intentionally).
-ONBOARDING_VERSION="v27.1.11"
+ONBOARDING_VERSION="v27.1.22"
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_COMMON="$_SCRIPT_DIR/platform/common.sh"
 _PLATFORM_COMMON_TEMP=""
@@ -2024,7 +2024,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v27.1.11 - safe_json_edit
+# v27.1.22 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2472,6 +2472,27 @@ except Exception:
   local WS_LIST_FILE
   WS_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-ws-$$.txt")"
   : > "$WS_LIST_FILE"
+  # RRS001: registered workspaces (entries{} map AND legacy list[]), used ONLY by
+  # the create-only TOOLS.md pass below. Kept apart from WS_LIST_FILE so that
+  # registering a workspace never widens which files the unify loop rewrites.
+  local REG_LIST_FILE
+  REG_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-reg-$$.txt")"
+  : > "$REG_LIST_FILE"
+  if [ -f "$OCJSON" ] && command -v python3 >/dev/null 2>&1; then
+    OC_JSON="$OCJSON" python3 - >> "$REG_LIST_FILE" 2>/dev/null <<'PYEOF' || true
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    ag = cfg.get("agents", {}) or {}
+    ent = ag.get("entries") if isinstance(ag.get("entries"), dict) else {}
+    lst = ag.get("list") if isinstance(ag.get("list"), list) else []
+    for e in list(ent.values()) + lst:
+        if isinstance(e, dict) and e.get("workspace"):
+            print(os.path.expanduser(e["workspace"]))
+except Exception:
+    pass
+PYEOF
+  fi
 
   if [ -f "$OCJSON" ] && command -v python3 >/dev/null 2>&1; then
     OC_JSON="$OCJSON" python3 - >> "$WS_LIST_FILE" 2>/dev/null <<'PYEOF' || true
@@ -2514,7 +2535,7 @@ PYEOF
         done >> "$WS_LIST_FILE" 2>/dev/null || true
   done
 
-  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0
+  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0 CREATED_TOOLS=0
 
   # Dedup workspace list, then process each.
   local W
@@ -2661,6 +2682,11 @@ for line in src_text.splitlines():
 if cur:
     blocks.append("\n".join(cur))
 unique = [b for b in blocks if b.strip() and b.strip() not in canon_text]
+# RRS001: a file seeded from skill 15's templates (marker below) is reproducible, so
+# there is nothing unique to preserve into IDENTITY.md; appending it would duplicate
+# the identity text that is already there.
+if "rr-operator-support:v1" in src_text:
+    unique = []
 if unique:
     with open(idf, "a", encoding="utf-8") as fh:
         fh.write("\n\n" + mark + "\n")
@@ -2694,9 +2720,40 @@ PYEOF
     done
   done < <(sort -u "$WS_LIST_FILE")
 
-  rm -f "$WS_LIST_FILE" 2>/dev/null || true
+  # RRS001: a REGISTERED agent workspace (agents.entries{} or legacy agents.list[])
+  # that has NO TOOLS.md at all gets the box's TOOLS.md. OpenClaw 2026.10.x no
+  # longer seeds TOOLS.md, so an agent created after that change (remote-rescue
+  # was the first to show it) never had the box's tool notes and could not know
+  # a send path existed. This is CREATE-ONLY: an existing TOOLS.md (file, empty
+  # file or symlink) is handled by the loop above and never touched here, and
+  # AGENTS.md / USER.md stay "absent stays absent". Fail-open like the loop
+  # above: an empty canonical TOOLS.md creates nothing.
+  if [ -n "$CANON_HASH_TOOLS" ] && [ -f "$REG_LIST_FILE" ]; then
+    local RW RW_REAL
+    while IFS= read -r RW; do
+      [ -n "$RW" ] || continue
+      RW="$(printf '%s' "$RW" | sed 's:/*$::')"
+      [ -d "$RW" ] || continue
+      RW_REAL="$(cd "$RW" 2>/dev/null && pwd -P || echo "$RW")"
+      [ "$RW_REAL" = "$CANON_REAL" ] && continue
+      case "$RW_REAL/" in */workflows/*/agents/*) continue ;; esac
+      if [ -e "$RW_REAL/TOOLS.md" ] || [ -L "$RW_REAL/TOOLS.md" ]; then continue; fi
+      local RMO RM_MODE RM_OWNER
+      RMO="$(_lsc_mode_owner "$CANON_REAL/TOOLS.md")"
+      RM_MODE="${RMO%%|*}"; RM_OWNER="${RMO#*|}"
+      if [ "$(_lsc_write_copy "$CANON_REAL/TOOLS.md" "$RW_REAL/TOOLS.md" "$RM_MODE" "$RM_OWNER")" = "OK" ]; then
+        echo "  [link-shared] CREATE $RW_REAL/TOOLS.md <- $CANON_REAL/TOOLS.md (registered agent had none)"
+        CREATED_TOOLS=$((CREATED_TOOLS + 1))
+      else
+        echo "  WARN: [link-shared] verified create FAILED for $RW_REAL/TOOLS.md" >&2
+        FAILED=$((FAILED + 1))
+      fi
+    done < <(sort -u "$REG_LIST_FILE")
+  fi
 
-  echo "  [link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED already-ok=$NOOP failed=$FAILED"
+  rm -f "$WS_LIST_FILE" "$REG_LIST_FILE" 2>/dev/null || true
+
+  echo "  [link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED tools-created=$CREATED_TOOLS already-ok=$NOOP failed=$FAILED"
   echo "  [link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 
   if [ "$FAILED" -gt 0 ]; then
@@ -5483,10 +5540,9 @@ except Exception:
   #
   # SELF-CONTAINED BY DESIGN -- NOT a call into shared-utils/cron-lib.sh's
   # oc_cron_present/oc_cron_tombstoned:
-  #   * oc_cron_present deliberately FAILS OPEN (treats an unreadable
-  #     `cron list --json` as "absent") because ITS caller's asymmetry favors
-  #     attempting a redundant, idempotent registration over silently never
-  #     registering. THIS probe's asymmetry is the opposite: forcing a full
+  #   * oc_cron_present returns 2 (UNKNOWN, D10) on an unreadable
+  #     `cron list --json`, so its registrars skip rather than add a duplicate.
+  #     THIS probe's asymmetry is different: forcing a full
   #     pass on a transient CLI hiccup means a full pass on every one of 38
   #     boxes on a bad network day. So a genuine parse failure here is
   #     advisory (return 0), never "treat as absent".
@@ -5881,7 +5937,7 @@ print(state + " " + str(len(headers)))
         _FAST_CONVERGED=0
       else
         # --- CC currency (state=behind or state=dirty on a CC checkout) ----
-        # Repair: fetch + fast-forward reset to origin/main — but ONLY when
+        # Repair: fetch + fast-forward (merge --ff-only) to origin/main — but ONLY when
         # the checkout is clean (no uncommitted client work). A dirty checkout
         # is load-bearing (the probe's own comment: "uncommitted work on a
         # client box is load-bearing") — do NOT reset it; report and let the
@@ -5902,7 +5958,11 @@ print(state + " " + str(len(headers)))
           # `reset --hard` does not touch untracked files, so stray `??`
           # entries are no reason to refuse the repair.
           _fast_dirty="$(git -C "$_fast_p" status --porcelain 2>/dev/null | grep -v '^??' || true)"
-          _fast_sync="reset --hard"
+          # ALWAYS fast-forward only. `reset --hard origin/main` threw away local
+          # commits on a diverged checkout (D01: 14 and 8 commits on two boxes);
+          # `merge --ff-only` is identical when HEAD is behind origin/main and
+          # refuses when it is diverged, so the full pass handles that case.
+          _fast_sync="merge --ff-only"
           if [ -n "$_fast_dirty" ]; then
             # Dirty is fine when upstream did not touch the edited files:
             # merge --ff-only keeps them. Never reset a dirty tree.
@@ -6097,7 +6157,12 @@ print(state + " " + str(len(headers)))
   # records exactly that (restore: `skills-rollback.sh restore <dir>`). Only a box with no
   # recorded commit at all (exit 3: fresh or pre-manifest install) or a failed record falls
   # back to the old one-time copy, so an update is never left with no way back.
-  _SKILLS_BACKUP_ROOT="$HOME/Downloads/openclaw-backups"
+  # D04: on Contabo $HOME is the throwaway container layer; the backups live on the volume.
+  if _SKILLS_BACKUP_ROOT="$(oc_persist_root 2>/dev/null)"; then
+    _SKILLS_BACKUP_ROOT="$_SKILLS_BACKUP_ROOT/backups"
+  else
+    _SKILLS_BACKUP_ROOT="$HOME/Downloads/openclaw-backups"
+  fi
   if [ -d "$SKILLS_DIR" ] && [ "$(ls -A "$SKILLS_DIR" 2>/dev/null)" ]; then
     ROLLBACK_DIR="$_SKILLS_BACKUP_ROOT/skills-rollback-$(date +%Y%m%d-%H%M%S)"
     _RB_GITDIR=""; [ -d "$EXTRACTED_DIR/.git" ] && _RB_GITDIR="$EXTRACTED_DIR/.git"
@@ -7580,10 +7645,13 @@ sys.exit(0 if (isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()) 
     # is written. An unfilled variable shipped to a live box as the literal text
     # `[MASTER_FILES_FOLDER]/64-agnes-video/agnes-video-full.md` — a pointer to a
     # path that exists nowhere. Same platform rule the skill installers use.
-    local CU_MASTER_FILES_DIR="${OPENCLAW_MASTER_FILES_DIR:-}"
+    local _cu_proot="" CU_MASTER_FILES_DIR="${OPENCLAW_MASTER_FILES_DIR:-${MASTER_FILES_DIR:-}}"
     if [ -z "$CU_MASTER_FILES_DIR" ]; then
       if [ -f /data/.openclaw/openclaw.json ]; then
         CU_MASTER_FILES_DIR="/data/.openclaw/master-files"
+      elif _cu_proot="$(oc_persist_root 2>/dev/null)"; then
+        # D04: Contabo -- the OpenClaw root is the only volume, $HOME is throwaway.
+        CU_MASTER_FILES_DIR="$_cu_proot/openclaw-master-files"
       else
         CU_MASTER_FILES_DIR="$HOME/Downloads/openclaw-master-files"
       fi
@@ -9919,14 +9987,14 @@ PY
   }
   command -v oc_cron_present >/dev/null 2>&1 || oc_cron_present() {
     local _name="$1" _raw
-    _raw=$(openclaw cron list --json 2>/dev/null) || _raw=""
-    if [ -n "$_raw" ] && command -v jq >/dev/null 2>&1; then
+    _raw=$(openclaw cron list --json 2>/dev/null) || return 2
+    if command -v jq >/dev/null 2>&1; then
       printf '%s' "$_raw" | jq -e --arg n "$_name" '
         ( if type == "array" then . else .jobs // [] end ) | map(select(.name == $n)) | length > 0
       ' >/dev/null 2>&1
-      return $?
+      case $? in 0) return 0;; 1) return 1;; *) return 2;; esac
     fi
-    if [ -n "$_raw" ] && command -v python3 >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1; then
       OC_CRON_RAW="$_raw" python3 - "$_name" 2>/dev/null <<'PYEOF'
 import json, os, sys
 name = sys.argv[1]
@@ -9934,13 +10002,13 @@ raw = os.environ.get("OC_CRON_RAW", "")
 try:
     data = json.loads(raw)
 except Exception:
-    sys.exit(1)
+    sys.exit(2)
 jobs = data if isinstance(data, list) else data.get("jobs", [])
 sys.exit(0 if any(j.get("name") == name for j in jobs) else 1)
 PYEOF
       return $?
     fi
-    return 1
+    return 2
   }
   # DURABLE TOMBSTONE fallback (fix/industry-gate-and-idempotent-crons,
   # live-VPS finding): fail OPEN (never tombstoned) if shared-utils/cron-lib.sh
@@ -10109,7 +10177,8 @@ PYEOF
       fi
     fi
     # Create cron only when it is absent (never existed, or just deleted above)
-    if ! oc_cron_present "weekly-onboarding-update"; then
+    # D10: register only on a definite "absent" (rc 1); rc 2 = cron list unreadable -> unknown, skip
+    if oc_cron_present "weekly-onboarding-update"; [ $? -eq 1 ]; then
       # ── SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons) ───────────
       # weekly-onboarding-update is a MAINTENANCE/update-check cron, NOT an
       # owner-facing announcement. The old form registered it

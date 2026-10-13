@@ -13,7 +13,9 @@
 #             is needed)
 #   model     primary  = DeepSeek V4.1 Flash on Ollama Cloud
 #             fallback = DeepSeek V4.1 Flash on OpenRouter (used only when the
-#                        primary fails: full, rate-limited or unavailable)
+#                        primary fails: full, rate-limited or unavailable); when
+#                        the box lacks that twin, the box's own
+#                        agents.defaults.model.fallbacks (listed, non-Claude)
 #             Never an Anthropic or Claude model.
 #
 # MODEL IDENTIFIERS ARE NEVER GUESSED. They are discovered from THIS box's own
@@ -177,8 +179,27 @@ DEFAULT_M="$(printf '%s\n' "$SEL" | sed -n 's/^DEFAULT=//p')"
 if [ -z "$PRIMARY" ] && [ -z "$PRIMARY_OVERRIDE" ] && [ -n "$DEFAULT_M" ]; then
   PRIMARY="$DEFAULT_M"; echo "[$PROG] DeepSeek V4.1 Flash not on this box's list; using the box default model $PRIMARY"
 fi
+# D20: with no OpenRouter twin, use the box's own agents.defaults.model.fallbacks
+# (only ids that are on this box's model list, never Anthropic/Claude, never the
+# primary) instead of leaving the job with no fallback at all.
 if [ -z "$FALLBACK" ] && [ -z "$FALLBACK_OVERRIDE" ] && [ -n "$PRIMARY" ]; then
-  FB_NONE=1; echo "[$PROG] no fallback model provable on this box; job created without --fallbacks"
+  FALLBACK="$(OC_JSON="$(pr_ocroot)/openclaw.json" PRIMARY="$PRIMARY" python3 - "$TMP/models.json" <<'PY' 2>/dev/null || true
+import json, os, re, sys
+try:
+    fb = json.load(open(os.environ["OC_JSON"]))["agents"]["defaults"]["model"]["fallbacks"]
+    listed = open(sys.argv[1]).read()
+    keep = []
+    for f in fb if isinstance(fb, list) else []:
+        if (isinstance(f, str) and f != os.environ["PRIMARY"] and f not in keep
+                and "," not in f and not re.search(r"anthropic|claude", f, re.I) and f in listed):
+            keep.append(f)
+    print(",".join(keep))
+except Exception:
+    pass
+PY
+)"
+  if [ -n "$FALLBACK" ]; then echo "[$PROG] no OpenRouter twin on this box; using the box's own default fallbacks: $FALLBACK"
+  else FB_NONE=1; echo "[$PROG] no fallback model provable on this box; job created without --fallbacks"; fi
 fi
 if [ -z "$PRIMARY" ] || { [ -z "$FALLBACK" ] && [ -z "${FB_NONE:-}" ]; }; then
   echo "REFUSED [$PROG]: the model identifiers could not be proven on this box, so no job was created or changed:" >&2
@@ -218,7 +239,7 @@ print("ID=%s" % j.get("id")); print("KIND=%s" % p.get("kind"))
 fb = p.get("fallbacks")
 want = {
     "model": (p.get("model"), os.environ["W_MODEL"]),
-    "fallbacks": (list(fb) if isinstance(fb, list) else (fb or []), [os.environ["W_FB"]] if os.environ["W_FB"] else []),
+    "fallbacks": (list(fb) if isinstance(fb, list) else (fb or []), [x for x in os.environ["W_FB"].split(",") if x]),
     "thinking": (p.get("thinking"), os.environ["W_THINK"]),
     "schedule": (s.get("expr"), os.environ["W_EXPR"]),
     "session": (j.get("sessionTarget"), "isolated"),

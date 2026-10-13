@@ -13,6 +13,24 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v27.1.17 - 2026-10-12 - fix: reconcile-cron job on a throwaway $HOME path is repaired on Hostinger too (SK6003)
+
+- `scripts/install-github-archive-reconcile-cron.sh`: repair now covers Hostinger (`/data`) as well as Contabo (`~/.openclaw`); `~/clawd/skill6-fix` links to `/data/clawd/skill6-fix` on Hostinger. Tests: `TestPersistentPathSK6002` Hostinger repair and link.
+
+---
+
+## v27.1.14 - 2026-10-12 - fix: reconcile-cron evidence folder lives on the persistent volume on Docker boxes (SK6002)
+
+- Per-platform persistent default via `tools/cc_board.py resolve_evidence_base()` / `cc_board.py evidence-base`: Mac `$HOME/clawd/skill6-fix`, Hostinger `/data/clawd/skill6-fix`, Contabo `$HOME/.openclaw/clawd/skill6-fix`. Installer repairs a job on a non-persistent Docker `$HOME` path, leaves healthy persistent jobs alone, links `~/clawd/skill6-fix` on Contabo for Command Center; the sweep creates a missing folder. Tests: `TestPersistentPathSK6002`.
+
+---
+
+## v27.1.12 - 2026-10-12 - fix: reconcile-cron installer never takes a --flag as the evidence directory (SK6001)
+
+- `scripts/install-github-archive-reconcile-cron.sh`: parses flags (`--idempotent` accepted, `--evidence-base`), resolves and creates the evidence directory, and repairs an existing job registered with `--sweep-base "--idempotent"` in place. Tests: `TestInstallerFlagParsingSK6001`.
+
+---
+
 ## v25.3.22 - 2026-10-06 - feat: page image prompts use the rule 12 length band
 
 - `tools/ghl_media.py`: the 1,500-character `PROMPT_CHAR_FLOOR` is retired. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut. The floor is measured on the creative content before the English pin and the ceiling with it.

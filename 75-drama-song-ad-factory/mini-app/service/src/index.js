@@ -78,6 +78,18 @@ export function r2Store(bucket) {
 
 export default {
   async fetch(request, env) {
+    const path = new URL(request.url).pathname;
+    if (request.method === 'GET' && ['/uploads', '/uploads/', '/upload.js'].includes(path)) {
+      if (!env.DS_UPLOAD_ASSETS) return fail(503, 'AF-DS-UP-PAGE', 'Upload page is not ready.');
+      const assetUrl = new URL(path === '/upload.js' ? '/upload.js' : '/index.html', request.url);
+      const asset = await env.DS_UPLOAD_ASSETS.fetch(new Request(assetUrl, request));
+      const headers = new Headers(asset.headers);
+      headers.set('Cache-Control', 'no-store');
+      headers.set('Referrer-Policy', 'no-referrer');
+      headers.set('X-Content-Type-Options', 'nosniff');
+      headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.r2.cloudflarestorage.com; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
+      return new Response(asset.body, { status: asset.status, headers });
+    }
     const store = kvStore(env.DS_STUDIO);
     const objects = r2Store(env.DRAMA_STUDIO);
     return handle(request, env, store, objects);

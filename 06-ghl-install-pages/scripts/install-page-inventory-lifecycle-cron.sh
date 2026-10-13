@@ -87,13 +87,13 @@ fi
 # as scripts/ensure-pipeline-crons.sh::_cron_present).
 _cron_present() {
   local raw
-  raw=$(openclaw cron list --json 2>/dev/null) || raw=""
-  [[ -n "$raw" ]] || return 1
+  raw=$(openclaw cron list --json 2>/dev/null) || return 2
+  [[ -n "$raw" ]] || return 2
   if command -v jq >/dev/null 2>&1; then
     printf '%s' "$raw" | jq -e --arg n "$CRON_NAME" \
       '(if type=="array" then . else .jobs // [] end) | map(select(.name == $n)) | length > 0' \
       >/dev/null 2>&1
-    return $?
+    case $? in 0) return 0;; 1) return 1;; *) return 2;; esac
   fi
   OC_CRON_RAW="$raw" python3 - "$CRON_NAME" <<'PYEOF' 2>/dev/null
 import json, os, sys
@@ -101,13 +101,19 @@ name = sys.argv[1]
 try:
     data = json.loads(os.environ.get("OC_CRON_RAW", ""))
 except Exception:
-    sys.exit(1)
+    sys.exit(2)
 jobs = data if isinstance(data, list) else data.get("jobs", [])
 sys.exit(0 if any(j.get("name") == name for j in jobs) else 1)
 PYEOF
 }
 
-if _cron_present; then
+# D10: a failed/unparseable `cron list` is UNKNOWN, not "absent" — adding on it creates duplicates.
+_cron_present && _cp_rc=0 || _cp_rc=$?
+if [[ "$_cp_rc" -eq 2 ]]; then
+  _log "FAIL could not read 'openclaw cron list --json' — presence of '$CRON_NAME' unknown, NOT registering (would risk a duplicate). Non-fatal — re-run to backfill."
+  exit 3
+fi
+if [[ "$_cp_rc" -eq 0 ]]; then
   _log "OK  '$CRON_NAME' cron already present — nothing to do"
   exit 0
 fi

@@ -145,6 +145,21 @@ openclaw config validate
 - [ ] Operator IDs are bound exclusively to `remote-rescue`
 - [ ] Resulting session keys are disjoint: `agent:remote-rescue:telegram:<operatorChatId>` vs `agent:main:telegram:<ownerChatId>`
 
+### 7C2. Workspace seed gate (HARD FAIL if violated, RRS001)
+
+```bash
+OC_ROOT="${OPENCLAW_ROOT:-$HOME/.openclaw}"
+RR_WS="$OC_ROOT/workspaces/remote-rescue"
+ls -la "$RR_WS"
+grep -c "workspace" "$RR_WS/IDENTITY.md"
+```
+
+- [ ] `IDENTITY.md` in the remote-rescue workspace is a real operator-support identity, not OpenClaw's blank starter text
+- [ ] There is no `BOOTSTRAP.md` that is still OpenClaw's "you just woke up" birth script
+- [ ] `IDENTITY.md`, `SOUL.md` or `AGENTS.md` names the owner's main workspace by absolute path and says the remote-rescue folder is not the owner's workspace
+- [ ] A `TOOLS.md` exists in the remote-rescue workspace
+  - If any fail: run `bash scripts/install-remote-rescue.sh --repair` (seeds a missing or starter-only file, never overwrites a file the box already filled in)
+
 ### 7D. Live-turn verification (cannot be substituted by config check alone)
 
 - [ ] An operator DM'd the bot and received a reply from the `remote-rescue` context

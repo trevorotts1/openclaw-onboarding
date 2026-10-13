@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # apply-fleet-standards.sh — Idempotent enforcer for the OpenClaw fleet standard:
 #   • Sub-agents fully permitted (spawn + exec + read/write across all agents)
-#   • tools.exec: security=full, ask=off (TOP-LEVEL only — valid on 2026.6.1+)
+#   • tools.exec: security=full, ask=off (TOP-LEVEL only — valid on 2026.6.1+); a box already on tools.exec.mode gets mode=full instead (D23)
 #   • GOAL-4 D4 (4B+4C): FULL fleetwide exec/approval UNGATE + a no-refusal tool
 #     baseline at agents.defaults.tools.allow=["*"] so NO department/sub-agent ever
 #     refuses a job (exec, file ops, web, MCP, Kie HTTP). The CEO/main per-agent
@@ -331,95 +331,42 @@ def deep_merge(dst, src):
 #     tests/unit/fleet-standards-legacy-exec-mode.test.sh -- do not rename these
 #     two anchor comments without updating that test) <<<
 #
-# DEFECT (2026-09-17). This script deep-merges {security, ask} into tools.exec.
-# On a box whose config still carries the LEGACY tools.exec.mode key the merged
-# block holds mode AND security AND ask at once, and the OpenClaw validator
-# rejects that combination outright:
+# HISTORY. 2026-09-17: this script deep-merges {security, ask} into tools.exec.
+# On a box carrying tools.exec.mode the merged block held mode AND security AND
+# ask, which the OpenClaw validator rejects ("mode cannot be combined with
+# security or ask in the same exec object"), and the whole fleet-standards
+# write rolled back. The first fix translated mode DOWN into the legacy
+# {security, ask} pair and deleted mode.
 #
-#   tools.exec.mode: mode cannot be combined with security or ask in the same
-#   exec object.
+# D23 (2026-10-12). That translation is now the defect. OpenClaw 2026.10.1's
+# own `openclaw doctor --fix` migrates {security, ask} UP into tools.exec.mode
+# (seen on Dr. Stephanie Brown's box, openclaw-a3go), and every roll then
+# rewrote the legacy keys back: a doctor migration undone on every update, one
+# config mutation plus a reload per roll, forever. So the direction is reversed:
+# when tools.exec.mode is present the box is on the mode schema, and this
+# script ENFORCES THE FLEET STANDARD IN THAT SCHEMA (mode "full" is the gateway's
+# own resolveExecPolicyForMode(full) = security full / ask off) and writes NO
+# legacy keys. A security/ask pair left beside a mode is the validator-rejected
+# combination, so it is dropped (mode carries the same policy). Only a box with
+# no tools.exec.mode (the legacy schema) still gets {security: full, ask: off}.
 #
-# The script then printed "ERROR: openclaw config validate failed" and rolled
-# back the WHOLE fleet-standards write -- toolSearch directory mode, the
-# WhatsApp ban, the subagent ungate, plugins.allow, every standard in this file
-# -- on every box carrying the legacy key, on every roll. Reproduced on two
-# client Macs on 2026-09-15 and again on 2026-09-17.
-#
-# SCHEMA EVIDENCE (OpenClaw 2026.9.4, read from $(npm root -g)/openclaw/dist):
-#
-#   zod-schema.agent-runtime-*.mjs
-#     const ToolExecBaseShape = {
-#       host: enum["auto","sandbox","gateway","node"],
-#       mode: enum["deny","allowlist","ask","auto","full"],
-#       security: enum["deny","allowlist","full"],
-#       ask: enum["off","on-miss","always"], ... }
-#     const ToolExecSchema =
-#       object(ToolExecBaseShape).strict().superRefine(addExecPolicyModeConflictIssue)
-#
-#     function addExecPolicyModeConflictIssue(value, ctx) {
-#       if (value.mode === void 0 ||
-#           (value.security === void 0 && value.ask === void 0)) return;
-#       ...ctx.addIssue({ path: ["mode"], message: "mode cannot be combined
-#          with security or ask in the same exec object. ..." })
-#     }
-#
-#   That `if` IS the exact conflict rule: an error is raised if and only if
-#   `mode` is present AND at least one of `security` / `ask` is present.
-#   Neither alone is an error.
-#
-#   exec-approvals-core-*.mjs
-#     function resolveExecPolicyForMode(mode) {
-#       case "deny":      return { security: "deny",      ask: "off",     autoReview: false }
-#       case "allowlist": return { security: "allowlist", ask: "off",     autoReview: false }
-#       case "ask":       return { security: "allowlist", ask: "on-miss", autoReview: false }
-#       case "auto":      return { security: "allowlist", ask: "on-miss", autoReview: true  }
-#       case "full":      return { security: "full",      ask: "off",     autoReview: false }
-#     }
-#
-#   EXEC_MODE_TO_POLICY below is that table verbatim. It is the gateway's own
-#   resolver, not an inference. `autoReview` is deliberately NOT carried across:
-#   it is not a member of ToolExecBaseShape, and the schema is .strict(), so
-#   writing it is rejected ("Unrecognized key: autoReview"). It is a derived
-#   runtime value, never persisted config, so "auto" and "ask" translate to the
-#   same persistable pair and nothing storable is lost.
-#
-# VERIFIED AGAINST THE REAL VALIDATOR (OPENCLAW_CONFIG_PATH=<temp>
-# openclaw config validate, OpenClaw 2026.9.4):
-#   {"tools":{"exec":{"mode":"full","security":"full","ask":"off"}}}  -> rc=1, the
-#       conflict message above  (the fleet defect, exactly)
-#   {"tools":{"exec":{"security":"full","ask":"off"}}}                -> rc=0 VALID
-#       (what this translation leaves behind)
-#   {"tools":{"exec":{"mode":"full"}}}                                -> rc=0 VALID
-#       (the legacy box BEFORE the merge -- which is why the box was healthy
-#        until this script ran)
-#   every {security, ask} pair in EXEC_MODE_TO_POLICY                 -> rc=0 VALID
-#
-# DIRECTION OF TRAVEL. The validator's own repair hint prefers the opposite
-# move ("Replace security/ask with mode=..."), and `openclaw doctor --fix`
-# migrates legacy policies toward `mode`. We deliberately do NOT flip the fleet
-# standard to `mode` here: {security, ask} are still fully valid keys on
-# 2026.9.4 (proved above), the whole fleet standard, its post-merge assertions
-# and verify-routing.sh all key off {security, ask}, and older gateways on the
-# fleet are not proven to accept `mode`. Changing the written shape fleet-wide
-# is a separate, larger decision. This fix removes the CONFLICT, nothing more.
-EXEC_MODE_TO_POLICY = {
-    "deny":      {"security": "deny",      "ask": "off"},
-    "allowlist": {"security": "allowlist", "ask": "off"},
-    "ask":       {"security": "allowlist", "ask": "on-miss"},
-    "auto":      {"security": "allowlist", "ask": "on-miss"},
-    "full":      {"security": "full",      "ask": "off"},
-}
+# SCHEMA EVIDENCE (OpenClaw 2026.9.4 dist, zod-schema.agent-runtime-*.mjs):
+#   mode: enum["deny","allowlist","ask","auto","full"]; strict(); an issue is
+#   raised iff mode is present AND (security or ask) is present.
+#   exec-approvals-core-*.mjs resolveExecPolicyForMode(full) -> security full,
+#   ask off.
+EXEC_MODES = ("deny", "allowlist", "ask", "auto", "full")
 
 
-def translate_legacy_exec_mode(cfg):
-    """Drop a legacy tools.exec.mode, translating it into {security, ask}.
+def keep_exec_mode(cfg):
+    """Enforce the exec ungate in the schema the box is already on.
 
     Returns (status, detail):
-      ("absent", None)            no tools.exec block, or no mode key -- no-op.
-      ("translated", mode)        mode recognised; replaced by its {security,
-                                  ask} pair and the mode key deleted. The
-                                  canonical merge then enforces the fleet
-                                  standard on top, as it always did.
+      ("absent", None)            no tools.exec block, or no mode key -- legacy
+                                  schema: the caller merges {security, ask}.
+      ("kept", old_mode)          mode recognised: set to "full" (the fleet
+                                  standard), any security/ask beside it dropped.
+                                  The caller must NOT merge security/ask.
       ("untranslatable", raw)     mode present but NOT one of the five schema
                                   values. We do not guess and we do not delete
                                   a key we cannot interpret. The caller SKIPS
@@ -436,37 +383,35 @@ def translate_legacy_exec_mode(cfg):
         return ("absent", None)
     raw = execblk.get("mode")
     key = raw.strip().lower() if isinstance(raw, str) else None
-    policy = EXEC_MODE_TO_POLICY.get(key)
-    if policy is None:
+    if key not in EXEC_MODES:
         return ("untranslatable", raw)
-    del execblk["mode"]
-    for pk, pv in policy.items():
-        execblk[pk] = pv
-    return ("translated", key)
+    execblk["mode"] = "full"
+    execblk.pop("security", None)
+    execblk.pop("ask", None)
+    return ("kept", key)
 
 
-_EXEC_STATUS, _EXEC_DETAIL = translate_legacy_exec_mode(cfg)
-if _EXEC_STATUS == "translated":
-    _p = EXEC_MODE_TO_POLICY[_EXEC_DETAIL]
-    print("[apply-fleet-standards] legacy tools.exec.mode=\"%s\" translated to "
-          "security=\"%s\" ask=\"%s\" and the mode key removed "
-          "(the OpenClaw validator rejects mode combined with security/ask)"
-          % (_EXEC_DETAIL, _p["security"], _p["ask"]))
+_EXEC_STATUS, _EXEC_DETAIL = keep_exec_mode(cfg)
+if _EXEC_STATUS == "kept":
+    print("[apply-fleet-standards] tools.exec.mode present (2026.10.x schema): kept "
+          "as mode=\"full\" (was \"%s\"); legacy security/ask NOT written"
+          % _EXEC_DETAIL)
 elif _EXEC_STATUS == "untranslatable":
     print("[apply-fleet-standards] WARNING: tools.exec.mode=%r is not one of %s "
-          "-- cannot translate it, so the tools.exec sub-block is SKIPPED on this "
+          "-- cannot interpret it, so the tools.exec sub-block is SKIPPED on this "
           "box. Every other fleet standard IS still applied. This config was "
           "already invalid before this script ran (the schema enum rejects that "
           "value on its own); fix tools.exec.mode by hand, then re-run."
-          % (_EXEC_DETAIL, sorted(EXEC_MODE_TO_POLICY)))
+          % (_EXEC_DETAIL, sorted(EXEC_MODES)))
 # >>> END LEGACY-EXEC-MODE TRANSLATION <<<
 
-# Apply the canonical block. When the legacy mode key could not be translated we
-# merge a copy with the tools.exec sub-block removed, so ONE unreadable key can
-# never cost the box every other standard in this file. CANONICAL itself is left
+# Apply the canonical block. On a mode-schema box (kept) or an uninterpretable
+# mode we merge a copy with the tools.exec sub-block removed, so legacy
+# security/ask are never written next to a mode and ONE unreadable key can never
+# cost the box every other standard in this file. CANONICAL itself is left
 # intact -- the before/after audit print at the end still keys off it.
 CANONICAL_TO_MERGE = json.loads(json.dumps(CANONICAL))
-if _EXEC_STATUS == "untranslatable":
+if _EXEC_STATUS in ("kept", "untranslatable"):
     CANONICAL_TO_MERGE["tools"].pop("exec", None)
 deep_merge(cfg, CANONICAL_TO_MERGE)
 
@@ -3766,6 +3711,40 @@ echo "=== CHECK 2: onboarding-state.sh ===";   ls -la "$P2" 2>&1 || echo "ABSENT
 Every probe reports. Nothing aborts. `Exec failed` never fires, so there is nothing to retry.
 ECDEOF
   echo "[apply-fleet-standards] EXEC_CHAIN_DISCIPLINE_V1 injected into $AGENTS_FILE"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
+fi
+
+# ─── 5f. Inject CORE_FILE_CLAIMS_V1 into workspace/AGENTS.md (RRS001) ───────
+# A helper agent (remote-rescue) with its own near-empty folder told an operator the
+# owner's workspace was fresh and its identity blank, and a second agent said Gmail
+# had no send path. Both judged the owner's box from a folder that was never the
+# owner's. AGENTS.md is injected into the system prompt every turn, so the rule
+# lives here. Idempotent: guarded by <!-- CORE_FILE_CLAIMS_V1 -->.
+CORE_FILE_CLAIMS_MARKER="<!-- CORE_FILE_CLAIMS_V1 -->"
+
+if grep -qF "$CORE_FILE_CLAIMS_MARKER" "$AGENTS_FILE"; then
+  echo "[apply-fleet-standards] CORE_FILE_CLAIMS_V1 already present in $AGENTS_FILE - no-op"
+else
+  cat >> "$AGENTS_FILE" <<'CFCEOF'
+
+<!-- CORE_FILE_CLAIMS_V1 -->
+## Core-File Claims: name the paths, follow symlinks, never judge the owner from your own folder (stamped by apply-fleet-standards.sh, do NOT edit manually)
+
+> Marker: `CORE_FILE_CLAIMS_V1`. Idempotent. Re-stamped on every install/update.
+
+Real incident (2026-10-11): a helper agent with its own small folder told an operator that the owner's workspace was "fresh" and its identity "blank". It had only looked inside its own folder. The owner's real files were untouched, in the main workspace, the whole time.
+
+Before you say a core file (`AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `MEMORY.md`) or a download is missing, blank or unconfigured:
+
+1. **Name the absolute path of every place you checked.** "Not found in A, B and C" is a report. "Not found" is a guess. Also say what you did NOT check.
+2. **Follow symlinks.** Use `find -L` and `ls -L`. A plain `find` does not follow a link, so a file reached through one looks absent.
+3. **Never judge the owner's files from a secondary agent's own folder.** Your folder is yours. It is normally smaller than the owner's workspace. The owner's (main) workspace is `$OPENCLAW_WORKSPACE`, else `agents.entries.main.workspace`, else `agents.defaults.workspace`, else `<openclaw root>/workspace`. Look there by absolute path before you claim anything about the owner.
+4. **Check the tools notes before you say a tool has no way to work.** For example, email can send through gws OAuth OR the Google service-account path. Read the main `TOOLS.md` first.
+CFCEOF
+  echo "[apply-fleet-standards] CORE_FILE_CLAIMS_V1 injected into $AGENTS_FILE"
 fi
 
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then

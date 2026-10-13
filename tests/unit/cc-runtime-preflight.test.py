@@ -141,7 +141,7 @@ class Compatibility(unittest.TestCase):
 
     def test_locked_installs_in_both_modes_use_ci_and_stop_on_failure(self):
         source=(ROOT/'32-command-center-setup/scripts/run-full-install.sh').read_text()
-        function=source[source.index('cc_install_locked_dependencies() {'):source.index('# ---- preflight ----')]
+        function=source[source.index('cc_with_node() {'):source.index('# ---- preflight ----')]
         # Exercise the actual shell helper used by both phase-6 branches with a
         # recording npm stub. No package downloads, scripts or real DB calls.
         self.assertEqual(source.count('  cc_install_locked_dependencies\n'),1)  # fresh install

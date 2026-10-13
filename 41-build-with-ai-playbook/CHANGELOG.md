@@ -1,3 +1,8 @@
+## [2.0.2] - 2026-10-12 - D05: core-file blocks go to the configured workspace
+
+- `04-update-core-files.sh` resolves the workspace with skill 70 `pr_workspace` (the configured `agents.defaults.workspace`) instead of `$HOME/clawd`, so the AGENTS.md / MEMORY.md / TOOLS.md blocks land in the real workspace and no stray `.skill41.bak` copies are made. `$HOME/clawd` stays only for a box with no `openclaw.json`; an explicit `WORKSPACE_ROOT` wins.
+- `lib-master-files.sh`: on Contabo (OpenClaw root is the only mount) the master-files default is `<root>/openclaw-master-files`, not `/data/openclaw-master-files`.
+
 ## [2.0.0] - 2026-08-03 — fix: the stale-block remover never ran on macOS, so every bump duplicated the rules
 
 ### Why

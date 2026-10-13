@@ -41,6 +41,8 @@ Supported surface (only what the registrars under test actually call):
   message send --channel telegram -t ID -m MSG
       -> succeeds unless $FAKE_OC_MESSAGE_FAIL is set, in which case it prints
          that string to stderr and exits 1 (used by the rate-limit-backoff test).
+  $FAKE_OC_LIST_MODE=fail|garbage|empty -> `cron list` (not --help) fails / prints
+      non-JSON / prints nothing (D10: unknown must never read as "absent").
   doctor / config get ...  -> no-ops so callers that probe these don't abort.
 """
 import json
@@ -170,6 +172,18 @@ def cmd_cron_list(rest):
     if "--help" in rest:
         advertise_status = os.environ.get("FAKE_OC_ADVERTISE_STATUS_FLAG", "") == "1"
         sys.stdout.write(LIST_HELP_WITH_STATUS if advertise_status else LIST_HELP_BASE)
+        return 0
+
+    # D10 failure injection: $FAKE_OC_LIST_MODE = fail (stderr + rc 1, e.g. gateway
+    # down / slow) | garbage (rc 0, non-JSON banner text) | empty (rc 0, no output).
+    mode = os.environ.get("FAKE_OC_LIST_MODE", "")
+    if mode == "fail":
+        sys.stderr.write("Error: gateway not reachable\n")
+        return 1
+    if mode == "garbage":
+        sys.stdout.write("Gateway is starting, please retry shortly...\n")
+        return 0
+    if mode == "empty":
         return 0
 
     jobs = load_jobs()

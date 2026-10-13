@@ -43,6 +43,28 @@ oc_canonical_path() {
   printf '%s\n' "$resolved"
 }
 
+# True when <dir> is a mount point. Needs util-linux `mountpoint` (absent on
+# macOS, where it simply answers false).
+oc_is_mount() {
+  [ -d "$1" ] && command -v mountpoint >/dev/null 2>&1 && mountpoint -q "$1"
+}
+
+# ONE rule for "where does durable data live" (D04/D05/D06). On Contabo the node
+# user's $HOME is the container image's throwaway layer and only the OpenClaw
+# root (~/.openclaw) is a mounted volume, so ~/Downloads, ~/999-setup and the
+# like vanish on every recreate. Prints the OpenClaw root when it is a mount and
+# $HOME is not (Linux only); prints nothing and returns 1 everywhere else (Mac,
+# Hostinger where $HOME=/data is itself the volume, a bare VPS). Callers then use
+#   <root>/openclaw-master-files   <root>/backups   <root>/persist-home/999-setup
+# Same rule as shared-utils/detect_platform.py _home_master_files().
+oc_persist_root() {
+  local root="${1:-${OPENCLAW_ROOT:-$HOME/.openclaw}}"
+  [ "$(uname -s)" = Linux ] || return 1
+  oc_is_mount "$root" || return 1
+  oc_is_mount "$HOME" && return 1
+  printf '%s' "${root%/}"
+}
+
 oc_container_marked() {
   [[ -f /.dockerenv || -f /run/.containerenv ]] && return 0
   [[ -r /proc/1/cgroup ]] && grep -qE '(^|/)(docker|kubepods|libpod)(/|[-.])' /proc/1/cgroup && return 0
@@ -138,6 +160,9 @@ PY
     OC_INSTALL_LOG_DIR="$OC_BACKUPS/install-logs"
   else
     OC_DOWNLOADS="${root%/*}/Downloads"
+    # Contabo: the volume is the OpenClaw root, not $HOME (D04), so the master
+    # files folder ($OC_DOWNLOADS/openclaw-master-files) lives at <root>/openclaw-master-files.
+    oc_persist_root "$root" >/dev/null && OC_DOWNLOADS="$root"
     OC_BACKUPS="$root/backups"
     OC_INSTALL_LOG_DIR="$root/logs/install"
   fi
