@@ -198,7 +198,7 @@ export async function handle(request, env, store, objects, deps = {}) {
     const set = setOption(record, body.option, { nowMs, approval: body.approval });
     if (!set.ok) return fail(set.code === AF_OPT_APPROVAL ? 403 : 400, set.code, set.message);
     await store.kvPut(`client:${target}`, JSON.stringify(set.record));
-    return ok({ option: set.record.option, line: optionLine(set.record, nowMs, await lastCheckIn(store, target)) });
+    return ok({ option: set.record.option, line: optionLine(set.record, nowMs, await lastCheckIn(objects, target)) });
   }
 
   // POST /api/studio/admin/push/send — operator-triggered, explicitly opt-in (U20)
@@ -250,7 +250,7 @@ export async function handle(request, env, store, objects, deps = {}) {
 
   // POST /api/studio/checkin — the 2-minute network call. Zero model tokens.
   if (request.method === 'POST' && url.pathname === '/api/studio/checkin') {
-    const result = await checkIn(store, objects, { clientId, nowMs, orders: body.orders });
+    const result = await checkIn(objects, { clientId, nowMs, orders: body.orders });
     if (Array.isArray(body.orders)) await writeInbox(objects, { clientId, orders: body.orders, nowMs });
     return ok(result);
   }
@@ -278,7 +278,7 @@ export async function handle(request, env, store, objects, deps = {}) {
     await writeInbox(objects, { clientId, orders: waiting, nowMs });
     return ok({
       order: project(order, nowMs),
-      option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(store, clientId)),
+      option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId)),
     }, 201);
   }
 
@@ -292,7 +292,7 @@ export async function handle(request, env, store, objects, deps = {}) {
     if (!verb && request.method === 'GET') {
       const stale = staleVerdict({
         record: await clientRecord(store, clientId),
-        lastCheckMs: await lastCheckIn(store, clientId),
+        lastCheckMs: await lastCheckIn(objects, clientId),
         hasWaitingOrder: JSON.parse(raw).state === 'waiting',
         nowMs,
       });
@@ -324,7 +324,7 @@ export async function handle(request, env, store, objects, deps = {}) {
   // GET /api/studio/options — the real-wait line for the client's record
   if (request.method === 'GET' && url.pathname === '/api/studio/options') {
     const record = await clientRecord(store, clientId);
-    return ok({ option: record.option || 1, line: optionLine(record, nowMs, await lastCheckIn(store, clientId)) });
+    return ok({ option: record.option || 1, line: optionLine(record, nowMs, await lastCheckIn(objects, clientId)) });
   }
 
   // POST /api/studio/uploads/<id>/complete — the poll view for a phone

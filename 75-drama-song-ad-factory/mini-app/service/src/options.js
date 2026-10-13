@@ -30,6 +30,10 @@ import { checkinKey } from './ids.js';
 export const OPTIONS = [1, 2, 3];
 export const DEFAULT_OPTION = 1;
 export const STALE_AFTER_MS = 30 * 60 * 1000;
+// How often a check-in re-saves its time. Boxes still ask every 2 minutes;
+// saving every 2 minutes burned the KV free tier (1,000 writes/day, 2026-10-13).
+// Must stay well under STALE_AFTER_MS or a live box reads as stale.
+export const CHECKIN_SAVE_EVERY_MS = 20 * 60 * 1000;
 
 export const AF_OPT_INVALID = 'AF-DS-OPT-INVALID';
 export const AF_OPT_APPROVAL = 'AF-DS-OPT-APPROVAL';
@@ -75,11 +79,13 @@ export function clockText(ms, timezone) {
  * The stored check-in for a client, in ms, or null when it has never checked
  * in. Read through the ONE shared key helper the check-in is written with
  * (ids.checkinKey, written by inbox.checkIn), so the page can never report a
- * different record from the one the box's check-in landed in.
+ * different record from the one the box's check-in landed in. Stored in R2,
+ * not KV: R2's free tier takes the fleet's check-ins, KV's 1,000 writes/day
+ * does not.
  */
-export async function lastCheckIn(store, clientId) {
-  const raw = await store.kvGet(checkinKey(clientId));
-  const n = raw === null || raw === undefined ? NaN : Number(raw);
+export async function lastCheckIn(objectStore, clientId) {
+  const obj = await objectStore.objectGet(checkinKey(clientId));
+  const n = obj ? Number(obj.value) : NaN;
   return Number.isFinite(n) ? n : null;
 }
 
