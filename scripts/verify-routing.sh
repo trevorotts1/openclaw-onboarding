@@ -7,7 +7,9 @@
 #   G3  PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V4_3) present in the resolved SOUL.md
 #   G3b (V4.3) heading present in the installed ceo-routing-doctrine plugin dist
 #   G4  default agent has skills:[] in openclaw.json (pptx skill physically blocked)
-#       "default agent" = first agent with default:true; falls back to id="main"
+#       "default agent" = default:true -> id="main" -> router id -> the id the CLI
+#       prints as "(default)" -> a single-entry agents.entries (2026.10.x removed
+#       the per-entry default marker, so those last two are the live path now)
 #   G5  workspace real-path is in skills.load.allowSymlinkTargets
 #   G6  at least one department workspace row exists in mission-control.db
 #   G7  CEO/main agent tools policy. The production-tool deny (write/edit/
@@ -287,7 +289,9 @@ fi
 
 # ─── G4: default agent has skills:[] ─────────────────────────────────────────
 # The "default agent" is the first entry in agents.list with default:true;
-# if none carries that flag, fall back to id=="main" (pre-v10 convention).
+# if none carries that flag, fall back to id=="main" (pre-v10 convention), then
+# a router id, then the id `openclaw agents list` prints as "(default)", then a
+# single-entry agents.entries (2026.10.x has no default marker at all).
 # Boxes whose primary agent is named "ceo", "dept-master-orchestrator", or any
 # other router id are gated; a PERSONAL-ASSISTANT-default box (default agent is
 # NOT a router) is a VALID topology — skills:[] is NOT required there and its
@@ -368,6 +372,27 @@ try:
                 default_agent = ag
                 break
 
+    # Priority 4 (OpenClaw 2026.10.x, verified 2026-10-13 on a live box): the
+    # per-entry `default` marker no longer exists — the config schema rejects it
+    # and `openclaw doctor --fix` strips it. The CLI still resolves and PRINTS
+    # the default, so ask the runtime; a single-agent box is unambiguous anyway
+    # (one entry IS the default agent).
+    if default_agent is None:
+        try:
+            import re as _re, shutil as _sh, subprocess as _sp
+            if _sh.which("openclaw"):
+                _out = _sp.run(["openclaw", "agents", "list"], capture_output=True,
+                               text=True, timeout=30).stdout or ""
+                _out = _re.sub(r"\x1b\[[0-9;]*m", "", _out)
+                _m = _re.search(r"^\s*-\s*(\S+)\s*\(default\)", _out, _re.M)
+                if _m:
+                    default_agent = next((ag for ag in agents_list
+                                          if _oc_id(ag) == _m.group(1)), None)
+        except Exception:
+            pass
+    if default_agent is None and len(agents_list) == 1:
+        default_agent = agents_list[0]
+
     if default_agent is None:
         print("NO_DEFAULT_AGENT")
         sys.exit(0)
@@ -415,7 +440,7 @@ case "$G4_RESULT" in
     _pass "G4: default agent (id=${_G4_ID}) retains owner-configured skills: ${_G4_SKILLS}"
     ;;
   NO_DEFAULT_AGENT)
-    _fail "G4: no default agent found in openclaw.json agents.list (no default:true entry and no id=main fallback)"
+    _fail "G4: no default agent resolved (no default:true entry, no id=main, no CLI '(default)' line, not a single-agent box)"
     FAILURES=$((FAILURES + 1))
     ;;
   ERROR:*)
@@ -557,7 +582,8 @@ fi
 # (exec is now a normal member of CEO_TOOL_ALLOW — the routing path — so the old
 # INTERIM_EXEC fail-warn would fire on every correctly-configured box).
 #
-# The CEO agent is resolved as default:true → id=="main" → known CEO ids.
+# The CEO agent is resolved as default:true → id=="main" → known CEO ids → the
+# id `openclaw agents list` prints as "(default)" → a single-agent box.
 _info "G7: CEO production-tool deny RETIRED (Trevor 2026-08-05) — not enforced; still checking per-agent tools schema validity + GHL MCP deny-by-provider."
 _pass "G7: CEO production-tool deny intentionally absent (retired fleet-wide per Trevor 2026-08-05) — no longer a requirement"
 
@@ -643,6 +669,23 @@ try:
         for ag in agents:
             if _oc_id(ag) in CEO_IDS:
                 ceo = ag; break
+    # 2026.10.x: no per-entry default marker exists (schema rejects it, doctor
+    # --fix strips it). Ask the CLI for its resolved default, then accept the
+    # only agent on the box. Mirrors G4's priority chain.
+    if ceo is None:
+        try:
+            import re as _re, shutil as _sh, subprocess as _sp
+            if _sh.which("openclaw"):
+                _out = _sp.run(["openclaw", "agents", "list"], capture_output=True,
+                               text=True, timeout=30).stdout or ""
+                _out = _re.sub(r"\x1b\[[0-9;]*m", "", _out)
+                _m = _re.search(r"^\s*-\s*(\S+)\s*\(default\)", _out, _re.M)
+                if _m:
+                    ceo = next((ag for ag in agents if _oc_id(ag) == _m.group(1)), None)
+        except Exception:
+            pass
+    if ceo is None and len(agents) == 1:
+        ceo = agents[0]
     if ceo is None:
         print("NO_CEO_AGENT"); sys.exit(0)
 
