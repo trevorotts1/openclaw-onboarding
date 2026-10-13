@@ -13,19 +13,25 @@ worker, reports status, delivers, and leaves an owned-run cleanup receipt.
 It speaks the U2 service contract verbatim (branch unit/U2, head 8f344a1d):
 
     GET  /api/studio/health
+    POST /api/studio/enroll                      {enrollment_secret, label?}   no key
+    POST /api/studio/link                        header x-ds-key  {rotate}
     POST /api/studio/checkin                     header x-ds-key
+    GET  /api/studio/orders/<id>                 header x-ds-key
     POST /api/studio/orders/<id>/state           header x-ds-key  {event}
     POST /api/studio/uploads                     header x-ds-key  {channel, ...}
     POST /api/studio/orders                      header x-ds-key  {title, order_id?}
 
 `event` is one of claim | needs_you | answer | ready | deliver | done.
 
-SECRETS: the presented key is read from env `DS_KEY` only — never argv, never a
-file the caller names on the command line, never a log line. Nothing in this
-module prints, echoes or receipts a key value.
+SECRETS: the presented key comes from env `DS_KEY` first, else the state
+folder's `machine.key` (SPEC §2/§6) — never argv, never a file the caller names
+on the command line, never a log line. Nothing in this module prints, echoes or
+receipts a key value.
 
-Exit codes: 0 ok · 1 error · 2 refused · 3 undefined (transport unknown).
-Stdlib only: argparse, hashlib, json, os, pathlib, sys, time, urllib.
+Exit codes: 0 ok · 1 error · 2 refused · 3 undefined (transport unknown, or an
+approval not answered yet).
+Stdlib only: argparse, hashlib, json, os, pathlib, re, subprocess, sys, time,
+urllib.
 """
 from __future__ import annotations
 
@@ -34,6 +40,8 @@ import hashlib
 import json
 import os
 import pathlib
+import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -45,6 +53,15 @@ from studio_claim import ClaimLedger, LedgerError, message_id  # noqa: E402
 EXIT = {"ok": 0, "error": 1, "refused": 2, "undefined": 3}
 
 STATUS_EVENTS = ("claim", "needs_you", "answer", "ready", "deliver", "done")
+
+#: The claim ledger's owner row: one box = one claimant, whatever the process.
+BRIDGE_OWNER = "studio-bridge"
+#: The one inbox line the service prints (service/src/inbox.js:61).
+INBOX_LINE = re.compile(r'^DRAMA_ORDER\s+(\S+)\s+"(.*)"$')
+APPROVAL_STAGES = ("script", "song", "storyboard")
+DELIVERY_KINDS = ("ghl", "r2")
+#: An order id becomes a run directory name: one path segment, never a walk.
+ORDER_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 
 # The studio sits behind Cloudflare, which refuses Python's default User-Agent
 # ("Python-urllib/3.x") with HTTP 403 "error code: 1010". Every request from this
@@ -78,10 +95,70 @@ IMAGE_MAGIC = (
 
 # --- key handshake -----------------------------------------------------------
 
+def _env_of(env):
+    return os.environ if env is None else env
+
+
+def _home_state(env=None):
+    """`~/.drama-studio` for the SAME env the caller passed (SPEC §2)."""
+    src = _env_of(env)
+    home = (src.get("HOME") or "").strip() or str(pathlib.Path.home())
+    return pathlib.Path(home) / ".drama-studio"
+
+
+def state_dir(env=None):
+    """The state folder: `$DRAMA_STUDIO_STATE` when set, else `~/.drama-studio`."""
+    src = _env_of(env)
+    given = (src.get("DRAMA_STUDIO_STATE") or "").strip()
+    return pathlib.Path(given).expanduser() if given else _home_state(env)
+
+
+def read_private(path):
+    """The one stripped line of a state file, or "". Never logged, never raised."""
+    try:
+        p = pathlib.Path(path)
+        return p.read_text(encoding="utf-8").strip() if p.is_file() else ""
+    except OSError:
+        return ""
+
+
+def write_private(path, text, *, mode=0o600, folder_mode=0o700):
+    """Write a state file 0600 in a 0700 folder (SPEC §2). The value is never echoed."""
+    p = pathlib.Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(p.parent, folder_mode)
+    except OSError:  # a folder this process cannot chmod still holds the file
+        pass
+    p.write_text(text, encoding="utf-8")
+    os.chmod(p, mode)
+    return p
+
+
 def load_key(env=None):
-    """The presented key, from env only. Returns "" when absent (fail closed)."""
-    src = os.environ if env is None else env
-    return src.get("DS_KEY") or ""
+    """The presented key: env `DS_KEY`, else `machine.key`, else home (SPEC §6).
+
+    Returns "" when absent (fail closed). The value is never printed.
+    """
+    src = _env_of(env)
+    key = (src.get("DS_KEY") or "").strip()
+    if key:
+        return key
+    for folder in (state_dir(env), _home_state(env)):
+        found = read_private(folder / "machine.key")
+        if found:
+            return found
+    return ""
+
+
+def resolve_base_url(base_url=None, env=None):
+    """The studio API base: `--base-url` → `machine.url` → `studio.url` (SPEC §2)."""
+    if base_url and base_url.strip():
+        return base_url.strip().rstrip("/")
+    found = read_private(state_dir(env) / "machine.url")
+    if not found:
+        found = read_private(_home_state(env) / "studio.url")
+    return found.rstrip("/")
 
 
 def key_headers(key):
@@ -411,9 +488,16 @@ def cmd_status(args):
     if not key:
         _emit({"code": "NO_KEY", "message": "DS_KEY not set in env"})
         return EXIT["refused"]
+    body = {"event": args.event}
+    if bool(args.delivery_url) != bool(args.delivery_kind):
+        _emit({"code": "AF-DS-DELIVERY-KIND",
+               "message": "--delivery-url and --delivery-kind go together"})
+        return EXIT["refused"]
+    if args.delivery_url:
+        body["delivery"] = {"url": args.delivery_url, "kind": args.delivery_kind}
     status, body = _http("POST",
                          args.base_url.rstrip("/") + "/api/studio/orders/%s/state" % args.order,
-                         key=key, body={"event": args.event})
+                         key=key, body=body)
     if status == 0:
         _emit({"code": "TRANSPORT_UNKNOWN", "message": body.get("message", "")})
         return EXIT["undefined"]
@@ -466,6 +550,249 @@ def cmd_cleanup_receipt(args):
     return EXIT["ok"]
 
 
+# --- enroll / link (SPEC §6) -------------------------------------------------
+
+def _refusal(out, status, what):
+    if status == 0:
+        _emit({"code": "TRANSPORT_UNKNOWN", "message": out.get("message", "")})
+        return EXIT["undefined"]
+    _emit({"code": out.get("code") or "HTTP_%d" % status,
+           "message": out.get("message") or ("%s refused" % what)})
+    return EXIT["refused"]
+
+
+def cmd_enroll(args):
+    """Register this box ONCE; the key comes back once and is written 0600."""
+    env = os.environ
+    if load_key(env):
+        _emit({"code": "ALREADY_ENROLLED",
+               "message": "a machine key already exists; refusing to replace it"})
+        return EXIT["refused"]
+    secret = (env.get("DS_ENROLLMENT_SECRET") or "").strip()
+    if not secret:
+        _emit({"code": "NO_ENROLLMENT_SECRET",
+               "message": "DS_ENROLLMENT_SECRET not set in env"})
+        return EXIT["refused"]
+    base = resolve_base_url(args.base_url, env) or STUDIO_BASE_URL
+    body = {"enrollment_secret": secret}
+    if args.label:
+        body["label"] = args.label
+    status, out = _http("POST", base + "/api/studio/enroll", body=body)
+    if status // 100 != 2 or not out.get("ok") or not out.get("key"):
+        return _refusal(out, status, "enroll")
+    folder = state_dir(env)
+    write_private(folder / "machine.key", str(out["key"]).strip() + "\n")
+    write_private(folder / "machine.url", base + "\n")
+    _emit({"ok": True, "client_id": out.get("client_id"), "base_url": base,
+           "machine_key": str(folder / "machine.key"),
+           "machine_url": str(folder / "machine.url")})
+    return EXIT["ok"]
+
+
+def cmd_link(args):
+    """Print the client's personal link; `--new` rotates it and saves `client.url`."""
+    key = load_key()
+    if not key:
+        _emit({"code": "NO_KEY", "message": "no machine key; run enroll first"})
+        return EXIT["refused"]
+    base = resolve_base_url(args.base_url) or STUDIO_BASE_URL
+    stored_path = state_dir() / "client.url"
+    stored = read_private(stored_path)
+    if stored and not args.new:
+        print(stored)
+        return EXIT["ok"]
+    status, out = _http("POST", base + "/api/studio/link", key=key,
+                        body={"rotate": bool(args.new)})
+    link = str(out.get("link") or "").strip()
+    if status // 100 != 2 or not out.get("ok") or not link:
+        if out.get("exists"):
+            # The active link's secret is not recoverable, only re-minted.
+            _emit({"code": "LINK_UNAVAILABLE",
+                   "message": "an active link exists but its value is not stored "
+                              "here; run link --new to mint a fresh one"})
+            return EXIT["refused"]
+        return _refusal(out, status, "link")
+    write_private(stored_path, link + "\n")
+    print(link)
+    return EXIT["ok"]
+
+
+# --- poll (SPEC §6) ----------------------------------------------------------
+
+def _board_epic(skill_root, order_id, title):
+    """One epic card when `CC_WORKSPACE` is set; a silent skip when it is not."""
+    if not (os.environ.get("CC_WORKSPACE") or "").strip():
+        return
+    core = str(pathlib.Path(skill_root) / "scripts" / "core")
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    try:
+        from cc_sync import Outbox  # noqa: PLC0415
+        from batch_mode.batch import STAGES  # noqa: PLC0415
+        out = Outbox()
+        out.enqueue_create(job_id=order_id, show_name=title,
+                           stages=[{"slug": s[0]} for s in STAGES],
+                           workspace=out.workspace)
+        out.flush()
+    except Exception:  # noqa: BLE001 - a down board never stops the order
+        pass
+
+
+def _replay(skill_root, run_dir, replies):
+    """Hand every reply back to the card, in order. argv list, never a shell."""
+    factory = (pathlib.Path(skill_root).expanduser() / "scripts" / "core"
+               / "intake_preflight" / "factory.py")
+    if not factory.is_file():
+        _emit({"code": "NO_FACTORY",
+               "message": "factory.py not found under %s" % skill_root})
+        return EXIT["refused"], factory
+    argv = [sys.executable, str(factory), "card", "--step", "--format", "text",
+            "--run-dir", str(run_dir)]
+    for reply in replies:
+        argv.extend(["--reply", str(reply)])
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True,
+                              timeout=600, cwd=str(skill_root))
+    except (OSError, subprocess.SubprocessError) as exc:
+        _emit({"code": "REPLAY_FAILED", "message": str(exc)[:300]})
+        return EXIT["error"], factory
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "").strip()[-300:]
+        _emit({"code": "REPLAY_FAILED", "message": tail})
+        return EXIT["error"], factory
+    return EXIT["ok"], factory
+
+
+def cmd_poll(args):
+    """Check in, claim one waiting order, replay it, print one JSON line."""
+    key = load_key()
+    if not key:
+        _emit({"code": "NO_KEY", "message": "no machine key; run enroll first"})
+        return EXIT["refused"]
+    base = resolve_base_url(args.base_url)
+    if not base:
+        _emit({"code": "NO_BASE_URL",
+               "message": "no studio address; pass --base-url or run enroll"})
+        return EXIT["refused"]
+
+    status, out = _http("POST", base + "/api/studio/checkin", key=key, body={})
+    if status // 100 != 2 or not out.get("ok"):
+        return _refusal(out, status, "check-in")
+    line = out.get("line")
+    if not line:
+        return EXIT["ok"]                       # nothing waiting: no output at all
+    found = INBOX_LINE.match(str(line))
+    if not found:
+        _emit({"code": "BAD_INBOX_LINE", "message": str(line)[:200]})
+        return EXIT["refused"]
+    order_id, title = found.group(1), found.group(2)
+    if not ORDER_ID.fullmatch(order_id):
+        _emit({"code": "BAD_ORDER_ID", "message": "refusing order id %r" % order_id[:64]})
+        return EXIT["refused"]
+
+    with ClaimLedger(args.db or str(state_dir() / "studio.db")) as led:
+        won = led.claim_order(order_id, BRIDGE_OWNER)
+    if not won:
+        return EXIT["ok"]                       # another run holds it: no output
+
+    status, out = _http("POST", base + "/api/studio/orders/%s/state" % order_id,
+                        key=key, body={"event": "claim"})
+    if status // 100 != 2 or not out.get("ok"):
+        return _refusal(out, status, "claim")
+    status, out = _http("GET", base + "/api/studio/orders/%s" % order_id, key=key)
+    if status // 100 != 2 or not out.get("ok"):
+        return _refusal(out, status, "order fetch")
+    order = out.get("order") or {}
+    title = str(order.get("title") or title)
+    client_id = str(order.get("client_id") or "")
+
+    run_dir = pathlib.Path(args.runs).expanduser() / order_id
+    control = run_dir / "control"
+    control.mkdir(parents=True, exist_ok=True)
+    # The run dir knows WHERE the studio is; it never holds the key.
+    (control / "studio-order.json").write_text(
+        json.dumps({"order_id": order_id, "client_id": client_id,
+                    "title": title, "base_url": base}, sort_keys=True) + "\n",
+        encoding="utf-8")
+
+    code, factory = _replay(args.skill_root, run_dir, order.get("replies") or [])
+    if code != EXIT["ok"]:
+        return code
+    _board_epic(args.skill_root, order_id, title)
+    print(json.dumps({"order_id": order_id, "run_dir": str(run_dir),
+                      "next": "%s %s next --run-dir %s"
+                              % (sys.executable, factory, run_dir)},
+                     sort_keys=True))
+    return EXIT["ok"]
+
+
+# --- approvals (U2 owns approvals_bridge) ------------------------------------
+
+def _bridge_call(name, base, key, args, *extra):
+    """Call `approvals_bridge.<name>(base, key, order, stage, version, *extra)`.
+
+    Imported lazily: U2 lands the module separately, and the rest of this
+    bridge must keep working without it.
+    """
+    try:
+        import approvals_bridge  # noqa: PLC0415
+    except ImportError as exc:
+        _emit({"code": "NO_APPROVALS_BRIDGE", "message": str(exc)[:300]})
+        return EXIT["error"], None
+    fn = getattr(approvals_bridge, name, None)
+    if fn is None:
+        _emit({"code": "NO_APPROVALS_BRIDGE",
+               "message": "approvals_bridge has no %r" % name})
+        return EXIT["error"], None
+    try:
+        return EXIT["ok"], fn(base, key, args.order, args.stage, args.version, *extra)
+    except Exception as exc:  # noqa: BLE001 - a refusal keeps its own code
+        _emit({"code": getattr(exc, "code", "APPROVAL_FAILED"),
+               "message": str(exc)[:300]})
+        return EXIT["error"], None
+
+
+def cmd_publish_approval(args):
+    key, base = load_key(), resolve_base_url(args.base_url)
+    if not key:
+        _emit({"code": "NO_KEY", "message": "no machine key; run enroll first"})
+        return EXIT["refused"]
+    if not base:
+        _emit({"code": "NO_BASE_URL", "message": "no studio address; pass --base-url"})
+        return EXIT["refused"]
+    try:
+        text = pathlib.Path(args.text_file).expanduser().read_text(encoding="utf-8")
+    except OSError as exc:
+        _emit({"code": "NO_TEXT_FILE", "message": str(exc)[:300]})
+        return EXIT["refused"]
+    choices = [{"n": i + 1, "label": str(label)}
+               for i, label in enumerate(args.choice or [])]
+    # `files`: local paths approvals_bridge PUTs to their presigned URLs.
+    code, item = _bridge_call("publish", base, key, args, text, choices,
+                              list(args.file or []))
+    if code != EXIT["ok"]:
+        return code
+    _emit(item if isinstance(item, dict) else {"item": item})
+    return code
+
+
+def cmd_approval_answer(args):
+    key, base = load_key(), resolve_base_url(args.base_url)
+    if not key:
+        _emit({"code": "NO_KEY", "message": "no machine key; run enroll first"})
+        return EXIT["refused"]
+    if not base:
+        _emit({"code": "NO_BASE_URL", "message": "no studio address; pass --base-url"})
+        return EXIT["refused"]
+    code, value = _bridge_call("answer", base, key, args)
+    if code != EXIT["ok"]:
+        return code
+    if value is None:
+        return EXIT["undefined"]                # not answered yet (exit 3)
+    print(value if isinstance(value, str) else json.dumps(value, sort_keys=True))
+    return code
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -498,6 +825,9 @@ def main(argv=None):
     s.add_argument("--base-url", required=True)
     s.add_argument("--order", required=True)
     s.add_argument("--event", required=True, choices=STATUS_EVENTS)
+    s.add_argument("--delivery-url", default=None,
+                   help="with --event deliver: the finished video's link")
+    s.add_argument("--delivery-kind", default=None, choices=DELIVERY_KINDS)
     s.set_defaults(func=cmd_status)
 
     d = sub.add_parser("deliver", help="hash and record the finished video")
@@ -520,6 +850,40 @@ def main(argv=None):
     r.add_argument("--out", default=None)
     r.add_argument("--apply", action="store_true", help="also remove disposable paths")
     r.set_defaults(func=cmd_cleanup_receipt)
+
+    en = sub.add_parser("enroll", help="register this box once; writes machine.key + machine.url")
+    en.add_argument("--base-url", default=None, help="default: stored address, else the studio")
+    en.add_argument("--label", default=None, help="computer/box name stored with the key")
+    en.set_defaults(func=cmd_enroll)
+
+    li = sub.add_parser("link", help="print the client's personal link; --new rotates it")
+    li.add_argument("--new", action="store_true", help="mint a fresh link; the old one stops working")
+    li.add_argument("--base-url", default=None)
+    li.set_defaults(func=cmd_link)
+
+    po = sub.add_parser("poll", help="check in, claim one order, replay it, print one JSON line")
+    po.add_argument("--skill-root", required=True, help="skill 75 root R")
+    po.add_argument("--runs", required=True, help="runs directory D; the order becomes D/<order_id>")
+    po.add_argument("--base-url", default=None)
+    po.add_argument("--db", default=None, help="claim ledger (default: <state folder>/studio.db)")
+    po.set_defaults(func=cmd_poll)
+
+    pa = sub.add_parser("publish-approval", help="post an approval item and PUT its files")
+    pa.add_argument("--order", required=True)
+    pa.add_argument("--stage", required=True, choices=APPROVAL_STAGES)
+    pa.add_argument("--version", required=True, type=int)
+    pa.add_argument("--text-file", required=True)
+    pa.add_argument("--choice", action="append", default=[], help="choice label (repeat)")
+    pa.add_argument("--file", action="append", default=[], help="local file to PUT (repeat)")
+    pa.add_argument("--base-url", default=None)
+    pa.set_defaults(func=cmd_publish_approval)
+
+    aa = sub.add_parser("approval-answer", help="print the client's answer, or nothing")
+    aa.add_argument("--order", required=True)
+    aa.add_argument("--stage", required=True, choices=APPROVAL_STAGES)
+    aa.add_argument("--version", required=True, type=int)
+    aa.add_argument("--base-url", default=None)
+    aa.set_defaults(func=cmd_approval_answer)
 
     args = ap.parse_args(argv)
     try:
