@@ -73,7 +73,7 @@ CFG="$CFG" python3 - <<'PY'
 import json, os
 json.dump({"channels": {"telegram": {"botToken": "111:secretA", "accounts": {
     "default": {"botToken": "111:secretA", "allowFrom": ["42"], "dmPolicy": "allowlist"},
-    "operator": {"botToken": "", "dmPolicy": "allowlist", "allowFrom": ["5252140759"]}}}}}, open(os.environ["CFG"], "w"))
+    "operator": {"botToken": "", "dmPolicy": "allowlist", "allowFrom": ["777"]}}}}}, open(os.environ["CFG"], "w"))
 PY
 OUT="$(HOME="$h" OPERATOR_TELEGRAM_BOT_TOKEN= bash "$OPTG" 2>&1)"
 [ "$(tg_get botToken)" = "<absent>" ] && ok "top-level botToken removed" || nope "top-level botToken still present"
