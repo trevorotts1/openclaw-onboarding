@@ -85,6 +85,45 @@ class ResolveInterviewLink(unittest.TestCase):
                 self.assertIsNone(link)
                 self.assertTrue(reason)
 
+    # ── Decision (team-lead 2026-10-13): the recorded registration gap must
+    # surface as the reason, never as a link — even when a configured origin
+    # would otherwise resolve one (record() pops the stale verified origin and
+    # keeps the probe receipt; the receipt wins).
+    GAP = {
+        "commandCenterTenantVerification": {
+            "ready": False,
+            "missing": ["access_identity_unregistered", "company_record"],
+            "checkedAt": "2026-10-13T00:00:00+00:00",
+        },
+        # The trap: origin sources that survived the failed probe.
+        "commandCenterUrl": ORIGIN,
+    }
+
+    def test_registry_gap_reason_wins_over_surviving_origin_sources(self):
+        link, reason = nudge.resolve_interview_link(
+            dict(self.GAP), env={"MC_TENANT_PUBLIC_URL": ORIGIN})
+        self.assertIsNone(link)
+        self.assertEqual(reason, "access_identity_unregistered")
+
+    def test_nudge_output_names_reason_and_carries_no_link(self):
+        # 503 registry-gap fixture: the nudge must say WHY, carry no link, and
+        # never reach the gateway.
+        with patch("shutil.which") as which, \
+                patch("subprocess.run") as run:
+            import io, contextlib
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                ok = nudge.send_telegram_nudge(dict(META), dict(CFG), "client-a",
+                                               dry_run=False, _state=dict(self.GAP))
+            out = buf.getvalue()
+        self.assertFalse(ok)
+        which.assert_not_called()
+        run.assert_not_called()
+        self.assertIn("access_identity_unregistered", out)
+        self.assertNotIn(ORIGIN, out)
+        self.assertNotIn("{link}", out)
+        self.assertIn("[SKIP]", out)
+
     def test_never_builds_resume_slug_or_placeholder_links(self):
         link, _ = nudge.resolve_interview_link(dict(STATE), env={})
         self.assertNotIn("onboarding/resume", link)
@@ -145,6 +184,22 @@ class GatewayReceipt(unittest.TestCase):
         self.assertIn("--json", calls[0])
         sent_message = calls[0][calls[0].index("--message") + 1]
         self.assertIn(ORIGIN + "/interview", sent_message)
+
+    def test_healthy_fixture_carries_link_and_no_reason(self):
+        # Decision 1, healthy half: recorded ready:true with an empty missing
+        # list -> the nudge carries the link and NO registration reason.
+        receipt = json.dumps({"channel": "telegram",
+                              "payload": {"ok": True, "messageId": "m-1",
+                                          "chatId": "8399116757"}})
+        state = dict(STATE,
+                     commandCenterTenantVerification={"ready": True,
+                                                      "missing": []})
+        ok, calls = self._send(
+            state, {"TELEGRAM_CHAT_ID": "8399116757"}, cli_stdout=receipt, cli_rc=0)
+        self.assertTrue(ok)
+        sent_message = calls[0][calls[0].index("--message") + 1]
+        self.assertIn(ORIGIN + "/interview", sent_message)
+        self.assertNotIn("access_identity_unregistered", sent_message)
 
     def test_operator_chat_rejected(self):
         receipt = json.dumps({"channel": "telegram",
