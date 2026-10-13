@@ -16,8 +16,8 @@ reported.
 
 | | |
 |---|---|
-| Host | the operator Mac, `Darwin 25.3.0`, login user `blackceomacmini` |
-| Worktree | `/Users/blackceomacmini/dsf-wt/DSF-302`, branch `unit/DSF-302` at `origin/main` (`5cd1d6145`) |
+| Host | the operator Mac, `Darwin 25.3.0`, login user `<operator>` |
+| Worktree | `/Users/<operator>/dsf-wt/DSF-302`, branch `unit/DSF-302` at `origin/main` (`5cd1d6145`) |
 | Lane (scratch) | `…/DRAMA FIXES OCT 13/run/lanes/DSF-302-lane/` |
 | Temp roots | `/tmp/lane-DSF-302-hostinger`, `/tmp/lane-DSF-302-contabo`, `/tmp/lane-DSF-302-mac` |
 | Identity shim | `/tmp/lane-DSF-302-bin/id` — prints `node` for `id -un`, else `exec /usr/bin/id`. This Mac's login user is not `node`, so the Hostinger/Contabo **user** rows are simulated with it. It is named here so nobody mistakes it for a real box user. |
@@ -61,7 +61,7 @@ the mac guard requires the state dir to be under `$HOME`, which the lane is).
 ### 1a. `studio_bridge.py poll`, no order waiting
 
 ```
-$ env -i HOME=/Users/blackceomacmini \
+$ env -i HOME=/Users/<operator> \
     DRAMA_STUDIO_STATE=<lane>/mac/.drama-studio \
     python3 …/shared-bridge/studio_bridge.py poll \
       --base-url http://127.0.0.1:55327 --skill-root …/75-drama-song-ad-factory \
@@ -78,7 +78,7 @@ SPEC §6.
 
 ```
 $ printf 'DSF302-mac-order-0003\tDSF-302 Mac test order' > <lane>/state/lock
-$ env -i HOME=/Users/blackceomacmini DRAMA_STUDIO_STATE=<lane>/mac/.drama-studio \
+$ env -i HOME=/Users/<operator> DRAMA_STUDIO_STATE=<lane>/mac/.drama-studio \
     python3 …/studio_bridge.py poll --base-url http://127.0.0.1:55327 \
       --skill-root …/75-drama-song-ad-factory --runs <lane>/mac/drama-runs
 {"next": "/Library/Developer/CommandLineTools/usr/bin/python3 …/scripts/core/intake_preflight/factory.py next --run-dir <lane>/mac/drama-runs/DSF302-mac-order-0003", "order_id": "DSF302-mac-order-0003", "run_dir": "<lane>/mac/drama-runs/DSF302-mac-order-0003"}
@@ -98,19 +98,19 @@ for the key prefix returns nothing — the key never enters a run dir.
 ### 1c. `run-timer.sh` for real, mac platform
 
 ```
-$ ls -ld /Users/blackceomacmini/.openclaw/drama-runs
-ls: /Users/blackceomacmini/.openclaw/drama-runs: No such file or directory
+$ ls -ld /Users/<operator>/.openclaw/drama-runs
+ls: /Users/<operator>/.openclaw/drama-runs: No such file or directory
 
-$ env -i HOME=/Users/blackceomacmini DS_PLATFORM=mac \
+$ env -i HOME=/Users/<operator> DS_PLATFORM=mac \
     DS_STATE_DIR=<lane>/mac/.drama-studio \
-    DS_SKILL_ROOT=/Users/blackceomacmini/dsf-wt/DSF-302/75-drama-song-ad-factory \
+    DS_SKILL_ROOT=/Users/<operator>/dsf-wt/DSF-302/75-drama-song-ad-factory \
     sh …/timer-artifacts/run-timer.sh
 stdout: 0 bytes
 stderr: (empty)
 exit code: 0
 
-$ ls -ld /Users/blackceomacmini/.openclaw/drama-runs
-ls: /Users/blackceomacmini/.openclaw/drama-runs: No such file or directory
+$ ls -ld /Users/<operator>/.openclaw/drama-runs
+ls: /Users/<operator>/.openclaw/drama-runs: No such file or directory
 ```
 
 The shipped timer reaches the real bridge and the fake studio, exits 0, prints
@@ -120,14 +120,14 @@ operator's real `~/.openclaw`. The operator Mac is untouched.
 ### 1d. What `run-timer.sh` computes on mac (argv probe)
 
 ```
-$ env -i HOME=/Users/blackceomacmini DS_PLATFORM=mac DS_STATE_DIR=<lane>/mac/.drama-studio \
+$ env -i HOME=/Users/<operator> DS_PLATFORM=mac DS_STATE_DIR=<lane>/mac/.drama-studio \
     DS_SKILL_ROOT=<lane>/probe-skill DSF302_PROBE_LOG=<lane>/probe-argv.log \
     sh …/timer-artifacts/run-timer.sh
 exit code: 0
-  HOME                  = /Users/blackceomacmini
+  HOME                  = /Users/<operator>
   DRAMA_STUDIO_STATE    = <lane>/mac/.drama-studio
   PATH                  = /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin
-  argv: poll --base-url http://127.0.0.1:55327 --skill-root <lane>/probe-skill --runs /Users/blackceomacmini/.openclaw/drama-runs
+  argv: poll --base-url http://127.0.0.1:55327 --skill-root <lane>/probe-skill --runs /Users/<operator>/.openclaw/drama-runs
 ```
 
 Every mac path the timer used came from `$HOME` or from an override the caller
@@ -139,15 +139,15 @@ supplied. No platform literal appears.
 $ bash …/timer-artifacts/install-timer.sh --platform mac --dry-run
 DRY RUN — nothing written, nothing registered.
   platform : mac
-  user     : blackceomacmini
-  home     : /Users/blackceomacmini
-  state    : /Users/blackceomacmini/.drama-studio  (persistent)
-  install  : /Users/blackceomacmini/Library/LaunchAgents/com.blackceo.drama-studio-bridge.plist
-  script   : /Users/blackceomacmini/.openclaw/skills/75-drama-song-ad-factory/timer-artifacts/run-timer.sh  (ships with the skill; not copied)
-  log      : /Users/blackceomacmini/Library/Logs/openclaw/drama-studio-timer.log
+  user     : <operator>
+  home     : /Users/<operator>
+  state    : /Users/<operator>/.drama-studio  (persistent)
+  install  : /Users/<operator>/Library/LaunchAgents/com.blackceo.drama-studio-bridge.plist
+  script   : /Users/<operator>/.openclaw/skills/75-drama-song-ad-factory/timer-artifacts/run-timer.sh  (ships with the skill; not copied)
+  log      : /Users/<operator>/Library/Logs/openclaw/drama-studio-timer.log
   direct   : /bin/sh …/run-timer.sh  (no model, no interactive session)
   operator registration command (NOT run by this script):
-    launchctl bootstrap gui/$(id -u) /Users/blackceomacmini/Library/LaunchAgents/com.blackceo.drama-studio-bridge.plist
+    launchctl bootstrap gui/$(id -u) /Users/<operator>/Library/LaunchAgents/com.blackceo.drama-studio-bridge.plist
 ```
 
 ---
@@ -199,7 +199,7 @@ Unshimmed, this Mac's real login user:
 ```
 $ env -i HOME=/tmp/lane-DSF-302-hostinger/data PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin \
     DS_PLATFORM=hostinger sh …/timer-artifacts/run-timer.sh
-ds-timer: hostinger: must run as user 'node', got 'blackceomacmini' 1
+ds-timer: hostinger: must run as user 'node', got '<operator>' 1
 exit code: 1
 ```
 
@@ -339,7 +339,7 @@ state dir: machine.key machine.url studio.db studio.db-shm studio.db-wal
 ```
 # real identity
 $ env -i HOME=/tmp/lane-DSF-302-contabo/home/node DS_PLATFORM=contabo sh …/run-timer.sh
-ds-timer: contabo: must run as user 'node', got 'blackceomacmini' 1
+ds-timer: contabo: must run as user 'node', got '<operator>' 1
 exit code: 1
 
 # identity shim -> user 'node'
@@ -427,7 +427,7 @@ refused and is recorded as a finding rather than a failure.
 
 | Path | Mechanism | Where | Meaning on a real box |
 |---|---|---|---|
-| `RUN_USER` | taken from the environment, then compared to a literal | `run-timer.sh:43` (`id -un`), compared at `:57` (hostinger) and `:66` (contabo) | must literally be user `node`; on this Mac it is `blackceomacmini` |
+| `RUN_USER` | taken from the environment, then compared to a literal | `run-timer.sh:43` (`id -un`), compared at `:57` (hostinger) and `:66` (contabo) | must literally be user `node`; on this Mac it is `<operator>` |
 | mac `HOME` | pattern + leaf check, both derived from the environment | `run-timer.sh:49-53` | any `/Users/<user>` whose leaf equals the user — genuinely HOME-derived |
 | hostinger `HOME` | **absolute literal** | `run-timer.sh:58-61` (`/data`) | `HOME` must *be* `/data`; a temp root is refused |
 | contabo `HOME` | **absolute literal** | `run-timer.sh:67-70` (`/home/node`) | `HOME` must *be* `/home/node`; a temp root is refused |
@@ -461,11 +461,11 @@ $ env -i HOME=/tmp/lane-DSF-302-hostinger/data python3 -c "… print(b.state_dir
   state_dir()=/tmp/lane-DSF-302-hostinger/data/.drama-studio            _home_state()=/tmp/lane-DSF-302-hostinger/data/.drama-studio
 $ env -i HOME=/tmp/lane-DSF-302-contabo/home/node python3 -c "…"
   state_dir()=/tmp/lane-DSF-302-contabo/home/node/.drama-studio         _home_state()=/tmp/lane-DSF-302-contabo/home/node/.drama-studio
-$ env -i HOME=/Users/blackceomacmini python3 -c "…"
-  state_dir()=/Users/blackceomacmini/.drama-studio                      _home_state()=/Users/blackceomacmini/.drama-studio
+$ env -i HOME=/Users/<operator> python3 -c "…"
+  state_dir()=/Users/<operator>/.drama-studio                      _home_state()=/Users/<operator>/.drama-studio
 # HOME unset -> falls back to pathlib.Path.home()
 $ env -i python3 -c "…"
-  state_dir()= /Users/blackceomacmini/.drama-studio
+  state_dir()= /Users/<operator>/.drama-studio
 ```
 
 No Mac path is baked into the bridge: with a Hostinger or Contabo `HOME` it
@@ -499,7 +499,7 @@ them can, and was.
 
 `run-timer.sh:30` is `die() { say "$*"; exit "${2:-1}"; }`, so the exit code
 carried as the second argument is printed as part of the message:
-`ds-timer: hostinger: must run as user 'node', got 'blackceomacmini' 1`. The
+`ds-timer: hostinger: must run as user 'node', got '<operator>' 1`. The
 code is right, the message carries a stray `1`. Recorded, not fixed — this unit
 makes no code change.
 
@@ -540,7 +540,7 @@ The client works (the control prints a row) and the daemon socket is missing, so
 the fault is the absent daemon, not a broken instrument.
 
 An in-container run is therefore **UNDETERMINED** — not BLOCKED. The container
-row stays open for a real canary box, which remains a "Needs Trevor" item.
+row stays open for a real client box, which remains a "Needs Trevor" item.
 
 Supplementary, same instrument, shipped checker:
 

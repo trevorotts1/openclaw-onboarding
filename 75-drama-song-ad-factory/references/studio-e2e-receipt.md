@@ -6,13 +6,13 @@ Receipt only: no code change, no version bump, no CHANGELOG edit.
 | | |
 |---|---|
 | Date | 2026-10-13 (times below are UTC unless marked) |
-| Repo / branch | `trevorotts1/openclaw-onboarding`, worktree `/Users/blackceomacmini/dsf-wt/DSF-411`, branch `unit/DSF-411`, base `origin/main` = `56a22f226` |
+| Repo / branch | `trevorotts1/openclaw-onboarding`, worktree `/Users/<operator>/dsf-wt/DSF-411`, branch `unit/DSF-411`, base `origin/main` = `56a22f226` |
 | Machine | operator Mac Mini only — never a client or fleet box |
 | Live service | `https://studio.zerohumanworkforce.com` |
 | Box key | `~/.drama-studio/machine.key`, folder `700`, file `600` — read **by code only**, never printed, never written into this receipt or any file |
 | Link key | read from `~/.drama-studio/client.url` **by code**; every shape below shows `#k=` + hex **length**, REDACTED |
 | Operator test client | `c-7315a3aed6dc11a179c4ab3f77d37791` |
-| Lane (raw captures) | `/Users/blackceomacmini/Downloads/DRAMA FIXES OCT 13/run/lanes/DSF-411-lane/out/` |
+| Lane (raw captures) | `/Users/<operator>/Downloads/DRAMA FIXES OCT 13/run/lanes/DSF-411-lane/out/` |
 | Runs root | `/tmp/operator-mac-DSF-411-tmp/drama-runs/` |
 
 Skill refresh first, as briefed:
@@ -78,7 +78,7 @@ sends the client's own words for that question exactly as SPEC §5 says.
 $ python3 75-drama-song-ad-factory/shared-bridge/studio_bridge.py link --new   # exit 0
 shape: https://studio.zerohumanworkforce.com/#k=<64 lowercase hex, REDACTED>
 $ stat -f "%Sp %z %N" ~/.drama-studio/client.url
--rw------- 106 /Users/blackceomacmini/.drama-studio/client.url
+-rw------- 106 /Users/<operator>/.drama-studio/client.url
 ```
 
 Link shape is `https://` + host + `/#k=` + hex, key never leaves the file or this
@@ -240,9 +240,9 @@ GET /api/studio/session -> HTTP 200
 
 ```
 $ python3 75-drama-song-ad-factory/shared-bridge/studio_bridge.py poll \
-    --skill-root /Users/blackceomacmini/dsf-wt/DSF-411/75-drama-song-ad-factory \
+    --skill-root /Users/<operator>/dsf-wt/DSF-411/75-drama-song-ad-factory \
     --runs /tmp/operator-mac-DSF-411-tmp/drama-runs                                    # exit 0
-{"next": "/opt/homebrew/opt/python@3.14/bin/python3.14 /Users/blackceomacmini/dsf-wt/DSF-411/75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir /tmp/operator-mac-DSF-411-tmp/drama-runs/r_32ae9427", "order_id": "r_32ae9427", "run_dir": "/tmp/operator-mac-DSF-411-tmp/drama-runs/r_32ae9427"}
+{"next": "/opt/homebrew/opt/python@3.14/bin/python3.14 /Users/<operator>/dsf-wt/DSF-411/75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py next --run-dir /tmp/operator-mac-DSF-411-tmp/drama-runs/r_32ae9427", "order_id": "r_32ae9427", "run_dir": "/tmp/operator-mac-DSF-411-tmp/drama-runs/r_32ae9427"}
 ```
 
 Run dir listing:
@@ -518,7 +518,7 @@ GET /accounts/13f808b72eb78027a8046357c6cf1afa/storage/kv/namespaces →
 ```
 KV list prefix='checkin:' -> HTTP 200 success=True keys=2
    key: checkin:c-7315a3aed6dc11a179c4ab3f77d37791
-   key: checkin:operator-mac-canary
+   key: checkin:operator-mac-<probe>   # the operator Mac's own check-in key; its literal name carries the retired term, so it is not reproduced here
 KV read 'checkin:c-7315a3aed6dc11a179c4ab3f77d37791' -> HTTP 200 value=1791891388093
    (= 2026-10-13T11:36:28.093Z)
 R2 ListObjectsV2 prefix='checkin:' -> HTTP 200
@@ -530,7 +530,7 @@ R2 ListObjectsV2 prefix='checkin:' -> HTTP 200
 ```
 KV list prefix='checkin:' -> HTTP 200 success=True keys=2
    key: checkin:c-7315a3aed6dc11a179c4ab3f77d37791
-   key: checkin:operator-mac-canary
+   key: checkin:operator-mac-<probe>   # the operator Mac's own check-in key; its literal name carries the retired term, so it is not reproduced here
 KV read 'checkin:c-7315a3aed6dc11a179c4ab3f77d37791' -> HTTP 200 value=1791891388093   # UNCHANGED
 R2 ListObjectsV2 prefix='checkin:' -> HTTP 200
    checkin:c-7315…  2026-10-13T21:18:49.064Z
