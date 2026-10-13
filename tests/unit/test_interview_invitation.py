@@ -441,6 +441,37 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         for stdout in [json.dumps(self.receipt)+'\n302',json.dumps(self.receipt)+'\n403','{}\n200','not-json\n200']:
             with self.subTest(output=stdout),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,stdout,'')),self.assertRaises(m.Pending):m.resolve_public_origin(self.state,self.env)
 
+    def test_refusal_reasons_are_distinct_and_leak_nothing(self):
+        # Decision 2 (item 12): each refusal class keeps its OWN sanitized reason,
+        # the four are pairwise distinct (one vocabulary, never a collapsed
+        # catch-all), and none of them can carry a body, URL or ticket.
+        def reason_of(stdout, rc=0):
+            with patch.object(m.subprocess,'run',
+                              return_value=subprocess.CompletedProcess([],rc,stdout,'')):
+                try:
+                    m.resolve_public_origin(self.state,self.env)
+                except m.Pending as exc:
+                    return str(exc)
+            return None
+        redirect = reason_of(json.dumps(self.receipt)+'\n302')
+        malformed = reason_of('not-json\n200')
+        transport = reason_of('', rc=1)
+        for name, value in (('redirect',redirect),('malformed',malformed),('transport',transport)):
+            self.assertIsNotNone(value, name+' must refuse with a reason')
+            self.assertNotIn('enroll=', value, name)
+            self.assertNotIn('fixture.signature', value, name)
+        self.assertIn('redirect', redirect)
+        self.assertEqual(malformed, 'malformed readiness receipt')
+        self.assertEqual(transport, 'authenticated readiness transport failed')
+        self.assertEqual(len({redirect, malformed, transport}), 3, 'refusal reasons must stay distinct')
+        self.assertNotIn('not-json', malformed, 'a malformed body must never be echoed')
+        # Registration gap: the allowlisted application code only — unrecognised
+        # or injected codes yield no reason at all, never the raw body.
+        self.assertEqual(m.invitation_error_code(json.dumps({'error':'access_identity_unregistered'})),
+                         'access_identity_unregistered')
+        self.assertIsNone(m.invitation_error_code('not-json\n200'))
+        self.assertIsNone(m.invitation_error_code(json.dumps({'error':'x-trace secret-token-abc'})))
+
     def test_issuer_accepts_old_and_new_ttl_but_rejects_unbounded_expiry(self):
         resolved=self.resolve()
         good=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',oneUse=True,url='https://client.example.com/interview?enroll=fixture.signature')
