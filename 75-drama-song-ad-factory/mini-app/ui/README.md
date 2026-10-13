@@ -11,7 +11,7 @@ only**.
 |---|---|
 | `index.html` | The page shell: skip link, progress bar, section nav, focusable `<main>`, polite live region. |
 | `studio.css` | Warm palette tokens (light + dark), focus ring, reduced-motion guard, 16px gutter, no horizontal scroll. |
-| `studio.js` | The five pages, the eight options, the QR surface, the "Looks good" state, and the delivery download. |
+| `studio.js` | The order flow: home, one question per screen, recap, "Lock it in", the project screen (status, approvals, delivery) and the delivery download. |
 | `qr.js` | A dependency-free QR generator (byte mode, EC level M, versions 1..10). Inline SVG, no CDN. |
 | `download.js` | The one place that decides whether a delivery link is an **actual download**. |
 | `api-client.js` | The whole U2 service boundary — the entrypoints the page consumes. Implements no service behaviour. |
@@ -19,17 +19,37 @@ only**.
 | `package.json` | `{"type":"module"}` marker so the checks import the shipped modules unchanged. |
 | `checks/` | The runnable proofs (see below). |
 
-### The five pages
+### The five screens and the order flow
 
-1. **Start** — what the client is buying and how the four steps go.
-2. **Your eight answers** — the option surface (offer, audience, star, length, music,
-   look, quality, budget), native radio groups with real labels.
-3. **The recap** — the numbered card, the **"Looks good — start my video"**
-   confirmation state, and a QR surface beside the chosen look sample.
-4. **Your approvals** — script, song (pick 1 of 3), storyboard. Each ends in its own
-   "Looks good" state that stays on the page after it is taken.
-5. **Your premiere** — the delivery download, the clips, and a QR surface for the
-   share link.
+1. **Home** (`start`) — a greeting, **Order a new video**, the client's projects with
+   their plain-word status, the service's `option_line`, and the personal link as a
+   QR code with the link written underneath it.
+2. **Questions** (`questions`) — the real questions from `getQuestions()` (the
+   `intake_card.py --format studio-json` export served as `/questions.json`), **one
+   per screen** in export order, with the example under each question, a "n of N"
+   line, radio options whose value is the option number as a string, and a text box
+   for an option the card reads as typed text (`Reply with …`). Every **Next** calls
+   `saveDraft({ replies })`; opening the screen again resumes from
+   `session.draft.replies`.
+3. **Recap** (`recap`) — one line per answer, each one a button that takes you back
+   to that question, then **Lock it in** → `lockIn({ title, replies: [..., "yes"],
+   upload_ids })` → the **Order received** screen.
+4. **Project** (`approvals`) — the order's status timeline in words,
+   `renderApprovalsFor(order)` for the approvals, and the delivery link when the
+   order has one.
+5. **Premiere** (`delivery`) — the delivery download, the clips, and a QR surface
+   for the share link.
+
+Routing keeps the personal key: the URL is `#k=<key>&p=<page>`, navigation rewrites
+`p` and never drops `k` (SPEC §3).
+
+`session.client_id` is the only client id the page ever holds — there is no
+hard-coded one.
+
+`DEFAULT_OPTIONS` in `studio.js` is **not used by any screen any more**. It stays
+exported only because `checks/ui-contract.mjs` imports it and asserts on it, and
+that file is not this unit's to edit; removing it means updating `ui-contract.mjs`
+in the same change.
 
 ## The U2 dependency, stated plainly
 
@@ -87,7 +107,7 @@ static plus computed, and `checks/README.md` says so in the same words.
 
 ```bash
 cd 75-drama-song-ad-factory/mini-app/ui
-bash checks/run-all.sh          # all four; exit 0 = pass, 2 = a check failed
+bash checks/run-all.sh          # exit 0 = pass, 2 = a check failed
 ```
 
 Individual checks:
@@ -96,6 +116,13 @@ Individual checks:
 - `node checks/a11y-check.mjs` — the accessibility floor above.
 - `node checks/qr-roundtrip.mjs` — the QR really scans (decoded by an independent decoder).
 - `node checks/download-bytes-check.mjs` — real bytes, with the redirect-only negative control.
+- `node checks/service-client-check.mjs` — the page/service wiring (W1-studio-page-U1's file).
+- `node checks/questions-drift.mjs` — the committed `questions.json` still equals a fresh
+  `intake_card.py --format studio-json` export (W1-studio-page-U4's file).
+
+The last two are wired into `checks/run-all.sh` here and **run the moment their file
+exists on the branch**; a branch that does not have the file yet reports it as
+skipped, never as passed.
 
 ## U20 — the OPTIONAL web-push surface (version 2, never a version-0 gate)
 
