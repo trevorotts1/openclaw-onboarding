@@ -329,6 +329,20 @@ for rel in owned:
     if banned.search(txt):
         fails.append("Anthropic-family id shape found in owned file: %s" % rel)
 
+# --- no Google API key literal in any owned text file ---
+# Module-level beside the Anthropic-id scan above, so it runs on EVERY verify.sh run
+# (it once sat inside the inventory-missing branch and never executed on a healthy tree).
+_google_api_re = re.compile(r'AIza[0-9A-Za-z_-]{35}')
+for rel in owned:
+    fp = p(rel)
+    if not os.path.isfile(fp): continue
+    try:
+        txt = io.open(fp, encoding="utf-8", errors="replace").read()
+    except Exception:
+        continue
+    if _google_api_re.search(txt):
+        fails.append("Google API key literal found in owned file: %s" % rel)
+
 # --- script-inventory-equals-shipped-set (bidirectional) ---
 # Every shipped scripts/* file MUST appear in ENGINE-MANIFEST.script_inventory
 # (with a matching basename); every script_inventory row whose 'script' field
@@ -367,18 +381,6 @@ if isinstance(man, dict):
     if inventory_missing_from_disk:
         for fn in sorted(inventory_missing_from_disk):
             fails.append("script_inventory row references a .py script NOT on disk: scripts/%s" % fn)
-
-        # --- no Google API key literal in any owned text file ---
-        _google_api_re = re.compile(r'AIza[0-9A-Za-z_-]{35}')
-        for rel in owned:
-            fp = p(rel)
-            if not os.path.isfile(fp): continue
-            try:
-                txt = io.open(fp, encoding="utf-8", errors="replace").read()
-            except Exception:
-                continue
-            if _google_api_re.search(txt):
-                fails.append("Google API key literal found in owned file: %s" % rel)
 
 # --- enforcement-set hash vs ENGINE-PIN.sha256 (DRIFT recompute) ---
 # The entry's GATE 3 (AF-AE-HASH-PIN) enforces the pin at dispatch time; this
