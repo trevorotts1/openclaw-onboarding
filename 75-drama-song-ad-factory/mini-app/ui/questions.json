@@ -1,0 +1,270 @@
+{
+  "format": "studio-json",
+  "version": 0,
+  "question_count": 9,
+  "questions": [
+    {
+      "id": "models",
+      "label": "AI MODELS",
+      "question": "Which AI should build your video, and which should check the work? OpenRouter is recommended because it's faster; Ollama works too.",
+      "price": null,
+      "example": "\"1. Recommended setup.\" Short, clear, done.",
+      "options": [
+        {
+          "n": 1,
+          "text": "Recommended setup",
+          "detail": "An OpenRouter model builds, Claude Sonnet checks.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "Choose my own",
+          "detail": "Reply with the build model and the check model, e.g. 'DeepSeek builds, Sonnet checks'.",
+          "price": null,
+          "recommended": false
+        }
+      ]
+    },
+    {
+      "id": "length",
+      "label": "LENGTH",
+      "question": "How long do you want your ad to be? The longer ads also come with short clips you can post on social media.",
+      "price": null,
+      "example": "\"60 seconds. It's for Instagram.\" The length and the reason.",
+      "options": [
+        {
+          "n": 1,
+          "text": "60 seconds",
+          "detail": "The standard ad length.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "90 seconds",
+          "detail": "Room for a fuller story.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 3,
+          "text": "3 minutes + 60s and 90s clips",
+          "detail": "Plus a 60-second clip and a 90-second clip.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 4,
+          "text": "5 minutes + 60s and 90s clips",
+          "detail": "Plus a 60-second clip and a 90-second clip.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 5,
+          "text": "10 minutes (the long version) + 60s and 90s clips",
+          "detail": "Plus a 60-second clip and a 90-second clip.",
+          "price": null,
+          "recommended": false
+        }
+      ]
+    },
+    {
+      "id": "music",
+      "label": "MUSIC STYLE",
+      "question": "Which sound fits your story?",
+      "price": null,
+      "example": "\"Soul Rise. It starts with the problem and ends hopeful.\" The style and the reason.",
+      "options": [
+        {
+          "n": 1,
+          "text": "Soul Ballad",
+          "detail": "slow, heartfelt singing; builds to a big emotional chorus.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "R&B Flow",
+          "detail": "rhythmic rap verses, then a smooth sung hook you remember.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 3,
+          "text": "Soul Rise",
+          "detail": "starts slow and sad, then lifts into an upbeat, hopeful groove.",
+          "price": null,
+          "recommended": false
+        }
+      ]
+    },
+    {
+      "id": "look",
+      "label": "VIDEO STYLE",
+      "question": "How should your video look? Tap a link to watch a sample.",
+      "price": null,
+      "example": "\"Lifelike 3D. I want it to look real.\" Your choice and your reason.",
+      "options": [
+        {
+          "n": 1,
+          "text": "Lifelike 3D",
+          "detail": "polished animated movie look with lifelike faces.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "2D Hand-Painted",
+          "detail": "a warm, hand-painted cartoon from start to finish.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 3,
+          "text": "Sketch to Life (Hybrid)",
+          "detail": "black-and-white pencil sketch that turns into real footage.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 4,
+          "text": "Canvas to Life",
+          "detail": "painted cartoon that turns into real footage.",
+          "price": null,
+          "recommended": false
+        },
+        {
+          "n": 5,
+          "text": "Canvas to 3D",
+          "detail": "painted cartoon that turns into lifelike 3D.",
+          "price": null,
+          "recommended": false
+        }
+      ]
+    },
+    {
+      "id": "model",
+      "label": "VIDEO MODEL",
+      "question": "Which video model should make your shots? Prices are for your 60-second ad, with the song, pictures and a 20% redo allowance.",
+      "price": "Prices are for your 60-second ad, with the song, pictures and a 20% redo allowance.",
+      "example": "\"MiniMax H3. Good quality at a fair price.\"",
+      "options": [
+        {
+          "n": 1,
+          "text": "MiniMax H3",
+          "detail": "great quality, best value - about $3.22",
+          "price": "$3.22",
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "Seedance 2.5",
+          "detail": "premium detail and motion - about $23.02",
+          "price": "$23.02",
+          "recommended": false
+        },
+        {
+          "n": 3,
+          "text": "Seedance 2.0 Mini",
+          "detail": "quicker and cheaper - about $3.29",
+          "price": "$3.29",
+          "recommended": false
+        },
+        {
+          "n": 4,
+          "text": "Google Veo 3.1",
+          "detail": "top-tier realism - about $3.31",
+          "price": "$3.31",
+          "recommended": false
+        }
+      ]
+    },
+    {
+      "id": "spend",
+      "label": "BUDGET",
+      "question": "What's the most you want to spend on this video? Reply with a dollar amount, like $25.",
+      "price": null,
+      "example": "\"1. The recommended price.\" Clear, and it includes the redo allowance.",
+      "options": [
+        {
+          "n": 1,
+          "text": "A different maximum",
+          "detail": "reply with a dollar amount, like $25",
+          "price": null,
+          "recommended": false
+        }
+      ]
+    },
+    {
+      "id": "storyboard",
+      "label": "STORYBOARD APPROVAL",
+      "question": "Do you want to approve the storyboard before any video is made?",
+      "price": null,
+      "example": "\"Approved. Change shot 4 to show the storefront.\"",
+      "options": [
+        {
+          "n": 1,
+          "text": "Yes, show me first",
+          "detail": "Nothing is generated until you say go.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "No, just make it",
+          "detail": "I start as soon as the card is approved.",
+          "price": null,
+          "recommended": false
+        }
+      ]
+    },
+    {
+      "id": "song",
+      "label": "SONG APPROVAL",
+      "question": "Do you want to hear and pick the song before any video is made?",
+      "price": null,
+      "example": "\"Version B. I can't stop humming the chorus.\" Choice and reason.",
+      "options": [
+        {
+          "n": 1,
+          "text": "Yes, send me 3 versions to choose from",
+          "detail": "Three labelled songs; nothing else starts until you pick, and two extra songs are added to the price.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "No, just make it",
+          "detail": "I make one song and keep going.",
+          "price": null,
+          "recommended": false
+        }
+      ]
+    },
+    {
+      "id": "script",
+      "label": "SCRIPT APPROVAL",
+      "question": "Do you want to read and approve the script - your story and the song lyrics - before the song is made?",
+      "price": null,
+      "example": "\"Approved. Change 'free class' to 'free masterclass'.\" Clear and specific.",
+      "options": [
+        {
+          "n": 1,
+          "text": "Yes, show me first",
+          "detail": "Nothing is generated until you say go.",
+          "price": null,
+          "recommended": true
+        },
+        {
+          "n": 2,
+          "text": "No, just make it",
+          "detail": "I start as soon as the card is approved.",
+          "price": null,
+          "recommended": false
+        }
+      ]
+    }
+  ]
+}
