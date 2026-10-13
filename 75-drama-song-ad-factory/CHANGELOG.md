@@ -4,6 +4,24 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.45 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #1: the studio page, service routes and personal links
+
+Batch `BATCH-DSF-1` — nine Drama Fixes units merged together (one version bump
+and one entry for the whole batch, per the swarm plan):
+
+- `W1-studio-service-U1` personal link keys: mint, rotate, revoke, admin link (`link.js`).
+- `W1-studio-service-U2` page data: session list, draft save, order answer validation (`page-api.js`).
+- `W1-studio-service-U3` approvals on the service: publish, list, first answer wins, file stream (`approvals-api.js`).
+- `W1-studio-service-U4` `questions.json` exported from `intake_card.py` plus a drift check.
+- `W1-studio-page-U1` `service-client.js` installs `studioService` from the `#k=` link key.
+- `W1-studio-page-U2` the order flow: home, one question per screen, draft, recap, Lock it in (`studio.js`).
+- `W1-studio-page-U3` approval cards on the page: script, song pick, storyboard (`approvals-view.js`).
+- `W1-studio-page-U4` the upload page reads the key from the link fragment.
+- `W1-studio-page-U5` the admin page is served by the studio itself under `ui/admin/`.
+
+No behaviour outside SPEC.md was added; every unit's own tests and the area
+regressions pass on this batch head.
+
 ## v2.9.44 - 2026-10-13 - KV-FREE-TIER: check-ins stop burning the KV free tier
 
 Cloudflare blocked KV writes (429) on 2026-10-12 and 2026-10-13: namespace

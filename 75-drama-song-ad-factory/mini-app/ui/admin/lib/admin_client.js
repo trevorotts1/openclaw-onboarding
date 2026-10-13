@@ -21,6 +21,8 @@
  *                                          approval? }
  *        -> 200 { ok, option, line };  Option 3 needs
  *           approval: { option3: true, client_name }
+ *   POST /api/studio/admin/link          { admin_key, client_id }
+ *        -> 200 { ok, link: "https://…/#k=…" }   (always rotates; W1-U1 link.js)
  *
  * THE ONE RULE ABOUT SECRETS: the presented key ALWAYS travels in the `x-ds-key`
  * header and NEVER in a query string, so it cannot land in a URL log. The admin
@@ -131,6 +133,20 @@
       ok: true,
       method: 'POST',
       path: '/api/studio/admin/pairing-code',
+      body: { admin_key: adminKey, client_id: clientId.trim() },
+    };
+  }
+
+  /** Mint (or re-mint) a client's personal studio link. Always rotates. */
+  function makeLinkRequest(adminKey, clientId) {
+    if (typeof adminKey !== 'string' || adminKey === '') return missingKey();
+    if (typeof clientId !== 'string' || clientId.trim() === '') {
+      return { ok: false, code: AF_ADMIN_NOCLIENT, message: 'A client id is required to make a link for.' };
+    }
+    return {
+      ok: true,
+      method: 'POST',
+      path: '/api/studio/admin/link',
       body: { admin_key: adminKey, client_id: clientId.trim() },
     };
   }
@@ -294,6 +310,7 @@
     checkCode: checkCode,
     optionApprovalProblem: optionApprovalProblem,
     mintPairingCodeRequest: mintPairingCodeRequest,
+    makeLinkRequest: makeLinkRequest,
     setOptionRequest: setOptionRequest,
     checkKeyRequest: checkKeyRequest,
     revokeKeyRequest: revokeKeyRequest,
