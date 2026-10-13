@@ -1,7 +1,7 @@
 /* =============================================================================
  * DRAMA STUDIO MINI-APP :: U12 — PAIRING / ADMIN  ::  test/pairing.test.mjs
  * -----------------------------------------------------------------------------
- *   node --test 75-drama-song-ad-factory/mini-app/pairing/test/pairing.test.mjs
+ *   node --test 75-drama-song-ad-factory/mini-app/ui/admin/test/pairing.test.mjs
  *   exit 0 = all pass
  *
  * Two suites, no framework beyond node:test and no browser:
@@ -25,7 +25,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIB = join(HERE, '..', 'lib');
-const PAGE = join(HERE, '..', 'admin.html');
+const PAGE = join(HERE, '..', 'index.html');
 
 await import(pathToFileURL(join(LIB, 'qr.js')).href);
 await import(pathToFileURL(join(LIB, 'admin_client.js')).href);
@@ -331,6 +331,17 @@ test('admin: the mint request needs both an admin key and a client id', () => {
   assert.equal(DSAdmin.mintPairingCodeRequest('k', '  ').code, 'AF-DS-ADMIN-NOCLIENT');
 });
 
+test('admin: the make-link request posts the admin key and client id in the body', () => {
+  assert.deepEqual(
+    DSAdmin.makeLinkRequest('admin-fixture', ' c_1 '),
+    { ok: true, method: 'POST', path: '/api/studio/admin/link', body: { admin_key: 'admin-fixture', client_id: 'c_1' } },
+  );
+  assert.equal(DSAdmin.makeLinkRequest('', 'c_1').code, 'AF-DS-ADMIN-NOKEY');
+  assert.equal(DSAdmin.makeLinkRequest('k', '  ').code, 'AF-DS-ADMIN-NOCLIENT');
+  // the link key rides in the body, never in a query string
+  assert.equal(/\?/.test(DSAdmin.makeLinkRequest('admin-fixture', 'c_1').path), false);
+});
+
 test('admin: the key surface uses the x-ds-key header and never a query string', () => {
   const probe = DSAdmin.checkKeyRequest(' a-key ');
   assert.equal(probe.ok, true);
@@ -440,12 +451,12 @@ test('page: every control is labelled, every id is unique, every id the script u
 test('page: every section announces its result and its refusal', () => {
   const html = pageSource();
   const sections = [...html.matchAll(/<section[^>]*>([\s\S]*?)<\/section>/g)].map((m) => m[1]);
-  assert.equal(sections.length, 4, 'pairing, key, options, cutoff');
+  assert.equal(sections.length, 5, 'pairing, key, options, cutoff, link');
   for (const section of sections) {
     assert.match(section, /role="status"/, 'a result needs a polite live region');
     assert.match(section, /role="alert"/, 'a refusal needs an assertive live region');
   }
-  // focus order is the reading order: the four headings appear in page order
+  // focus order is the reading order: the five headings appear in page order
   const headings = [...html.matchAll(/<h2 id="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(headings, ['pairing-h', 'key-h', 'options-h', 'cutoff-h']);
+  assert.deepEqual(headings, ['pairing-h', 'key-h', 'options-h', 'cutoff-h', 'link-h']);
 });

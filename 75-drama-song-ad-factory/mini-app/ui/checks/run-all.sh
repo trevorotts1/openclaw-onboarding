@@ -18,12 +18,26 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE/.."
 
 status=0
-for check in ui-contract a11y-check qr-roundtrip download-bytes-check; do
+ran=0
+# ui-contract, a11y-check, qr-roundtrip and download-bytes-check live here.
+# service-client-check.mjs (W1-studio-page-U1) and questions-drift.mjs
+# (W1-studio-page-U4) are wired in here as their own units' files; each runs the
+# moment it exists on this branch, and a check that is not there yet is
+# reported as skipped, never as passed.
+for check in ui-contract a11y-check qr-roundtrip download-bytes-check \
+             service-client-check questions-drift; do
+  if [ ! -f "checks/${check}.mjs" ]; then
+    echo "==================================================================="
+    echo "== checks/${check}.mjs — not present on this branch (owned by another unit): SKIPPED"
+    echo
+    continue
+  fi
   echo "==================================================================="
   echo "== checks/${check}.mjs"
   echo "==================================================================="
   node "checks/${check}.mjs"
   rc=$?
+  ran=$((ran + 1))
   echo "-- checks/${check}.mjs exit ${rc}"
   if [ "$rc" -ne 0 ]; then status="$rc"; fi
   echo
@@ -31,8 +45,8 @@ done
 
 echo "==================================================================="
 if [ "$status" -ne 0 ]; then
-  echo "U3 UI check suite FAILED (last non-zero exit ${status})"
+  echo "UI check suite FAILED (last non-zero exit ${status})"
   exit 2
 fi
-echo "U3 UI check suite OK: all four checks passed"
+echo "UI check suite OK: all ${ran} present checks passed"
 exit 0

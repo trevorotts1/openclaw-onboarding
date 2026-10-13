@@ -25,9 +25,11 @@
   <h1>Send a file to your studio</h1>
   <p>Choose a photo, voice note or video for your ad. Photos and audio can be up to 25 MB. Videos can be up to 200 MB.</p>
   <form id="upload-form">
-    <label for="studio-key">Your studio access key</label>
-    <input id="studio-key" type="password" autocomplete="off" required aria-describedby="key-help">
-    <p id="key-help">Use the key from your studio connection. It stays in this page while it is open.</p>
+    <div id="paste-key">
+      <label for="studio-key">Your studio access key</label>
+      <input id="studio-key" type="password" autocomplete="off" required aria-describedby="key-help">
+      <p id="key-help">Use the key from your studio connection. It stays in this page while it is open.</p>
+    </div>
     <label for="channel">File type</label>
     <select id="channel"><option value="image">Photo</option><option value="audio">Voice note or audio</option><option value="video">Video</option></select>
     <label for="file">Choose your file</label>

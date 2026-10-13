@@ -1,12 +1,25 @@
 // =============================================================================
-// Drama Song Ad Factory mini-app — U3 version-0 studio UI
+// Drama Song Ad Factory mini-app — the order flow on the page
 // -----------------------------------------------------------------------------
 // mini-app/ui/studio.js
 //
-// Pages -> QR surface -> options -> accessibility -> the "Looks good" state,
-// then the delivery download. Everything the client sees and touches is built
-// here; everything that must be SAVED goes through api-client.js to the U2
-// service. This file keeps no store of its own.
+// HOME -> one question per screen (the draft saves after every answer) ->
+// RECAP -> "Lock it in" -> ORDER RECEIVED, then the PROJECT page (status
+// timeline, approvals, delivery link) and the premiere.
+//
+// WHAT THIS FILE DELIBERATELY DOES NOT DO
+//   * It asks no question of its own. Every question comes from
+//     getQuestions() — the intake_card.py `studio-json` export served as
+//     /questions.json, the only place questions are defined (SPEC §5).
+//   * It keeps no store of its own beyond the screen on display. Drafts,
+//     orders and approvals live in the service; this page reads and writes
+//     them through globalThis.studioService (service-client.js).
+//   * It carries no client id of its own — the id is whatever the service
+//     reports in `session.client_id`.
+//
+// HASH ROUTING KEEPS THE KEY. The URL is `#k=<key>&p=<page>`; navigation
+// rewrites `p` and preserves `k` (SPEC §3 — the personal key lives in the
+// fragment and must never be dropped by routing).
 //
 // Accessibility contract (asserted by checks/a11y-check.mjs):
 //   * every control is a native <button>, <input type="radio"> or <a>;
@@ -20,9 +33,26 @@ import { studio, serviceConnected, ServiceUnavailableError } from "./api-client.
 import { encode, toElement } from "./qr.js";
 import { verifyDownload, triggerSave } from "./download.js";
 
-// ── The eight questions + three looks + three song versions ──────────────────
-// Mirrors the client guide's production. The SERVICE is authoritative when it
-// answers getOptions(); this is the layout the page can draw without it.
+// ── sibling modules, each owned by another unit ──────────────────────────────
+// service-client.js (W1-studio-page-U1) installs globalThis.studioService;
+// approvals-view.js (W1-studio-page-U3) exports renderApprovalsFor(order, root).
+// Each import is guarded so the page and its checks still run on a branch where
+// that file has not landed yet: without the service the page says "not
+// connected" in words, without the view the project page says approvals are not
+// here yet. The moment the file exists, the import succeeds and the feature is
+// on — nothing is skipped silently after that.
+let renderApprovalsFor = null;
+
+async function loadSiblingModules() {
+  try { await import("./service-client.js"); } catch { /* not on this branch yet */ }
+  try { ({ renderApprovalsFor } = await import("./approvals-view.js")); } catch { /* same */ }
+}
+
+// ── the version-0 option surface ─────────────────────────────────────────────
+// NOT USED BY ANY SCREEN ANYMORE: the page asks getQuestions() instead (see the
+// header). It stays exported only because checks/ui-contract.mjs imports it and
+// asserts on it, and that file is not this unit's to edit — deleting it means
+// updating ui-contract.mjs first (named in the PR body for the conductor).
 export const DEFAULT_OPTIONS = {
   questions: [
     { id: "offer", label: "What are we promoting?", hint: "Your offer and its link.",
@@ -70,23 +100,44 @@ export const DEFAULT_OPTIONS = {
   ],
 };
 
+// The five pages. The ids are the contract checks/ui-contract.mjs asserts on:
+// `start` is the home screen, `approvals` is the project screen (status,
+// approvals and delivery live together there), `delivery` is the premiere.
 const PAGES = [
-  { id: "start", label: "Start", title: "Welcome to your studio" },
-  { id: "questions", label: "Your eight answers", title: "Tell us about your video" },
-  { id: "recap", label: "The recap", title: "Read this back, then say go" },
-  { id: "approvals", label: "Your approvals", title: "Three things you approve" },
-  { id: "delivery", label: "Your premiere", title: "Your finished video" },
+  { id: "start", label: "Home", title: "Welcome to your studio" },
+  { id: "questions", label: "Questions", title: "Tell us about your video" },
+  { id: "recap", label: "Recap", title: "Read this back, then lock it in" },
+  { id: "approvals", label: "Project", title: "Your project and approvals" },
+  { id: "delivery", label: "Premiere", title: "Your finished video" },
 ];
+
+// Plain words for every order state the service can report (lifecycle.js).
+const STATUS_WORDS = {
+  waiting: "Waiting for the studio to start",
+  in_production: "In production",
+  needs_you: "Needs you",
+  ready: "Ready for you",
+  delivered: "Delivered",
+  done: "Finished",
+  cancelled: "Cancelled",
+  expired: "Expired",
+};
+const TIMELINE = ["waiting", "in_production", "needs_you", "ready", "delivered", "done"];
 
 const state = {
   page: "start",
-  options: DEFAULT_OPTIONS,
-  answers: {},
-  approvals: { script: false, song: null, storyboard: false },
-  confirmed: false,
+  clientId: null,       // session.client_id — the service's id, never a hard-coded one
+  optionLine: "",
+  orders: [],
+  order: null,          // the project on screen
+  questions: [],        // from getQuestions()
+  qIndex: 0,            // which question screen
+  picks: [],            // selected option number, as a string
+  texts: [],            // typed answer for a free-text option
+  replies: [],          // what the box replays: option number, or the typed text
+  locked: false,
   delivery: null,
   deliveryVerdict: null,
-  clientId: "demo-client",
 };
 
 const el = (tag, attrs = {}, children = []) => {
@@ -114,10 +165,28 @@ function focusHeading() {
   if (h) { h.setAttribute("tabindex", "-1"); h.focus(); }
 }
 
+// ── hash routing: `#k=<key>&p=<page>`, and `k` is never dropped ──────────────
+function readHash() {
+  const raw = location.hash.replace(/^#/, "");
+  const params = new URLSearchParams(raw);
+  const page = params.get("p") || (PAGES.some((p) => p.id === raw) ? raw : "");
+  return { key: params.get("k") || "", page };
+}
+
+function personalLink() {
+  const { key } = readHash();
+  return key ? `${location.origin}/#k=${key}` : "";
+}
+
 function setPage(id) {
   state.page = id;
   render();
-  if (location.hash !== `#${id}`) history.replaceState(null, "", `#${id}`);
+  const { key } = readHash();
+  const params = new URLSearchParams();
+  if (key) params.set("k", key);
+  params.set("p", id);
+  const next = `#${params.toString()}`;
+  if (location.hash !== next) history.replaceState(null, "", next);
 }
 
 // ── chrome ───────────────────────────────────────────────────────────────────
@@ -140,166 +209,342 @@ function renderProgress() {
   document.getElementById("step-label").textContent = `Step ${idx + 1} of ${PAGES.length}: ${PAGES[idx].label}`;
 }
 
-// ── pages ────────────────────────────────────────────────────────────────────
-function pageStart() {
-  return [
-    el("h1", { text: "Welcome to your studio" }),
-    el("div", { class: "card" }, [
-      el("p", { text: "You are the Executive Producer. You make three approvals — the script, the song and the storyboard — and the studio does the rest." }),
-      el("p", { text: "One thing at a time. Nothing starts until you say it looks good." }),
-      el("div", { class: "actions" }, [primary("Start your eight answers", () => setPage("questions"))]),
-    ]),
-    el("div", { class: "panel" }, [
-      el("h2", { text: "How this works" }),
-      el("ol", {}, [
-        el("li", { text: "Answer eight short questions." }),
-        el("li", { text: "Read the recap back. Say “looks good” to start, or change a line." }),
-        el("li", { text: "Approve the script, pick one of three songs, approve the storyboard." }),
-        el("li", { text: "Your finished video arrives here, ready to scan, watch and download." }),
-      ]),
-    ]),
-  ];
+// ── the service, in the words this page shows when it is not there ───────────
+function svc() {
+  const s = globalThis.studioService;
+  if (!s) throw new ServiceUnavailableError();
+  return s;
 }
 
-function fieldFor(q) {
-  const fieldset = el("fieldset", { class: "options" });
-  fieldset.append(el("legend", { text: q.label }));
-  if (q.hint) fieldset.append(el("p", { class: "hint muted", text: q.hint }));
-  if (q.choices.length === 0) {
-    const id = `q-${q.id}`;
-    fieldset.append(el("label", { class: "visually-hidden", for: id, text: q.label }));
-    const input = el("input", { id, name: q.id, type: "text", autocomplete: "off" });
-    input.value = state.answers[q.id] || "";
-    input.addEventListener("input", () => { state.answers[q.id] = input.value; });
-    fieldset.append(input);
-    return fieldset;
+async function loadQuestions() {
+  if (state.questions.length) return;
+  try {
+    const out = await svc().getQuestions();
+    const list = out && Array.isArray(out.questions) ? out.questions : [];
+    state.questions = list;
+    if (!list.length) announce("The questions are not available right now. Nothing was lost — try again.");
+  } catch (err) {
+    announce(serviceMessage(err));
   }
-  for (const c of q.choices) {
-    const id = `q-${q.id}-${c.id}`;
-    const input = el("input", { id, type: "radio", name: q.id, value: c.id });
-    if (state.answers[q.id] === c.id) input.checked = true;
-    input.addEventListener("change", () => { state.answers[q.id] = c.id; render(); });
-    const label = el("label", { class: "option", for: id }, [
-      input,
-      el("span", {}, [
-        el("span", { class: "label", text: c.label }),
-        c.hint ? el("span", { class: "hint", text: ` ${c.hint}` }) : null,
-      ].filter(Boolean)),
-    ]);
-    fieldset.append(label);
+}
+
+// A reply is the option number as a string, or — for an option the card reads
+// as typed text ("Reply with …") — exactly what the client typed (SPEC §5).
+const isFreeTextOption = (o) => /^reply with/i.test(String(o.detail || "").trim());
+
+function hydrateReplies(replies) {
+  state.picks = [];
+  state.texts = [];
+  replies.forEach((r, i) => {
+    const q = state.questions[i];
+    if (!q || r == null || r === "") return;
+    const pick = q.options.find((o) => String(o.n) === String(r));
+    if (pick) { state.picks[i] = String(pick.n); return; }
+    const free = q.options.find(isFreeTextOption) || q.options[0];
+    if (free) { state.picks[i] = String(free.n); state.texts[i] = String(r); }
+  });
+}
+
+function replyFor(i) {
+  const q = state.questions[i];
+  const pick = state.picks[i];
+  if (!q || !pick) return "";
+  const opt = q.options.find((o) => String(o.n) === String(pick));
+  if (opt && isFreeTextOption(opt)) return String(state.texts[i] || "").trim();
+  return String(pick);
+}
+
+const currentReplies = () => state.questions.map((_, i) => replyFor(i));
+
+function firstUnanswered() {
+  for (let i = 0; i < state.questions.length; i++) if (!replyFor(i)) return i;
+  return state.questions.length;
+}
+
+function ensurePick(i) {
+  const q = state.questions[i];
+  if (q && !state.picks[i] && q.options.length === 1) state.picks[i] = String(q.options[0].n);
+}
+
+async function saveDraft() {
+  try {
+    await svc().saveDraft({ replies: state.replies });
+    announce("Saved. Your answers are safe.");
+  } catch (err) {
+    announce(serviceMessage(err));
   }
-  return fieldset;
+}
+
+async function advance() {
+  const i = state.qIndex;
+  const value = replyFor(i);
+  if (!value) {
+    announce(state.picks[i] ? "Type your answer first." : "Pick one of the options first.");
+    return;
+  }
+  state.replies = currentReplies();
+  await saveDraft();
+  if (i + 1 >= state.questions.length) { setPage("recap"); return; }
+  state.qIndex = i + 1;
+  render();
+}
+
+async function startOrder() {
+  await loadQuestions();
+  if (!state.questions.length) { render(); return; }
+  hydrateReplies(state.replies);
+  state.replies = currentReplies();
+  const next = firstUnanswered();
+  if (next >= state.questions.length) { setPage("recap"); return; }
+  state.qIndex = next;
+  setPage("questions");
+}
+
+function goAnswer() {
+  hydrateReplies(state.replies);
+  state.qIndex = Math.min(firstUnanswered(), state.questions.length - 1);
+  setPage("questions");
+}
+
+const statusWords = (order) => STATUS_WORDS[order && order.state] || "In progress";
+
+function openProject(order) {
+  state.order = order;
+  setPage("approvals");
+}
+
+// ── pages ────────────────────────────────────────────────────────────────────
+function pageHome() {
+  const link = personalLink();
+  const nodes = [el("h1", { text: "Welcome to your studio" })];
+
+  if (!serviceConnected()) {
+    nodes.push(el("div", { class: "refusal", text: new ServiceUnavailableError().message }));
+  }
+
+  nodes.push(el("div", { class: "card" }, [
+    el("h2", { text: "Start a drama video" }),
+    el("p", { text: "Answer the studio's questions one screen at a time. Your answers save as you go, so you can close this page and come back." }),
+    el("div", { class: "actions" }, [primary("Order a new video", () => startOrder())]),
+  ]));
+
+  if (state.optionLine) {
+    nodes.push(el("div", { class: "panel" }, [el("p", { text: state.optionLine })]));
+  }
+
+  nodes.push(el("div", { class: "card" }, [el("h2", { text: "Your projects" }), ...projectList()]));
+
+  if (link) {
+    nodes.push(el("div", { class: "card" }, [
+      el("h2", { text: "Your studio link" }),
+      qrSurface(link, "your studio link"),
+    ]));
+  } else if (serviceConnected()) {
+    nodes.push(el("p", { class: "muted", text: "Open this page from your personal link and your studio QR code appears here." }));
+  }
+
+  return nodes;
+}
+
+function projectList() {
+  if (!state.orders.length) {
+    return [el("p", { class: "muted", text: "Nothing here yet. Your first project appears the moment you lock in an order." })];
+  }
+  return [el("ul", {}, state.orders.map((o) => {
+    const li = el("li", {});
+    const b = el("button", {
+      type: "button", class: "btn secondary",
+      text: `${o.title || "Your video"} — ${statusWords(o)}`,
+    });
+    b.addEventListener("click", () => openProject(o));
+    li.append(b);
+    return li;
+  }))];
+}
+
+function answerBox(value, onInput) {
+  const wrap = el("div", {});
+  const id = "q-answer";
+  wrap.append(el("label", { for: id, text: "Your answer" }));
+  const input = el("input", { id, type: "text", autocomplete: "off" });
+  input.value = value;
+  input.addEventListener("input", () => onInput(input.value));
+  wrap.append(input);
+  return wrap;
 }
 
 function pageQuestions() {
-  const answered = state.options.questions.filter((q) => state.answers[q.id]).length;
-  const body = state.options.questions.map((q) => el("div", { class: "card" }, [fieldFor(q)]));
-  const next = primary("Next: read the recap", () => setPage("recap"));
+  if (!state.questions.length) {
+    return [
+      el("h1", { text: "Tell us about your video" }),
+      el("div", { class: "refusal", text: "The questions are not here yet. Nothing you typed has been lost — go home and try again." }),
+      el("div", { class: "actions" }, [secondary("Home", () => setPage("start"))]),
+    ];
+  }
+
+  const i = state.qIndex;
+  const q = state.questions[i];
+  ensurePick(i);
+  const chosen = q.options.find((o) => String(o.n) === String(state.picks[i] || ""));
+
+  const fieldset = el("fieldset", { class: "options" });
+  fieldset.append(el("legend", { text: q.question }));
+  if (q.example) fieldset.append(el("p", { class: "hint muted", text: `See a great answer: ${q.example}` }));
+  for (const o of q.options) {
+    const id = `q-${q.id}-${o.n}`;
+    const input = el("input", { id, type: "radio", name: `q-${q.id}`, value: String(o.n) });
+    if (String(state.picks[i]) === String(o.n)) input.checked = true;
+    input.addEventListener("change", () => { state.picks[i] = String(o.n); render(); });
+    fieldset.append(el("label", { class: "option", for: id }, [
+      input,
+      el("span", {}, [
+        el("span", { class: "label", text: o.text }),
+        o.detail ? el("span", { class: "hint", text: ` ${o.detail}` }) : null,
+        o.price ? el("span", { class: "hint", text: ` ${o.price}` }) : null,
+      ].filter(Boolean)),
+    ]));
+  }
+  if (chosen && isFreeTextOption(chosen)) {
+    fieldset.append(answerBox(state.texts[i] || "", (v) => { state.texts[i] = v; }));
+  }
+
   return [
-    el("h1", { text: "Tell us about your video" }),
-    el("p", { class: "muted", text: `${answered} of ${state.options.questions.length} answered. Your answers are saved as you go.` }),
-    ...body,
-    el("div", { class: "actions" }, [next]),
+    el("h1", { text: q.label || "Your question" }),
+    el("p", { class: "muted", text: `${i + 1} of ${state.questions.length}. Your answer saves when you tap Next.` }),
+    el("div", { class: "card" }, [fieldset]),
+    el("div", { class: "actions" }, [
+      i > 0
+        ? secondary("Back", () => { state.qIndex = i - 1; render(); })
+        : secondary("Home", () => setPage("start")),
+      primary(i + 1 >= state.questions.length ? "Read the recap" : "Next", () => advance()),
+    ]),
   ];
 }
 
-const LINE_LABELS = {
-  offer: "The offer", audience: "Who it is for", character: "The star",
-  length: "How long it runs", music: "The music", look: "The look",
-  model: "The quality", budget: "The budget",
-};
-
 function pageRecap() {
-  const rows = state.options.questions.map((q, i) => {
-    const chosen = q.choices.find((c) => c.id === state.answers[q.id]);
-    const value = chosen ? chosen.label : (state.answers[q.id] || "not chosen yet");
-    return el("li", { text: `${i + 1}. ${LINE_LABELS[q.id] || q.label}: ${value}` });
-  });
-  const look = state.options.looks.find((l) => l.id === state.answers.look);
-  const qrCard = look ? el("div", { class: "card" }, [
-    el("h2", { text: `See the ${look.label} look on your phone` }),
-    qrSurface(look.sampleUrl, `Sample of the ${look.label} look`),
-  ]) : null;
+  if (state.locked) return pageReceived();
+  if (!state.questions.length) {
+    return [
+      el("h1", { text: "Read this back, then lock it in" }),
+      el("div", { class: "refusal", text: "There is nothing to recap yet. Start your order from the home screen." }),
+      el("div", { class: "actions" }, [secondary("Home", () => setPage("start"))]),
+    ];
+  }
 
-  const confirmBtn = primary("Looks good — start my video", async () => {
-    state.confirmed = true;
-    try {
-      await studio.advance({ clientId: state.clientId, stage: "confirmed" });
-      announce("Confirmed. The studio is starting your production.");
-    } catch (err) {
-      announce(serviceMessage(err));
-    }
-    render();
+  const replies = currentReplies();
+  const rows = state.questions.map((q, i) => {
+    const li = el("li", {});
+    const b = el("button", {
+      type: "button", class: "btn secondary",
+      text: `${i + 1}. ${q.label}: ${replies[i] || "not answered yet"}`,
+    });
+    b.addEventListener("click", () => { state.qIndex = i; setPage("questions"); });
+    li.append(b);
+    return li;
   });
+  const missing = replies.some((r) => !r);
 
   return [
-    el("h1", { text: "Read this back, then say go" }),
-    ...(state.confirmed
-      ? [el("p", { class: "complete", text: "Looks good — your production is starting. You will approve the script next." })]
-      : []),
+    el("h1", { text: "Read this back, then lock it in" }),
+    missing ? el("div", { class: "refusal", text: "One line is still empty. Tap it to answer before locking in." }) : null,
     el("div", { class: "card" }, [el("h2", { text: "Your recap" }), el("ol", {}, rows)]),
-    qrCard,
-    state.confirmed ? null : el("p", { class: "muted", text: "If a line is wrong, go back and change it — it is free right now." }),
+    el("p", { class: "muted", text: "Tap any line to change it. Locking it in sends your answers to the studio — nothing starts before that." }),
     el("div", { class: "actions" }, [
-      state.confirmed ? null : confirmBtn,
-      secondary("Change an answer", () => setPage("questions")),
-      primary("Go to my approvals", () => setPage("approvals")),
+      missing ? null : primary("Lock it in", () => lockIn()),
+      secondary("Change an answer", () => goAnswer()),
     ].filter(Boolean)),
   ].filter(Boolean);
 }
 
-function approvalCard(kind, title, body, doneText, actionLabel, onApprove) {
-  const done = kind === "song" ? !!state.approvals.song : state.approvals[kind];
-  return el("div", { class: "card" }, [
-    el("h2", { text: title }),
-    ...body,
-    done
-      ? el("p", { class: "complete", text: doneText })
-      : el("div", { class: "actions" }, [primary(actionLabel, onApprove)]),
-  ]);
+async function lockIn() {
+  try {
+    const out = await svc().lockIn({
+      title: `Drama video ${new Date().toISOString().slice(0, 10)}`,
+      replies: [...currentReplies(), "yes"],
+      upload_ids: [],
+    });
+    state.locked = true;
+    if (out && out.order) {
+      state.order = out.order;
+      state.orders = [out.order, ...state.orders.filter((o) => o.order_id !== out.order.order_id)];
+      if (out.option_line) state.optionLine = out.option_line;
+    }
+    announce("Order received. Your answers are with the studio.");
+  } catch (err) {
+    announce(serviceMessage(err));
+    return;
+  }
+  render();
 }
 
-function pageApprovals() {
-  const songs = state.options.songs;
-  const songBody = songs.map((s) => {
-    const id = `song-${s.id}`;
-    const input = el("input", { id, type: "radio", name: "song", value: s.id });
-    if (state.approvals.song === s.id) input.checked = true;
-    input.addEventListener("change", async () => {
-      state.approvals.song = s.id;
-      try { await studio.saveAnswer({ clientId: state.clientId, questionId: "song", value: s.id }); }
-      catch (err) { announce(serviceMessage(err)); }
-      announce(`You chose ${s.label}.`);
-      render();
-    });
-    return el("label", { class: "option", for: id }, [
-      input,
-      el("span", {}, [el("span", { class: "label", text: s.label }),
-        el("span", { class: "hint", text: ` ${s.hint}` })]),
-    ]);
-  });
-
+function pageReceived() {
   return [
-    el("h1", { text: "Three things you approve" }),
-    approvalCard("script", "Approval 1 — the script",
-      [el("p", { text: "The story and the song lyrics, before the song is recorded. Read it out loud; anything that trips your tongue, tell us." })],
-      "Script approved. Thank you.", "Looks good — approve the script",
-      () => { state.approvals.script = true; announce("Script approved."); render(); }),
-    approvalCard("song", "Approval 2 — the song (pick 1 of 3)",
-      [el("p", { text: "Listen to all three, then pick the one you would play on a long drive." }),
-        el("fieldset", { class: "options" }, [el("legend", { text: "Which version do you want?" }), ...songBody])],
-      "Song chosen. Thank you.", "Looks good — use this song",
-      () => {
-        if (!state.approvals.song) { announce("Pick one of the three versions above first."); return; }
-        announce("Song approved.");
-        render();
-      }),
-    approvalCard("storyboard", "Approval 3 — the storyboard",
-      [el("p", { text: "Every shot, with a picture and a card. This is the last stop before anything is filmed." })],
-      "Storyboard approved. Thank you.", "Looks good — approve every shot",
-      () => { state.approvals.storyboard = true; announce("Storyboard approved."); render(); }),
-    el("div", { class: "actions" }, [primary("Go to my premiere", () => setPage("delivery"))]),
+    el("h1", { text: "Order received" }),
+    el("div", { class: "complete", text: "Your order is in. The studio picks it up within about two minutes and plays your answers back exactly as you gave them." }),
+    el("div", { class: "actions" }, [
+      primary("See my project", () => setPage("approvals")),
+      secondary("Back to home", () => setPage("start")),
+    ]),
   ];
+}
+
+function timelineFor(order) {
+  const at = TIMELINE.indexOf(order.state);
+  if (at < 0) return [el("p", { class: "muted", text: `Status: ${statusWords(order)}` })];
+  return [el("ol", {}, TIMELINE.map((s, i) => el("li", {
+    text: `${STATUS_WORDS[s]}${i < at ? " — finished" : i === at ? " — now" : " — not yet"}`,
+  })))];
+}
+
+function pageProject() {
+  const order = state.order || state.orders[0];
+  const nodes = [el("h1", { text: "Your project" })];
+
+  if (!order) {
+    nodes.push(el("p", { class: "muted", text: "No project yet. Lock in an order and it shows up here with its status." }));
+    nodes.push(el("div", { class: "actions" }, [secondary("Back to home", () => setPage("start"))]));
+    return nodes;
+  }
+
+  nodes.push(el("div", { class: "card" }, [
+    el("h2", { text: order.title || "Your video" }),
+    el("p", { text: `Status: ${statusWords(order)}` }),
+    ...timelineFor(order),
+  ]));
+
+  const approvalsCard = el("div", { class: "card" }, [el("h2", { text: "Your approvals" })]);
+  const slot = el("div", {});
+  approvalsCard.append(slot);
+  if (renderApprovalsFor) {
+    Promise.resolve(renderApprovalsFor(order, slot))
+      .then((ret) => {
+        if (ret && !slot.childNodes.length) {
+          if (Array.isArray(ret)) slot.append(...ret); else slot.append(ret);
+        }
+      })
+      .catch((err) => {
+        slot.replaceChildren(el("p", { class: "refusal", text: `The approvals could not be loaded (${err.message}). Try again.` }));
+      });
+  } else {
+    slot.append(el("p", { class: "muted", text: "Approvals appear here as soon as the studio sends them. Nothing waits on this page — you will get a message too." }));
+  }
+  nodes.push(approvalsCard);
+
+  const url = order.delivery && order.delivery.url;
+  if (url) {
+    nodes.push(el("div", { class: "card" }, [
+      el("h2", { text: "Your finished video" }),
+      el("p", {}, [el("a", { href: url, rel: "noopener", text: url })]),
+      el("div", { class: "actions" }, [primary("Watch it now", () => {
+        state.delivery = { masterUrl: url, clips: [], qrPayload: url };
+        state.deliveryVerdict = null;
+        setPage("delivery");
+      })]),
+    ]));
+  }
+
+  nodes.push(el("div", { class: "actions" }, [secondary("Back to home", () => setPage("start"))]));
+  return nodes;
 }
 
 function qrSurface(url, what) {
@@ -401,8 +646,8 @@ function serviceMessage(err) {
 
 // ── render ───────────────────────────────────────────────────────────────────
 const RENDERERS = {
-  start: pageStart, questions: pageQuestions, recap: pageRecap,
-  approvals: pageApprovals, delivery: pageDelivery,
+  start: pageHome, questions: pageQuestions, recap: pageRecap,
+  approvals: pageProject, delivery: pageDelivery,
 };
 
 export function render() {
@@ -413,25 +658,37 @@ export function render() {
 }
 
 async function boot() {
-  const hash = location.hash.replace("#", "");
-  if (PAGES.some((p) => p.id === hash)) state.page = hash;
+  await loadSiblingModules();
+
+  const fromHash = readHash();
+  state.page = PAGES.some((p) => p.id === fromHash.page) ? fromHash.page : "start";
 
   if (serviceConnected()) {
     try {
       const session = await studio.getSession({ clientId: state.clientId });
-      state.answers = session.answers || {};
-      state.approvals = session.approvals || state.approvals;
-      const opts = await studio.getOptions({ clientId: state.clientId });
-      if (opts?.questions) state.options = opts;
+      state.clientId = session.client_id || state.clientId;
+      state.optionLine = session.option_line || "";
+      state.orders = Array.isArray(session.orders) ? session.orders : [];
+      state.replies = Array.isArray(session.draft && session.draft.replies)
+        ? [...session.draft.replies] : [];
     } catch (err) {
       announce(serviceMessage(err));
     }
+    if (state.page === "questions" || state.page === "recap") {
+      await loadQuestions();
+      hydrateReplies(state.replies);
+      const next = firstUnanswered();
+      if (next >= state.questions.length) state.page = "recap";
+      else if (state.page === "questions") state.qIndex = next;
+    }
+  } else {
+    announce(new ServiceUnavailableError().message);
   }
 
   render();
   window.addEventListener("hashchange", () => {
-    const id = location.hash.replace("#", "");
-    if (PAGES.some((p) => p.id === id) && id !== state.page) { state.page = id; render(); }
+    const { page } = readHash();
+    if (PAGES.some((p) => p.id === page) && page !== state.page) { state.page = page; render(); }
   });
 }
 
