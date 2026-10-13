@@ -1,3 +1,14 @@
+## [v27.1.26]  -  2026-10-13  -  D26c: every reader of the Telegram bot token resolves it like OpenClaw (accounts.default first, then top-level, then env) so boxes repaired by D26 keep working
+
+##### What Changed
+- D26 (v27.1.23) removes the top-level `channels.telegram.botToken` once `accounts.default` holds it, but several readers looked only at the top-level key. OpenClaw resolves a token as `accounts.<id>.tokenFile/botToken`, then the top-level `tokenFile/botToken`, then (default account only) `TELEGRAM_BOT_TOKEN`; every reader now does the same through one identical `tg_token()` block.
+- `install.sh` `tg_send_direct` (the last-resort kickoff send, which failed on a box with no env var), and the bot-id lookup in `install.sh` `resolve_telegram_target_universal`, `shared-utils/resolve-owner-chat.sh`, `scripts/ensure-pipeline-crons.sh`, `38-conversational-ai-system/scripts/check-ghl-pit-liveness.sh` and `44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh` (without it the bot's own id could be picked as the owner chat).
+- `scripts/telegram-offset-healthcheck.sh`: same resolution, including `tokenFile` and account-first precedence.
+- Test: `scripts/test-telegram-token-readers-default-account.sh` (21 checks; 10 fail on the old files): identical block in every reader, precedence cases, then the real `resolve_owner_chat_id`, `tg_send_direct` and healthcheck on a post-D26 and a legacy config. Wired into `config-injection-shapes-guard.yml`. No token is printed.
+
+##### Migration Notes
+- Risk: LOW. Read-only token lookups; the legacy top-level-only shape still resolves. No box action needed.
+
 ## [v27.1.25]  -  2026-10-13  -  D26b QC: diagnose-telegram-config.sh masks bot tokens in its channels.telegram block dump (the token was printed to the terminal); regression check added to test-diagnose-telegram-operator-optional.sh
 
 ## [v27.1.24]  -  2026-10-13  -  D26b: diagnose-telegram-config.sh and telegram-offset-healthcheck.sh agree with D26 (operator account optional, no top-level botToken required)

@@ -153,7 +153,33 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 fi
 
 # ---- 1. bot token ----
-BOT_TOKEN=$(jq -r '.channels.telegram.botToken // .channels.telegram.accounts.default.botToken // .channels.telegram.token // empty' "$CONFIG_FILE" 2>/dev/null)
+BOT_TOKEN=$(python3 - "$CONFIG_FILE" 2>/dev/null <<'PYEOF'
+import json, os, sys
+# D26c tg-token-resolve BEGIN (mirrors OpenClaw resolveTelegramToken; keep identical in every reader)
+def tg_token(cfg, acct="default"):
+    tg = (cfg.get("channels") or {}).get("telegram") or {}
+    acc = (tg.get("accounts") or {}).get(acct) or {}
+    for src in (acc, tg):
+        f = src.get("tokenFile")
+        if isinstance(f, str) and f.strip():
+            try:
+                t = open(os.path.expanduser(f.strip())).read().strip()
+                if t:
+                    return t
+            except Exception:
+                pass
+        t = src.get("botToken")
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+    return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() if acct == "default" else ""
+# D26c tg-token-resolve END
+try:
+    cfg = json.load(open(sys.argv[1]))
+    print(tg_token(cfg) or ((cfg.get("channels") or {}).get("telegram") or {}).get("token") or "")
+except Exception:
+    pass
+PYEOF
+)
 if [[ -z "$BOT_TOKEN" || "$BOT_TOKEN" == "null" ]]; then
   log "WARN" "no telegram botToken in $CONFIG_FILE -- telegram not configured; skipping"
   exit 2
