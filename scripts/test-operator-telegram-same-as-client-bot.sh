@@ -29,7 +29,11 @@ json.dump({"channels": {"telegram": tg}}, open(os.environ["CFG"], "w"))
 PY
   OUT="$(HOME="$h" OPERATOR_TELEGRAM_BOT_TOKEN="$etok" bash "$OPTG" 2>&1)"
 }
-optok() { python3 -c "import json,sys;print(json.load(open('$CFG'))['channels']['telegram']['accounts']['operator']['botToken'])"; }
+# D26: an operator account with no token is no longer written, so an absent account reads as "".
+optok() { python3 -c "import json,sys;print(json.load(open('$CFG'))['channels']['telegram']['accounts'].get('operator',{}).get('botToken',''))"; }
+has_op() { python3 -c "import json;print('operator' in json.load(open('$CFG'))['channels']['telegram']['accounts'])"; }
+tg_get() { python3 -c "import json;print(json.load(open('$CFG'))['channels']['telegram'].get('$1','<absent>'))"; }
+def_tok() { python3 -c "import json;print(json.load(open('$CFG'))['channels']['telegram']['accounts']['default'].get('botToken','<absent>'))"; }
 has_binding() { python3 -c "import json;print(any(b.get('match',{}).get('accountId')=='operator' for b in json.load(open('$CFG')).get('bindings',[])))"; }
 leaks() { printf '%s' "$OUT" | grep -q 'secretA\|secretB'; }
 
@@ -62,6 +66,55 @@ printf '%s' "$OUT" | grep -q 'STATUS: operator-telegram=CONFIGURED' && ok "CONFI
 echo "== no operator token at all =="
 run_case none 111:secretA "" "" ""
 printf '%s' "$OUT" | grep -q 'STRUCTURE_ONLY_NEEDS_TOKEN' && ok "unchanged STRUCTURE_ONLY status" || nope "status changed"
+
+echo "== D26: measured shape (top-level token == default token, operator token empty, no env token) =="
+h="$TMP/d26"; mkdir -p "$h/.openclaw"; CFG="$h/.openclaw/openclaw.json"
+CFG="$CFG" python3 - <<'PY'
+import json, os
+json.dump({"channels": {"telegram": {"botToken": "111:secretA", "accounts": {
+    "default": {"botToken": "111:secretA", "allowFrom": ["42"], "dmPolicy": "allowlist"},
+    "operator": {"botToken": "", "dmPolicy": "allowlist", "allowFrom": ["777"]}}}}}, open(os.environ["CFG"], "w"))
+PY
+OUT="$(HOME="$h" OPERATOR_TELEGRAM_BOT_TOKEN= bash "$OPTG" 2>&1)"
+[ "$(tg_get botToken)" = "<absent>" ] && ok "top-level botToken removed" || nope "top-level botToken still present"
+[ "$(def_tok)" = "111:secretA" ] && ok "accounts.default.botToken unchanged" || nope "default token changed"
+[ "$(has_op)" = "False" ] && ok "no operator account" || nope "empty operator account left"
+[ "$(tg_get defaultAccount)" = "default" ] && ok "defaultAccount default" || nope "defaultAccount wrong"
+printf '%s' "$OUT" | grep -q 'STATUS: operator-telegram=STRUCTURE_ONLY_NEEDS_TOKEN' && ok "STRUCTURE_ONLY status kept" || nope "status changed"
+leaks && nope "token secret printed" || ok "no secret printed"
+SUM1="$(cksum < "$CFG")"
+OUT="$(HOME="$h" OPERATOR_TELEGRAM_BOT_TOKEN= bash "$OPTG" 2>&1)"
+[ "$SUM1" = "$(cksum < "$CFG")" ] && ok "second run changes nothing" || nope "second run changed config"
+
+echo "== D26: legacy-only token migrates to default, top-level removed, no operator account =="
+run_case legacyonly "" 444:secretA "" ""
+[ "$(tg_get botToken)" = "<absent>" ] && ok "top-level botToken removed" || nope "top-level botToken still present"
+[ "$(def_tok)" = "444:secretA" ] && ok "token migrated to default" || nope "token not migrated"
+[ "$(has_op)" = "False" ] && ok "no operator account" || nope "operator account created"
+
+echo "== D26: top-level token differs from default is kept =="
+run_case differs 555:secretA 666:secretB "" ""
+[ "$(tg_get botToken)" = "666:secretB" ] && ok "differing top-level botToken kept" || nope "differing top-level dropped"
+[ "$(def_tok)" = "555:secretA" ] && ok "default unchanged" || nope "default changed"
+leaks && nope "token secret printed" || ok "no secret printed"
+
+echo "== D26: tokenFile treated like botToken =="
+h="$TMP/d26file"; mkdir -p "$h/.openclaw"; CFG="$h/.openclaw/openclaw.json"
+CFG="$CFG" python3 - <<'PY'
+import json, os
+json.dump({"channels": {"telegram": {"tokenFile": "/x/t", "accounts": {"default": {"tokenFile": "/x/t"}}}}}, open(os.environ["CFG"], "w"))
+PY
+HOME="$h" OPERATOR_TELEGRAM_BOT_TOKEN= bash "$OPTG" >/dev/null 2>&1
+[ "$(tg_get tokenFile)" = "<absent>" ] && ok "top-level tokenFile removed" || nope "top-level tokenFile kept"
+
+echo "== D26: distinct operator token -> operator account present with it =="
+run_case distinct 111:secretA 111:secretA 999:secretB ""
+[ "$(tg_get botToken)" = "<absent>" ] && ok "top-level botToken removed" || nope "top-level botToken still present"
+[ "$(has_op)" = "True" ] && [ "$(optok)" = "999:secretB" ] && ok "operator account has its own token" || nope "operator account missing"
+[ "$(def_tok)" = "111:secretA" ] && ok "default unchanged" || nope "default changed"
+SUM1="$(cksum < "$CFG")"
+HOME="$h" OPERATOR_TELEGRAM_BOT_TOKEN=999:secretB bash "$OPTG" >/dev/null 2>&1
+[ "$SUM1" = "$(cksum < "$CFG")" ] && ok "second run changes nothing" || nope "second run changed config"
 
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
