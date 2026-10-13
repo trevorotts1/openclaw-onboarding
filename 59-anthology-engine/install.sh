@@ -141,14 +141,25 @@ note "STEP 3/4 -- credential labels (SET or NOT SET only, never a value)"
 if [ -f "$SCRIPTS/caf_credential_gate.py" ]; then
     ensure_gate_token_secret
     GATE_RC=0
-    python3 "$SCRIPTS/caf_credential_gate.py" || GATE_RC=$?
+    # Capture the gate's own output so the stop below can quote the REAL verdict/finding
+    # (exit 4 covers COMMINGLE, INLINE_EXPOSURE, ALLOWLIST_LABEL_MISMATCH and combinations).
+    GATE_OUT="$(python3 "$SCRIPTS/caf_credential_gate.py" 2>&1)" || GATE_RC=$?
+    if [ -n "$GATE_OUT" ]; then
+        printf '%s\n' "$GATE_OUT"
+    fi
     case "$GATE_RC" in
         0)
             # gate passed
             rm -f "$SELF_DIR/install-status.txt" 2>/dev/null || true
             ;;
         4)
-            echo "HARD-STOP: credential gate flagged an INLINE_EXPOSURE in a file -- review the gate output above, remove the exposed value, then re-run install.sh." >&2
+            GATE_VERDICT="$(printf '%s\n' "$GATE_OUT" | awk '/^\[caf_credential_gate\] verdict=/{print; exit}')"
+            GATE_FINDINGS="$(printf '%s\n' "$GATE_OUT" | awk '/^[[:space:]]+!/{print}')"
+            echo "HARD-STOP: credential gate exited 4 -- ${GATE_VERDICT:-the gate printed no verdict line}" >&2
+            if [ -n "$GATE_FINDINGS" ]; then
+                printf '%s\n' "$GATE_FINDINGS" >&2
+            fi
+            echo "  The gate's own finding above is the reason (COMMINGLE, INLINE_EXPOSURE or ALLOWLIST_LABEL_MISMATCH -- never assume one). Fix what it names, then re-run install.sh." >&2
             exit 2
             ;;
         2)

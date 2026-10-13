@@ -472,24 +472,52 @@ def index_namespaced_values(sources):
 # stands in place of the named client's own. Returns a verdict dict carrying label NAMES
 # and reason CODES only -- never a value, never a full fingerprint.
 # ---------------------------------------------------------------------------
-def fingerprint(resolutions, namespaced_index=None, expected=None, deny_fps=None):
+def _same_owner_duplicate(res, allowed_locations):
+    """SAME-OWNER EXEMPTION (intra-box duplicate) for the (a)/(b) namespace collision.
+
+    A Location id is a TENANT ID, not a credential. The namespaced-collision index is
+    built from THIS box's sources only (the live process env plus this box's own env
+    stores), so a byte-identical Location id under a second label HERE is one tenant
+    recorded twice on one box -- intra-box duplication, not cross-box/cross-tenant
+    sharing -- and must NOT be reported as a violation. When this box's allowed-location
+    set is configured (CAF_ALLOWED_LOCATION_IDS / GOHIGHLEVEL_ALLOWED_LOCATION_IDS, the
+    tenant fence), the value must ALSO be a member of it, so an id this box does not own
+    still trips. Every other family (the PIT, the gate-token secret) is a credential:
+    those collisions keep the full fence, and cross-box knowledge still arrives through
+    the expected-own fingerprints, the deny list and the allowlist tenant check.
+    ponytail: owner proof is value-identity plus (when configured) allowlist membership;
+    upgrade path: resolve the label's owning client from the provisioning registry once
+    a per-box owner label exists."""
+    if res.family != "convert_and_flow_location":
+        return False
+    if allowed_locations is None:
+        return True
+    return str(res.value).strip() in allowed_locations
+
+def fingerprint(resolutions, namespaced_index=None, expected=None, deny_fps=None,
+                allowed_locations=None):
     """AF-AE-COMMINGLE enforcement.
 
-    resolutions      : iterable of Resolution (the resolved client credentials).
-    namespaced_index : output of index_namespaced_values() (config-free collision base).
-    expected         : {"convert_and_flow_pit": fp_or_None,
-                        "convert_and_flow_location": fp_or_None} expected-own fingerprints.
-    deny_fps         : iterable of known operator/other-client fingerprints (full or >=8
-                       hex prefix).
+    resolutions        : iterable of Resolution (the resolved client credentials).
+    namespaced_index   : output of index_namespaced_values() (config-free collision base).
+    expected           : {"convert_and_flow_pit": fp_or_None,
+                          "convert_and_flow_location": fp_or_None} expected-own fingerprints.
+    deny_fps           : iterable of known operator/other-client fingerprints (full or >=8
+                         hex prefix).
+    allowed_locations  : this box's allowed Location-id set (the CAF/GOHIGHLEVEL allowlist),
+                         or None when no allowlist is configured -- the same-owner test
+                         for a Location-id collision.
 
     Returns {"clean": bool, "checks_active": [...], "checks_inactive": [...],
-             "reasons": [ {"credential","code","detail"} ... ]} with zero secret material.
+             "reasons": [ {"credential","code","detail"} ... ],
+             "exempted": [ {"credential","code","detail"} ... ]} with zero secret material;
+    "exempted" carries the intra-box same-owner duplicates that were NOT reported.
     """
     namespaced_index = namespaced_index or {}
     expected = expected or {}
     deny_fps = [d.strip().lower() for d in (deny_fps or []) if d and d.strip()]
 
-    reasons = []
+    reasons, exempted = [], []
     active, inactive = [], []
 
     (active if namespaced_index else inactive).append("operator_shared_value_collision")
@@ -505,13 +533,21 @@ def fingerprint(resolutions, namespaced_index=None, expected=None, deny_fps=None
         # (a)/(b) config-free namespace collision.
         slot = namespaced_index.get(fp)
         if slot:
-            if slot.get("operator"):
+            same_owner = _same_owner_duplicate(res, allowed_locations)
+            if same_owner and (slot.get("operator") or slot.get("foreign")):
+                exempted.append({
+                    "credential": res.family, "code": "same_owner_intra_box_duplicate",
+                    "detail": "same Location id under a second label on THIS box "
+                              "(intra-box, same owner -- not reported): %s"
+                              % ", ".join(sorted(set(slot.get("operator") or ())
+                                                 | set(slot.get("foreign") or ())))})
+            if slot.get("operator") and not same_owner:
                 reasons.append({
                     "credential": res.family, "code": "operator_shared_value_collision",
                     "detail": "resolved value is byte-identical to a value under "
                               "operator/shared label(s): %s"
                               % ", ".join(sorted(slot["operator"]))})
-            if slot.get("foreign"):
+            if slot.get("foreign") and not same_owner:
                 reasons.append({
                     "credential": res.family, "code": "foreign_client_value_collision",
                     "detail": "resolved value is byte-identical to a value under another "
@@ -541,6 +577,7 @@ def fingerprint(resolutions, namespaced_index=None, expected=None, deny_fps=None
         "checks_active": active,
         "checks_inactive": inactive,
         "reasons": reasons,
+        "exempted": exempted,
     }
 
 
@@ -836,6 +873,15 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
                       % (len(caf_res.value.split(",")), len(ghl_res.value.split(",")))}
 
     # Anti-commingling over the resolved CLIENT Convert and Flow credentials.
+    # The allowlist IS this box's tenant set, so it is also the same-owner witness for a
+    # Location-id collision: a byte-identical id under a second label on THIS box is an
+    # intra-box duplicate when it is a member of that set (None = no allowlist configured,
+    # where the Location id's own byte-identity is the only owner evidence available).
+    allowed_locations = None
+    _al_res = caf_res if caf_res.present else (ghl_res if ghl_res.present else None)
+    if _al_res is not None:
+        allowed_locations = {x.strip() for x in str(_al_res.value).split(",")
+                             if x.strip()}
     namespaced_index = index_namespaced_values(sources)
     # Deny fingerprints: explicit + the env-supplied list.
     all_deny = list(deny_fps or [])
@@ -844,7 +890,8 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
         all_deny.extend([x for x in re.split(r"[,\s]+", env_deny) if x])
     fam_res = [resolutions_by_family[fam] for fam, _a in REQUIRED_FAMILIES]
     fp_verdict = fingerprint(fam_res, namespaced_index=namespaced_index,
-                             expected=expected, deny_fps=all_deny)
+                             expected=expected, deny_fps=all_deny,
+                             allowed_locations=allowed_locations)
 
     # Inline exposure scan.
     inline = {"scanned": False, "clean": True, "findings": []}
@@ -916,6 +963,9 @@ def render_human(report, show_fingerprints=False):
                     ", ".join(fpv["checks_inactive"]) or "none"))
     for rs in fpv["reasons"]:
         lines.append("    ! %s: %s -- %s" % (rs["credential"], rs["code"], rs["detail"]))
+    for ex in fpv.get("exempted") or []:
+        lines.append("    = same-owner exempt (not a violation): %s: %s -- %s"
+                     % (ex["credential"], ex["code"], ex["detail"]))
     alv = report.get("allowlist_labels")
     if alv:
         lines.append("    ! allowlist labels: %s -- %s" % (alv["reason"], alv["detail"]))
@@ -1014,6 +1064,39 @@ def self_test():
     assert any(r["code"] == "foreign_client_value_collision"
                for r in rep["fingerprint"]["reasons"]), rep
     print("  [4] COMMINGLE via foreign-client value collision -> exit 4: OK")
+
+    # 4b. SAME-OWNER EXEMPTION (intra-box duplicate): the SAME Location id recorded under
+    #     a foreign-namespaced label on THIS box is one tenant named twice -- intra-box,
+    #     not cross-box sharing -- so it is NOT a violation, and the exemption is REPORTED
+    #     (never silently swallowed). With an allowlist configured the id must be a member
+    #     of it, so an id this box does not own still trips. The PIT stays a credential:
+    #     test [4] above must keep tripping untouched.
+    code, rep = gate(environ=_creds(CLIENT_XY_LOCATION_ID=real_loc),
+                     store_paths=[], do_scan=False)
+    assert code == EX_OK and rep["verdict"] == "PASS", rep
+    assert rep["fingerprint"]["clean"] and not rep["fingerprint"]["reasons"], rep
+    assert [e["code"] for e in rep["fingerprint"]["exempted"]] == [
+        "same_owner_intra_box_duplicate"], rep
+    assert real_loc not in json.dumps(rep), "the exempted location leaked into the report"
+    # Allowlist configured, id IS a member -> same owner, still exempt.
+    code, rep = gate(environ=_creds(CLIENT_XY_LOCATION_ID=real_loc,
+                                    CAF_ALLOWED_LOCATION_IDS=real_loc),
+                     store_paths=[], do_scan=False)
+    assert code == EX_OK and rep["verdict"] == "PASS", rep
+    # Allowlist configured, id is NOT a member -> this box does not own it -> still trips.
+    code, rep = gate(environ=_creds(CLIENT_XY_LOCATION_ID=real_loc,
+                                    CAF_ALLOWED_LOCATION_IDS="locA,locB"),
+                     store_paths=[], do_scan=False)
+    assert code == EX_VIOLATION, rep
+    assert any(r["code"] == "foreign_client_value_collision"
+               for r in rep["fingerprint"]["reasons"]), rep
+    # A credential (the PIT) is never exempt under the same shape.
+    code, rep = gate(environ=_creds(CLIENT_XY_PIT=real_pit,
+                                    CAF_ALLOWED_LOCATION_IDS=real_loc),
+                     store_paths=[], do_scan=False)
+    assert code == EX_VIOLATION, rep
+    print("  [4b] same-owner exemption: intra-box duplicate Location id -> PASS (reported "
+          "as exempt), non-member id -> exit 4, PIT collision never exempt: OK")
 
     # 5. COMMINGLE via expected-own mismatch.
     wrong_fp = credential_fingerprint(other_pit)
