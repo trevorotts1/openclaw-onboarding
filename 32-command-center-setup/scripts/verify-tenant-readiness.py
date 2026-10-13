@@ -135,6 +135,7 @@ def startability(before,env,args):
     # Public authenticated readiness + registered Access identity (item 13).
     sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'shared-utils'))
     from interview_invitation import resolve_public_origin,Pending
+    resolved=None
     try:
         resolved=resolve_public_origin(before,env);receipt=dict(resolved['receipt'])
     except Pending as exc:
@@ -144,11 +145,15 @@ def startability(before,env,args):
     # Identity is compared HERE, not inherited from the probe: a receipt for a
     # wrong host, company or installation must fail this gate on its own, even
     # when the probe itself returned 200.
-    origin=env.get('MC_TENANT_PUBLIC_URL') or before.get('commandCenterUrl') or ''
-    expected_host=(urlsplit(origin).hostname or '').lower()
-    expected_identity={'companyId':before.get('companyId') or env.get('MC_COMPANY_ID'),
-                       'tenantId':before.get('tenantId') or env.get('MC_TENANT_ID'),
-                       'installationId':before.get('installationId') or env.get('MC_INSTALLATION_ID'),
+    # The resolver's own identity is authoritative when present: a receipt
+    # nested under a foreign host/installation must fail even though the nested
+    # receipt body still names the registered host.
+    r = resolved if isinstance(resolved, dict) else {}
+    origin=r.get('origin') or env.get('MC_TENANT_PUBLIC_URL') or before.get('commandCenterUrl') or ''
+    expected_host=(r.get('host') or urlsplit(origin).hostname or '').lower()
+    expected_identity={'companyId':r.get('companyId') or before.get('companyId') or env.get('MC_COMPANY_ID'),
+                       'tenantId':r.get('tenantId') or before.get('tenantId') or env.get('MC_TENANT_ID'),
+                       'installationId':r.get('installationId') or before.get('installationId') or env.get('MC_INSTALLATION_ID'),
                        'host':expected_host}
     if not expected_host:missing_identity=['client origin host']
     else:
