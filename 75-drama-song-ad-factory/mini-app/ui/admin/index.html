@@ -22,6 +22,7 @@
 
   WHAT IT TALKS TO (U2's measured contract, service/README.md):
     POST /api/studio/admin/pairing-code  { admin_key, client_id }
+    POST /api/studio/admin/link          { admin_key, client_id }
     POST /api/studio/options             { admin_key, target_client_id, option, approval? }
     GET  /api/studio/options             header x-ds-key
 
@@ -115,6 +116,12 @@
     margin: 6px 0;
     word-break: break-all;
   }
+  .link {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 1rem;
+    margin: 6px 0;
+    word-break: break-all;
+  }
   .result {
     display: flex;
     flex-wrap: wrap;
@@ -133,7 +140,7 @@
 <body>
 
 <h1>Drama Studio — pairing and admin</h1>
-<p class="lede">Mint a pairing code, check a key, set the option, see the cutoff. Everything here talks to the studio service; nothing here holds a credential of its own.</p>
+<p class="lede">Mint a pairing code, make a personal link, check a key, set the option, see the cutoff. Everything here talks to the studio service; nothing here holds a credential of its own.</p>
 
 <!-- ======================= 1. PAIRING ======================= -->
 <section aria-labelledby="pairing-h">
@@ -247,6 +254,37 @@
   <button type="button" class="secondary" id="save-cutoff">Save cutoff</button>
   <div role="status" id="cutoff-status"></div>
   <div role="alert" id="cutoff-error"></div>
+</section>
+
+<!-- ======================= 5. PERSONAL LINK ======================= -->
+<section aria-labelledby="link-h">
+  <h2 id="link-h">5. Make a personal link</h2>
+  <p class="hint">The link a client opens on their phone, as a QR they can scan. Making a new one stops the old link working at once, so only the link you hand over works.</p>
+
+  <div class="field">
+    <label for="link-client">Client id</label>
+    <input id="link-client" name="link_client_id" type="text" autocomplete="off" spellcheck="false" aria-describedby="link-client-hint">
+    <p class="hint" id="link-client-hint">The studio&rsquo;s id for this client, like <code class="inline">c_9f2&hellip;</code>. Never a name.</p>
+  </div>
+
+  <div class="field">
+    <label for="link-admin-key">Admin key</label>
+    <input id="link-admin-key" name="link_admin_key" type="password" autocomplete="off" spellcheck="false" aria-describedby="link-admin-key-hint">
+    <p class="hint" id="link-admin-key-hint">Sent in the request body only. It is never stored in this page, never put in a URL and never shown back.</p>
+  </div>
+
+  <button type="button" id="make-link">Make personal link</button>
+  <div role="status" id="link-status"></div>
+  <div role="alert" id="link-error"></div>
+
+  <div class="result" id="link-result" hidden>
+    <div class="qr" id="link-qr-holder"></div>
+    <div>
+      <p class="meta">Personal link — scan the square, or copy what is under it.</p>
+      <p class="link" id="link-text"></p>
+      <p class="meta">Send it to this client. It keeps working until you make another one; then the old one stops at once.</p>
+    </div>
+  </div>
 </section>
 
 <script src="lib/qr.js"></script>
@@ -442,6 +480,45 @@
     var saved = A.setCutoffRequest(cutoffMinutes(), el('cutoff-zone').value.trim());
     say('cutoff-status', 'cutoff-error', saved.code + ' — ' + saved.message, true);
   });
+
+  // ---- 5. personal link --------------------------------------------------
+  el('make-link').addEventListener('click', function () {
+    var built = A.makeLinkRequest(el('link-admin-key').value, el('link-client').value);
+    if (!built.ok) {
+      el('link-result').hidden = true;
+      say('link-status', 'link-error', built.code + ' — ' + built.message, true);
+      return;
+    }
+    say('link-status', 'link-error', 'Asking the studio…', false);
+    sendPost(built.path, built.body).then(function (reply) {
+      var link = reply.ok && typeof reply.data.link === 'string' ? reply.data.link : '';
+      if (link === '') {
+        el('link-result').hidden = true;
+        say('link-status', 'link-error', reply.ok
+          ? A.AF_REPLY_UNREADABLE + ' — the studio made no link, so nothing is shown.'
+          : reply.code + ' — ' + reply.message, true);
+        return;
+      }
+      showLink(link);
+      say('link-status', 'link-error', 'A personal link was made for ' + built.body.client_id + '.', false);
+    }).catch(function () {
+      el('link-result').hidden = true;
+      say('link-status', 'link-error', 'The studio could not be reached, so no link was made.', true);
+    });
+  });
+
+  function showLink(link) {
+    el('link-text').textContent = link;
+    // A link is long, so the encoder gets the level with the most room (L).
+    var qr = Q.encode(link, { level: 'L' });
+    if (!qr.ok) {
+      el('link-qr-holder').innerHTML = '';
+      el('link-qr-holder').textContent = 'The square could not be drawn; copy the link instead.';
+    } else {
+      el('link-qr-holder').innerHTML = Q.toSvg(qr, { label: 'Personal link', width: '168', height: '168' });
+    }
+    el('link-result').hidden = false;
+  }
 })();
 </script>
 </body>
