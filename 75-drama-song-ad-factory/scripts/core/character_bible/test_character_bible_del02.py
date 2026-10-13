@@ -332,5 +332,70 @@ class ImageResolution(unittest.TestCase):
         self.assertIn(b"Close-Up", blob)
 
 
+class RefuseBeforeAnyWrite(unittest.TestCase):
+    """N99-CB: NO_REFERENCE_IMAGES lands BEFORE any output file or directory.
+
+    The CHANGELOG claim ("a missing reference picture is a refusal, never an
+    empty directory") is held by the code: a planted missing-reference case
+    raises with ZERO filesystem output, and a clean case still delivers both
+    contract files.
+    """
+
+    def setUp(self):
+        self.t = tempfile.mkdtemp(prefix="del02-refuse-")
+        self.delivery = os.path.join(self.t, "delivery")
+
+    def tearDown(self):
+        shutil.rmtree(self.t, ignore_errors=True)
+
+    def _assert_nothing_written(self):
+        self.assertFalse(os.path.exists(self.delivery),
+                         "delivery directory was created on a refusal")
+        self.assertFalse(os.path.exists(
+            os.path.join(self.delivery, CB.DELIVERY_PDF_NAME)),
+            "PDF was written on a refusal")
+        self.assertFalse(os.path.exists(
+            os.path.join(self.delivery, "02 - Character Bible Images")),
+            "images directory was created on a refusal")
+
+    def test_missing_reference_refuses_with_no_pdf_and_no_images_dir(self):
+        # planted bad: no reference pictures at all
+        with self.assertRaises(CB.BibleError) as caught:
+            CB.write_delivery(self.delivery, CB.record(FIXTURE), [])
+        self.assertIn("NO_REFERENCE_IMAGES", str(caught.exception))
+        self._assert_nothing_written()
+
+    def test_only_broken_reference_paths_refuse_with_no_output(self):
+        # planted bad: every path points at a file that does not exist
+        with self.assertRaises(CB.BibleError) as caught:
+            CB.write_delivery(self.delivery, CB.record(FIXTURE),
+                              {"close-up": os.path.join(self.t, "missing.png"),
+                               "full-standing": os.path.join(self.t, "gone.png")})
+        self.assertIn("NO_REFERENCE_IMAGES", str(caught.exception))
+        self._assert_nothing_written()
+
+    def test_zero_byte_reference_refuses_with_no_output(self):
+        # planted bad: file exists but carries no bytes
+        empty = os.path.join(self.t, "close-up.png")
+        open(empty, "wb").close()
+        with self.assertRaises(CB.BibleError) as caught:
+            CB.write_delivery(self.delivery, CB.record(FIXTURE),
+                              {"close-up": empty})
+        self.assertIn("NO_REFERENCE_IMAGES", str(caught.exception))
+        self._assert_nothing_written()
+
+    def test_clean_case_still_delivers_pdf_and_images_dir(self):
+        img = _png(os.path.join(self.t, "close-up.png"), 80, 120, (60, 120, 180))
+        pdf = CB.write_delivery(self.delivery, CB.record(FIXTURE),
+                                {"close-up": img})
+        self.assertEqual(pdf, os.path.join(self.delivery, CB.DELIVERY_PDF_NAME))
+        self.assertTrue(os.path.isfile(pdf))
+        self.assertTrue(_read(pdf).startswith(b"%PDF"))
+        img_dir = os.path.join(self.delivery, "02 - Character Bible Images")
+        self.assertTrue(os.path.isdir(img_dir))
+        self.assertEqual(os.listdir(img_dir), ["close-up.png"])
+        self.assertGreater(os.path.getsize(os.path.join(img_dir, "close-up.png")), 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
