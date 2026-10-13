@@ -30,7 +30,7 @@
 import { AF_ID_INVALID, isClientId } from './ids.js';
 import { AF_ISO_CROSS, authorizeClient, enrollClient } from './isolation.js';
 import { AF_PAIR_LOCKED, PAIRING_MAX_TRIES, attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
-import { checkIn, writeInbox } from './inbox.js';
+import { MAX_WAITING_ORDERS, checkIn, readInbox, writeInbox } from './inbox.js';
 import { acceptUpload, pollUpload } from './uploads.js';
 import { resolveOrderState, transition, writeOperatorRecord } from './lifecycle.js';
 import { AF_OPT_APPROVAL, lastCheckIn, optionLine, setOption, staleVerdict } from './options.js';
@@ -313,8 +313,22 @@ export async function handle(request, env, store, objects, deps = {}) {
     await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(order));
     // Lock it in ends the draft: the order holds the answers now.
     await deleteDraft(objects, clientId);
-    const waiting = await waitingList(store, clientId);
-    await writeInbox(objects, { clientId, orders: waiting, nowMs });
+    // DSF-611 — the box must see this order on its VERY first poll.
+    // waitingList() is a KV LIST taken in the same request as the kvPut above;
+    // KV list is eventually consistent, so the brand-new key is not in it and
+    // the object was stored with orders:[] (live Worker, 11 min 49 s until an
+    // unrelated event rewrote it). Rebuild the inbox from the inbox object's
+    // own content — an R2 read is strongly consistent — plus THIS order. No
+    // list, no delay, no retry.
+    const seen = (await readInbox(objects, clientId)).waiting.filter((o) => o.order_id !== orderId);
+    const waiting = [...seen, order];
+    await writeInbox(objects, {
+      clientId,
+      // keep the newest if the cap is hit, so this order can never be the one
+      // waitingOrders() slices off — an invisible order is the bug itself.
+      orders: waiting.length > MAX_WAITING_ORDERS ? waiting.slice(-MAX_WAITING_ORDERS) : waiting,
+      nowMs,
+    });
     return ok({
       order: project(order, nowMs),
       option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId)),
