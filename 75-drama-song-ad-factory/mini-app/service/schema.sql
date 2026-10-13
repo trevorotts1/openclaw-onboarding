@@ -73,9 +73,11 @@
 --    The order id is scoped by client_id in the KEY, so another client's key
 --    cannot even name this record.
 --
--- 5. CHECK-INS                            checkin: <client_id>
+-- 5. CHECK-INS                            checkin: <client_id>   (R2, NOT KV)
 --    value: the epoch-ms of the last check-in, as a plain string.
---    Written by POST /api/studio/checkin. Zero model tokens.
+--    Written by POST /api/studio/checkin, at most once per 20 minutes
+--    (options.CHECKIN_SAVE_EVERY_MS). Lives in the R2 bucket, not KV: boxes
+--    check in every 2 minutes and KV's free tier is 1,000 writes/day.
 --
 -- 6. UPLOAD JOBS                          upload: <client_id>:<upload_id>
 --    value: JSON

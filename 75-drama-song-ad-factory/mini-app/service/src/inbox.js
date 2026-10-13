@@ -17,6 +17,7 @@
 'use strict';
 
 import { checkinKey, scopePath } from './ids.js';
+import { CHECKIN_SAVE_EVERY_MS, lastCheckIn } from './options.js';
 
 export const MAX_WAITING_ORDERS = 50;
 export const INBOX_LINE_PREFIX = 'DRAMA_ORDER';
@@ -67,10 +68,15 @@ export function inboxLine(orders) {
 /**
  * A check-in from a box or computer: records the moment, returns the one line
  * (or nothing). Zero model tokens on the client side — this is the network
- * call, not a model turn.
+ * call, not a model turn. The moment is re-saved at most every
+ * CHECKIN_SAVE_EVERY_MS. Boxes send `{orders: true}`, so only a real array is
+ * treated as an order list; anything else reads the inbox.
  */
-export async function checkIn(store, objectStore, { clientId, nowMs, orders }) {
-  await store.kvPut(checkinKey(clientId), String(nowMs));
-  const inbox = orders ? { waiting: waitingOrders(orders) } : await readInbox(objectStore, clientId);
+export async function checkIn(objectStore, { clientId, nowMs, orders }) {
+  const last = await lastCheckIn(objectStore, clientId);
+  if (last === null || nowMs - last >= CHECKIN_SAVE_EVERY_MS) {
+    await objectStore.objectPut(checkinKey(clientId), String(nowMs));
+  }
+  const inbox = Array.isArray(orders) ? { waiting: waitingOrders(orders) } : await readInbox(objectStore, clientId);
   return { ok: true, checked_in_at: nowMs, line: inboxLine(inbox.waiting) };
 }
