@@ -4,6 +4,26 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.44 - 2026-10-13 - KV-FREE-TIER: check-ins stop burning the KV free tier
+
+Cloudflare blocked KV writes (429) on 2026-10-12 and 2026-10-13: namespace
+DS_STUDIO wrote ~1,125 times a day against the free tier's 1,000. Root cause:
+every `POST /api/studio/checkin` (each box, every 2 minutes) wrote
+`checkin:<client_id>` to KV, ~720 writes per box per day.
+
+- The check-in time now lives in R2 (`checkin:<client_id>` in zhw-drama-studio,
+  same key helper) and is re-saved at most every 20 minutes
+  (`options.CHECKIN_SAVE_EVERY_MS`, kept under the 30-minute stale rule).
+  Boxes still check in every 2 minutes; order pickup speed is unchanged.
+  "Last check-in" on the page can read up to 20 minutes old.
+- `options.lastCheckIn(objectStore, clientId)` and
+  `inbox.checkIn(objectStore, ...)` take the R2 store; every caller in
+  `index.js` passes it.
+- Fixed: the box sends `{"orders": true}`, which `checkIn` treated as an order
+  list and crashed on (`(orders || []).filter is not a function`). Only a real
+  array is used as a list now; anything else reads the inbox.
+- No box-side change. One Worker redeploy applies it to the whole fleet.
+
 ## v2.9.43 - 2026-10-12 - Direct client uploads
 
 - Sign links for zhw-drama-studio and derive SigV4 signing keys using raw HMAC bytes through aws4_request.

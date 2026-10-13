@@ -27,7 +27,7 @@ import {
   AF_STATE_ILLEGAL, AF_STATE_TERMINAL, operatorRecordCount, resolveOrderState, transition,
   writeOperatorRecord,
 } from '../src/lifecycle.js';
-import { AF_OPT_APPROVAL, AF_OPT_INVALID, optionLine, setOption, staleVerdict } from '../src/options.js';
+import { AF_OPT_APPROVAL, AF_OPT_INVALID, CHECKIN_SAVE_EVERY_MS, STALE_AFTER_MS, optionLine, setOption, staleVerdict } from '../src/options.js';
 import { SERVICE_VERSION, handle } from '../src/index.js';
 import { get, memObjects, memStore, post } from './fakes.mjs';
 
@@ -186,9 +186,35 @@ test('inbox: a check-in records the moment even when nothing is waiting', async 
   const store = memStore();
   const objects = memObjects();
   const clientId = randomClientId();
-  const result = await checkIn(store, objects, { clientId, nowMs: T0, orders: [] });
+  const result = await checkIn(objects, { clientId, nowMs: T0, orders: [] });
   assert.equal(result.line, null);
-  assert.equal(await store.kvGet(`checkin:${clientId}`), String(T0));
+  assert.equal(objects._mem.get(checkinKey(clientId)), String(T0));
+  assert.equal(store._mem.size, 0, 'a check-in writes nothing to KV');
+});
+
+// KV-FREE-TIER — 2026-10-13: every 2-minute check-in wrote KV, ~720 writes per
+// box per day, and blew Cloudflare's 1,000 writes/day free cap. The time now
+// lives in R2 and is re-saved at most every CHECKIN_SAVE_EVERY_MS.
+test('KV-FREE-TIER: a 2-minute check-in re-saves its time only every 20 minutes', async () => {
+  const objects = memObjects();
+  const clientId = randomClientId();
+  let puts = 0;
+  const put = objects.objectPut;
+  objects.objectPut = async (p, v) => { puts += 1; return put(p, v); };
+  for (let m = 0; m < 60; m += 2) {
+    await checkIn(objects, { clientId, nowMs: T0 + m * 60000 });
+  }
+  assert.equal(puts, 3, 'saved at minute 0, 20 and 40 — not 30 times');
+  assert.equal(objects._mem.get(checkinKey(clientId)), String(T0 + 40 * 60000));
+  assert.ok(CHECKIN_SAVE_EVERY_MS < STALE_AFTER_MS, 'a live box can never read as stale');
+});
+
+test('KV-FREE-TIER: the box body {orders: true} reads the inbox instead of crashing', async () => {
+  const objects = memObjects();
+  const clientId = randomClientId();
+  await writeInbox(objects, { clientId, nowMs: T0, orders: [{ order_id: 'r_1', state: 'waiting', title: 'Spring Sale' }] });
+  const result = await checkIn(objects, { clientId, nowMs: T0, orders: true });
+  assert.equal(result.line, 'DRAMA_ORDER r_1 "Spring Sale"');
 });
 
 // ---------------------------------------------------------------------------
@@ -431,7 +457,7 @@ test('service: the option line is served, and Option 3 is refused without approv
   const store = memStore();
   const objects = memObjects();
   const { clientId, key } = await clientWithKey(store);
-  await store.kvPut(`checkin:${clientId}`, String(Date.now()));
+  await objects.objectPut(checkinKey(clientId), String(Date.now()));
 
   const line = await handle(get('/api/studio/options', key), GOOD_ENV, store, objects);
   assert.equal((await line.json()).option, 1);
@@ -526,7 +552,7 @@ test('CHECKIN-500: a missing inbox object is an empty inbox — 200, line null, 
   const res = await handle(post('/api/studio/checkin', {}, key), GOOD_ENV, store, objects);
   assert.equal(res.status, 200);
   assert.equal((await res.json()).line, null);
-  assert.ok(Number.isFinite(Number(await store.kvGet(`checkin:${clientId}`))), 'the check-in is recorded');
+  assert.ok(Number.isFinite(Number(objects._mem.get(checkinKey(clientId)))), 'the check-in is recorded');
 });
 
 test('CHECKIN-500: a valid client with one waiting order still prints the DRAMA_ORDER line', async () => {
@@ -583,16 +609,16 @@ test('OPTIONS-LASTCHECKIN: one shared key helper, and the page reads the record 
 
   // The route wrote the check-in under the key the shared helper builds, and
   // that key is the ONLY check-in key in the store.
-  assert.ok(Number.isFinite(Number(await store.kvGet(checkinKey(clientId)))), 'the check-in is stored under checkinKey(clientId)');
+  assert.ok(Number.isFinite(Number(objects._mem.get(checkinKey(clientId)))), 'the check-in is stored under checkinKey(clientId)');
   assert.deepEqual(
-    [...store._mem.keys()].filter((k) => k.startsWith('checkin:')),
+    [...objects._mem.keys()].filter((k) => k.startsWith('checkin:')),
     [checkinKey(clientId)],
     'one shared helper is the only producer of the check-in key',
   );
 
   // Age the check-in through that same key. The page can only follow it by
   // reading the record checkIn wrote.
-  await store.kvPut(checkinKey(clientId), String(Date.now() - 60 * 60 * 1000));
+  await objects.objectPut(checkinKey(clientId), String(Date.now() - 60 * 60 * 1000));
   const aged = await handle(get('/api/studio/options', key), GOOD_ENV, store, objects);
   assert.match((await aged.json()).line, /Last check-in: 1 hour ago\.$/);
 

@@ -47,7 +47,7 @@ routes = [
 binding     = "DRAMA_STUDIO"
 bucket_name = "zhw-drama-studio"
 
-# KV binding — key records, client records, orders, check-ins, upload jobs and
+# KV binding — key records, client records, orders, upload jobs and
 # the one operator record per client per day. The SOLE destination authority.
 # Fill id/preview_id from `npx wrangler kv namespace create DS_STUDIO`.
 [[kv_namespaces]]
