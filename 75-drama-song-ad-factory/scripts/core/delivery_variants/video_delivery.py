@@ -254,6 +254,13 @@ def build_video_delivery(master, delivery_dir, ad_name, lines, cues=None,
                 "video-delivery-captioned", cwd=str(tmp))
         _render(clean_argv(master, clean_path, ffmpeg),
                 "video-delivery-clean")
+    except BaseException:
+        # ANY render that dies leaves the finished captioned file and any
+        # partial clean file behind: same unlink pair as the gate below, so a
+        # failed render still ships NOTHING (all or nothing, fail closed).
+        cap_path.unlink(missing_ok=True)
+        clean_path.unlink(missing_ok=True)
+        raise
     finally:
         for junk in tmp.glob("*"):
             try:
