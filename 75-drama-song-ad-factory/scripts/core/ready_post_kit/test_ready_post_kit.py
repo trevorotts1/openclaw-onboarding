@@ -2,8 +2,10 @@
 """DEL-07 tests: the READY-TO-POST KIT (the kit, its refusals, its floor).
 
 Done-when cases (stdlib only, empty HOME, no network, no paid calls):
-  1. a run with a receipt, a gate, a script and a link builds the numbered
-     kit files (07 - Ready-to-Post Kit.pdf + .json) in the delivery folder;
+  1. a run with a receipt, a gate, a script and a link builds the kit:
+     the numbered PDF (07 - Ready-to-Post Kit.pdf) in the delivery folder
+     and the same kit as data (07 - Ready-to-Post Kit.json) in the run's
+     QC folder -- the JSON never lands beside the PDF in delivery/;
   2. every glyph on every page is at least 12 pt on a white page;
   3. the kit carries a caption, a hashtag set and a placement row for
      YouTube, Instagram, TikTok and Facebook, and the link rides in each
@@ -97,9 +99,10 @@ class Build(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.run, self.deliv = make_run(self.tmp.name)
 
-    def test_numbered_kit_files_land_in_the_delivery_folder(self):
+    def test_kit_pdf_lands_in_delivery_and_json_in_the_run_qc_folder(self):
         kit = build(self.run, self.deliv)
-        pdf, js, data = R.write_kit(kit, str(self.deliv))
+        pdf, js, data = R.write_kit(kit, str(self.deliv),
+                                    str(self.run / R.QC_NAME))
         self.assertTrue(pdf.endswith(R.PDF_NAME))
         self.assertTrue(js.endswith(R.JSON_NAME))
         raw = Path(pdf).read_bytes()
@@ -109,6 +112,31 @@ class Build(unittest.TestCase):
         saved = json.loads(Path(js).read_text(encoding="utf-8"))
         self.assertEqual(saved["kit_number"], "07")
         self.assertEqual(saved["link"], LINK)
+
+    def test_the_json_never_sits_beside_the_pdf_in_the_delivery_folder(self):
+        # the leak L2: the kit JSON is QC / manifest data, so a produced run
+        # must leave it OUT of the client-facing delivery folder.
+        kit = build(self.run, self.deliv)
+        pdf, js, _data = R.write_kit(kit, str(self.deliv),
+                                     str(self.run / R.QC_NAME))
+        self.assertTrue(Path(pdf).parent.resolve() == self.deliv.resolve())
+        self.assertTrue(Path(js).parent.resolve() ==
+                        (self.run / R.QC_NAME).resolve())
+        self.assertFalse((self.deliv / R.JSON_NAME).exists(),
+                         "the kit JSON leaked into the delivery folder")
+        self.assertTrue((self.run / R.QC_NAME / R.JSON_NAME).is_file())
+
+    def test_write_kit_defaults_the_json_to_the_runs_qc_folder(self):
+        # no data_dir given: the JSON goes to the run's QC folder, derived
+        # from the delivery folder's parent -- never beside the PDF.
+        run = Path(self.tmp.name) / "run"          # <run>/delivery layout
+        deliv = run / "delivery"
+        deliv.mkdir(parents=True, exist_ok=True)
+        kit = build(self.run, self.deliv)
+        pdf, js, _data = R.write_kit(kit, str(deliv))
+        self.assertTrue(Path(js).parent.resolve() == (run / R.QC_NAME).
+                        resolve())
+        self.assertFalse((deliv / R.JSON_NAME).exists())
 
     def test_every_glyph_is_at_least_12pt(self):
         kit = build(self.run, self.deliv)
@@ -169,6 +197,43 @@ class Build(unittest.TestCase):
         (run / "creative" / "script.json").write_text(json.dumps(script))
         kit = build(run, deliv)
         self.assertLessEqual(kit["youtube"]["title_length"], 100)
+
+
+class ProduceDelivery(unittest.TestCase):
+    """The REAL deliver path (produce_delivery), end to end: a produced run
+    leaves the kit PDF in <run>/delivery and the kit JSON in <run>/qc, and
+    the client-facing folder never sees the JSON."""
+
+    def test_produced_run_keeps_the_kit_json_out_of_the_delivery_folder(self):
+        from delivery_package import contract as C
+        from ready_post_kit import ready_post_kit as RP
+        tmp = tempfile.TemporaryDirectory(prefix="kit-deliv-")
+        self.addCleanup(tmp.cleanup)
+        run, deliv = make_run(tmp.name)
+        # a real run layout: the delivery folder lives INSIDE the run, which
+        # is where produce_delivery writes it (RI.delivery_dir).
+        inside = run / "delivery"
+        deliv.rename(inside)
+        deliv = inside
+
+        item = C.ITEMS_BY_KEY["ready_to_post_kit"]
+        staged = RP.produce_delivery(str(run), item)
+        self.assertEqual([p.name for p in staged], list(item.files))
+        pdf = deliv / R.PDF_NAME
+        self.assertTrue(pdf.is_file())
+        self.assertTrue((run / R.QC_NAME / R.JSON_NAME).is_file(),
+                        "the kit JSON must land in <run>/qc")
+        self.assertFalse((deliv / R.JSON_NAME).exists(),
+                         "the kit JSON leaked into the client's delivery "
+                         "folder")
+        self.assertEqual(
+            sorted(p.name for p in deliv.iterdir()),
+            sorted(["delivery-receipt.json", "README.md", R.PDF_NAME,
+                    "ad-9x16.mp4", "ad-16x9.mp4", "Song.mp3"]),
+            "the delivery folder holds more than the deliverables")
+        saved = json.loads(
+            (run / R.QC_NAME / R.JSON_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(saved["kit_number"], "07")
 
 
 class Refusals(unittest.TestCase):
@@ -256,6 +321,10 @@ class Cli(unittest.TestCase):
             capture_output=True, text=True)
         self.assertEqual(ok.returncode, 0, ok.stderr)
         self.assertTrue((deliv / R.PDF_NAME).is_file())
+        # the CLI passes the run dir, so the JSON lands in <run>/qc and the
+        # client-facing delivery folder stays free of it.
+        self.assertTrue((run / R.QC_NAME / R.JSON_NAME).is_file())
+        self.assertFalse((deliv / R.JSON_NAME).exists())
         # break the link, rebuild: refusal, exit 2, named on stderr
         (run / "brief.json").write_text(json.dumps({"offer": "no link here"}),
                                         encoding="utf-8")

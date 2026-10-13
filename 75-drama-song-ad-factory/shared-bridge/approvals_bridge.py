@@ -39,6 +39,16 @@ from studio_claim import LedgerError  # noqa: E402
 
 STAGES = ("script", "song", "storyboard")
 
+# The only content types this bridge will ever PUT to a client page: a .json,
+# .log or .py handed to the publisher is refused HERE, locally, before any
+# request and before the key is used (SPEC §4: approvals carry media only).
+PUBLISHABLE_PREFIXES = ("image/", "audio/", "video/")
+PUBLISHABLE_TYPES = ("application/pdf",)
+
+
+def _publishable(ctype):
+    return ctype.startswith(PUBLISHABLE_PREFIXES) or ctype in PUBLISHABLE_TYPES
+
 
 def _url(base_url, order_id):
     oid = urllib.parse.quote(str(order_id), safe="")
@@ -61,7 +71,11 @@ def _version(value):
 
 
 def _file_spec(entry):
-    """One file to publish: a path on disk, or {path, name, content_type}."""
+    """One file to publish: a path on disk, or {path, name, content_type}.
+
+    Only image/*, audio/*, video/* and application/pdf are publishable;
+    anything else raises locally, with no request and no key involved.
+    """
     if isinstance(entry, dict):
         path = entry.get("path") or ""
         name = entry.get("name") or os.path.basename(str(path))
@@ -74,6 +88,10 @@ def _file_spec(entry):
     ctype = ctype or mimetypes.guess_type(name)[0]
     if not ctype:
         raise LedgerError("UNSUPPORTED_FILE", "unknown file type: %s" % name)
+    if not _publishable(ctype):
+        raise LedgerError("BAD_FILE_TYPE",
+                          "refusing to publish %s: content type %s is not "
+                          "image, audio, video or pdf" % (name, ctype))
     return {"path": p, "name": name, "content_type": ctype,
             "bytes": p.stat().st_size}
 

@@ -10,7 +10,8 @@ Brown ads). One place, six rules; every later run follows it.
                    tagged "KEPT_BEST (UNDETERMINED, sung)". A borderline
                    spoken line is kept, flagged.
   3. MOUTH STRIPS  8-frame strip for every UNDETERMINED or flagged segment at
-                   <delivery>/mouth-strips/<segment>.png, listed in the receipt.
+                   <run>/qc/mouth-strips/<segment>.png, listed in the receipt.
+                   QC evidence, never in the client's delivery folder.
   4. RETRY         only on a person's call (person_verdict "DEFECT"), with
                    fewer than 2 jobs (all name variants counted) and a CHANGED
                    input. Never on a checker verdict.
@@ -125,8 +126,22 @@ def retry_allowed(*, usable_take, person_verdict, jobs, input_fingerprint,
 
 # 3 -----------------------------------------------------------------------
 
-def strip_path(delivery_dir, segment):
-    return _gos.path.join(str(delivery_dir), "mouth-strips",
+#: run_inputs.DELIVERY_NAME: the run's delivery folder is <run>/delivery, so a
+#: caller holding only that folder is derived back to its run the same way.
+DELIVERY_NAME = "delivery"
+
+def strip_path(run_dir, segment):
+    """Where ONE mouth strip lands: <run>/qc/mouth-strips/<segment>.png.
+
+    The strip is QC evidence for a person to look at, never a deliverable, so
+    it goes in the run's QC folder and never into the client's delivery folder.
+    A caller that passes only the delivery folder (<run>/delivery) is derived
+    to its run by the same name run_inputs uses.
+    """
+    root = _gos.path.abspath(str(run_dir))
+    if _gos.path.basename(root) == DELIVERY_NAME:
+        root = _gos.path.dirname(root)
+    return _gos.path.join(root, "qc", "mouth-strips",
                           safe_name(segment) + ".png")
 
 
