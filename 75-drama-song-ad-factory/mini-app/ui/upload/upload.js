@@ -1,3 +1,10 @@
+// The personal link carries the key in the fragment (#k=<32 hex>, possibly followed by &p=<page>).
+// Browsers never send the fragment to the server, so it is the only place a link key may live.
+export function linkKey(hash = globalThis.location?.hash ?? '') {
+  const value = new URLSearchParams(hash.replace(/^#/, '')).get('k');
+  return /^[0-9a-f]{32}$/.test(value ?? '') ? value : null;
+}
+
 const LIMITS = { image: 25 * 1024 * 1024, audio: 25 * 1024 * 1024, video: 200 * 1024 * 1024 };
 const TYPES = {
   image: { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp' },
@@ -44,6 +51,13 @@ if (typeof document !== 'undefined') {
   const file = document.getElementById('file');
   const button = document.getElementById('send');
   const status = document.getElementById('status');
+  const keyField = document.getElementById('paste-key');
+  const keyInput = document.getElementById('studio-key');
+  const hashKey = linkKey();
+  if (hashKey) {
+    keyField.hidden = true;
+    keyInput.required = false;
+  }
   channel.addEventListener('change', () => {
     file.accept = Object.keys(TYPES[channel.value]).map((ext) => '.' + ext).join(',');
     file.value = '';
@@ -53,7 +67,7 @@ if (typeof document !== 'undefined') {
     button.disabled = true;
     status.textContent = 'Sending your file. Keep this page open.';
     try {
-      const result = await sendFile(file.files[0], document.getElementById('studio-key').value.trim(), channel.value);
+      const result = await sendFile(file.files[0], hashKey || keyInput.value.trim(), channel.value);
       status.textContent = `File received. Upload reference: ${result.upload_id}`;
       file.value = '';
     } catch (error) { status.textContent = error.message; }
