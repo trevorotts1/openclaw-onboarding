@@ -16,6 +16,7 @@ else
   OCJSON=$HOME/.openclaw/openclaw.json
   CRED_DIR=$HOME/.openclaw/credentials
 fi
+export OCJSON
 
 echo "════════════════════════════════════════════════════"
 echo "  Credentials directory dump (Hostinger Docker schema)"
@@ -138,14 +139,13 @@ accounts = tg.get("accounts", {})
 default_acct = accounts.get("default", {})
 op_acct = accounts.get("operator", {})
 default_account_key = tg.get("defaultAccount", "")
-bindings = cfg.get("channels", {}).get("bindings", []) or []
-op_binding = next(
-    (b for b in bindings
-     if isinstance(b, dict)
-     and b.get("channel") == "telegram"
-     and b.get("accountId") == "operator"),
-    None,
-)
+# v16.1.4 schema: `bindings` is TOP-LEVEL, entries are {agentId, match:{channel, accountId}}
+# (what configure-operator-telegram.sh writes). Also accept the legacy flat / channels.bindings shapes.
+bindings = (cfg.get("bindings") or []) + (cfg.get("channels", {}).get("bindings") or [])
+def _route(b):
+    m = b.get("match") if isinstance(b.get("match"), dict) else b
+    return m.get("channel") == "telegram" and m.get("accountId") == "operator"
+op_binding = next((b for b in bindings if isinstance(b, dict) and _route(b)), None)
 OPERATOR_IDS = {"5252140759", "6663821679", "6771245262"}
 op_allow = {str(x) for x in (op_acct.get("allowFrom") or [])}
 client_allow = {str(x) for x in (default_acct.get("allowFrom") or tg.get("allowFrom") or [])}
@@ -153,30 +153,46 @@ client_allow = {str(x) for x in (default_acct.get("allowFrom") or tg.get("allowF
 def ck(ok, label, detail=""):
     print(f"  {'✓ PASS' if ok else '✗ FAIL'}  {label}{(' — ' + detail) if detail else ''}")
 
+def _bid(t):  # public bot id (digits before the colon); never the secret half
+    return t.split(":", 1)[0].strip() if isinstance(t, str) else ""
+
+# D26b: OpenClaw resolves an account token as accounts.<id>.botToken (or tokenFile),
+# then falls back to the channel-level one. Mirror that to see which bot each side runs.
+def _tok(acct):
+    return (acct.get("botToken") or "", acct.get("tokenFile") or "")
+top_tok = _tok(tg)
+client_tok = _tok(default_acct) if any(_tok(default_acct)) else top_tok
+op_eff = _tok(op_acct) if any(_tok(op_acct)) else top_tok
+dup = (bool(_bid(op_eff[0])) and _bid(op_eff[0]) == _bid(client_tok[0])) or \
+      (bool(op_eff[1]) and op_eff[1] == client_tok[1])
+
 ck(bool(accounts), "channels.telegram.accounts present")
 ck("default" in accounts, "accounts.default (CLIENT bot) present")
-ck("operator" in accounts, "accounts.operator (OPERATOR bot) present")
 ck(default_account_key == "default",
    "defaultAccount == 'default'", f"got {default_account_key!r}")
-ck(op_acct.get("dmPolicy") == "allowlist",
-   "operator dmPolicy == 'allowlist'", f"got {op_acct.get('dmPolicy')!r}")
-ck(OPERATOR_IDS.issubset(op_allow),
-   "operator allowFrom includes all operator IDs", f"got {sorted(op_allow)}")
-ck(bool(client_allow) and not (client_allow & OPERATOR_IDS) or True,
-   "client account allowFrom is the CLIENT (operator IDs not the only entries)")
-ck(op_binding is not None,
-   "bindings has telegram+operator -> agent route",
-   f"binding={op_binding!r}")
-if op_binding is not None:
-    ck(op_binding.get("agentId") in ("main", "default") or bool(op_binding.get("agentId")),
-       "operator binding targets an agentId", f"agentId={op_binding.get('agentId')!r}")
-token_ok = bool(op_acct.get("botToken"))
-ck(token_ok, "operator account HAS a bot token",
-   "EXISTING BOXES: provision an operator bot in BotFather, set "
-   "OPERATOR_TELEGRAM_BOT_TOKEN, re-run scripts/configure-operator-telegram.sh"
-   if not token_ok else "")
-if not (accounts and "operator" in accounts and op_binding):
-    print("  → To fix: run scripts/configure-operator-telegram.sh (idempotent, additive).")
+if "operator" not in accounts:
+    # D26: no operator bot provisioned -> no operator account at all. Not a defect.
+    print("  ℹ INFO  operator line not provisioned (STRUCTURE_ONLY_NEEDS_TOKEN) — "
+          "no accounts.operator, nothing to check. To add one: set "
+          "OPERATOR_TELEGRAM_BOT_TOKEN, run scripts/configure-operator-telegram.sh")
+else:
+    ck(not dup, "operator bot differs from the CLIENT bot (no duplicate Telegram bot token)",
+       "operator token resolves to the client bot: re-run scripts/configure-operator-telegram.sh "
+       "(removes the stale top-level token / empty operator account)" if dup else "")
+    ck(any(op_eff), "operator account resolves a bot token",
+       "empty operator account and no fallback: re-run scripts/configure-operator-telegram.sh"
+       if not any(op_eff) else "")
+    ck(op_acct.get("dmPolicy") == "allowlist",
+       "operator dmPolicy == 'allowlist'", f"got {op_acct.get('dmPolicy')!r}")
+    ck(OPERATOR_IDS.issubset(op_allow),
+       "operator allowFrom includes all operator IDs", f"got {sorted(op_allow)}")
+    ck(op_binding is not None,
+       "bindings has telegram+operator -> agent route",
+       f"binding={op_binding!r}")
+    if op_binding is not None:
+        ck(op_binding.get("agentId") in ("main", "default") or bool(op_binding.get("agentId")),
+           "operator binding targets an agentId", f"agentId={op_binding.get('agentId')!r}")
+
 PYEOF
 
 echo ""
