@@ -6333,6 +6333,23 @@ PYEOF
     # named subdirectory, producing dest/01-skill/ as intended.
     cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
     oc_skill_box_state_restore "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
+
+    # ENGINE-PIN RE-STAMP (2026-10-13). Skill 59's `verify.sh stamp-pin`
+    # recomputes ENGINE-PIN.sha256 over its enforcement set (the entry script,
+    # ENGINE-MANIFEST.json and the four guard scripts), and the entry's own
+    # GATE 3 (AF-AE-HASH-PIN) refuses to dispatch on a stale pin. So a freshly
+    # copied skill whose manifest changed would otherwise land DEAD on the box
+    # until somebody remembered to restamp by hand. Restamp right here, inside
+    # the copy loop, for any skill that ships both a verify.sh and a pin file.
+    # FAIL-SAFE: a stamp that fails WARNs and the roll continues -- a pin this
+    # updater could not write must never take down the whole update.
+    if [ -f "$SKILLS_DIR/$SKILL_NAME/verify.sh" ] \
+       && [ -f "$SKILLS_DIR/$SKILL_NAME/ENGINE-PIN.sha256" ]; then
+      if ! bash "$SKILLS_DIR/$SKILL_NAME/verify.sh" stamp-pin >>"$LOG_FILE" 2>&1; then
+        echo "    [stamp-pin] WARN: $SKILL_NAME ENGINE-PIN.sha256 re-stamp FAILED -- continuing (the pin may be stale; see $LOG_FILE)"
+      fi
+    fi
+
     echo "    Updated: $SKILL_NAME"
     # FIX 1: state transition -- files are on disk = DOWNLOADED (NOT installed).
     command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "downloaded"

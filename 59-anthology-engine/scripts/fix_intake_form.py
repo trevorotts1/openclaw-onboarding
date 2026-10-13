@@ -430,18 +430,45 @@ def load_all_modules(out=None) -> dict:
             continue
         try:
             modules[name] = importlib.import_module("u04_modules." + name)
-        except ImportError:
-            missing.append(name)
+        except ImportError as _imp:
+            # A missing FILE and a FAILED IMPORT are different faults: the
+            # file may be present and its own `import pytest` (or any
+            # third-party import) may have raised. Keep the exception so the
+            # assembly can tell them apart below instead of mislabelling a
+            # real ImportError as an absent file.
+            missing.append((name, _imp))
     for name in TEST_MODULES:
         try:
             modules[name] = importlib.import_module("u04_modules." + name)
-        except ImportError:
-            missing.append(name)
+        except ImportError as _imp:
+            # A missing FILE and a FAILED IMPORT are different faults: the
+            # file may be present and its own `import pytest` (or any
+            # third-party import) may have raised. Keep the exception so the
+            # assembly can tell them apart below instead of mislabelling a
+            # real ImportError as an absent file.
+            missing.append((name, _imp))
     if missing:
+        def _mod_file(_n):
+            # cc_board_hygiene's roster carries ".py" suffixes; the other
+            # families carry bare module names. Both resolve to a file on disk.
+            return MODULES_DIR / (_n if _n.endswith(".py") else _n + ".py")
+        _absent = [n for n, _e in missing if not _mod_file(n).is_file()]
+        _broken = [(n, _e) for n, _e in missing if _mod_file(n).is_file()]
+        if _broken:
+            # A module whose FILE is on disk did not go missing: its import
+            # raised for a real reason (e.g. `import pytest` failing on a box
+            # without pytest). Surface the underlying ImportError verbatim
+            # instead of the file-not-found message. Still fail-closed.
+            raise AssembleError(
+                "u04_modules module(s) present on disk but FAILED TO IMPORT -- a "
+                "real import error, not a missing file (fail-closed, no module "
+                "is ever skipped): %s"
+                % "; ".join("%s: %s: %s" % (n, type(e).__name__, e)
+                            for n, e in _broken))
         raise AssembleError(
             "u04_modules file(s) not found: %s — the 16-file assembly is "
             "incomplete (fail-closed: no module is ever skipped)"
-            % ", ".join(missing))
+            % ", ".join(_absent))
     if len(modules) != 15:
         raise AssembleError(
             "assembly loaded %d modules, expected 15 (main_skeleton + 9 "
