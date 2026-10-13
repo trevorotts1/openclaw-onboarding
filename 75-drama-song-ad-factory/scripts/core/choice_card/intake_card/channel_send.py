@@ -9,6 +9,14 @@ send rules can never drift between them::
     CS.CHANNEL_SEND["app"].func is CS.send          # True
     CS.CHANNEL_SEND["terminal"].func is CS.send     # True
     CS.CHANNEL_SEND["storyboard"].func is CS.send   # True
+    CS.CHANNEL_SEND["studio"].func is CS.send       # True
+
+The ``studio`` channel is the one channel that does NOT go through Telegram: it
+publishes the approval item to the client's studio page via
+``shared-bridge/approvals_bridge.publish`` (order id and base URL from the run's
+``control/studio-order.json``, key from the bridge's own lookup). Callers that
+run a studio order send on the studio channel AND keep their normal channel --
+the first answer wins (the service returns 409 on the second).
 
 Delivery reuses the skill's EXISTING send (``intake_card.openclaw_send_argv`` --
 the same ``openclaw message send`` argv the choice card and the storyboard
@@ -38,11 +46,13 @@ _CORE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 if _CORE not in sys.path:
     sys.path.insert(0, _CORE)
 
-CHANNELS = ("app", "terminal", "storyboard")
+CHANNELS = ("app", "terminal", "storyboard", "studio")
 #: The device notice rides the app channel (the device is where the client reads it).
 NOTICE_CHANNEL = "app"
 #: Refused send: the same exit code the skill's existing gates already use.
 REFUSED_EXIT = 5
+#: studio_bridge poll writes this in the run dir; the studio channel reads it.
+STUDIO_ORDER_FILE = os.path.join("control", "studio-order.json")
 
 
 class ChannelError(ValueError):
@@ -79,16 +89,76 @@ def song_pick_gate(run_dir):
     return SC.refusal(run_dir)
 
 
-def send(channel, target, text, media=(), sink=None, gate=None, gate_input=None):
+def _shared_bridge_dir():
+    return os.path.join(os.path.dirname(os.path.dirname(_CORE)), "shared-bridge")
+
+
+def studio_order(run_dir):
+    """The run's studio order record (``control/studio-order.json``, written by
+    ``studio_bridge.py poll``) -- ``{order_id, client_id, title, base_url}`` --
+    or None when the run did not come from the studio."""
+    if not run_dir:
+        return None
+    try:
+        with open(os.path.join(run_dir, STUDIO_ORDER_FILE), encoding="utf-8") as f:
+            rec = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(rec, dict) or not rec.get("order_id") or not rec.get("base_url"):
+        return None
+    return rec
+
+
+def _bridge_publish():
+    """``approvals_bridge.publish`` from shared-bridge (same folder as the bridge)."""
+    shared = _shared_bridge_dir()
+    if shared not in sys.path:
+        sys.path.insert(0, shared)
+    import approvals_bridge   # noqa: PLC0415
+    return approvals_bridge.publish
+
+
+def _bridge_key():
+    """The bridge's OWN key lookup (``studio_bridge.load_key``) -- reused, never copied."""
+    shared = _shared_bridge_dir()
+    if shared not in sys.path:
+        sys.path.insert(0, shared)
+    import studio_bridge   # noqa: PLC0415
+    return studio_bridge.load_key()
+
+
+def studio_send(run_dir, stage, version, text, files=(), choices=(), publish=None):
+    """Channel ``studio``: publish one approval item to the client's studio page.
+    The order id and base URL come from the run's ``control/studio-order.json``;
+    the key is the bridge's lookup. Returns the item dict. Loud
+    :class:`ChannelError` when the run is not a studio run -- never a silent
+    no-op send. ``publish`` injects the transport (default:
+    ``approvals_bridge.publish``), so tests send nowhere."""
+    order = studio_order(run_dir)
+    if not order:
+        raise ChannelError("channel 'studio' needs a studio order in the run "
+                           "(missing or invalid %s)" % STUDIO_ORDER_FILE)
+    publish = publish or _bridge_publish()
+    return publish(order["base_url"], _bridge_key(), order["order_id"], stage,
+                   version, text, list(choices), list(files))
+
+
+def send(channel, target=None, text="", media=(), sink=None, gate=None, gate_input=None,
+         run_dir="", stage="", version=0, files=(), choices=()):
     """THE channel-neutral send. Runs the gate FIRST (a refusal raises
-    :class:`SendRefused` before anything is built or sent), then builds the
-    existing openclaw argv and hands it to the sink (default: run it).
-    Returns the argv."""
+    :class:`SendRefused` before anything is built or sent). app, terminal and
+    storyboard build the existing openclaw argv and hand it to the sink
+    (default: run it). The studio channel publishes the approval item to the
+    page instead (see :func:`studio_send`; ``sink`` injects the publish call).
+    Returns the argv, or the studio item dict on channel 'studio'."""
     _require_channel(channel)
     if gate is not None:
         refusal = gate(gate_input)
         if refusal:
             raise SendRefused(refusal)
+    if channel == "studio":
+        return studio_send(run_dir=run_dir, stage=stage, version=version, text=text,
+                           files=files, choices=choices, publish=sink)
     from choice_card.intake_card import intake_card as IC   # noqa: PLC0415
     argv = IC.openclaw_send_argv(target, text, media=list(media))
     (sink or _run_send)(argv)
@@ -139,11 +209,19 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("send")
     s.add_argument("--channel", choices=CHANNELS, required=True)
-    s.add_argument("--target", required=True)
+    s.add_argument("--target", default="",
+                   help="the chat target (app/terminal/storyboard); the studio channel does not use it")
     s.add_argument("--message", required=True)
     s.add_argument("--media", action="append", default=[])
     s.add_argument("--run-dir", default="",
-                   help="consult the existing song-pick gate before sending")
+                   help="consult the existing song-pick gate before sending; the studio channel reads its order here")
+    s.add_argument("--stage", default="", help="studio channel: approval stage (script/song/storyboard)")
+    s.add_argument("--version", dest="version", type=int, default=0,
+                   help="studio channel: approval version")
+    s.add_argument("--file", action="append", default=[],
+                   help="studio channel: a file path to publish with the item (repeatable)")
+    s.add_argument("--choice", action="append", default=[],
+                   help="studio channel: a choice {n, label} as JSON (repeatable)")
     n = sub.add_parser("notice")
     n.add_argument("--target", required=True)
     n.add_argument("--message", required=True)
@@ -153,9 +231,13 @@ def main(argv=None):
     a = ap.parse_args(argv)
     try:
         if a.cmd == "send":
+            if a.channel != "studio" and not a.target:
+                ap.error("--target is required for channel %s" % a.channel)
             gate = song_pick_gate if a.run_dir else None
             print(json.dumps(send(a.channel, a.target, a.message, media=a.media,
-                                  gate=gate, gate_input=a.run_dir)))
+                                  gate=gate, gate_input=a.run_dir, run_dir=a.run_dir,
+                                  stage=a.stage, version=a.version, files=a.file,
+                                  choices=[json.loads(c) for c in a.choice])))
         else:
             nargv = device_notice(a.target, a.message, requested=a.requested,
                                   run_dir=a.run_dir or None)
