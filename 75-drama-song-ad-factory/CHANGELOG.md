@@ -4,6 +4,18 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.49 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #7: proof receipts plus inbox freshness
+
+Batch `BATCH-DSF-7` — three W4 units merged together (one version bump and one
+entry for the whole batch, per the swarm plan):
+
+- `#1976` (`unit/DSF-411`, W4-e2e-proof-U1) adds `references/studio-e2e-receipt.md`, the live end-to-end proof run on the operator Mac.
+- `#1970` (`unit/DSF-302`, W4-e2e-proof-U2) replaces `timer-artifacts/PLATFORM-PROOF.md` with the no-docker platform proof (mac PROVEN, hostinger/contabo UNDETERMINED).
+- `#1979` (`unit/DSF-611`) is the inbox-freshness fix: `mini-app/service/src/index.js` (+17/-3) read-modify-writes the R2 inbox on the order-created path instead of listing KV in the same request as the put, plus `mini-app/service/test/inbox-freshness.test.mjs` (+213).
+
+No behaviour outside SPEC.md was added and no bridge file was touched; every
+unit's own tests and the area regressions pass on this batch head.
+
 ## v2.9.48 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #4: the client-facing folder holds deliverables only
 
 Batch `BATCH-DSF-4` — six client-folder units merged together (one version bump
