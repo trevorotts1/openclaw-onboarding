@@ -364,28 +364,31 @@ def write_delivery(delivery_dir, rec, images=None):
     reference pictures the layout used, as separate full files -- the
     client's consistency set ships on its own, not only embedded in the
     PDF. This is the real deliver path for the whole item: no reference
-    picture in the run, no item (BibleError), never a placeholder.
+    picture in the run, no item (BibleError), never a placeholder. The
+    refusal lands BEFORE any output file or directory exists: the whole
+    ship plan is computed first, and the folder is only created once
+    something real will go into it.
     """
-    os.makedirs(delivery_dir, exist_ok=True)
     if images is None:
         images = rec.get("reference_images") or []
     resolved = images if isinstance(images, dict) else resolve_images(images)
-    path = os.path.join(delivery_dir, DELIVERY_PDF_NAME)
-    pdf = render(rec, resolved, path)
-    img_dir = os.path.join(delivery_dir, _ITEMS["character_bible"].files[1])
-    os.makedirs(img_dir, exist_ok=True)
-    shipped = 0
+    plan = []                                        # (view, src, ext), no writes yet
     for view in sorted(resolved):
         src = resolved.get(view)
         if not src or not os.path.isfile(src) or os.path.getsize(src) <= 0:
             continue
-        ext = os.path.splitext(src)[1].lower() or ".png"
-        shutil.copy2(src, os.path.join(img_dir, view + ext))
-        shipped += 1
-    if not shipped:
+        plan.append((view, src, os.path.splitext(src)[1].lower() or ".png"))
+    if not plan:
         raise BibleError("NO_REFERENCE_IMAGES: %s has no reference picture "
                          "to ship beside the bible PDF"
                          % (rec.get("character_name") or "the character"))
+    os.makedirs(delivery_dir, exist_ok=True)
+    path = os.path.join(delivery_dir, DELIVERY_PDF_NAME)
+    pdf = render(rec, resolved, path)
+    img_dir = os.path.join(delivery_dir, _ITEMS["character_bible"].files[1])
+    os.makedirs(img_dir, exist_ok=True)
+    for view, src, ext in plan:
+        shutil.copy2(src, os.path.join(img_dir, view + ext))
     return pdf
 
 

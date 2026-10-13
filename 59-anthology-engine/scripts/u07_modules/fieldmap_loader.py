@@ -424,8 +424,15 @@ def main(argv=None):
     ap.add_argument("--field-map", default="",
                     help="path to field-map.json (default: the skill's "
                          "config copy, config/field-map.json)")
-    ap.add_argument("cmd", nargs="?", default="",
-                    choices=["run", "self-test"])
+    # NOTE: `choices=` is DELIBERATELY absent from this optional positional.
+    # On Python 3.9 argparse validates an omitted optional positional against
+    # `choices` using its DEFAULT, and a default of "" is not in the list --
+    # so main([]) raised SystemExit(2) instead of returning the usage/STOP
+    # path the self-test asserts. The empty-command path below already prints
+    # usage and returns EX_STOP; a NON-empty unknown command is validated
+    # explicitly right after it, which is what keeps the check strict without
+    # re-introducing the 3.9 default-validation crash.
+    ap.add_argument("cmd", nargs="?", default="")
     args = ap.parse_args(argv)
 
     if args.help or not args.cmd:
@@ -446,6 +453,10 @@ def main(argv=None):
             "total_keys mismatch, derivation law, type law, key law); 4 "
             "self-test FAILED.\n")
         return reg.EX_OK if args.cmd else reg.EX_STOP
+
+    if args.cmd not in ("run", "self-test"):
+        sys.stderr.write("[fieldmap-loader] STOP: unknown command %r\n" % args.cmd)
+        return reg.EX_STOP
 
     if args.cmd == "self-test":
         return self_test()

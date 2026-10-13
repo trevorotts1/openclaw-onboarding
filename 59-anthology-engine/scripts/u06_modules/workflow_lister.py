@@ -426,8 +426,16 @@ def main(argv=None, environ=None):
     ap.add_argument("--execute", action="store_true",
                     help="explicit Trevor gate for an ACTION; the archive "
                          "ACTION is a plan even WITH --execute (no mutation)")
-    ap.add_argument("cmd", nargs="?", default="",
-                    choices=["list", "archive", "self-test"])
+    # NOTE: `choices=` is DELIBERATELY absent from this optional positional.
+    # On Python 3.9 argparse validates an omitted optional positional against
+    # `choices` using its DEFAULT, and a default of "" is not in the list --
+    # so main([]) raised SystemExit(2) instead of returning the usage/STOP
+    # path the self-test asserts. The empty-command path below already prints
+    # usage and returns EX_STOP; a NON-empty unknown command is validated
+    # explicitly right after it, which is what keeps the check strict (and the
+    # usage text's "2 STOP (usage / ... unknown ACTION)" contract honest)
+    # without re-introducing the 3.9 default-validation crash.
+    ap.add_argument("cmd", nargs="?", default="")
     args = ap.parse_args(argv)
 
     if args.help or not args.cmd:
@@ -450,6 +458,12 @@ def main(argv=None, environ=None):
             "unknown ACTION); 3 HELD (rail unreachable or edge-blocked or "
             "malformed listing); 4 self-test FAILED.\n" % ARCHIVE_NOTE)
         return EX_OK if args.cmd else EX_STOP
+
+    if args.cmd not in ("list", "archive", "self-test"):
+        sys.stderr.write(
+            "[workflow-lister] STOP: unknown ACTION/command %r (usage above)\n"
+            % args.cmd)
+        return EX_STOP
 
     if args.cmd == "self-test":
         return self_test()
