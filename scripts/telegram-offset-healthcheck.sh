@@ -153,7 +153,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
 fi
 
 # ---- 1. bot token ----
-BOT_TOKEN=$(jq -r '.channels.telegram.botToken // .channels.telegram.token // empty' "$CONFIG_FILE" 2>/dev/null)
+BOT_TOKEN=$(jq -r '.channels.telegram.botToken // .channels.telegram.accounts.default.botToken // .channels.telegram.token // empty' "$CONFIG_FILE" 2>/dev/null)
 if [[ -z "$BOT_TOKEN" || "$BOT_TOKEN" == "null" ]]; then
   log "WARN" "no telegram botToken in $CONFIG_FILE -- telegram not configured; skipping"
   exit 2

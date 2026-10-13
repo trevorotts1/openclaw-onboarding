@@ -31,6 +31,9 @@ on:
       - "scripts/fix-active-memory-bug.sh"
       - "scripts/test-config-injection-shapes.sh"
       - "scripts/test-operator-telegram-same-as-client-bot.sh"
+      - "scripts/test-diagnose-telegram-operator-optional.sh"
+      - "scripts/diagnose-telegram-config.sh"
+      - "scripts/telegram-offset-healthcheck.sh"
       - "install.sh"
       - "update-skills.sh"
       - ".github/workflows/config-injection-shapes-guard.yml"
@@ -43,6 +46,9 @@ on:
       - "scripts/fix-active-memory-bug.sh"
       - "scripts/test-config-injection-shapes.sh"
       - "scripts/test-operator-telegram-same-as-client-bot.sh"
+      - "scripts/test-diagnose-telegram-operator-optional.sh"
+      - "scripts/diagnose-telegram-config.sh"
+      - "scripts/telegram-offset-healthcheck.sh"
       - "install.sh"
       - "update-skills.sh"
       - ".github/workflows/config-injection-shapes-guard.yml"
@@ -70,4 +76,5 @@ jobs:
           set -euo pipefail
           bash scripts/test-config-injection-shapes.sh
           bash scripts/test-operator-telegram-same-as-client-bot.sh
+          bash scripts/test-diagnose-telegram-operator-optional.sh
           echo "config-injection-shapes-guard: PASS"

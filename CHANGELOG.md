@@ -1,3 +1,14 @@
+## [v27.1.24]  -  2026-10-13  -  D26b: diagnose-telegram-config.sh and telegram-offset-healthcheck.sh agree with D26 (operator account optional, no top-level botToken required)
+
+##### What Changed
+- `scripts/diagnose-telegram-config.sh`: after D26 (v27.1.23) a box with no operator bot token has NO `channels.telegram.accounts.operator` and no top-level `botToken`, but the diagnostic still demanded both and failed every such box. Now: operator account absent = informational note (`STRUCTURE_ONLY_NEEDS_TOKEN`, no FAIL); operator with its own token = PASS; an operator whose token resolves to the client bot (empty with a top-level fallback, or the same bot id) = FAIL (the duplicate bug D26 fixes); top-level `botToken` absent while `accounts.default` has one = PASS. It also looked for the operator route under `channels.bindings` in the flat shape; it now reads the top-level `bindings` `{agentId, match}` shape that configure-operator-telegram.sh writes (the old lookup failed on every correctly configured box). `OCJSON` is now exported so the embedded python reads the same file the shell resolved.
+- `scripts/telegram-offset-healthcheck.sh`: reads the bot token from `accounts.default.botToken` when the top-level `botToken` is gone (it skipped every D26-repaired box as "telegram not configured").
+- Test: `scripts/test-diagnose-telegram-operator-optional.sh` (9 checks; 8 fail on the old scripts), wired into `config-injection-shapes-guard.yml` next to the D26 test.
+
+##### Migration Notes
+- Risk: LOW. Read-only diagnostic and manual health-check scripts; no config is written. No box action needed.
+
+
 ## [v27.1.23]  -  2026-10-13  -  D26: configure-operator-telegram.sh drops the legacy top-level telegram botToken/tokenFile once default holds it and no longer writes an empty-token operator account
 
 ##### What Changed
