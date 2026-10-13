@@ -104,9 +104,13 @@ if [[ "$UPDATE_ONLY" != "true" ]]; then
   if [[ -z "$COMPANY_NAME" ]]; then
     echo "run-full-install.sh: missing company name" >&2; exit 1
   fi
-  if [[ -z "$CONTACT_EMAIL" ]]; then
-    echo "run-full-install.sh: missing contact email" >&2; exit 1
-  fi
+  # Item 06: an ABSENT contact email is a PENDING state, not a usage error.
+  # run-full-install no longer requires the third argument — the launch gate
+  # classifies a placeholder/absent email as launch-pending (exit 8) before any
+  # Access registration or invitation attempt, and register-access already
+  # refuses to derive Access subjects from a pending+ placeholder. Never invent
+  # a sign-in identity here.
+  : "${CONTACT_EMAIL:=}"
 fi
 
 # Resolve the actual OS/topology and preserve the selected installation roots.
@@ -2398,6 +2402,18 @@ log "INFO" "phase=6j cc-watchdog: done"
 # unambiguous. The STATE FIELD is renamed commandCenterPhase6bStatus →
 # commandCenterPhase6hStatus, but the READ falls back to the old key so the
 # duplicate-CC re-POST guard keeps working on boxes whose state predates this rename.
+# cc_interview_email_pending — item 06: a placeholder or absent contactEmail
+# means the CONFIRMED intake owner email was never collected. That is launch
+# pending, never a sign-in identity: register-access refuses to build Cloudflare
+# Access subjects from it (pending+ guard at the register-access stage) and the
+# invitation can never be minted until a real address lands.
+cc_interview_email_pending() {
+  case "$(state_get '.contactEmail')" in
+    pending+*|"") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 log "INFO" "phase=6h tunnel: starting"
 if [[ "$UPDATE_ONLY" == "true" && -z "$(state_get '.launchBootstrap')" ]]; then
   log "INFO" "phase=6h tunnel: --update-only mode — skipping (tunnel already established on prior run)"
@@ -2424,6 +2440,15 @@ else
       log "WARN" "phase=6h: create-tunnel.sh not executable at $TUNNEL_SCRIPT — marking tunnel as todo"
       state_set '.commandCenterPhase6hStatus = "skipped-script-missing"'
     else
+      # Item 06: decide BEFORE the request stamp. Never mark "requested" and
+      # never POST a pending+ placeholder as the client's contactEmail — that
+      # status is terminal for the re-POST guard, so a skipped run must record
+      # "email-pending" instead and converge on the run where the confirmed
+      # address exists. No invented sign-in identity anywhere.
+      if cc_interview_email_pending; then
+        state_set '.commandCenterPhase6hStatus = "email-pending"'
+        log "WARN" "phase=6h: contactEmail is a pending+ placeholder or empty — NOT registering the tunnel (no invented contact identity); re-run once the confirmed owner email exists"
+      else
       log "INFO" "phase=6h: invoking create-tunnel.sh $CLIENT_SLUG $COMPANY_NAME $CONTACT_EMAIL"
       # Record the request before the external effect. Interrupted/ambiguous calls
       # reconcile via the authenticated readiness probe; never blindly re-POST.
@@ -2445,6 +2470,7 @@ else
         # The requested URL was scoped before deployment; no .env-exists guessing.
         state_set '.commandCenterPhase6hStatus = "created"'
         log "INFO" "phase=6h tunnel: created; awaiting authenticated public verification"
+      fi
       fi
     fi
   fi
@@ -2519,6 +2545,15 @@ if [[ "$SP_ACTIVE" != "true" && ( "$UPDATE_ONLY" != "true" || ( -n "$(state_get 
   # multi-signal corroboration — the flag alone is set even on the fabricating path).
   INTERVIEW_COMPLETE=$(state_get '.interviewComplete')
   if [[ "$INTERVIEW_COMPLETE" != "true" ]]; then
+    # Item 06: placeholder/absent owner email is decided FIRST — before any
+    # Access registration, readiness probe or invitation attempt, which would
+    # all fail anyway. Completed interviews are untouched by this branch.
+    if cc_interview_email_pending; then
+      state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "owner-email-pending"'
+      log "WARN" "Interview launch pending: the confirmed intake owner email is absent (contactEmail is a pending+ placeholder or empty) — no Access identity can be registered and no invitation may be claimed. Collect the owner's real email, then re-run run-full-install.sh with it as the third argument."
+      echo "INTERVIEW_LAUNCH_PENDING: owner email not confirmed — AI Workforce interview has NOT started and is NOT complete. No invitation exists." >&2
+      exit 8
+    fi
     if ! cc_launch_stage prebuild; then
       state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "foundation-pending"'
       log "WARN" "Interview launch pending: explicit lane/consent or foundation verification missing; see $LOG_FILE"
@@ -2559,7 +2594,7 @@ if [[ "$SP_ACTIVE" != "true" && ( "$UPDATE_ONLY" != "true" || ( -n "$(state_get 
     fi
     log "INFO" "interview-gate: interviewComplete=${INTERVIEW_COMPLETE:-<unset>} — REPORTING 'interview not completed yet' and exiting clean. NOT seeding/scaffolding the real workforce."
     state_set '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = "AI Workforce interview not completed (interviewComplete != true) — real-workforce materialization is gated until the owner finishes their interview. The CC stays in locked interview-mode (P0-5 middleware 302s to /interview) by design until buildCompletedAt at closeout."'
-    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview not completed yet. Real workforce NOT materialized (expected, not an error). The authenticated public interview prerequisites passed; provider liveness remains separately unverified. The shell remains in locked interview-mode by design until closeout." >&2
+    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview is NOT complete (never claim completion from this state). Real workforce NOT materialized (expected, not an error). The authenticated public interview prerequisites passed; provider liveness remains separately unverified. The shell remains in locked interview-mode by design until closeout." >&2
     exit 0
   fi
   log "INFO" "interview-gate: fast pre-check passed (interviewComplete=true) — now CORROBORATING with qc-interview-completion.py (multi-signal, per SKILL.md)."
