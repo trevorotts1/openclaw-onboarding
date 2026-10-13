@@ -56,8 +56,26 @@ try:
 except Exception:
     pass
 
+# D26c tg-token-resolve BEGIN (mirrors OpenClaw resolveTelegramToken; keep identical in every reader)
+def tg_token(cfg, acct="default"):
+    tg = (cfg.get("channels") or {}).get("telegram") or {}
+    acc = (tg.get("accounts") or {}).get(acct) or {}
+    for src in (acc, tg):
+        f = src.get("tokenFile")
+        if isinstance(f, str) and f.strip():
+            try:
+                t = open(os.path.expanduser(f.strip())).read().strip()
+                if t:
+                    return t
+            except Exception:
+                pass
+        t = src.get("botToken")
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+    return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() if acct == "default" else ""
+# D26c tg-token-resolve END
 bot_id = ""
-bt = cfg.get("channels", {}).get("telegram", {}).get("botToken", "") or ""
+bt = tg_token(cfg)
 if ":" in bt:
     bot_id = bt.split(":")[0]
 

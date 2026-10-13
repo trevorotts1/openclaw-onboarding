@@ -32,6 +32,11 @@ on:
       - "scripts/test-config-injection-shapes.sh"
       - "scripts/test-operator-telegram-same-as-client-bot.sh"
       - "scripts/test-diagnose-telegram-operator-optional.sh"
+      - "scripts/test-telegram-token-readers-default-account.sh"
+      - "scripts/ensure-pipeline-crons.sh"
+      - "shared-utils/resolve-owner-chat.sh"
+      - "38-conversational-ai-system/scripts/check-ghl-pit-liveness.sh"
+      - "44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh"
       - "scripts/diagnose-telegram-config.sh"
       - "scripts/telegram-offset-healthcheck.sh"
       - "install.sh"
@@ -47,6 +52,11 @@ on:
       - "scripts/test-config-injection-shapes.sh"
       - "scripts/test-operator-telegram-same-as-client-bot.sh"
       - "scripts/test-diagnose-telegram-operator-optional.sh"
+      - "scripts/test-telegram-token-readers-default-account.sh"
+      - "scripts/ensure-pipeline-crons.sh"
+      - "shared-utils/resolve-owner-chat.sh"
+      - "38-conversational-ai-system/scripts/check-ghl-pit-liveness.sh"
+      - "44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh"
       - "scripts/diagnose-telegram-config.sh"
       - "scripts/telegram-offset-healthcheck.sh"
       - "install.sh"
@@ -77,4 +87,5 @@ jobs:
           bash scripts/test-config-injection-shapes.sh
           bash scripts/test-operator-telegram-same-as-client-bot.sh
           bash scripts/test-diagnose-telegram-operator-optional.sh
+          bash scripts/test-telegram-token-readers-default-account.sh
           echo "config-injection-shapes-guard: PASS"

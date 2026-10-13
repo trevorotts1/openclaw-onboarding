@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v27.1.25"
+ONBOARDING_VERSION="v27.1.26"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -460,8 +460,26 @@ cfg = {}
 try: cfg = json.load(open(OC_JSON))
 except Exception: pass
 
+# D26c tg-token-resolve BEGIN (mirrors OpenClaw resolveTelegramToken; keep identical in every reader)
+def tg_token(cfg, acct="default"):
+    tg = (cfg.get("channels") or {}).get("telegram") or {}
+    acc = (tg.get("accounts") or {}).get(acct) or {}
+    for src in (acc, tg):
+        f = src.get("tokenFile")
+        if isinstance(f, str) and f.strip():
+            try:
+                t = open(os.path.expanduser(f.strip())).read().strip()
+                if t:
+                    return t
+            except Exception:
+                pass
+        t = src.get("botToken")
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+    return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() if acct == "default" else ""
+# D26c tg-token-resolve END
 bot_id = ""
-bt = cfg.get("channels", {}).get("telegram", {}).get("botToken", "") or ""
+bt = tg_token(cfg)
 if ":" in bt:
     bot_id = bt.split(":")[0]
 
@@ -961,11 +979,29 @@ tg_send_direct() {
     [ ! -f "$oc_json" ] && return 1
     local creds
     creds=$(python3 - <<PYEOF 2>/dev/null
-import json
+import json, os
+# D26c tg-token-resolve BEGIN (mirrors OpenClaw resolveTelegramToken; keep identical in every reader)
+def tg_token(cfg, acct="default"):
+    tg = (cfg.get("channels") or {}).get("telegram") or {}
+    acc = (tg.get("accounts") or {}).get(acct) or {}
+    for src in (acc, tg):
+        f = src.get("tokenFile")
+        if isinstance(f, str) and f.strip():
+            try:
+                t = open(os.path.expanduser(f.strip())).read().strip()
+                if t:
+                    return t
+            except Exception:
+                pass
+        t = src.get("botToken")
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+    return os.environ.get("TELEGRAM_BOT_TOKEN", "").strip() if acct == "default" else ""
+# D26c tg-token-resolve END
 try:
     d = json.load(open("$oc_json"))
     tg = d.get("channels", {}).get("telegram", {}) or {}
-    bot = tg.get("botToken") or d.get("env", {}).get("vars", {}).get("TELEGRAM_BOT_TOKEN", "")
+    bot = tg_token(d) or d.get("env", {}).get("vars", {}).get("TELEGRAM_BOT_TOKEN", "")
     chat = ""
     for c in (tg.get("allowFrom") or []):
         chat = str(c); break
