@@ -35,7 +35,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAIRING_DIR = dirname(HERE);
-const SERVICE_DIR = join(PAIRING_DIR, '..', 'service');
+const SERVICE_DIR = join(PAIRING_DIR, '..', '..', 'service');
 
 // Test fixtures, not secrets: they exist only inside this process.
 const ADMIN = 'fixture-admin-key-not-a-real-secret-000000';
@@ -294,7 +294,7 @@ function shippedSourcesPersistNothing() {
   const scanned = readdirSync(join(PAIRING_DIR, 'lib'))
     .filter((name) => name.endsWith('.js'))
     .map((name) => join(PAIRING_DIR, 'lib', name));
-  scanned.push(join(PAIRING_DIR, 'admin.html'));
+  scanned.push(join(PAIRING_DIR, 'index.html'));
   const banned = [
     ['localStorage', /localStorage/],
     ['sessionStorage', /sessionStorage/],
