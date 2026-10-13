@@ -1118,6 +1118,21 @@ If client gives short answers, says "I don't know" twice, or pauses:
 - Tell the client: “You can return to your interview page after signing in. If asked to sign in again, re-open this same link — no fresh link is needed. If you lost this link, tell me ‘resume my interview.’ Your saved answers will still be there.”
 - Leave the existing interview identity and answers in place. Do not restart the interview, fabricate answers, or mark it complete. The owner chooses when to continue.
 
+### Interview Status Questions — Authoritative Read Order and Prohibited Inference
+
+For "can she start", "what is the link", "is the link working", "my link expired", "resume my interview" and every startability question: read SKILL.md first, then THIS file, before answering. An actual build still requires the full six-read set. Answering from a local port probe is prohibited — see below.
+
+State three separate facts, never one:
+1. **Stable public bookmark** — `https://<host>/interview`, which authenticates before it serves.
+2. **Privately minted sign-in link** — issued per invitation; `send-interview-link.sh --mint-only` proves issuance and discards the ticket, proving nothing about delivery.
+3. **Verified delivery** — the acknowledged gateway message recorded in the scoped delivery receipt.
+
+Install, invitation delivery, provider answer and workforce completion are four further facts, and none of them implies any other.
+
+**⛔ Never derive "no interview link" (or "link working") from a local port probe.** `curl 127.0.0.1:4000` is not a fact about the interview: the port can be closed while the public route serves, and open while the host registry has no Access identity. Authoritative sources are, in order: the exact authenticated public `/api/auth/interview-ready` receipt (including `capabilities.invitationIssuable` / `enrollment`), the invitation route's refusal code, and the scoped delivery receipt. The no-send startability gate (`verify-tenant-readiness.py --startability --no-send`) is the single command that proves all of it at once.
+
+**A down application is a Command Center deployment fault.** `cc-start.sh` refusing with exit 78 `build-manifest-missing` (missing or stale `.next/build-inventory.json`) means rebuild or config repair — never a blind restart loop, never a workforce-completion fault, and never a 9Router fault. Report the deployment fault as what it is; never fold it into interview status.
+
 ### Interview Start and Resume Links — Client-Requested Renewal
 
 The initial invitation uses `bash scripts/send-interview-link.sh` on the client's own box. It verifies the client's public Command Center origin/readiness and sends one acknowledged Telegram message through that client's OpenClaw gateway. A private `/interview?enroll=...` sign-in link (older issuers mint `/interview#enroll=...`; both are accepted) and a separate stable `/interview` bookmark point to the same client's saved interview. Do not construct `/onboarding/resume/{slug}` or fall back to an unauthenticated/chat invitation when web readiness is missing.
