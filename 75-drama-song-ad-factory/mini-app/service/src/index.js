@@ -29,13 +29,18 @@
 
 import { AF_ID_INVALID, isClientId } from './ids.js';
 import { AF_ISO_CROSS, authorizeClient, enrollClient } from './isolation.js';
-import { attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
+import { AF_PAIR_LOCKED, PAIRING_MAX_TRIES, attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
 import { checkIn, writeInbox } from './inbox.js';
 import { acceptUpload, pollUpload } from './uploads.js';
 import { resolveOrderState, transition, writeOperatorRecord } from './lifecycle.js';
 import { AF_OPT_APPROVAL, lastCheckIn, optionLine, setOption, staleVerdict } from './options.js';
 import { listKeys, randomConnectHex } from './support.js';
 import { AF_PUSH_DISABLED, pushEnabled, registerSubscription, revokeSubscription, sendPush } from './push.js';
+// W2 wiring: the page, the personal link and the approvals live in their own
+// modules; index.js only dispatches to them (SPEC §4).
+import { AF_LINK_KIND, linkRoute } from './link.js';
+import { deleteDraft, pageRoute, validateReplies } from './page-api.js';
+import { approvalsRoute } from './approvals-api.js';
 
 export const SERVICE_VERSION = '0.1.0';
 export { randomConnectHex };
@@ -79,16 +84,11 @@ export function r2Store(bucket) {
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
-    if (request.method === 'GET' && ['/uploads', '/uploads/', '/upload.js'].includes(path)) {
-      if (!env.DS_UPLOAD_ASSETS) return fail(503, 'AF-DS-UP-PAGE', 'Upload page is not ready.');
-      const assetUrl = new URL(path === '/upload.js' ? '/upload.js' : '/index.html', request.url);
-      const asset = await env.DS_UPLOAD_ASSETS.fetch(new Request(assetUrl, request));
-      const headers = new Headers(asset.headers);
-      headers.set('Cache-Control', 'no-store');
-      headers.set('Referrer-Policy', 'no-referrer');
-      headers.set('X-Content-Type-Options', 'nosniff');
-      headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.r2.cloudflarestorage.com; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
-      return new Response(asset.body, { status: asset.status, headers });
+    // The whole studio page, the admin page and the upload page are static
+    // files under the assets dir (ui/); every JSON route starts with /api/.
+    if (request.method === 'GET' && !path.startsWith('/api/')) {
+      const assetPath = staticAssetPath(path);
+      if (assetPath) return serveAsset(request, env, assetPath);
     }
     const store = kvStore(env.DS_STUDIO);
     const objects = r2Store(env.DRAMA_STUDIO);
@@ -141,6 +141,13 @@ export async function handle(request, env, store, objects, deps = {}) {
 
   // POST /api/studio/pair — U12 mints the code, this burns it (section 3.11)
   if (request.method === 'POST' && url.pathname === '/api/studio/pair') {
+    // The 5-try lock has to hold per CALLER, not per code: a wrong code finds
+    // no record, so a per-code counter never increments (section 3.11).
+    const pairFailKey = `pairfail:${request.headers.get('CF-Connecting-IP') || 'unknown'}`;
+    const pairFails = Number(await store.kvGet(pairFailKey)) || 0;
+    if (pairFails >= PAIRING_MAX_TRIES) {
+      return fail(403, AF_PAIR_LOCKED, 'Too many wrong codes from this address. Try again later.');
+    }
     const recordRaw = await store.kvGet(await pairRecordKey(body.code || ''));
     const attempt = await attemptPairing(recordRaw ? JSON.parse(recordRaw) : null, body.code, nowMs);
     if (!attempt.ok) {
@@ -149,8 +156,10 @@ export async function handle(request, env, store, objects, deps = {}) {
         // not a per-request guess.
         await store.kvPut(`pair:${attempt.record.fingerprint}`, JSON.stringify(attempt.record), 900);
       }
+      await store.kvPut(pairFailKey, String(pairFails + 1), 900);
       return fail(403, attempt.code, 'That pairing code cannot be used.');
     }
+    await store.kvDelete(pairFailKey);
     await store.kvDelete(`pair:${attempt.record.fingerprint}`);
     const minted = await mintKey();
     const machine = await buildKeyRecord({
@@ -214,6 +223,13 @@ export async function handle(request, env, store, objects, deps = {}) {
     return ok({ attempted: out.attempted, sent: out.sent, failed: out.failed, pruned: out.pruned });
   }
 
+  // POST /api/studio/admin/link — the one route with no key: the admin page
+  // presents the admin_key in the body, for any client (SPEC §4).
+  if (request.method === 'POST' && url.pathname === '/api/studio/admin/link') {
+    const adminLink = await linkRoute(request, { store, env, body, url, nowMs, ok, fail, isAdmin });
+    if (adminLink) return adminLink;
+  }
+
   // Everything below needs a key.
   const auth = await authorizeClient(store, key, body.client_id);
   if (!auth.ok) {
@@ -228,6 +244,15 @@ export async function handle(request, env, store, objects, deps = {}) {
     return fail(401, auth.code, 'That key cannot open this.');
   }
   const clientId = auth.client_id;
+
+  // W2 dispatch: link, page and approvals routes answer their own paths; the
+  // first non-null Response wins and everything else falls through to the
+  // routes below (SPEC §4).
+  const ctx = { store, env, objects, auth, body, url, nowMs, ok, fail, isAdmin, project };
+  for (const route of [linkRoute, pageRoute, approvalsRoute]) {
+    const routed = await route(request, ctx);
+    if (routed) return routed;
+  }
 
   // POST /api/studio/push/subscribe — a browser registers its OWN subscription.
   // With web push off this refuses and stores NOTHING (section 5.2: a refusal
@@ -263,17 +288,26 @@ export async function handle(request, env, store, objects, deps = {}) {
 
   // POST /api/studio/orders — the client tapped Lock it in
   if (request.method === 'POST' && url.pathname === '/api/studio/orders') {
+    // The answers are the order: the box replays them through factory.py, so
+    // they are validated against the SPEC §4 limits and stored on the record
+    // (they used to be dropped — only the title survived).
+    const checked = validateReplies(body.replies === undefined ? [] : body.replies, body.upload_ids);
+    if (!checked.ok) return fail(400, checked.code, checked.message);
     const orderId = body.order_id || `r_${randomConnectHex(4)}`;
     const order = {
       order_id: orderId,
       client_id: clientId,
       title: String(body.title || 'your video'),
+      replies: checked.replies,
+      upload_ids: checked.uploadIds,
       state: 'waiting',
       paid_started: false,
       created_at: nowMs,
       updated_at: nowMs,
     };
     await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(order));
+    // Lock it in ends the draft: the order holds the answers now.
+    await deleteDraft(objects, clientId);
     const waiting = await waitingList(store, clientId);
     await writeInbox(objects, { clientId, orders: waiting, nowMs });
     return ok({
@@ -304,9 +338,23 @@ export async function handle(request, env, store, objects, deps = {}) {
     }
 
     if (verb === 'state' && request.method === 'POST') {
+      // SPEC §3: the phone may cancel its own order and nothing else — claim,
+      // deliver and every other event belong to the box or the computer.
+      if (auth.record.kind === 'link' && body.event !== 'cancel') {
+        return fail(403, AF_LINK_KIND, 'A personal link may only cancel an order.');
+      }
       const moved = transition(JSON.parse(raw), body.event, { nowMs, actor: body.actor || auth.record.kind });
       if (!moved.ok) return fail(409, moved.code, moved.message);
       if (body.event === 'claim' || body.event === 'needs_you') moved.order.paid_started = Boolean(body.paid_started);
+      if (body.event === 'deliver' && body.delivery && typeof body.delivery === 'object') {
+        // The page shows WHERE the video is (GHL library first, R2 copy
+        // second). Only an https URL and one of the two known kinds are stored.
+        const deliveryUrl = typeof body.delivery.url === 'string' ? body.delivery.url : '';
+        const deliveryKind = body.delivery.kind === 'ghl' || body.delivery.kind === 'r2' ? body.delivery.kind : null;
+        if (deliveryUrl.startsWith('https://') && deliveryKind) {
+          moved.order.delivery = { url: deliveryUrl, kind: deliveryKind };
+        }
+      }
       await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(moved.order));
       await writeInbox(objects, { clientId, orders: await waitingList(store, clientId), nowMs });
       return ok({ order: project(moved.order, nowMs) });
@@ -343,6 +391,45 @@ export async function handle(request, env, store, objects, deps = {}) {
 export function isAdmin(env, presented) {
   const expected = env && env.DS_ADMIN_KEY;
   return typeof expected === 'string' && expected.length > 0 && presented === expected;
+}
+
+/** The one place that maps a public GET path onto a file inside the assets
+ *  directory (ui/). Everything that is not /api/ is a page file (SPEC §4). */
+function staticAssetPath(path) {
+  if (path === '/' || path === '/index.html') return '/index.html';
+  if (path === '/admin' || path === '/admin/') return '/admin/index.html';
+  if (path === '/uploads' || path === '/uploads/') return '/upload/index.html';
+  if (path === '/upload.js') return '/upload/upload.js';
+  if (path.startsWith('/api/')) return null;
+  return path;
+}
+
+/** Serve one file from the assets binding with the service's own headers.
+ *  The upload page moved from the assets root into ui/upload/, so a bundle
+ *  deployed before that move still answers at the root: try ui/upload/ first,
+ *  then the root. */
+async function serveAsset(request, env, assetPath) {
+  if (!env.DS_UPLOAD_ASSETS) return fail(503, 'AF-DS-UP-PAGE', 'That page is not ready.');
+  const candidates = assetPath === '/upload/index.html' ? [assetPath, '/index.html'] : [assetPath];
+  let asset = null;
+  for (const candidate of candidates) {
+    try {
+      const got = await env.DS_UPLOAD_ASSETS.fetch(new Request(new URL(candidate, request.url), request));
+      if (got && got.status >= 200 && got.status < 300) {
+        asset = got;
+        break;
+      }
+    } catch {
+      // A bundle without that file: try the next candidate.
+    }
+  }
+  if (!asset) return fail(404, 'AF-DS-UP-PAGE', 'That page is not ready.');
+  const headers = new Headers(asset.headers);
+  headers.set('Cache-Control', 'no-store');
+  headers.set('Referrer-Policy', 'no-referrer');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.r2.cloudflarestorage.com; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
+  return new Response(asset.body, { status: asset.status, headers });
 }
 
 async function clientRecord(store, clientId) {

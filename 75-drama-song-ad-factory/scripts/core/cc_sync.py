@@ -90,6 +90,12 @@ CREATE TABLE IF NOT EXISTS epic_ids(
   epic_id TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS card_ids(
+  job_id TEXT NOT NULL,
+  stage_slug TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  PRIMARY KEY (job_id, stage_slug)
+);
 """
 
 #: CC deliverable types (src/lib/validation.ts CreateDeliverableSchema).
@@ -156,8 +162,14 @@ class Outbox:
 
     def __init__(self, db_path=":memory:", base_url=None, workspace=None, sender=None):
         # CC_PORT is what Command Center's ecosystem.config.cjs exports; default stays 4000.
+        # Env order matches every other fleet board client (mc_board.py,
+        # cc_board.py): CC_BASE_URL, then COMMAND_CENTER_URL, then MISSION_CONTROL_URL.
         default_url = "http://127.0.0.1:%s" % (os.environ.get("CC_PORT") or "4000")
-        self.base_url = (base_url or os.environ.get("CC_BASE_URL") or default_url).rstrip("/")
+        self.base_url = (base_url
+                         or os.environ.get("CC_BASE_URL")
+                         or os.environ.get("COMMAND_CENTER_URL")
+                         or os.environ.get("MISSION_CONTROL_URL")
+                         or default_url).rstrip("/")
         self.workspace = workspace or os.environ.get("CC_WORKSPACE", "")
         if not self.workspace:
             raise BoardSyncError("workspace binding required (pass workspace= or set CC_WORKSPACE)")
@@ -249,6 +261,42 @@ class Outbox:
             payload["description"] = description
         return self._insert("deliverable", epic_id, None, workspace, payload)
 
+    def enqueue_stage_deliverable(self, job_id, stage_slug, url, title, workspace,
+                                  description=None):
+        """Register a ``url`` deliverable on ONE stage card.
+
+        The Command Center refuses ``review``/``done`` on a card with no
+        registered deliverable (task-lifecycle.ts PRECONDITION_EVIDENCE), so a
+        stage card must say where its work landed before it can move up. The
+        POST address is the stage card's TASK id, kept in ``card_ids`` from the
+        create response's ``stages[].id`` (see _seed_cards) — resolved at send
+        time, so this may be queued in the same flush as the create.
+        """
+        self._bind(workspace)
+        if not (1 <= len(job_id) <= 128):
+            raise BoardSyncError("job_id length out of range")
+        if not (1 <= len(stage_slug) <= 64):
+            raise BoardSyncError("stage slug length out of range")
+        if not (1 <= len(title) <= 500):
+            raise BoardSyncError("deliverable title length out of range")
+        path = (url or "").strip()
+        # CC FIX 27 refuses a non-http(s) url at registration; fail here instead.
+        if not (path.startswith("http://") or path.startswith("https://")):
+            raise BoardSyncError("stage deliverable url must be http(s): %r" % (url,))
+        payload = {"deliverable_type": "url", "path": path, "title": title}
+        if description is not None:
+            payload["description"] = description
+        return self._insert("deliverable", job_id, stage_slug, workspace, payload)
+
+    def stage_deliverable_queued(self, job_id, stage_slug):
+        """True when a stage card already carries a deliverable that is not
+        terminal-rejected (pending/sent/acked)."""
+        row = self.db.execute(
+            "SELECT 1 FROM outbox WHERE kind='deliverable' AND job_id=? AND stage_slug=?"
+            " AND state IN (?,?,?) LIMIT 1",
+            (job_id, stage_slug, PENDING, SENT, ACKED)).fetchone()
+        return row is not None
+
     def epic_id(self, job_id):
         """The epic card id recorded for this campaign's create, or None."""
         row = self.db.execute("SELECT epic_id FROM epic_ids WHERE job_id=?",
@@ -270,6 +318,14 @@ class Outbox:
                 raise BlockedGateError("blocked requires a non-empty ask")
         if status in ("review", "done") and not (evidence or "").strip():
             raise EvidenceError("%s requires completion evidence" % status)
+        if status in ("review", "done") and not self.stage_deliverable_queued(job_id, stage_slug):
+            # CC answers a review/done move with 422 PRECONDITION_EVIDENCE when
+            # the card has no deliverable, and the outbox would mark it rejected.
+            # Refuse here instead: the remedy is one enqueue_stage_deliverable call.
+            raise EvidenceError(
+                "card %r has no registered deliverable: call "
+                "enqueue_stage_deliverable(%r, %r, url, title, workspace) before %s"
+                % (stage_slug, job_id, stage_slug, status))
         if status == "done":  # independent completion authority: no self-approval
             if not reviewer:
                 raise SelfApprovalError("done requires an independent reviewer")
@@ -319,7 +375,7 @@ class Outbox:
                 elif kind == "create":
                     self._send_create(rid, job_id, body, report)
                 elif kind == "deliverable":
-                    self._send_deliverable(rid, job_id, body, report)
+                    self._send_deliverable(rid, job_id, stage, body, report)
                 else:
                     self._send_move(rid, job_id, stage, body, report)
             except AuthError:
@@ -359,7 +415,23 @@ class Outbox:
             if isinstance(s, dict) and s.get("slug"):
                 self.db.execute("INSERT OR IGNORE INTO card_state(job_id,stage_slug,status) VALUES(?,?,?)",
                                 (job_id, s["slug"], s.get("status", "backlog")))
+                # stages[].id is the card's task id (ad-campaigns.ts StageRef):
+                # the deliverable POST is addressed to it, never to the campaign.
+                if s.get("id"):
+                    self.db.execute(
+                        "INSERT OR REPLACE INTO card_ids(job_id,stage_slug,task_id) VALUES(?,?,?)",
+                        (job_id, s["slug"], s["id"]))
         self.db.commit()
+
+    def _stage_task_id(self, job_id, stage_slug):
+        """Task id of a stage card, or None when the create never landed.
+        An epic deliverable row already carries its card id in job_id."""
+        if not stage_slug:
+            return job_id
+        row = self.db.execute(
+            "SELECT task_id FROM card_ids WHERE job_id=? AND stage_slug=?",
+            (job_id, stage_slug)).fetchone()
+        return row[0] if row else None
 
     def _send_create(self, rid, job_id, body, report):
         self._mark_sent(rid)
@@ -381,26 +453,40 @@ class Outbox:
             self._resolve(rid, REJECTED, {"http": status, "code": (resp or {}).get("code", "BAD_REQUEST")})
             report["rejected"].append(rid)
 
-    def _send_deliverable(self, rid, epic_id, body, report):
+    def _send_deliverable(self, rid, job_id, stage, body, report):
+        # job_id is the campaign for a stage deliverable (stage slug set) and
+        # the epic card for an epic deliverable (stage slug None).
+        task_id = self._stage_task_id(job_id, stage)
+        if task_id is None:
+            # The stage card id never arrived (create rejected or never enqueued):
+            # the POST cannot be addressed. Terminal and named, never a blind retry.
+            self._resolve(rid, REJECTED, {"http": 0, "code": "CARD_ID_UNKNOWN",
+                                          "stage": stage})
+            report["rejected"].append(rid)
+            return
         self._mark_sent(rid)
-        status, resp = self.sender("POST", "/api/tasks/%s/deliverables" % epic_id, body)
+        status, resp = self.sender("POST", "/api/tasks/%s/deliverables" % task_id, body)
         if status in (200, 201):
-            self._resolve(rid, ACKED, {"http": status, "deliverable": epic_id})
+            self._resolve(rid, ACKED, {"http": status, "deliverable": task_id})
             report["acked"].append(rid)
         elif status == 404:
-            # Unknown epic: reconciled against the board before any retry —
+            # Unknown card: reconciled against the board before any retry —
             # update-existing-only, never auto-created here.
-            self._reconcile_deliverable(rid, epic_id, body, report)
+            self._reconcile_deliverable(rid, task_id, body, report)
         else:
             self._resolve(rid, REJECTED, {"http": status, "code": (resp or {}).get("code", "DELIVERABLE_FAILED")})
             report["rejected"].append(rid)
 
-    def _reconcile_deliverable(self, rid, epic_id, body, report):
-        """404 on the deliverable POST: GET the epic's deliverable list; ack
-        when the registration already landed (server replay), otherwise the
-        epic itself is gone — terminal, operator reconciles."""
+    def _reconcile_deliverable(self, rid, task_id, body, report):
+        """Deliverable row left sent (timeout/5xx, maybe dispatched): GET the
+        card's deliverable list; ack when the registration already landed
+        (server replay), otherwise it never did — terminal, operator reconciles."""
+        if task_id is None:
+            self._resolve(rid, REJECTED, {"http": 0, "code": "CARD_ID_UNKNOWN"})
+            report["rejected"].append(rid)
+            return
         try:
-            status, resp = self.sender("GET", "/api/tasks/%s/deliverables" % epic_id, None)
+            status, resp = self.sender("GET", "/api/tasks/%s/deliverables" % task_id, None)
         except TransportOutage as e:
             raise e
         known = [d for d in (resp or []) if isinstance(d, dict)]
@@ -409,7 +495,7 @@ class Outbox:
                 and d.get("path") == body.get("path")
                 for d in known):
             self._resolve(rid, ACKED, {"http": 200, "reconciled": True,
-                                       "deliverable": epic_id})
+                                       "deliverable": task_id})
             report["acked"].append(rid)
         else:
             self._resolve(rid, REJECTED, {"http": status, "code": (resp or {}).get("code", "EPIC_NOT_FOUND") if status != 200 else "EPIC_NOT_FOUND"})
@@ -433,6 +519,12 @@ class Outbox:
     def _reconcile(self, rid, kind, job_id, stage, body, report):
         """Row left sent (UNKNOWN after timeout/5xx): GET first, resend only
         what the server proves missing. Paid intents are never blindly re-sent."""
+        # A deliverable row's job_id is a TASK id (stage card id for a stage
+        # deliverable), never a campaign id: asking the campaign route about it
+        # 404s and would mark work that DID land as rejected.
+        if kind == "deliverable":
+            return self._reconcile_deliverable(rid, self._stage_task_id(job_id, stage),
+                                               body, report)
         try:
             status, resp = self.sender("GET", "/api/ad-campaigns/" + job_id, None)
         except TransportOutage as e:
@@ -444,12 +536,14 @@ class Outbox:
             self._resolve(rid, REJECTED, {"http": status, "code": (resp or {}).get("code", "RECONCILE_FAILED")})
             report["rejected"].append(rid)
             return
-        cards = {c.get("stage_slug"): c.get("status") for c in (resp or {}).get("cards", []) if isinstance(c, dict)}
+        cards = [{"slug": c.get("stage_slug"), "status": c.get("status"), "id": c.get("id")}
+                 for c in (resp or {}).get("cards", []) if isinstance(c, dict) and c.get("stage_slug")]
+        statuses = {c["slug"]: c["status"] for c in cards}
         if kind == "create":
-            self._seed_cards(job_id, [{"slug": k, "status": v} for k, v in cards.items()])
+            self._seed_cards(job_id, cards)
             self._resolve(rid, ACKED, {"http": 200, "created": False, "reconciled": True})
             report["acked"].append(rid)
-        elif cards.get(stage) == body["status"]:
+        elif statuses.get(stage) == body["status"]:
             self.db.execute("INSERT OR REPLACE INTO card_state(job_id,stage_slug,status) VALUES(?,?,?)",
                             (job_id, stage, body["status"]))
             self.db.commit()

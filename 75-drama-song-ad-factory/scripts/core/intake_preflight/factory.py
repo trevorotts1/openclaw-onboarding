@@ -30,6 +30,7 @@ approve -> `next` hands out music; anything else -> the edit is re-checked and r
 import argparse
 import json
 import re
+import shlex
 import sqlite3
 import sys
 import uuid
@@ -230,25 +231,166 @@ def _approval_runner():
         return None
 
 
+# ── STUDIO (SPEC §6): the studio page as an approval channel ─────────────────
+#
+# A run that came from the studio page carries `control/studio-order.json`
+# ({order_id, client_id, title, base_url} — no key; the key comes from the
+# bridge's own lookup). Two seams only, both through shared-bridge/
+# approvals_bridge.py (W1-box-bridge-U2): PUBLISH an approval item to the page,
+# READ the client's answer back. The approval rules themselves (first answer
+# wins, same version = same item) live in the service; nothing here re-derives
+# them.
+
+def _bridge_dir():
+    return Path(__file__).resolve().parents[3] / "shared-bridge"
+
+
+def _studio_order(run_dir):
+    """The studio order this run came from, or None (a chat/manual run)."""
+    try:
+        d = json.loads((Path(run_dir) / "control" / "studio-order.json")
+                       .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return d if isinstance(d, dict) and d.get("order_id") else None
+
+
+def _approvals_bridge():
+    """shared-bridge/approvals_bridge.py when the box has it; else None (fail closed)."""
+    br = str(_bridge_dir())
+    if br not in sys.path:
+        sys.path.insert(0, br)
+    try:
+        import approvals_bridge   # noqa: PLC0415
+        return approvals_bridge
+    except ImportError:
+        return None
+
+
+def _studio_key():
+    """The presented key, via the bridge's own lookup. Never printed."""
+    br = str(_bridge_dir())
+    if br not in sys.path:
+        sys.path.insert(0, br)
+    try:
+        import studio_bridge      # noqa: PLC0415
+        return studio_bridge.load_key()
+    except ImportError:
+        import os
+        return os.environ.get("DS_KEY") or ""
+
+
+def _studio_versions(run_dir):
+    """{stage: current approval version} — the version key the service scopes
+    items by (same version = same item, first answer wins)."""
+    try:
+        return json.loads((Path(run_dir) / "control" / "studio-versions.json")
+                          .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _studio_bump_version(run_dir, stage):
+    """One more approval round for this stage; returns the new version."""
+    v = _studio_versions(run_dir)
+    v[stage] = int(v.get(stage) or 0) + 1
+    p = Path(run_dir) / "control" / "studio-versions.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(v, indent=2, sort_keys=True), encoding="utf-8")
+    return v[stage]
+
+
+def _studio_publish(run_dir, order, stage, text, files, choices=()):
+    """One approval item on the studio page (approvals_bridge.publish). Returns
+    the item dict, or None when the bridge module is not on this box."""
+    ab = _approvals_bridge()
+    if ab is None:
+        return None
+    version = _studio_bump_version(run_dir, stage)
+    return ab.publish(order.get("base_url") or "", _studio_key(),
+                      order.get("order_id"), stage, version,
+                      text, list(choices), list(files))
+
+
+def _studio_answer(run_dir, stage):
+    """The client's studio answer for one approval stage, or None — never opens
+    a gate on a studio error, a missing bridge, or a never-published stage."""
+    order = _studio_order(run_dir)
+    ab = _approvals_bridge() if order else None
+    if not order or ab is None:
+        return None
+    version = int(_studio_versions(run_dir).get(stage) or 1)
+    try:
+        return ab.answer(order.get("base_url") or "", _studio_key(),
+                         order.get("order_id"), stage, version)
+    except Exception:   # noqa: BLE001 - a studio outage keeps the gate waiting
+        return None
+
+
+def _studio_apply(cmd, sid, run_dir, stage, approval, value):
+    """A studio ANSWER becomes the EXISTING apply command (script-reply /
+    song pick / storyboard --reply). No new approval logic here."""
+    q = shlex.quote
+    run = q(str(run_dir))
+    if approval == "script":
+        command = ("python3 scripts/core/intake_preflight/factory.py script-reply "
+                   "--run-dir %s --reply %s" % (run, q(str(value))))
+    elif approval == "song":
+        command = ("python3 scripts/core/song_choices/song_choices.py pick "
+                   "--run-dir %s --reply %s" % (run, q(str(value))))
+    else:
+        command = ("python3 scripts/core/intake_preflight/factory.py storyboard "
+                   "--run-dir %s --reply %s" % (run, q(str(value))))
+    return envelope(cmd, sid, "ok", "next-stage",
+                    "The client answered the %s approval on the studio page; "
+                    "run this command, then `next` again." % approval,
+                    data={"stage": stage, "command": command,
+                          "approval": approval, "answer": value})
+
+
 def cmd_storyboard(a):
-    """storyboard --run-dir D --target CHAT [--reply TEXT]: one approval step."""
+    """storyboard --run-dir D [--target CHAT] [--reply TEXT]: one approval step.
+
+    Delivery, in order (SPEC §6): the studio page when the run came from one
+    (approvals_bridge.publish), the client chat when a target exists (both when
+    the run has both — first answer wins), and with neither the cards and stills
+    come back in data for whoever called."""
     ar = _approval_runner()
     run_dir = str(Path(a.run_dir).expanduser().resolve())
     sid = Path(run_dir).name or "run"
     if ar is None:
         return envelope("storyboard", sid, "error", "approval-runner-missing",
                         "storyboard_director/approval_runner.py not importable.")
+    studio = _studio_order(run_dir)
+    target = a.target or ar.receipt_target(run_dir)
+    sent, stills = [], []
+
+    def send(message, images):
+        delivered = False
+        if studio:
+            delivered = _studio_publish(run_dir, studio, "storyboard", message,
+                                        [p for _n, p in images],
+                                        choices=["GO"]) is not None or delivered
+        if target:
+            ar.openclaw_sender(target)(message, images)
+            delivered = True
+        if not delivered:       # nowhere to send: hand the cards back to the caller
+            sent.append(message)
+            stills.extend(p for _n, p in images)
+
     try:
-        r = ar.run(run_dir, ar.openclaw_sender(a.target or ar.receipt_target(run_dir)),
-                   reply=a.reply)
+        r = ar.run(run_dir, send, reply=a.reply)
     except Exception as e:   # ApprovalError, missing files, send failure: loud, no video
         return envelope("storyboard", sid, "error", getattr(e, "code", "storyboard-failed"),
                         str(e)[:300])
     out = "ok" if r["action"] in ("approved", "revised") else "waiting"
+    data = dict(r)
+    if sent:
+        data["messages"], data["stills"] = sent, stills
     return envelope("storyboard", sid, out, r["action"],
                     "Run `next` for the video stage." if r["action"] == "approved"
                     else "Waiting for the client's reply (GO, or 'shot N: change ...').",
-                    data=r)
+                    data=data)
 
 
 def _deliverer(a, out):
@@ -400,6 +542,10 @@ def cmd_next(a):
     if next_stage == "video-generation":      # storyboard approval point
         ar = _approval_runner()
         if ar is not None and not ar.gate_open(str(run_dir)):
+            ans = _studio_answer(run_dir, "storyboard")
+            if ans:
+                return _studio_apply("next", str(sid), run_dir, next_stage,
+                                     "storyboard", ans)
             return envelope("next", str(sid), "waiting", "storyboard-approval-required",
                             "Video is blocked until the storyboard is approved. Run "
                             "`factory.py storyboard --run-dir %s --target <chat id>` "
@@ -418,6 +564,10 @@ def cmd_next(a):
         except Exception as exc:  # noqa: BLE001 - a broken gate never opens
             hold = {"reason_code": "SONG_GATE_BROKEN", "next_action": "song gate failed: %r" % (exc,)}
         if hold:
+            if hold["reason_code"] == "SONG_PICK_MISSING":   # the client's pick, via the studio
+                ans = _studio_answer(run_dir, "song")
+                if ans:
+                    return _studio_apply("next", str(sid), run_dir, next_stage, "song", ans)
             return envelope("next", str(sid), "error", hold["reason_code"], hold["next_action"],
                             data={"stage": next_stage, "detail": hold.get("detail", "")})
     row = rows.get(next_stage) or {"command": "", "produces": ""}
@@ -429,6 +579,11 @@ def cmd_next(a):
     if next_stage == "music":
         sa = _script_gate(run_dir, a, reply=None)
         if sa["outcome"] != "go":
+            if sa["outcome"] == "waiting":      # the client's answer, via the studio
+                ans = _studio_answer(run_dir, "script")
+                if ans:
+                    return _studio_apply("next", str(sid), run_dir, next_stage,
+                                         "script", ans)
             return _sa_envelope("next", str(sid), sa)
         # D2 item 1: SONG APPROVAL = Yes routes HERE, to the three-version
         # music runner, not the single dispatch runbook row.
@@ -511,7 +666,10 @@ def main(argv=None):
     c = sub.add_parser("card", help="Print the intake card (nine questions, ten with a saved character) as raw "
                                     "text (not JSON), or as send payloads (H9).")
     c.add_argument("--format", default="text",
-                   choices=("text", "openclaw-json", "telegram-json"))
+                   choices=("text", "openclaw-json", "telegram-json", "studio-json"),
+                   help="text: raw card for the chat. openclaw-json / telegram-json: "
+                        "send payloads. studio-json: the studio question/price/example "
+                        "export (SPEC §5).")
     c.add_argument("--target", default="", help="Telegram chat id")
     c.add_argument("--client-dir", default="",
                    help="Client data folder; adds the saved-character question when it has saved characters (I6).")
