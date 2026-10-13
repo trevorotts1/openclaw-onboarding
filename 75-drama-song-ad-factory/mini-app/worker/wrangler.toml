@@ -61,9 +61,10 @@ enabled = true
 [vars]
 DRAMA_STUDIO_BUCKET = "zhw-drama-studio"
 
-# Only the direct-upload page and its script. The Worker controls routing.
+# The WHOLE ui folder (studio page, admin, upload). The Worker controls routing
+# (run_worker_first), so every path reaches service/src/index.js first.
 [assets]
-directory = "../ui/upload"
+directory = "../ui"
 binding = "DS_UPLOAD_ASSETS"
 run_worker_first = true
 html_handling = "none"

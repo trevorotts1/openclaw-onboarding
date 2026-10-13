@@ -645,7 +645,7 @@ write_resolved_config() {
     -e "s#<PLACEHOLDER_KV_NAMESPACE_ID_DS_STUDIO>#${kv}#g" \
     -e "s#<PLACEHOLDER_KV_NAMESPACE_PREVIEW_ID_DS_STUDIO>#${kv}#g" \
     -e "s#^(main[[:space:]]*=[[:space:]]*).*#\1\"${main_abs}\"#" \
-    -e "s#^directory[[:space:]]*=[[:space:]]*.*#directory = \"${MINI_APP_DIR}/ui/upload\"#" \
+    -e "s#^directory[[:space:]]*=[[:space:]]*.*#directory = \"${MINI_APP_DIR}/ui\"#" \
     "$src" > "$dst"
 }
 
