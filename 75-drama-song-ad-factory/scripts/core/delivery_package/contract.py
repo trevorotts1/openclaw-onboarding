@@ -18,6 +18,15 @@ The run FAILS when the folder misses any item -- delivery_checklist Q12
 repair_scope, and packaging.package_run refuses to hand over a folder that
 does not verify.
 
+The folder also has to be CLEAN: the client is handed deliverables and
+nothing else. verify_folder lists the folder's top-level names and fails
+with DELIVERY_FOLDER_NOT_CLEAN for any name outside the contract (the 12
+items' files and folders) plus the three known extras -- the delivery
+receipt, the README and the song-choices folder -- and the
+``<Author> - <Title> - Song.mp3`` / ``.wav`` pair. A working file an agent
+or a producer dropped in there (a cost report, a QC strip, a half render)
+fails the gate instead of shipping.
+
 An item opens only when it opens:
   pdf   -- a real PDF header (%PDF-), never a renamed text file;
   srt   -- a cue block: an index line then a timing line "HH:MM:SS,mmm --> ..."
@@ -120,6 +129,29 @@ PACKAGE_ITEMS = (
 ITEMS_BY_KEY = {item.key: item for item in PACKAGE_ITEMS}
 assert len(ITEMS_BY_KEY) == 12 == len(PACKAGE_ITEMS)
 
+#: the clean-folder gate's failure code (SPEC B3b): the client folder holds
+#: deliverables only, so a top-level name outside the allow-list fails.
+DELIVERY_FOLDER_NOT_CLEAN = "DELIVERY_FOLDER_NOT_CLEAN"
+
+#: the three known extras beside the 12 items: the delivery receipt, the
+#: client README and the song-choices folder.
+EXTRA_ALLOWED = ("delivery-receipt.json", "README.md", "SONG-CHOICES")
+
+#: '<Author> - <Title> - Song.mp3' and its '.wav' twin (SKILL.md song pair).
+_SONG_PAIR = re.compile(r"^.+ - .+ - Song\.(mp3|wav)$")
+
+
+def allowed_top_level():
+    """The names a clean delivery folder may hold at its top level."""
+    names = {name for item in PACKAGE_ITEMS for name in item.files}
+    names.update(EXTRA_ALLOWED)
+    return frozenset(names)
+
+
+def is_allowed_top_level(name):
+    """True when this top-level folder name is a deliverable or a known extra."""
+    return name in allowed_top_level() or bool(_SONG_PAIR.match(name))
+
 
 def _problem(path, kind):
     """None when the file opens, else the one sentence that says why not."""
@@ -163,14 +195,16 @@ def _problem(path, kind):
 def verify_folder(folder):
     """Check a delivery folder against all 12 package items. Never raises.
 
-    Returns {"ok", "folder", "expected", "present", "missing", "problems"}
-    where missing holds the package keys and problems names item + file +
-    the sentence that failed. A folder that does not exist misses all 12.
+    Returns {"ok", "folder", "expected", "present", "missing", "problems",
+    "not_clean"} where missing holds the package keys, problems names item +
+    file + the sentence that failed, and not_clean holds every top-level name
+    outside the allow-list (each one also a problem, code
+    DELIVERY_FOLDER_NOT_CLEAN). A folder that does not exist misses all 12.
     """
     root = Path(folder)
     report = {"contract_version": CONTRACT_VERSION, "folder": str(root),
               "expected": len(PACKAGE_ITEMS), "present": [], "missing": [],
-              "problems": [], "ok": False}
+              "problems": [], "not_clean": [], "ok": False}
     if not root.is_dir():
         report["missing"] = [item.key for item in PACKAGE_ITEMS]
         report["problems"] = [{"item": "", "unit": "", "file": str(root),
@@ -188,7 +222,16 @@ def verify_folder(folder):
             report["missing"].append(item.key)
         else:
             report["present"].append(item.key)
-    report["ok"] = not report["missing"]
+    for entry in sorted(root.iterdir()):
+        if is_allowed_top_level(entry.name):
+            continue
+        report["not_clean"].append(entry.name)
+        report["problems"].append(
+            {"item": "", "unit": "", "file": entry.name,
+             "problem": "%s: extra %s not in the delivery contract"
+                        % (DELIVERY_FOLDER_NOT_CLEAN,
+                           "directory" if entry.is_dir() else "file")})
+    report["ok"] = not report["missing"] and not report["not_clean"]
     return report
 
 
