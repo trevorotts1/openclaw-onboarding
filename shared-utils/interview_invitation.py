@@ -90,7 +90,7 @@ def load_service_environment(state, env):
     filename=launch.get('serviceEnvPath') if isinstance(launch,dict) else None
     if filename is None:return result
     if not isinstance(filename,str) or not Path(filename).is_absolute(): raise Pending('service environment path invalid')
-    allowed={'MC_TENANT_ID','MC_COMPANY_ID','MC_INSTALLATION_ID','MC_TENANT_PUBLIC_URL','MC_API_TOKEN','CF_ACCESS_CLIENT_ID','CF_ACCESS_CLIENT_SECRET'}
+    allowed={'MC_TENANT_ID','MC_COMPANY_ID','MC_INSTALLATION_ID','CC_PUBLIC_URL','MC_TENANT_PUBLIC_URL','MC_API_TOKEN','CF_ACCESS_CLIENT_ID','CF_ACCESS_CLIENT_SECRET'}
     stored={}
     try:
         file=Path(filename)
@@ -146,7 +146,12 @@ def resolve_public_origin(state, env, fetch=None):
         if record.get('protocol') != PROTOCOL: raise Pending('canonical origin protocol mismatch')
         if any(record.get(k) != v for k,v in expected.items()): raise Pending('canonical origin identity mismatch')
         candidate = record.get('origin')
-    candidates = [v for v in [candidate, env.get('MC_TENANT_PUBLIC_URL'), state.get('commandCenterUrl'), env.get('OPENCLAW_DASHBOARD_URL')] if v]
+    # Item 12: the app's own configured origin resolves CC_PUBLIC_URL-first
+    # (tenant-context configuredPublicOrigin), so the sender must accept the
+    # SAME name — a box configured only with CC_PUBLIC_URL could never reach
+    # readiness from here while the app itself served that origin. Every
+    # candidate must still agree: a genuine origin conflict refuses.
+    candidates = [v for v in [candidate, env.get('CC_PUBLIC_URL'), env.get('MC_TENANT_PUBLIC_URL'), state.get('commandCenterUrl'), env.get('OPENCLAW_DASHBOARD_URL')] if v]
     if not candidates: raise Pending('public interview origin pending')
     origins = [public_origin(v)[0] for v in candidates]
     if len(set(origins)) != 1: raise Pending('public origin configuration conflict')

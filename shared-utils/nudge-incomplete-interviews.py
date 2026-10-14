@@ -221,6 +221,23 @@ def resolve_interview_link(state: dict, env=None):
     env = env if env is not None else os.environ
     if not isinstance(state, dict):
         return None, "build state is not an object"
+    # Decision (team-lead 2026-10-13, item 12): a recorded NOT-ready probe whose
+    # missing reasons name the registration gap must surface THAT allowlisted
+    # cause in place of the link. verify-tenant-readiness.py's record() pops the
+    # stale verified origin on failure (the state stays truthful — a stale origin
+    # never survives as if the host were ready) and keeps the probe receipt under
+    # commandCenterTenantVerification. That receipt is where the cause lives, and
+    # it must be read BEFORE the origin candidates: otherwise a surviving
+    # MC_TENANT_PUBLIC_URL / commandCenterUrl would resurrect a link for the very
+    # host the issuer just refused, and the owner would get a dead-end message
+    # while the log kept nothing. The reason string is the exact vocabulary the
+    # shell sender and readiness use (item 10/13 allowlist) — one vocabulary
+    # everywhere. No gateway call, no message, no link when this fires.
+    verification = state.get("commandCenterTenantVerification")
+    if isinstance(verification, dict) and verification.get("ready") is False:
+        missing = verification.get("missing")
+        if isinstance(missing, list) and "access_identity_unregistered" in missing:
+            return None, "access_identity_unregistered"
 
     def _clean(value):
         return value.strip() if isinstance(value, str) and value.strip() else None
