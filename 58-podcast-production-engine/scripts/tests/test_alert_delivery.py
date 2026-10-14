@@ -53,6 +53,7 @@ def _load(name, path):
 
 SMOKE = _load("podcast_smoke_test", _SMOKE)
 CQ = _load("credit_queue", _CREDIT)
+DEDUP = _load("alert_dedup_delivery_target", _DEDUP)
 
 
 def _run_dedup(argv):
@@ -62,9 +63,14 @@ def _run_dedup(argv):
     return proc.returncode, (json.loads(lines[-1]) if lines else {})
 
 
+# Every name alert-dedup.py may resolve a target from, in the environment or in
+# the box config file.
+_FOUNDER_TARGET_ENV = ("PODCAST_FOUNDER_ALERT_CHAT", "OPERATOR_TELEGRAM_CHAT_ID",
+                       "FOUNDER_TELEGRAM_CHAT_ID", "OPERATOR_ESCALATION_CHAT_ID")
+
+
 def _clear_founder_env():
-    for k in ("PODCAST_FOUNDER_ALERT_CHAT", "OPERATOR_TELEGRAM_CHAT_ID",
-              "FOUNDER_TELEGRAM_CHAT_ID"):
+    for k in _FOUNDER_TARGET_ENV:
         os.environ.pop(k, None)
 
 
@@ -179,6 +185,58 @@ class CreditQueueDeliveryTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(d["action"], "queued_digest")
         self.assertEqual(d["severity"], "digest")
+
+
+class FounderTargetResolutionTest(unittest.TestCase):
+    """Where a founder alert target comes from (Guardrail 7, ONB58-ALERT-DELIVERY).
+
+    Nothing exports these names into the process environment on every box, so a
+    box that only carries its escalation chat in openclaw.json must still
+    resolve - and a value that is not a chat id (a tombstone placeholder) must
+    count as UNSET rather than become a send target."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="onb58-target-")
+        self._home = os.environ.get("HOME")
+        os.environ["HOME"] = self.tmp          # the box config lives under HOME
+        _clear_founder_env()
+
+    def tearDown(self):
+        _clear_founder_env()
+        if self._home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self._home
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write_box_config(self, env_vars):
+        d = Path(self.tmp) / ".openclaw"
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / "openclaw.json", "w", encoding="utf-8") as fh:
+            json.dump({"env": {"vars": env_vars}}, fh)
+
+    def test_box_config_escalation_chat_resolves(self):
+        self._write_box_config({"OPERATOR_ESCALATION_CHAT_ID": "-100123"})
+        self.assertEqual(DEDUP._resolve_founder_target(None), "-100123")
+
+    def test_environment_wins_over_box_config(self):
+        self._write_box_config({"OPERATOR_ESCALATION_CHAT_ID": "-100123"})
+        os.environ["PODCAST_FOUNDER_ALERT_CHAT"] = "founder-env-target"
+        self.assertEqual(DEDUP._resolve_founder_target(None),
+                         "founder-env-target")
+
+    def test_value_that_is_not_a_chat_id_is_unset(self):
+        # File tombstone: the config file is authoritative, so no target at all.
+        self._write_box_config(
+            {"OPERATOR_ESCALATION_CHAT_ID": "REMOVED-OPERATOR-CHAT-ID"})
+        self.assertIsNone(DEDUP._resolve_founder_target(None))
+        # Same tombstone arriving through the environment: also unset, and it
+        # must not mask a usable legacy environment name either.
+        self._write_box_config({})
+        os.environ["OPERATOR_ESCALATION_CHAT_ID"] = "REMOVED-OPERATOR-CHAT-ID"
+        self.assertIsNone(DEDUP._resolve_founder_target(None))
+        os.environ["FOUNDER_TELEGRAM_CHAT_ID"] = "-4242"
+        self.assertEqual(DEDUP._resolve_founder_target(None), "-4242")
 
 
 if __name__ == "__main__":

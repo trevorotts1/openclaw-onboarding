@@ -1,5 +1,25 @@
 # Changelog - 58 Podcast Production Engine (58-podcast-production-engine)
 
+## v1.0.16 - 2026-10-14 - fix(podcast): fourteen QC-passed engine fixes in one batch
+
+Nine QC-passed fix branches merged in one batch, plus the single-writer Skill 58 version bump.
+
+- repo-01 (`scripts/podbean_publish.sh`): the publish script picks the Podbean show by production mode after loading the box secrets, and refuses a draft show in proxy mode.
+- repo-02 (`scripts/podcast_step_driver.py`): the step driver emits runnable Step 10, 15, 16 and 17 plus the content commands, carrying mode, show, release date, cover prompt and the default directories.
+- repo-03 (`scripts/webhook/mapper.py`): the intake mapper carries `visual_description` through and rejects an unfilled `SET_AT_PROVISIONING` placeholder instead of publishing it.
+- repo-04 (`scripts/webhook/intake_handler.py`): the duplicate-guest guard runs for Interview mode only, so a Personal re-run is never blocked by it.
+- repo-05 (`scripts/podcast_step_driver.py`, `modes/personal.md`): Personal mode skips the Step 16 link-back, so the episode URL field never fires workflow 04.
+- repo-06 (`scripts/caf/enrollment/enroll.py`): enrollment resolves workflows 04 and 06 to the single PUBLISHED workflow carrying that exact name.
+- repo-07 (`scripts/ghl_credential_gate.py`): the Step 0 credential gate reads the box secrets files.
+- repo-08 (`wire.sh`): `wire.sh` loads `PODCAST_INTAKE_INBOUND_SECRET`, so activation health check B5 can pass.
+- repo-09 (`scripts/alert-dedup.py`): founder alerts fall back to the fleet operator escalation chat when the primary destination is not configured.
+- repo-10 (`scripts/provision-podcast-client.sh`): the provisioner pushes the snapshot to an explicit client location, keeps a truthful ledger, and installs a working idempotent smoke cron.
+- repo-11 (`scripts/activate-podcast-fb-workflows.py`, `scripts/verify-podcast-ghl-workflows.py`): the internal-rail workflow readers match the exact current template names, page past the 200-item cap, and prefer the copy carrying the expected status.
+- repo-12 (`PODCAST-SNAPSHOT-BUILD-MANIFEST.md`, `config/podcast-snapshot-registry.json`): SOP-02 carries the per-client 04/06 publish step, and manifest Section J plus the registry state what is actually live.
+- n8n-02 (`config/n8n/`): the checked-in n8n exports match the deployed publish rail and standing-check, with two behavior tests pinning them.
+- box lane 01 (`scripts/podcast-smoke-test.py`, `scripts/podcast_state.py`, `scripts/webhook/intake_handler.py`): the intake bridge writes its ledger to the right directory, preserves test state, and isolates its own self-test.
+- repo-14: `skill-version.txt` and the SKILL.md frontmatter move to v1.0.16 together, with this entry. One writer owns the Skill 58 version files; the root version file is left to the merge train.
+
 ## v1.0.14 - 2026-10-06 - feat(kie): one KIE path through the Skill 74 transport
 
 - `scripts/generate_cover.sh` (Step 10) now calls Skill 74's CLI (`kie_live_adapter.py submit`, `wait`, `save`, `--mode active --json`) for the cover job, found as a sibling skill folder. If Skill 74 is not installed the step exits 2 with a clear message; there is no fallback to a second client.
