@@ -19,7 +19,9 @@ are used (agents >= 1, kie_inflight <= 8, one machine-sized ffmpeg pool).
 No automatic runner: the agent loops next -> run the command -> register ->
 next (manual B1 step 5).
 
-SCRIPT APPROVAL (card question 11): when `next` would hand out the `music` stage
+SCRIPT APPROVAL (the card question labelled SCRIPT APPROVAL -- never a position
+number, which drifts when the card grows): when `next` would hand out the `music`
+stage
 and the client answered Yes, it first runs script_approval.stage.run_stage: sends
 the script through the client-delivery path (`openclaw message send` to --target,
 or, with no --target, the messages come back in data.messages for the chat),
@@ -609,6 +611,26 @@ def cmd_next(a):
                     data=nxt, evidence=["%s" % db, runbook_path])
 
 
+def _card_help():
+    """`card` subcommand help carrying the card's LIVE total.
+
+    SWI-002: the total is read off QUESTIONS at parser-build time, so this file
+    holds no literal question count for the card and cannot repeat the stale
+    literal one it used to carry. When the card module is not importable here
+    the help claims no total at all rather than guessing one.
+    """
+    total = ""
+    try:
+        core = str(Path(__file__).resolve().parent.parent)
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        from choice_card.intake_card import intake_card as _card  # noqa: PLC0415
+        total = " (%d questions, the same total with a saved character)" % len(_card.QUESTIONS)
+    except Exception:  # noqa: BLE001 - card module absent: claim no total
+        total = ""
+    return "Print the intake card%s as raw text (not JSON), or as send payloads (H9)." % total
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="factory.py",
                                  description="Drama-song factory control CLI (intake/preflight/next).")
@@ -663,8 +685,7 @@ def main(argv=None):
     sr.add_argument("--run-dir", required=True)
     sr.add_argument("--reply", required=True)
     sr.add_argument("--target", default="")
-    c = sub.add_parser("card", help="Print the intake card (nine questions, ten with a saved character) as raw "
-                                    "text (not JSON), or as send payloads (H9).")
+    c = sub.add_parser("card", help=_card_help())
     c.add_argument("--format", default="text",
                    choices=("text", "openclaw-json", "telegram-json", "studio-json"),
                    help="text: raw card for the chat. openclaw-json / telegram-json: "
@@ -672,7 +693,7 @@ def main(argv=None):
                         "export (SPEC §5).")
     c.add_argument("--target", default="", help="Telegram chat id")
     c.add_argument("--client-dir", default="",
-                   help="Client data folder; adds the saved-character question when it has saved characters (I6).")
+                   help="Client data folder; swaps in the saved-character question when it has saved characters (I6).")
     c.add_argument("--run-state-file", default="",
                    help="with --step and no replies: first call sends the one-time intro, next call question 1")
     c.add_argument("--price", default=None, help="card total in dollars, shown in the spend question")
