@@ -484,6 +484,28 @@ REPIN_LOG_RELATIVE = ("working", "logs", "repin.log")
 REPIN_TIMEOUT_S = 120.0
 
 
+#: PRES-039: dispatch() refuses when the engine compatibility preflight
+#: fails (AF-ENGINE-STALE-DUPLICATE / AF-ENGINE-CONTRACT-DRIFT) -- joins
+#: the -1..-11 refusal family. Nothing spawned. A stale PYTHONPATH
+#: duplicate or a contract-drifted copy must never be silently imported
+#: at dispatch.
+#: NUMBERING: the CC vendored copy numbers this sentinel -8, but in THIS
+#: (canonical) tree -8 is DISPATCH_OCR_REFUSED (FIX 33) and -9..-11 are
+#: taken, so the engine sentinel takes the next free value, -12.
+#: engine_origin._check_contract asserts THIS value in this file; the
+#: check and the launcher travel together from this tree (Item 7
+#: generated sync), so the pair cannot drift apart silently.
+DISPATCH_ENGINE_REFUSED = -12
+
+#: CLI exit code for DISPATCH_ENGINE_REFUSED.
+EXIT_ENGINE_REFUSED = 13
+
+ENGINE_AUTOFAIL_CODES = (
+    "AF-ENGINE-STALE-DUPLICATE",
+    "AF-ENGINE-CONTRACT-DRIFT",
+)
+
+
 #: Mirrors capacity.STATUS_UNDETERMINED. `available` is non-None in this status
 #: (it's capacity.DEFAULT_CONSERVATIVE) but was NEVER MEASURED -- it is a floor
 #: to proceed AT, not a ceiling this account was proven to support. Checking
@@ -1541,7 +1563,10 @@ def dispatch(
         (AF-CREDIT-PREFLIGHT, nothing spawned), -7 when the notify transport
         is unconfigured (AF-NOTIFY-UNCONFIGURED, FIX 22 fail-closed,
         nothing spawned), -11 when a resume needed an auto-repin and the
-        repin failed (AF-MANIFEST-REPIN-FAILED, F2, nothing spawned).
+        repin failed (AF-MANIFEST-REPIN-FAILED, F2, nothing spawned),
+        -12 when the PRES-039 engine preflight refused
+        (AF-ENGINE-STALE-DUPLICATE / AF-ENGINE-CONTRACT-DRIFT, nothing
+        spawned).
         The function returns immediately when background=True.
     """
     # Single-sourced validation (fix/deck-type-routing-bypass): deck_type is
@@ -1564,6 +1589,29 @@ def dispatch(
     if not engine_entry.is_file():
         print(f"launcher: engine entry not found at {engine_entry}", file=sys.stderr)
         return -1
+
+    # PRES-039: compatibility preflight BEFORE every other gate -- a stale
+    # PYTHONPATH duplicate or a contract-drifted copy refuses here
+    # (AF-ENGINE-STALE-DUPLICATE / AF-ENGINE-CONTRACT-DRIFT), never dispatch.
+    try:
+        try:
+            from . import engine_origin as _engine_origin
+        except ImportError:
+            import engine_origin as _engine_origin  # direct file run
+        _pf_code, _pf_report = _engine_origin.preflight()
+        print(f"launcher: {_engine_origin.format_origin_line(_pf_report['origin'])}",
+              flush=True)
+        if _pf_code != 0:
+            print(f"launcher: REFUSING to dispatch -- "
+                  f"{_pf_report.get('autofail')}: {_pf_report.get('detail')}",
+                  file=sys.stderr)
+            return DISPATCH_ENGINE_REFUSED
+    except ImportError:
+        # engine_origin module absent (pre-PRES-039 tree): record
+        # UNDETERMINED, never silently claim provenance. Dispatch proceeds --
+        # the gate it would enforce did not exist when that copy was made.
+        print("launcher: engine origin UNDETERMINED (engine_origin module "
+              "absent, pre-PRES-039 copy)", flush=True)
 
     run_path = Path(run_dir).expanduser().resolve()
 
@@ -2108,6 +2156,8 @@ def main(argv: Optional[list] = None) -> int:
             return EXIT_MODEL_PLAN_UNSATISFIED
         if rc == DISPATCH_REPIN_FAILED:
             return EXIT_REPIN_FAILED
+        if rc == DISPATCH_ENGINE_REFUSED:
+            return EXIT_ENGINE_REFUSED
         return 0 if rc == 0 else 1
     pid = dispatch_resume(str(run_path), background=True,
                           requested_parallel=args.requested_parallel,
@@ -2134,6 +2184,8 @@ def main(argv: Optional[list] = None) -> int:
         return EXIT_MODEL_PLAN_UNSATISFIED
     if pid == DISPATCH_REPIN_FAILED:
         return EXIT_REPIN_FAILED
+    if pid == DISPATCH_ENGINE_REFUSED:
+        return EXIT_ENGINE_REFUSED
     return 0 if pid > 0 else 1
 
 
