@@ -13,8 +13,9 @@
 #             is needed)
 #   model     the client's choice, or their configured default model.
 #             primary  = the model the client chose with --primary; with no
-#                        override, the box's configured default model (the
-#                        model tagged "default" in this box's own model list)
+#                        override, the configured default model of the box
+#                        (agents.defaults.model.primary in its openclaw.json,
+#                        or the model tagged "default" in its own model list)
 #             fallback = the model the client chose with --fallback; with no
 #                        override, the box's own
 #                        agents.defaults.model.fallbacks entries that are on
@@ -121,7 +122,7 @@ if ! "$OPENCLAW_BIN" models list --json > "$TMP/models.json" 2> "$TMP/models.err
   tail -3 "$TMP/models.err" >&2
   exit 2
 fi
-SEL="$(PRIMARY_OVERRIDE="$PRIMARY_OVERRIDE" FALLBACK_OVERRIDE="$FALLBACK_OVERRIDE" python3 - "$TMP/models.json" <<'PY'
+SEL="$(PRIMARY_OVERRIDE="$PRIMARY_OVERRIDE" FALLBACK_OVERRIDE="$FALLBACK_OVERRIDE" OC_JSON="$(pr_ocroot)/openclaw.json" python3 - "$TMP/models.json" <<'PY'
 import json, os, re, sys
 try:
     data = json.load(open(sys.argv[1]))
@@ -151,28 +152,51 @@ def walk(o):
 walk(data)
 banned = re.compile(r"anthropic|claude", re.I)
 def pick_override(override, label):
-    # The client's explicit choice (--primary / --fallback). Still validated:
-    # never an Anthropic or Claude model, and it must be on this box's list.
+    # The explicit client choice (--primary / --fallback). Still validated:
+    # never an Anthropic or Claude model, and it must be on the configured
+    # model list of this box.
     if banned.search(override):
         return "REFUSED_%s=%s is an Anthropic or Claude model, which this job must never use" % (label, override)
     if override not in ids:
         return "MISSING_%s=%s (not on this box's configured model list)" % (label, override)
     return "%s=%s" % (label, override)
+def cfg_default_model():
+    # The configured default model of this box, read from its own
+    # openclaw.json (agents.defaults.model.primary, or the plain-string
+    # agents.defaults.model). Empty when the box configures none.
+    try:
+        cfg = json.load(open(os.environ.get("OC_JSON", "")))
+        m = ((cfg.get("agents") or {}).get("defaults") or {}).get("model")
+        if isinstance(m, dict):
+            m = m.get("primary")
+        if isinstance(m, str) and m.strip():
+            return m.strip()
+    except Exception:
+        pass
+    return ""
 primary_override = os.environ.get("PRIMARY_OVERRIDE", "")
 fallback_override = os.environ.get("FALLBACK_OVERRIDE", "")
+configured = cfg_default_model()
 if primary_override:
     print(pick_override(primary_override, "PRIMARY"))
+elif configured:
+    if banned.search(configured):
+        print("MISSING_PRIMARY=the configured default model of this box (%s) is an Anthropic or Claude model, which this job must never use; pass --primary with a non-Anthropic id on the list, or configure a different default model" % configured)
+    elif configured not in ids:
+        print("MISSING_PRIMARY=the configured default model of this box (%s) is not on its configured model list; pass --primary with an id on the list, or configure a default model that is on the list" % configured)
+    else:
+        print("PRIMARY=" + configured)
 elif default_id[0]:
     if banned.search(default_id[0]):
-        print("MISSING_PRIMARY=the box's configured default model (%s) is an Anthropic or Claude model, which this job must never use; pass --primary with a non-Anthropic id on the list, or configure a different default model" % default_id[0])
+        print("MISSING_PRIMARY=the configured default model of this box (%s) is an Anthropic or Claude model, which this job must never use; pass --primary with a non-Anthropic id on the list, or configure a different default model" % default_id[0])
     else:
         print("PRIMARY=" + default_id[0])
 else:
-    print("MISSING_PRIMARY=no configured default model on this box (no model tagged 'default' in its configured model list); pass --primary with an id on the list, or configure a default model")
+    print("MISSING_PRIMARY=no configured default model on this box (no agents.defaults.model.primary in openclaw.json and no model tagged as default in its configured model list); pass --primary with an id on the list, or configure a default model")
 if fallback_override:
     print(pick_override(fallback_override, "FALLBACK"))
 # With no fallback override, nothing is printed here: the shell resolves the
-# fallback from the box's own agents.defaults.model.fallbacks below.
+# fallback from the agents.defaults.model.fallbacks of this box below.
 PY
 )"
 PRIMARY="$(printf '%s\n' "$SEL" | sed -n 's/^PRIMARY=//p')"
