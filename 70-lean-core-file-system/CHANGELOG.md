@@ -4,6 +4,11 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [1.0.4] - 2026-10-13 - model doctrine cleanup
+
+- `scripts/install-weekly-cron.sh` model resolution is now functional client-choice resolution: `--primary` / `--fallback` remain the client's explicit choice (still validated against the box's configured model list; Anthropic/Claude still refused); with no override the primary is the box's configured default model and the fallback comes from the box's own `agents.defaults.model.fallbacks`. No named model is prescribed anywhere. Header, EXAMPLES.md, INSTALL.md, QC.md and the full skill doc updated to match. Exit codes and all non-model behavior unchanged.
+- skill-version v1.0.3 -> v1.0.4.
+
 ## [1.0.3] - 2026-10-12 - D04
 
 - `lib-paths.sh`: `pr_master_files` also honours `MASTER_FILES_DIR`; on Contabo (OpenClaw root is a mount, `$HOME` is not) `pr_master_files` and `pr_backup_root` are `<root>/openclaw-master-files` and `<root>/backups`, not the throwaway `$HOME/Downloads`. Mac and Hostinger unchanged.
