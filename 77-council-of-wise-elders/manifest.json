@@ -2,9 +2,9 @@
   "skill": "council-of-wise-elders",
   "skill_version": "v1.0.0",
   "generated_by": "scripts/build-bundles.mjs",
-  "source_commit": "5a82e3c708a5916ebf84c02655584732b0688a86",
-  "file_count": 256,
-  "aggregate_sha256": "7cde1a5cf866c06841a909f4d1c702edfc42d2ef9eb761d97eb29144231bddbc",
+  "source_commit": "2dc6c98e1100eed32297d25becb8bbeefbf67063",
+  "file_count": 263,
+  "aggregate_sha256": "bcb748c22cb9f4c8f27f7aff35afe3ca93b4a962533c4ccc12900fccba4b39e7",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -1201,6 +1201,41 @@
       "path": "runtime/tests/run-authorization.test.ts",
       "sha256": "70688878abe64ae1f45e30494b7a8bc53807ef5aa40a4b761c137e7617777ef1",
       "bytes": 37043
+    },
+    {
+      "path": "runtime/tests/scenarios/README.md",
+      "sha256": "2c317cddf56497b7655c65a9b69dd24002669eb0dbcb70a47ab60de3082a613d",
+      "bytes": 3139
+    },
+    {
+      "path": "runtime/tests/scenarios/pack-evals.test.ts",
+      "sha256": "079d886199483907d3692e9aff3c4ae0c51db62e94c4fd428b3f6ec82bc80e38",
+      "bytes": 23719
+    },
+    {
+      "path": "runtime/tests/scenarios/qualification-cases.json",
+      "sha256": "0036d51ef713436428706b70bbf526acd88920102be340a07b54f67e9d2cf2ca",
+      "bytes": 18565
+    },
+    {
+      "path": "runtime/tests/scenarios/records/pack-evaluation-records.json",
+      "sha256": "32f0c25f67fd040113e6b498571e6f97bf30e8e2eb71371d5a40837664649a03",
+      "bytes": 37158
+    },
+    {
+      "path": "runtime/tests/scenarios/records/qualification-ledger.json",
+      "sha256": "6869d3d722818f395d14c851018f8bb616d0fefeb1ef913323d19039269b3e82",
+      "bytes": 32184
+    },
+    {
+      "path": "runtime/tests/scenarios/rubric.test.ts",
+      "sha256": "0981d1ac73ebb00e59f55ce91d2bda4a21ad76e11f6520b54dad0ffa9d1ae31e",
+      "bytes": 8626
+    },
+    {
+      "path": "runtime/tests/scenarios/rubric.ts",
+      "sha256": "b2acb81c2efbd49d4e551d63e4013ef77e4c8cb634d146cebbe55327aede6903",
+      "bytes": 9446
     },
     {
       "path": "runtime/tests/scoring.test.ts",
