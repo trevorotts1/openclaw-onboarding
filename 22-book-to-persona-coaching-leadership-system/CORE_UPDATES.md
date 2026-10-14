@@ -30,10 +30,10 @@ Converts any book (PDF/EPUB/MOBI/AZW3) into a dual-purpose persona blueprint.
 Pre-built personas already included. Run: python3 ~/.openclaw/scripts/gemini-indexer.py --status to see total count. Pipeline runs on new books only.
 
 Pipeline (model selection is DYNAMIC via shared-utils/select_model.py — Anthropic FORBIDDEN):
-- Phase 1: Latest Kimi (Ollama Cloud preferred) → OpenRouter Kimi → OAuth GPT → DeepSeek V4+ → ask owner. Temperature 1.0. → extraction-notes.md
-- Phase 2: Same Kimi-first chain as Phase 1 (was hardcoded deepseek/deepseek-v3.2 prior to v9.5.0). → analysis-notes.md
-- Phase 3: OAuth GPT preferred → latest Kimi fallback. → persona-blueprint.md (all 14 sections)
-- Runtime fallback: selector re-runs with failed model excluded, walks down tier list. Never selects Anthropic.
+- Phase 1: Model is the client's choice, or the client's configured default model (resolved by the selector from the client's openclaw.json; no model prescribed by name). Temperature 1.0. → extraction-notes.md
+- Phase 2: Same client-choice/default resolution as Phase 1 (was hardcoded deepseek/deepseek-v3.2 prior to v9.5.0). → analysis-notes.md
+- Phase 3: Same client-choice/default resolution. → persona-blueprint.md (all 14 sections)
+- Runtime fallback: selector re-runs with failed model excluded. Never selects Anthropic. Recommendation: a large-context model on a subscription-billed route, because extraction passes whole books at once and subscription billing keeps per-book cost flat.
 
 Persona Reflex (MANDATORY for every professional / non-mechanical task — not optional):
 A persona blueprint is DUAL-PURPOSE. The Coaching half guides conversation; the LEADERSHIP / Task-Mode
@@ -79,12 +79,12 @@ Do NOT skip this step -- the search will not find the new persona until re-index
 ```
 ## Book-to-Persona - Model Routing and Gemini Engine
 Pipeline model routing (DYNAMIC selection via shared-utils/select_model.py — never hardcoded):
-- Phase 1: latest Kimi (Ollama Cloud preferred) → OpenRouter Kimi → OAuth GPT → DeepSeek V4+. Temperature 1.0.
-- Phase 2: same Kimi-first chain as Phase 1. (Was hardcoded deepseek/deepseek-v3.2-speciale prior to v9.5.0.)
-- Phase 3: OAuth GPT preferred (subscription, no per-call cost) → latest Kimi fallback.
+- Phase 1: Model is the client's choice, or the client's configured default model. Temperature 1.0.
+- Phase 2: same client-choice/default resolution as Phase 1. (Was hardcoded deepseek/deepseek-v3.2-speciale prior to v9.5.0.)
+- Phase 3: same client-choice/default resolution.
 - Runtime fallback: selector re-runs with failed model excluded.
 - ABSOLUTE: Anthropic models (anthropic/claude-*) are FORBIDDEN. Filter applied at every tier.
-- Auto-adapts: when client adds a new Kimi or GPT version, selector picks the higher number automatically.
+- Auto-adapts: when the client configures a newer model, the selector resolves it with no skill update needed.
 
 Gemini Vector Database: coaching-personas
 Setup commands (run once on fresh install):
