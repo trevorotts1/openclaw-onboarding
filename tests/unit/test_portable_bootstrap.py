@@ -240,12 +240,29 @@ PY
         proof = self.root / 'install-args'
         body = ('note() { :; }; warn() { :; }; success() { :; }\n' + function
                 + '\nbootstrap_command_center_shell')
-        result = self.run_shell(body, CC_APP_DIR=str(own), SKILLS_DIR=str(skills),
-                                OPENCLAW_COMPANY_SLUG='jordan', OPENCLAW_COMPANY_NAME="Jordan's Company",
-                                LOG_FILE=str(self.root / 'log'), FIXTURE_ARGS=str(proof))
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(proof.read_text().splitlines(),
-                         ['jordan', "Jordan's Company", 'pending+jordan@zerohumanworkforce.com', '--app-dir', str(own)])
+        base_env = dict(CC_APP_DIR=str(own), SKILLS_DIR=str(skills),
+                        OPENCLAW_COMPANY_SLUG='jordan', OPENCLAW_COMPANY_NAME="Jordan's Company",
+                        LOG_FILE=str(self.root / 'log'))
+
+        def argv_for(owner_email=None, tag='default'):
+            proof = self.root / ('install-args-' + tag)
+            env = dict(base_env, FIXTURE_ARGS=str(proof))
+            if owner_email is not None:
+                env['OPENCLAW_OWNER_EMAIL'] = owner_email
+            result = self.run_shell(body, **env)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            return proof.read_text().splitlines()
+
+        # Item 06 contract: the installer passes the CONFIRMED intake owner email
+        # when one exists, and passes NO email argument otherwise — a pending+
+        # placeholder is an invented sign-in identity and must never be handed
+        # to the child (the child classifies its absence as launch-pending).
+        self.assertEqual(argv_for(None),
+                         ['jordan', "Jordan's Company", '--app-dir', str(own)])
+        self.assertEqual(argv_for('jordan@example.com', 'confirmed'),
+                         ['jordan', "Jordan's Company", 'jordan@example.com', '--app-dir', str(own)])
+        self.assertEqual(argv_for('pending+jordan@zerohumanworkforce.com', 'placeholder'),
+                         ['jordan', "Jordan's Company", '--app-dir', str(own)])
 
     def test_ambiguous_or_stopped_container_never_creates_host_client(self):
         for values in ({'FIXTURE_DOCKER_NAMES': 'openclaw-a\nopenclaw-b'},
