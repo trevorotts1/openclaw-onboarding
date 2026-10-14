@@ -34,7 +34,11 @@ def public_origin(value):
 
 def initialize(path, slug, name, email, env):
     if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', slug): raise ValueError('invalid client slug')
-    if not name.strip() or not email.strip(): raise ValueError('explicit installation owner metadata is required')
+    # Item 06: an ABSENT owner email is a PENDING state, not an installation
+    # error — identity allocation must proceed so the launch gate can classify
+    # it. Never invent a sign-in identity to satisfy this check.
+    if not name.strip(): raise ValueError('explicit installation owner name is required')
+    email = str(email or '').strip()
     def mutate(s):
         for key in ('companySlug', 'clientSlug'):
             if s.get(key) and s[key] != slug: raise ValueError('existing company slug conflicts; refusing identity replacement')
@@ -48,7 +52,26 @@ def initialize(path, slug, name, email, env):
                 s[key] = value or str(uuid.uuid4())
             if s[key] == 'default': raise ValueError('default identity cannot provision a client')
         s.setdefault('companySlug', slug); s.setdefault('clientSlug', slug)
-        s.setdefault('companyName', name); s.setdefault('contactEmail', email)
+        s.setdefault('companyName', name)
+        # Item 06: placeholder-only replacement with conflict refusal.
+        #   empty  -> pending (no identity invented)
+        #   existing pending+/empty + a confirmed address -> replaced
+        #   existing confirmed + the same address -> idempotent
+        #   existing confirmed + a pending+ placeholder -> confirmed WINS (a
+        #     placeholder can never downgrade a real address)
+        #   existing confirmed + a DIFFERENT confirmed address -> conflict, refuse
+        _cur = str(s.get('contactEmail') or '').strip()
+        _new = str(email or '').strip()
+        if not _new:
+            s['contactEmail'] = _cur
+        elif _cur == _new:
+            pass
+        elif _cur.startswith('pending+') or not _cur:
+            s['contactEmail'] = _new
+        elif _new.startswith('pending+'):
+            pass
+        else:
+            raise ValueError('contactEmail conflict; refusing overwrite of a confirmed owner address')
         if env.get('OPENCLAW_OWNER_NAME', '').strip(): s.setdefault('ownerName', env['OPENCLAW_OWNER_NAME'].strip())
         s.setdefault('interviewComplete', False)
         s.setdefault('buildId', str(uuid.uuid4()))
