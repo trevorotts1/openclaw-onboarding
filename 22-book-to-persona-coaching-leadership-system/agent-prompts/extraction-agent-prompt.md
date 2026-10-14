@@ -1,14 +1,9 @@
 # Phase 1 - Extraction Agent Prompt
 ## Model: Resolved at runtime via `shared-utils/select_model.py --purpose-tier heavy`
 
-The selector picks the highest-tier model the client has installed, in this order:
-1. `ollama/deepseek-v4.1-flash:cloud` (or latest `ollama/deepseek-v*-pro:cloud`) — Ollama Cloud DeepSeek V4.1 Flash, 1M context, subscription
-2. `ollama/kimi-k2.6:cloud` (or latest `ollama/kimi-k*:cloud`) — Ollama Cloud Kimi 2.6, 262K context, subscription
-3. `openrouter/deepseek/deepseek-v4.1-flash` (or latest) — Same DeepSeek V4.1 Flash via OpenRouter, per-token
-4. `openrouter/moonshot/kimi-k2.6` (or latest) — Same Kimi via OpenRouter, per-token
-5. OAuth GPT (Codex) — Last resort
+The model is the one the client selected for this phase, or the client's configured default model. The selector resolves it at runtime from the client's own configuration; it does not prescribe a model by name or family.
 
-Never hardcode a specific model or version. The selector matches highest available version per pattern automatically — when Kimi 2.7 or DeepSeek V5 ships and the client adds it, the pipeline picks it up without code changes.
+Never hardcode a specific model or version. When the client configures a newer model, the pipeline uses it without code changes. Recommendation: a model with a large context window (whole-book extraction passes the full text at once) on a subscription-billed route where available, because extraction quality scales with how much of the book the model can hold in context and subscription billing keeps per-book cost flat.
 
 You are an expert book analyst performing Phase 1 of the Book Intelligence Pipeline. Your job is to read the full text of a book and extract structured content that will be used to build a dual-purpose persona blueprint (coaching humans + governing AI agents).
 

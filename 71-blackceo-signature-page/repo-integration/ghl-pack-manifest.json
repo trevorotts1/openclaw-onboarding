@@ -1,0 +1,5731 @@
+{
+ "ghl_pack_version": "1.0.0",
+ "purpose": "The GHL pack ships as ONE unit (Amendment 5): Skill 6 (ghl-install-pages), Skill 44 (convert-and-flow-operator) and Skill 38's conversational delivery layer (conversational-ai-system), copied from the onboarding repo into the 999 repo's .claude/skills. Pair rule (Row 8): Skills 6 and 44 ship together or not at all. This manifest is the pack's binding classification for the Item 27 parity checker: neutral files byte-parity, adapter files version-tracked by seam, excluded files must be absent in 999. ghl_pack_version is recorded in automation-wiring receipts (Item 31).",
+ "classification_method": "Pre-copy harness audits (Amendment 5 method): grep-evidence coupling inventory per file; Skill 6 lists taken from the audit's Row 6A manifest draft; Skill 38 verdicts from its included/excluded manifest draft; Skill 44 classified with the same token groups.",
+ "source_head": "ea22ed88c368 (openclaw-onboarding checkout)",
+ "files": [
+  {
+   "source": "06-ghl-install-pages/CHANGELOG.md",
+   "dest": ".claude/skills/ghl-install-pages/CHANGELOG.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/CORE_UPDATES.md",
+   "dest": ".claude/skills/ghl-install-pages/CORE_UPDATES.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/DAY-0-CARD.md",
+   "dest": ".claude/skills/ghl-install-pages/DAY-0-CARD.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/ENV-MATRIX.md",
+   "dest": ".claude/skills/ghl-install-pages/ENV-MATRIX.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/EXAMPLES.md",
+   "dest": ".claude/skills/ghl-install-pages/EXAMPLES.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/INSTALL.md",
+   "dest": ".claude/skills/ghl-install-pages/INSTALL.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/INSTRUCTIONS.md",
+   "dest": ".claude/skills/ghl-install-pages/INSTRUCTIONS.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/OPERATOR-LIVE-CHECKLIST.md",
+   "dest": ".claude/skills/ghl-install-pages/OPERATOR-LIVE-CHECKLIST.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/PREREQS.json",
+   "dest": ".claude/skills/ghl-install-pages/PREREQS.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/QC.md",
+   "dest": ".claude/skills/ghl-install-pages/QC.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/SKILL.md",
+   "dest": ".claude/skills/ghl-install-pages/SKILL.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/TECHNIQUES-cross-origin-iframe-dragdrop.md",
+   "dest": ".claude/skills/ghl-install-pages/TECHNIQUES-cross-origin-iframe-dragdrop.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/README.md",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/README.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/mismatch-free-card.json",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/mismatch-free-card.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/per-page-blend-receipts.json",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/per-page-blend-receipts.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/persona-bundle-receipt.json",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/persona-bundle-receipt.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/persona-selection-log.md",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/persona-selection-log.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/producer-cc-ingest-handshake.json",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/producer-cc-ingest-handshake.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/run-log.txt",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/run-log.txt",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/README.md",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/README.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/mismatch-free-card.json",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/mismatch-free-card.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/per-page-blend-receipts.json",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/per-page-blend-receipts.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/persona-bundle-receipt.json",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/persona-bundle-receipt.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/persona-selection-log.md",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/persona-selection-log.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/producer-cc-ingest-handshake.json",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/producer-cc-ingest-handshake.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/run-log.txt",
+   "dest": ".claude/skills/ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/run-log.txt",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/exemplars/buyer/premium-mastermind-sales-letter/WHY-GOOD.md",
+   "dest": ".claude/skills/ghl-install-pages/exemplars/buyer/premium-mastermind-sales-letter/WHY-GOOD.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/exemplars/buyer/premium-mastermind-sales-letter/gold-output.md",
+   "dest": ".claude/skills/ghl-install-pages/exemplars/buyer/premium-mastermind-sales-letter/gold-output.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/exemplars/buyer/premium-mastermind-sales-letter/provenance.json",
+   "dest": ".claude/skills/ghl-install-pages/exemplars/buyer/premium-mastermind-sales-letter/provenance.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/exemplars/event/founders-summit-webinar-registration/WHY-GOOD.md",
+   "dest": ".claude/skills/ghl-install-pages/exemplars/event/founders-summit-webinar-registration/WHY-GOOD.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/exemplars/event/founders-summit-webinar-registration/gold-output.md",
+   "dest": ".claude/skills/ghl-install-pages/exemplars/event/founders-summit-webinar-registration/gold-output.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/exemplars/event/founders-summit-webinar-registration/provenance.json",
+   "dest": ".claude/skills/ghl-install-pages/exemplars/event/founders-summit-webinar-registration/provenance.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/exemplars/lead/clarity-call-optin/WHY-GOOD.md",
+   "dest": ".claude/skills/ghl-install-pages/exemplars/lead/clarity-call-optin/WHY-GOOD.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/exemplars/lead/clarity-call-optin/gold-output.md",
+   "dest": ".claude/skills/ghl-install-pages/exemplars/lead/clarity-call-optin/gold-output.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/exemplars/lead/clarity-call-optin/provenance.json",
+   "dest": ".claude/skills/ghl-install-pages/exemplars/lead/clarity-call-optin/provenance.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-engines/README.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-engines/README.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-engines/registry.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-engines/registry.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/README.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/README.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/2-step-tripwire-free-plus-shipping.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/2-step-tripwire-free-plus-shipping.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/2-step-tripwire-free-plus-shipping.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/2-step-tripwire-free-plus-shipping.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/book-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/book-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/book-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/book-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/daily-deal.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/daily-deal.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/daily-deal.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/daily-deal.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/membership-continuity.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/membership-continuity.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/membership-continuity.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/membership-continuity.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/sales-letter.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/sales-letter.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/sales-letter.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/sales-letter.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/self-liquidating-offer-slo.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/self-liquidating-offer-slo.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/self-liquidating-offer-slo.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/self-liquidating-offer-slo.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/storefront.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/storefront.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/storefront.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/storefront.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/video-sales-letter-vsl.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/video-sales-letter-vsl.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/buyer/video-sales-letter-vsl.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/buyer/video-sales-letter-vsl.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/_INDEX.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/_INDEX.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/_PERSONAS.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/_PERSONAS.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/autowebinar-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/autowebinar-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/autowebinar-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/autowebinar-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/five-minute-perfect-webinar-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/five-minute-perfect-webinar-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/five-minute-perfect-webinar-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/five-minute-perfect-webinar-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/hotel-meeting-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/hotel-meeting-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/hotel-meeting-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/hotel-meeting-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/invisible-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/invisible-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/invisible-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/invisible-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/live-demo-home-party-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/live-demo-home-party-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/live-demo-home-party-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/live-demo-home-party-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/perfect-webinar-shortcut-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/perfect-webinar-shortcut-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/perfect-webinar-shortcut-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/perfect-webinar-shortcut-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/product-launch-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/product-launch-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/product-launch-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/product-launch-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/summit-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/summit-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/summit-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/summit-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/teleseminar-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/teleseminar-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/teleseminar-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/teleseminar-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/telesummit-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/telesummit-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/telesummit-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/telesummit-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/webinar-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/webinar-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/event/webinar-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/event/webinar-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/_index.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/_index.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/_index.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/_index.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/_personas.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/_personas.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/application.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/application.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/application.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/application.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/ask-campaign.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/ask-campaign.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/ask-campaign.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/ask-campaign.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/bridge.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/bridge.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/bridge.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/bridge.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/hero.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/hero.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/hero.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/hero.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/homepage.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/homepage.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/homepage.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/homepage.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/lead-magnet.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/lead-magnet.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/lead-magnet.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/lead-magnet.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/reverse-squeeze-page.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/reverse-squeeze-page.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/reverse-squeeze-page.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/reverse-squeeze-page.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/squeeze-page.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/squeeze-page.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/squeeze-page.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/squeeze-page.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/survey-quiz.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/survey-quiz.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/lead/survey-quiz.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/lead/survey-quiz.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/retention-followup/cancellation-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/retention-followup/cancellation-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/retention-followup/cancellation-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/retention-followup/cancellation-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/retention-followup/follow-up-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/retention-followup/follow-up-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/retention-followup/follow-up-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/retention-followup/follow-up-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/break-even-front-end.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/break-even-front-end.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/break-even-front-end.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/break-even-front-end.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/client-acquisition.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/client-acquisition.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/client-acquisition.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/client-acquisition.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/cold-traffic-article-preframe.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/cold-traffic-article-preframe.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/cold-traffic-article-preframe.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/cold-traffic-article-preframe.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/funnel-hub.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/funnel-hub.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/funnel-hub.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/funnel-hub.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/pop-up-ad.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/pop-up-ad.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/pop-up-ad.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/pop-up-ad.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/pre-funnel-social-preframe.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/pre-funnel-social-preframe.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/pre-funnel-social-preframe.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/pre-funnel-social-preframe.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/shadow-funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/shadow-funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/shadow-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/shadow-funnel.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/viral-front-end.json",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/viral-front-end.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/funnel-templates/traffic-advanced/viral-front-end.md",
+   "dest": ".claude/skills/ghl-install-pages/funnel-templates/traffic-advanced/viral-front-end.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/ghl-browser-builder-full.md",
+   "dest": ".claude/skills/ghl-install-pages/ghl-browser-builder-full.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/ghl-install-pages-full.md",
+   "dest": ".claude/skills/ghl-install-pages/ghl-install-pages-full.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/ghl-install-pages.skill",
+   "dest": ".claude/skills/ghl-install-pages/ghl-install-pages.skill",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/qc-built-community.sh",
+   "dest": ".claude/skills/ghl-install-pages/qc-built-community.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/qc-built-course.sh",
+   "dest": ".claude/skills/ghl-install-pages/qc-built-course.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/qc-built-form.sh",
+   "dest": ".claude/skills/ghl-install-pages/qc-built-form.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/qc-built-funnel.sh",
+   "dest": ".claude/skills/ghl-install-pages/qc-built-funnel.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/qc-ghl-install-pages.sh",
+   "dest": ".claude/skills/ghl-install-pages/qc-ghl-install-pages.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/references/client-facing-phrasebook.md",
+   "dest": ".claude/skills/ghl-install-pages/references/client-facing-phrasebook.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/references/form-browser-operator-instructions.md",
+   "dest": ".claude/skills/ghl-install-pages/references/form-browser-operator-instructions.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/references/form-builder-spec.md",
+   "dest": ".claude/skills/ghl-install-pages/references/form-builder-spec.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/references/form-click-map.md",
+   "dest": ".claude/skills/ghl-install-pages/references/form-click-map.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/references/form-creation-checklist.md",
+   "dest": ".claude/skills/ghl-install-pages/references/form-creation-checklist.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/references/form-reasoning-layer.md",
+   "dest": ".claude/skills/ghl-install-pages/references/form-reasoning-layer.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/references/forms-playbook.md",
+   "dest": ".claude/skills/ghl-install-pages/references/forms-playbook.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/references/ghl-build-self-check.md",
+   "dest": ".claude/skills/ghl-install-pages/references/ghl-build-self-check.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/references/ghl-build-spec-from-transcript.md",
+   "dest": ".claude/skills/ghl-install-pages/references/ghl-build-spec-from-transcript.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/references/golden/PROVENANCE.json",
+   "dest": ".claude/skills/ghl-install-pages/references/golden/PROVENANCE.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/references/golden/README.md",
+   "dest": ".claude/skills/ghl-install-pages/references/golden/README.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/references/golden/funnel-optin.page-data.json",
+   "dest": ".claude/skills/ghl-install-pages/references/golden/funnel-optin.page-data.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/references/golden/website-page.page-data.json",
+   "dest": ".claude/skills/ghl-install-pages/references/golden/website-page.page-data.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/references/iframe-drag-capability.md",
+   "dest": ".claude/skills/ghl-install-pages/references/iframe-drag-capability.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/schedule/skill6-github-archive-reconcile-sweep.cron.json",
+   "dest": ".claude/skills/ghl-install-pages/schedule/skill6-github-archive-reconcile-sweep.cron.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/schedule/skill6-page-inventory-lifecycle.cron.json",
+   "dest": ".claude/skills/ghl-install-pages/schedule/skill6-page-inventory-lifecycle.cron.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ],
+   "flags": [
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/schedule/skill6-routing-drift-check.cron.json",
+   "dest": ".claude/skills/ghl-install-pages/schedule/skill6-routing-drift-check.cron.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/schedule/skill6-selector-drift-probe.cron.json",
+   "dest": ".claude/skills/ghl-install-pages/schedule/skill6-selector-drift-probe.cron.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ],
+   "flags": [
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/scripts/check-agent-browser-reaper-schedule.sh",
+   "dest": ".claude/skills/ghl-install-pages/scripts/check-agent-browser-reaper-schedule.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ],
+   "flags": [
+    "fifth-seam bridge: verifies the teardown reaper's cron schedule"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/scripts/check-version-drift.py",
+   "dest": ".claude/skills/ghl-install-pages/scripts/check-version-drift.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/scripts/guard-ghl-method-decision.sh",
+   "dest": ".claude/skills/ghl-install-pages/scripts/guard-ghl-method-decision.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/scripts/guard-ghl-verify-unfakeable.sh",
+   "dest": ".claude/skills/ghl-install-pages/scripts/guard-ghl-verify-unfakeable.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/scripts/import_aa_handoff.py",
+   "dest": ".claude/skills/ghl-install-pages/scripts/import_aa_handoff.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/scripts/install-github-archive-reconcile-cron.sh",
+   "dest": ".claude/skills/ghl-install-pages/scripts/install-github-archive-reconcile-cron.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/scripts/install-page-inventory-lifecycle-cron.sh",
+   "dest": ".claude/skills/ghl-install-pages/scripts/install-page-inventory-lifecycle-cron.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/scripts/install-routing-drift-check-cron.sh",
+   "dest": ".claude/skills/ghl-install-pages/scripts/install-routing-drift-check-cron.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/scripts/install-selector-drift-probe-cron.sh",
+   "dest": ".claude/skills/ghl-install-pages/scripts/install-selector-drift-probe-cron.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [],
+   "flags": [
+    "fits none of the four seams (audit-named)",
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/scripts/prove_skill6_block_u22.py",
+   "dest": ".claude/skills/ghl-install-pages/scripts/prove_skill6_block_u22.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/scripts/run-selector-drift-probe.sh",
+   "dest": ".claude/skills/ghl-install-pages/scripts/run-selector-drift-probe.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/scripts/vps-mount-proof.sh",
+   "dest": ".claude/skills/ghl-install-pages/scripts/vps-mount-proof.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ],
+   "flags": [
+    "fifth-seam candidate: host services (VPS mount proof)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/skill-version.txt",
+   "dest": ".claude/skills/ghl-install-pages/skill-version.txt",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/conftest.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/conftest.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/fixtures/README.md",
+   "dest": ".claude/skills/ghl-install-pages/tests/fixtures/README.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/fixtures/golden_page_blob_funnel.json",
+   "dest": ".claude/skills/ghl-install-pages/tests/fixtures/golden_page_blob_funnel.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/fixtures/golden_page_blob_website.json",
+   "dest": ".claude/skills/ghl-install-pages/tests/fixtures/golden_page_blob_website.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/fixtures/persona-bundles/cc-fetch-confirmed.json",
+   "dest": ".claude/skills/ghl-install-pages/tests/fixtures/persona-bundles/cc-fetch-confirmed.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/fixtures/persona-bundles/cc-fetch-pending.json",
+   "dest": ".claude/skills/ghl-install-pages/tests/fixtures/persona-bundles/cc-fetch-pending.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/fixtures/persona-bundles/threaded-confirmed.json",
+   "dest": ".claude/skills/ghl-install-pages/tests/fixtures/persona-bundles/threaded-confirmed.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/fixtures/persona-bundles/threaded-pending.json",
+   "dest": ".claude/skills/ghl-install-pages/tests/fixtures/persona-bundles/threaded-pending.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/fixtures/routing_corpus.json",
+   "dest": ".claude/skills/ghl-install-pages/tests/fixtures/routing_corpus.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/mocks/__init__.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/mocks/__init__.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/mocks/mock_ghl.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/mocks/mock_ghl.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/mocks/mock_gmail.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/mocks/mock_gmail.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/mocks/mock_secret_store.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/mocks/mock_secret_store.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_a_u7_convergence.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_a_u7_convergence.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_a_u9_exemplar_injection.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_a_u9_exemplar_injection.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_b_u15_env_matrix_live_proof.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_b_u15_env_matrix_live_proof.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_browser_manager_capability_wire.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_browser_manager_capability_wire.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_browser_manager_login_circuit_breaker.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_browser_manager_login_circuit_breaker.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_browser_manager_singleton.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_browser_manager_singleton.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_capability_probe.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_capability_probe.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_cc_board_catchall_doc.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_cc_board_catchall_doc.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_cc_board_funnel_department_registration_gap.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_cc_board_funnel_department_registration_gap.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_cc_board_reconcile.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_cc_board_reconcile.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_cc_board_status.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_cc_board_status.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_cc_board_u39_s4_lifecycle.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_cc_board_u39_s4_lifecycle.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_cc_rail_contract.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_cc_rail_contract.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_cc_u9_tightenings.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_cc_u9_tightenings.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_community_course_builders.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_community_course_builders.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_community_course_live_ready.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_community_course_live_ready.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_cua_last_resort_adapter.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_cua_last_resort_adapter.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_env_matrix.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_env_matrix.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_funnel_engine_registry_guard.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_funnel_engine_registry_guard.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_funnel_matcher.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_funnel_matcher.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_activation_resilience.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_activation_resilience.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_archive_receipt_gate.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_archive_receipt_gate.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_auth_fallback_gates.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_auth_fallback_gates.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_auth_fallback_happy_and_selfheal.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_auth_fallback_happy_and_selfheal.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_auth_orchestrator.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_auth_orchestrator.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_builder_render_signals.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_builder_render_signals.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_builder_rest_plans.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_builder_rest_plans.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_builder_transcript_recipe.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_builder_transcript_recipe.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_bulk_workflow_enroll.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_bulk_workflow_enroll.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_ecosystem.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_ecosystem.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_f4_remove_redesign.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_f4_remove_redesign.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_fallback_ladder.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_fallback_ladder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_form_builder_capture.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_form_builder_capture.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_form_interpreter_preflight.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_form_interpreter_preflight.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_form_rename_and_cleanup.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_form_rename_and_cleanup.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_gate.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_gate.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_github_archive.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_github_archive.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_github_reconcile.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_github_reconcile.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_idempotent_page.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_idempotent_page.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_iframe_drag.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_iframe_drag.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_image_stage_kie_key.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_image_stage_kie_key.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_inventory.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_inventory.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_media.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_media.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_media_cred_resolution.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_media_cred_resolution.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_media_funnel_folders.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_media_funnel_folders.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_method.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_method.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_method_signal_derivation.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_method_signal_derivation.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_method_site_routing.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_method_site_routing.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_object_router_and_survey_f1.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_object_router_and_survey_f1.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_pipeline_builder.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_pipeline_builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_receipts.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_receipts.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_rest_canvas.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_rest_canvas.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_rest_canvas_seo_images.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_rest_canvas_seo_images.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_routing_drift_check.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_routing_drift_check.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_secret_hygiene.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_secret_hygiene.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_selector_drift_probe.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_selector_drift_probe.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_text_verb_cli_shapes.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_text_verb_cli_shapes.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_vercel.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_vercel.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_verify.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_verify.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_ghl_workflow_builder.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_ghl_workflow_builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_github_archive_maintenance_schedule.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_github_archive_maintenance_schedule.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_golden_readme_skillmd_reconciliation.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_golden_readme_skillmd_reconciliation.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_guard_ghl_auth_fallback.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_guard_ghl_auth_fallback.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_iframe_failure_taxonomy.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_iframe_failure_taxonomy.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_iframe_router.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_iframe_router.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_iframe_survival_probe.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_iframe_survival_probe.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_inject_ghl_auth_no_reload.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_inject_ghl_auth_no_reload.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_model_router.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_model_router.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_openclaw_browser_adapter.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_openclaw_browser_adapter.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_page_inventory_lifecycle_schedule.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_page_inventory_lifecycle_schedule.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [],
+   "flags": [
+    "fits none of the four seams (audit-named)",
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_parallel_saves.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_parallel_saves.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_part7_execution_rules.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_part7_execution_rules.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_persona_bundle_ladder.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_persona_bundle_ladder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_prove_skill6_block_u22.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_prove_skill6_block_u22.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_routing_corpus.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_routing_corpus.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_routing_drift_check_maintenance_schedule.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_routing_drift_check_maintenance_schedule.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [],
+   "flags": [
+    "fits none of the four seams (audit-named)",
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_scrub_turn_telemetry.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_scrub_turn_telemetry.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_selector_drift_probe_maintenance_schedule.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_selector_drift_probe_maintenance_schedule.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [],
+   "flags": [
+    "fits none of the four seams (audit-named)",
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_session_keepalive_wired.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_session_keepalive_wired.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_skill6_survey_url_resume_runreport.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_skill6_survey_url_resume_runreport.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_subaccount_matches.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_subaccount_matches.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_survey_builder_hardening.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_survey_builder_hardening.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_survival_targets_doc.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_survival_targets_doc.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [],
+   "flags": [
+    "fits none of the four seams (audit-named)",
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_u106_smoke_first_and_survival.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_u106_smoke_first_and_survival.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_u28_agent_browser_reaper_seeded_orphan.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_u28_agent_browser_reaper_seeded_orphan.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_u28_headless_guard_coverage.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_u28_headless_guard_coverage.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_u28_orphan_descriptor_audit.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_u28_orphan_descriptor_audit.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_u28_reaper_schedule_presence.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_u28_reaper_schedule_presence.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ],
+   "flags": [
+    "fifth-seam bridge: verifies the teardown reaper's cron schedule"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tests/test_v2_dispatcher.py",
+   "dest": ".claude/skills/ghl-install-pages/tests/test_v2_dispatcher.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tools/README.md",
+   "dest": ".claude/skills/ghl-install-pages/tools/README.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/SELECTORS-LIVE-automations.md",
+   "dest": ".claude/skills/ghl-install-pages/tools/SELECTORS-LIVE-automations.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/SELECTORS-LIVE-community.md",
+   "dest": ".claude/skills/ghl-install-pages/tools/SELECTORS-LIVE-community.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/SELECTORS-LIVE-course.md",
+   "dest": ".claude/skills/ghl-install-pages/tools/SELECTORS-LIVE-course.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/SELECTORS-LIVE-form.md",
+   "dest": ".claude/skills/ghl-install-pages/tools/SELECTORS-LIVE-form.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/SELECTORS-LIVE-funnel.md",
+   "dest": ".claude/skills/ghl-install-pages/tools/SELECTORS-LIVE-funnel.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/SELECTORS-LIVE-page.md",
+   "dest": ".claude/skills/ghl-install-pages/tools/SELECTORS-LIVE-page.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/SELECTORS-LIVE-pipeline.md",
+   "dest": ".claude/skills/ghl-install-pages/tools/SELECTORS-LIVE-pipeline.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/SELECTORS-LIVE-survey.md",
+   "dest": ".claude/skills/ghl-install-pages/tools/SELECTORS-LIVE-survey.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/_kie_prompt_enforcer_embedded.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/_kie_prompt_enforcer_embedded.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/agent_browser_orphan_audit.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/agent_browser_orphan_audit.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/browser_manager.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/browser_manager.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/browser_manager.sh",
+   "dest": ".claude/skills/ghl-install-pages/tools/browser_manager.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/capability_probe.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/capability_probe.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/catalog-index.json",
+   "dest": ".claude/skills/ghl-install-pages/tools/catalog-index.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tools/cc_board.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/cc_board.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/cua_last_resort_adapter.sh",
+   "dest": ".claude/skills/ghl-install-pages/tools/cua_last_resort_adapter.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/examples/example-run/routing/form-click-list.json",
+   "dest": ".claude/skills/ghl-install-pages/tools/examples/example-run/routing/form-click-list.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/examples/example-run/routing/form-dependency-plan.json",
+   "dest": ".claude/skills/ghl-install-pages/tools/examples/example-run/routing/form-dependency-plan.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/examples/example-run/routing/form-plan.json",
+   "dest": ".claude/skills/ghl-install-pages/tools/examples/example-run/routing/form-plan.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/examples/example-run/routing/form-preflight.json",
+   "dest": ".claude/skills/ghl-install-pages/tools/examples/example-run/routing/form-preflight.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/examples/form-click-list.example.json",
+   "dest": ".claude/skills/ghl-install-pages/tools/examples/form-click-list.example.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/examples/form-dependency-plan.example.json",
+   "dest": ".claude/skills/ghl-install-pages/tools/examples/form-dependency-plan.example.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/fallback-ladder.json",
+   "dest": ".claude/skills/ghl-install-pages/tools/fallback-ladder.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/funnel_engine_selector.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/funnel_engine_selector.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/funnel_matcher.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/funnel_matcher.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/funnel_matcher_cli.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/funnel_matcher_cli.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tools/gates.json",
+   "dest": ".claude/skills/ghl-install-pages/tools/gates.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_ab_executor.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_ab_executor.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_archive_receipt_gate.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_archive_receipt_gate.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_auth.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_auth.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_auth_fallback.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_auth_fallback.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_builder.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_bulk_workflow_enroll.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_bulk_workflow_enroll.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_community_builder.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_community_builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_course_builder.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_course_builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_ecosystem.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_ecosystem.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_env_matrix_ground_truth.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_env_matrix_ground_truth.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_fallback_ladder.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_fallback_ladder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_form_builder.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_form_builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_gate.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_gate.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_github_archive.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_github_archive.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_github_reconcile.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_github_reconcile.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_gmail_probe.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_gmail_probe.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_iframe_drag.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_iframe_drag.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_iframe_dragdrop.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_iframe_dragdrop.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_image_stage.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_image_stage.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_inventory.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_inventory.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_login_browser.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_login_browser.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_media.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_media.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_method.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_method.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_object_router.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_object_router.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_pipeline_builder.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_pipeline_builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_receipts.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_receipts.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_rest_canvas.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_rest_canvas.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_routing_drift_check.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_routing_drift_check.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [],
+   "flags": [
+    "fits none of the four seams (audit-named)",
+    "fifth-seam candidate: host scheduling (naming a fifth seam is a plan amendment)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_run_state.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_run_state.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_selector_drift_probe.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_selector_drift_probe.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_survey_builder.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_survey_builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_survey_rest.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_survey_rest.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_vercel.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_vercel.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_verify.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_verify.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_vps_mount_proof.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_vps_mount_proof.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ],
+   "flags": [
+    "fifth-seam candidate: host services (VPS mount proof)"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/ghl_workflow_builder.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/ghl_workflow_builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/headless_guard_audit.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/headless_guard_audit.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/iframe-survival-targets.json",
+   "dest": ".claude/skills/ghl-install-pages/tools/iframe-survival-targets.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/iframe_router.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/iframe_router.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/inject-ghl-auth.sh",
+   "dest": ".claude/skills/ghl-install-pages/tools/inject-ghl-auth.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/intake_interview.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/intake_interview.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tools/model_router.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/model_router.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tools/openclaw_browser_adapter.sh",
+   "dest": ".claude/skills/ghl-install-pages/tools/openclaw_browser_adapter.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/parallel_saves.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/parallel_saves.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/parallel_saves.sh",
+   "dest": ".claude/skills/ghl-install-pages/tools/parallel_saves.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/persona_bundle_ladder.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/persona_bundle_ladder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/scrub_turn_telemetry.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/scrub_turn_telemetry.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "06-ghl-install-pages/tools/seed-ghl-auth.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/seed-ghl-auth.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/selectors-live-communities-courses.json",
+   "dest": ".claude/skills/ghl-install-pages/tools/selectors-live-communities-courses.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/selectors-live.json",
+   "dest": ".claude/skills/ghl-install-pages/tools/selectors-live.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/skill6_convergence.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/skill6_convergence.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/tools/v2_dispatcher.py",
+   "dest": ".claude/skills/ghl-install-pages/tools/v2_dispatcher.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "06-ghl-install-pages/v2-autonomous-build-sop.md",
+   "dest": ".claude/skills/ghl-install-pages/v2-autonomous-build-sop.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/CHANGELOG.md",
+   "dest": ".claude/skills/convert-and-flow-operator/CHANGELOG.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/CORE_UPDATES.md",
+   "dest": ".claude/skills/convert-and-flow-operator/CORE_UPDATES.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/INSTALL.md",
+   "dest": ".claude/skills/convert-and-flow-operator/INSTALL.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/INSTRUCTIONS.md",
+   "dest": ".claude/skills/convert-and-flow-operator/INSTRUCTIONS.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/PREREQS.json",
+   "dest": ".claude/skills/convert-and-flow-operator/PREREQS.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/QC.md",
+   "dest": ".claude/skills/convert-and-flow-operator/QC.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/SKILL.md",
+   "dest": ".claude/skills/convert-and-flow-operator/SKILL.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/README.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/README.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/_links/_build_link_map.py",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/_links/_build_link_map.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation-link-map.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/_links/funnel-to-automation-link-map.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/_links/funnel-to-automation.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/_matcher/README.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/_matcher/README.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/_matcher/WIRING.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/_matcher/WIRING.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/_matcher/automation_matcher.py",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/_matcher/automation_matcher.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/_matcher/catalog-index.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/_matcher/catalog-index.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/_matcher/cli.py",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/_matcher/cli.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/_matcher/flex.py",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/_matcher/flex.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/_patches/_skill44_step0_section.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/_patches/_skill44_step0_section.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/_patches/skill44-instructions-step0-flexible-match.patch",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/_patches/skill44-instructions-step0-flexible-match.patch",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/_patches/skill6-funnel-matcher-flexibility.patch",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/_patches/skill6-funnel-matcher-flexibility.patch",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/attractive-character-story-rotation.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/attractive-character-story-rotation.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/attractive-character-story-rotation.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/attractive-character-story-rotation.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/daily-seinfeld-sequence.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/daily-seinfeld-sequence.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/daily-seinfeld-sequence.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/daily-seinfeld-sequence.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/email-teaser-click-driver.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/email-teaser-click-driver.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/email-teaser-click-driver.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/email-teaser-click-driver.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/re-engagement-winback-broadcast.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/re-engagement-winback-broadcast.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/re-engagement-winback-broadcast.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/re-engagement-winback-broadcast.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/seinfeld-broadcast-email.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/seinfeld-broadcast-email.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/seinfeld-broadcast-email.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/seinfeld-broadcast-email.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/three-ms-content-broadcast.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/three-ms-content-broadcast.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/three-ms-content-broadcast.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/three-ms-content-broadcast.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/value-broadcast-3-closes-campaign.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/value-broadcast-3-closes-campaign.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/engagement-broadcast/value-broadcast-3-closes-campaign.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/engagement-broadcast/value-broadcast-3-closes-campaign.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/application-homework-booking-nurture.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/funnel-specific-followups/application-homework-booking-nurture.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/application-homework-booking-nurture.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/funnel-specific-followups/application-homework-booking-nurture.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/autowebinar-watch-segmented-followup.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/funnel-specific-followups/autowebinar-watch-segmented-followup.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/autowebinar-watch-segmented-followup.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/funnel-specific-followups/autowebinar-watch-segmented-followup.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/cart-abandon-recovery.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/funnel-specific-followups/cart-abandon-recovery.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/cart-abandon-recovery.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/funnel-specific-followups/cart-abandon-recovery.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/free-plus-shipping-book-oto-followup.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/funnel-specific-followups/free-plus-shipping-book-oto-followup.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/free-plus-shipping-book-oto-followup.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/funnel-specific-followups/free-plus-shipping-book-oto-followup.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/membership-stick-retention.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/funnel-specific-followups/membership-stick-retention.json",
+   "verdict": "include",
+   "class": "adapter",
+   "flags": [
+    "fits none of the four seams (host-other tokens only)"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/membership-stick-retention.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/funnel-specific-followups/membership-stick-retention.md",
+   "verdict": "include",
+   "class": "adapter",
+   "flags": [
+    "fits none of the four seams (host-other tokens only)"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/funnel-specific-followups/webinar-registration-reminder-replay-stack.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/multichannel-automation/abandoned-cart-multichannel-recovery.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/multichannel-automation/abandoned-cart-multichannel-recovery.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/multichannel-automation/abandoned-cart-multichannel-recovery.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/multichannel-automation/abandoned-cart-multichannel-recovery.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/multichannel-automation/autowebinar-behavioral-branching.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/multichannel-automation/autowebinar-behavioral-branching.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/multichannel-automation/autowebinar-behavioral-branching.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/multichannel-automation/autowebinar-behavioral-branching.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/multichannel-automation/behavioral-retargeting-page-visit-fire.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/multichannel-automation/indoctrination-multichannel-preframe.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/multichannel-automation/indoctrination-multichannel-preframe.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/multichannel-automation/indoctrination-multichannel-preframe.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/multichannel-automation/post-optin-multichannel-stack.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/multichannel-automation/post-optin-multichannel-stack.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/multichannel-automation/post-optin-multichannel-stack.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/multichannel-automation/post-optin-multichannel-stack.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/abandoned-cart-recovery.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/abandoned-cart-recovery.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/abandoned-cart-recovery.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/abandoned-cart-recovery.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/cart-open-cart-close-launch-sequence.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/cart-open-cart-close-launch-sequence.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/cart-open-cart-close-launch-sequence.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/cart-open-cart-close-launch-sequence.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/perfect-webinar-stack-close.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/perfect-webinar-stack-close.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/perfect-webinar-stack-close.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/perfect-webinar-stack-close.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/scarcity-deadline-close.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/scarcity-deadline-close.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/scarcity-deadline-close.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/scarcity-deadline-close.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/seinfeld-daily-sequence.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/seinfeld-daily-sequence.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/seinfeld-daily-sequence.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/seinfeld-daily-sequence.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/soap-opera-sequence.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/soap-opera-sequence.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/soap-opera-sequence.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/soap-opera-sequence.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/three-closes-master-followup.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/three-closes-master-followup.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/sales-close-sequences/three-closes-master-followup.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/sales-close-sequences/three-closes-master-followup.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/welcome-indoctrination/attractive-character-intro-sequence.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/welcome-indoctrination/attractive-character-intro-sequence.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/welcome-indoctrination/attractive-character-intro-sequence.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/welcome-indoctrination/attractive-character-intro-sequence.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/welcome-indoctrination/new-subscriber-indoctrination.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/welcome-indoctrination/new-subscriber-indoctrination.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/welcome-indoctrination/new-subscriber-indoctrination.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/welcome-indoctrination/new-subscriber-indoctrination.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/welcome-indoctrination/soap-opera-sequence.json",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/welcome-indoctrination/soap-opera-sequence.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/automation-templates/welcome-indoctrination/soap-opera-sequence.md",
+   "dest": ".claude/skills/convert-and-flow-operator/automation-templates/welcome-indoctrination/soap-opera-sequence.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/platform/mac/SKILL.md",
+   "dest": ".claude/skills/convert-and-flow-operator/platform/mac/SKILL.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/platform/mac/recipes/firebase-token-auto-regrab.md",
+   "dest": ".claude/skills/convert-and-flow-operator/platform/mac/recipes/firebase-token-auto-regrab.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/platform/vps/SKILL.md",
+   "dest": ".claude/skills/convert-and-flow-operator/platform/vps/SKILL.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/qc-built-workflow.sh",
+   "dest": ".claude/skills/convert-and-flow-operator/qc-built-workflow.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown",
+    "paths-secrets"
+   ],
+   "flags": [
+    "qc-asset: parity-tracked per Row 8 (qc-built-workflow.sh + WF-1..21 checklist)"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/qc-convert-and-flow.sh",
+   "dest": ".claude/skills/convert-and-flow-operator/qc-convert-and-flow.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ],
+   "flags": [
+    "qc-asset: parity-tracked per Row 8 (qc-built-workflow.sh + WF-1..21 checklist)"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/references/fleet-announcement-template.md",
+   "dest": ".claude/skills/convert-and-flow-operator/references/fleet-announcement-template.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/references/owner-token-grabber-guide.md",
+   "dest": ".claude/skills/convert-and-flow-operator/references/owner-token-grabber-guide.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/references/workflow-build-checklist-template.md",
+   "dest": ".claude/skills/convert-and-flow-operator/references/workflow-build-checklist-template.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown",
+    "paths-secrets"
+   ],
+   "flags": [
+    "qc-asset: parity-tracked per Row 8 (qc-built-workflow.sh + WF-1..21 checklist)"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/references/workflow-quality-rubric.md",
+   "dest": ".claude/skills/convert-and-flow-operator/references/workflow-quality-rubric.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown",
+    "paths-secrets"
+   ],
+   "flags": [
+    "qc-asset: parity-tracked per Row 8 (qc-built-workflow.sh + WF-1..21 checklist)"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/references/workflow-timing.md",
+   "dest": ".claude/skills/convert-and-flow-operator/references/workflow-timing.md",
+   "verdict": "include",
+   "class": "adapter",
+   "flags": [
+    "fits none of the four seams (host-other tokens only)"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/skill-version.txt",
+   "dest": ".claude/skills/convert-and-flow-operator/skill-version.txt",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tests/conftest.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tests/conftest.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tests/test_automation_matcher.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tests/test_automation_matcher.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tests/test_contacts_upsert.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tests/test_contacts_upsert.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tests/test_qc_built_workflow.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tests/test_qc_built_workflow.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "qc-asset: parity-tracked per Row 8 (qc-built-workflow.sh + WF-1..21 checklist)"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/check-ghl-token-liveness.sh",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/check-ghl-token-liveness.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/chrome-extension/icon48.png",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/chrome-extension/icon48.png",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/chrome-extension/manifest.json",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/chrome-extension/manifest.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/chrome-extension/popup.html",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/chrome-extension/popup.html",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/chrome-extension/popup.js",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/chrome-extension/popup.js",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/.env.example",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/.env.example",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/.gitignore",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/.gitignore",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/README.md",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/README.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/builders/_email_sequences_parser.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/builders/_email_sequences_parser.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/builders/consulti-nurture-builder.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/builders/consulti-nurture-builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/builders/email-sequences-doc-builder.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/builders/email-sequences-doc-builder.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/builders/post-purchase-nurture-builder.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/builders/post-purchase-nurture-builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/builders/wf1-course-interest-builder.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/builders/wf1-course-interest-builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/builders/wf5-ht-interest-builder.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/builders/wf5-ht-interest-builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/builders/wf6-post-call-sales-builder.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/builders/wf6-post-call-sales-builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/caf",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/caf",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/chrome-extension/icon48.png",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/chrome-extension/icon48.png",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/chrome-extension/manifest.json",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/chrome-extension/manifest.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/chrome-extension/popup.html",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/chrome-extension/popup.html",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/chrome-extension/popup.js",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/chrome-extension/popup.js",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/__init__.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/__init__.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/__init__.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/__init__.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/__main__.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/__main__.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/core/__init__.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/core/__init__.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/gohighlevel_cli.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/__init__.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/__init__.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/adapter.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/adapter.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/adapter_types.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/adapter_types.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/contract.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/contract.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/degrade.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/degrade.py",
+   "verdict": "include",
+   "class": "adapter",
+   "flags": [
+    "fits none of the four seams (host-other tokens only)"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/endpoints.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/endpoints.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/fixtures/README.md",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/fixtures/README.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/fixtures/contract.golden.json",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/fixtures/contract.golden.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/fixtures/contract.schema.json",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/fixtures/contract.schema.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/guards.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/guards.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/probe.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/probe.py",
+   "verdict": "include",
+   "class": "adapter",
+   "flags": [
+    "fits none of the four seams (host-other tokens only)"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/transport.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/internal/transport.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/skills/SKILL.md",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/skills/SKILL.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/__init__.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/__init__.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/ghl_client.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/ghl_client.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/ghl_internal_client.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/ghl_internal_client.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/repl_skin.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/repl_skin.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/safety_gate.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/safety_gate.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/snapshot_manager.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/snapshot_manager.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/workflow_timing.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/workflow_timing.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/write_lock.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/write_lock.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/convertandflow",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/convertandflow",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/docs/how-it-works.excalidraw",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/docs/how-it-works.excalidraw",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/docs/how-it-works.png",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/docs/how-it-works.png",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/ghl",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/ghl",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/install.sh",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/install.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/setup.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/setup.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/tests/__init__.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/tests/__init__.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/tests/test_adapter_probe.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/tests/test_adapter_probe.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/tests/test_e2e_unit11.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/tests/test_e2e_unit11.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/tests/test_ecosystem_cli.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/tests/test_ecosystem_cli.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/tests/test_safety_gate.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/tests/test_safety_gate.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/tests/test_token_retry.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/tests/test_token_retry.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/tests/test_u2_commands.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/tests/test_u2_commands.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/tests/test_u88_social_create_post.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/tests/test_u88_social_create_post.py",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/tests/test_workflow_timing.py",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/tests/test_workflow_timing.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/verify-ghl-live.sh",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/verify-ghl-live.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/engine/wire-ghl-env.sh",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/engine/wire-ghl-env.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/tools/tests/test-ghl-token-liveness.sh",
+   "dest": ".claude/skills/convert-and-flow-operator/tools/tests/test-ghl-token-liveness.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "44-convert-and-flow-operator/wire.sh",
+   "dest": ".claude/skills/convert-and-flow-operator/wire.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/CHANGELOG.md",
+   "dest": ".claude/skills/conversational-ai-system/CHANGELOG.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/CORE_UPDATES.md",
+   "dest": ".claude/skills/conversational-ai-system/CORE_UPDATES.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/EXAMPLES.md",
+   "dest": ".claude/skills/conversational-ai-system/EXAMPLES.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/INSTALL.md",
+   "dest": ".claude/skills/conversational-ai-system/INSTALL.md",
+   "verdict": "exclude",
+   "class": "adapter",
+   "flags": [
+    "judgment-call (audit-flagged; excluded per the brief's lists, ruling recorded for copy time)"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/INSTRUCTIONS.md",
+   "dest": ".claude/skills/conversational-ai-system/INSTRUCTIONS.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "include-adapt per the audit manifest draft"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/PREREQS.json",
+   "dest": ".claude/skills/conversational-ai-system/PREREQS.json",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "include-adapt per the audit manifest draft"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/SKILL.md",
+   "dest": ".claude/skills/conversational-ai-system/SKILL.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "include-adapt per the audit manifest draft"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/_wire_agents_ghl_note.py",
+   "dest": ".claude/skills/conversational-ai-system/_wire_agents_ghl_note.py",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/_wire_rules_15_16.py",
+   "dest": ".claude/skills/conversational-ai-system/_wire_rules_15_16.py",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/ab-testing-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/ab-testing-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/aggression-detection-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/aggression-detection-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/business-logic-workflow-suggestions-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/business-logic-workflow-suggestions-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/client-test-mode-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/client-test-mode-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/compliance-keyword-detection-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/compliance-keyword-detection-protocol.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/confidence-threshold-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/confidence-threshold-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/conversation-analytics-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/conversation-analytics-protocol.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/conversation-export-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/conversation-export-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/conversation-log-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/conversation-log-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/conversation-workflows-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/conversation-workflows-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/conversational-safeguards.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/conversational-safeguards.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/crm-field-write-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/crm-field-write-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/customer-segmentation-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/customer-segmentation-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/customer-service-support-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/customer-service-support-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/discount-code-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/discount-code-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/document-generation-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/document-generation-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/drift-detection-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/drift-detection-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/geo-qualification-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/geo-qualification-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/intelligent-followup-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/intelligent-followup-protocol.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/intelligent-routing-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/intelligent-routing-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/knowledge-source-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/knowledge-source-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/model-version-freshness-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/model-version-freshness-protocol.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/monthly-comprehensive-review-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/monthly-comprehensive-review-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/multi-language-detection-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/multi-language-detection-protocol.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/multi-tenant-isolation-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/multi-tenant-isolation-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/notification-routing-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/notification-routing-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/opportunity-sync-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/opportunity-sync-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/persona-registry-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/persona-registry-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/pii-scrubbing-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/pii-scrubbing-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/pre-handoff-qc-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/pre-handoff-qc-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/proactive-outreach-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/proactive-outreach-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/proactive-suggestions-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/proactive-suggestions-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/prompt-injection-protection-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/prompt-injection-protection-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/quiet-hours-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/quiet-hours-protocol.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/sales-best-practices-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/sales-best-practices-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/sentiment-monitoring-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/sentiment-monitoring-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/shopify-integration-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/shopify-integration-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/smart-booking-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/smart-booking-protocol.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/smart-faq-tool-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/smart-faq-tool-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/smart-playbook-switching-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/smart-playbook-switching-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/stripe-integration-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/stripe-integration-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/tool-gating-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/tool-gating-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/typed-knowledge-bases-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/typed-knowledge-bases-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/voice-phone-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/voice-phone-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ],
+   "flags": [
+    "describes the voice-phone capability the scoped copy deliberately does not ship"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/web-scraper-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/web-scraper-protocol.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/webhook-chaining-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/webhook-chaining-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/weekly-tune-up-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/weekly-tune-up-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/workflow-exit-rules-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/workflow-exit-rules-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/workflow-visual-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/workflow-visual-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/zhc-pixel-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/zhc-pixel-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch"
+   ],
+   "flags": [
+    "describes the full pixel capability; the scoped copy ships render-only"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/protocols/zhc-tag-prefix-protocol.md",
+   "dest": ".claude/skills/conversational-ai-system/protocols/zhc-tag-prefix-protocol.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/GHL-INBOUND-AND-PLAYBOOKS.md",
+   "dest": ".claude/skills/conversational-ai-system/references/GHL-INBOUND-AND-PLAYBOOKS.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/GHL_AI_LAYERS.md",
+   "dest": ".claude/skills/conversational-ai-system/references/GHL_AI_LAYERS.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/HOSTINGER-DOCKER-ENV.md",
+   "dest": ".claude/skills/conversational-ai-system/references/HOSTINGER-DOCKER-ENV.md",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/references/VPS-VS-MAC-INSTALL.md",
+   "dest": ".claude/skills/conversational-ai-system/references/VPS-VS-MAC-INSTALL.md",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/references/agents-runtime-rules.md",
+   "dest": ".claude/skills/conversational-ai-system/references/agents-runtime-rules.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/cloudflare-tunnel-troubleshooting.md",
+   "dest": ".claude/skills/conversational-ai-system/references/cloudflare-tunnel-troubleshooting.md",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/references/communications-playbook-standard.md",
+   "dest": ".claude/skills/conversational-ai-system/references/communications-playbook-standard.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/conversational-ai-strategic-roadmap.md",
+   "dest": ".claude/skills/conversational-ai-system/references/conversational-ai-strategic-roadmap.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/convert-and-flow-snapshot-guide.md",
+   "dest": ".claude/skills/conversational-ai-system/references/convert-and-flow-snapshot-guide.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/departments-and-roles.md",
+   "dest": ".claude/skills/conversational-ai-system/references/departments-and-roles.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/references/fleet-onboarding-tunnel-provisioning-field-guide.md",
+   "dest": ".claude/skills/conversational-ai-system/references/fleet-onboarding-tunnel-provisioning-field-guide.md",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/references/ghl-api-quick-reference.md",
+   "dest": ".claude/skills/conversational-ai-system/references/ghl-api-quick-reference.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/ghl-coupons-api.md",
+   "dest": ".claude/skills/conversational-ai-system/references/ghl-coupons-api.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/ghl-raw-body-json-standard.md",
+   "dest": ".claude/skills/conversational-ai-system/references/ghl-raw-body-json-standard.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/references/memory-design-rules.md",
+   "dest": ".claude/skills/conversational-ai-system/references/memory-design-rules.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/model-fallback-chain.md",
+   "dest": ".claude/skills/conversational-ai-system/references/model-fallback-chain.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/notion-client-doc-standard.md",
+   "dest": ".claude/skills/conversational-ai-system/references/notion-client-doc-standard.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/playbook-prelude.md",
+   "dest": ".claude/skills/conversational-ai-system/references/playbook-prelude.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/sales-frameworks-deep-dive.md",
+   "dest": ".claude/skills/conversational-ai-system/references/sales-frameworks-deep-dive.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/references/shopify-graphql-reference.md",
+   "dest": ".claude/skills/conversational-ai-system/references/shopify-graphql-reference.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/references/snapshot-inbound-workflow-fixture.json",
+   "dest": ".claude/skills/conversational-ai-system/references/snapshot-inbound-workflow-fixture.json",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/references/stripe-coupons-api.md",
+   "dest": ".claude/skills/conversational-ai-system/references/stripe-coupons-api.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/references/stripe-webhooks-reference.md",
+   "dest": ".claude/skills/conversational-ai-system/references/stripe-webhooks-reference.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/subagent-delegation-pattern.md",
+   "dest": ".claude/skills/conversational-ai-system/references/subagent-delegation-pattern.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/references/tag-migration-notes.md",
+   "dest": ".claude/skills/conversational-ai-system/references/tag-migration-notes.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/references/v6.0-source-playbook.md",
+   "dest": ".claude/skills/conversational-ai-system/references/v6.0-source-playbook.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "session-seed",
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/references/vps-vs-mac-install-considerations.md",
+   "dest": ".claude/skills/conversational-ai-system/references/vps-vs-mac-install-considerations.md",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/references/workflow-ai-instructions-standard.md",
+   "dest": ".claude/skills/conversational-ai-system/references/workflow-ai-instructions-standard.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/00-verify-prerequisites.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/00-verify-prerequisites.sh",
+   "verdict": "exclude",
+   "class": "adapter",
+   "flags": [
+    "judgment-call (audit-flagged; excluded per the brief's lists, ruling recorded for copy time)"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/01-locate-master-files-folder.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/01-locate-master-files-folder.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/02-create-knowledgebases.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/02-create-knowledgebases.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/03-create-journey-templates.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/03-create-journey-templates.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/04-register-crons.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/04-register-crons.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/05-update-agents-md.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/05-update-agents-md.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/06-append-memory-rules.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/06-append-memory-rules.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/07-stripe-setup-wizard.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/07-stripe-setup-wizard.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/08-shopify-setup-wizard.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/08-shopify-setup-wizard.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/09-install-conversation-workflows.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/09-install-conversation-workflows.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "inseparable: reads the master-files pointer the excluded host steps maintain and chowns the conversation log dir to the gateway runtime user; the scoped copy must supply both"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/10-generate-capabilities-playbook.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/10-generate-capabilities-playbook.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "inseparable at the path seam: resolves targets through the master-files pointer and reads openclaw.json"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/11-run-qc-checklist.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/11-run-qc-checklist.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ],
+   "flags": [
+    "inseparable: its cron, tunnel and config sections reference excluded scripts 04, 13, 14, 16; those sections can only fail or be amputated in the scoped copy"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/12-scaffold-channel-playbooks.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/12-scaffold-channel-playbooks.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ],
+   "flags": [
+    "inseparable at the path seam: resolves targets through the master-files pointer"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/13-create-cloudflare-tunnel.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/13-create-cloudflare-tunnel.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/14-install-cloudflared-service.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/14-install-cloudflared-service.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/15-configure-hooks-mappings.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/16-verify-openclaw-version.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/16-verify-openclaw-version.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/17-backup-openclaw-config.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/17-backup-openclaw-config.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/18-locate-secrets-env.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/18-locate-secrets-env.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/19-configure-dreaming-embeddings.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/19-configure-dreaming-embeddings.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/20-seed-design-principles.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/20-seed-design-principles.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/21-generate-client-reference-sheet.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/21-generate-client-reference-sheet.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/22-init-run-manifest.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/22-init-run-manifest.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/22-notify-client-doc.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/22-notify-client-doc.sh",
+   "verdict": "exclude",
+   "class": "adapter",
+   "flags": [
+    "judgment-call (audit-flagged; excluded per the brief's lists, ruling recorded for copy time)"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/23-save-secrets.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/23-save-secrets.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/24-self-test-hook.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/24-self-test-hook.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/24-update-tools-md.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/24-update-tools-md.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/25-seed-round3-feature-files.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/25-seed-round3-feature-files.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/26-verify-pixel-prerequisites.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/26-verify-pixel-prerequisites.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/27-render-pixel-js.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/27-render-pixel-js.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ],
+   "flags": [
+    "render-only in the scoped copy: activation needs excluded scripts 26, 28, 29"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/28-configure-pixel-hook.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/28-configure-pixel-hook.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/29-deploy-pixel-cloudflare.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/29-deploy-pixel-cloudflare.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/30-voice-phone-setup-wizard.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/30-voice-phone-setup-wizard.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/31-generate-workflow-visual.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/31-generate-workflow-visual.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "launch",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/32-verify-model-failover-support.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/32-verify-model-failover-support.sh",
+   "verdict": "exclude",
+   "class": "adapter",
+   "flags": [
+    "judgment-call (audit-flagged; excluded per the brief's lists, ruling recorded for copy time)"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/33-runtime-tool-gating-prover.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/33-runtime-tool-gating-prover.sh",
+   "verdict": "exclude",
+   "class": "adapter",
+   "flags": [
+    "judgment-call (audit-flagged; excluded per the brief's lists, ruling recorded for copy time)"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/cc-task.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/cc-task.sh",
+   "verdict": "exclude",
+   "class": "adapter",
+   "flags": [
+    "judgment-call (audit-flagged; excluded per the brief's lists, ruling recorded for copy time)"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/check-ghl-pit-liveness.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/check-ghl-pit-liveness.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/import_aa_handoff.py",
+   "dest": ".claude/skills/conversational-ai-system/scripts/import_aa_handoff.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/lib-docker-tenant.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/lib-docker-tenant.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/lib-docker-tenant.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/lib-docker-tenant.test.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-23-key-bodies.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-23-key-bodies.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-ab-testing.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-ab-testing.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-ab-testing.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-ab-testing.test.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-backend-ready.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-backend-ready.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-client-test-mode.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-client-test-mode.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-client-test-mode.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-client-test-mode.test.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-communications-playbook-standard.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-communications-playbook-standard.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-config-schema-safety.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-config-schema-safety.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-conversation-memory.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-conversation-memory.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-f45-f47-substance.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-f45-f47-substance.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-f45-f47-substance.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-f45-f47-substance.test.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-feature-logs.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-feature-logs.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-ghl-raw-body-standard.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-ghl-raw-body-standard.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-lattice-pointer.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-lattice-pointer.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-model-fallback.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-model-fallback.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-model-fallback.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-model-fallback.test.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-multi-tenant.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-multi-tenant.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-multi-tenant.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-multi-tenant.test.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-no-personal-data.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-no-personal-data.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-notify-client-doc.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-notify-client-doc.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-notion-doc-standard.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-notion-doc-standard.sh",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-opportunity-sync.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-opportunity-sync.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-opportunity-sync.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-opportunity-sync.test.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-playbook-declares.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-playbook-declares.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-playbook-declares.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-playbook-declares.test.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-playbook-doc.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-playbook-doc.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-playbook-doc.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-playbook-doc.test.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-playbook-engine.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-playbook-engine.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-proactive-outreach.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-proactive-outreach.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-proactive-outreach.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-proactive-outreach.test.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-reference-sheet.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-reference-sheet.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-runtime-tool-gating.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-runtime-tool-gating.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-runtime-tool-gating.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-runtime-tool-gating.test.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-segmentation.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-segmentation.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-segmentation.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-segmentation.test.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-self-test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-self-test.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-send-directive.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-send-directive.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-tool-gating.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-tool-gating.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-tool-gating.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-tool-gating.test.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-tools-md-ghl-ref.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-tools-md-ghl-ref.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-trinity-registry.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-trinity-registry.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-trinity-registry.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-trinity-registry.test.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-voice-phone.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-voice-phone.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-voice-phone.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-voice-phone.test.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-webhook-chaining.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-webhook-chaining.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-webhook-chaining.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-webhook-chaining.test.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-workflow-exits.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-workflow-exits.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-workflow-exits.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-workflow-exits.test.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-workflow-visual.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-workflow-visual.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-workflow-visual.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-workflow-visual.test.sh",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-zhc-pixel.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-zhc-pixel.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-zhc-pixel.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-zhc-pixel.test.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/qc-zhc-tag-prefix.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/repair/repair-inbound-hooks.py",
+   "dest": ".claude/skills/conversational-ai-system/scripts/repair/repair-inbound-hooks.py",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/skill38-calendar-sync.sh",
+   "dest": ".claude/skills/conversational-ai-system/scripts/skill38-calendar-sync.sh",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/scripts/two_strike_adapter.py",
+   "dest": ".claude/skills/conversational-ai-system/scripts/two_strike_adapter.py",
+   "verdict": "exclude",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/skill-version.txt",
+   "dest": ".claude/skills/conversational-ai-system/skill-version.txt",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/agent-capabilities-playbook-template.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/agent-capabilities-playbook-template.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/templates/channel-playbook-template.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/channel-playbook-template.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/client-reference-sheet-template.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/client-reference-sheet-template.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/templates/journey-templates/coach/journey.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/journey-templates/coach/journey.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/journey-templates/consulting/journey.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/journey-templates/consulting/journey.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/journey-templates/course-creator/journey.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/journey-templates/course-creator/journey.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/journey-templates/e-commerce/journey.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/journey-templates/e-commerce/journey.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/journey-templates/real-estate/journey.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/journey-templates/real-estate/journey.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/journey-templates/registry.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/journey-templates/registry.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/journey-templates/saas/journey.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/journey-templates/saas/journey.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/journey-templates/service-provider/journey.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/journey-templates/service-provider/journey.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/journey-templates/wellness/journey.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/journey-templates/wellness/journey.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/registry.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/registry.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/run-manifest-template.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/run-manifest-template.md",
+   "verdict": "include",
+   "class": "adapter"
+  },
+  {
+   "source": "38-conversational-ai-system/templates/sms-workflow-ai-prompt-template.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/sms-workflow-ai-prompt-template.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/templates/workflow-verification-checklist-template.md",
+   "dest": ".claude/skills/conversational-ai-system/templates/workflow-verification-checklist-template.md",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "teardown",
+    "paths-secrets"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/templates/zhc-pixel/zhc-pixel.template.js",
+   "dest": ".claude/skills/conversational-ai-system/templates/zhc-pixel/zhc-pixel.template.js",
+   "verdict": "include",
+   "class": "adapter",
+   "seams": [
+    "session-seed"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/tests/repair-inbound-hooks.test.sh",
+   "dest": ".claude/skills/conversational-ai-system/tests/repair-inbound-hooks.test.sh",
+   "verdict": "exclude",
+   "class": "adapter",
+   "flags": [
+    "its only file tests the excluded hooks-repair script"
+   ]
+  },
+  {
+   "source": "38-conversational-ai-system/tools/playbook_engine.py",
+   "dest": ".claude/skills/conversational-ai-system/tools/playbook_engine.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/tools/tests/fixtures/broken-playbook.md",
+   "dest": ".claude/skills/conversational-ai-system/tools/tests/fixtures/broken-playbook.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/tools/tests/fixtures/good-playbook.md",
+   "dest": ".claude/skills/conversational-ai-system/tools/tests/fixtures/good-playbook.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/tools/tests/fixtures/runtime-gating-log.md",
+   "dest": ".claude/skills/conversational-ai-system/tools/tests/fixtures/runtime-gating-log.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/tools/tests/fixtures/runtime-gating-playbook.md",
+   "dest": ".claude/skills/conversational-ai-system/tools/tests/fixtures/runtime-gating-playbook.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/tools/tests/fixtures/sample-log.md",
+   "dest": ".claude/skills/conversational-ai-system/tools/tests/fixtures/sample-log.md",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/tools/tests/test_playbook_engine.py",
+   "dest": ".claude/skills/conversational-ai-system/tools/tests/test_playbook_engine.py",
+   "verdict": "include",
+   "class": "neutral"
+  },
+  {
+   "source": "38-conversational-ai-system/wire.sh",
+   "dest": ".claude/skills/conversational-ai-system/wire.sh",
+   "verdict": "exclude",
+   "class": "adapter"
+  }
+ ]
+}

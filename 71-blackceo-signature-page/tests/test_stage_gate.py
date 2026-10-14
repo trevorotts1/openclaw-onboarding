@@ -25,6 +25,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE = ROOT / "scripts" / "stage_gate.py"
+WRITE_REVIEW = ROOT / "scripts" / "write_review.py"
 PY = sys.executable
 sys.path.insert(0, str(ROOT / "scripts"))
 import stage_gate  # noqa: E402  (module import loads the real contract)
@@ -64,9 +65,13 @@ def receipt(stage, author="builder-agent", reviewer=None, status="pass", scores=
         "started_at": "2026-10-05T10:00:00+00:00",
         "finished_at": "2026-10-05T10:30:00+00:00",
         "artifacts": [],
-        "scores": scores or {},
         "notes": "fixture",
     }
+    # Review Receipt v2: receipts carry no scores. The scores key is only
+    # emitted when a caller passes a non-empty dict (the legacy image-chain
+    # fixtures below, which predate v2 and are out of scope here).
+    if scores:
+        r["scores"] = scores
     if extra:
         r.update(extra)
     return r
@@ -74,6 +79,33 @@ def receipt(stage, author="builder-agent", reviewer=None, status="pass", scores=
 
 def put_receipt(run: Path, stage, **kw):
     write(run / "private" / "receipts" / f"{stage}.json", json.dumps(receipt(stage, **kw)))
+
+
+REVIEW_NOTE = "Checked against the artifact bytes and the stage rubric line by line."
+REVIEW_PERFORMED = "Opened the artifact itself and scored it against the stage rubric."
+REVIEW_NEXT = "the stage receipt that closes on this review"
+
+
+def write_review(run, stage, item, criteria, author_session, reviewer_session, env):
+    """Write one Review Receipt v2 file with the real writer, run from the
+    reviewer's session (OPENCLAW_SESSION_ID), exactly as a run would."""
+    scores = json.dumps({name: {"score": score, "note": REVIEW_NOTE}
+                         for name, score in criteria.items()})
+    wenv = {k: v for k, v in env.items()
+            if k not in ("OPENCLAW_SESSION_ID", "CLAUDE_CODE_SESSION_ID",
+                         "CLAUDE_SESSION_ID")}
+    wenv["OPENCLAW_SESSION_ID"] = reviewer_session
+    proc = subprocess.run(
+        [PY, str(WRITE_REVIEW), str(run), stage, item,
+         "--scores", scores, "--verdict", "pass",
+         "--performed-check", REVIEW_PERFORMED,
+         "--next-current-artifact", REVIEW_NEXT,
+         "--author-session", author_session],
+        text=True, capture_output=True, env=wenv)
+    assert proc.returncode == 0, (
+        f"write_review {stage}/{item}: rc={proc.returncode}\n"
+        f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
+    return proc
 
 
 def kie_transport(files, **over):
@@ -106,6 +138,33 @@ def png_bytes():
     return base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     )
+
+
+def png_variant(index):
+    """Distinct deterministic PNG bytes per index (stdlib only): a
+    16x16 two-tone pattern from a fixed palette, seeded per index. The
+    image-chain fixtures need genuinely distinct images, not just
+    distinct bytes: the assembled gate's grade screen detects
+    duplicates by average hash, under which any two solid-color
+    images are identical."""
+    import random
+    import struct
+    import zlib
+    palette = [(200, 40, 40), (40, 200, 40), (40, 40, 200), (200, 200, 40)]
+    base = palette[index % len(palette)]
+    dark = tuple(int(c * 0.45) for c in base)
+    rng = random.Random(1000 + index)
+    px = [[base if rng.random() < 0.5 else dark for _ in range(16)]
+          for _ in range(16)]
+
+    def chunk(kind, data):
+        return (struct.pack(">I", len(data)) + kind + data
+                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+
+    ihdr = struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0)
+    raw = b"".join(b"\x00" + b"".join(bytes(p) for p in row) for row in px)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
 def fixture_contract(td: Path) -> Path:
@@ -146,7 +205,7 @@ class StageGateTest(unittest.TestCase):
         self.assertIn("visual-mockup", combined,
                       "failure output must name the unclosed dependency visual-mockup")
 
-    # ---- (b) close with reviewer_agent == author_agent fails
+    # ---- (b) close whose only review comes from the author's own session fails
     def test_b_close_reviewer_equals_author_fails(self):
         run = self.td / "run"
         write(run / "intake.json", "{}")
@@ -156,9 +215,13 @@ class StageGateTest(unittest.TestCase):
         write(run / "copy" / "internal-manuscript.md", "x")
         write(run / "copy" / "public-copy.md", "x")
         write(run / "copy" / "copy-manifest.json", "{}")
+        # Review Receipt v2: the only review was written from the author's
+        # own session, so the gate refuses the close on independence.
+        write_review(run, "copy", "stage", {"clarity": 9},
+                     "builder-session", "builder-session", self.env)
         proc = run_gate("close", str(run), "copy", expect=1, env=self.env)
         combined = proc.stdout + proc.stderr
-        self.assertIn("reviewer_agent equals author_agent", combined)
+        self.assertIn("reviewer_session equals author_session", combined)
 
     # ---- (b2) close with an independent reviewer passes
     def test_b2_close_independent_reviewer_passes(self):
@@ -166,11 +229,12 @@ class StageGateTest(unittest.TestCase):
         write(run / "intake.json", "{}")
         write(run / "private" / "brand.json", json.dumps({"fonts": {"display": "Test"}}))
         run_gate("init", str(run), expect=0, env=self.env)
-        put_receipt(run, "copy", author="builder-agent", reviewer="reviewer-agent",
-                    scores={"clarity": 9})
+        put_receipt(run, "copy", author="builder-agent", reviewer="reviewer-agent")
         write(run / "copy" / "internal-manuscript.md", "x")
         write(run / "copy" / "public-copy.md", "x")
         write(run / "copy" / "copy-manifest.json", "{}")
+        write_review(run, "copy", "stage", {"clarity": 9},
+                     "builder-session", "reviewer-session", self.env)
         run_gate("close", str(run), "copy", expect=0, env=self.env)
         state = json.loads((run / "private" / "state.json").read_text())
         self.assertEqual(state["stages"]["copy"]["status"], "closed")
@@ -201,22 +265,63 @@ class StageGateTest(unittest.TestCase):
         write(run / "responsive-html" / "index.html", "<html></html>")
         write(run / "responsive-html" / "page.txt", "code-only")
         write(run / "responsive-html" / "compare" / "compare-1440-01.png", png_bytes())
-        put_receipt(run, "responsive-html", author="html-builder", reviewer="visual-reviewer",
-                    extra={
-                        "scores": {"brand_palette_fidelity": 9, "section_match": 8},
-                        "review_files": {"responsive-html/compare/compare-1440-01.png": {"score": 9}},
-                    })
+        put_receipt(run, "responsive-html", author="html-builder", reviewer="visual-reviewer")
+        write_review(run, "responsive-html", "compare-1440-01",
+                     {"brand_palette_fidelity": 9, "section_match": 8},
+                     "html-builder-session", "visual-reviewer-session", self.env)
         gate("close", str(run), "responsive-html", expect=0)
         # ghl-install-test + publish-verify close as not_authorized (allowed stages)
         put_receipt(run, "ghl-install-test", status="not_authorized")
         write(run / "ghl-install-test" / "install-steps.md", "steps")
+        # Assembly fix (S8): S5's contract entries for these stages
+        # require their delivery artifacts even on a not_authorized
+        # close; this fixture predates them.
+        write(run / "ghl-install-test" / "funnel-completion.json", "{}")
+        write(run / "ghl-install-test" / "evidence" / "desktop.png", png_bytes())
+        write(run / "ghl-install-test" / "evidence" / "mobile.png", png_bytes())
         gate("close", str(run), "ghl-install-test", expect=0)
         put_receipt(run, "publish-verify", status="not_authorized")
         write(run / "publish-verify" / "receipts" / "note.md", "n/a")
+        write(run / "publish-verify" / "fetch-record.json", "{}")
         gate("close", str(run), "publish-verify", expect=0)
+        # Assembly fix (S8): the assembled system has a 14th stage
+        # (automation-wiring, Item 31) that S1's fixture predates. This
+        # intake declares no GHL workflows publish, so the stage
+        # records not_applicable at close and the run can complete.
+        gate("close", str(run), "automation-wiring", expect=0)
+        # Assembly fix (S8): Item 34's deliverables contract postdates
+        # this fixture too; cmd_report refuses while the deliverables
+        # folder does not verify. Mirror S5's minimal valid folder.
+        deliverables = {
+            "page/index.html": "<html><body>page</body></html>",
+            "assets/hero.png": png_bytes(),
+            "copy/public-copy.md": "approved copy",
+            "reports/REPORT.md": "run report",
+            "reports/REPORT.json": "{}",
+            "handoffs/automation-handoff.json": "{}",
+            "receipts/intake.json": "{}",
+            "provenance.json": json.dumps({
+                "run_id": "run-test-1",
+                "github": {"owner": "op", "repo": "pages", "branch": "main",
+                           "commit_sha": "abc1234"},
+                "vercel": {"project_id": "prj_1", "deployment_id": "dpl_1",
+                           "url": "https://pages.example.com/"},
+                "ghl": {"location_id": "loc_1", "funnel_id": "F-100"}}),
+        }
+        for rel, data in deliverables.items():
+            write(run / "deliverables" / rel, data)
+        write(run / "deliverables" / "manifest.json", json.dumps(
+            {"run_id": "run-test-1",
+             "files": sorted(set(deliverables) | {"manifest.json"})}))
         proc = run_gate("report", str(run), expect=0, env=self.env)
         report = (run / "REPORT.md").read_text()
-        self.assertIn("RUN COMPLETE", report)
+        # Assembly ruling (S8): this fixture's intake is a test run, and
+        # Item 6 rule 1 (S5, owner-ordered) says a test run's report
+        # never reads as a production delivery, even when every stage
+        # closed. S1's original "RUN COMPLETE" headline assertion
+        # predates Item 6; the banner is the assembled semantics. The
+        # completion evidence is the stage table asserted below.
+        self.assertIn("TEST RUN, NOT A PRODUCTION DELIVERY", report)
         self.assertIn("PASS", report)
         self.assertNotIn("NOT RUN |", report)
         self.assertIn("ghl-install-test | NOT AUTHORIZED", report)
@@ -246,11 +351,22 @@ class StageGateTest(unittest.TestCase):
             "fonts": {"display": "Test", "body": "Test", "accent": "Test"},
             "logo": {"files": "test.png", "masthead_files": "test.png"},
             "founder_photos": "test.png",
+            # Assembly fix (S8): the real brand file carries a grade
+            # object (thresholds null until Item 8 calibration);
+            # validate_image_grade.py fails a brand file with no grade
+            # object at all, by design.
+            "grade": {"min_mean_saturation": None, "min_luma_std": None},
         }))
         write(run / "intake.json", json.dumps({
             "page_version": "standard", "brand_owner": "blackceo",
             "brand_file": "private/brand.json",
             "creative_direction": None, "image_cap": images, "test_run": True,
+            # Assembly fix (S8): the Item 13 layout gate (S3 Request 2)
+            # refuses the layout-stage closes below without the
+            # owner-supplied reference files or a recorded waiver.
+            "layout_waivers": [
+                {"gate": "layout-references",
+                 "reason": "test fixture: owner-supplied Item 13 reference files absent"}],
         }))
         write(run / "copy" / "internal-manuscript.md", "internal")
         write(run / "copy" / "public-copy.md", "public")
@@ -261,8 +377,17 @@ class StageGateTest(unittest.TestCase):
             write(run / "desktop-wireframe" / f"part-{i:02d}.png", "stub")
         write(run / "desktop-wireframe" / "image-inventory.json",
               json.dumps({"images": [{"id": f"IMG-{i:03d}"} for i in range(1, images + 1)]}))
+        # Assembly fix (S8): the delta contract's desktop-wireframe
+        # review covers section-plan.json, mockup.html and bible.md
+        # (Item 3); this legacy fixture predates the delta.
+        write(run / "desktop-wireframe" / "section-plan.json", "{}")
+        write(run / "desktop-wireframe" / "mockup.html", "<html></html>")
+        write(run / "desktop-wireframe" / "bible.md", "# bible")
         write(run / "mobile-tablet" / "part-01.png", "stub")
         write(run / "mobile-tablet" / "tablet-rules.md", "rules")
+        # Assembly fix (S8): the assembled contract also requires
+        # mobile-tablet/section-plan.json (S3 Request 1 contract reads).
+        write(run / "mobile-tablet" / "section-plan.json", "{}")
         write(run / "visual-mockup" / "page-visual-bible.json",
               json.dumps({"selection_mode": "SECRET_SAUCE_ONLY"}))
         write(run / "visual-mockup" / "mockup.html", "<html></html>")
@@ -270,27 +395,96 @@ class StageGateTest(unittest.TestCase):
         write(run / "visual-mockup" / "mobile" / "part-01.png", "stub")
         for i in range(1, images + 1):
             write(run / "image-inventory-prompts" / f"IMG-{i:03d}.txt", prompt_text)
-            write(run / "image-generation-qc" / f"Image-{i:03d}.png", png_bytes())
+            write(run / "image-generation-qc" / f"Image-{i:03d}.png", png_variant(i))
         write(run / "image-inventory-prompts" / "prompt-manifest.json", "{}")
+        # Assembly fix (S8): GCR-S2-4 (Item 10) requires a governing
+        # style selection record before the prompts stage can close.
+        write(run / "image-inventory-prompts" / "style-selection.json",
+              json.dumps({"schema_version": 1, "selections": [
+                  {"applies_to": "all", "source_library": "image-guide-sauce-only",
+                   "style_id": "signature-grade", "branded_name": "Signature Grade"}]}))
         write(run / "image-generation-qc" / "image-qc.json", "{}")
 
         def gate(*args, expect=None, env=fixture_env):
             return run_gate(*args, expect=expect, env=env)
 
         gate("init", str(run), expect=0)
+        # Assembly fix (S8): these legacy fixtures predated Review
+        # Receipt v2 (S1's receipt() note flagged them as out of scope
+        # while the module could not run standalone). They now close
+        # the way build_run_chain does: no scores in receipts, one v2
+        # review file per reviewed stage, from the reviewer's session.
         noop_stages = [
-            ("intake", "intake-agent", None, None, None),
-            ("copy", "copy-writer", "copy-reviewer", {"clarity": 9}, None),
-            ("font-action-plan", "font-planner", None, None, None),
-            ("desktop-wireframe", "wireframe-lead", "wireframe-reviewer", {"layout": 9}, None),
-            ("mobile-tablet", "mobile-lead", "mobile-reviewer", {"reflow": 8}, None),
-            ("visual-mockup", "mock-builder", None, None, None),
+            ("intake", "intake-agent", "intake-reviewer", {"grounding": 9, "craft": 9}),
+            ("copy", "copy-writer", "copy-reviewer", {"clarity": 9, "voice": 9}),
+            ("font-action-plan", "font-planner", None, None),
+            ("desktop-wireframe", "wireframe-lead", "wireframe-reviewer", {"layout": 9}),
+            ("mobile-tablet", "mobile-lead", "mobile-reviewer", {"responsiveness": 9}),
+            ("visual-mockup", "mock-builder", None, None),
         ]
-        for stage, author, reviewer, scores, extra in noop_stages:
+        for stage, author, reviewer, criteria in noop_stages:
+            extra = {"author_session_id": f"sess-author-{stage}",
+                     "reviewer_session_id": f"sess-reviewer-{stage}"}
             put_receipt(run, stage, author=author, reviewer=reviewer or author,
-                        scores=scores or {}, extra=extra)
+                        extra=extra)
+            if stage == "visual-mockup":
+                # Per-artifact coverage (Item 3 delta): one review per
+                # artifact, mirroring build_run_chain's review table.
+                for item, item_criteria in [
+                        ("desktop-part-01", {"composition_fidelity": 9}),
+                        ("mobile-part-01", {"composition_fidelity": 9}),
+                        ("page-visual-bible", {"brand_token_discipline": 9}),
+                        ("mockup", {"composition_fidelity": 9})]:
+                    write_review(run, stage, item, item_criteria,
+                                 "mock-session", "mock-review-session",
+                                 fixture_env)
+            elif reviewer:
+                write_review(run, stage, "stage", criteria,
+                             f"sess-author-{stage}", f"sess-reviewer-{stage}",
+                             {**fixture_env, "AGENT_ID": reviewer})
             gate("close", str(run), stage, expect=0)
-        return env, gate
+
+        def gate_returned(*args, expect=None, env=None):
+            """The gate the image-stage tests close with. Assembly fix
+            (S8): the two image stages are itemized in the assembled
+            contract (Item 20), so their stage closes fan in on
+            item-level closes (S7's recorded composition finding: the
+            tests close items first; the gate is not weakened), and the
+            tests' legacy receipts carry v1 scores, which translate
+            here into the stage's Review Receipt v2 file."""
+            use_env = env if env is not None else fixture_env
+            if len(args) >= 3 and args[0] == "close" and args[2] in (
+                    "image-inventory-prompts", "image-generation-qc"):
+                stage = args[2]
+                receipt_path = run / "private" / "receipts" / f"{stage}.json"
+                if receipt_path.is_file():
+                    data = json.loads(receipt_path.read_text())
+                    # The legacy receipts carry the review scores in the
+                    # receipt; v2 moves them into the per-item review
+                    # files (the image stages score per artifact).
+                    had_scores = "scores" in data
+                    scores = data.pop("scores", None) or {"fidelity": 9}
+                    if had_scores:
+                        receipt_path.write_text(json.dumps(data), encoding="utf-8")
+                    sessions = {"image-inventory-prompts":
+                                ("prompt-session", "prompt-review-session"),
+                                "image-generation-qc":
+                                ("image-session", "image-review-session")}[stage]
+                    inventory = json.loads(
+                        (run / "desktop-wireframe" / "image-inventory.json").read_text())
+                    # Review files are keyed by artifact file stem
+                    # (Image-001), item closes by inventory id (IMG-001);
+                    # the gate maps between them by numeric suffix.
+                    stems = [Path(vf).stem for vf in (data.get("validator_files") or [])]
+                    for idx, entry in enumerate(inventory.get("images", [])):
+                        item = entry["id"]
+                        stem = stems[idx] if idx < len(stems) else item
+                        write_review(run, stage, stem, scores,
+                                     sessions[0], sessions[1], use_env)
+                        run_gate("close-item", str(run), stage, item, env=use_env)
+            return gate(*args, expect=expect, env=use_env)
+
+        return env, gate_returned
 
     def test_e_close_image_inventory_prompts_real_validator(self):
         # Passing fixture prompt contains the exact Signature Grade Block, so
@@ -371,7 +565,10 @@ class StageGateTest(unittest.TestCase):
                             "--image-cap", "2", "--image-engine", "agnes", "--test-run"], check=True)
         put_receipt(run, "image-generation-qc", author="image-gen", reviewer="image-reviewer",
                     scores={"grade": 9}, extra=base)
-        return run_gate("close", str(run), "image-generation-qc", env=env)
+        # Assembly fix (S8): close through the chain's returned gate so
+        # the v2 translation and item-level closes run, exactly as the
+        # success-path tests do; the raw run_gate close predates both.
+        return gate("close", str(run), "image-generation-qc", env=env)
 
     def test_i1_no_transport_block_is_refused(self):
         proc = self.close_image_qc()
@@ -531,6 +728,14 @@ class StageGateTest(unittest.TestCase):
             "page_version": "standard", "brand_owner": "blackceo",
             "brand_file": "private/brand.json",
             "creative_direction": None, "image_cap": 2, "test_run": True,
+            # S8 assembly: the Item 13 layout gate fires at wireframe and
+            # mockup close in gate code (not via contract validators), and
+            # the owner-supplied reference files are absent from the test
+            # environment; the fixture records the waiver, as a real run
+            # whose owner waived them would.
+            "layout_waivers": [{"gate": "layout-references",
+                                "reason": "test fixture: layout reference files are "
+                                          "owner-supplied (Item 13) and absent here"}],
         }))
         write(run / "copy" / "internal-manuscript.md", "internal")
         write(run / "copy" / "public-copy.md", "public")
@@ -541,8 +746,20 @@ class StageGateTest(unittest.TestCase):
             write(run / "desktop-wireframe" / f"part-{i:02d}.png", "stub")
         write(run / "desktop-wireframe" / "image-inventory.json",
               json.dumps({"images": [{"id": "IMG-001"}, {"id": "IMG-002"}]}))
+        write(run / "desktop-wireframe" / "section-plan.json", json.dumps([
+            {"section_id": "hero", "copy_block_ids": ["hero-copy"],
+             "image_slot_ids": ["IMG-001"], "reference_traits": []},
+            {"section_id": "offer", "copy_block_ids": ["offer-copy"],
+             "image_slot_ids": ["IMG-002"], "reference_traits": []},
+        ]))
         write(run / "mobile-tablet" / "part-01.png", "stub")
         write(run / "mobile-tablet" / "tablet-rules.md", "rules")
+        write(run / "mobile-tablet" / "section-plan.json", json.dumps([
+            {"section_id": "hero", "copy_block_ids": ["hero-copy"],
+             "image_slot_ids": ["IMG-001"], "reference_traits": []},
+            {"section_id": "offer", "copy_block_ids": ["offer-copy"],
+             "image_slot_ids": ["IMG-002"], "reference_traits": []},
+        ]))
         write(run / "visual-mockup" / "page-visual-bible.json",
               json.dumps({"selection_mode": "SECRET_SAUCE_ONLY"}))
         write(run / "visual-mockup" / "mockup.html", "<html></html>")
@@ -551,6 +768,12 @@ class StageGateTest(unittest.TestCase):
         write(run / "image-inventory-prompts" / "IMG-001.txt", "prompt")
         write(run / "image-inventory-prompts" / "IMG-002.txt", "prompt")
         write(run / "image-inventory-prompts" / "prompt-manifest.json", "{}")
+        # Assembly fix (S8): GCR-S2-4 (Item 10) requires a governing
+        # style selection record before the prompts stage can close.
+        write(run / "image-inventory-prompts" / "style-selection.json",
+              json.dumps({"schema_version": 1, "selections": [
+                  {"applies_to": "all", "source_library": "image-guide-sauce-only",
+                   "style_id": "signature-grade", "branded_name": "Signature Grade"}]}))
         write(run / "image-generation-qc" / "Image-001.png", "stub")
         write(run / "image-generation-qc" / "Image-002.png", "stub")
         write(run / "image-generation-qc" / "image-qc.json", "{}")
@@ -577,12 +800,33 @@ class StageGateTest(unittest.TestCase):
             "mobile-tablet": "mobile-reviewer", "image-inventory-prompts": "prompt-reviewer",
             "image-generation-qc": "image-reviewer",
         }
-        scores = {
-            "copy": {"clarity": 9},
-            "desktop-wireframe": {"layout": 9},
-            "mobile-tablet": {"reflow": 8},
-            "image-inventory-prompts": {"fidelity": 9},
-            "image-generation-qc": {"grade": 9},
+        # Review Receipt v2: every review-required stage gets one review
+        # file per required item, written by the real writer from a
+        # reviewer session distinct from the author session, before close.
+        review_items = {
+            "copy": [("stage", {"clarity": 9})],
+            "desktop-wireframe": [("stage", {"layout": 9})],
+            "mobile-tablet": [("stage", {"reflow": 8})],
+            "visual-mockup": [("desktop-part-01", {"composition_fidelity": 9}),
+                              ("mobile-part-01", {"composition_fidelity": 9}),
+                              ("page-visual-bible", {"brand_token_discipline": 9}),
+                              ("mockup", {"composition_fidelity": 9})],
+            "image-inventory-prompts": [("IMG-001", {"fidelity": 9}),
+                                        ("IMG-002", {"fidelity": 9})],
+            "image-generation-qc": [("Image-001", {"grade": 9}),
+                                    ("Image-002", {"grade": 9})],
+            "final-mockups": [("desktop-part-01", {"composition_fidelity": 9}),
+                              ("mobile-part-01", {"composition_fidelity": 9}),
+                              ("mockup", {"composition_fidelity": 9})],
+        }
+        review_sessions = {
+            "copy": ("copy-session", "copy-review-session"),
+            "desktop-wireframe": ("wireframe-session", "wireframe-review-session"),
+            "mobile-tablet": ("mobile-session", "mobile-review-session"),
+            "visual-mockup": ("mock-session", "mock-review-session"),
+            "image-inventory-prompts": ("prompt-session", "prompt-review-session"),
+            "image-generation-qc": ("image-session", "image-review-session"),
+            "final-mockups": ("final-session", "final-review-session"),
         }
         kie_receipts(run, kie_transport(KIE_FILES))
         costs = {"image-generation-qc": {"provider": "kie", "credits_before": 100.0,
@@ -591,9 +835,20 @@ class StageGateTest(unittest.TestCase):
         for stage in authors:
             put_receipt(run, stage, author=authors[stage],
                         reviewer=reviewers.get(stage, authors[stage]),
-                        scores=scores.get(stage, {}),
                         extra=({"cost": {k: v for k, v in costs[stage].items() if k != "transport"},
                                 "transport": costs[stage]["transport"]} if stage in costs else None))
+            for item, criteria in review_items.get(stage, []):
+                author_session, reviewer_session = review_sessions[stage]
+                write_review(run, stage, item, criteria,
+                             author_session, reviewer_session, self.env)
+            # S8 assembly (S7's recorded composition finding): with Item
+            # 20's item gates in force, an itemized stage's close refuses
+            # until every item is closed at item level first (fan-in).
+            # The gate is unchanged; the chain closes the items first,
+            # as a real run under the swarm runner does.
+            if stage in ("image-inventory-prompts", "image-generation-qc"):
+                for item_id in ("IMG-001", "IMG-002"):
+                    gate("close-item", str(run), stage, item_id, expect=0)
             gate("close", str(run), stage, expect=0)
         return run, gate
 

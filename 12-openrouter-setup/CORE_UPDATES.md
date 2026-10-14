@@ -11,8 +11,9 @@ Add:
 
 ```
 ## OpenRouter Model Routing [PRIORITY: CRITICAL]
-- Before any task, evaluate: What model fits best? What thinking level?
-- Opus = planning/QC only, not grunt work. MiniMax = daily workhorse. Kimi = code army (no tool calls).
+- Before any task, evaluate: What kind of work is this? Which of the client's chosen models fits it best, or the client's configured default model? What thinking level?
+- Route each task to the client's choice for that kind of work. Never route a tool-call task to a model that does not support tool calls.
+- Recommendation: match the model to the task (a large context window for long documents, reliable tool calling for tool-heavy work, strong reasoning for planning and QC), because capability fit gives better results at lower cost. A recommendation is guidance only; the client's selection always wins.
 - ALWAYS back up config before adding/changing models
 - Full guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/12-openrouter-setup/openrouter-setup-full.md
 ```

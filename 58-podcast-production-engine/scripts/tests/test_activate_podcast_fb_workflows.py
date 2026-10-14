@@ -33,34 +33,66 @@ def _load_module():
 ACT = _load_module()
 
 _SAMPLE_ROWS = [
-    {"id": "1", "name": "01a - Update Facebook audience"},
-    {"id": "2", "name": "02-Fb Podcast Lead That DID NOT COMPLETE"},
-    {"id": "3", "name": "02a-2nd Fb Podcast Interview"},
-    {"id": "4", "name": "03-Podcast LeadForm Fb Ad"},
+    {
+        "id": "1",
+        "name": "01a - Update Facebook audience when survey completed (must update to work)",
+    },
+    {
+        "id": "2",
+        "name": (
+            "02-Fb Podcast Lead That DID NOT COMPLETE INTERVIEW "
+            "(MUST ADD TRIGGER FOR FB LEAD FORM AD related to Podcast)"
+        ),
+    },
+    {
+        "id": "3",
+        "name": (
+            "02a-2nd Fb Podcast Interview (Lead That DID NOT COMPLETE INTERVIEW "
+            "(MUST ADD TRIGGER FOR FB LEAD FORM AD related to Podcast)"
+        ),
+    },
+    {
+        "id": "4",
+        "name": "03-Podcast LeadForm Fb Ad submitted (MUST ADD TRIGGER FOR FB LEAD FORM AD)",
+    },
     {"id": "5", "name": "01a-fake-decoy-workflow-that-shares-prefix"},
 ]
+
+# The script must target these exact names, not truncated prefixes of them.
+_TEMPLATE_NAMES = [row["name"] for row in _SAMPLE_ROWS[:4]]
+
+
+class ExactTemplateNamesTests(unittest.TestCase):
+    """FB_WORKFLOWS must hold the exact names the snapshot ships."""
+
+    def test_fb_workflows_are_the_exact_template_names(self):
+        self.assertEqual([name for _k, name, _u in ACT.FB_WORKFLOWS], _TEMPLATE_NAMES)
 
 
 class ExactMatchTests(unittest.TestCase):
     """Exact full-name match must return the correct row."""
 
     def test_exact_match_finds_correct_row(self):
-        m = ACT._match_workflow(_SAMPLE_ROWS, "01a - Update Facebook audience")
+        m = ACT._match_workflow(_SAMPLE_ROWS, _TEMPLATE_NAMES[0])
         self.assertIsNotNone(m)
         self.assertEqual(m["id"], "1")
 
     def test_exact_match_does_not_hit_prefix_rival(self):
-        m = ACT._match_workflow(_SAMPLE_ROWS, "01a - Update Facebook audience")
+        m = ACT._match_workflow(_SAMPLE_ROWS, _TEMPLATE_NAMES[0])
         self.assertIsNotNone(m)
-        self.assertEqual(m["name"], "01a - Update Facebook audience")
+        self.assertEqual(m["name"], _TEMPLATE_NAMES[0])
         self.assertNotEqual(m["id"], "5")
 
     def test_exact_match_long_name(self):
-        m = ACT._match_workflow(
-            _SAMPLE_ROWS, "02-Fb Podcast Lead That DID NOT COMPLETE"
-        )
+        m = ACT._match_workflow(_SAMPLE_ROWS, _TEMPLATE_NAMES[1])
         self.assertIsNotNone(m)
         self.assertEqual(m["id"], "2")
+
+    def test_truncated_legacy_name_matches_nothing(self):
+        m = ACT._match_workflow(
+            _SAMPLE_ROWS, "01a - Update Facebook audience"
+        )
+        self.assertIsNone(m)
 
 
 class PrefixRejectedTests(unittest.TestCase):
@@ -83,17 +115,17 @@ class CaseAndWhitespaceTests(unittest.TestCase):
     """Case and leading/trailing whitespace must be normalized before comparison."""
 
     def test_lowercase_with_whitespace(self):
-        m = ACT._match_workflow(_SAMPLE_ROWS, "  03-podcast leadform fb ad  ")
+        m = ACT._match_workflow(_SAMPLE_ROWS, "  %s  " % _TEMPLATE_NAMES[3].lower())
         self.assertIsNotNone(m)
         self.assertEqual(m["id"], "4")
 
     def test_uppercase_variant(self):
-        m = ACT._match_workflow(_SAMPLE_ROWS, "02A-2ND FB PODCAST INTERVIEW")
+        m = ACT._match_workflow(_SAMPLE_ROWS, _TEMPLATE_NAMES[2].upper())
         self.assertIsNotNone(m)
         self.assertEqual(m["id"], "3")
 
     def test_mixed_case_original(self):
-        m = ACT._match_workflow(_SAMPLE_ROWS, "02a-2nd Fb Podcast Interview")
+        m = ACT._match_workflow(_SAMPLE_ROWS, _TEMPLATE_NAMES[2])
         self.assertIsNotNone(m)
         self.assertEqual(m["id"], "3")
 

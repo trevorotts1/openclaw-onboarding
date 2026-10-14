@@ -34,12 +34,14 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 DEFAULT_LOC = "CjxATjhv9Gt21qSqURIt"
 
-# name-substring -> which FB fields this workflow uses
+# exact live template name -> which FB fields this workflow uses.
+# _match_workflow() compares the WHOLE name, so these must be the names the
+# snapshot actually ships -- truncated names match nothing.
 FB_WORKFLOWS = [
-    ("01a", "01a - Update Facebook audience", {"audience"}),
-    ("02",  "02-Fb Podcast Lead That DID NOT COMPLETE", {"audience"}),
-    ("02a", "02a-2nd Fb Podcast Interview", {"audience"}),
-    ("03",  "03-Podcast LeadForm Fb Ad", {"capi"}),
+    ("01a", "01a - Update Facebook audience when survey completed (must update to work)", {"audience"}),
+    ("02",  "02-Fb Podcast Lead That DID NOT COMPLETE INTERVIEW (MUST ADD TRIGGER FOR FB LEAD FORM AD related to Podcast)", {"audience"}),
+    ("02a", "02a-2nd Fb Podcast Interview (Lead That DID NOT COMPLETE INTERVIEW (MUST ADD TRIGGER FOR FB LEAD FORM AD related to Podcast)", {"audience"}),
+    ("03",  "03-Podcast LeadForm Fb Ad submitted (MUST ADD TRIGGER FOR FB LEAD FORM AD)", {"capi"}),
 ]
 
 
@@ -88,6 +90,21 @@ def _req(tok, method, path, body=None):
         return -1, {"_exc": str(e)[:300]}
 
 
+def _list_workflows(tok, loc):
+    """Page /workflow/{loc}/list -- one GET only returns 200 rows, and real
+    sub-accounts hold more (341 rows has been observed), which silently hid
+    workflows from every reader."""
+    rows, off = [], 0
+    while off < 10000:  # ponytail: 10k-row ceiling; raise it only if a sub-account grows past that
+        code, page = _req(tok, "GET", f"/workflow/{loc}/list?limit=100&offset={off}&type=workflow")
+        page_rows = page.get("rows", []) if code == 200 and isinstance(page, dict) else []
+        rows.extend(r for r in page_rows if r.get("type") == "workflow")
+        if code != 200 or len(page_rows) < 100:
+            break
+        off += 100
+    return code, rows
+
+
 CHECKLIST = """
 PER-CLIENT FACEBOOK-ADS CONNECT CHECKLIST (do these in order):
   1. Client connects their Facebook Business account in Convert-and-Flow (GoHighLevel):
@@ -126,21 +143,16 @@ def self_test():
         ok = ok and cond
         print("  [%s] %s" % ("PASS" if cond else "FAIL", label))
 
-    rows = [
-        {"id": "1", "name": "01a - Update Facebook audience"},
-        {"id": "2", "name": "02-Fb Podcast Lead That DID NOT COMPLETE"},
-        {"id": "3", "name": "02a-2nd Fb Podcast Interview"},
-        {"id": "4", "name": "03-Podcast LeadForm Fb Ad"},
-        {"id": "5", "name": "01a-fake-decoy-workflow-that-shares-prefix"},
-    ]
+    rows = [{"id": str(i + 1), "name": name} for i, (_key, name, _uses) in enumerate(FB_WORKFLOWS)]
+    rows.append({"id": "5", "name": "01a-fake-decoy-workflow-that-shares-prefix"})
 
     print("== self-test: exact match passes ==")
-    m = _match_workflow(rows, "01a - Update Facebook audience")
+    m = _match_workflow(rows, FB_WORKFLOWS[0][1])
     check("exact-match-found", m is not None and m["id"] == "1")
     check("exact-match-no-false-hit-on-prefix-rival",
-          m is not None and m["name"] == "01a - Update Facebook audience")
+          m is not None and m["name"] == FB_WORKFLOWS[0][1])
 
-    m2 = _match_workflow(rows, "02-Fb Podcast Lead That DID NOT COMPLETE")
+    m2 = _match_workflow(rows, FB_WORKFLOWS[1][1])
     check("exact-match-long-name", m2 is not None and m2["id"] == "2")
 
     print("== self-test: prefix-only match is rejected ==")
@@ -150,11 +162,15 @@ def self_test():
     m_pfx2 = _match_workflow(rows, "01a -")
     check("partial-name-rejected", m_pfx2 is None)
 
+    print("== self-test: truncated (pre-fix) name is rejected ==")
+    m_old = _match_workflow(rows, "01a - Update Facebook audience")
+    check("truncated-name-rejected", m_old is None)
+
     print("== self-test: case/whitespace variants match ==")
-    m_case = _match_workflow(rows, "  03-podcast leadform fb ad  ")
+    m_case = _match_workflow(rows, "  %s  " % FB_WORKFLOWS[3][1].lower())
     check("lowercase-and-whitespace-ok", m_case is not None and m_case["id"] == "4")
 
-    m_mixed = _match_workflow(rows, "02a-2ND FB PODCAST INTERVIEW")
+    m_mixed = _match_workflow(rows, FB_WORKFLOWS[2][1].upper())
     check("mixed-case-ok", m_mixed is not None and m_mixed["id"] == "3")
 
     print("== self-test: fully-missing name yields None ==")
@@ -198,8 +214,7 @@ def main() -> int:
     if not have_fb:
         print("No --fb-* values supplied: reporting current state only (nothing written).")
 
-    code, listing = _req(tok, "GET", f"/workflow/{loc}/list?limit=200")
-    rows = [r for r in (listing.get("rows", []) if isinstance(listing, dict) else []) if r.get("type") == "workflow"]
+    _code, rows = _list_workflows(tok, loc)
     ok_all = True
     for key, sub, uses in FB_WORKFLOWS:
         match = _match_workflow(rows, sub)

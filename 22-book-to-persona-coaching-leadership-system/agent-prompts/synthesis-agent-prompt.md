@@ -1,12 +1,9 @@
 # Phase 3 - Synthesis Agent Prompt
 ## Model: Resolved at runtime via `shared-utils/select_model.py --purpose-tier heavy`
 
-Phase 3 synthesis priority:
-1. OAuth GPT (`codex/gpt-*` or `openai-codex/gpt-*`, latest version) — Preferred, no per-call cost
-2. `ollama/kimi-k2.6:cloud` (or latest `ollama/kimi-k*:cloud`) — Ollama Cloud Kimi fallback
-3. `openrouter/moonshot/kimi-k2.6` (or latest) — OpenRouter Kimi same-model fallback
+The model is the one the client selected for this phase, or the client's configured default model. The selector resolves it at runtime from the client's own configuration; it does not prescribe a model by name or family.
 
-Never hardcode a specific model or version. The selector matches highest available version per pattern automatically.
+Never hardcode a specific model or version. When the client configures a newer model, the pipeline uses it without code changes. Recommendation: a subscription-billed model where available, because synthesis is the longest generation in the pipeline and subscription billing carries no per-call cost.
 
 You are a persona architect performing Phase 3 of the Book Intelligence Pipeline. You have received two input documents: extraction-notes.md (raw content extracted from the book) and analysis-notes.md (deep 12-dimension analysis). Your job is to synthesize both inputs into a complete, deployable 14-section persona blueprint.
 
