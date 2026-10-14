@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
 Unit tests for the Intelligent Model Selector — shared-utils/select_model.py
-(task-time selector + cascade + modality) and shared-utils/assert_model_sovereignty.py
+(task-time selector + resolution + modality) and shared-utils/assert_model_sovereignty.py
 (the AF-MODEL-SOVEREIGNTY gate).
 
-Covers the four mandated invariants (PLAN.md §4–§7):
-  1. CASCADE ORDER     — Ollama Cloud (T1) beats OpenRouter open-source (T2) beats free (T3)
+Covers the mandated invariants (PLAN.md §4–§7, client-choice doctrine D3):
+  1. RESOLUTION ORDER , explicit client choice, then the client's configured
+                         default model, then capability-ranked selection
+                         among the client's own configured models (route tier
+                         Ollama Cloud T1 > OpenRouter OSS T2 > free T3 is only
+                         a ranking tie-break), then owner-input-required.
+                         A bare free default NEVER resolves.
   2. MODALITY MATCH    — a vision task MUST get a vision-capable model; text-only never eligible
   3. SOP OVERRIDE      — a valid SOP pin wins; an invalid SOP pin surfaces (never silent free)
   4. NO-MODEL REJECTED — the free sentinel / null / forbidden / wrong-modality is BLOCKED by the gate
@@ -82,7 +87,11 @@ class TestTierClassification(unittest.TestCase):
 
 
 class TestCascadeOrder(unittest.TestCase):
-    """Invariant 1: Ollama Cloud -> OpenRouter OSS -> free, in that exact order."""
+    """Ranking tie-break: among the client's own configured models, route
+    tier Ollama Cloud (T1) beats OpenRouter OSS (T2) beats free routes (T3).
+    This is a tie-break inside resolution step 3, not a preference cascade:
+    an explicit choice or the client's configured default wins over it
+    (see TestClientChoiceResolution)."""
 
     def test_tier1_beats_tier2_and_free(self):
         r = sm.select_task_model(task_text="analyze the strategy", inventory=INV_FULL)
@@ -96,13 +105,13 @@ class TestCascadeOrder(unittest.TestCase):
         self.assertEqual(r["tier"], 2)
         self.assertEqual(r["model_id"], "openrouter/deepseek/deepseek-v4.1-flash")
 
-    def test_free_is_last_resort_only(self):
-        # free is the ONLY thing in inventory -> it may resolve, but as tier 3
+    def test_free_sentinel_never_resolves(self):
+        # a bare free default is NOT a resolution: when the free sentinel is
+        # the only thing in inventory there is no named last resort to fall
+        # back to, so this surfaces as needs_owner_input (the gate would
+        # reject 'openrouter/free' anyway).
         r = sm.select_task_model(task_text="draft a short reply",
                                  inventory=["openrouter/free"])
-        # the bare 'openrouter/free' sentinel is never inventory-valid for text
-        # modality matching, so this surfaces as needs_owner_input rather than a
-        # silent free default (the gate would reject 'openrouter/free' anyway).
         self.assertTrue(r["needs_owner_input"])
         self.assertIsNone(r["model_id"])
 
@@ -111,6 +120,74 @@ class TestCascadeOrder(unittest.TestCase):
         inv = ["ollama/kimi-k2.6:cloud", "ollama/kimi-k2.7:cloud"]
         r = sm.select_task_model(task_text="analyze the strategy", inventory=inv)
         self.assertEqual(r["model_id"], "ollama/kimi-k2.7:cloud")
+
+
+class TestClientChoiceResolution(unittest.TestCase):
+    """Invariant 1 (D3): explicit client choice, then the client's configured
+    default model, then capability-ranked selection, then owner input.
+    No named model is ever a prescribed fallback."""
+
+    def _write_config(self, cfg):
+        import json as _json
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".json")
+        with open(fd, "w") as f:
+            _json.dump(cfg, f)
+        self.addCleanup(lambda: Path(path).unlink(missing_ok=True))
+        return path
+
+    _CFG_WITH_DEFAULT = {
+        "models": {"list": [{"id": "ollama/kimi-k2.7:cloud"},
+                            {"id": "ollama/minimax-m3:cloud"}]},
+        "agents": {"defaults": {"model": {"primary": "ollama/minimax-m3:cloud"}}},
+    }
+
+    def test_configured_default_wins_in_task_selector(self):
+        path = self._write_config(self._CFG_WITH_DEFAULT)
+        r = sm.select_task_model(task_text="analyze the strategy",
+                                 openclaw_json_path=path)
+        self.assertEqual(r["model_id"], "ollama/minimax-m3:cloud")
+        self.assertEqual(r["position_label"], "client configured default model")
+        self.assertFalse(r["needs_owner_input"])
+
+    def test_configured_default_wins_in_skill_selector(self):
+        path = self._write_config(self._CFG_WITH_DEFAULT)
+        r = sm.select_model_for_skill("some-skill", purpose_tier="heavy",
+                                      openclaw_json_path=path)
+        self.assertEqual(r["model_id"], "ollama/minimax-m3:cloud")
+        self.assertEqual(r["position_label"], "client configured default model")
+
+    def test_explicit_choice_wins_over_default(self):
+        path = self._write_config(self._CFG_WITH_DEFAULT)
+        r = sm.select_model_for_skill(
+            "some-skill", purpose_tier="heavy", openclaw_json_path=path,
+            explicit_model="ollama/kimi-k2.7:cloud")
+        self.assertEqual(r["model_id"], "ollama/kimi-k2.7:cloud")
+        self.assertEqual(r["position_label"], "client explicit choice")
+
+    def test_explicit_choice_forbidden_surfaces_owner_input(self):
+        path = self._write_config(self._CFG_WITH_DEFAULT)
+        r = sm.select_model_for_skill(
+            "some-skill", purpose_tier="heavy", openclaw_json_path=path,
+            explicit_model="anthropic/claude-sonnet-5")
+        self.assertTrue(r["needs_owner_input"])
+        self.assertIsNone(r["model_id"])
+
+    def test_nothing_qualifying_surfaces_owner_input(self):
+        # the only configured model cannot satisfy the huge-context gate
+        # (the deepseek-flash family has no long_context capability in the
+        # registry), so no step of the resolution can produce a model and
+        # the client is asked instead of a named model being substituted.
+        path = self._write_config({
+            "models": {"list": [{"id": "ollama/deepseek-v4.1-flash:cloud"}]},
+            "agents": {"defaults": {}},
+        })
+        r = sm.select_model_for_skill("some-skill", purpose_tier="heavy",
+                                      context_need="huge",
+                                      openclaw_json_path=path)
+        self.assertTrue(r["needs_owner_input"])
+        self.assertIsNone(r["model_id"])
+        self.assertIn("Which model should I use", r["prompt_to_owner"])
 
 
 class TestOllamaCloudIdShapes(unittest.TestCase):

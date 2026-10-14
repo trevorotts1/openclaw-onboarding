@@ -2,41 +2,56 @@
 select_model.py — Smart model selector for OpenClaw skills.
 
 Used by Skill 22 (Book-to-Persona), Skill 15 (Team Management), Skill 23 (AI
-Workforce Blueprint), and any other skill that needs a model recommendation
-that auto-adapts to whatever the client has installed.
+Workforce Blueprint), and any other skill that needs a model that
+auto-adapts to whatever the client has installed.
 
-Three purpose-tier chains (v10.2.0 priority — Ollama Cloud first, then
-OpenRouter version of the same models, then OAuth GPT):
+MODEL RESOLUTION (client-choice doctrine, D3). The client SELECTS their
+model; this module never prescribes one by name. Resolution order:
+
+  1. An explicit client choice for this call (the explicit_model argument /
+     --model CLI flag, or a SOP model pin in select_task_model()).
+  2. The client's configured default model (agents.defaults.model in their
+     own openclaw.json) when it satisfies the tier's capability
+     requirements.
+  3. The best-ranked model among the models the CLIENT configured, ranked
+     by the tier's capability requirements. Ranking criteria, in order:
+     provider-route tier (see the cascade note below), preferred-capability
+     fit, highest version number, lowest cost band, then model id. The
+     ranking only ever chooses among the client's own configured models;
+     it never imports a model the client did not configure.
+  4. Nothing qualifies: the selector returns Tier 5 (owner-input-required)
+     with a plain-English prompt asking the client which model to use. A
+     box is never left silently model-less, and no named model is ever
+     substituted silently.
+
+PURPOSE TIERS are capability requirements, not family preferences. Any
+client-configured model that satisfies them is eligible:
 
   --purpose-tier heavy   (Heavy reasoning / heavy thinking — default)
-    1. ollama/deepseek-v*-flash:cloud (Ollama Cloud DeepSeek V4.1 Flash, 1M ctx)
-    2. ollama/kimi-k*:cloud           (Ollama Cloud Kimi 2.6+, 262K ctx)
-    3. openrouter/deepseek/deepseek-v*-flash  (OpenRouter DeepSeek V4.1 Flash — same model, OR route)
-    4. openrouter/moonshot/kimi-k*    (OpenRouter Kimi — same model, OR route)
-    5. codex/gpt-* OR openai-codex/gpt-*    (OAuth GPT — last resort, latest version)
-
+    Requires text. Prefers reasoning, long context, tool use.
+    Large/huge context needs also REQUIRE long context.
   --purpose-tier mid     (Mid-tier reasoning — fast but capable)
-    1. ollama/minimax-m*:cloud        (Ollama Cloud Minimax 2.7+)
-    2. ollama/glm-*:cloud             (Ollama Cloud GLM)
-    3. openrouter/xiaomi/mimo-v*-pro  (OpenRouter Mimo 2.5+ pro, thinking=high)
-    4. openrouter/z-ai/glm-*          (OpenRouter GLM)
-
+    Requires text. Prefers reasoning and tool use.
   --purpose-tier fast    (Fast / cheap — bulk operations)
-    1. ollama/deepseek-v*-flash:cloud (Ollama Cloud DeepSeek V4-flash)
-    2. openrouter/deepseek/deepseek-v*-flash  (OpenRouter DeepSeek V4-flash)
-    3. openrouter/google/gemini-3*flash-lite* (OpenRouter Gemini Flash Lite)
+    Requires text.
 
-In every tier chain: NEVER select Anthropic models. Hardcoded filter.
+CASCADE NOTE. The provider-route preference (Ollama Cloud first, then
+OpenRouter open-source routes, then free routes) survives ONLY as a ranking
+tie-break inside step 3, among models the client already configured. It is
+not a resolution order and never substitutes for the client's choice or
+configured default. A bare "free" default (the openrouter/free literal or
+a *-free slug as an unconfigured default) is never a valid resolution; the
+sovereignty gate rejects it.
 
-For each tier, the selector picks the HIGHEST VERSION NUMBER it finds in the
-client's openclaw.json. So when Kimi 2.7 or 3.0 ships and the client adds it,
-the selector automatically picks the higher version without any code change.
+CLASSIFICATION DATA. The slot patterns and CHAINS tables below classify
+known model families by capability class and route tier (which models
+support which work). They are retained for tier_of_model(),
+capabilities_for_model() and existing callers. The selectors do NOT walk
+CHAINS as a family preference order.
 
-If no chain entry matches anything in the client's config, the selector
-returns Tier 5 (owner-input-required) with a plain-English prompt the install
-agent can show the owner.
+In every selection path: NEVER select Anthropic models. Hardcoded filter.
 
-OLLAMA CLOUD ID SHAPES (ISSUE-08). Every `ollama/...` slot above matches the
+OLLAMA CLOUD ID SHAPES (ISSUE-08). The classification patterns match the
 three shapes the fleet actually runs, not just the bare `:cloud` tag:
 
   ollama/deepseek-v4.1-flash:cloud          plain cloud tag
@@ -52,10 +67,10 @@ slot, and stays unmatched by the Kimi pattern.
 Example:
     >>> from select_model import select_model_for_skill
     >>> r = select_model_for_skill("book-to-persona", purpose_tier="heavy")
-    >>> r["model_id"]
+    >>> r["model_id"]   # the client's configured default, when it qualifies
     'ollama/kimi-k2.6:cloud'
     >>> r["chain_position"]
-    1
+    0
 """
 
 import json
@@ -86,19 +101,24 @@ FORBIDDEN_PREFIXES = (
     "claude-",
 )
 
-# ─── Intelligent Model Selector (v12.15.0) ───────────────────────────────────
-# The PREFERENCE CASCADE (PLAN.md §2) — single source of truth for tier order.
-# Every layer (build-time dept default, task-time selector, repair sweep, gate)
-# obeys this exact ordering.
+# ─── Intelligent Model Selector ───────────────────────────────────────────────
+# ROUTE-TIER CLASSIFICATION (PLAN.md §2), single source of truth for the
+# route tier of a model id. tier_of_model() classifies; the ranking inside
+# the selectors uses this ONLY as a tie-break among models the CLIENT
+# configured, after the client's explicit choice and configured default
+# (see MODEL RESOLUTION in the module docstring). It is not a preference
+# cascade and never substitutes a model the client did not configure.
 #
 #   TIER 1 — Ollama Cloud   : ollama/*:cloud (baseUrl https://ollama.com/v1)
 #   TIER 2 — OpenRouter OSS  : openrouter/<oss-vendor>/* (open-weight only)
-#   TIER 3 — Free            : *:free / pricingModel == 'free'  (LAST RESORT)
+#   TIER 3, Free            : *:free / pricingModel == 'free' (ranked last
+#                              among configured models; a bare "free" default
+#                              is never a valid resolution, see FREE_SENTINELS)
 #
 # A proprietary OpenRouter route (openrouter/openai/*, openrouter/google/*-pro,
 # openrouter/anthropic/*) is NOT a Tier-2 open-source model. Anthropic is
 # forbidden outright (FORBIDDEN_PREFIXES); other proprietary routes are not
-# silently selected by the cascade.
+# silently selected by the ranking.
 TIER_OLLAMA_CLOUD = 1
 TIER_OPENROUTER_OSS = 2
 TIER_FREE = 3
@@ -278,7 +298,7 @@ def model_has_modality(model_id: str, required_modality) -> bool:
 
 
 def tier_of_model(model_id: str) -> int:
-    """Classify a model id into the PREFERENCE CASCADE tier (1/2/3).
+    """Classify a model id into its provider-route tier (1/2/3).
 
     Returns 0 for a model that does not belong to any valid tier (e.g. a
     proprietary OpenRouter route or the free sentinel — which the gate rejects).
@@ -374,40 +394,40 @@ DEEPSEEK_FLASH_OPENROUTER = {"label": "OpenRouter DeepSeek V*-flash",
 GEMINI_FLASH_LITE         = {"label": "OpenRouter Gemini Flash Lite",
                              "family": "gemini-flash-lite",
                              "pattern": re.compile(r"^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-flash-lite(?:-preview)?$")}
-# v10.10.0 P0-002: Gemini 3.1 Pro pattern. Final fallback for the
-# orchestrator and installer-subagent chains per PRD §5.1 and §5.2.
+# Gemini Pro pattern: classification entry for the Gemini Pro family
+# (PRD §5.1 and §5.2 capability class).
 GEMINI_PRO                = {"label": "OpenRouter Gemini Pro",
                              "family": "gemini-pro",
                              "pattern": re.compile(r"^(?:openrouter/)?google/gemini-(\d+(?:\.\d+)*)-pro(?:-preview)?$")}
 
-# Purpose-tier chains. v10.2.0 priority (per owner directive):
-#   For heavy reasoning + book extraction, prefer Ollama Cloud DeepSeek V4.1 Flash
-#   or Ollama Cloud Kimi 2.6 (or latest version of each). If the client has
-#   neither on Ollama Cloud, fall back to the SAME model via OpenRouter
-#   (openrouter/deepseek/deepseek-v4.1-flash or openrouter/moonshot/kimi-k2.6).
-#   OAuth GPT only when neither Ollama nor OpenRouter has those models.
+# Purpose-tier classification tables. These tables classify known model
+# families into capability classes per purpose tier and context need. They
+# are CLASSIFICATION DATA, retained for tier_of_model(),
+# capabilities_for_model(), _best_match_in_position() and existing callers.
+# The selectors do NOT walk these lists as a family preference order:
+# selection follows the client-choice resolution in the module docstring
+# (explicit choice, then the client's configured default, then
+# capability-ranked selection among the client's own configured models).
 #
-# Each chain has 3 context-need variants:
-#   normal — input fits in Kimi's 262K window
-#   large  — input is 800K-3M chars; DeepSeek V4.1 Flash's 1M ctx required
-#   huge   — input is > 3M chars; DeepSeek V4.1 Flash only
+# Each table has 3 context-need variants:
+#   normal, standard input window
+#   large , input is 800K-3M chars; a long-context model is required
+#   huge  , input is > 3M chars; the largest-context models only
 CHAINS = {
     "heavy": {
-        # Default heavy reasoning — Ollama DeepSeek V4.1 Flash and Kimi 2.6 first,
-        # then OpenRouter versions of the same models, then OAuth GPT.
         "normal": [
-            KIMI_OLLAMA,           # Ollama Cloud preferred (same models)
-            KIMI_OPENROUTER,   # Same models via OpenRouter as fallback
-            OAUTH_GPT,                                  # Last resort
-            MIMO_OPENROUTER, GLM_OPENROUTER,            # Mid-cost OR alternates only if Kimi/DeepSeek missing
+            KIMI_OLLAMA,
+            KIMI_OPENROUTER,
+            OAUTH_GPT,
+            MIMO_OPENROUTER, GLM_OPENROUTER,
         ],
-        # Large input (800K-3M chars): DeepSeek V4.1 Flash's 1M context required
+        # Large input (800K-3M chars): long context required
         "large": [
             DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER,
             OAUTH_GPT,
-            KIMI_OLLAMA, KIMI_OPENROUTER,  # last resort; 262K may fail on big input
+            KIMI_OLLAMA, KIMI_OPENROUTER,
         ],
-        # Huge input (>3M chars): DeepSeek V4.1 Flash is the only model with enough context
+        # Huge input (>3M chars): largest-context class only
         "huge": [
             DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER,
             OAUTH_GPT,
@@ -424,66 +444,159 @@ CHAINS = {
         "huge":   [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER],
     },
 
-    # ─── v10.9.0 P1-C: PRD §5 role-specific chains ────────────────────────
-    # These four chains map 1:1 to the audit's PRD §5 specification so
-    # Phase 8 (Model Selection) can verify role-specific dispatch.
-    #
-    # §5.1 Master Orchestrator (thinking=high):
-    #   1. ollama/kimi-k*:cloud  → 2. openrouter/moonshot/kimi-k*  → 3. Gemini 3.1 Pro
-    # v10.10.0 P0-002: Gemini Pro is now in position 3, the explicit PRD §5.1
-    # fallback. Flash Lite drops to position 4 (cheaper last resort).
+    # ─── Role-specific classification tables (PRD §5) ─────────────────────
+    # These four tables map 1:1 to the audit's PRD §5 role specification.
+    # Same status as the tier tables above: classification data only, not a
+    # selection order. Role capability needs:
+    #   orchestrator      , heavy reasoning (thinking=high)
+    #   installer-subagent, long context for big skill files
+    #   qc-subagent       , capable reasoning plus cheap bulk checks
+    #   book-to-persona   , heavy reasoning over long inputs
     "orchestrator": {
         "normal": [
-            KIMI_OLLAMA,                # 1. Ollama Cloud Kimi (latest)
-            KIMI_OPENROUTER,            # 2. OpenRouter Kimi (same model, OR route)
-            GEMINI_PRO,                 # 3. Gemini 3.1 Pro — PRD §5.1 explicit fallback
-            GEMINI_FLASH_LITE,          # 4. Gemini Flash Lite — cheaper last resort
+            KIMI_OLLAMA,
+            KIMI_OPENROUTER,
+            GEMINI_PRO,
+            GEMINI_FLASH_LITE,
             OAUTH_GPT,
         ],
         "large": [KIMI_OLLAMA, KIMI_OPENROUTER, GEMINI_PRO, DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, OAUTH_GPT],
         "huge":  [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
     },
 
-    # §5.2 Installer sub-agent — needs DeepSeek V4.1 Flash's 1M context for big
-    #   skill files
-    #   1. ollama/deepseek-v*-flash:cloud  →  2. openrouter/deepseek/...  →  3. Gemini 3.1 Pro
     "installer-subagent": {
         "normal": [
-            GEMINI_PRO,                 # 3. Gemini 3.1 Pro — PRD §5.2 explicit fallback
-            GEMINI_FLASH_LITE,          # 4. Cheaper last resort
+            GEMINI_PRO,
+            GEMINI_FLASH_LITE,
             OAUTH_GPT,
         ],
         "large": [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
         "huge":  [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_PRO, OAUTH_GPT],
     },
 
-    # §5.3 QC sub-agent — cheap+capable; Kimi for reasoning, Flash Lite for
-    #   bulk yes/no checks
-    #   1. ollama/kimi-k*:cloud  →  2. openrouter/moonshot/kimi  →  3. Gemini Flash Lite
     "qc-subagent": {
         "normal": [
-            KIMI_OLLAMA,                # 1. Ollama Cloud Kimi
-            KIMI_OPENROUTER,            # 2. OpenRouter Kimi
-            GEMINI_FLASH_LITE,          # 3. OpenRouter Gemini Flash Lite (cheap last resort)
+            KIMI_OLLAMA,
+            KIMI_OPENROUTER,
+            GEMINI_FLASH_LITE,
         ],
         "large": [KIMI_OLLAMA, KIMI_OPENROUTER, DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER],
         "huge":  [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER],
     },
 
-    # §5.4 Book-to-Persona pipeline — Trevor 2026-06-01: DeepSeek V4.1 Flash FIRST
-    #   (the latest; Ollama Cloud preferred -> OpenRouter DeepSeek fallback). Kimi
-    #   demoted to tertiary; cheapest fallback at the end.
-    #   1. DeepSeek cloud -> 2. DeepSeek OR -> 3. Kimi cloud -> 4. Kimi OR -> 5. Gemini Flash Lite
     "book-to-persona": {
         "normal": [
-            KIMI_OLLAMA,                # 3. Ollama Cloud Kimi
-            KIMI_OPENROUTER,            # 4. OpenRouter Kimi
-            GEMINI_FLASH_LITE,          # 5. Cheapest fallback
+            KIMI_OLLAMA,
+            KIMI_OPENROUTER,
+            GEMINI_FLASH_LITE,
         ],
         "large": [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, KIMI_OLLAMA, KIMI_OPENROUTER, GEMINI_FLASH_LITE],
         "huge":  [DEEPSEEK_FLASH_OLLAMA, DEEPSEEK_FLASH_OPENROUTER, GEMINI_FLASH_LITE],
     },
 }
+
+
+# ─── Client-choice resolution (D3) ────────────────────────────────────────────
+# Capability requirements per purpose tier. `required` capabilities are a hard
+# gate for steps 2-3 of the resolution (module docstring); `preferred`
+# capabilities only rank candidates. Requirements are expressed WITHOUT family
+# names: any client-configured model that satisfies them is eligible.
+TIER_REQUIREMENTS = {
+    "heavy": {
+        "normal": {"required": ("text",),
+                   "preferred": ("reasoning", "long_context", "tool_use")},
+        "large":  {"required": ("text", "long_context"),
+                   "preferred": ("reasoning", "tool_use")},
+        "huge":   {"required": ("text", "long_context"),
+                   "preferred": ("reasoning",)},
+    },
+    "mid": {
+        "normal": {"required": ("text",),
+                   "preferred": ("reasoning", "tool_use")},
+        "large":  {"required": ("text", "long_context"),
+                   "preferred": ("reasoning", "tool_use")},
+        "huge":   {"required": ("text", "long_context"),
+                   "preferred": ("reasoning",)},
+    },
+    "fast": {
+        "normal": {"required": ("text",), "preferred": ()},
+        "large":  {"required": ("text", "long_context"), "preferred": ()},
+        "huge":   {"required": ("text", "long_context"), "preferred": ()},
+    },
+}
+
+# Role tiers resolve with the requirements of their capability class.
+_ROLE_TIER_CLASS = {
+    "orchestrator": "heavy",
+    "installer-subagent": "heavy",
+    "book-to-persona": "heavy",
+    "qc-subagent": "mid",
+}
+
+
+def _requirements_for(purpose_tier: str, context_need: str) -> dict:
+    """Capability requirements for a purpose tier + context need."""
+    tier_class = _ROLE_TIER_CLASS.get(purpose_tier, purpose_tier)
+    tiers = TIER_REQUIREMENTS.get(tier_class, TIER_REQUIREMENTS["mid"])
+    return tiers.get(context_need, tiers["normal"])
+
+
+def _meets_requirements(model_id: str, req: dict) -> bool:
+    """True iff the model's capabilities cover the tier's REQUIRED set."""
+    caps = set(capabilities_for_model(model_id))
+    return all(c in caps for c in req.get("required", ()))
+
+
+def _preferred_count(model_id: str, req: dict) -> int:
+    caps = set(capabilities_for_model(model_id))
+    return sum(1 for c in req.get("preferred", ()) if c in caps)
+
+
+def _version_key(model_id: str) -> tuple:
+    """First dotted version number in the provider-stripped slug, as a tuple."""
+    bare = _strip_provider(model_id) or model_id
+    m = re.search(r"(\d+(?:\.\d+)*)", bare)
+    return _parse_version(m.group(1)) if m else (0,)
+
+
+def _rank_candidates(models: list, req: dict) -> list:
+    """Deterministically rank the CLIENT's own configured models.
+
+    Criteria, primary first: route tier (tier_of_model, unclassified last),
+    preferred-capability fit (desc), highest version (desc), lowest cost
+    band, then model id. This ranking is a tie-break among models the client
+    configured; it never imports a model the client did not configure.
+    Implemented as successive stable sorts, last sort is primary.
+    """
+    ranked = sorted(models)                                        # id asc
+    ranked.sort(key=lambda m: _cost_band(m))                       # cost asc
+    ranked.sort(key=_version_key, reverse=True)                    # version desc
+    ranked.sort(key=lambda m: -_preferred_count(m, req))           # fit desc
+    ranked.sort(key=lambda m: tier_of_model(m) or 99)              # tier asc
+    return ranked
+
+
+def _configured_default_model(cfg: dict) -> Optional[str]:
+    """The client's OWN configured default model id (agents.defaults.model).
+
+    Accepts the canonical object form ({"primary": ...}) and a bare string.
+    Returns None when no default is configured, or when the configured
+    default is forbidden (the Anthropic filter applies to defaults too: a
+    forbidden default is treated as unconfigured so the caller surfaces
+    owner input rather than dispatching it).
+    """
+    if not isinstance(cfg, dict):
+        return None
+    defaults = (cfg.get("agents") or {}).get("defaults") or {}
+    field = defaults.get("model")
+    primary = None
+    if isinstance(field, str):
+        primary = field
+    elif isinstance(field, dict):
+        primary = field.get("primary") or field.get("model")
+    if isinstance(primary, str) and primary.strip() and not _is_forbidden(primary):
+        return primary.strip()
+    return None
 
 
 def _parse_version(s: str) -> tuple:
@@ -645,9 +758,13 @@ def select_model_for_skill(
     input_chars: Optional[int] = None,
     purpose: str = "",
     openclaw_json_path: Optional[str] = None,
+    explicit_model: Optional[str] = None,
 ) -> dict:
     """
-    Select the best available model for a skill.
+    Select the model for a skill, following the client-choice resolution
+    (module docstring): explicit client choice, then the client's
+    configured default model, then capability-ranked selection among the
+    client's own configured models, then owner-input-required.
 
     Args:
       skill_name:     For logs / prompts
@@ -656,6 +773,7 @@ def select_model_for_skill(
       input_chars:    Optional input size; if provided, overrides context_need
       purpose:        Free-text description
       openclaw_json_path: Path override
+      explicit_model: A model id the client explicitly chose for this call
 
     Returns dict with:
       model_id, chain_position, position_label, needs_owner_input,
@@ -674,51 +792,92 @@ def select_model_for_skill(
 
     cfg = _load_openclaw_config(openclaw_json_path)
     available = _list_available_models(cfg)
-    chain = CHAINS[purpose_tier][context_need]
+    req = _requirements_for(purpose_tier, context_need)
 
-    for idx, entry in enumerate(chain, start=1):
-        match = _best_match_in_position(available, entry)
-        if match:
-            return {
-                "model_id": match,
-                "chain_position": idx,
-                "position_label": entry["label"],
-                "needs_owner_input": False,
-                "purpose_tier": purpose_tier,
-                "context_need": context_need,
-                "available_models": available,
-                "prompt_to_owner": "",
-                "skill": skill_name,
-                "purpose": purpose,
-            }
+    def _ok(model_id, position, label):
+        return {
+            "model_id": model_id,
+            "chain_position": position,
+            "position_label": label,
+            "needs_owner_input": False,
+            "purpose_tier": purpose_tier,
+            "context_need": context_need,
+            "available_models": available,
+            "prompt_to_owner": "",
+            "skill": skill_name,
+            "purpose": purpose,
+        }
 
-    # Nothing matched anywhere in this chain
-    chain_summary = " → ".join(e["label"] for e in chain)
+    def _needs_input(prompt):
+        return {
+            "model_id": None,
+            "chain_position": 0,
+            "position_label": "owner-input-required",
+            "needs_owner_input": True,
+            "purpose_tier": purpose_tier,
+            "context_need": context_need,
+            "available_models": available,
+            "prompt_to_owner": prompt,
+            "skill": skill_name,
+            "purpose": purpose,
+        }
+
+    # Step 1, explicit client choice for this call. Honored when it is not
+    # forbidden, not a bare free sentinel, and present in the client's
+    # configuration (or when no configuration was discoverable to check
+    # against). An unusable explicit choice surfaces as owner input, the
+    # same way an invalid SOP pin does in select_task_model().
+    if explicit_model:
+        pick = explicit_model.strip()
+        if (not _is_forbidden(pick)
+                and pick.lower() not in FREE_SENTINELS
+                and (not available or pick in available)):
+            return _ok(pick, 0, "client explicit choice")
+        return _needs_input(
+            f"The model you chose for {skill_name or 'this skill'} "
+            f"('{pick}') cannot be used: it is forbidden by policy, a bare "
+            f"free default, or not present in your openclaw.json.\n\n"
+            f"Available models in your config: "
+            f"{', '.join(available) if available else '(none discoverable)'}\n\n"
+            f"Which model should I use for {skill_name or 'this skill'}? "
+            f"Reply with the exact model ID from your config."
+        )
+
+    # Step 2, the client's configured default model, when it satisfies
+    # this tier's capability requirements.
+    default_model = _configured_default_model(cfg)
+    if (default_model and default_model in available
+            and _meets_requirements(default_model, req)):
+        return _ok(default_model, 0, "client configured default model")
+
+    # Step 3, capability-ranked selection among the client's own
+    # configured models. The configured default, when present but not
+    # requirement-satisfying, is not eligible here either: eligibility is
+    # the tier's required capability set.
+    eligible = [m for m in available if _meets_requirements(m, req)]
+    ranked = _rank_candidates(eligible, req)
+    if ranked:
+        return _ok(ranked[0], 1, "capability match")
+
+    # Step 4, nothing qualifies: ask the client. Never substitute a named
+    # model silently, and never leave the box silently model-less.
+    required_text = ", ".join(req.get("required", ("text",)))
     prompt = (
-        f"I cannot find a model for {skill_name or 'this skill'} "
+        f"I cannot find a usable model for {skill_name or 'this skill'} "
         f"(tier: {purpose_tier} / context: {context_need}"
         f"{', ' + purpose if purpose else ''}). "
-        f"I looked for: {chain_summary}. "
-        f"None are present in your openclaw.json. Anthropic models are excluded by policy.\n\n"
+        f"This tier needs a model with these capabilities: {required_text}. "
+        f"None of the models in your openclaw.json qualifies, and no "
+        f"configured default model is set. Anthropic models are excluded by policy.\n\n"
         f"Available models in your config: "
         f"{', '.join(available) if available else '(none discoverable)'}\n\n"
         f"Which model should I use for {skill_name or 'this skill'}? "
-        f"Reply with the exact model ID (e.g. ollama/kimi-k2.7:cloud or ollama/deepseek-v4.1-flash:cloud). "
+        f"Reply with the exact model ID from your config, or set a default "
+        f"model in agents.defaults.model and re-run. "
         f"The install will continue without this — I just need the answer before "
         f"wiring {skill_name or 'this skill'} for runtime use."
     )
-    return {
-        "model_id": None,
-        "chain_position": 0,
-        "position_label": "owner-input-required",
-        "needs_owner_input": True,
-        "purpose_tier": purpose_tier,
-        "context_need": context_need,
-        "available_models": available,
-        "prompt_to_owner": prompt,
-        "skill": skill_name,
-        "purpose": purpose,
-    }
+    return _needs_input(prompt)
 
 
 # ─── Task-time selector (PLAN.md §4) ─────────────────────────────────────────
@@ -823,8 +982,13 @@ def select_task_model(
     """Task-time selector (PLAN.md §4 + §5 precedence).
 
     Resolution order (highest wins):
-      1. SOP pin (validated — still gated; PLAN.md §5)
-      2. Task-time cascade over modality-filtered candidates (this function)
+      1. SOP pin (the client's own pinned choice, validated, still gated;
+         PLAN.md §5)
+      2. The client's configured default model, when the config was loaded
+         here and the default is modality-appropriate and meets the tier's
+         capability requirements
+      3. Capability-ranked selection over modality-filtered candidates
+         from the client's own configured inventory (this function)
       (role override + dept default are handled by the CC resolver / build side)
 
     Returns a dict including model_id, tier (1/2/3), modelSource, required_modality,
@@ -838,6 +1002,7 @@ def select_task_model(
     tier_purpose = difficulty_to_tier(difficulty)
 
     # Build available inventory
+    cfg = None
     if inventory is None:
         cfg = _load_openclaw_config(openclaw_json_path)
         inventory = _list_available_models(cfg)
@@ -894,47 +1059,51 @@ def select_task_model(
             ),
         }
 
-    # Step C — walk the cascade over modality-filtered, available candidates.
-    # Modality is a HARD pre-filter applied BEFORE the cascade (PLAN.md §4.3).
+    # Step C, resolve over modality-filtered, available candidates (D3).
+    # Modality is a HARD pre-filter applied BEFORE ranking (PLAN.md §4.3).
     modality_ok = [m for m in inv_ids if model_has_modality(m, required_modality)]
     considered = list(modality_ok)
 
-    # Within the difficulty-selected purpose chain, prefer the existing
-    # version-aware chain ordering, but enforce the tier cascade as the outer
-    # loop so Tier 1 always beats Tier 2 beats Tier 3.
-    chain = CHAINS.get(tier_purpose, CHAINS["mid"]).get("normal", [])
+    # Inside this step: (1) the client's configured default model, when the
+    # config was loaded here (an explicitly passed inventory carries no
+    # default preference) and the default is in the pool and meets the
+    # tier's capability requirements; (2) the best-ranked remaining
+    # candidate. The route tier is the ranking's outer loop (Tier 1 beats
+    # Tier 2 beats Tier 3) purely as a tie-break among the client's own
+    # configured models; no family preference order is consulted.
+    req = _requirements_for(tier_purpose, "normal")
+    cfg_default = _configured_default_model(cfg) if cfg is not None else None
     for cascade_tier in (TIER_OLLAMA_CLOUD, TIER_OPENROUTER_OSS, TIER_FREE):
         tier_pool = [m for m in modality_ok if tier_of_model(m) == cascade_tier]
         if not tier_pool:
             continue
-        # (a) prefer a model that matches a known chain slot (highest version)
-        for idx, entry in enumerate(chain, start=1):
-            match = _best_match_in_position(tier_pool, entry)
-            if match:
-                return {
-                    "model_id": match,
-                    "tier": cascade_tier,
-                    "modelSource": "task_selector",
-                    "required_modality": required_modality,
-                    "difficulty": difficulty,
-                    "chain_position": idx,
-                    "position_label": entry["label"],
-                    "candidates_considered": considered,
-                    "needs_owner_input": False,
-                    "prompt_to_owner": "",
-                }
-        # (b) no chain slot matched, but the tier has modality-correct models:
-        #     pick deterministically (sorted) — effectiveness already satisfied
-        #     by modality + tier; ties broken by lowest cost band then name.
-        best = sorted(tier_pool, key=lambda m: (_cost_band(m), m))[0]
+        if (cfg_default and cfg_default in tier_pool
+                and _meets_requirements(cfg_default, req)):
+            return {
+                "model_id": cfg_default,
+                "tier": cascade_tier,
+                "modelSource": "task_selector",
+                "required_modality": required_modality,
+                "difficulty": difficulty,
+                "chain_position": 0,
+                "position_label": "client configured default model",
+                "candidates_considered": considered,
+                "needs_owner_input": False,
+                "prompt_to_owner": "",
+            }
+        # Eligibility is the tier's required capability set; when no pool
+        # member meets it, the whole modality-correct pool stays eligible
+        # (modality was already hard-filtered above).
+        eligible = [m for m in tier_pool if _meets_requirements(m, req)] or tier_pool
+        best = _rank_candidates(eligible, req)[0]
         return {
             "model_id": best,
             "tier": cascade_tier,
             "modelSource": "task_selector",
             "required_modality": required_modality,
             "difficulty": difficulty,
-            "chain_position": 0,
-            "position_label": "tier-modality-match",
+            "chain_position": 1,
+            "position_label": "capability match",
             "candidates_considered": considered,
             "needs_owner_input": False,
             "prompt_to_owner": "",
@@ -982,8 +1151,9 @@ def select_task_model(
             f"(department: {department or 'unknown'}). "
             f"A {required_modality} task MUST run on a {required_modality}-capable "
             f"model — a text-only model is never eligible. "
-            f"Add a {required_modality}-capable model (Ollama Cloud preferred, "
-            f"then OpenRouter open-source) and re-run."
+            f"Ask the client which model to use, add a {required_modality}-capable "
+            f"model to the configuration, or set one as the configured default "
+            f"model, and re-run."
         ),
     }
 
@@ -996,7 +1166,8 @@ def resolve_dept_default_model(
     """Build-time Layer-1 dept default (PLAN.md §3.2).
 
     Looks up the department's suitability (tier + baseline modality) and resolves
-    a concrete model from the client inventory via the cascade. Never returns the
+    a concrete model from the client inventory via the client-choice resolution
+    (configured default first, then capability ranking). Never returns the
     free sentinel; returns needs_owner_input if no suitable model exists.
     """
     suit_map = load_suitability_map()
@@ -1033,13 +1204,17 @@ def main():
     parser.add_argument("--skill", default="", help="Skill name (for logs/prompts)")
     parser.add_argument("--purpose-tier", choices=("heavy", "mid", "fast"),
                         default="heavy",
-                        help="heavy=Kimi-first reasoning chain (default); "
-                             "mid=Minimax/Mimo chain; fast=DeepSeek-flash/Gemini-lite chain")
+                        help="Capability tier: heavy=reasoning/planning/QC (default); "
+                             "mid=general work (reasoning + tool use preferred); "
+                             "fast=bulk lookups and classification (text only)")
     parser.add_argument("--context-need", choices=("normal", "large", "huge"),
                         default="normal",
-                        help="normal=fits Kimi 262K ctx (default, Kimi preferred); "
-                             "large=>800K chars, DeepSeek-pro 1M ctx preferred; "
-                             "huge=>3M chars, DeepSeek-pro only")
+                        help="normal=standard window (default); "
+                             "large=>800K chars, long context required; "
+                             "huge=>3M chars, long context required")
+    parser.add_argument("--model", default=None,
+                        help="[skill mode] explicit model id chosen by the client "
+                             "for this call (resolution step 1)")
     parser.add_argument("--input-chars", type=int, default=None,
                         help="Optional input size in chars; overrides --context-need "
                              "(< 800K = normal, 800K-3M = large, > 3M = huge)")
@@ -1048,8 +1223,8 @@ def main():
     # ── Intelligent Model Selector modes (v12.15.0) ──
     parser.add_argument("--mode", choices=("skill", "task", "dept-default"),
                         default="skill",
-                        help="skill=legacy purpose-tier chain (default); "
-                             "task=task-time selector (modality+difficulty+cascade); "
+                        help="skill=purpose-tier capability resolution (default); "
+                             "task=task-time selector (modality+difficulty+ranking); "
                              "dept-default=Layer-1 build-time dept default model")
     parser.add_argument("--task-text", default="",
                         help="[task mode] task title+description for classification")
@@ -1094,6 +1269,7 @@ def main():
             input_chars=args.input_chars,
             purpose=args.purpose,
             openclaw_json_path=args.config,
+            explicit_model=args.model,
         )
 
     if args.format == "id":

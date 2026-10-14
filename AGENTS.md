@@ -310,7 +310,7 @@ This is the single canonical index of the N1–N35 non-negotiables. Every other 
 
 | N | Rule | Binding doc | Enforced by |
 |---|------|-------------|-------------|
-| N1 | **No Anthropic models in OpenClaw pipeline.** Pipeline (orchestrator, installer sub-agents, QC, scoring) uses DeepSeek V4.1 Flash (Ollama Cloud) + Gemini 3.1 Flash Lite (OpenRouter). Anthropic models are too expensive for sub-agent volume. | `direct-to-agent-install.md` | `shared-utils/select_model.py` model chains |
+| N1 | **No Anthropic models in OpenClaw pipeline.** Pipeline (orchestrator, installer sub-agents, QC, scoring) runs on the model the client selects, or the client's configured default model; no specific model is prescribed by name. Recommendation: use a low-cost model for pipeline roles, because Anthropic models are too expensive for sub-agent volume. | `direct-to-agent-install.md` | `shared-utils/select_model.py` model resolution |
 | N2 | **Master Orchestrator does no work.** Orchestrator coordinates only — spawns sub-agents, reads reports, scores composites, dispatches. Never reads skill `.md` files to install them. Never runs `install.sh` steps directly. Never QCs its own work. | This file (top section) | Audit Phase 6 |
 | N3 | **Read before act.** Before any non-read action on a skill, the worker sub-agent must confirm by re-stating the skill's file inventory. No "act and verify"; verify first. | `direct-to-agent-install.md` | `qc-agent.sh` cross-check |
 | N4 | **Follow declared step order.** Sub-agents execute steps in the order declared in `INSTALL.md`. No re-ordering "for efficiency." No skipping "to save time." | `direct-to-agent-install.md` | QC scripts verify step-by-step exit codes |
@@ -340,11 +340,11 @@ This is the single canonical index of the N1–N35 non-negotiables. Every other 
 | N28 | **No destructive teardown or kill scripts — ever.** Agents MUST NOT create or schedule any script or cron that removes the toolchain (`~/clawd`, `~/.openclaw`, Homebrew, Node, or OpenClaw itself). Cleanup must be scoped (remove a specific cron by ID), reversible (rename to `.QUARANTINED-<ts>` before deleting), and never self-deleting via a cron-scheduled kill script. Applies to build-cleanup, post-build teardown, SOP-backfill abort, and any "clean up after yourself" pattern. Root cause: 2026-05 incident — autonomous agent created a kill script during Skill 23 to abort a runaway SOP build; script wiped Homebrew/Node/OpenClaw/clawd. No script that touches core toolchain paths may be spawned by an agent without explicit owner approval. | This file + forensic post-mortem 2026-06-03 | Cron audit gate: any cron payload containing `rm -rf`, `brew uninstall`, `npm uninstall -g openclaw`, or paths `~/clawd` / `~/.openclaw` must be rejected |
 | N29 | **Shared core files (Zero-Human-Workforce file model).** On every box, ALL of that account's agents + sub-agents SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via a **verified real-file copy** (not a symlink, not hand-duplicated) — re-copied on every `install.sh` / `update-skills.sh` run, so drift is bounded to one roll. Per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's OWN real files. The copy SOURCE is ALWAYS the LOCAL box's own canonical (the default agent workspace resolved from THIS box's `openclaw.json`) — NEVER a hardcoded or cross-box/cross-account path (co-mingling guard, N0). Nested workflow agents (`*/workflows/*/agents/*`) are EXEMPT. Real files are backed up (`*.bak-unify-<ts>`) + unique content preserved additively into the agent's own `IDENTITY.md` before copying. **Amended 2026-09-21:** backups are BOUNDED — only the `$UNIFY_BAK_KEEP` newest (default 3) are kept per target, oldest deleted first. They were unbounded: one full-size copy per target per roll, forever (measured live: 25,604 `AGENTS.md.bak-unify-*` files / 4.3 GB on one box, written daily since 2026-06-23, disk at 95%). Only a target's OWN `.bak-unify-<ts>` siblings are ever pruned. **Amended 2026-09-22 (v25.1.74):** that per-target prune only reaches paths the unify SCAN enumerated, so `reclaim_unify_backups()` now runs ONCE at the end of every roll in both scripts and bounds the three populations the scan is blind to — orphaned role folders whose live core files are gone, hidden archive dot-dirs, and the out-of-tree `zero-human-company` trees under `<workspace>/` and `~/clawd/` (71,805 files / ~8.4 GB across 6 client boxes, oldest 2026-06-07). It deletes only basenames matching `.bak-unify-<8 digits>-<6 digits>[-<n>]`, so a live core file is unmatchable. Idempotent. **Amended 2026-07-31:** the runtime's workspace-root boundary guard rejects any symlink whose realpath resolves outside the agent's own workspace, reporting the file missing and injecting a ~107-char stub with no error anywhere — do not restore symlinks. | This file (Shared Core Files section) + [`docs/SHARED-CORE-FILES.md`](docs/SHARED-CORE-FILES.md) | `link_shared_core_files()` in `install.sh` (Step 10a) + `update-skills.sh`; QC check 9.9 in `scripts/qc-system-integrity.sh` — real file, byte-identical to canonical (a lingering symlink is a FAIL) |
 | N30 | **Ollama provider baseUrl is PLATFORM-BRANCHED (Mac vs VPS).** **VPS client** (Hostinger Docker / any Linux container, no local daemon): `baseUrl` MUST be `https://ollama.com` + the client's own `OLLAMA_API_KEY`; a loopback baseUrl → immediate `ECONNREFUSED` (HARD VIOLATION). **Mac client** (Mac mini / laptop / any macOS): the LOCAL Ollama daemon is signed in (`ollama signin`, client's own ollama.com account) and ONE `ollama` provider points at it — `baseUrl: "http://127.0.0.1:11434"`, `api: "ollama"`, `apiKey: "ollama-local"`. A signed-in daemon serves BOTH local AND `:cloud` models through that one loopback endpoint (the "Cloud + Local" hybrid flow). On Mac the loopback baseUrl is REQUIRED for inference, NOT a violation; forcing a Mac onto `https://ollama.com` (HARD VIOLATION on Mac) discards the local-model path. Health-check probes against a local daemon were always loopback-exempt. | This file (N30 section) + `docs/OLLAMA-PROVIDER-BY-PLATFORM.md` | `scripts/qc-assert-ollama-provider-platform.sh` (single source of truth); `scripts/qc-system-integrity.sh` CHECK X.9; `build-workforce.py` provider setup; `install.sh` model config step |
-| N31 | **Agent model field MUST be an object `{primary, fallbacks:[...]}`, NEVER a bare string.** Writing `"model": "ollama/deepseek-v4.1-flash:cloud"` in `agents.list[]` bypasses all fallback chains — if Ollama Cloud is over-capacity the agent dies silently. Every agent entry written by `build-workforce.py` or any install script MUST use the canonical object form: `{"primary": "ollama/deepseek-v4.1-flash:cloud", "fallbacks": ["openrouter/deepseek/deepseek-v4.1-flash", ...]}`. Bare strings are only permissible in temporary draft states during development; NEVER in production `openclaw.json`. | This file (N31 section) + `build-workforce.py add_agent_to_config()` | `scripts/qc-system-integrity.sh` model-object check |
+| N31 | **Agent model field MUST be an object `{primary, fallbacks:[...]}`, NEVER a bare string.** Writing `"model": "<client's configured default model>"` as a bare string in `agents.list[]` bypasses all fallback chains, if the primary's provider is over-capacity the agent dies silently. Every agent entry written by `build-workforce.py` or any install script MUST use the canonical object form: `{"primary": "<client's configured default model>", "fallbacks": ["<client's selected fallback model>", ...]}`. Bare strings are only permissible in temporary draft states during development; NEVER in production `openclaw.json`. | This file (N31 section) + `build-workforce.py add_agent_to_config()` | `scripts/qc-system-integrity.sh` model-object check |
 | N32 | **A model-provider change is NOT complete until `embedding-health` passes on the box.** Switching the generative provider (or any API key rotation) can silently orphan all three embedding consumers: OpenClaw memory search, persona gemini-index, and CC SOP embeddings. The `embedding-health` check (PRD Addendum B.6) MUST pass — all three indexes, three legs each (provider capable + key live + smoke embed + stamp matches config) — before any provider-change task is marked done. Ollama Cloud is NEVER embedding-capable (hard rule). Run: `python3 shared-utils/embedding_health.py --json` on the box after any provider/key change. | This file (N32 section) + `shared-utils/embedding_health.py` | `step_embedding_health()` in `fleet_refresh_runner.py`; Sunday cron `--verify-only` pass in `scripts/fleet-refresh.sh` |
 | N33 | **Credential Check Protocol — never falsely report a key missing.** Use `~/.openclaw/skills/shared-utils/check-credential.sh <KEY>` every time. Evidence triad required before "absent": (1) live process env checked (`docker exec printenv` / `ps eww`), (2) MCP server headers checked, (3) all .env stores checked. Only after all three return empty may a key be called GENUINELY-ABSENT. | This file (N33 section) + `shared-utils/check-credential.sh` | `<!-- CREDENTIAL_CHECK_V2 -->` marker (injected by `apply-fleet-standards.sh`) |
-| N34 | **Provider Detection Protocol — a missing config block is NEVER proof a provider is absent.** "Does box X have provider Y" = "can the gateway resolve Y's API key at runtime" — NOT "is there a models.providers.Y block." Run `check-credential.sh --provider <Y>` (3-state verdict). Missing/empty models.providers block alone NEVER produces absent — only downgrades PRESENT_WITH_BLOCK to NEEDS_BLOCK. GENUINELY-ABSENT only after live-env tier + all stores came up empty. Use SONNET (never Haiku) for credential/provider checks. Write NOT_ASSESSED (never false) for any check that did not run. | This file (N34 section) + `shared-utils/check-credential.sh --provider` mode | `check-credential.sh --self-test` in CI (qc-static.yml); fleet sweeps branch off 3-state verdict |
-| N35 | **AF-MODEL-SOVEREIGNTY — no task dispatches without a resolved, valid, modality-appropriate model.** A resolved model must be (a) non-null and NOT the `openrouter/free` literal nor any bare "free" default, (b) present in the client's available inventory, (c) not forbidden (Anthropic), and (d) modality-appropriate (`capabilities ⊇ required_modality`). The authoritative PREFERENCE CASCADE is **Ollama Cloud → OpenRouter open-source → OpenRouter `google/gemini-3.5-flash` (explicit universal last resort)**; the final rung fires only when Tier 1 and Tier 2 both fail and credits are live — the old `*:free` wording is superseded; the free literal is still rejected by the gate as not a valid resolution. Precedence: **SOP pin > task selector > role override > dept default > needs_owner_input** (NEVER a silent free downgrade). **MiniMax M2 is BANNED fleet-wide**; the `execution` and `qc` roles use MiniMax M3 only; the generic "MiniMax" allowance in Tier 2 means M3 exclusively. A vision/image/video/audio task MUST get a model with that modality. Build-time: every department gets a real, modality-correct dept default (suitability map). Task-time: the selector classifies modality + difficulty and walks the cascade. Failures route to `needs_owner_input`, never a silent free fallback. | This file (N35 section) + `shared-utils/select_model.py` (`select_task_model` / `resolve_dept_default_model`) + `shared-utils/assert_model_sovereignty.py` + `shared-utils/{model-capabilities,dept-model-suitability}.json` | `tests/unit/model-selector.test.py` + `.github/workflows/model-selector-guard.yml` (CI gate) + `scripts/repair-model-sovereignty.sh` (fleet repair sweep). CC runtime half (resolver/dispatcher gate/migration 071/display) lands in `blackceo-command-center` — see N35 section. |
+| N34 | **Provider Detection Protocol, a missing config block is NEVER proof a provider is absent.** "Does box X have provider Y" = "can the gateway resolve Y's API key at runtime", NOT "is there a models.providers.Y block." Run `check-credential.sh --provider <Y>` (3-state verdict). Missing/empty models.providers block alone NEVER produces absent, only downgrades PRESENT_WITH_BLOCK to NEEDS_BLOCK. GENUINELY-ABSENT only after live-env tier + all stores came up empty. Credential/provider checks must run on a model with strong instruction-following and a low false-negative rate (recommendation, per the N33/N34 evidence-triad reasoning: a weak checker manufactures false GENUINELY-ABSENT verdicts); the model itself is the client's choice or the client's configured default model, never a prescribed name. Write NOT_ASSESSED (never false) for any check that did not run. | This file (N34 section) + `shared-utils/check-credential.sh --provider` mode | `check-credential.sh --self-test` in CI (qc-static.yml); fleet sweeps branch off 3-state verdict |
+| N35 | **AF-MODEL-SOVEREIGNTY, no task dispatches without a resolved, valid, modality-appropriate model.** A resolved model must be (a) non-null and NOT the `openrouter/free` literal nor any bare "free" default, (b) present in the client's available inventory, (c) not forbidden (Anthropic), and (d) modality-appropriate (`capabilities ⊇ required_modality`). Model RESOLUTION is the client-choice order (D3): **(1) the client's explicit choice (including a SOP pin), (2) the client's configured default model, (3) neither resolves: stop at `needs_owner_input` and ask the client**. No named model is a cascade rung or a last resort; route tier (Ollama Cloud, then OpenRouter open-source, then free routes) survives only as a ranking tie-break among models the client already configured, and the free literal is rejected by the gate as not a valid resolution. Precedence: **SOP pin > task selector > role override > dept default > needs_owner_input** (NEVER a silent free downgrade). **Recommendation for the `execution` and `qc` roles: avoid MiniMax M2.** M2 has measured reliability problems in fleet execution and QC work, so a stronger current model is recommended for those roles; the actual model is the client's choice or the client's configured default model, provided it meets the role's capability requirements. No model is banned or mandated by name. A vision/image/video/audio task MUST get a model with that modality. Build-time: every department gets a real, modality-correct dept default (suitability map). Task-time: the selector classifies modality + difficulty and resolves per the order above (configured default first, then capability-ranked selection among the client's configured models). Failures route to `needs_owner_input`, never a silent free fallback. | This file (N35 section) + `shared-utils/select_model.py` (`select_task_model` / `resolve_dept_default_model`) + `shared-utils/assert_model_sovereignty.py` + `shared-utils/{model-capabilities,dept-model-suitability}.json` | `tests/unit/model-selector.test.py` + `.github/workflows/model-selector-guard.yml` (CI gate) + `scripts/repair-model-sovereignty.sh` (fleet repair sweep). CC runtime half (resolver/dispatcher gate/migration 071/display) lands in `blackceo-command-center`, see N35 section. |
 | N36 | **BLOCKED MEANS HUMAN-ONLY: workers never park in Blocked; broken/stuck work returns to the orchestrator.** A task is `status:blocked` ONLY when a named human must perform a specific human-only action (decision, approval, credential/access, or payment) before work can proceed. EVERYTHING else keeps moving. Worker agents NEVER set status=blocked directly -- they call `POST /api/tasks/{id}/return-to-orchestrator` (requires `Authorization: Bearer $MC_API_TOKEN` -- the Command Center write-back API is fail-closed and 401s without it; never `$OPENCLAW_GATEWAY_TOKEN`, see BLOCKED-IS-GATED.md) with a structured handback `{task_id, problem, what_i_tried, what_i_think_it_needs, suggested_department?}`. The Master Orchestrator is the SOLE authority that writes status=blocked, and only after the four-way classifier in SOP-01 passes. After 3 re-route attempts (qc_reroute_attempts cap), the orchestrator escalates to the operator instead of looping. Extends N24 (no silent abandonment): the structured handback is the required replacement for a silent drop. | This file (N36 section) + `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-01-Blocked-vs-Return.md` + `23-ai-workforce-blueprint/references/BLOCKED-IS-GATED.md` | API gate in `src/app/api/tasks/[id]/route.ts` (400 on non-human blocked attempt) + `src/app/api/tasks/[id]/return-to-orchestrator/route.ts` (worker handback endpoint) + stale-task-sweep registered in scheduler.ts + ceo-delegation-sweep extended to sweep returned tasks |
 | N37 | **AF-WORKSPACE-SHELL — "TEMPLATE DEPLOYED" and "WORKSPACE INSTANTIATED" are TWO SEPARATE states; each is verified separately, and never reported as the other.** Copying the role-library TEMPLATE to disk (`/data/.openclaw/skills/.../role-library/<dept>/` — a SKILLS-tree path) is "TEMPLATE DEPLOYED." It does NOT make a client department. A client department is "WORKSPACE INSTANTIATED" only when its WORKSPACE dir (`workspace/zero-human-company/<company>/departments/<dept>/`) is MATERIALIZED: ≥1 numbered role subdir (`00-*`/`01-*`…) AND director `IDENTITY.md` AND `SOUL.md` AND ≥1 real SOP (`how-to.md` ≥3 KB or a substantive standalone `0[1-9]-*.md` ≥7 KB). A dept dir that is only `DREAMS.md` + `memory/` is a SHELL. NEVER report a client/department "done / installed / updated / airtight" without the workspace gate passing **with raw counts** (a template on disk can NEVER satisfy it; a dept-dir symlinked into the template tree is treated as not-materialized). Extends the `lib-onboarding-state.sh` onboarding-honesty philosophy to the workspace layer (N27). **AND THE CLIENT MUST BE ABLE TO SEE IT — `chosen == provisioned == displayed` (`AF-BOARD-JOIN-DRIFT`, the C-series JOIN).** A materialized tree is still not "done" if the department has no column on the client's Command Center board (the `workspaces` rows in `mission-control.db`): a department they PAID FOR that they CANNOT SEE. The three layers — what the client CHOSE (the C7 durable `departments.json` artifact / build-state record), what is PROVISIONED on disk, and what is DISPLAYED on the board — were each guarded internally and never JOINED, so all three could be internally perfect and describe three different companies. The join is `23-ai-workforce-blueprint/scripts/prove-board-join.py` (archive-aware: an ARCHIVED row is NOT displayed; and **scoped to ONE `company_id`** — one `mission-control.db` can hold several companies' rows, and joining one company's tree against all of them manufactures FALSE drift). **Every non-zero rc of the gate MUST have an explicit arm in CHECK X.11** — a WARN does not change `qc-system-integrity.sh`'s exit code, so an untaught rc is FAIL-OPEN ("ALL CHECKS PASSED" on a proven defect); the catch-all is fail-CLOSED and hard-fails an unrecognised rc. | This file (N37 section) + `FLEET-STANDARDS.md §6` + `scripts/qc-assert-workspace-departments-built.sh` (single source of truth; required set = `department-floor.py` floor) + `23-ai-workforce-blueprint/scripts/prove-board-join.py` (the JOIN) | `scripts/qc-system-integrity.sh` CHECK X.11 — **rc=3 `AF-WORKSPACE-SHELL` hard-fail; rc=5 `AF-PHANTOM-DEPT-TREE` hard-fail; rc=6 `AF-BOARD-JOIN-DRIFT` hard-fail** (chosen != provisioned != displayed); rc=4/rc=2 warn; any unrecognised non-zero rc hard-fails (fail-closed catch-all) + `lib-onboarding-state.sh` `oc_overall_goal_check` criterion (iii) `workspaceMaterialized` (overall "done" blocked while any dept is a shell OR the board join drifts — ANY non-zero rc = "not materialized") + watchdog `oc_overall_goal_check` (kill condition) + CI `.github/workflows/qc-static.yml` (runs `scripts/test-workspace-departments-built.sh` + `scripts/test-watchdog-loop.sh` T8/T8b) + CI `.github/workflows/board-join-chain-guard.yml` (runs `23-ai-workforce-blueprint/scripts/test-board-join-chain.sh`) |
 | N38 | **AF-REPO-CONSISTENCY — a department / role / SOP / persona may NEVER ship inconsistent across the SIX sources of truth.** The Skill 23 blueprint carries six independent lists that must agree: **FLOOR** (`department-naming-map.json` `.mandatory` + the 6 universal-primary verticals — 6 not 7 since naming-map v2.6.1 reclassified `listings` to real-estate-only; on-disk floor = 30 [24 mandatory + 6 universal-primary, includes the never-declinable master-orchestrator]; the interview-declinable buildable floor `qc-assert-repo-consistency.py`'s own gate checks is 29 [23 + 6]), **ROSTERS** (`suggested-roles/*.md`), **ROLE LIBRARY** (`templates/role-library/_index.json`), **SOP SOURCE** (role-library copy path / Skill-42 PA library), **PERSONA DOMAINS** (`build-workforce.py` `dept_to_domains` x2 + `create_role_workspaces.py` `DEPT_DOMAIN_HINTS`), and **NO ORPHANS**. Six departments once shipped UNBUILDABLE because nothing cross-checked floor vs rosters; missing persona-domain keys silently routed 11 floor depts to the generic `['leadership']` pool. For EVERY floor dept: its roster must parse, every roster role must resolve a library/SOP template, the dept must dry-run-instantiate cleanly, every role must have a real SOP source, and the dept must have a NON-fallback persona-domain mapping in ALL THREE persona maps. When you ADD or RENAME a department/role/SOP/persona you MUST update floor + roster + library + SOP source + persona maps together (see `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md`). **PERSONA-SET COUNT TRIAD (7th assertion):** beyond persona-DOMAIN mappings, adding a coaching/leadership persona must keep the COUNT triad in lockstep — `blueprint dirs (22-…/personas/*) == persona-categories.json keys == INDEX-MANIFEST.persona_count == INDEX-MANIFEST.canonical_persona_count` — else a persona ships matchable-but-vector-less (in the SET, no embeddings) or the manifest is bumped with no blueprint. The propagation checklist (blueprint + SET + incremental index + manifest + re-wire) is `23-ai-workforce-blueprint/ADDING-PERSONAS.md`. | This file (N38 section) + `FLEET-STANDARDS.md §7` + `23-ai-workforce-blueprint/ADDING-DEPARTMENTS-ROLES-SOPS.md` + `23-ai-workforce-blueprint/ADDING-PERSONAS.md` + `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` (single source of truth; uses the SAME `parse_roster`/`library_lookup`/`evaluate_floor`/`is_canonical_dept` functions the build uses, plus the `_persona_set_triad_failures` count assertion) | `scripts/qc-system-integrity.sh` CHECK X.12 (rc=5 hard-fail) + build-start preflight `lib-onboarding-state.sh` `oc_repo_consistency_ok()` (a client build REFUSES to run against a drifted repo) + CI `.github/workflows/qc-static.yml` (runs the gate + `23-ai-workforce-blueprint/scripts/test-repo-consistency.sh`) + CI `.github/workflows/persona-set-asset-consistency-guard.yml` (PR-boundary triad guard) |
@@ -441,21 +441,24 @@ The old rule said "client boxes do NOT run a local Ollama daemon; `127.0.0.1:114
 
 ### Correct form
 
+The `models` entries below list the models the client selected on their box;
+the ids shown are placeholders for the client's own selected model ids.
+
 ```json
 // MAC — openclaw.json providers block (signed-in local daemon, hybrid Cloud+Local)
 { "models": { "providers": { "ollama": {
   "baseUrl": "http://127.0.0.1:11434", "api": "ollama", "apiKey": "ollama-local",
-  "models": [ { "id": "kimi-k2.6:cloud", "maxTokens": 64000 },
-              { "id": "deepseek-v4.1-flash:cloud", "maxTokens": 64000 },
-              { "id": "gemma4", "maxTokens": 64000 } ] } } } }
+  "models": [ { "id": "<client-selected cloud model>", "maxTokens": 64000 },
+              { "id": "<client-selected cloud model>", "maxTokens": 64000 },
+              { "id": "<client-selected local model>", "maxTokens": 64000 } ] } } } }
 ```
 
 ```json
 // VPS — openclaw.json providers block (cloud-direct, client's own key)
 { "models": { "providers": { "ollama": {
   "baseUrl": "https://ollama.com", "api": "ollama", "apiKey": "{{OLLAMA_API_KEY}}",
-  "models": [ { "id": "kimi-k2.6:cloud", "maxTokens": 64000 },
-              { "id": "deepseek-v4.1-flash:cloud", "maxTokens": 64000 } ] } } } }
+  "models": [ { "id": "<client-selected cloud model>", "maxTokens": 64000 },
+              { "id": "<client-selected cloud model>", "maxTokens": 64000 } ] } } } }
 ```
 
 Always confirm a live PONG (`openclaw run --model ollama/<m>:cloud "Reply with exactly: PONG"`) — config-valid is not proof the model replies.
@@ -472,21 +475,21 @@ Enforced by `scripts/qc-assert-ollama-provider-platform.sh` (single source of tr
 
 ```json
 // WRONG — bare string, no fallbacks
-{ "id": "dept-marketing", "model": "ollama/deepseek-v4.1-flash:cloud" }
+{ "id": "dept-marketing", "model": "<client's configured default model>" }
 ```
 
 ### Correct form
 
 ```json
-// CORRECT — object with primary + fallbacks
+// CORRECT, object with primary + fallbacks (ids are the client's own
+// configured default and the fallback models the client selected)
 {
   "id": "dept-marketing",
   "model": {
-    "primary": "ollama/deepseek-v4.1-flash:cloud",
+    "primary": "<client's configured default model>",
     "fallbacks": [
-      "openrouter/deepseek/deepseek-v4.1-flash",
-      "ollama/kimi-k2.6:cloud",
-      "openrouter/moonshotai/kimi-k2.6"
+      "<client's selected fallback model>",
+      "<client's selected fallback model>"
     ]
   }
 }
@@ -494,8 +497,8 @@ Enforced by `scripts/qc-assert-ollama-provider-platform.sh` (single source of tr
 
 ### Why this matters
 
-- Ollama Cloud may be over-capacity for a specific model — fallback to OpenRouter keeps the agent alive
-- A bare string on an agent that serves a client's Telegram messages → total silence on Ollama outage
+- A provider may be over-capacity for a specific model, a fallback on another route keeps the agent alive
+- A bare string on an agent that serves a client's Telegram messages → total silence on a provider outage
 
 ### Enforcement
 
@@ -1134,7 +1137,7 @@ verdict — the absent path is reached only after the 4-layer key search, never 
 |------|----------------|
 | Check `models.providers` and see no block → report "no openrouter" | **Hard violation.** Block absence ≠ key absence. Run `--provider` mode. |
 | Write `had_openrouter: false` for a check that never ran | **Hard violation.** Use `NOT_ASSESSED` for any check that did not execute. |
-| Use Haiku for credential/provider checks | Haiku fabricates "process env: NOTFOUND". Sonnet only. |
+| Run credential/provider checks on a weak, fabrication-prone model | A weak checker fabricates results (measured: "process env: NOTFOUND" invented by a low-capability model). Checks need a model with strong instruction-following and a low false-negative rate; the model itself is the client's choice or configured default. |
 | Grep `secrets/.env` + `openclaw.json` without the live-process-env check | The live env is authoritative; file-grep misses are NOT definitive. |
 | Report absent without `live_env_checked: true` and `where_found: []` in evidence | Incomplete evidence = unverifiable and false claim. |
 
@@ -1149,7 +1152,7 @@ Every fleet sweep that edits `models.providers` MUST:
    - `GENUINELY-ABSENT` (with `live_env_checked:true` + `where_found:[]`) → only then skip
 3. NEVER emit a provider verdict (e.g. `had_openrouter:false`) for a check that did not run — use `NOT_ASSESSED`.
 4. Every `PRESENT`/`NEEDS_BLOCK` finding requires a non-empty `where_found[]`; every `ABSENT` requires `live_env_checked:true`.
-5. Use **Sonnet** (never Haiku) for credential/provider checks.
+5. Run credential/provider checks on a model with strong instruction-following and a low false-negative rate (recommendation: a weak checker fabricates verdicts, measured as invented "process env: NOTFOUND" results; the model itself is the client's choice or the client's configured default model, never a prescribed name).
 
 ### CI Gate
 
@@ -1164,14 +1167,30 @@ Every fleet sweep that edits `models.providers` MUST:
 > wrong-modality dispatch **structurally impossible**. The free literal is never a
 > valid resolution; it is a sentinel the gate explicitly rejects.
 
-### The PREFERENCE CASCADE (authoritative, exact)
+### The RESOLUTION ORDER (authoritative, exact)
 
-1. **TIER 1 — Ollama Cloud** (`ollama/*:cloud` or `*-cloud` tag, baseUrl `https://ollama.com`)
-2. **TIER 2 — OpenRouter open-source** (open-weight vendors: DeepSeek, Moonshot/Kimi, Qwen, Z-AI/GLM, Xiaomi, Llama, Mistral, Gemma, MiniMax M3 — **MiniMax M2 is BANNED everywhere; the "MiniMax" allowance here means M3 only**; NOT proprietary OpenAI/Anthropic/Gemini-pro routes)
-3. **TIER 3 — OpenRouter `google/gemini-3.5-flash`** — explicit universal last-resort safety rung; fires only when Tier 1 and Tier 2 both fail and credits are live. This supersedes the former `*:free` wording — gemini-3.5-flash is the named model at this rung, not an anonymous free slot. The `openrouter/free` literal and any bare "free" default remain REJECTED by the gate.
+1. **The client's explicit choice** for the task or role (including a SOP pin).
+2. **The client's configured default model** (`agents.defaults.model` in their own openclaw.json), when it is present in their available inventory and modality-appropriate.
+3. **Neither resolves: stop at `needs_owner_input`** and ask the client which model to use. No named model is a last-resort rung, and no model is ever substituted silently.
 
-Within a tier: highest version wins; ties break to the cheaper model.
-**Modality is a HARD pre-filter applied BEFORE the cascade.** A vision task only
+When a selection must be made among several of the client's own configured
+models (for example by the task-time selector), ranking is a tie-break only:
+route tier first (Tier 1 Ollama Cloud: `ollama/*:cloud` or `*-cloud` tag;
+Tier 2 OpenRouter open-source: open-weight vendors such as DeepSeek,
+Moonshot/Kimi, Qwen, Z-AI/GLM, Xiaomi, Llama, Mistral, Gemma, MiniMax; NOT
+proprietary OpenAI/Anthropic/Gemini-pro routes; Tier 3 free routes), then
+capability fit, then highest version, then the cheaper model. The ranking
+never imports a model the client did not configure. The `openrouter/free`
+literal and any bare "free" default remain REJECTED by the gate.
+
+**Recommendation for the `execution` and `qc` roles: avoid MiniMax M2.**
+M2 has measured reliability problems in fleet execution and QC work, so a
+stronger current model is recommended for those roles; the actual model is
+the client's choice or the client's configured default model, provided it
+meets the role's capability requirements. No model is banned or mandated
+by name.
+
+**Modality is a HARD pre-filter applied BEFORE resolution.** A vision task only
 ever considers `vision`-capable models; a text-only model is never eligible.
 
 ### Precedence (highest wins)
@@ -1206,7 +1225,7 @@ Otherwise dispatch is BLOCKED and routed to `needs_owner_input`.
 
 ### CI Gate
 
-`tests/unit/model-selector.test.py` (cascade order, modality match, SOP override,
+`tests/unit/model-selector.test.py` (resolution order, modality match, SOP override,
 no-model rejected, dept default, difficulty) + the repair-sweep smoke run in
 `.github/workflows/model-selector-guard.yml`.
 
@@ -1221,7 +1240,7 @@ migration 071 (`sops.model_pin`); seed `model_registry` from the box's
 to write `agent_settings` rows; `scripts/repair-model-defaults.ts` to rewrite
 offending `tasks.model_id` rows (driven by this repo's repair-sweep receipts);
 tier/source/modality display badges. The CC TypeScript reuses THIS repo's
-`model-capabilities.json` + cascade rules verbatim.
+`model-capabilities.json` + resolution rules verbatim.
 
 ---
 
