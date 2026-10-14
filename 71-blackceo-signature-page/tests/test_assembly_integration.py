@@ -114,6 +114,49 @@ def test_layout_gate_failures_and_waivers():
         assert gate.layout_gate_failures(run), "a waiver without a reason is not a waiver"
 
 
+def test_layout_gate_substitution_record():
+    """Ruling 5 (2026-10-14): the recorded owner substitution in
+    assets/page-references/substitutions.json satisfies the two
+    Challenge screenshots; the Elevation Conference JPG stays
+    outstanding, so an unwaivered run still fails naming only it,
+    and a defective record fails closed (no substitution at all)."""
+    subs, outstanding = gate._layout_substitution_record()
+    assert set(subs) == {
+        "screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07.png",
+        "screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07-2.png"}, subs
+    assert outstanding == ["Sales Page - Elevation Conference - Desktop(1).jpg"], outstanding
+    with tempfile.TemporaryDirectory() as td:
+        run = Path(td)
+        fixture_intake(run)
+        failures = gate.layout_gate_failures(run)
+        assert len(failures) == 1, failures
+        assert "missing layout reference" in failures[0], failures
+        assert "Elevation Conference" in failures[0], failures
+        assert "screencapture" not in failures[0], failures
+        # a recorded waiver still excuses the outstanding file for the run
+        fixture_intake(run, layout_waivers=[{"gate": "layout-references",
+                                             "reason": "owner waived for this run"}])
+        assert gate.layout_gate_failures(run) == []
+    # fail-closed parsing against synthetic roots
+    def record_at(root, payload):
+        write(Path(root) / "assets" / "page-references" / "substitutions.json",
+              payload if isinstance(payload, str) else json.dumps(payload))
+        return gate._layout_substitution_record(Path(root))
+    with tempfile.TemporaryDirectory() as td:
+        assert record_at(td, "{not json") == ({}, [])
+        entry = {"named_file": "x.png", "status": "substituted",
+                 "stand_in_files": [{"file": "y.pdf"}],
+                 "ruled_by": "Trevor Otts", "ruling_date": "2026-10-14",
+                 "ruling": "stands in"}
+        got, _ = record_at(td, {"substitutions": [entry]})
+        assert set(got) == {"x.png"}, got
+        for broken in ({k: v for k, v in entry.items() if k != "ruled_by"},
+                       {**entry, "stand_in_files": []},
+                       {**entry, "status": "waived"}):
+            got, _ = record_at(td, {"substitutions": [broken]})
+            assert got == {}, (broken, got)
+
+
 # ------------------------------------------------------------- grade calibrated
 
 def test_grade_calibrated_builtin():

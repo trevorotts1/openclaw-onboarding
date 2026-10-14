@@ -977,6 +977,49 @@ LAYOUT_REFERENCE_FILES = (
     "screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07-2.png",
 )
 LAYOUT_GATE_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
+LAYOUT_SUBSTITUTIONS_NAME = "substitutions.json"
+
+
+def _layout_substitution_record(skill_root=None):
+    """Parse assets/page-references/substitutions.json (Ruling 5).
+
+    A substitution counts only when its record is complete: the named
+    file, status "substituted", a non-empty ruled_by, ruling_date, and
+    ruling, and at least one stand-in entry with a file name. Any
+    defect (unreadable file, malformed JSON, an incomplete entry)
+    means NO substitution for that name: the record fails closed,
+    exactly like a waiver without a reason is not a waiver. Returns
+    (substitutions, outstanding): substitutions maps a named file to
+    its record entry; outstanding lists the names the record itself
+    marks outstanding.
+    """
+    root = SKILL_ROOT if skill_root is None else Path(skill_root)
+    path = root / "assets" / "page-references" / LAYOUT_SUBSTITUTIONS_NAME
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}, []
+    if not isinstance(data, dict):
+        return {}, []
+    substitutions = {}
+    for entry in data.get("substitutions") or []:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("named_file")
+        stand_ins = entry.get("stand_in_files") or []
+        if (isinstance(name, str) and name
+                and entry.get("status") == "substituted"
+                and str(entry.get("ruled_by") or "").strip()
+                and str(entry.get("ruling_date") or "").strip()
+                and str(entry.get("ruling") or "").strip()
+                and isinstance(stand_ins, list) and stand_ins
+                and all(isinstance(s, dict) and str(s.get("file") or "").strip()
+                        for s in stand_ins)):
+            substitutions[name] = entry
+    outstanding = [e.get("named_file") for e in data.get("outstanding") or []
+                   if isinstance(e, dict) and e.get("status") == "outstanding"
+                   and isinstance(e.get("named_file"), str) and e.get("named_file")]
+    return substitutions, outstanding
 
 
 def _layout_references_waived(run_dir):
@@ -1075,15 +1118,31 @@ def layout_gate_failures(run_dir):
     """Item 13 / S3 Request 2: the three bundled layout reference files
     must exist in the installed skill at wireframe and mockup close, or
     the run's intake must carry the recorded waiver. The files are
-    owner-supplied; no substitute is accepted."""
+    owner-supplied; no substitute is accepted except one the owner has
+    ruled on, recorded in assets/page-references/substitutions.json
+    (Ruling 5, 2026-10-14: the owner-supplied GoFullPage PDF captures
+    stand in for the two Challenge screenshots; the Elevation
+    Conference JPG has no substitution and stays outstanding, so an
+    unwaivered run still hard-stops on it). The gate reads the
+    substitution record, not the stand-in binaries: the PDFs (108 MB)
+    are held in the diagnostic record and bundling them here is a
+    separate owner-visible step."""
+    substitutions, _outstanding = _layout_substitution_record()
     missing = [name for name in LAYOUT_REFERENCE_FILES
-               if not (SKILL_ROOT / "assets" / "page-references" / name).is_file()]
+               if not (SKILL_ROOT / "assets" / "page-references" / name).is_file()
+               and name not in substitutions]
     if not missing:
         return []
     if _layout_references_waived(run_dir):
         return []
+    covered = [name for name in LAYOUT_REFERENCE_FILES if name in substitutions]
+    note = ""
+    if covered:
+        note = (f"; {len(covered)} named reference(s) are satisfied by the "
+                "recorded owner substitution in assets/page-references/"
+                "substitutions.json (Ruling 5, 2026-10-14)")
     return ["missing layout reference file(s) in assets/page-references/: "
-            + ", ".join(missing)
+            + ", ".join(missing) + note
             + "; the references are required reads for this stage (Item 13) "
               "and no waiver is recorded in intake.json (layout_waivers or "
               "layout_references_waived with a reason)"]
@@ -2485,6 +2544,18 @@ def collect_warnings(run_dir, state):
             if _idata.get("layout_references_waived") is True:
                 warns.append("layout waiver recorded (layout-references, flat form): "
                              f"{_idata.get('layout_references_waiver_reason')}")
+    # Item 13 (Ruling 5): recorded reference substitutions and any
+    # outstanding reference are always visible in the report, so a
+    # report never implies the substituted set is the original set.
+    _subs, _outst = _layout_substitution_record()
+    for _name in sorted(_subs):
+        _entry = _subs[_name]
+        _files = ", ".join(str(s.get("file")) for s in _entry.get("stand_in_files") or [])
+        warns.append(f"layout reference substitution recorded ({_name}): "
+                     f"stand-in {_files} (owner ruling {_entry.get('ruling_date')})")
+    for _name in _outst:
+        warns.append(f"layout reference outstanding ({_name}): no substitution "
+                     "recorded; the original is still required (Item 13)")
     # Uncalibrated grade thresholds
     brand = brand_path_for(run_dir)
     try:

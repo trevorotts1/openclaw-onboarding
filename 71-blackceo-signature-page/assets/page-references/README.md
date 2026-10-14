@@ -61,3 +61,54 @@ Verified present on Trevor's Mac but NOT the named files:
 
 `assets/BlackCEO-Master-Visual-Reference-Guide.png` is an image-style menu
 only. It is not a page-layout or page-color reference.
+
+## Owner substitution recorded 2026-10-14 (Ruling 5)
+
+This section qualifies the supply-status text above. It is the one
+recorded exception to "Do not substitute similar-but-different files":
+a substitution counts only when the owner has ruled on it and the
+ruling is recorded here and in the machine-readable record,
+`substitutions.json` in this folder, which the stage gate reads.
+
+**The ruling.** Trevor Otts, 2026-10-14 (Ruling 5): the two
+owner-supplied GoFullPage PDF captures of the BlackCEO 6-Figure Launch
+Challenge registration page stand in for named files 2 and 3:
+
+- `gofullpage-blackceochallenge-reg-va.pdf` (48,701,310 bytes) is the
+  primary stand-in for
+  `screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07.png`:
+  the same capture subject (the va design variant of the Challenge
+  registration page), captured full-page top to bottom at higher
+  resolution (2658 px wide, 334.5 PPI) than the named screenshot.
+- The va PDF also covers
+  `screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07-2.png`:
+  the named file is the continuation of the same page (Day 5 and the
+  closing founder letter), and the va PDF's full-page stack
+  (2658 x 45,736 px) contains that content, founder letter included.
+- `gofullpage-blackceochallenge-reg-vb.pdf` (59,269,104 bytes) is the
+  second design variant of the same page, registered alongside the
+  primary. Two variants of one page are not two distinct references,
+  and the vb capture does NOT reach the continuation's tail: it ends
+  at the first sliver of the grid photograph, so the master-grid
+  section, founder letter, and founder portrait are absent from it.
+  Coverage of file 3 rests on the va PDF alone.
+
+**Reading order effect.** For the Challenge page, read the va PDF
+(which replaces reading steps 2 and 3 above). Step 1, the Elevation
+Conference file, is unchanged: see below.
+
+**Where the files live.** The PDF binaries are NOT bundled in this
+folder. They are held in the diagnostic record
+(`skill-71-diagnostic/owner-examples/`, registered 2026-10-14 with
+sizes and dimensions verified at intake). At 108 MB combined, bundling
+them into the skill is a separate owner-visible step awaiting
+Trevor's word. The stage gate satisfies files 2 and 3 from
+`substitutions.json`, not from the binaries.
+
+**Still outstanding.** Named file 1,
+`Sales Page - Elevation Conference - Desktop(1).jpg`, is NOT
+substituted and NOT waived. It remains a required original, and the
+stage gate still refuses to open desktop-wireframe, mobile-tablet, or
+visual-mockup for any run whose intake carries no recorded
+layout-references waiver, naming this file. A waiver excuses it for
+one run only; it does not retire the requirement.
