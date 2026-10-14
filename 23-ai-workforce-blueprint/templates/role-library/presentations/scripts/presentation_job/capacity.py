@@ -2462,6 +2462,66 @@ def resource_profile_surface(config_dir: Optional[Path] = None,
     return surface
 
 
+def fleet_shape_surface(config_dir: Optional[Path] = None) -> dict:
+    """FIX-PLAN Item 17: the capacity probe's read-only view of the fleet
+    shape and the remembered system gauge.
+
+    The probe CONSUMES the shape budgets the profile recorded at gauge
+    time: the recorded shape (fleet-mac / fleet-hostinger / fleet-contabo,
+    exact labels), the detection candidates when no shape is recorded,
+    and the persisted gauge (container budget, host ceiling, per-class
+    budgets, per-provider readings) WITH its freshness state -- a stale
+    or superseded gauge is surfaced as the state gauge_status() reports
+    ("stale-age", "shape-changed", "hardware-changed"), never silently
+    presented as measured truth. Local file reads only (the profile
+    store and /proc/cgroup evidence): zero discovery requests, so this
+    surface is safe on the probe path PRES-015 keeps pure of network
+    work. Never raises; a box with no profile, a flag-disabled profile,
+    or a broken store degrades to the detection-only answer."""
+    surface: dict = {"recorded_shape": None, "detected_shape": None,
+                     "candidates": [], "gauge_state": "missing",
+                     "gauge": None}
+    det: dict = {}
+    try:
+        try:
+            from . import hardware_budget as _hb
+        except ImportError:  # direct file run from presentation_job/
+            import hardware_budget as _hb  # type: ignore[no-redef]
+        det = _hb.detect_fleet_shape()
+        surface["detected_shape"] = det.get("shape")
+        surface["candidates"] = list(det.get("candidates") or [])
+        surface["container_budget_bytes"] = det.get("container_budget_bytes")
+        surface["host_ceiling_bytes"] = det.get("host_ceiling_bytes")
+    except Exception as exc:  # noqa: BLE001 -- never break the probe
+        surface["detection_error"] = f"{exc.__class__.__name__}: {exc}"
+    try:
+        try:
+            from . import resource_profile as _rp
+        except ImportError:  # direct file run from presentation_job/
+            import resource_profile as _rp  # type: ignore[no-redef]
+        if not _rp.flag_enabled():
+            surface["profile_enabled"] = False
+            return surface
+        surface["profile_enabled"] = True
+        profile = _rp.load_profile(config_dir)
+        surface["recorded_shape"] = _rp.fleet_shape(profile)
+        gauge = _rp.system_gauge(profile)
+        if gauge:
+            status = _rp.gauge_status(profile)
+            surface["gauge_state"] = status.get("state")
+            surface["gauge"] = {
+                "fleet_shape": gauge.get("fleet_shape"),
+                "measured_at": gauge.get("measured_at"),
+                "state": status.get("state"),
+                "hardware": gauge.get("hardware"),
+                "budgets": gauge.get("budgets"),
+                "providers": gauge.get("providers"),
+            }
+    except Exception as exc:  # noqa: BLE001 -- never break the probe
+        surface["profile_error"] = f"{exc.__class__.__name__}: {exc}"
+    return surface
+
+
 def provider_probes_surface(transport: Optional[callable] = None) -> dict:
     """FIX 9 surface on capacity.probe(): a REDACTED summary of the provider
     inventory -- per provider {present, key_source, probed, ok, model_count}
@@ -2825,6 +2885,10 @@ def probe(config_dir: Optional[Path] = None, *,
         "working_concurrent_method": method,
         "resource_profile": resource_profile_surface(config_dir,
                                                      resolution=resolution),
+        # Item 17: the fleet shape + remembered gauge this probe's numbers
+        # were cut on (recorded shape, detection candidates, gauge state).
+        # Read-only local surface -- see fleet_shape_surface().
+        "fleet_shape": fleet_shape_surface(config_dir),
         # PRES-015 (H-P1): zero discovery by default. The inventory surface
         # rides along ONLY when the caller asked for it -- and even then it
         # is served from the cached explicit-refresh snapshot, never as a
@@ -3001,6 +3065,16 @@ def format_report(result: dict) -> str:
         (f"Working concurrent now: {result.get('working_concurrent')} "
          f"({result.get('working_concurrent_method')})"),
     ]
+    fleet = result.get("fleet_shape") or {}
+    if fleet:
+        shape_txt = (fleet.get("recorded_shape")
+                     or fleet.get("detected_shape")
+                     or ("unknown (candidates: "
+                         + ", ".join(fleet.get("candidates") or [])
+                         + ")" if fleet.get("candidates") else "unknown"))
+        lines.append(
+            f"Fleet shape: {shape_txt} "
+            f"(gauge: {fleet.get('gauge_state', 'missing')})")
     for note in result.get("notes") or []:
         lines.append(f"Note: {note}")
     rows = report_provider_rows(result)
