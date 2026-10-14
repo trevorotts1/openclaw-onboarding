@@ -406,14 +406,9 @@ Before selecting a persona:
 
 ### Model Requirements for Critical Skills
 
-Skills 22 (Book-to-Persona) and 23 (AI Workforce Blueprint) MUST run on high reasoning models. Use a model the CLIENT actually has — Ollama Cloud first (cheapest for the client), OpenRouter only as a fallback (most clients have Ollama Cloud; many also have OpenRouter), then the closest available. NEVER pin Anthropic (Opus/Sonnet/Haiku/Claude) — it is the operator's own tooling and is cost-prohibitive for client workloads.
-- `ollama/deepseek-v4.1-flash:cloud` (Ollama Cloud — preferred primary; 1M context, top reasoning)
-- `openrouter/deepseek/deepseek-v4.1-flash` (OpenRouter fallback for clients who have it)
-- `openrouter/xiaomi/mimo-v2-pro` (with thinking enabled)
-- `google/gemini-3.1-pro-preview`
-- `openai-codex/gpt-5.4`
+Skills 22 (Book-to-Persona) and 23 (AI Workforce Blueprint) MUST run on high reasoning models. The model itself is the client's choice, or the client's configured default model; no specific model is prescribed by name. Use a model the CLIENT actually has. NEVER pin Anthropic (Opus/Sonnet/Haiku/Claude): it is the operator's own tooling and is cost-prohibitive for client workloads.
 
-NEVER use Kimi 2.5, Gemini Flash, or Gemini Flash Lite for these skills. If the client is on a low reasoning model, suggest switching before proceeding.
+Recommendation: pick a model with strong reasoning and a large context window (these skills extract and synthesize whole books and full workforce designs, so reasoning depth and context size decide the output quality). An Ollama Cloud route is recommended when the client has one, because it is the cheapest route for the client; OpenRouter is the next choice. Avoid older, smaller model generations and lite/flash-class models for these skills: they lack the reasoning depth the work needs. If the client's configured model is a low reasoning model, suggest switching before proceeding.
 
 ### Workspace Architecture
 
@@ -1456,15 +1451,15 @@ Edit `~/.openclaw/openclaw.json` and set these values under `agents.defaults.sub
 
 #### Part B: Model Allow List
 
-Edit `~/.openclaw/openclaw.json` and add these models under `agents.defaults.models`. These are the approved models sub-agents can use:
+Edit `~/.openclaw/openclaw.json` and add the models the CLIENT selects under `agents.defaults.models`, plus the client's configured default model. The allow list is built from the client's own selection; there is no fleet-wide mandated list. The block below shows the entry SHAPE and the params worth recording per model (context window and max tokens, measured for the model the client picked). The first entry is the client's selected primary model; the remaining entries are worked examples of the shape for other model classes:
 
 ```json
 {
   "agents": {
     "defaults": {
       "models": {
-        "moonshot/kimi-k2.6": {
-          "alias": "kimi"
+        "<provider>/<client-selected-model>": {
+          "alias": "<short alias for the client's model>"
         },
         "openrouter/xiaomi/mimo-v2-pro": {
           "alias": "mimo",
@@ -1530,7 +1525,7 @@ Edit `~/.openclaw/openclaw.json` and add these models under `agents.defaults.mod
 **Verification:**
 1. Read `~/.openclaw/openclaw.json` and confirm all values are present
 2. Confirm `maxSpawnDepth`, `maxConcurrent`, `maxChildrenPerAgent` are set
-3. Confirm at least 9 model entries exist under `agents.defaults.models`
+3. Confirm the client's selected models and their configured default model are present under `agents.defaults.models`
 4. Backup the config: `cp ~/.openclaw/openclaw.json ~/Downloads/openclaw-backups/openclaw-json-after-model-update-$(date +'%B %-d at %-I-%M %p').txt`
 5. Gateway restart: `openclaw gateway restart`
 

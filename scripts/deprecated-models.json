@@ -4,62 +4,62 @@
       "model": "openrouter/google/gemini-3.1-flash-lite-preview",
       "reason": "Replaced by gemini-3-flash",
       "removalDate": "2026-06-01",
-      "replacement": "ollama/deepseek-v4.1-flash:cloud"
+      "replacement": "client-choice: use the model the client selects, or the client's configured default model (recommendation: the vendor's current successor in the same model family, if the client wants the closest equivalent)"
     },
     {
       "model": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
       "reason": "Removed from OpenRouter free tier",
       "removalDate": "2026-05-01",
-      "replacement": "ollama/nemotron-3-super:cloud"
+      "replacement": "client-choice: use the model the client selects, or the client's configured default model (recommendation: the vendor's current successor in the same model family, if the client wants the closest equivalent)"
     },
     {
       "model": "openrouter/minimax/minimax-m2.5:free",
       "reason": "Replaced by minimax-m2.7",
       "removalDate": "2026-05-15",
-      "replacement": "openrouter/minimax/minimax-m2.7"
+      "replacement": "client-choice: use the model the client selects, or the client's configured default model (recommendation: the vendor's current successor in the same model family, if the client wants the closest equivalent)"
     },
     {
       "model": "xiaomi/mimo-v2.5",
       "reason": "Replaced by mimo-v2.5-pro",
       "removalDate": "2026-06-01",
-      "replacement": "xiaomi/mimo-v2.5-pro"
+      "replacement": "client-choice: use the model the client selects, or the client's configured default model (recommendation: the vendor's current successor in the same model family, if the client wants the closest equivalent)"
     },
     {
       "model": "ollama/deepseek-v4-flash",
       "reason": "Retired by Ollama Cloud (HTTP 410)",
       "removalDate": "2026-09-25",
-      "replacement": "ollama/deepseek-v4.1-flash:cloud"
+      "replacement": "client-choice: use the model the client selects, or the client's configured default model (recommendation: the vendor's current successor in the same model family, if the client wants the closest equivalent)"
     },
     {
       "model": "ollama/deepseek-v4-flash:cloud",
       "reason": "Retired by Ollama Cloud (HTTP 410)",
       "removalDate": "2026-09-25",
-      "replacement": "ollama/deepseek-v4.1-flash:cloud"
+      "replacement": "client-choice: use the model the client selects, or the client's configured default model (recommendation: the vendor's current successor in the same model family, if the client wants the closest equivalent)"
     },
     {
       "model": "ollama/deepseek-v4-flash:0731",
       "reason": "Retired by Ollama Cloud (HTTP 410)",
       "removalDate": "2026-09-25",
-      "replacement": "ollama/deepseek-v4.1-flash:cloud"
+      "replacement": "client-choice: use the model the client selects, or the client's configured default model (recommendation: the vendor's current successor in the same model family, if the client wants the closest equivalent)"
     },
     {
       "model": "ollama/deepseek-v4-flash:0731-cloud",
       "reason": "Retired by Ollama Cloud (HTTP 410)",
       "removalDate": "2026-09-25",
-      "replacement": "ollama/deepseek-v4.1-flash:cloud"
+      "replacement": "client-choice: use the model the client selects, or the client's configured default model (recommendation: the vendor's current successor in the same model family, if the client wants the closest equivalent)"
     },
     {
       "model": "ollama-cloud/deepseek-v4-flash",
       "reason": "Retired by Ollama Cloud (HTTP 410)",
       "removalDate": "2026-09-25",
-      "replacement": "ollama/deepseek-v4.1-flash:cloud"
+      "replacement": "client-choice: use the model the client selects, or the client's configured default model (recommendation: the vendor's current successor in the same model family, if the client wants the closest equivalent)"
     },
     {
       "model": "ollama-cloud/deepseek-v4-flash:0731",
       "reason": "Retired by Ollama Cloud (HTTP 410)",
       "removalDate": "2026-09-25",
-      "replacement": "ollama/deepseek-v4.1-flash:cloud"
+      "replacement": "client-choice: use the model the client selects, or the client's configured default model (recommendation: the vendor's current successor in the same model family, if the client wants the closest equivalent)"
     }
   ],
-  "lastUpdated": "2026-10-06"
+  "lastUpdated": "2026-10-13"
 }
