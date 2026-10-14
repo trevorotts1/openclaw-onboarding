@@ -1211,6 +1211,15 @@ def _emit_configuration_pending(run_dir: Path, pending_providers: List[str],
                 "the run is NOT blocked — already configured routes proceed"),
             "state": CONFIGURATION_PENDING_EVENT,
             "owner": "presentation-intake",
+            # FIX-PLAN Item 10: the park-class vocabulary owned by
+            # presentation_job.auto_resume. This wait is a CLIENT-ACTION
+            # park: the missing resource-plan answer is owed by the client,
+            # it never auto-resumes, and the run waits on the client. The
+            # "owner" field above names the emitting subsystem and is kept
+            # for existing readers; "waiting_on" names the actor who must
+            # act, which is what Item 33b's conversational layer keys on.
+            "park_class": "client_action",
+            "waiting_on": "client",
             "source": "deck-intake-driver",
         })
     try:
