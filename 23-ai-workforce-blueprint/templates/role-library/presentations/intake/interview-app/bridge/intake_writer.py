@@ -63,6 +63,50 @@ MANDATORY_PRE_CAPTURE = (
     "HOOK_SEED",
 )
 
+# Item 13: the six MANDATORY_PRE_CAPTURE fields are DERIVED, never asked.
+# Every record this writer assembles stamps derived_field_provenance for
+# each of the six it synthesized (source answer or constant + the rule),
+# so no consumer mistakes a synthesized value for something the client
+# said. A field the client actually answered is NOT listed: it carries
+# its own answer. The same map, word for word, is stamped by the hosted
+# page (../pages/index.html) and the live worker
+# (../deployed-r2/src/index.js assembleValidatedIntake).
+_DERIVED_PRE_CAPTURE_PROVENANCE = {
+    "REPRESENTATION_MIX": {"source": "audience", "rule": "Derived from the audience answer: the stated audience stands as the representation mix. No separate representation-mix question is asked."},
+    "AUDIENCE_COMPOSITION_NOTE": {"source": "audience", "rule": "Derived from the audience answer, which doubles as the audience composition note. No separate composition question is asked."},
+    "GROUNDED_CONTENT": {"source": "offer_name", "rule": "Derived from the offer name answer, the grounded content anchor. No separate grounded-content question is asked."},
+    "VISUAL_MIX": {"source": "constant", "rule": "Fixed default 'mix'. No visual-mix question is asked."},
+    "DARK_OK": {"source": "constant", "rule": "Fixed default false (light design). No dark-mode question is asked."},
+    "HOOK_SEED": {"source": "transformation_promise", "rule": "Derived from the transformation promise answer, which seeds the hook. No separate hook question is asked."},
+}
+
+
+def _stamp_derived_provenance(record: dict) -> None:
+    """Stamp derived_field_provenance on a frontend-shaped record.
+
+    Keeps a provenance map the producer already stamped (the hosted page
+    knows its own synthesis); otherwise derives one: each of the six
+    fields present in pre_presentation_capture that no answer in the
+    record maps to was synthesized by the producer.
+    """
+    if record.get("derived_field_provenance"):
+        return
+    pre = record.get("pre_presentation_capture") or {}
+    if not isinstance(pre, dict):
+        return
+    answered_fields = set()
+    for qid, v in (record.get("answers") or {}).items():
+        if isinstance(v, dict):
+            v = v.get("value", "")
+        answered_fields.add(field_for(qid, v))
+    provenance = {
+        field: dict(spec)
+        for field, spec in _DERIVED_PRE_CAPTURE_PROVENANCE.items()
+        if field in pre and field not in answered_fields
+    }
+    if provenance:
+        record["derived_field_provenance"] = provenance
+
 # presentation_type -> {deck_type, creation_mode, presentation_mode,
 # audience_mode}. Mirrors deck-intake-driver.py:LEGACY_FIELD_MAPPING /
 # intake/deck-intake-questions.json's legacy_field_mapping -- THE SOURCE OF
@@ -932,6 +976,7 @@ def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
     if isinstance(app_payload.get("intake"), dict):
         base = dict(app_payload["intake"])
         base["answers"] = app_payload.get("answers") or base.get("answers") or {}
+        _stamp_derived_provenance(base)
         return base
 
     answers = app_payload.get("answers") or {}
@@ -977,6 +1022,15 @@ def assemble_intake(app_payload: dict, run_id: str = "") -> dict:
         "intake": intake_flat,
         "answers": answers,
     }
+    # Item 13: stamp provenance for the synthesized six (a field a real
+    # answer landed in `pre` for is the client's own, not derived).
+    provenance = {
+        field: dict(spec)
+        for field, spec in _DERIVED_PRE_CAPTURE_PROVENANCE.items()
+        if field not in pre
+    }
+    if provenance:
+        intake["derived_field_provenance"] = provenance
     intake.update(deck_type_fields)
     return intake
 

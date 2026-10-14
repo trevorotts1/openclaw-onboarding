@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { D1Shim, makeDb, WorkerHarness, PAYLOAD } from "../../../intake-miniapp/test/pres024_env.mjs";
+import { D1Shim, makeDb, WorkerHarness, PAYLOAD } from "./pres024_env.mjs";
 import worker from "../worker/src/index.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
