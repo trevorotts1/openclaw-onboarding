@@ -3360,5 +3360,39 @@
     ]
    }
   }
+ },
+ {
+  "name": "tamper-guard-manifest",
+  "was": "(new, FIX-PLAN Item 32 / B12 design Section 2.2)",
+  "script": "scripts/ci/fast-guards.d/tamper-guard-manifest.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/tamper_guard.py",
+     "shared-utils/tamper-guard-scope.json",
+     "shared-utils/tamper-guard-patterns.json",
+     "scripts/ci/fast-guards.d/tamper-guard-manifest.sh",
+     "tests/unit/tamper-guard.test.py",
+     "**/integrity-manifest.json"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "shared-utils/tamper_guard.py",
+     "shared-utils/tamper-guard-scope.json",
+     "shared-utils/tamper-guard-patterns.json",
+     "scripts/ci/fast-guards.d/tamper-guard-manifest.sh",
+     "tests/unit/tamper-guard.test.py",
+     "**/integrity-manifest.json"
+    ]
+   }
+  }
  }
 ]
