@@ -15,3 +15,10 @@
  */
 export * from './scope.js';
 export * from './permissions.js';
+// CWE-049 composition: the run authorization service (run-grants.ts)
+// and per-operation admission (admission.ts) compose on the CWE-007
+// ports above. These two lines are the barrel wiring CWE-007's header
+// promised ("which are deliberately not defined here"); no CWE-007
+// decision function is changed by them.
+export * from './run-grants.js';
+export * from './admission.js';
