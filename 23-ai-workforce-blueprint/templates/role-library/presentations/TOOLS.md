@@ -57,7 +57,7 @@ The scripts directory defaults to the materialized department's `scripts/` folde
 
 **Your job is NOT just `slides.json`.** `slides.json` is the Layer-A structure ledger; the
 render also requires the hand-authored rich per-slide prompt files
-(`working/prompts/slide-NN.txt`, sized to the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`: target 95 to 100 percent of the model maximum, hard floor 80 percent), read with `kie_live_adapter.py prompt-budget --check`; until the renderer gate (9,000 to 18,000 in `build_deck.py` and `prompt_gate.py`) is migrated to rule 12, write 16,000 to 18,000 characters so both pass) and every other upstream Layer-A artifact the manifest
+(`working/prompts/slide-NN.txt`, sized to the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`: target 95 to 100 percent of the model maximum, hard floor 80 percent), read with `kie_live_adapter.py prompt-budget --check`; the renderer gate enforces rule 12 through the shared enforcer shared-utils/kie_prompt_enforcer.py, so write to the enforcer's floor and target for the pin) and every other upstream Layer-A artifact the manifest
 requires before the render preflight will pass. The full two-layer procedure — walk
 `run_signature_deck.py --next` phase by phase, THEN dispatch the canonical entry command
 above — is in `BUILDER-PROMPT.md`; read it first on every deck task. Treat the mechanics

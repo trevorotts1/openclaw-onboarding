@@ -56,13 +56,13 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ### DELIVERY INTERLOCK (mandatory hard stop)
 
-Delivery CANNOT start without `working/qc/final_deck_qc.json` present on disk. If this file does not exist, halt immediately. Do not touch any delivery destination. Notify the Director: "Delivery blocked: working/qc/final_deck_qc.json is absent. QC Specialist must emit this file before delivery can proceed." This is not a soft guideline -- it is a hard interlock. A done message without a verified QC artifact is a lie.
+Delivery CANNOT start unless the engine closeout gate is green for the run: the build_deck postflight completeness gate passed (verdict recorded in `working/checkpoints/process_manifest.json`) AND `working/qc/final_qc_report.json` is present from P-QC-AGGREGATE with its gate-facing average >= 8.5. If either condition fails, halt immediately. Do not touch any delivery destination. Notify the Director: "Delivery blocked: the engine closeout gate is not green (postflight verdict and/or final_qc_report.json average). QC Specialist must bring the run to a green closeout before delivery can proceed." This is not a soft guideline -- it is a hard interlock. A done message without a verified QC artifact is a lie. (The retired `working/qc/final_deck_qc.json` pass-artifact no longer exists in code and gates nothing; delivery must never wait for it.)
 
 ### On Receiving a QC-Passed Deck
 
 You are dispatched by the Director of Presentations or the QC Specialist after final Phase 6 QC passes (score >= 8.5).
 
-1. Confirm `working/qc/final_deck_qc.json` exists on disk. If absent: halt -- see the DELIVERY INTERLOCK above. Read the file: confirm the `qc_score` field is >= 8.5. If the score is below 8.5, refuse delivery. Return the deck to the QC Specialist.
+1. Confirm the engine closeout gate is green (see the DELIVERY INTERLOCK above) and read `working/qc/final_qc_report.json`: confirm its gate-facing `average` is >= 8.5. If the average is below 8.5, refuse delivery. Return the deck to the QC Specialist.
 2. **Run SOP 9.0 (Package Assembly and Hygiene Sweep) FIRST**, before any destination upload. This step creates the clean `delivery/[DECK_SLUG]-FINAL/` directory and runs the AF-DH1 deliverable-hygiene check. Hard-stop on any hygiene failure.
 3. Run SOP 9.1 (Destination Resolution) to determine where the deck must be delivered.
 4. Run SOP 9.2 (Multi-Destination Upload) to deliver FROM the clean `delivery/[DECK_SLUG]-FINAL/` directory to every required destination. Never copy from `working/` or the build root directly.
@@ -114,7 +114,7 @@ Review the delivery_destinations records across all completed runs. Are all deli
 - Google Drive API (if applicable -- `use_drive: true` in intake.json)
 - `openclaw message send` (notification -- NEVER raw Telegram API)
 - working/checkpoints/media_library.json (read and write)
-- working/qc/final_deck_qc.json (read -- QC gate confirmation)
+- working/qc/final_qc_report.json (read -- the aggregate QC report of record; its gate-facing average is the QC gate confirmation)
 - intake.json (read -- client box type, use_drive flag)
 - output/[DECK_SLUG].pptx (the QC-passed assembled deck -- SOP 9.0 packaging source)
 - delivery/[DECK_SLUG]-FINAL/ (the SOP 9.0 clean package -- the only copy that ships)
@@ -127,12 +127,12 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.0 -- Package Assembly and Hygiene Sweep
 
-**When to run:** FIRST, immediately after the QC interlock is confirmed (score >= 8.5 in `working/qc/final_deck_qc.json`) and before any destination is resolved or touched. Nothing is uploaded from anywhere except this clean package directory.
+**When to run:** FIRST, immediately after the QC interlock is confirmed (engine closeout gate green; gate-facing average >= 8.5 in `working/qc/final_qc_report.json`) and before any destination is resolved or touched. Nothing is uploaded from anywhere except this clean package directory.
 
 **Inputs:**
 - output/[DECK_SLUG].pptx (the QC-passed assembled deck)
-- The approved render exports (deck PDF, PRESENTER-GUIDE.pdf, PRESENTER-SPEECH.pdf, PRESENTER-AUDIO.mp3) as produced by the pipeline phases
-- working/qc/final_deck_qc.json (QC gate confirmation)
+- The approved render exports (deck PDF, PRESENTER-GUIDE.pdf, PRESENTER-SPEECH.pdf, PRESENTER-AUDIO.mp3, presenter-teleprompter.html, the run's webinar mp4) as produced by the pipeline phases
+- working/qc/final_qc_report.json (QC gate confirmation)
 
 **Steps:**
 1. Create the clean client package directory: `delivery/[DECK_SLUG]-FINAL/`. If a directory with this name already exists (a re-run), clear it completely and rebuild it from scratch -- never patch a stale package.
@@ -142,8 +142,10 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - `PRESENTER-GUIDE.pdf`
    - `PRESENTER-SPEECH.pdf`
    - `PRESENTER-AUDIO.mp3`
-   Include a file only when the run's deliverable bundle actually produced it; a missing optional artifact is a gap to report, never a wrong file to invent.
-3. Run the AF-DH1 deliverable-hygiene check: enumerate every file in `delivery/[DECK_SLUG]-FINAL/` and compare each name against the five-item whitelist above. Any extra file (build artifacts, intermediate renders, prompts, scripts, QC reports, draft PPTX versions, anything else) or any file not ending in `-FINAL` (for the deck PPTX/PDF) is an AF-DH1 violation. Delete nothing silently; remove drafts and extras from the package and record each removal.
+   - `presenter-teleprompter.html`
+   - `[Deck-Title]-WEBINAR.mp4` (the run's webinar video, produced at P9.6)
+   Include a file only when the run's deliverable bundle actually produced it; a missing required artifact is a gap to report, never a wrong file to invent.
+3. Run the AF-DH1 deliverable-hygiene check: enumerate every file in `delivery/[DECK_SLUG]-FINAL/` and compare each name against the seven-item whitelist above. Any extra file (build artifacts, intermediate renders, prompts, scripts, QC reports, draft PPTX versions, anything else) or any file not ending in `-FINAL` (for the deck PPTX/PDF) is an AF-DH1 violation. Delete nothing silently; remove drafts and extras from the package and record each removal.
 4. Hard-stop on any hygiene failure you cannot resolve by rebuilding the package from the approved outputs. Record the violation in delivery_plan.json as `"hygiene_blocked": true, "reason": "AF-DH1: [specific file]"` and notify the Director.
 5. Confirm the package is the ONLY copy that will move: all later SOPs (9.1, 9.2) deliver FROM `delivery/[DECK_SLUG]-FINAL/`. Never copy from `working/` or the build root directly to a destination.
 
@@ -164,7 +166,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Inputs:**
 - intake.json (client box type: `box_type: "mac"` or other; `use_drive: true/false`)
 - working/checkpoints/media_library.json (ghl_folder_id, ghl_folder_name, version_number)
-- working/qc/final_deck_qc.json (final QC score -- must confirm >= 8.5 before proceeding)
+- working/qc/final_qc_report.json (final QC score of record -- its gate-facing average must confirm >= 8.5 before proceeding)
 
 **Steps:**
 0. Confirm SOP 9.0 has completed: `delivery/[DECK_SLUG]-FINAL/` exists and passes the AF-DH1 whitelist check. Destination resolution never runs against an unhygiened build root.
@@ -192,7 +194,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "created_at": "ISO timestamp"
    }
    ```
-5. Confirm the final QC score from working/qc/final_deck_qc.json. If score < 8.5: halt, return to Director. Record in delivery_plan.json: `"delivery_blocked": true, "reason": "QC score below threshold"`.
+5. Confirm the final QC score of record from working/qc/final_qc_report.json. If its gate-facing average is < 8.5: halt, return to Director. Record in delivery_plan.json: `"delivery_blocked": true, "reason": "QC score below threshold"`.
 
 **Outputs:**
 - working/checkpoints/delivery_plan.json (all destinations listed with pending status)
@@ -257,7 +259,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Inputs:**
 - working/checkpoints/delivery_plan.json (all destinations with verified status)
-- working/qc/final_deck_qc.json (final QC score)
+- working/qc/final_qc_report.json (final QC score of record)
 - working/checkpoints/media_library.json (ghl_folder_name for human-readable reference)
 
 **Steps:**
@@ -340,7 +342,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 ## 10. Quality Gates
 
 ### Gate 1 -- QC Score Gate (Mandatory Pre-Delivery Check)
-Final Phase 6 QC score in working/qc/final_deck_qc.json must be >= 8.5. No delivery begins below this threshold. A score below 8.5 means the deck goes back to the QC Specialist, not to the client.
+Final Phase 6 QC score of record, the gate-facing average in working/qc/final_qc_report.json, must be >= 8.5, and the engine closeout gate must be green. No delivery begins below this threshold. A score below 8.5 means the deck goes back to the QC Specialist, not to the client.
 
 ### Gate 2 -- Destination Resolution Before Upload
 delivery_plan.json must exist with all destinations recorded before any file is copied or uploaded. Never skip the resolution step and go directly to upload.
@@ -358,7 +360,7 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 ### You receive work from:
 - **ROLE-08 PPTX Assembly Specialist** -- the QC-passed output/[DECK_SLUG].pptx; triggered after Phase 6 QC passes (score >= 8.5); the Assembly Specialist hands the PPTX and the QC result to the Director, who dispatches this role
 - **ROLE-06 Media Librarian and GHL Updater** -- media_library.json (ghl_folder_id, ghl_folder_name, version_number, drive_folder_id); SOP 9.6 from ROLE-06 is now absorbed into this role; ROLE-06 no longer owns delivery
-- **QC Specialist -- Presentations** -- final Phase 6 QC score via working/qc/final_deck_qc.json
+- **QC Specialist -- Presentations** -- final Phase 6 QC score of record via working/qc/final_qc_report.json
 - **Director of Presentations** -- dispatch signal after Phase 6 QC passes
 
 ### You hand work off to:
@@ -437,7 +439,7 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 | 1 | Calling a delivery "done" when the GHL upload succeeded but verification was skipped | Gate 3: verification is mandatory before notification. API confirmation, not upload-step self-report. |
 | 2 | Using the operator's GHL API token instead of the client's | GHL credentials come from the CLIENT's env stores. Check before the first call. |
 | 3 | Sending the delivery message via a raw Telegram curl call | Gate 4: openclaw message send is the only allowed channel. No exceptions. |
-| 4 | Delivering a deck before Phase 6 QC score is confirmed | Gate 1: read final_deck_qc.json and confirm >= 8.5 as the literal first action. |
+| 4 | Delivering a deck before Phase 6 QC score is confirmed | Gate 1: read final_qc_report.json and confirm its gate-facing average >= 8.5 as the literal first action. |
 | 5 | Assuming a non-Mac client wants Mac Downloads delivery | SOP 9.1 step 3: if box_type is not mac, ASK. Never assume. |
 | 6 | Not writing delivery_plan.json before starting uploads | SOP 9.1 always runs first. delivery_plan.json is required input for SOP 9.2. |
 | 7 | Conflating ROLE-06 image delivery verification with PPTX delivery | ROLE-06 verifies slide image delivery. This role verifies PPTX delivery. They are separate steps. |
