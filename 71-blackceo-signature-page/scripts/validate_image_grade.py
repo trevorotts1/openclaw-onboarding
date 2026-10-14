@@ -35,6 +35,43 @@ monochrome or restrained-style image must not fail a color floor. The
 decision is printed per image. With no bible (and no per-image profile),
 behavior is exactly as before, including the uncalibrated WARN behavior.
 
+Per-family, per-posture floors (Calibration Redesign, Rulings 1 and 2,
+2026-10-14): the brand file's grade block may carry a nested `floors`
+structure keyed by rendering family (photographic, cinematic,
+visual-artist). Each family carries a FULL class (color floors), an
+ADAPT class (a two-sided saturation/colorfulness band plus a luma_std
+tonal floor; a band recorded `provisional` WARNs instead of failing),
+and non-color floors (luma_std, sharpness) pooled across the family's
+postures. The validator resolves each image's family (inventory
+`active_family`, default photographic) and posture class (hero_color_
+chroma posture, per image then bible; unrecorded posture resolves to
+the family's FULL floors with a NOTE, never silently N/A) and applies
+exactly that class's floors. SUPPRESS keeps color floors N/A. A family
+with no calibrated floors is WARN-uncalibrated, never a silent pass:
+brand calibration requires per-family anchors for every family the
+brand uses (Ruling 2; no family-scoped calibration mode exists).
+Transition: when a family has no nested block, the legacy flat grade
+keys (grade.min_*) stand in as the photographic family's FULL color
+floors and non-color floors, so pre-redesign brand files behave
+exactly as before.
+
+Option B selectivity (Calibration Redesign, Ruling 3): for FULL-posture
+images the screen also measures the protected region: near-neutral
+pixels (HSV saturation <= 0.12) plus the skin-hue band. It reports the
+protected-region mean saturation and the saturated-intrusion share
+(protected-territory skin-band pixels pushed past the protected cap).
+When an approved ceiling exists (grade.max_protected_saturation, or
+the family's FULL max_protected_saturation) the protected mean is
+enforced as a CEILING: a global color wash colonizes neutrals and skin
+and fails it, while selective hyperchroma at any hero intensity passes
+(Sauce sections 2 and 23.2). Until a ceiling is approved the metric is
+WARN-only and names itself uncalibrated Option B. When the protected
+mask covers almost none of the working copy the metric reports N/A,
+never a fabricated pass. This pixel proxy does not replace the
+doctrine's enforcement of record: selective saturation is judged at the
+Item 12 judgment gate (Guide section 13); the ceiling here is a screen,
+not the judgment.
+
 Unconditional checks (no threshold to calibrate; these always apply):
   - Near-duplicate / cloned-shot detection: for every pair of images in
     the invocation set, an average-hash Hamming distance of 4 or less is
@@ -123,6 +160,27 @@ COLOR_METRICS = {"mean_saturation", "colorfulness"}
 # Blend Profile dimension that governs the color floors.
 COLOR_DIMENSION = "hero_color_chroma"
 
+# Rendering families (Page Art Direction Router). Brand calibration is
+# per family (Ruling 2): every family the brand uses needs its own
+# anchors and floors; there is no family-scoped calibration mode.
+FAMILIES = ("photographic", "cinematic", "visual-artist")
+DEFAULT_FAMILY = "photographic"
+POSTURE_CLASSES = ("FULL", "ADAPT", "SUPPRESS", "UNRECORDED")
+
+# Option B protected-region selectivity (Ruling 3). The protected mask
+# is near-neutral pixels plus the skin-hue band, per Sauce section 2's
+# protected list (neutrals, skin, whites, blacks, shadow detail). The
+# hue-band skin heuristic is crude by design admission (the proposal's
+# honest limits): it is a screen proxy, and the Item 12 judgment gate
+# remains the enforcement of record for selective saturation.
+NEUTRAL_SAT_MAX = 0.12       # HSV saturation at or below: near-neutral
+SKIN_HUE_MIN = 0.03          # skin-hue band, warm orange-brown sector
+SKIN_HUE_MAX = 0.13          # (colorsys hue fraction, ~11 to ~47 degrees)
+SKIN_VALUE_MIN = 0.25
+SKIN_VALUE_MAX = 0.95
+PROTECTED_SKIN_SAT_MAX = 0.60  # skin-band pixels at or below: protected
+MIN_PROTECTED_SHARE = 0.005  # mask below 0.5% of pixels: report N/A
+
 
 def load_thresholds(brand_path):
     """Return {metric_key: threshold-or-None} from the brand file's grade block."""
@@ -141,6 +199,103 @@ def load_thresholds(brand_path):
                 f"FAIL: brand grade.{grade_key} must be a number or null, got {value!r}")
         thresholds[metric_key] = value
     return thresholds
+
+
+def load_grade(brand_path):
+    """Return the brand file's whole grade block (validated as a dict)."""
+    try:
+        brand = json.loads(Path(brand_path).read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise SystemExit(f"FAIL: could not read brand file {brand_path}: {exc}")
+    grade = brand.get("grade")
+    if not isinstance(grade, dict):
+        raise SystemExit(f"FAIL: brand file {brand_path} has no grade object.")
+    return grade
+
+
+def _num(value):
+    """A floor value: a number, or None when absent/null/not numeric."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+    return None
+
+
+def floor_plan(grade):
+    """Normalize a grade block into per-family, per-posture floor blocks.
+
+    Returns {family: {"full": dict|None, "adapt": dict|None,
+    "noncolor": dict|None}} with every FAMILIES key present. A block is
+    None when the brand file records nothing for it (uncalibrated).
+    Transition: a family with no nested `floors` block at all inherits
+    the legacy flat grade keys as its FULL color floors and non-color
+    floors; photographic is the only family that can inherit in
+    practice, because pre-redesign brand files describe the brand's one
+    calibrated surface. (A nested block that exists but is empty does
+    NOT inherit: empty is a recorded state, not an absence.)
+    """
+    floors = grade.get("floors")
+    if not isinstance(floors, dict):
+        floors = {}
+    plan = {}
+    for family in FAMILIES:
+        block = floors.get(family)
+        if not isinstance(block, dict):
+            block = None
+        full = adapt = noncolor = None
+        if block is not None:
+            if isinstance(block.get("full"), dict):
+                full = block["full"]
+            if isinstance(block.get("adapt"), dict):
+                adapt = block["adapt"]
+            if isinstance(block.get("noncolor"), dict):
+                noncolor = block["noncolor"]
+        plan[family] = {"full": full, "adapt": adapt, "noncolor": noncolor}
+    if floors.get(DEFAULT_FAMILY) is None:
+        legacy_full = {}
+        for metric_key, grade_key, _fmt in THRESHOLD_METRICS:
+            if metric_key in COLOR_METRICS:
+                value = _num(grade.get(grade_key))
+                if value is not None:
+                    legacy_full[grade_key] = value
+        legacy_noncolor = {}
+        for metric_key, grade_key, _fmt in THRESHOLD_METRICS:
+            if metric_key not in COLOR_METRICS:
+                value = _num(grade.get(grade_key))
+                if value is not None:
+                    legacy_noncolor[grade_key] = value
+        if legacy_full and plan[DEFAULT_FAMILY]["full"] is None:
+            plan[DEFAULT_FAMILY]["full"] = legacy_full
+        if legacy_noncolor and plan[DEFAULT_FAMILY]["noncolor"] is None:
+            plan[DEFAULT_FAMILY]["noncolor"] = legacy_noncolor
+    return plan
+
+
+def protected_ceiling(grade, plan, family):
+    """The approved Option B ceiling for a family, or None.
+
+    The family's FULL max_protected_saturation wins; the brand-wide
+    grade.max_protected_saturation is the fallback. Null/absent means
+    uncalibrated: Option B is WARN-only.
+    """
+    full = plan.get(family, {}).get("full") or {}
+    value = _num(full.get("max_protected_saturation"))
+    if value is not None:
+        return value
+    return _num(grade.get("max_protected_saturation"))
+
+
+def family_of(entry):
+    """(family, recorded) for an inventory entry.
+
+    The recorded active_family when it names a Router family; otherwise
+    the brand default (photographic) with recorded=False so the caller
+    can print the NOTE Part 1.5 requires.
+    """
+    if isinstance(entry, dict):
+        fam = entry.get("active_family")
+        if isinstance(fam, str) and fam.strip().lower() in FAMILIES:
+            return fam.strip().lower(), True
+    return DEFAULT_FAMILY, False
 
 
 def average_hash(gray_work):
@@ -168,10 +323,29 @@ def measure(path):
     n = len(pixels)
 
     total_sat = 0.0
+    protected_count = 0
+    protected_sat_sum = 0.0
+    intrusion_count = 0
     for r, g, b in pixels:
-        _h, s, _v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+        h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
         total_sat += s
+        # Option B protected region (Ruling 3): near-neutral pixels plus
+        # the skin-hue band are the surfaces Sauce section 2 protects.
+        # A skin-band pixel pushed past PROTECTED_SKIN_SAT_MAX is counted
+        # as saturated intrusion (protected territory colonized by chroma)
+        # instead of joining the mask. These numbers are a pixel proxy
+        # only; selective saturation itself is enforced at the Item 12
+        # judgment gate (Guide section 13), not by this screen.
+        skin_band = (SKIN_HUE_MIN <= h <= SKIN_HUE_MAX
+                     and SKIN_VALUE_MIN <= v <= SKIN_VALUE_MAX)
+        if s <= NEUTRAL_SAT_MAX or (skin_band and s <= PROTECTED_SKIN_SAT_MAX):
+            protected_count += 1
+            protected_sat_sum += s
+        elif skin_band:
+            intrusion_count += 1
     mean_sat = total_sat / n
+    protected_share = protected_count / n
+    protected_sat = (protected_sat_sum / protected_count) if protected_count else None
 
     luma = [0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b in pixels]
     mean_l = sum(luma) / n
@@ -198,6 +372,11 @@ def measure(path):
         "luma_std": luma_std,
         "sharpness": sharpness,
         "colorfulness": colorfulness,
+        # Option B (Ruling 3): protected_sat is None when the protected
+        # mask is empty; callers must report N/A, never 0-as-pass.
+        "protected_sat": protected_sat,
+        "protected_share": protected_share,
+        "intrusion_share": intrusion_count / n,
         "width": width,
         "height": height,
         "aspect_ratio": (width / height) if height else 0.0,
@@ -443,19 +622,36 @@ def load_bible_profile(path):
     return profile
 
 
+def posture_resolution(entry, bible_profile):
+    """(posture_class, source) for an image (Calibration Redesign 1.5).
+
+    The posture class is the recorded mode of hero_color_chroma,
+    per-image (inventory entry) first, then page-level (bible). FULL,
+    ADAPT, and SUPPRESS return as recorded; when nothing is recorded
+    anywhere the class is UNRECORDED, which the validator treats as the
+    family's FULL class (floors apply, with a NOTE): never silently N/A.
+    """
+    if entry is not None:
+        mode = blend_profile_of(entry).get(COLOR_DIMENSION)
+        if mode in POSTURE_CLASSES[:3]:
+            return mode, f"inventory blend profile {COLOR_DIMENSION}={mode}"
+    mode = bible_profile.get(COLOR_DIMENSION)
+    if mode in POSTURE_CLASSES[:3]:
+        return mode, f"bible blend profile {COLOR_DIMENSION}={mode}"
+    return "UNRECORDED", ""
+
+
 def color_floors_na(entry, bible_profile):
     """(True, source) if the color floors are N/A for this image per B4.
 
     SUPPRESS or ADAPT on hero_color_chroma, per-image (inventory entry)
     first, then page-level (bible). No profile anywhere: floors apply.
+    Retained for compatibility; posture_resolution() is the redesign's
+    resolver and agrees with this on SUPPRESS/ADAPT.
     """
-    if entry is not None:
-        mode = blend_profile_of(entry).get(COLOR_DIMENSION)
-        if mode in ("SUPPRESS", "ADAPT"):
-            return True, f"inventory blend profile {COLOR_DIMENSION}={mode}"
-    mode = bible_profile.get(COLOR_DIMENSION)
-    if mode in ("SUPPRESS", "ADAPT"):
-        return True, f"bible blend profile {COLOR_DIMENSION}={mode}"
+    posture, source = posture_resolution(entry, bible_profile)
+    if posture in ("SUPPRESS", "ADAPT"):
+        return True, source
     return False, ""
 
 
@@ -609,6 +805,165 @@ def ratio_close(actual, expected):
     return expected and abs(actual - expected) / expected <= RATIO_TOLERANCE
 
 
+def _floor_check(block, locator, metric_key, grade_key, fmt, m, reasons, uncal):
+    """One floor: FAIL reason when below, uncal label when not calibrated."""
+    value = _num(block.get(grade_key)) if isinstance(block, dict) else None
+    if value is None:
+        uncal.append(f"{locator}{grade_key}")
+        return
+    if m[metric_key] < value:
+        reasons.append(f"{metric_key} {fmt.format(m[metric_key])} < "
+                       f"{locator}{grade_key} {value}")
+
+
+def apply_grade_floors(name, m, family, posture, posture_source,
+                       fam_blocks, nested, ceiling):
+    """Apply one family's per-posture floors to one image (Redesign 1.5).
+
+    Prints NOTE/WARN lines for N/A decisions, provisional bands,
+    unrecorded postures, and the Option B selectivity screen. Returns
+    (fail_reasons, uncalibrated_flag). SUPPRESS: color floors N/A.
+    ADAPT: the recorded band (or legacy N/A when no band is calibrated).
+    FULL and UNRECORDED: the family's FULL color floors; unrecorded
+    posture is never silently N/A.
+    """
+    reasons = []
+    uncal = []
+    fam_loc = f"grade.floors.{family}." if nested else "grade."
+    full = fam_blocks.get("full")
+    adapt = fam_blocks.get("adapt")
+    noncolor = fam_blocks.get("noncolor")
+    family_calibrated = any(b is not None for b in (full, adapt, noncolor))
+
+    if not family_calibrated:
+        print(f"WARN: uncalibrated, family not calibrated: {name}: family "
+              f"{family} has no floors in this brand file's grade block. "
+              "Color and non-color floors were not applied. Brand "
+              "calibration requires per-family anchors for every family "
+              "the brand uses (Ruling 2); production close is refused "
+              "for uncalibrated families (Item 8 close rule).")
+        return reasons, True
+
+    if posture == "SUPPRESS":
+        print(f"NOTE: {name}: saturation/colorfulness floors are N/A "
+              f"({posture_source}); a SUPPRESS dimension is never a "
+              "failure (Amendment 6, Part B4)")
+    elif posture == "ADAPT":
+        if adapt is None:
+            print(f"NOTE: {name}: saturation/colorfulness floors are N/A "
+                  f"({posture_source}); no ADAPT band is calibrated for "
+                  f"family {family}, so the legacy B4 handling applies "
+                  "and the band's absence is recorded, not silent")
+        else:
+            provisional = bool(adapt.get("provisional"))
+            band_reasons = []
+            band_loc = f"{fam_loc}adapt."
+            for metric_key, lo_key, hi_key, fmt in (
+                    ("mean_saturation", "min_mean_saturation",
+                     "max_mean_saturation", "{:.4f}"),
+                    ("colorfulness", "min_colorfulness",
+                     "max_colorfulness", "{:.2f}")):
+                lo = _num(adapt.get(lo_key))
+                hi = _num(adapt.get(hi_key))
+                if lo is None and hi is None:
+                    uncal.append(f"{band_loc}{lo_key}/{hi_key}")
+                    continue
+                if lo is not None and m[metric_key] < lo:
+                    band_reasons.append(
+                        f"{metric_key} {fmt.format(m[metric_key])} is below "
+                        f"the {family} ADAPT band floor {band_loc}{lo_key} "
+                        f"{lo} (restrained work must still carry deliberate "
+                        "chroma or tonal commitment; Guide section 13, "
+                        "check 1)")
+                if hi is not None and m[metric_key] > hi:
+                    band_reasons.append(
+                        f"{metric_key} {fmt.format(m[metric_key])} exceeds "
+                        f"the {family} ADAPT band ceiling {band_loc}{hi_key} "
+                        f"{hi} (an ADAPT image above its recorded band has "
+                        "drifted toward FULL wash; Guide section 13, "
+                        "check 1)")
+            _floor_check(adapt, band_loc, "luma_std", "min_luma_std",
+                         "{:.2f}", m, band_reasons, uncal)
+            if provisional:
+                print(f"WARN: PROVISIONAL ADAPT band, family {family}: "
+                      f"{name}: the class was derived from 1 to 3 "
+                      "anchors and is recorded uncalibrated; its band is "
+                      "applied as WARN only, never as a failure")
+                for reason in band_reasons:
+                    print(f"WARN: PROVISIONAL ADAPT band, family {family}: "
+                          f"{name}: {reason}")
+                uncal.append(f"{band_loc}(provisional)")
+            else:
+                reasons.extend(band_reasons)
+    else:  # FULL or UNRECORDED
+        if posture == "UNRECORDED":
+            print(f"NOTE: {name}: no posture recorded for this image; "
+                  f"the {family} FULL floors apply (never silently N/A)")
+        if full is None:
+            uncal.append(f"{fam_loc}full")
+        else:
+            full_loc = f"{fam_loc}full."
+            for metric_key, grade_key, fmt in THRESHOLD_METRICS:
+                if metric_key in COLOR_METRICS:
+                    _floor_check(full, full_loc, metric_key, grade_key,
+                                 fmt, m, reasons, uncal)
+    # Non-color floors: the family's pooled block, except ADAPT whose
+    # luma_std tonal floor lives in its band block (handled above);
+    # sharpness always comes from the non-color block.
+    if posture != "ADAPT":
+        if noncolor is None:
+            uncal.append(f"{fam_loc}noncolor")
+        else:
+            nc_loc = f"{fam_loc}noncolor."
+            for metric_key, grade_key, fmt in THRESHOLD_METRICS:
+                if metric_key not in COLOR_METRICS:
+                    _floor_check(noncolor, nc_loc, metric_key, grade_key,
+                                 fmt, m, reasons, uncal)
+    else:
+        if noncolor is None:
+            uncal.append(f"{fam_loc}noncolor.min_sharpness")
+        else:
+            _floor_check(noncolor, f"{fam_loc}noncolor.", "sharpness",
+                         "min_sharpness", "{:.2f}", m, reasons, uncal)
+
+    # Option B selectivity (Ruling 3), FULL-posture images only
+    # (UNRECORDED resolves to FULL above). A pixel proxy: the Item 12
+    # judgment gate remains the enforcement of record for selective
+    # saturation; this screen never substitutes for it.
+    if posture in ("FULL", "UNRECORDED"):
+        if m["protected_sat"] is None or m["protected_share"] < MIN_PROTECTED_SHARE:
+            print(f"NOTE: {name}: protected-region saturation N/A "
+                  f"(Option B selectivity): the protected mask covers "
+                  f"{m['protected_share']:.2%} of the working copy, below "
+                  "the measurable minimum; reported as N/A, never as a "
+                  "pass. Selective saturation remains with the Item 12 "
+                  "judgment gate.")
+        elif ceiling is None:
+            print(f"WARN: uncalibrated Option B selectivity: {name}: "
+                  f"protected-region mean saturation "
+                  f"{m['protected_sat']:.4f}, saturated-intrusion share "
+                  f"{m['intrusion_share']:.2%}; no approved protected-"
+                  "region ceiling exists in the brand file, so this "
+                  "measurement is WARN only and never fails the image. "
+                  "The Item 12 judgment gate remains the enforcement of "
+                  "record for selective saturation (Sauce 2, 23.2).")
+            uncal.append("grade.max_protected_saturation")
+        elif m["protected_sat"] > ceiling:
+            reasons.append(
+                f"protected-region mean saturation {m['protected_sat']:.4f} "
+                f"exceeds the approved protected-region ceiling "
+                f"{ceiling} (Option B selectivity: a global wash "
+                "colonizes the protected neutrals and skin; Sauce 2, "
+                "23.2; saturated-intrusion share "
+                f"{m['intrusion_share']:.2%})")
+        else:
+            print(f"NOTE: {name}: protected-region mean saturation "
+                  f"{m['protected_sat']:.4f} is within the approved "
+                  f"ceiling {ceiling} (Option B selectivity); "
+                  f"saturated-intrusion share {m['intrusion_share']:.2%}")
+    return reasons, bool(uncal)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Signature-look image screen (Skill 71, Items 8 and 9, "
@@ -629,9 +984,13 @@ def main():
         print("FAIL: Pillow is required (pip install Pillow).")
         return 2
 
-    thresholds = load_thresholds(args.brand)
-    uncalibrated_keys = [k for k, v in thresholds.items() if v is None]
-    uncalibrated = bool(uncalibrated_keys)
+    grade = load_grade(args.brand)
+    plan = floor_plan(grade)
+    nested_families = set()
+    if isinstance(grade.get("floors"), dict):
+        nested_families = {f for f in FAMILIES
+                           if isinstance(grade["floors"].get(f), dict)}
+    any_uncalibrated = False
 
     inventory = load_inventory(args.inventory) if args.inventory else {}
     bible_profile = load_bible_profile(args.bible) if args.bible else {}
@@ -649,21 +1008,17 @@ def main():
         measured.append((path, m, entry))
         line = f"{path.name}: " + format_measures(m)
 
-        na, na_source = color_floors_na(entry, bible_profile)
-        if na:
-            print(f"NOTE: {path.name}: saturation/colorfulness floors are N/A "
-                  f"({na_source}); a SUPPRESS or ADAPT dimension is never a "
-                  "failure (Amendment 6, Part B4)")
-
-        reasons = []
-        for metric_key, grade_key, fmt in THRESHOLD_METRICS:
-            if na and metric_key in COLOR_METRICS:
-                continue
-            threshold = thresholds[metric_key]
-            if threshold is not None and m[metric_key] < threshold:
-                reasons.append(
-                    f"{metric_key} {fmt.format(m[metric_key])} < "
-                    f"grade.{grade_key} {threshold}")
+        family, family_recorded = family_of(entry)
+        if args.inventory and entry is not None and not family_recorded:
+            print(f"NOTE: {path.name}: inventory entry records no "
+                  f"active_family; the brand default family "
+                  f"{DEFAULT_FAMILY} applies")
+        posture, posture_source = posture_resolution(entry, bible_profile)
+        ceiling = protected_ceiling(grade, plan, family)
+        reasons, image_uncalibrated = apply_grade_floors(
+            path.name, m, family, posture, posture_source,
+            plan[family], family in nested_families, ceiling)
+        any_uncalibrated = any_uncalibrated or image_uncalibrated
 
         if args.inventory:
             if entry is None:
@@ -710,7 +1065,7 @@ def main():
         if reasons:
             failures.append(path.name)
             print(f"FAIL: {path.name}: " + "; ".join(reasons))
-        elif uncalibrated:
+        elif image_uncalibrated:
             print(f"WARN: uncalibrated — {line}")
         else:
             print(f"PASS: {line}")
@@ -743,20 +1098,20 @@ def main():
             print(f"FAIL: {line}")
             failures.append(line)
 
-    if uncalibrated:
-        grade_key_of = {mk: gk for mk, gk, _ in THRESHOLD_METRICS}
-        missing = ", ".join(f"grade.{grade_key_of[k]}" for k in uncalibrated_keys)
-        print("WARN: uncalibrated — the following grade thresholds are null in the "
-              f"brand file ({missing}); those measurements were printed above with "
-              "no gate applied. The native-ratio + crop-plan and near-duplicate "
-              "checks are unconditional and were applied.")
+    if any_uncalibrated:
+        print("WARN: uncalibrated — some grade floors that apply above are "
+              "not calibrated in the brand file (per-family, per-posture "
+              "floors, Calibration Redesign); those measurements were "
+              "printed above with no gate applied. The native-ratio + "
+              "crop-plan and near-duplicate checks are unconditional "
+              "and were applied.")
     if duplicate_pairs:
         failures.append(f"{len(duplicate_pairs)} near-duplicate pair(s)")
     if failures:
         print("FAIL: image check(s) failed the Signature grade screen: "
               + ", ".join(failures))
         return 1
-    if uncalibrated:
+    if any_uncalibrated:
         return 0
     print(f"PASS: {len(args.images)} image(s) meet the Signature grade floor.")
     return 0
