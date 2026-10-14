@@ -1,0 +1,3 @@
+# Generated locally; never committed (CWE-003/CWE-004 convention).
+node_modules/
+dist/

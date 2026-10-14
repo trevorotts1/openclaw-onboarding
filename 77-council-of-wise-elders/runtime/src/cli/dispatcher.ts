@@ -1,0 +1,677 @@
+/**
+ * blackceo-council CLI dispatcher (CWE-004; directive Section 25.3).
+ *
+ * Argument arrays only: no shell strings, no interactive prompts. Every
+ * command prints either clean JSON (--json) or a short human summary,
+ * and failures are stable typed envelopes (Section 17.3) with nonzero
+ * exit codes. The dispatcher is a thin shell over the engine and the
+ * injected host; importing it has no side effects.
+ *
+ * Honest surface: commands whose behavior belongs to a downstream unit
+ * return FEATURE_NOT_READY naming that unit instead of simulating
+ * success. Authorization commands belong to CWE-049, live route probes
+ * to CWE-009/CWE-010 with CWE-049, and PDF export to CWE-038.
+ */
+
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  CONTRACT_PACKAGE_VERSION,
+  DEFAULT_COUNCIL_SETTINGS,
+  canonicalHash,
+  type DecisionBrief,
+  type RunGrant,
+  type SessionSpec,
+  type Verdict,
+} from '../contracts/index.js';
+import { CouncilEngine } from './engine.js';
+import {
+  CouncilError,
+  featureNotReady,
+  invalidInput,
+  isCouncilError,
+  usageError,
+} from './errors.js';
+import { buildSampleSession, DeterministicFixtureTransport } from './fixture-transport.js';
+import type { CouncilHost } from './host-ports.js';
+import { createLocalHost, localScope, type LocalHost } from './local-host.js';
+import { resolveDataDir } from './paths.js';
+
+export interface CliIo {
+  out(text: string): void;
+  err(text: string): void;
+}
+
+const defaultIo: CliIo = {
+  out: (text) => process.stdout.write(text),
+  err: (text) => process.stderr.write(text),
+};
+
+export interface CliDeps {
+  createHost?: (options: { dataDir?: string; skillRoot?: string }) => LocalHost;
+}
+
+/** The skill folder that contains this runtime (state must stay outside it). */
+export function skillRootFromModule(): string {
+  const here = dirname(fileURLToPath(import.meta.url));
+  // src/cli or dist/cli -> cli -> src|dist -> runtime -> skill folder.
+  return resolve(here, '..', '..', '..');
+}
+
+interface ParsedArgs {
+  positionals: string[];
+  flags: Map<string, string | true>;
+}
+
+function parseArgs(argv: string[]): ParsedArgs {
+  const positionals: string[] = [];
+  const flags = new Map<string, string | true>();
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg.startsWith('--')) {
+      const name = arg.slice(2);
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith('--')) {
+        flags.set(name, next);
+        i += 1;
+      } else {
+        flags.set(name, true);
+      }
+    } else {
+      positionals.push(arg);
+    }
+  }
+  return { positionals, flags };
+}
+
+function flagString(flags: Map<string, string | true>, name: string): string | null {
+  const value = flags.get(name);
+  return typeof value === 'string' ? value : null;
+}
+
+function printResult(io: CliIo, json: boolean, human: string, data: unknown): void {
+  io.out(json ? `${JSON.stringify(data, null, 2)}\n` : `${human}\n`);
+}
+
+function verdictHuman(verdict: Verdict, sample: boolean): string {
+  const lines: string[] = [];
+  if (sample) lines.push('SAMPLE SESSION (synthetic fixture data, not a real council run)');
+  if (verdict.result_kind === 'consult') {
+    lines.push(`Consult result for session ${verdict.session_id}`);
+    lines.push(`Next step: ${verdict.next_step}`);
+    lines.push(`Validation: ${verdict.validation_status}`);
+    return lines.join('\n');
+  }
+  lines.push(`Verdict for session ${verdict.session_id}: ${verdict.label}`);
+  lines.push(
+    verdict.recommended_option_id
+      ? `Recommended option: ${verdict.recommended_option_id}`
+      : 'Recommended option: none (the evidence does not support a recommendation)',
+  );
+  for (const score of verdict.option_scores) {
+    lines.push(
+      `  Option ${score.option_id}: ${score.display_score === null ? 'no score' : score.display_score.toFixed(1)} (coverage ${score.coverage.toFixed(2)})`,
+    );
+  }
+  if (verdict.main_reasons.length > 0) {
+    lines.push(`Main reasons: ${verdict.main_reasons.join(' | ')}`);
+  }
+  if (verdict.strongest_dissent) {
+    lines.push(`Strongest dissent: ${verdict.strongest_dissent}`);
+  }
+  if (verdict.prerequisites.length > 0) {
+    lines.push(`Prerequisites: ${verdict.prerequisites.join(' | ')}`);
+  }
+  lines.push(`Ratification: ${verdict.ratification_status}`);
+  return lines.join('\n');
+}
+
+function verdictMarkdown(verdict: Verdict, sample: boolean): string {
+  const lines: string[] = [];
+  lines.push(`# Council verdict: ${verdict.session_id}`);
+  if (sample) {
+    lines.push('');
+    lines.push('> SAMPLE: synthetic fixture data. Not a real council run.');
+  }
+  if (verdict.result_kind === 'consult') {
+    lines.push('');
+    lines.push(`**Result kind:** consult`);
+    lines.push('');
+    lines.push(`**Answer:** ${verdict.consult_card.answer}`);
+    lines.push('');
+    lines.push(`**Next step:** ${verdict.next_step}`);
+    return `${lines.join('\n')}\n`;
+  }
+  lines.push('');
+  lines.push(`**Label:** ${verdict.label}`);
+  lines.push(`**Recommended option:** ${verdict.recommended_option_id ?? 'none'}`);
+  lines.push('');
+  lines.push('| Option | Score | Coverage | Spread |');
+  lines.push('| --- | --- | --- | --- |');
+  for (const score of verdict.option_scores) {
+    lines.push(
+      `| ${score.option_id} | ${score.display_score === null ? 'n/a' : score.display_score.toFixed(1)} | ${score.coverage.toFixed(2)} | ${score.spread ?? 'n/a'} |`,
+    );
+  }
+  if (verdict.main_reasons.length > 0) {
+    lines.push('');
+    lines.push('## Main reasons');
+    for (const reason of verdict.main_reasons) lines.push(`- ${reason}`);
+  }
+  if (verdict.strongest_dissent) {
+    lines.push('');
+    lines.push('## Strongest dissent');
+    lines.push(verdict.strongest_dissent);
+  }
+  if (verdict.prerequisites.length > 0) {
+    lines.push('');
+    lines.push('## Prerequisites');
+    for (const item of verdict.prerequisites) lines.push(`- ${item}`);
+  }
+  lines.push('');
+  lines.push(`Ratification: ${verdict.ratification_status}. Validation: ${verdict.validation_status}.`);
+  lines.push(
+    'Action proposals in this verdict require separate action-plan approval; a council verdict is not an execution credential.',
+  );
+  return `${lines.join('\n')}\n`;
+}
+
+/** A grant that exists only for the labeled sample path. */
+function sampleGrant(host: CouncilHost): RunGrant {
+  return {
+    schema_version: 'wise-elders.run-grant/v1',
+    grant_id: 'grant-sample-fixture',
+    authority_mode: 'local_interactive_owner',
+    issuer_principal: 'local-owner',
+    scope: {
+      tenant_id: 'sample-tenant',
+      company_id: 'sample-company',
+      installation_id: 'sample-installation',
+      owner_subject: null,
+    },
+    purpose: 'council_run',
+    session_id: 'sess-fixture-1',
+    brief_revision: 1,
+    brief_sha256: '',
+    mode: 'full',
+    seat_ids: [],
+    route_policy_sha256: canonicalHash({ policy: 'sample-fixture-route' }),
+    account_ref: null,
+    pack_version: 'pack-fixture-1.0.0',
+    protocol_version: CONTRACT_PACKAGE_VERSION,
+    allowed_operation_kinds: ['provider_request'],
+    ceilings: {
+      max_provider_requests: 50,
+      max_output_repairs: 9,
+      max_transport_retries: 8,
+      max_input_tokens: null,
+      max_output_tokens: null,
+      max_money: null,
+    },
+    created_at: '2026-01-01T00:00:00Z',
+    expires_at: '2099-01-01T00:00:00Z',
+    revocation_epoch: 0,
+    status: 'active',
+    standing_parent_grant_id: null,
+    preview_sha256: canonicalHash({ preview: 'sample-fixture' }),
+    consumed: { provider_requests: 0, output_repairs: 0, transport_retries: 0 },
+    reserved: { provider_requests: 0, output_repairs: 0, transport_retries: 0 },
+  };
+}
+
+const USAGE = [
+  'blackceo-council: Council of Wise Elders portable core (foundation build)',
+  '',
+  'Commands:',
+  '  doctor [--json]                     Offline readiness checks (no paid work)',
+  '  models [--json]                     Composed routes and model policy notes',
+  '  probe                               Live route probe (not ready in this build)',
+  '  create --spec FILE --brief FILE     Create a session from frozen spec and brief JSON',
+  '  create --sample                     Create the labeled synthetic sample session',
+  '  sample run [--json]                 Run the labeled sample end to end (fixture transport, spends nothing)',
+  '  start SESSION --grant-ref REF       Start a session under a resolved run grant',
+  '  resume SESSION --grant-ref REF      Resume a paused or blocked session',
+  '  status SESSION [--json]             Session state summary',
+  '  pause SESSION                       Pause an active session',
+  '  cancel SESSION                      Cancel a session (late results are fenced out)',
+  '  verdict SESSION [--json]           The validated verdict, when one exists',
+  '  replay SESSION [--json]             Committed event history (read only, spends nothing)',
+  '  export SESSION --format md|json|pdf [--out FILE]',
+  '  authorization preview|approve|status|revoke   Run authorization service (CWE-049)',
+  '',
+  'Global flags: --json, --data-dir DIR (default: per-user council data directory)',
+].join('\n');
+
+export async function runCli(
+  argv: string[],
+  io: CliIo = defaultIo,
+  deps: CliDeps = {},
+): Promise<number> {
+  const json = argv.includes('--json');
+  try {
+    const { positionals, flags } = parseArgs(argv);
+    const [command, sub, third] = positionals;
+    const dataDir = flagString(flags, 'data-dir') ?? undefined;
+    const skillRoot = skillRootFromModule();
+    const makeHost =
+      deps.createHost ?? ((opts) => createLocalHost({ ...opts, skillRoot }));
+    const hostFor = (): LocalHost => makeHost({ dataDir, skillRoot });
+    const engineFor = (host: CouncilHost) => new CouncilEngine(host);
+
+    if (command === undefined) {
+      io.out(`${USAGE}\n`);
+      return 0;
+    }
+
+    switch (command) {
+      case 'doctor': {
+        const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
+        checks.push({
+          name: 'node_sqlite',
+          ok: (() => {
+            try {
+              createRequire(import.meta.url)('node:sqlite');
+              return true;
+            } catch {
+              return false;
+            }
+          })(),
+          detail: 'node:sqlite module availability for the standalone store',
+        });
+        let dir: string | null = null;
+        try {
+          dir = resolveDataDir({ override: dataDir ?? null, skillRoot });
+          checks.push({
+            name: 'data_dir_outside_skill_tree',
+            ok: true,
+            detail: dir,
+          });
+        } catch (err) {
+          checks.push({
+            name: 'data_dir_outside_skill_tree',
+            ok: false,
+            detail: err instanceof Error ? err.message : String(err),
+          });
+        }
+        let routes: string[] = [];
+        let storeOk = false;
+        if (dir) {
+          const { host } = hostFor();
+          routes = host.transportRegistry.listRoutes();
+          storeOk = true;
+        }
+        checks.push({
+          name: 'local_store',
+          ok: storeOk,
+          detail: storeOk ? 'SQLite store opened in the data directory' : 'store did not open',
+        });
+        checks.push({
+          name: 'live_routes_composed',
+          ok: routes.length > 0,
+          detail:
+            routes.length > 0
+              ? `routes: ${routes.join(', ')}`
+              : 'no live transport is composed in this foundation build (CWE-009/CWE-010); runs on uncomposed routes refuse with COUNCIL_ROUTE_UNAVAILABLE',
+        });
+        checks.push({
+          name: 'run_authorization_service',
+          ok: false,
+          detail:
+            'grant service not composed (CWE-049); session starts refuse with RUN_AUTHORIZATION_REQUIRED',
+        });
+        const data = {
+          ok: checks.every((c) => c.ok || c.name === 'live_routes_composed' || c.name === 'run_authorization_service'),
+          contracts: CONTRACT_PACKAGE_VERSION,
+          data_dir: dir,
+          settings: {
+            max_session_provider_requests: DEFAULT_COUNCIL_SETTINGS.max_session_provider_requests,
+            operation_lease_ttl_seconds: 60,
+            operation_lease_heartbeat_seconds: 15,
+          },
+          checks,
+        };
+        printResult(
+          io,
+          json,
+          [
+            `Council core doctor (offline, no paid work)`,
+            `Contracts: ${CONTRACT_PACKAGE_VERSION}`,
+            `Data directory: ${dir ?? 'unresolved'}`,
+            ...checks.map((c) => `  [${c.ok ? 'ok' : 'not ready'}] ${c.name}: ${c.detail}`),
+          ].join('\n'),
+          data,
+        );
+        return data.ok ? 0 : 3;
+      }
+
+      case 'models': {
+        const { host } = hostFor();
+        const routes = host.transportRegistry.listRoutes();
+        const data = {
+          routes,
+          note: 'The client selects the model, or the client configured default applies. This core never prescribes a specific named model and never falls back silently.',
+        };
+        printResult(
+          io,
+          json,
+          routes.length > 0
+            ? `Composed routes: ${routes.join(', ')}\n${data.note}`
+            : `No live routes are composed in this foundation build.\n${data.note}`,
+          data,
+        );
+        return 0;
+      }
+
+      case 'probe': {
+        throw featureNotReady(
+          'Live route probing',
+          'CWE-009, CWE-010, and CWE-049',
+        );
+      }
+
+      case 'authorization': {
+        throw featureNotReady(
+          'The run authorization service (preview, approve, status, revoke)',
+          'CWE-049',
+        );
+      }
+
+      case 'create': {
+        const { host } = hostFor();
+        const engine = engineFor(host);
+        if (flags.has('sample')) {
+          const sample = buildSampleSession();
+          const created = await engine.createSession({ ...sample, sample: true });
+          printResult(
+            io,
+            json,
+            `SAMPLE session created: ${created.spec.session_id} (mode ${created.spec.mode}, state ${created.state.state}). Synthetic fixture data only.`,
+            {
+              ok: true,
+              session_id: created.spec.session_id,
+              mode: created.spec.mode,
+              state: created.state.state,
+              sample: true,
+            },
+          );
+          return 0;
+        }
+        const specPath = flagString(flags, 'spec');
+        const briefPath = flagString(flags, 'brief');
+        if (!specPath || !briefPath) {
+          throw usageError('create requires --spec FILE and --brief FILE (or --sample).');
+        }
+        let spec: SessionSpec;
+        let brief: DecisionBrief;
+        try {
+          spec = JSON.parse(readFileSync(specPath, 'utf8')) as SessionSpec;
+          brief = JSON.parse(readFileSync(briefPath, 'utf8')) as DecisionBrief;
+        } catch (err) {
+          throw invalidInput(
+            `Could not read session input files: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        const created = await engine.createSession({ spec, brief, scope: localScope() });
+        printResult(
+          io,
+          json,
+          `Session created: ${created.spec.session_id} (mode ${created.spec.mode}, state ${created.state.state}).`,
+          {
+            ok: true,
+            session_id: created.spec.session_id,
+            mode: created.spec.mode,
+            state: created.state.state,
+            sample: false,
+          },
+        );
+        return 0;
+      }
+
+      case 'sample': {
+        if (sub !== 'run') {
+          throw usageError('Usage: blackceo-council sample run [--json]');
+        }
+        const sample = buildSampleSession();
+        const { host } = createLocalHost({
+          dataDir,
+          skillRoot,
+          transports: [
+            {
+              routeId: sample.spec.model_policy.route_id,
+              transport: new DeterministicFixtureTransport(),
+            },
+          ],
+        });
+        const grant = sampleGrant(host);
+        grant.session_id = sample.spec.session_id;
+        grant.brief_sha256 = sample.spec.brief_sha256;
+        grant.mode = sample.spec.mode;
+        grant.seat_ids = [...sample.spec.seat_ids];
+        grant.scope = { ...sample.scope };
+        host.authorize = {
+          async resolveRunGrant(grantRef: string, sessionId: string) {
+            return grantRef === 'sample-grant' && sessionId === sample.spec.session_id
+              ? grant
+              : null;
+          },
+        };
+        const engine = engineFor(host);
+        const existing = await host.store.getSession(sample.spec.session_id);
+        if (!existing) {
+          await engine.createSession({ ...sample, sample: true });
+        }
+        const done =
+          existing && existing.state.state === 'COMPLETED'
+            ? existing
+            : await engine.startSession(sample.spec.session_id, 'sample-grant');
+        const verdict = await engine.getVerdict(sample.spec.session_id);
+        if (!verdict) {
+          throw new CouncilError(
+            'COUNCIL_VERDICT_NOT_READY',
+            `Sample session ended in state ${done.state.state} without a verdict.`,
+            { retryable: false, exitCode: 3 },
+          );
+        }
+        printResult(io, json, verdictHuman(verdict, true), {
+          ok: true,
+          sample: true,
+          session_id: verdict.session_id,
+          state: done.state.state,
+          verdict,
+        });
+        return 0;
+      }
+
+      case 'start':
+      case 'resume': {
+        const sessionId = sub;
+        if (!sessionId) throw usageError(`${command} requires a session ID.`);
+        const grantRef = flagString(flags, 'grant-ref');
+        if (!grantRef) {
+          throw usageError(
+            `${command} requires --grant-ref REF. A run cannot start without a resolved run grant (Section 25.6).`,
+          );
+        }
+        const { host } = hostFor();
+        const engine = engineFor(host);
+        const session =
+          command === 'start'
+            ? await engine.startSession(sessionId, grantRef)
+            : await engine.resumeSession(sessionId, grantRef);
+        printResult(
+          io,
+          json,
+          `Session ${sessionId}: state ${session.state.state} (version ${session.state.state_version}).`,
+          {
+            ok: true,
+            session_id: sessionId,
+            state: session.state.state,
+            state_version: session.state.state_version,
+            sample: session.sample,
+          },
+        );
+        return session.state.state === 'COMPLETED' ? 0 : 3;
+      }
+
+      case 'status': {
+        const sessionId = sub;
+        if (!sessionId) throw usageError('status requires a session ID.');
+        const { host } = hostFor();
+        const engine = engineFor(host);
+        const session = await engine.getSession(sessionId);
+        const budget = host.budget.snapshot(sessionId);
+        printResult(
+          io,
+          json,
+          [
+            `Session ${sessionId}${session.sample ? ' (SAMPLE)' : ''}`,
+            `  mode: ${session.spec.mode}`,
+            `  state: ${session.state.state} (version ${session.state.state_version})`,
+            `  brief revision: ${session.state.brief_revision}`,
+            `  provider requests consumed: ${budget.consumed.provider_requests} of ${budget.ceilings.max_provider_requests}`,
+          ].join('\n'),
+          {
+            ok: true,
+            session_id: sessionId,
+            mode: session.spec.mode,
+            state: session.state.state,
+            state_version: session.state.state_version,
+            brief_revision: session.state.brief_revision,
+            sample: session.sample,
+            budget,
+          },
+        );
+        return 0;
+      }
+
+      case 'pause':
+      case 'cancel': {
+        const sessionId = sub;
+        if (!sessionId) throw usageError(`${command} requires a session ID.`);
+        const { host } = hostFor();
+        const engine = engineFor(host);
+        const session =
+          command === 'pause'
+            ? await engine.pauseSession(sessionId)
+            : await engine.cancelSession(sessionId);
+        printResult(
+          io,
+          json,
+          `Session ${sessionId}: state ${session.state.state}.`,
+          { ok: true, session_id: sessionId, state: session.state.state },
+        );
+        return 0;
+      }
+
+      case 'verdict': {
+        const sessionId = sub;
+        if (!sessionId) throw usageError('verdict requires a session ID.');
+        const { host } = hostFor();
+        const engine = engineFor(host);
+        const session = await engine.getSession(sessionId);
+        const verdict = await engine.getVerdict(sessionId);
+        if (!verdict) {
+          throw new CouncilError(
+            'COUNCIL_VERDICT_NOT_READY',
+            `Session ${sessionId} is ${session.state.state} and has no validated verdict yet.`,
+            {
+              retryable: false,
+              action: 'Check status; a verdict exists only after VERIFYING completes.',
+              exitCode: 3,
+            },
+          );
+        }
+        printResult(io, json, verdictHuman(verdict, session.sample), {
+          ok: true,
+          sample: session.sample,
+          verdict,
+        });
+        return 0;
+      }
+
+      case 'replay': {
+        const sessionId = sub;
+        if (!sessionId) throw usageError('replay requires a session ID.');
+        const { host } = hostFor();
+        const engine = engineFor(host);
+        const session = await engine.getSession(sessionId);
+        const events = await engine.replaySession(sessionId);
+        printResult(
+          io,
+          json,
+          [
+            `Committed events for session ${sessionId}${session.sample ? ' (SAMPLE)' : ''} (read only):`,
+            ...events.map(
+              (e) => `  ${e.sequence}. ${e.event_type} by ${e.actor} at ${e.created_at}`,
+            ),
+          ].join('\n'),
+          { ok: true, sample: session.sample, events },
+        );
+        return 0;
+      }
+
+      case 'export': {
+        const sessionId = sub;
+        if (!sessionId) throw usageError('export requires a session ID.');
+        const format = flagString(flags, 'format') ?? 'md';
+        if (format === 'pdf') {
+          throw featureNotReady('PDF report export', 'CWE-038');
+        }
+        if (format !== 'md' && format !== 'json') {
+          throw usageError('export --format must be md, json, or pdf.');
+        }
+        const { host } = hostFor();
+        const engine = engineFor(host);
+        const session = await engine.getSession(sessionId);
+        const verdict = await engine.getVerdict(sessionId);
+        if (!verdict) {
+          throw new CouncilError(
+            'COUNCIL_VERDICT_NOT_READY',
+            `Session ${sessionId} has no validated verdict to export.`,
+            { retryable: false, exitCode: 3 },
+          );
+        }
+        const body =
+          format === 'json'
+            ? `${JSON.stringify(verdict, null, 2)}\n`
+            : verdictMarkdown(verdict, session.sample);
+        const outPath = flagString(flags, 'out');
+        if (outPath) {
+          writeFileSync(outPath, body, 'utf8');
+          printResult(io, json, `Exported ${format} verdict for ${sessionId} to ${outPath}.`, {
+            ok: true,
+            written: outPath,
+            format,
+          });
+        } else {
+          io.out(body);
+        }
+        return 0;
+      }
+
+      default:
+        throw usageError(`Unknown command: ${[command, sub, third].filter(Boolean).join(' ')}`);
+    }
+  } catch (err) {
+    const council = isCouncilError(err)
+      ? err
+      : err instanceof Error && err.name === 'ContractError'
+        ? new CouncilError('COUNCIL_STATE_CONFLICT', err.message, {
+            retryable: false,
+            exitCode: 3,
+          })
+        : new CouncilError(
+            'COUNCIL_INTERNAL',
+            err instanceof Error ? err.message : String(err),
+            { retryable: false, exitCode: 1 },
+          );
+    if (json) {
+      io.err(`${JSON.stringify(council.toEnvelope(), null, 2)}\n`);
+    } else {
+      io.err(`Error [${council.code}]: ${council.message}\nNext action: ${council.action}\n`);
+    }
+    return council.exitCode;
+  }
+}
