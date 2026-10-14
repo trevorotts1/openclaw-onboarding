@@ -1,3 +1,7 @@
+## [2.0.18] - 2026-10-14 - feat: presentations conversational layer (FIX-PLAN Item 33b)
+
+New `protocols/presentations-conversational-layer-protocol.md`: this skill's bounded doctrine for the three human-facing seams of the Presentations department: park and resume client communication (park-notice), post-delivery conversational follow-up including review-call booking through Skill 44 calendars (delivery-followup), and the intake front door that hands a qualified client into Skill 51's gated intake (intake-frontdoor). The contract is conversation-brief.json out of the run folder and conversation-receipt.json back into the run record; the department-side adapter and the message templates live in the presentations tree (`scripts/conversation_layer.py`, `scripts/conversation_templates.json`). Skill 51's gated intake is explicitly out of scope: the layer never asks the intake questions and never writes intake answers. Protocol count 51 to 52 (SKILL.md and INSTALL.md conformed). The scripts total stated at v1.9.2 (92) no longer matches disk (94 .sh files); that drift predates this change, is flagged in the Item 33b build manifest, and is deliberately not restated here.
+
 ## [2.0.12] - 2026-10-06 - fix: step O.6 accepts the Skill 76 local Ollama embedder
 
 `scripts/19-configure-dreaming-embeddings.sh` failed with "no client-owned embedding provider key" on a
