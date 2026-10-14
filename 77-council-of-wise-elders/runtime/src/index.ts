@@ -22,3 +22,4 @@ export * from './cli/local-host.js';
 export * from './cli/engine.js';
 export * from './cli/fixture-transport.js';
 export * from './cli/dispatcher.js';
+export * from './queue/index.js';
