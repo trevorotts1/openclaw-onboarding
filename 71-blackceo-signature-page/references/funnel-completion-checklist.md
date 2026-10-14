@@ -83,8 +83,9 @@ The journey runs in the stage's browser session and is recorded in
 - step 1 loads;
 - the primary CTA is clicked;
 - the pop-up opens;
-- the form displays and is test-submitted under Item 5's test-contact
-  rules;
+- every form displays and is test-submitted under Item 5's test-contact
+  rules, with the landed submission recorded per form (see the
+  once-only rule below);
 - the journey advances to the order step, which must RENDER the product
   and the price (the record names the product ID and the price shown, and
   they must match the receipt's products array);
@@ -92,9 +93,18 @@ The journey runs in the stage's browser session and is recorded in
 
 Two SOP Stage 13 rules ride in this record BY NAME:
 
-- **Once-only form submission:** a shared form is submitted only ONCE,
-  with a designated test contact (`form_submission.submissions_count`
-  must be exactly 1).
+- **Once-only form submission, per form:** a form is not complete
+  until a test submission has actually landed on it. EVERY form in the
+  receipt needs its own landed submission recorded in the
+  click-through, BOUND to the form by `form_id`: a `form_submissions`
+  list with one record per form, or the single `form_submission`
+  record when it carries that form's `form_id`. Each record carries
+  `performed: true`, `submissions_count` exactly 1 (a shared form is
+  submitted only ONCE), and a designated `test_contact_id`. A
+  submission record naming no form satisfies no form, and a run that
+  has forms has no not-performed escape: an existing form without a
+  landed test submission fails the sub-stage. A run with no forms has
+  nothing to submit, and the records may be absent.
 - **No live charge:** sales are verified in test mode only
   (`live_charge_made` must be false). Never make an unauthorized live
   charge to prove a checkout works.

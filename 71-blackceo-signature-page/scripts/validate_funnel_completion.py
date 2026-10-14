@@ -20,9 +20,11 @@ checks them against references/funnel-completion-checklist.md:
   any create, and the receipt records it per object; creating a duplicate
   of an object that already exists is a checklist failure endpoint;
 - the order-form step renders product and price in the live click-through;
-- the click-through carries SOP Stage 13's two rules by name: a shared
-  form is submitted only ONCE with a designated test contact, and sales
-  are verified in test mode only, never by an unauthorized live charge.
+- the click-through carries SOP Stage 13's two rules by name: every
+  form in the receipt has a test submission that actually landed on
+  it, recorded bound to the form by form_id and submitted only ONCE
+  with a designated test contact, and sales are verified in test mode
+  only, never by an unauthorized live charge.
 
 The forms array in funnel-completion.json is the SOLE source of the form
 IDs Item 31's hand-off carries; the gate enforces that equality at close.
@@ -221,16 +223,48 @@ def check_clickthrough(run_dir, fc, steps):
                 "claims)"]
     if fc.get("steps") and not ct.get("steps_visited"):
         failures.append("clickthrough.steps_visited is empty")
-    sub = ct.get("form_submission") or {}
-    if is_true(sub.get("performed")):
-        if sub.get("submissions_count") != 1:
-            failures.append("clickthrough submitted the shared form "
-                            f"{sub.get('submissions_count')!r} times; SOP Stage 13: "
-                            f"submit a shared form only ONCE, with a designated "
-                            f"test contact")
-        if not sub.get("test_contact_id"):
-            failures.append("clickthrough form submission names no designated "
-                            "test contact (SOP Stage 13)")
+    # SOP Stage 13, enforced per form: a form is not wired until a test
+    # submission has actually landed on it. Every form in the receipt
+    # needs its own submission record in the click-through, BOUND to the
+    # form by form_id (a form_submissions list, or the single
+    # form_submission record when it carries a form_id), performed
+    # exactly once with a designated test contact and no live charge. A
+    # record naming no form satisfies no form, and a run that has forms
+    # has no not-performed escape. A run with no forms has nothing to
+    # submit, so the records may be absent.
+    records = []
+    single = ct.get("form_submission")
+    if isinstance(single, dict):
+        records.append(single)
+    multi = ct.get("form_submissions")
+    if isinstance(multi, list):
+        records.extend(r for r in multi if isinstance(r, dict))
+    landed_by_form = {}
+    for rec in records:
+        if rec.get("form_id") and is_true(rec.get("performed")):
+            landed_by_form.setdefault(rec.get("form_id"), []).append(rec)
+    for form in fc.get("forms") or []:
+        fid = form.get("form_id")
+        landed = landed_by_form.get(fid) or []
+        if not landed:
+            failures.append(f"form {form.get('name')!r} ({fid}): no landed test "
+                            f"submission recorded; SOP Stage 13 requires one "
+                            f"submission with a designated test contact, bound "
+                            f"to this form_id")
+            continue
+        for rec in landed:
+            if rec.get("submissions_count") != 1:
+                failures.append("clickthrough submitted the shared form "
+                                f"{rec.get('submissions_count')!r} times; SOP Stage 13: "
+                                f"submit a shared form only ONCE, with a designated "
+                                f"test contact")
+            if not rec.get("test_contact_id"):
+                failures.append("clickthrough form submission names no designated "
+                                "test contact (SOP Stage 13)")
+            if rec.get("live_charge_made") is True:
+                failures.append(f"form {form.get('name')!r} ({fid}): test submission "
+                                f"made a live charge; SOP Stage 13: verify sales in "
+                                f"test mode only, never by an unauthorized live charge")
     if ct.get("live_charge_made") is True:
         failures.append("clickthrough.live_charge_made is true; SOP Stage 13: "
                         "verify sales in test mode only, never by an unauthorized "

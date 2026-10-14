@@ -337,8 +337,12 @@ def good_funnel_completion():
 def good_clickthrough():
     return {
         "steps_visited": ["Opt-in", "Order", "Book"],
-        "form_submission": {"performed": True, "submissions_count": 1,
-                            "test_contact_id": "TC-1"},
+        # Wiring fix (PR #2033): the submission record is BOUND to the
+        # form by form_id. The old unbound shape encoded the lax
+        # behavior the wiring gate proved (performed=false passed
+        # silently); an unbound record now satisfies no form.
+        "form_submission": {"form_id": "FORM-1", "performed": True,
+                            "submissions_count": 1, "test_contact_id": "TC-1"},
         "live_charge_made": False,
         "order_step": {"rendered": True, "product_id": "PR-1", "price": 497},
         "booking_step": {"rendered": True, "calendar_shown": True},
@@ -413,6 +417,70 @@ class FunnelCompletionTest(unittest.TestCase):
         proc = self.validate()
         self.assertEqual(proc.returncode, 1)
         self.assertIn("not_applicable", proc.stdout)
+
+    def test_existing_form_not_performed_fails_naming_the_form(self):
+        ct = good_clickthrough()
+        ct["form_submission"] = {"form_id": "FORM-1", "performed": False}
+        self.put_funnel(ct=ct)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("no landed test submission", proc.stdout)
+        self.assertIn("FORM-1", proc.stdout)
+        self.assertIn("Opt-in form", proc.stdout)
+        ct = good_clickthrough()
+        del ct["form_submission"]
+        self.put_funnel(ct=ct)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("no landed test submission", proc.stdout)
+        self.assertIn("FORM-1", proc.stdout)
+
+    def test_unbound_submission_record_satisfies_no_form(self):
+        ct = good_clickthrough()
+        del ct["form_submission"]["form_id"]
+        self.put_funnel(ct=ct)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("no landed test submission", proc.stdout)
+        self.assertIn("FORM-1", proc.stdout)
+
+    def test_second_form_without_submission_fails_naming_it(self):
+        fc = good_funnel_completion()
+        fc["forms"].append({"form_id": "FORM-2", "name": "Booking form",
+                            "attached_to_step": "Book", "created": True,
+                            "existence_check": True, "rail": "browser"})
+        self.put_funnel(fc)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("no landed test submission", proc.stdout)
+        self.assertIn("FORM-2", proc.stdout)
+        self.assertIn("Booking form", proc.stdout)
+        self.assertNotIn("(FORM-1): no landed", proc.stdout)
+
+    def test_two_forms_with_per_form_submissions_pass(self):
+        fc = good_funnel_completion()
+        fc["forms"].append({"form_id": "FORM-2", "name": "Booking form",
+                            "attached_to_step": "Book", "created": True,
+                            "existence_check": True, "rail": "browser"})
+        ct = good_clickthrough()
+        del ct["form_submission"]
+        ct["form_submissions"] = [
+            {"form_id": "FORM-1", "performed": True, "submissions_count": 1,
+             "test_contact_id": "TC-1"},
+            {"form_id": "FORM-2", "performed": True, "submissions_count": 1,
+             "test_contact_id": "TC-1"}]
+        self.put_funnel(fc, ct)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 0, proc.stdout)
+
+    def test_no_forms_and_no_submission_block_passes(self):
+        fc = good_funnel_completion()
+        fc["forms"] = []
+        ct = good_clickthrough()
+        del ct["form_submission"]
+        self.put_funnel(fc, ct)
+        proc = self.validate()
+        self.assertEqual(proc.returncode, 0, proc.stdout)
 
 
 class WriteIntakeDeliveryTest(unittest.TestCase):
