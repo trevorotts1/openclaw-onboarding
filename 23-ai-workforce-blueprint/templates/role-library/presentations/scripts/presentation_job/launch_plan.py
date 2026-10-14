@@ -238,6 +238,25 @@ def write_launch_plan(run_dir: Path, explicit: Optional[str] = None,
     except Exception as exc:  # noqa: BLE001 -- best-effort, always
         print(f"launch_plan: route honesty record unavailable "
               f"({exc.__class__.__name__}: {exc})", file=sys.stderr)
+    # FIX 31: the model freshness launch record (B11's Hook C,
+    # record-only on this non-interactive path), riding the same call
+    # site as the route-honesty record above. It is the SAME
+    # launch_check() the launcher's dispatch runs, so both dispatch
+    # paths leave the same .model-freshness.json evidence (the FT-18
+    # parity shape): the check is recorded, pending offers are updated
+    # under the narrow launch rule, nothing is presented and nothing
+    # is applied. Best-effort, always: a failed record never blocks.
+    try:
+        try:
+            from . import model_freshness as _mf
+        except ImportError:  # pragma: no cover -- flat-layout fallback
+            import model_freshness as _mf  # type: ignore[no-redef]
+        if _mf.launch_check(run_path, mode=mode) is not None \
+                and (run_path / ".model-freshness.json").is_file():
+            wrote.append(".model-freshness.json")
+    except Exception as exc:  # noqa: BLE001 -- best-effort, always
+        print(f"launch_plan: model freshness record unavailable "
+              f"({exc.__class__.__name__}: {exc})", file=sys.stderr)
     return {"mode": mode, "mode_source": mode_source, "declared": declared,
             "wrote": wrote}
 

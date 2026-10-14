@@ -1373,6 +1373,42 @@ def _announce_route_honesty(run_path: Path) -> None:
               f"({exc.__class__.__name__}: {exc})", file=sys.stderr)
 
 
+def _announce_model_freshness(run_path: Path, mode: Optional[str] = None) -> None:
+    """FIX 31 MODEL FRESHNESS -- the pre-run model freshness check
+    (B11's Hook B), called immediately after _announce_route_honesty()
+    inside the same pre-launch summary, exactly where B28's seam names
+    it. Runs for --new and --resume alike: it checks the provider
+    catalogs for the client's selected families, writes the
+    .model-freshness.json run record (accumulating across dispatches),
+    updates the profile only under the design's narrow launch rule
+    (a new pending offer, or a withdrawn one), and prints the freshness
+    summary line. The line is a RECORD, not an offer: a successor found
+    here waits in the profile for the client's next interactive
+    surface. It never presents a choice, never switches a model, and
+    has NO refusal return value -- dispatch ignores everything but the
+    printed lines, and a check that could not be made lands in the
+    record as unknown-offline while the run proceeds on the recorded
+    selection."""
+    try:
+        try:
+            from . import model_freshness as _mf
+        except ImportError:
+            import model_freshness as _mf  # type: ignore[no-redef]
+    except ImportError:
+        return  # no freshness module deployed: pre-fix launch, byte-for-byte
+    try:
+        if not _mf.flag_enabled():
+            return
+        verdict = _mf.launch_check(run_path, mode=mode)
+        if verdict is None:
+            return
+        for line in _mf.launch_summary_lines(verdict):
+            print(line, flush=True)
+    except Exception as exc:  # noqa: BLE001 -- a check never blocks a launch
+        print(f"launcher: model freshness check unavailable "
+              f"({exc.__class__.__name__}: {exc})", file=sys.stderr)
+
+
 def _as_text(chunk) -> str:
     """subprocess captures come back as str, bytes or None depending on where
     the exception was raised. All three have to land in the log readably."""
@@ -1772,6 +1808,14 @@ def dispatch(
     # it is not a gate and returns nothing. (B11's freshness line joins
     # at exactly this point, immediately after the honesty summary.)
     _announce_route_honesty(run_path)
+
+    # FIX 31 MODEL FRESHNESS -- B11's Hook B, immediately after the
+    # route-honesty summary above and before the mode-plan block: the
+    # pre-run catalog check and its one summary line, inside the same
+    # pre-launch summary. A record, never a gate, never a refusal (see
+    # _announce_model_freshness): the run proceeds on the client's
+    # recorded selection whatever the check finds.
+    _announce_model_freshness(run_path, mode=mode)
 
     # FIX 11 MODE PLAN -- the run's mode is stamped as an honest launch plan:
     # concurrency from the measured client ceiling (Ultra never above the
