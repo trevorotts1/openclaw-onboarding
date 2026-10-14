@@ -40,6 +40,13 @@ from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, H
 from . import heal
 from . import persona
 from . import curate as _curate
+# ITEM 15 (swarm FORCING): the width controller. Defensive, matching the
+# optional-import pattern used across this package: a tree without the
+# module keeps the pre-Item-15 ready-queue width verbatim.
+try:
+    from . import width_controller as _width_controller
+except ImportError:  # pragma: no cover - pre-Item-15 trees force nothing
+    _width_controller = None  # type: ignore[assignment]
 
 
 _ENGINE_ATTESTED_BY_PREFIX = "engine:"
@@ -4380,11 +4387,60 @@ class Engine:
                 "eta_measured_phases": sum(1 for p in remaining_ids if p in observed),
                 "updated_at": utcnow(),
             }
+            # ITEM 15: planned vs target vs current width for the phase
+            # pool, with the binding constraint named -- the run record's
+            # answer to "why is it running at N".
+            _rq_swarm = getattr(self, "_rq_swarm", None)
+            if _rq_swarm is not None:
+                payload["swarm"] = {
+                    "planned_width": _rq_swarm.get("planned_width"),
+                    "target_width": _rq_swarm.get("target_width"),
+                    "current_width": len(running),
+                    "binding_constraint": _rq_swarm.get("binding_constraint"),
+                    "binding_value": _rq_swarm.get("binding_value"),
+                    "shortfall": bool(_rq_swarm.get("shortfall")),
+                    "caps": _rq_swarm.get("caps"),
+                }
             with self._state_lock:
                 self.state["ready_queue"] = payload
                 self.store.save(self.state)
         except Exception as exc:  # noqa: BLE001 — reporting must never break scheduling
             self.report.event("warn", f"ready-queue report failed: {exc!r}")
+
+    def _swarm_width_decision(self, plan: dict) -> Optional[dict]:
+        """ITEM 15 (swarm FORCING): the ready queue's width as a DECISION.
+
+        The plan width for the phase pool is the run mode's operator
+        ceiling (Item 15's formula: as wide as the hard caps allow),
+        bounded by capacity.py's reserve-adjusted `available` for the run
+        (a positive int; the UNBOUNDED sentinel contributes no term) and
+        by the text-class hardware budget when hardware_budget holds a
+        MEASURED snapshot (its live memory-pressure verdict included; an
+        UNMEASURED snapshot contributes no term, per that module's own
+        doctrine that an absence is never evidence for a lower width).
+        Returns None when the controller is unavailable or faults, in
+        which case the caller keeps the pre-Item-15 width verbatim."""
+        if _width_controller is None:
+            return None
+        try:
+            hw_budget = None
+            try:
+                from . import hardware_budget as _hb
+                snap = _hb.cached_snapshot()
+                if str(snap.get("status")) == "MEASURED":
+                    hw_budget = _hb.budget_for_class("text", snap)
+            except Exception:  # noqa: BLE001 -- unmeasured: no term
+                hw_budget = None
+            mode = _width_controller.active_mode()
+            ceiling = _width_controller.mode_operator_ceiling(mode)
+            return _width_controller.decide_width(
+                ceiling if ceiling is not None else 1,
+                mode=mode, mode_ceiling=ceiling,
+                capacity_available=plan.get("available"),
+                hardware_budget=hw_budget,
+                work_class="text")
+        except Exception:  # noqa: BLE001 -- a controller fault never breaks scheduling
+            return None
 
     def _run_ready_queue(self, phases: List[Phase], plan: dict) -> List[Tuple[str, int]]:
         """PRES-036 step 1: the durable ready queue + persistent supervised
@@ -4412,6 +4468,32 @@ class Engine:
             # UNBOUNDED (a real measurement): width is bounded by ready work,
             # never by the sentinel literal (same contract as the wave loop).
             available = 8
+        # ITEM 15 (swarm FORCING): the pool width is a width-controller
+        # TARGET, reached and held by the persistent pool below (finished
+        # members are reaped every cycle and their slots refill from the
+        # ready set, so a member that dies mid-phase is replaced by the
+        # next admission, never by a narrower pool). An UNBOUNDED capacity
+        # no longer collapses to the hard-coded 8 above: the target is the
+        # mode operator ceiling, bounded by the measured capacity when
+        # there is one and by the hardware budget's live verdict. The
+        # `available = 8` fallback survives ONLY for when the controller
+        # itself is unavailable. The decision is recorded on the run
+        # record (state["ready_queue"]["swarm"], via
+        # _write_ready_queue_state) and on the event stream; a hard cap
+        # below the plan is a named swarm.shortfall event.
+        self._rq_swarm = self._swarm_width_decision(plan)
+        if self._rq_swarm is not None:
+            available = max(1, int(self._rq_swarm["target_width"]))
+            self.report.event(
+                "swarm.width",
+                f"ready queue width target {available} "
+                f"(planned {self._rq_swarm['planned_width']}, bound by "
+                f"{self._rq_swarm['binding_constraint']}="
+                f"{self._rq_swarm['binding_value']})")
+            if self._rq_swarm.get("shortfall") and _width_controller is not None:
+                self.report.event(
+                    "swarm.shortfall",
+                    _width_controller.shortfall_reason(self._rq_swarm))
         total = len(phases)
         failed_rcs: List[Tuple[str, int]] = []
         wave_of = {}
