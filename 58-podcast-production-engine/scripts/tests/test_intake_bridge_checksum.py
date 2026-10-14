@@ -131,7 +131,13 @@ class BridgeChecksumTests(unittest.TestCase):
                          (proc.returncode, (proc.stderr or proc.stdout).strip()))
         self.assertEqual(verdict["job_id"], job_id)
         record = self._read_record()
-        self.assertEqual(record["state"], "failed")
+        # A designated test intake keeps its terminal ledger "test" state: the bridge
+        # payload carries `_test`, and podcast_state.py deliberately leaves the ledger
+        # record's state alone so a test never walks the real state machine. The close
+        # was still accepted at the SQLite layer -- the `fail` above returned 0 with
+        # {"status": "failed"} -- and that acceptance is what this test owns: before
+        # the ordering fix the same call was REFUSED with "ledger checksum MISMATCH".
+        self.assertEqual(record["state"], "test")
         PS.verify_checksum(self._record_path().read_text(encoding="utf-8"))
 
     # -- AC3 (later writes): any webhook-layer write after the bridge ---------
