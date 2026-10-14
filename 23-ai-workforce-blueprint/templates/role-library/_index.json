@@ -9898,17 +9898,17 @@
       "slug": "SOP-GIP-01-PROMPT-ANATOMY",
       "dept": "graphics",
       "path": "templates/role-library/graphics/sops/SOP-GIP-01-PROMPT-ANATOMY.md",
-      "content_sha": "sha256:dee4da5fb58b800f8accd8a350f2d4328a53d8b84ff296ad8ac8c86ce2c8aed7",
-      "content_version": "1.0.6",
-      "content_hashed_at": "2026-10-11T09:13:55.751365+00:00"
+      "content_sha": "sha256:aa9046672a8b0e62501636c8902b5a0a4ba68c66d5db58f3b94eb76d171db12e",
+      "content_version": "1.0.7",
+      "content_hashed_at": "2026-10-14T02:14:26.835053+00:00"
     },
     {
       "slug": "SOP-GIP-02-IMAGE-QC",
       "dept": "graphics",
       "path": "templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md",
-      "content_sha": "sha256:21d6ab62202f43fa14887cf2c6cbdf0de741b4d6bfa268a348427128d1f3bde1",
-      "content_version": "1.0.2",
-      "content_hashed_at": "2026-10-11T09:13:55.751365+00:00"
+      "content_sha": "sha256:c5159ebd17b46ffe7b8740218fd743a09ea18e42e459e8715234ad7211a824e2",
+      "content_version": "1.0.3",
+      "content_hashed_at": "2026-10-14T02:14:26.835053+00:00"
     },
     {
       "slug": "SOP-GIP-03-GHL-MEDIA-DELIVERY",
