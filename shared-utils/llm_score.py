@@ -172,7 +172,10 @@ def openrouter_model() -> str:
 
     OPENROUTER_SCORING_MODEL wins; otherwise the client's configured
     default when it is an openrouter/ id; otherwise "", no silent named
-    pin.
+    pin. Either way the surface receives the BARE OpenRouter slug: an
+    openrouter/ provider prefix on the resolved value is stripped, the
+    same normalisation ollama_cloud_model() applies to its tag, because
+    the ids these callers post to OpenRouter carry no provider prefix.
 
     NOT a step of the chain below, the chain spends its OpenRouter budget
     on MiniMax and Gemini Lite. This is the id decompose-task.py and
@@ -180,11 +183,13 @@ def openrouter_model() -> str:
     resolvable for the same reason ollama_cloud_model() is.
     """
     chosen = _env("OPENROUTER_SCORING_MODEL")
+    if chosen.startswith("openrouter/"):
+        chosen = chosen[len("openrouter/"):]
     if chosen:
         return chosen
     default = _configured_default_model()
     if default.startswith("openrouter/"):
-        return default
+        return default[len("openrouter/"):]
     return ""
 
 

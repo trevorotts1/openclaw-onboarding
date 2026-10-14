@@ -41,7 +41,9 @@ WHAT IS PINNED HERE:
                   omitted with a loud ask-the-client warning and no call is
                   made. openrouter_model() resolves the same way, through
                   OPENROUTER_SCORING_MODEL and an openrouter/ configured
-                  default. The dead :cloud tag appears nowhere.
+                  default, and likewise yields the bare slug its surface
+                  posts (an openrouter/ prefix is stripped). The dead
+                  :cloud tag appears nowhere.
   3. FALLBACK  -- with no OLLAMA_CLOUD_API_KEY anywhere, the gateway's
                   provider key from openclaw.json is what gets sent.
   4. 401 RETRY -- a 401 on the env key retries exactly once, with the provider
@@ -221,13 +223,12 @@ def test_both_scoring_model_ids_are_env_overridable(box, monkeypatch):
         "an ollama/ default does not leak onto the OpenRouter surface"
 
     write_openclaw(box, {}, default_model="openrouter/deepseek/deepseek-v4.1-flash")
-    # NOTE: unlike ollama_cloud_model(), which strips the provider prefix
-    # and returns the bare tag its surface posts, openrouter_model()
-    # currently returns the configured default VERBATIM, prefix included.
-    # That is pinned here as observed behaviour, not endorsed: the value is
+    # Like ollama_cloud_model(), which strips the provider prefix and
+    # returns the bare tag its surface posts, openrouter_model() strips
+    # the openrouter/ prefix and returns the bare slug: the value is
     # handed to OpenRouter as a model id, and OpenRouter ids carry no
-    # provider prefix. Flagged to the PR author as a suspected bug.
-    assert llm_score.openrouter_model() == "openrouter/deepseek/deepseek-v4.1-flash"
+    # provider prefix.
+    assert llm_score.openrouter_model() == "deepseek/deepseek-v4.1-flash"
     assert llm_score.ollama_cloud_model() == "", \
         "an openrouter/ default does not leak onto the Ollama Cloud surface"
 
@@ -236,6 +237,12 @@ def test_both_scoring_model_ids_are_env_overridable(box, monkeypatch):
     assert llm_score.ollama_cloud_model() == "deepseek-v4.1-flash:0900"
     assert llm_score.ollama_cloud_model_id() == "ollama/deepseek-v4.1-flash:0900"
     assert llm_score.openrouter_model() == "deepseek/deepseek-v4.1-flash-x"
+
+    monkeypatch.setenv("OPENROUTER_SCORING_MODEL",
+                       "openrouter/deepseek/deepseek-v4.1-flash-x")
+    assert llm_score.openrouter_model() == "deepseek/deepseek-v4.1-flash-x", \
+        "an openrouter/ prefix on the explicit choice is stripped too: " \
+        "the surface posts the bare slug either way"
 
     monkeypatch.setenv("OLLAMA_CLOUD_API_KEY", ENV_KEY)
     calls = capture_posts(monkeypatch, [_SCORE_REPLY])
