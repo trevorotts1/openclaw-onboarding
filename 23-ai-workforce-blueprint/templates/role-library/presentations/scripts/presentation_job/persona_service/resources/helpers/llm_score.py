@@ -22,12 +22,15 @@ parseable {score, reasoning} wins:
     5. ollama-cloud     ollama_cloud_model()          backstop, measured 1.5s
     6. openrouter       google/gemini-3.1-flash-lite  backstop, cheapest
 
-Step 5 is the one id a box can move on its own: it resolves through
-ollama_cloud_model() / OLLAMA_CLOUD_SCORING_MODEL, the same value
-decompose-task.py and verify-persona-adherence.py use, so a provider
-retiring a tag stays a config change. openrouter_model() /
-OPENROUTER_SCORING_MODEL still serves those two callers; this chain routes
-its OpenRouter budget through MiniMax and Gemini Lite instead.
+Step 5 is the one id a box must configure on its own: it resolves through
+ollama_cloud_model(), OLLAMA_CLOUD_SCORING_MODEL (the client's explicit
+choice) first, then the client's configured default model
+(agents.defaults.model) when it names an Ollama Cloud model. When neither
+resolves, step 5 is OMITTED and one stderr warning tells the operator to
+ask the client; no named model is ever substituted silently.
+openrouter_model() / OPENROUTER_SCORING_MODEL resolves the same way for
+decompose-task.py and verify-persona-adherence.py; this chain routes its
+OpenRouter budget through MiniMax and Gemini Lite instead.
 
 Endpoints and credentials, one line each:
 
@@ -98,39 +101,118 @@ from pathlib import Path
 #: /v1 rather than left broken -- see ollama_cloud_chat_url().
 OLLAMA_CLOUD_DEFAULT_URL = "https://ollama.com/v1"
 
-#: DEFAULTS, not hard-codes. A provider renaming or retiring a tag must be a
-#: config change on the box, never a code change and a fleet roll -- the cloud
-#: tag of the retired DeepSeek V4 Pro model was deleted out from under this chain on
-#: 2026-08-17 and every scoring call failed silently until someone read a
-#: 404. GET https://ollama.com/api/tags on 2026-09-21 lists exactly
-#: deepseek-v4.1-flash (plus retired-model tags);
-#: openrouter.ai/api/v1/models lists deepseek/deepseek-v4.1-flash at 1048576
-#: context, $0.15/M prompt and $0.60/M completion. Flash is the scoring
-#: chain's model on both steps: these calls are 200-token judgements, not
-#: generation.
-OLLAMA_CLOUD_MODEL_DEFAULT = "deepseek-v4.1-flash"
-OPENROUTER_MODEL_DEFAULT = "deepseek/deepseek-v4.1-flash"
+#: Step 5's model (and the two single-call ids below) are BOX CONFIGURATION,
+#: never a code default. Resolution (client-choice doctrine, D3):
+#:   1. OLLAMA_CLOUD_SCORING_MODEL / OPENROUTER_SCORING_MODEL, the client's
+#:      explicit choice for scoring;
+#:   2. the client's configured default model (agents.defaults.model in
+#:      openclaw.json) when it is servable on that step's surface;
+#:   3. nothing, the step is omitted and the operator is told to ask the
+#:      client (see _warn_unresolved_scoring_model). There is deliberately
+#:      NO named fallback constant: a provider renaming or retiring a tag
+#:      must be a config change on the box, never a code change and a fleet
+#:      roll, the cloud tag of the retired DeepSeek V4 Pro model was
+#:      deleted out from under this chain on 2026-08-17 and every scoring
+#:      call failed silently until someone read a 404. That failure mode is
+#:      exactly what a named constant in code recreates.
+def _configured_default_model() -> str:
+    """The client's configured default model id (agents.defaults.model).
+
+    Reads the SAME installation the credential layers read (roots from
+    _openclaw_roots()). Accepts the canonical object form
+    ({"primary": ...}) and a bare string. Returns "" when the client has
+    not configured a default.
+    """
+    for root in _openclaw_roots():
+        path = os.path.join(root, "openclaw.json")
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path) as f:
+                cfg = json.load(f)
+        except Exception:
+            continue
+        field = ((cfg.get("agents") or {}).get("defaults") or {}).get("model")
+        if isinstance(field, str) and field.strip():
+            return field.strip()
+        if isinstance(field, dict):
+            primary = field.get("primary") or field.get("model")
+            if isinstance(primary, str) and primary.strip():
+                return primary.strip()
+        return ""
+    return ""
 
 
 def ollama_cloud_model() -> str:
-    """Step-1 model tag; OLLAMA_CLOUD_SCORING_MODEL overrides the default."""
-    return _env("OLLAMA_CLOUD_SCORING_MODEL", OLLAMA_CLOUD_MODEL_DEFAULT)
+    """Step-5 Ollama Cloud model tag, resolved per call (never at import).
+
+    OLLAMA_CLOUD_SCORING_MODEL wins; otherwise the client's configured
+    default when it names an Ollama Cloud model (an ollama/ or
+    ollama-cloud/ id, returned as the bare tag this surface posts);
+    otherwise "", no silent named pin.
+    """
+    chosen = _env("OLLAMA_CLOUD_SCORING_MODEL")
+    if chosen:
+        return chosen
+    default = _configured_default_model()
+    for prefix in ("ollama/", "ollama-cloud/"):
+        if default.startswith(prefix):
+            return default[len(prefix):]
+    return ""
 
 
 def ollama_cloud_model_id() -> str:
-    """The provider-qualified id this module REPORTS for a step-1 answer."""
-    return "ollama/" + ollama_cloud_model()
+    """The provider-qualified id this module REPORTS for a step-5 answer."""
+    tag = ollama_cloud_model()
+    return "ollama/" + tag if tag else ""
 
 
 def openrouter_model() -> str:
-    """The OpenRouter DeepSeek id; OPENROUTER_SCORING_MODEL overrides it.
+    """The OpenRouter model id for two external callers, resolved per call.
 
-    NOT a step of the chain below — the chain spends its OpenRouter budget on
-    MiniMax and Gemini Lite. This is the id decompose-task.py and
+    OPENROUTER_SCORING_MODEL wins; otherwise the client's configured
+    default when it is an openrouter/ id; otherwise "", no silent named
+    pin. Either way the surface receives the BARE OpenRouter slug: an
+    openrouter/ provider prefix on the resolved value is stripped, the
+    same normalisation ollama_cloud_model() applies to its tag, because
+    the ids these callers post to OpenRouter carry no provider prefix.
+
+    NOT a step of the chain below, the chain spends its OpenRouter budget
+    on MiniMax and Gemini Lite. This is the id decompose-task.py and
     verify-persona-adherence.py use for their own single bounded calls, kept
-    overridable for the same reason ollama_cloud_model() is.
+    resolvable for the same reason ollama_cloud_model() is.
     """
-    return _env("OPENROUTER_SCORING_MODEL", OPENROUTER_MODEL_DEFAULT)
+    chosen = _env("OPENROUTER_SCORING_MODEL")
+    if chosen.startswith("openrouter/"):
+        chosen = chosen[len("openrouter/"):]
+    if chosen:
+        return chosen
+    default = _configured_default_model()
+    if default.startswith("openrouter/"):
+        return default[len("openrouter/"):]
+    return ""
+
+
+_SCORING_MODEL_WARNED = False
+
+
+def _warn_unresolved_scoring_model():
+    """One clear stderr note when step 5 has no resolvable model (D3 step 3).
+
+    The chain still runs its other steps; this module degrades, it does not
+    raise. The warning fires once per process so a long scoring pass does
+    not spam it.
+    """
+    global _SCORING_MODEL_WARNED
+    if _SCORING_MODEL_WARNED:
+        return
+    _SCORING_MODEL_WARNED = True
+    print("[llm_score] step 5 (Ollama Cloud backstop) has no model: "
+          "OLLAMA_CLOUD_SCORING_MODEL is unset and openclaw.json configures "
+          "no Ollama Cloud default model. Ask the client to set "
+          "OLLAMA_CLOUD_SCORING_MODEL or configure a default model in "
+          "agents.defaults.model; the step is skipped until then and no "
+          "named model is substituted.", file=sys.stderr)
 
 
 #: The other three transports. All four are OpenAI-compatible
@@ -1072,10 +1154,14 @@ def default_scoring_chain() -> list:
     """THE CHAIN, AS DATA — (provider, model) in the operator's order.
 
     A function and not a module constant for one reason: step 5's tag is box
-    CONFIGURATION (ollama_cloud_model(), OLLAMA_CLOUD_SCORING_MODEL), and a
-    constant would freeze whatever the environment looked like at import —
-    which under launchd and the openclaw cron is nothing at all. Every other
-    id here is a literal.
+    CONFIGURATION (ollama_cloud_model(): the client's explicit
+    OLLAMA_CLOUD_SCORING_MODEL, else the client's configured default model),
+    and a constant would freeze whatever the environment looked like at
+    import, which under launchd and the openclaw cron is nothing at all.
+    When step 5 does not resolve, it is omitted (with one stderr warning)
+    rather than silently pinned to a named model. Every other id here is a
+    literal: operator-measured fallback data for steps 1-4 and 6, replaced
+    wholesale whenever the client sets LLM_SCORE_CHAIN.
 
     The order is deliberate and is not a price ranking: the two fastest models
     measured on a live box sit at 1 and 5, with a paid mirror of each in
@@ -1083,14 +1169,19 @@ def default_scoring_chain() -> list:
     does not resolve is skipped silently, so a box holding only an OpenRouter
     credential simply runs steps 2 and 6 and pays for nothing else.
     """
-    return [
+    steps = [
         ("ollama-cloud",    OLLAMA_CLOUD_CHAIN_MODEL),
         ("openrouter",      OPENROUTER_CHAIN_MODEL),
         ("agnes",           AGNES_MODEL),
         ("deepseek-direct", DEEPSEEK_DIRECT_MODEL),
-        ("ollama-cloud",    ollama_cloud_model()),
-        ("openrouter",      OPENROUTER_BACKSTOP_MODEL),
     ]
+    backstop = ollama_cloud_model()
+    if backstop:
+        steps.append(("ollama-cloud", backstop))
+    else:
+        _warn_unresolved_scoring_model()
+    steps.append(("openrouter", OPENROUTER_BACKSTOP_MODEL))
+    return steps
 
 
 def scoring_chain() -> list:
@@ -1133,7 +1224,18 @@ def scoring_chain() -> list:
 # the same two steps the chain runs, under the names that call site uses.
 
 def _attempt_ollama_cloud(prompt: str, model: str = "") -> dict:
-    return _step_ollama_cloud(prompt, model or ollama_cloud_model())
+    model = model or ollama_cloud_model()
+    if not model:
+        # Never open a socket with an empty model, and never substitute a
+        # named one: report the unresolved step as an ordinary step failure
+        # (this module never raises on LLM failure).
+        _warn_unresolved_scoring_model()
+        return {"ok": False,
+                "error": "no scoring model resolved: set "
+                         "OLLAMA_CLOUD_SCORING_MODEL or configure a default "
+                         "model in agents.defaults.model",
+                "model": ""}
+    return _step_ollama_cloud(prompt, model)
 
 
 def _attempt_openrouter(prompt: str, model_id: str) -> dict:
