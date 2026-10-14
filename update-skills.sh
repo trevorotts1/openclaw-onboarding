@@ -8456,6 +8456,75 @@ PYEOF
       fi
     fi
 
+    # DSR-101: Drama Studio enrollment + the 2-minute pickup timer (skill 75).
+    #
+    # shared-bridge/studio_bridge.py refuses BOTH `link` and `poll` until the
+    # box holds a machine key ("no machine key; run enroll first"), and the only
+    # thing that creates that key is `studio_bridge.py enroll` with
+    # DS_ENROLLMENT_SECRET in env. Nothing in the install path called it, so a
+    # client's personal studio link could never resolve on this box.
+    #
+    # NOT sentinel-gated, for the same reason as the RR-028 block above: what is
+    # being reconciled is BOX STATE (a key file, a loaded timer), not software
+    # files. Gating it to once-per-version-bump would mean a box whose cron an
+    # operator removed, or whose enroll failed while the studio was down, stayed
+    # dead until the next version number -- the "shipped but never delivered"
+    # failure class. Both legs are idempotent by construction (an existing
+    # machine key short-circuits enroll; `--register` answers 0 when the timer
+    # is already installed), so running them on every pass is safe.
+    #
+    # Fail-soft by design: no DS_ENROLLMENT_SECRET skips enrollment (exit 0,
+    # one line, box untouched) and a `--register` refusal (exit 2) only warns.
+    # A client box must never fail to update because the operator has not
+    # injected a studio secret.
+    if [ -d "$SKILL_DIR/shared-bridge" ]; then
+      echo "    Drama Studio: enrolling this box + registering the 2-minute pickup timer (skill 75, idempotent)..."
+      _dsr_rc=0
+      bash "$SKILL_DIR/shared-bridge/enroll-on-install.sh" 2>&1 | tee -a "$LOG_FILE" || _dsr_rc=$?
+      if [ "$_dsr_rc" -ne 0 ]; then
+        # The helper is fail-soft and exits 0 on every documented path, so a
+        # non-zero means the helper itself broke, not that the studio said no.
+        echo "    ⚠ drama-studio enrollment step could not run (rc=$_dsr_rc; see $LOG_FILE) -- next pass retries it"
+      fi
+
+      # Timer platform, auto-detected the way the timer's own contract names it:
+      # mac, or the two Docker flavours by their persistent home (Hostinger
+      # /data, Contabo /home/node). Anything else is reported, never guessed.
+      _dsr_platform=""
+      case "$(uname -s 2>/dev/null)" in
+        Darwin) _dsr_platform="mac" ;;
+        Linux)
+          case "${HOME:-}" in
+            /data)      _dsr_platform="hostinger" ;;
+            /home/node) _dsr_platform="contabo" ;;
+            *)
+              if [ -d "/data" ]; then
+                _dsr_platform="hostinger"
+              elif [ -d "/home/node" ]; then
+                _dsr_platform="contabo"
+              fi
+              ;;
+          esac
+          ;;
+      esac
+
+      if [ -z "$_dsr_platform" ]; then
+        echo "    ⚠ Drama Studio pickup timer: platform not determined (mac / hostinger / contabo) -- timer NOT registered; re-run on a box the timer contract recognises"
+      else
+        _dsr_timer_rc=0
+        bash "$SKILL_DIR/timer-artifacts/install-timer.sh" --platform "$_dsr_platform" --register 2>&1 | tee -a "$LOG_FILE" || _dsr_timer_rc=$?
+        if [ "$_dsr_timer_rc" -eq 0 ]; then
+          echo "    ✓ Drama Studio pickup timer registered ($_dsr_platform, every 120s)"
+        else
+          # Exit 2 is the documented "this refuses to register" answer. It is a
+          # warning, never a failure: the operator registers the timer by hand
+          # (timer-artifacts/README.md) and the roll continues normally.
+          echo "    ⚠ install-timer.sh --register refused for $_dsr_platform (rc=$_dsr_timer_rc) -- timer NOT registered; register it by hand per timer-artifacts/README.md. Roll continues."
+        fi
+      fi
+      unset _dsr_platform _dsr_timer_rc _dsr_rc
+    fi
+
     # Per-skill idempotency sentinel
     WIRED_SENTINEL="$SKILL_DIR/.wired-${ONBOARDING_VERSION}"
     if [ -f "$WIRED_SENTINEL" ]; then

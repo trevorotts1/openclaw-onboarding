@@ -10754,8 +10754,8 @@
       "slug": "SOP--drama-song-ad-pipeline",
       "dept": "video",
       "path": "templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md",
-      "content_sha": "sha256:cea7e798a53b20be88d431c592ecff1166ddc7db8213b016c291c1babdf95543",
-      "content_version": "1.0.8",
+      "content_sha": "sha256:26d8f8b14f32d9addfb65a3cd79766e2446d8f86c7cf2452b6c1693fc04427f5",
+      "content_version": "1.0.9",
       "content_hashed_at": "2026-10-11T09:13:55.751365+00:00"
     },
     {
