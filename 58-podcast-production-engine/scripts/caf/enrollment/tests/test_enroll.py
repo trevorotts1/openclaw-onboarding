@@ -115,9 +115,51 @@ def test_resolve_workflow_from_state():
 
 def test_resolve_workflow_from_live_discovery():
     runner = ScriptedRunner([{"tags": []}],
-                            workflows=[{"id": "LIVE", "name": en.WF_06}])
+                            workflows=[{"id": "LIVE", "name": en.WF_06,
+                                        "status": "published"}])
     wf = en.resolve_workflow({"workflows": {}}, en.WF_06, runner=runner)
     assert wf["id"] == "LIVE"
+
+
+def test_resolve_workflow_prefers_published_over_draft_copy():
+    """A legacy draft and a published copy sharing one name resolve to published."""
+    runner = ScriptedRunner([{"tags": []}],
+                            workflows=[{"id": "DRAFT", "name": en.WF_06,
+                                        "status": "draft"},
+                                       {"id": "PUBLISHED", "name": en.WF_06,
+                                        "status": "published"},
+                                       {"id": "OTHER", "name": "01-Something",
+                                        "status": "draft"}])
+    wf = en.resolve_workflow({"workflows": {}}, en.WF_06, runner=runner)
+    assert wf["id"] == "PUBLISHED"
+    assert wf["trigger"] == "direct_add"
+
+
+def test_resolve_workflow_two_drafts_raises_discovery():
+    """Two drafts of one name stop setup instead of enrolling into either."""
+    runner = ScriptedRunner([{"tags": []}],
+                            workflows=[{"id": "D1", "name": en.WF_06,
+                                        "status": "draft"},
+                                       {"id": "D2", "name": en.WF_06,
+                                        "status": "draft"}])
+    with pytest.raises(en.DiscoveryError) as excinfo:
+        en.resolve_workflow({"workflows": {}}, en.WF_06, runner=runner)
+    assert "only as draft" in str(excinfo.value)
+    assert "D1" in str(excinfo.value) and "D2" in str(excinfo.value)
+
+
+def test_resolve_workflow_two_published_raises_discovery():
+    """Two published copies of one name are never guessed between."""
+    runner = ScriptedRunner([{"tags": []}],
+                            workflows=[{"id": "P1", "name": en.WF_06,
+                                        "status": "published"},
+                                       {"id": "P2", "name": en.WF_06,
+                                        "status": "published"}])
+    with pytest.raises(en.DiscoveryError) as excinfo:
+        en.resolve_workflow({"workflows": {}}, en.WF_06, runner=runner)
+    message = str(excinfo.value)
+    assert "2 published copies" in message
+    assert "P1" in message and "P2" in message
 
 
 def test_resolve_workflow_missing_raises_discovery():
