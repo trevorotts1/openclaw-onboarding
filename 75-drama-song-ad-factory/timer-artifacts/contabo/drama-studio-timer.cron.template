@@ -3,8 +3,13 @@
 # Platform DEFINITION (a crontab line), not a registration. It lives on the
 # container's persistent volume at
 #   /home/node/.openclaw/scripts/drama-studio-timer.cron
-# The operator installs it into the container's `node` user crontab — install-timer.sh
-# only PRINTS that command, it never runs it:
+#
+# ARMING: `install-timer.sh --register` merges ONE line of this definition into
+# the `node` user's crontab, removing any previous line carrying the tag
+# `drama-studio-timer` first, so a second run never doubles the timer. It runs
+# check-first and exits 0 when the line is already there. Every other mode only
+# writes files and prints the command. Manual whole-file equivalent (replaces
+# the crontab; --register preserves it):
 #   docker exec -u node <container> sh -c 'crontab /home/node/.openclaw/scripts/drama-studio-timer.cron'
 #
 # DIRECT SHELL: [/bin/sh, run-timer.sh] with an explicit minimal environment.
@@ -23,4 +28,7 @@
 #   __HOME__        -> /home/node
 #   __PATH__        -> container PATH with the persistent npm-global first
 #   __STORE_DIR__   -> /home/node/.openclaw/.drama-studio   (persistent, NOT $HOME)
-__SCHEDULE__ HOME=__HOME__ PATH=__PATH__ DS_PLATFORM=contabo DS_STATE_DIR=__STORE_DIR__ /bin/sh __SCRIPT_PATH__ >> __LOG_PATH__ 2>&1
+#
+# The trailing `# drama-studio-timer` is the de-duplication TAG: --register
+# strips any crontab line containing it before appending this one.
+__SCHEDULE__ HOME=__HOME__ PATH=__PATH__ DS_PLATFORM=contabo DS_STATE_DIR=__STORE_DIR__ /bin/sh __SCRIPT_PATH__ >> __LOG_PATH__ 2>&1 # drama-studio-timer

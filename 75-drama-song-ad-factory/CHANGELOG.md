@@ -4,6 +4,24 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.50 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #8: the box enrols, the link is handed over, the timer installs, the client hears the pickup
+
+Batch `BATCH-DSF-8` - release group R2-A, four Round 2 units merged together
+(one version bump and one entry for the whole batch, per the swarm plan):
+
+- `#1998` (`unit/DSR-101`) enrols the box and registers the studio timer at install: `shared-bridge/enroll-on-install.sh` plus `shared-bridge/checks/test_enroll_on_install.py`, and the call sites in `install.sh`, `update-skills.sh` and `INSTALL.md`.
+- `#1993` (`unit/DSR-102`) makes the agent hand the client the personal studio link: `SKILL.md`, step 6 of STUDIO ORDERS in `INSTRUCTIONS.md` (who runs it, when, and what to say when the bridge answers `NO_KEY`) and the video department SOP.
+- `#1997` (`unit/DSR-103`) makes `--register` actually install the studio timer on mac, hostinger and contabo: everything under `timer-artifacts/` (`install-timer.sh`, the launchd plist template, both cron templates, `README.md`, `PLATFORM-PROOF.md`).
+- `#2000` (`unit/DSR-104`) lets the agent start after pickup and tells the client: `shared-bridge/studio_bridge.py`, `shared-bridge/wake_agent.sh`, `shared-bridge/checks/test_studio_handoff.py`, and `INSTRUCTIONS.md` steps 2-3.
+
+`INSTRUCTIONS.md` overlap: `#1993` and `#2000` both edit that file. `#1993`'s hunks
+sit in the step 6 link hand-over and `#2000`'s in steps 2-3, so git auto-merged them
+and both survive on this head - the link hand-over wording and the poll/wake
+wording are all present, and no conflict marker was ever written.
+
+No behaviour outside SPEC.md was added; every unit's own tests and the area
+regressions pass on this batch head.
+
 ## v2.9.49 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #7: proof receipts plus inbox freshness
 
 Batch `BATCH-DSF-7` — three W4 units merged together (one version bump and one
