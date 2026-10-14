@@ -159,11 +159,18 @@ test('studio render: identical option wording, opposite shape, decided by typed'
     'typed:false with the same wording must stay one line');
   assert.equal(textInputs(untypedTree).length, 1);
 
-  // the typed box also starts empty and still feeds the answer back
+  // the typed box starts empty, and what is typed in it reaches the answer
+  // store through the callback answerBox wired up — so the shape change did
+  // not quietly orphan the answer
   const area = byTag(typedTree, 'TEXTAREA')[0];
   assert.equal(area.value, '', 'a fresh screen starts with nothing typed');
-  state.texts[0] = 'Sweet Details Cookie-Decorating Class';
-  assert.equal(state.texts[0], 'Sweet Details Cookie-Decorating Class');
+  assert.equal(area.attrs.id, 'q-answer', 'the box keeps the id its label points at');
+  const onInput = (area.listeners.input || [])[0];
+  assert.equal(typeof onInput, 'function', 'the typed box is not wired to anything');
+  area.value = 'Sweet Details Cookie-Decorating Class';
+  onInput();
+  assert.equal(state.texts[0], 'Sweet Details Cookie-Decorating Class',
+    'typing in the box never reached the answer store');
 });
 
 // ── 4. every question the page is served is drawn from the contract ──────────
