@@ -30,6 +30,15 @@
 #   8. The update lock is ALWAYS released and the script's own exit status
 #      is kept, even when the stash cleanup itself fails (rm refused), on
 #      both the exit path and the normal path, and the log names the stash.
+#   9. EXCEPTION to 4 (the 2026-10 field-map wound): 59's
+#      config/field-map.json is stamped IN PLACE by the provisioner
+#      (anthology_registry.py provision-fields writes field_key / field_id /
+#      verified_at / location_masked) while the repo ships the pristine
+#      template. A STAMPED box copy survives the update BYTE-IDENTICAL
+#      (oc_skill_box_state_overrides_shipped puts it back over the shipped
+#      template), and template-state boxes are unaffected: a fresh box gets
+#      the shipped template, an already-template box keeps valid template
+#      state. Every other path keeps contract 4.
 #
 # METHOD. The wipe+copy step is EXTRACTED VERBATIM from the updater's skill
 # install loop (between the "# Remove old version if exists." anchor and the
@@ -195,6 +204,78 @@ if grep -q '"shipped"' "$BOX2/skills/$SKILL/model-map.json"; then
 else
   bad "stale box state overwrote a shipped file"
 fi
+
+# --- 9. the field-map exception (the 2026-10 every-roll wipe) -----------------
+# The provisioner stamps 59's config/field-map.json IN PLACE (38 rows:
+# field_key, field_id, verified_at, location_masked -> values) while the repo
+# ships the pristine template (all four null). Before the fix every roll
+# re-templated the stamped copy and verify-fields exited 1 until re-stamped.
+FM_REL="config/field-map.json"
+stamp_field_map() {  # $1 = a field-map.json path; stamps it like the provisioner
+  python3 - "$1" <<'PY'
+import json, sys
+p = sys.argv[1]
+fm = json.load(open(p))
+for i, item in enumerate(fm["provisioning"]["fields"]):
+    item["field_key"] = item["intended_key"]
+    item["field_id"] = 90000 + i
+    item["verified_at"] = "2026-10-14T00:00:00Z"
+    item["location_masked"] = "••••4242"
+with open(p, "w") as fh:
+    json.dump(fm, fh, indent=2, sort_keys=True)
+PY
+}
+
+hdr "a STAMPED field-map.json survives the update byte-identical"
+BOXF="$WORK/boxf"; new_box "$BOXF"
+stamp_field_map "$BOXF/skills/$SKILL/$FM_REL"
+cp "$BOXF/skills/$SKILL/$FM_REL" "$WORK/field-map-stamped-want"
+rm -rf "$TMPDIR"/oc-skill-box-state.*
+simulate_update "$BOXF" "$RELEASE"
+if cmp -s "$WORK/field-map-stamped-want" "$BOXF/skills/$SKILL/$FM_REL"; then
+  ok "stamped field-map survived the copy pass byte-identical"
+else
+  bad "stamped field-map was re-templated by the update"
+fi
+if cmp -s "$RELEASE/$SKILL/$FM_REL" "$BOXF/skills/$SKILL/$FM_REL"; then
+  bad "field-map equals the shipped pristine template -- the stamp was wiped"
+else
+  ok "field-map is the stamped box copy, not the shipped template"
+fi
+python3 - "$BOXF/skills/$SKILL/$FM_REL" <<'PY' \
+  && ok "all 38 rows still carry field_key/field_id/verified_at/location_masked" \
+  || bad "a stamped row lost its stamps"
+import json, sys
+rows = json.load(open(sys.argv[1]))["provisioning"]["fields"]
+assert len(rows) == 38, len(rows)
+for r in rows:
+    assert r["field_key"] and r["field_id"] and r["verified_at"] and r["location_masked"], r
+PY
+grep -qF "box state preserved over the shipped template: $SKILL/$FM_REL" "$WORK/sim.log" \
+  && ok "log names the override restore" || bad "no override-restore log line: $(tail -3 "$WORK/sim.log")"
+[ "$(stash_left)" = 0 ] && ok "no stash dir left after the field-map update" || bad "stash dir left"
+
+hdr "template-state field-map stays legal (fresh box and already-template box)"
+# Fresh box: no field-map on the box at all -- the shipped template simply lands.
+BOXG="$WORK/boxg"; new_box "$BOXG"; rm -f "$BOXG/skills/$SKILL/$FM_REL"
+rm -rf "$TMPDIR"/oc-skill-box-state.*
+simulate_update "$BOXG" "$RELEASE"
+cmp -s "$RELEASE/$SKILL/$FM_REL" "$BOXG/skills/$SKILL/$FM_REL" \
+  && ok "fresh box: shipped template installed unchanged" \
+  || bad "fresh box: shipped template did not land"
+# Already-template box: the update stays clean and the file stays template
+# state (all stamps null), exactly as before this fix.
+BOXH="$WORK/boxh"; new_box "$BOXH"
+rm -rf "$TMPDIR"/oc-skill-box-state.*
+simulate_update "$BOXH" "$RELEASE" || bad "template-state box update exited non-zero: $(tail -3 "$WORK/sim.log")"
+python3 - "$BOXH/skills/$SKILL/$FM_REL" <<'PY' \
+  && ok "template-state box: valid JSON, every stamp still null" \
+  || bad "template-state box: file is not template-state valid"
+import json, sys
+rows = json.load(open(sys.argv[1]))["provisioning"]["fields"]
+assert all(r["field_key"] is None and r["field_id"] is None for r in rows), "unexpected stamp on a template-state box"
+PY
+[ "$(stash_left)" = 0 ] && ok "no stash dir left (template-state box)" || bad "stash dir left (template-state box)"
 
 # --- 6. the stash is never orphaned when the run dies mid-step ----------------
 pinned_box() {  # $1 = box dir, installed with a pinned map
