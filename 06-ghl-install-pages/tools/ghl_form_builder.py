@@ -81,9 +81,14 @@ is auditable and de-duplicated:
 
 MODEL DOCTRINE — client-owned providers, NEVER Anthropic
 --------------------------------------------------------
-Ollama Cloud → OpenRouter equivalent → Gemini last-resort, thinking=high on every
-rung. MiniMax M2 is BANNED. Browser-control (execution) uses MiniMax M3 only →
-DeepSeek V4.1 Flash. Vision QC uses MiniMax M3 only. No Anthropic slug ever.
+Model: the client's choice, or the client's configured default model, resolved
+at plan time via tools/model_router.py (MODEL_ROUTER_CHOICE /
+MODEL_ROUTER_DEFAULT). This module prescribes no model by name, and plan
+building stops with an ask-the-client error when the client has configured
+neither. Recommendation: reliable tool calling for browser control and a
+vision-capable model for QC, because every drive-loop step is a tool call and
+QC reads screenshots. thinking=high on every rung. MiniMax M2 is BANNED. No
+Anthropic slug ever.
 
 NO LOGIN CODE — auth is handled upstream by the dispatcher / seeded browser
 session (token-only doctrine). The CI guard forbids login patterns outside
@@ -151,6 +156,10 @@ if _TOOLS_DIR not in sys.path:
 import ghl_run_state  # noqa: E402
 from ghl_run_state import PhaseSpec  # noqa: E402
 
+# Model ladders resolve through the shared router (client choice / configured
+# default only; no model is prescribed by name in this module).
+import model_router  # noqa: E402
+
 
 # ── U8: the form builder's declared phase walk (the click list's own F1…F13) ────
 # ``resumable=False`` = ALWAYS re-executes on resume:
@@ -209,38 +218,60 @@ QUICK_ADD_TAXONOMY: Dict[str, List[str]] = {
 # Fields GHL puts on a scratch form by default (01:39–02:27).
 DEFAULT_FORM_FIELDS = ["First Name", "Last Name", "Phone", "Email", "Terms & Conditions"]
 
-# ── Model ladders (Ollama-Cloud first → OpenRouter → Gemini last resort) ──────
-# thinking=high on every rung. MiniMax M2 BANNED. No Anthropic slug. Browser
-# execution = MiniMax M3 → DeepSeek V4.1 Flash. Vision QC = MiniMax M3 only.
-THINK_LADDER: List[dict] = [
-    {"rung": 1, "provider": "ollama-cloud", "model": "glm-5.2:cloud", "role": "reasoning", "thinking": "high"},
-    {"rung": 2, "provider": "ollama-cloud", "model": "kimi-k2.6:cloud", "role": "reasoning", "thinking": "high"},
-    {"rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4.1-flash:cloud", "role": "reasoning", "thinking": "high"},
-    {"rung": 4, "provider": "openrouter", "model": "z-ai/glm-5.2", "role": "reasoning", "thinking": "high"},
-    {"rung": 5, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash", "role": "reasoning", "thinking": "high"},
-    {"rung": 6, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
-     "role": "last-resort", "thinking": "high", "gate": "only_if_live_and_credited"},
-]
-EXECUTE_LADDER: List[dict] = [
-    {"rung": 1, "provider": "ollama-cloud", "model": "minimax-m3:cloud",
-     "role": "browser-control", "thinking": "high", "probe_gated": True},
-    {"rung": 2, "provider": "openrouter", "model": "minimax/minimax-m3",
-     "role": "browser-control", "thinking": "high", "probe_gated": True},
-    {"rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4.1-flash:cloud",
-     "role": "browser-control", "thinking": "high"},
-    {"rung": 4, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash",
-     "role": "browser-control", "thinking": "high"},
-    {"rung": 5, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
-     "role": "last-resort", "thinking": "high", "gate": "only_if_live_and_credited"},
-]
-QC_LADDER: List[dict] = [
-    {"rung": 1, "provider": "ollama-cloud", "model": "minimax-m3:cloud",
-     "role": "qc+vision", "thinking": "high", "probe_gated": True},
-    {"rung": 2, "provider": "openrouter", "model": "minimax/minimax-m3",
-     "role": "qc+vision", "thinking": "high", "probe_gated": True},
-    {"rung": 3, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
-     "role": "last-resort", "thinking": "high", "gate": "only_if_live_and_credited"},
-]
+# ── Model ladders: client resolution via model_router ───────────────────────
+# The ladders are built at plan time from the client's own configuration: the
+# client's explicit choice first, then the client's configured default model
+# (see tools/model_router.py, resolve_client_models). No model is prescribed
+# by name here. When the client has configured neither, building a ladder
+# raises model_router.ClientModelNotConfiguredError: the ask-the-client stop.
+# Module-level THINK_LADDER / EXECUTE_LADDER / QC_LADDER attribute access is
+# preserved for existing consumers (ghl_pipeline_builder) via __getattr__.
+
+
+def _resolution_rungs(env, role, role_label, *, probe_gated=False):
+    env = env if env is not None else os.environ
+    resolved = model_router.resolve_client_models(env, role)
+    if not resolved:
+        raise model_router.ClientModelNotConfiguredError(
+            model_router.ask_client_message(role)
+        )
+    rungs: List[dict] = []
+    for i, (slug, provider, source) in enumerate(resolved, start=1):
+        rung = {"rung": i, "provider": provider, "model": slug,
+                "role": role_label, "thinking": "high", "resolution": source}
+        if probe_gated:
+            rung["probe_gated"] = True
+        rungs.append(rung)
+    return rungs
+
+
+def build_think_ladder(env=None):
+    """THINK ladder (reasoning role): client choice, then configured default."""
+    return _resolution_rungs(env, "reasoning", "reasoning")
+
+
+def build_execute_ladder(env=None):
+    """EXECUTE ladder (browser control, probe-gated): client resolution."""
+    return _resolution_rungs(env, "execution", "browser-control", probe_gated=True)
+
+
+def build_qc_ladder(env=None):
+    """QC ladder (vision QC, probe-gated): client resolution."""
+    return _resolution_rungs(env, "qc", "qc+vision", probe_gated=True)
+
+
+_LADDER_BUILDERS = {
+    "THINK_LADDER": build_think_ladder,
+    "EXECUTE_LADDER": build_execute_ladder,
+    "QC_LADDER": build_qc_ladder,
+}
+
+
+def __getattr__(name):
+    if name in _LADDER_BUILDERS:
+        return _LADDER_BUILDERS[name]()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # Selector strategy the DUMB browser must apply on EVERY click-list step.
 SELECTOR_STRATEGY = [
@@ -514,7 +545,7 @@ def _build_form_plan(task: dict, fields: List[dict], dep_plan: dict) -> dict:
             "verify": "render_check 200 + snippet tag present in RENDERED DOM "
                       "(ghl_verify.render_check); embed VERBATIM, NO SRI attrs.",
         },
-        "model_ladders": {"think": THINK_LADDER, "execute": EXECUTE_LADDER, "qc": QC_LADDER},
+        "model_ladders": {"think": build_think_ladder(), "execute": build_execute_ladder(), "qc": build_qc_ladder()},
         "real_domains": {
             "app_shell": GHL_APP_ORIGIN_DEFAULT,
             "form_builder": f"https://{GHL_FORM_BUILDER_HOST}/form-builder-v2/<formId> "
@@ -2854,6 +2885,10 @@ def build_form(task: dict, evidence_root: str, *, dry_run: bool = True,
 def _selftest() -> int:
     import tempfile
     errors: List[str] = []
+    # Offline dry runs build model ladders from the client's configuration;
+    # give the selftest a neutral configured default (never overrides a real
+    # client configuration already present in the environment).
+    os.environ.setdefault("MODEL_ROUTER_DEFAULT", "selftest-default:cloud")
 
     # 1. zhc helpers are idempotent + correctly shaped
     if zhc_field_key("Podcast Rating") != "zhc_podcast_rating":
@@ -2919,8 +2954,10 @@ def _selftest() -> int:
         if "add contact tag" not in blob:
             errors.append("click list missing tag-attachment handoff")
 
-    # 6. no banned model tokens anywhere in the ladders
-    lad = json.dumps(THINK_LADDER + EXECUTE_LADDER + QC_LADDER).lower()
+    # 6. no banned model tokens anywhere in the ladders (built from a neutral
+    #    test configuration: the client's configured default in selftest form)
+    _test_env = {"MODEL_ROUTER_DEFAULT": "selftest-default:cloud"}
+    lad = json.dumps(build_think_ladder(_test_env) + build_execute_ladder(_test_env) + build_qc_ladder(_test_env)).lower()
     for banned in ("minimax-m2", "minimax_m2", "anthropic", "claude", "opus", "sonnet", "haiku"):
         if banned in lad:
             errors.append(f"BANNED model token in ladders: {banned}")

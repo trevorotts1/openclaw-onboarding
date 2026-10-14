@@ -43,10 +43,14 @@ GOVERNING RULES
 
 MODEL DOCTRINE — client-owned providers, NEVER Anthropic
 ---------------------------------------------------------
-Fallback order: Ollama Cloud → OpenRouter equivalent → Gemini last-resort.
-``thinking=high`` on every rung. MiniMax M2 is BANNED; execution uses
-MiniMax M3 only → DeepSeek V4.1 Flash. Vision QC goes to MiniMax M3 only.
-``assert_model_sovereignty`` hard-blocks any Anthropic slug before dispatch.
+Model: the client's choice, or the client's configured default model, resolved
+via tools/model_router.py (MODEL_ROUTER_CHOICE / MODEL_ROUTER_DEFAULT). No
+model is prescribed by name here, and ladder building stops with an
+ask-the-client error when the client has configured neither. Recommendation:
+reliable tool calling for execution and a vision-capable model for QC, because
+the drive loop is tool calls and QC reads screenshots. ``thinking=high`` on
+every rung. MiniMax M2 is BANNED. ``assert_model_sovereignty`` hard-blocks any
+Anthropic slug before dispatch.
 
 COMMAND CENTER HOOKS (fail-soft — never block the build)
 ---------------------------------------------------------
@@ -154,6 +158,10 @@ import ghl_receipts  # noqa: E402
 # U8/U10 — shared phase-checkpoint store + the uniform RUN REPORT emitter.
 import ghl_run_state  # noqa: E402
 from ghl_run_state import PhaseSpec, run_phase  # noqa: E402
+
+# Model ladders resolve through the shared router (client choice / configured
+# default only; no model is prescribed by name in this module).
+import model_router  # noqa: E402
 
 try:
     import cc_board as _cc_board  # noqa: E402 — best-effort board producer
@@ -344,86 +352,60 @@ CONDITIONAL_LOGIC_RULES: List[dict] = [
     },
 ]
 
-# ── Phase model ladders (passed to model_router.select when available) ────
-# Ollama Cloud FIRST → OpenRouter equivalent → Gemini last-resort (only if live+credited)
-# thinking=high on every rung. MiniMax M2 BANNED. Vision only to MiniMax M3.
+# ── Phase model ladders: client resolution via model_router ─────────────────
+# The ladders are built at plan time from the client's own configuration: the
+# client's explicit choice first, then the client's configured default model
+# (see tools/model_router.py, resolve_client_models). No model is prescribed
+# by name here. When the client has configured neither, building a ladder
+# raises model_router.ClientModelNotConfiguredError: the ask-the-client stop.
+# Module-level THINK_LADDER / EXECUTE_LADDER / QC_LADDER attribute access is
+# preserved for existing consumers via __getattr__.
 
-THINK_LADDER: List[dict] = [
-    {
-        "rung": 1, "provider": "ollama-cloud", "model": "glm-5.2:cloud",
-        "role": "funnel/reasoning", "thinking": "high",
-        "note": "Verify glm-5.2:cloud tag live; fallback MODEL_ROUTER_GLM=glm-5.1:cloud",
-    },
-    {
-        "rung": 2, "provider": "ollama-cloud", "model": "kimi-k2.6:cloud",
-        "role": "reasoning", "thinking": "high",
-        "note": "Kimi via Ollama Cloud ONLY; never kimi-2.6 (wrong slug)",
-    },
-    {
-        "rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4.1-flash:cloud",
-        "role": "reasoning", "thinking": "high",
-    },
-    {
-        "rung": 4, "provider": "openrouter", "model": "z-ai/glm-5.2",
-        "role": "funnel/reasoning", "thinking": "high",
-    },
-    {
-        "rung": 5, "provider": "openrouter", "model": "moonshotai/kimi-k2.6",
-        "role": "reasoning", "thinking": "high",
-    },
-    {
-        "rung": 6, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash",
-        "role": "reasoning", "thinking": "high",
-    },
-    {
-        "rung": 7, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
-        "role": "cheap-multimodal-fallback", "thinking": "high",
-        "gate": "only_if_live_and_credited",
-        "note": "Last-resort only; if 404 override to google/gemini-3.1-flash-lite via MODEL_ROUTER_GEMINI",
-    },
-]
 
-EXECUTE_LADDER: List[dict] = [
-    {
-        "rung": 1, "provider": "ollama-cloud", "model": "minimax-m3:cloud",
-        "role": "browser-control", "thinking": "high", "probe_gated": True,
-        "note": "Probe: tool_call_fired AND parsed AND args=={ok:True}; one retry then advance",
-    },
-    {
-        "rung": 2, "provider": "openrouter", "model": "minimax/minimax-m3",
-        "role": "browser-control", "thinking": "high", "probe_gated": True,
-    },
-    {
-        "rung": 3, "provider": "ollama-cloud", "model": "deepseek-v4.1-flash:cloud",
-        "role": "browser-control", "thinking": "high",
-    },
-    {
-        "rung": 4, "provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash",
-        "role": "browser-control", "thinking": "high",
-    },
-    {
-        "rung": 5, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
-        "role": "cheap-multimodal-fallback", "thinking": "high",
-        "gate": "only_if_live_and_credited",
-    },
-]
+def _resolution_rungs(env, role, role_label, *, probe_gated=False):
+    env = env if env is not None else os.environ
+    resolved = model_router.resolve_client_models(env, role)
+    if not resolved:
+        raise model_router.ClientModelNotConfiguredError(
+            model_router.ask_client_message(role)
+        )
+    rungs: List[dict] = []
+    for i, (slug, provider, source) in enumerate(resolved, start=1):
+        rung = {"rung": i, "provider": provider, "model": slug,
+                "role": role_label, "thinking": "high", "resolution": source}
+        if probe_gated:
+            rung["probe_gated"] = True
+        rungs.append(rung)
+    return rungs
 
-QC_LADDER: List[dict] = [
-    {
-        "rung": 1, "provider": "ollama-cloud", "model": "minimax-m3:cloud",
-        "role": "qc+vision", "thinking": "high", "probe_gated": True,
-        "note": "Vision REQUIRED on this rung; never route vision to DeepSeek/GLM",
-    },
-    {
-        "rung": 2, "provider": "openrouter", "model": "minimax/minimax-m3",
-        "role": "qc+vision", "thinking": "high", "probe_gated": True,
-    },
-    {
-        "rung": 3, "provider": "openrouter", "model": "google/gemini-3.5-flash-lite",
-        "role": "cheap-multimodal-fallback", "thinking": "high",
-        "gate": "only_if_live_and_credited",
-    },
-]
+
+def build_think_ladder(env=None):
+    """THINK ladder (funnel/reasoning role): client choice, then default."""
+    return _resolution_rungs(env, "reasoning", "funnel/reasoning")
+
+
+def build_execute_ladder(env=None):
+    """EXECUTE ladder (browser control, probe-gated): client resolution."""
+    return _resolution_rungs(env, "execution", "browser-control", probe_gated=True)
+
+
+def build_qc_ladder(env=None):
+    """QC ladder (vision QC, probe-gated): client resolution."""
+    return _resolution_rungs(env, "qc", "qc+vision", probe_gated=True)
+
+
+_LADDER_BUILDERS = {
+    "THINK_LADDER": build_think_ladder,
+    "EXECUTE_LADDER": build_execute_ladder,
+    "QC_LADDER": build_qc_ladder,
+}
+
+
+def __getattr__(name):
+    if name in _LADDER_BUILDERS:
+        return _LADDER_BUILDERS[name]()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # ── GHL field-type display labels ─────────────────────────────────────────
 _FIELD_TYPE_LABELS: dict[str, str] = {
@@ -1675,9 +1657,9 @@ def _build_survey_plan(task: dict, fields: List[dict]) -> dict:
         ),
         "layout_source": "task" if layout_given else "linear-default",
         "model_ladders": {
-            "think": THINK_LADDER,
-            "execute": EXECUTE_LADDER,
-            "qc": QC_LADDER,
+            "think": build_think_ladder(),
+            "execute": build_execute_ladder(),
+            "qc": build_qc_ladder(),
         },
         "real_domains": {
             "app_shell": GHL_APP_ORIGIN_DEFAULT,
@@ -3720,6 +3702,10 @@ def _selftest() -> int:
     """Run unit-level assertions. Returns 0 on pass, 1 on any failure."""
     import tempfile
     errors: List[str] = []
+    # Offline dry runs build model ladders from the client's configuration;
+    # give the selftest a neutral configured default (never overrides a real
+    # client configuration already present in the environment).
+    os.environ.setdefault("MODEL_ROUTER_DEFAULT", "selftest-default:cloud")
 
     with tempfile.TemporaryDirectory() as tmp:
 
@@ -3762,9 +3748,12 @@ def _selftest() -> int:
         elif "NOT A2P" not in tc.get("note", ""):
             errors.append("T & C capture_fields note must contain 'NOT A2P'")
 
-        # 5. No banned model tokens in ladders
+        # 5. No banned model tokens in ladders (built from a neutral test
+        #    configuration: the client's configured default in selftest form)
+        _test_env = {"MODEL_ROUTER_DEFAULT": "selftest-default:cloud"}
         ladders_json = json.dumps(
-            THINK_LADDER + EXECUTE_LADDER + QC_LADDER
+            build_think_ladder(_test_env) + build_execute_ladder(_test_env)
+            + build_qc_ladder(_test_env)
         ).lower()
         for banned in (
             "minimax-m2", "minimax_m2",
