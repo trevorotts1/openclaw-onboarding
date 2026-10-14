@@ -17,9 +17,15 @@ def _summary(brief):
     return INT.summarize(INT.normalize(brief)[0])[0]
 
 
-def test_models_is_the_first_question_with_the_exact_text():
-    t = IC.render_step(1)
-    assert t.startswith("Question 1 of %d - AI MODELS" % len(IC.QUESTIONS))
+#: AI MODELS is the first of the nine production choices; the five story-brief
+#: questions (DSR-105) open the card ahead of it.
+MODELS_AT = [q["id"] for q in IC.QUESTIONS].index("models") + 1
+#: The brief answers that come before AI MODELS, so a reply lands on it.
+BRIEF = IC.example_replies()[:MODELS_AT - 1]
+
+def test_models_is_the_first_choice_question_with_the_exact_text():
+    t = IC.render_step(MODELS_AT)
+    assert t.startswith("Question %d of %d - AI MODELS" % (MODELS_AT, len(IC.QUESTIONS)))
     assert ("Which AI should build your video, and which should check the work? "
             "OpenRouter is recommended because it's faster; Ollama works too.") in t
     assert "1. Recommended setup - An OpenRouter model builds, Claude Sonnet checks. (RECOMMENDED)" in t
@@ -31,7 +37,8 @@ def test_recommended_is_an_openrouter_build_not_ollama():
     for reply in ("1", "recommended"):
         c, err = AM.parse(reply)
         assert err is None and c == REC
-    assert IC.conversation(["1"])["answers"][0]["value"] == REC
+    st = IC.conversation(BRIEF + ["1"])
+    assert st["answers"][MODELS_AT - 1]["value"] == REC
 
 
 def test_ollama_choice_is_accepted():
@@ -43,8 +50,8 @@ def test_ollama_choice_is_accepted():
 def test_unknown_model_refused_politely():
     c, err = AM.parse("Banana builds, Sonnet checks")
     assert c is None and 'cannot use "Banana"' in err and "GLM 5.3 Flash" in err
-    st = IC.conversation(["Banana builds, Sonnet checks"])
-    assert st["answers"] == [] and st["message"].startswith("Sorry, I cannot use")
+    st = IC.conversation(BRIEF + ["Banana builds, Sonnet checks"])
+    assert len(st["answers"]) == len(BRIEF) and st["message"].startswith("Sorry, I cannot use")
     assert AM.parse("2")[0] is None                      # "choose my own" alone asks for both names
 
 

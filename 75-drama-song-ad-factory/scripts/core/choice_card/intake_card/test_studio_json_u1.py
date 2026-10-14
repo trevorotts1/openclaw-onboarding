@@ -77,13 +77,16 @@ def test_cli_writes_the_export_and_exits_zero():
     p = _cli("--format", "studio-json")
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
-    assert payload["questions"][0]["id"] == "models"
+    # DSR-105: the story brief opens the card, the nine production choices follow.
+    assert [q["id"] for q in payload["questions"][:5]] == list(IC.BRIEF_IDS)
+    assert payload["questions"][5]["id"] == "models"
     assert set(payload["questions"][0]) >= set(REQUIRED)
 
 
 def test_negative_control_missing_question_text_fails_loudly():
     bad = [dict(q) for q in IC.QUESTIONS]
-    bad[1].pop("ask")                     # the LENGTH screen loses its question text
+    at = [q["id"] for q in bad].index("length")
+    bad[at].pop("ask")                    # the LENGTH screen loses its question text
     try:
         IC.studio_json(bad)
     except IC.StudioExportError as e:
@@ -94,13 +97,28 @@ def test_negative_control_missing_question_text_fails_loudly():
 
 def test_negative_control_example_missing_fails_loudly():
     bad = [dict(q) for q in IC.QUESTIONS]
-    bad[1]["id"] = "not_a_guide_step"     # no client-guide example for this id
+    bad[1]["id"] = "not_a_guide_step"     # the OFFER LINK screen loses its guide example
     try:
         IC.studio_json(bad)
     except IC.StudioExportError as e:
         assert "field=example" in str(e), e
     else:
         raise AssertionError("export accepted a screen with no example")
+
+
+def test_the_story_brief_screens_are_typed_and_carry_a_guide_example():
+    """DSR-105: the page must be able to ask the brief, so every brief screen
+    has a question, a guide example and one option the page reads as "type it"."""
+    screens = {s["id"]: s for s in IC.studio_json()["questions"]}
+    for qid in IC.BRIEF_IDS:
+        s = screens[qid]
+        assert s["question"].strip() and s["example"].strip(), qid
+        assert s["price"] is None, qid
+        assert len(s["options"]) == 1, qid
+        assert s["options"][0]["detail"].lower().startswith("reply with"), qid
+        assert not s["options"][0]["recommended"], qid
+    assert [s["example"] for s in (screens["offer"], screens["link"], screens["photos"])] \
+        == [screens["offer"]["example"]] * 3          # one STEP 4 example, three screens
 
 
 def test_negative_control_process_exit_is_non_zero():

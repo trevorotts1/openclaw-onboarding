@@ -60,7 +60,7 @@ def test_question_renders_last_with_right_count_and_text():
 
 
 def test_recap_and_change_by_number():
-    base = ["$25" if q["id"] == "spend" else "1" for q in IC.QUESTIONS]   # spend takes a dollar amount
+    base = IC.example_replies()     # the story brief is typed, the choices picked, spend a dollar amount
     recap = IC.conversation(base)["message"]
     assert "%d. Script Approval: Yes, show me first" % N in recap
     st = IC.conversation(base + [str(N)])                      # change the last line

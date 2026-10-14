@@ -37,7 +37,7 @@ def lyrics_of(sheet):
 
 def ones():
     """One reply per question: option 1, or a dollar amount for the spend question."""
-    return ["$25" if q["id"] == "spend" else "1" for q in IC.QUESTIONS]
+    return IC.example_replies()
 
 
 def make_run(yes=True):
