@@ -25,6 +25,17 @@ serially -- 20-25 sequential language-model calls per QC phase, twice per
 deck, plus copy by section -- while the run's measured capacity said 8, 100 or
 2,500.
 
+ITEM 11 UPDATE (manifest v71, FIX-PLAN Item 11 / B23). The eight phases
+listed above now DECLARE `workers` in the shipped manifest (each its own
+fanout batch_width; P9-SPEECH declares an explicit 1, deliberately serial),
+and an undeclared fanout width is loud at load (manifest.py
+fanout_width_warnings, sync_check W2, run record). The F6 property proven
+here is unchanged: on the generic manifest fan-out path, `phase.workers` is
+not the width authority. Tests 1 and 6 therefore force a workers=1 phase
+object synthetically (dataclasses.replace), the exact object the pre-v71
+manifest handed this path. The declaration contract itself is pinned by
+tests/test_item11_fanout_width_declarations.py.
+
 THE FIX. The width now comes from the SAME authority P4-PROMPT's wave uses:
 `_routing_stamp` (renamed from `_prompt_routing_stamp`, which was never
 P4-specific) -> client resource profile -> route -> capacity probe -> mode
@@ -76,7 +87,9 @@ CLUSTER_MANIFEST = (
     / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
 )
 
-PHASE = "P-STYLE-SPEC"          # manifest: fanout by slide, NO `workers` key
+PHASE = "P-STYLE-SPEC"          # manifest: fanout by slide (workers: 3 since
+                                # FIX-PLAN Item 11 / manifest v71; tests 1 and 6
+                                # force workers=1 synthetically, see below)
 OWNING_ROLE = "brand-steward"
 
 
@@ -168,18 +181,33 @@ def _dispatch(d, run_dir: Path):
 # 1. The width is the routed capacity min'd with the unit count -- never 1.
 # ---------------------------------------------------------------------------
 def test_fanout_phase_runs_at_the_routed_width_not_at_one(tmp_path, monkeypatch):
+    import dataclasses
     import presentation_job.dispatcher as d
     routed = _router_absent(monkeypatch)
     run_dir = _seed_run(tmp_path, n_slides=3)
     calls = _stub_units(monkeypatch, _variant)
 
-    # The manifest genuinely declares NO `workers` for this phase: the pre-F6
-    # code path had literally nothing but the default 1 to work with.
-    assert _phase_obj(run_dir).workers == 1, (
-        "harness assumption broken: P-STYLE-SPEC now declares `workers` in the "
-        "manifest, so this test no longer exercises the absent-workers default")
+    # FIX-PLAN Item 11 (manifest v71): P-STYLE-SPEC now DECLARES workers (3,
+    # its own fanout batch_width), so the absent-workers condition this test
+    # exercises is constructed synthetically: the same phase object with the
+    # declaration forced back to the default 1 the pre-F6 code path faced.
+    # CURE NOTE (branch update onto the main that landed Item 15): the
+    # dispatcher's width controller now reads workers_declared (the field
+    # Item 11 itself stamps) -- a phase object carrying workers=1 WITH
+    # workers_declared=True is a deliberate serial declaration (the
+    # P9-SPEECH shape) and is honored at width 1 by design. The absent
+    # condition this test exercises is workers=1 with NO declaration, so
+    # the forced object clears workers_declared as well. No assertion or
+    # expected value changes.
+    po = _phase_obj(run_dir)
+    assert po.workers == 3, (
+        "harness assumption broken: P-STYLE-SPEC no longer declares "
+        "workers=3 (its fanout batch_width) in the manifest")
+    forced = dataclasses.replace(po, workers=1, workers_declared=False)
 
-    result = _dispatch(d, run_dir)
+    result = d.dispatch_one(
+        run_dir, PHASE, {"phase_id": PHASE, "owning_role": OWNING_ROLE},
+        dept_root=SCRIPTS.parent, phase_obj=forced, worker_id="test-f6")
     assert result.status == "ok", f"fanout dispatch failed: {result.reasons}"
     assert len(calls) == 3, calls
 
@@ -378,9 +406,10 @@ def test_routing_stamp_is_not_p4_specific_and_keeps_its_old_name(tmp_path, monke
 # 6. phase.workers is no longer a cap on this path.
 # ---------------------------------------------------------------------------
 def test_phase_workers_is_not_a_cap_on_the_manifest_fanout_path(tmp_path, monkeypatch):
-    """A `workers: 1` phase object -- what the manifest hands every fan-out
-    phase except P4-PROMPT -- must not clamp the pool. The `fanout` field is
-    the opt-in flag; `workers` is not the ceiling here."""
+    """A `workers: 1` phase object -- what the manifest handed every fan-out
+    phase except P4-PROMPT before manifest v71 (FIX-PLAN Item 11) -- must
+    not clamp the pool. The `fanout` field is the opt-in flag; `workers` is
+    not the ceiling here."""
     import dataclasses
     import presentation_job.dispatcher as d
     routed = _router_absent(monkeypatch)
@@ -388,8 +417,16 @@ def test_phase_workers_is_not_a_cap_on_the_manifest_fanout_path(tmp_path, monkey
     _stub_units(monkeypatch, _variant)
 
     po = _phase_obj(run_dir)
-    assert po.workers == 1
-    forced = dataclasses.replace(po, workers=1)
+    # FIX-PLAN Item 11 (manifest v71): the manifest declares workers=3 for
+    # this phase now; the workers=1 phase object the F6 defect fed on is
+    # forced synthetically, exactly what the pre-v71 manifest handed over.
+    # CURE NOTE (branch update onto the main that landed Item 15): the
+    # forced object also clears workers_declared -- with the declaration
+    # flag still set, workers=1 reads as a deliberate serial declaration
+    # to the dispatcher's width controller and is honored, which is the
+    # opposite of the absent condition this test exercises (see test 1).
+    assert po.workers == 3
+    forced = dataclasses.replace(po, workers=1, workers_declared=False)
 
     result = d.dispatch_one(
         run_dir, PHASE, {"phase_id": PHASE, "owning_role": OWNING_ROLE},
