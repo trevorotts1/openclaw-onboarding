@@ -2,7 +2,7 @@
  "header": "Consumed by the box roll: this manifest records every file of the canonical tree (75-drama-song-ad-factory/) against its packaged copy, and onboarding is canonical per references/parity-contract.md.",
  "manifest": "drama-song-ad-factory cross-distribution sync manifest",
  "schema": "blackceo.skill-sync-manifest/v1",
- "generated_utc": "2026-10-14T14:27:07Z",
+ "generated_utc": "2026-10-14T14:35:03Z",
  "canonical": {
   "repo": "trevorotts1/openclaw-onboarding",
   "path": "75-drama-song-ad-factory/",
@@ -30,6 +30,7 @@
   "canonical-wins": 4,
   "deferred": 2,
   "identical": 582,
+  "packaged-ahead": 0,
   "packaged-only": 14
  },
  "disposition_values": [
