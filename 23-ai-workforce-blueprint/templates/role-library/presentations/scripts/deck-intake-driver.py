@@ -1138,6 +1138,176 @@ def _import_resource_profile():
         return None
 
 
+def _import_route_honesty():
+    """Import presentation_job.route_honesty beside this driver.
+
+    Fail-soft on the same terms as _import_resource_profile(): a box that
+    carries the driver but not the engine package must still take the
+    interview. Absence is announced LOUDLY on stderr -- never swallowed.
+    The honesty block is presentation and record, never a gate: losing it
+    must never lose the client's answers."""
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import route_honesty as _rh  # noqa: PLC0415
+        return _rh
+    except Exception as exc:  # noqa: BLE001 -- a partial deploy must not kill intake
+        print(f"  WARN  [ROUTE-HONESTY] presentation_job.route_honesty is not "
+              f"importable from {SCRIPTS_DIR} ({exc.__class__.__name__}: {exc}) "
+              f"-- the numeric honesty block for an Ollama route cannot be "
+              f"presented or recorded on this box. Fix the deploy; the "
+              f"interview itself proceeds.", file=sys.stderr)
+        return None
+
+
+def _route_honesty_pre_state():
+    """The honesty block's pre-answer state for the resource_plan turn:
+    whether it is owed, and the selection signature it is owed against,
+    read BEFORE the plan-tier / model-plan recorders below mutate the
+    profile. The decision recorder compares this against the selection in
+    force after the answer -- that comparison IS the accept/decline
+    verdict, so reading it after the recorders would erase the very
+    change it exists to detect. Fail-soft: None means no offer was
+    tracked for this answer and no decision will be recorded."""
+    rh = _import_route_honesty()
+    if rh is None or not rh.flag_enabled():
+        return None
+    try:
+        rp = _import_resource_profile()
+        prof = rp.load_profile() if rp is not None else {}
+        return {"owed": rh.block_owed(prof),
+                "signature": rh.selection_signature(prof)}
+    except Exception:  # noqa: BLE001 -- presentation state never kills intake
+        return None
+
+
+def _record_route_honesty(pre_state, entries) -> None:
+    """Record the client's route decision (FIX 18) after the resource_plan
+    answer has been durably recorded by the plan-tier / model-plan
+    recorders. Fail-soft with a loud WARN, deliberately unlike the
+    recorders above: the decision record is VISIBILITY over an answer
+    that already landed -- refusing the answer itself at this point
+    would punish the client for a bookkeeping failure, and the profile
+    write order (tier, then model plan, then this) means the answer is
+    already on disk either way."""
+    if not pre_state or not pre_state.get("owed"):
+        return
+    rh = _import_route_honesty()
+    if rh is None:
+        return
+    try:
+        answers = _answer_view(entries)
+        slides = rh.coerce_deck_slides(
+            answers.get("slide_count"), answers.get("SLIDE_COUNT"),
+            answers.get("client_requested_slide_count"))
+        rh.record_route_decision(pre_signature=pre_state.get("signature"),
+                                 pre_owed=True, deck_slides=slides,
+                                 source="intake")
+    except Exception as exc:  # noqa: BLE001 -- visibility must never kill intake
+        print(f"  WARN  [ROUTE-HONESTY] could not record the route decision "
+              f"({exc.__class__.__name__}: {exc}) -- the client's plan "
+              f"answer above IS recorded; only the honesty decision record "
+              f"is missing, so the block may be shown once more.",
+              file=sys.stderr)
+
+
+def _import_model_freshness():
+    """Import presentation_job.model_freshness beside this driver.
+
+    Fail-soft on the same terms as _import_route_honesty(): a box that
+    carries the driver but not the engine package must still take the
+    interview. Absence is announced LOUDLY on stderr -- never swallowed.
+    The freshness check is presentation and record, never a gate: losing
+    it must never lose the client's answers."""
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import model_freshness as _mf  # noqa: PLC0415
+        return _mf
+    except Exception as exc:  # noqa: BLE001 -- a partial deploy must not kill intake
+        print(f"  WARN  [MODEL-FRESHNESS] presentation_job.model_freshness "
+              f"is not importable from {SCRIPTS_DIR} "
+              f"({exc.__class__.__name__}: {exc}) -- the model freshness "
+              f"check cannot run or be recorded on this box. Fix the "
+              f"deploy; the interview itself proceeds.", file=sys.stderr)
+        return None
+
+
+#: The client's explicit freshness decision, carried as a labelled
+#: segment of the resource_plan answer ("model_freshness: switch" /
+#: "keep" / "defer"). It is parsed HERE, out of the raw answer text,
+#: rather than derived from the plan the answer records: silence must
+#: stay silence (the offer stays pending, which is a state, not a
+#: decision), and only an explicit label is the client's act.
+_FRESHNESS_DECISION_RE = re.compile(
+    r"(?:model[ _-]?freshness|freshness)\s*(?:decision)?\s*[:=]\s*"
+    r"(switch|keep|defer)\b", re.IGNORECASE)
+
+
+def _freshness_decision_label(text: str) -> Optional[str]:
+    match = _FRESHNESS_DECISION_RE.search(str(text or ""))
+    return match.group(1).lower() if match else None
+
+
+def _record_model_freshness(text: str) -> Optional[Dict[str, Any]]:
+    """FIX 31 (B11 Hook A): the freshness beat of the resource_plan turn,
+    run AFTER the model plan is recorded and immediately after the
+    route-honesty decision -- the check is against the just-saved
+    profile, never before it.
+
+    (1) An explicit decision label in THIS answer settles the offer that
+    was outstanding when the turn began (the most recent pending offer),
+    through record_freshness_decision -- the single decision writer.
+    (2) The check itself runs and is recorded at the intake surface; a
+    successor found becomes a pending offer.
+
+    Returns the block cmd_answer presents in THIS turn's response
+    ({"offers", "decision", "text"}): the decision's own message when a
+    decision was recorded (a refused switch tells the client, in plain
+    terms, that the switch could not be applied and why), plus the text
+    of a newly found offer. No decision label and no offer means None:
+    the offer from an earlier detection stays pending, which the
+    _emit_question seam re-presents at the next resource_plan turn.
+    Fail-soft with a loud WARN, on _record_route_honesty's terms: the
+    client's answer is already recorded above, and a freshness failure
+    must never un-record it or block the interview."""
+    mf = _import_model_freshness()
+    if mf is None:
+        return None
+    try:
+        if not mf.flag_enabled():
+            return None
+        decision = None
+        outcome = _freshness_decision_label(text)
+        if outcome:
+            rp = _import_resource_profile()
+            prof = rp.load_profile() if rp is not None else {}
+            offers = mf.pending_offers(prof)
+            if offers:
+                decision = mf.record_freshness_decision(
+                    offers[-1].get("check_id"), outcome)
+        verdict = mf.intake_check()
+        found = (verdict or {}).get("offers") or []
+        if decision is None and not found:
+            return None
+        block: Dict[str, Any] = {"offers": found, "decision": decision,
+                                 "text": ""}
+        parts = []
+        if decision is not None:
+            parts.append(str(decision.get("message") or ""))
+        if found:
+            parts.append(str(found[0].get("text") or ""))
+        block["text"] = "\n\n".join(p for p in parts if p)
+        return block
+    except Exception as exc:  # noqa: BLE001 -- visibility must never kill intake
+        print(f"  WARN  [MODEL-FRESHNESS] could not run or record the "
+              f"freshness check ({exc.__class__.__name__}: {exc}) -- the "
+              f"client's plan answer above IS recorded; only the "
+              f"freshness check is missing, so it will run again at the "
+              f"next surface.", file=sys.stderr)
+        return None
+
+
 def _import_capacity():
     """Import presentation_job.capacity beside this driver.
 
@@ -1695,6 +1865,9 @@ def cmd_answer(args) -> int:
     # with the SAME shape the drift-side waiver builder reads (validated +
     # normalized + answer), then apply the legacy special handlers.
     structured_intake_writes: Dict[str, Any] = {}
+    # FIX 31: the freshness block this answer's response presents, set by
+    # the resource_plan branch below and attached to `extra` at the end.
+    _freshness_offer: Optional[Dict[str, Any]] = None
     if qdef.get("subfields"):
         err = validate_labeled_enums(qdef, text)
         if err:
@@ -1771,6 +1944,14 @@ def cmd_answer(args) -> int:
         # directory): the P4-PROMPT fan-out children re-resolve routes in a
         # separate process that inherits the profile path but has no run_dir.
         if qid == "resource_plan":
+            # FIX 18 ROUTE HONESTY -- capture the pre-answer offer state
+            # FIRST, before any recorder below mutates the profile: whether
+            # the numeric honesty block is owed for this account, and the
+            # selection signature it is owed against. The decision is
+            # recorded after the model plan lands (see _record_route_honesty
+            # below); without this snapshot the comparison that produces
+            # the accept/decline verdict has nothing to compare against.
+            _honesty_pre = _route_honesty_pre_state()
             # CLIENT PLAN TIER (F5) -- FIRST, because it is the ask-once lock.
             # Before this wire, production intake recorded the model plan and
             # the run mode and NOTHING about the plan tier, so the profile lock
@@ -1792,6 +1973,22 @@ def cmd_answer(args) -> int:
             rc = _record_client_model_plan(derived, entries)
             if rc != 0:
                 return rc
+            # FIX 18: the answer just recorded IS the client's decision
+            # about the route the honesty block priced for them -- kept
+            # Ollama means declined, moved off Ollama means accepted, and
+            # either way the run proceeds on their selection. Recorded
+            # LAST and fail-soft (see the helper): a refused answer above
+            # never reaches this, and a failure here never un-records the
+            # answer.
+            _record_route_honesty(_honesty_pre, entries)
+            # FIX 31 MODEL FRESHNESS (B11 Hook A) -- immediately after
+            # the route-honesty decision, against the profile the
+            # recorders above just saved: an explicit decision label in
+            # this answer settles the outstanding offer first, then the
+            # check runs and any offer it finds is presented in THIS
+            # turn's response (attached to `extra` below). Fail-soft:
+            # a freshness failure never un-records the answer.
+            _freshness_offer = _record_model_freshness(text)
 
         # STYLE-PICK AUTO OPT-IN (F5) rides the style turn -- the one turn that
         # is required + block_gate and therefore asked on EVERY deck (unlike
@@ -1866,6 +2063,11 @@ def cmd_answer(args) -> int:
     # include this turn instead of going stale (or, under the old bug, being
     # silently destroyed). Never silent: stderr NOTICE + a JSON field below.
     extra: Dict[str, Any] = {}
+    if _freshness_offer is not None:
+        # FIX 31: the freshness offer (or the decision's own message,
+        # including a refused switch's plain reason) rides THIS turn's
+        # response, under the same turn's numbers.
+        extra["model_freshness"] = _freshness_offer
     if already_complete:
         envelope, warning = _finalize_transcript_envelope(run_dir)
         extra["post_completion_append"] = True
@@ -1952,6 +2154,64 @@ def _emit_question(qdef: Dict[str, Any],
         output["default"] = default
     if extra:
         output.update(extra)
+
+    # FIX 18 ROUTE HONESTY: the resource_plan turn carries the numeric
+    # honesty block when it is owed -- once per account-level answer set,
+    # and route_honesty owns that state machine (asked, remembered, and
+    # re-opened only by a changed selection). The block rides AFTER the
+    # bank's own help text and as its own field, so a consumer can present
+    # either. The showing is recorded (status "offered") at presentation
+    # time; the decision is recorded in cmd_answer when the turn is
+    # answered. B11 SEAM: B11's freshness offer for this same turn
+    # attaches immediately after this block, in this same output, under
+    # these numbers (route_honesty.py's docstring names the seam).
+    if qdef.get("id") == "resource_plan":
+        rh = _import_route_honesty()
+        if rh is not None:
+            try:
+                rp = _import_resource_profile()
+                prof = rp.load_profile() if rp is not None else {}
+                slides = rh.coerce_deck_slides(
+                    answers.get("slide_count"), answers.get("SLIDE_COUNT"),
+                    answers.get("client_requested_slide_count"))
+                pend = rh.pending_honesty(prof, deck_slides=slides)
+                if pend.get("owed") and pend.get("block"):
+                    output["route_honesty"] = pend["block"]
+                    output["help"] = (
+                        (help_text + "\n\n") if help_text else ""
+                    ) + pend["block"]
+                    rh.note_block_shown(deck_slides=slides, source="intake")
+            except Exception as exc:  # noqa: BLE001 -- presentation never kills intake
+                print(f"  WARN  [ROUTE-HONESTY] could not present the "
+                      f"honesty block ({exc.__class__.__name__}: {exc}) -- "
+                      f"the turn itself is unaffected.",
+                      file=sys.stderr)
+        # FIX 31 MODEL FRESHNESS: a pending offer (detected at an
+        # earlier intake check or at launch) is presented with THIS
+        # turn, immediately after the route_honesty block above, under
+        # the same numbers. Presentation only: the pending state is
+        # read from the profile, no new check runs here, and nothing is
+        # decided by showing it -- the client's answer (an explicit
+        # "model_freshness: switch|keep|defer" label in the
+        # resource_plan answer) is what cmd_answer records.
+        mf = _import_model_freshness()
+        if mf is not None:
+            try:
+                if mf.flag_enabled():
+                    rp = _import_resource_profile()
+                    prof = rp.load_profile() if rp is not None else {}
+                    block = mf.pending_offer_block(prof)
+                    if block:
+                        output["model_freshness"] = block
+                        output["help"] = (
+                            (output.get("help") + "\n\n")
+                            if output.get("help") else ""
+                        ) + block["text"]
+            except Exception as exc:  # noqa: BLE001 -- presentation never kills intake
+                print(f"  WARN  [MODEL-FRESHNESS] could not present the "
+                      f"pending freshness offer "
+                      f"({exc.__class__.__name__}: {exc}) -- the turn "
+                      f"itself is unaffected.", file=sys.stderr)
 
     print(json.dumps(output, indent=2))
     return 0
