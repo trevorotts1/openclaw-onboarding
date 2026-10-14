@@ -614,8 +614,11 @@ class Guard:
 # Signed allow-list sourcing (design Section 3.3): the box-state paths
 # come from update-skills.sh's oc_skill_box_state_paths() itself, never
 # from a second list that can drift. The function is a per-skill case
-# statement echoing one path per skill; this parser reads exactly those
-# entries.
+# statement whose branch prints one path per line, either with echo
+# (one path) or with printf (a format string, then one quoted path per
+# line); this parser reads the paths out of whichever emitter form a
+# branch uses, so an updater entry that grows a second path, or moves
+# from echo to printf, is still sourced from the updater itself.
 # --------------------------------------------------------------------------
 
 def box_state_paths_for(skill_folder_name: str,
@@ -629,9 +632,24 @@ def box_state_paths_for(skill_folder_name: str,
         r"oc_skill_box_state_paths\(\)\s*\{(.*?)\n\}", text, re.DOTALL)
     if not match:
         return []
-    entry = re.search(
-        re.escape(skill_folder_name) + r"\)\s*echo\s+\"([^\"]+)\"",
-        match.group(1))
+    branch = re.search(
+        re.escape(skill_folder_name) + r"\)\s*(.*?);;",
+        match.group(1), re.DOTALL)
+    if not branch:
+        return []
+    command = branch.group(1)
+    if re.search(r"\bprintf\b", command):
+        # printf '<format>' "path" ["path" ...]: the first quoted
+        # string is the format, every later quoted string is one
+        # printed path, in argument order.
+        quoted = re.findall(r"\"([^\"]+)\"|'([^']+)'", command)
+        strings = [double or single for double, single in quoted]
+        if strings and "%" in strings[0]:
+            strings = strings[1:]
+        return strings
+    # echo form: the historical behavior, unchanged. The branch prints
+    # its one path as the first double-quoted string after echo.
+    entry = re.search(r"echo\s+\"([^\"]+)\"", command)
     return [entry.group(1)] if entry else []
 
 

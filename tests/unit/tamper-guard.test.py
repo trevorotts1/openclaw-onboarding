@@ -269,15 +269,18 @@ def test_fp6_allow_listed_changes_pass():
     result = checker.verify(tree, SLUG)
     assert result["verdict"] == "OK", result
     # The SKILL-BOX-STATE source of truth parses from update-skills.sh
-    # itself (design Section 3.3): at base its one entry is Skill 59's
-    # model-map.json, and a manifest generated for that skill carries
-    # the path in its signed exclusions, reused, never re-listed.
+    # itself (design Section 3.3): on current main its one entry is
+    # Skill 59's, printing model-map.json and config/field-map.json
+    # via printf (main's e2db397b2 moved it from the one-path echo
+    # form), and a manifest generated for that skill carries both
+    # paths in its signed exclusions, reused, never re-listed.
     assert tg.box_state_paths_for("59-anthology-engine") == \
-        ["model-map.json"]
+        ["model-map.json", "config/field-map.json"]
     anthology = _make_tree(root, name="59-anthology-engine")
     a_manifest, _ = tg.build_manifest(anthology, "59-anthology-engine",
                                       keyring)
     assert "model-map.json" in a_manifest["exclusions"]
+    assert "config/field-map.json" in a_manifest["exclusions"]
 
 
 def test_fp7_business_level_questions_no_trigger():
