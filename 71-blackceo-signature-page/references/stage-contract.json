@@ -14,7 +14,8 @@
     "final-mockups",
     "responsive-html",
     "ghl-install-test",
-    "publish-verify"
+    "publish-verify",
+    "automation-wiring"
   ],
   "stages": {
     "intake": {
@@ -59,16 +60,39 @@
         }
       ],
       "validators": [
+        "python3 scripts/validate_copy_structure.py {run_dir} --spec references/copy-specs/{copy_version}-v6.json",
         "python3 scripts/validate_public_copy.py {run_dir}/copy/public-copy.md"
       ],
       "review_required": true,
       "min_scores": {
         "each": 8
       },
+      "copy_selection": {
+        "intake_field": "copy_version",
+        "required": true,
+        "note": "Exactly ONE guide governs copy structure, selected by the run's intake copy_version (Amendment 6, Items 18/19). The selected guide's copy spec and emotional-quality extract are read with it. The Production and QC SOP and the Image Intelligence Guide v5 stay in reads as linked documents; they govern their own layers and do not override the selected guide on copy structure. The copy stage receipt records the selection as copy_selection {copy_version, guide, spec, emotional_quality} (documented in references/artifact-contracts.md).",
+        "values": {
+          "standard": {
+            "guide": "references/BlackCEO-Signature-Landing-Page-Standard-v6.md",
+            "spec": "references/copy-specs/standard-v6.json",
+            "emotional_quality": "references/copy-specs/standard-emotional-quality.md"
+          },
+          "long-form": {
+            "guide": "references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md",
+            "spec": "references/copy-specs/long-form-v6.json",
+            "emotional_quality": "references/copy-specs/long-form-emotional-quality.md"
+          }
+        }
+      },
       "reads": [
         "references/BlackCEO-Page-Brand-Law.md",
-        "references/BlackCEO-Signature-Landing-Page-Standard-v6.md",
-        "references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md"
+        "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md (linked document: governs production and QC layers, not copy structure)",
+        "references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md (linked document: governs the image layer, not copy structure)",
+        "the ONE selected copy guide, per copy_selection (intake copy_version): references/BlackCEO-Signature-Landing-Page-Standard-v6.md or references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md",
+        "the selected guide's copy spec, per copy_selection: references/copy-specs/standard-v6.json or references/copy-specs/long-form-v6.json",
+        "the selected guide's emotional-quality chapter extract, per copy_selection: references/copy-specs/standard-emotional-quality.md or references/copy-specs/long-form-emotional-quality.md",
+        "copy/internal-manuscript.md",
+        "copy/public-copy.md"
       ],
       "may_be_not_authorized": false
     },
@@ -112,9 +136,15 @@
         {
           "glob": "desktop-wireframe/image-inventory.json",
           "min_count": 1
+        },
+        {
+          "glob": "desktop-wireframe/section-plan.json",
+          "min_count": 1
         }
       ],
-      "validators": [],
+      "validators": [
+        "python3 scripts/validate_wireframe.py {run_dir} desktop-wireframe"
+      ],
       "review_required": true,
       "min_scores": {
         "each": 8
@@ -122,7 +152,8 @@
       "reads": [
         "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md",
         "references/BlackCEO-Page-Brand-Law.md",
-        "font-action-plan/font-map.json"
+        "font-action-plan/font-map.json",
+        "assets/page-references/README.md (the layout reference index: the run's layout references are recorded there per Item 13)"
       ],
       "may_be_not_authorized": false
     },
@@ -139,9 +170,15 @@
         {
           "glob": "mobile-tablet/tablet-rules.md",
           "min_count": 1
+        },
+        {
+          "glob": "mobile-tablet/section-plan.json",
+          "min_count": 1
         }
       ],
-      "validators": [],
+      "validators": [
+        "python3 scripts/validate_wireframe.py {run_dir} mobile-tablet"
+      ],
       "review_required": true,
       "min_scores": {
         "each": 8
@@ -149,7 +186,8 @@
       "reads": [
         "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md",
         "references/BlackCEO-Page-Brand-Law.md",
-        "font-action-plan/font-map.json"
+        "font-action-plan/font-map.json",
+        "assets/page-references/README.md (the layout reference index: the run's layout references are recorded there per Item 13)"
       ],
       "may_be_not_authorized": false
     },
@@ -180,18 +218,28 @@
         "python3 scripts/validate_visual_direction.py {run_dir}",
         "python3 scripts/validate_page.py {run_dir}/visual-mockup/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}"
       ],
-      "review_required": false,
-      "min_scores": null,
+      "review_required": true,
+      "review_covers": [
+        "visual-mockup/desktop/part-*.png",
+        "visual-mockup/mobile/part-*.png",
+        "visual-mockup/mockup.html",
+        "visual-mockup/page-visual-bible.*"
+      ],
+      "min_scores": {
+        "each": 8
+      },
       "reads": [
         "references/BlackCEO-Page-Brand-Law.md",
         "assets/brand/blackceo-brand.json",
         "assets/brand/signature-grade-block.txt",
         "desktop-wireframe/",
-        "mobile-tablet/"
+        "mobile-tablet/",
+        "the layout references recorded in assets/page-references/README.md (Item 13)"
       ],
       "may_be_not_authorized": false
     },
     "image-inventory-prompts": {
+      "itemized": true,
       "depends_on": [
         "mobile-tablet"
       ],
@@ -229,6 +277,7 @@
       "may_be_not_authorized": false
     },
     "image-generation-qc": {
+      "itemized": true,
       "depends_on": [
         "image-inventory-prompts"
       ],
@@ -249,7 +298,9 @@
       "cost_required": true,
       "transport_required": true,
       "validators": [
-        "python3 scripts/validate_image_grade.py {file} --brand {brand}"
+        "python3 scripts/validate_image_grade.py {file} --brand {brand}",
+        "gate:image_grade_full_set image-generation-qc",
+        "gate:grade_calibrated"
       ],
       "review_required": true,
       "min_scores": {
@@ -313,8 +364,15 @@
       "validators": [
         "python3 scripts/validate_page.py {run_dir}/final-mockups/mockup.html --brand {brand} --mode mockup --run-dir {run_dir}"
       ],
-      "review_required": false,
-      "min_scores": null,
+      "review_required": true,
+      "review_covers": [
+        "final-mockups/desktop/part-*.png",
+        "final-mockups/mobile/part-*.png",
+        "final-mockups/mockup.html"
+      ],
+      "min_scores": {
+        "each": 8
+      },
       "reads": [
         "references/BlackCEO-Page-Brand-Law.md",
         "assets/brand/blackceo-brand.json",
@@ -363,6 +421,7 @@
       "may_be_not_authorized": false
     },
     "ghl-install-test": {
+      "uses_browser": true,
       "depends_on": [
         "responsive-html"
       ],
@@ -371,18 +430,50 @@
         {
           "glob": "ghl-install-test/install-steps.md",
           "min_count": 1
+        },
+        {
+          "glob": "ghl-install-test/funnel-completion.json",
+          "min_count": 1
+        },
+        {
+          "glob": "ghl-install-test/evidence/desktop.png",
+          "min_count": 1
+        },
+        {
+          "glob": "ghl-install-test/evidence/mobile.png",
+          "min_count": 1
+        },
+        {
+          "glob": "ghl-install-test/browser-hygiene.json",
+          "min_count": 1
         }
       ],
-      "validators": [],
+      "validators": [
+        "python3 scripts/validate_install.py {run_dir} install",
+        "python3 scripts/validate_funnel_completion.py {run_dir}"
+      ],
       "review_required": false,
       "min_scores": null,
       "reads": [
         "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md",
-        "responsive-html/page.txt"
+        "responsive-html/page.txt",
+        "references/funnel-completion-checklist.md",
+        "references/browser-engine-contract.md",
+        "references/automation-handoff.md"
       ],
-      "may_be_not_authorized": true
+      "may_be_not_authorized": true,
+      "sub_stages": [
+        {
+          "id": "funnel-completion",
+          "required_when": "intake.publish_target == \"ghl\" or any funnel step binds an externally hosted page by embed",
+          "receipt": "ghl-install-test/funnel-completion.json",
+          "validator": "python3 scripts/validate_funnel_completion.py {run_dir}",
+          "checklist": "references/funnel-completion-checklist.md"
+        }
+      ]
     },
     "publish-verify": {
+      "uses_browser": true,
       "depends_on": [
         "ghl-install-test"
       ],
@@ -391,15 +482,61 @@
         {
           "glob": "publish-verify/receipts/*",
           "min_count": 1
+        },
+        {
+          "glob": "publish-verify/fetch-record.json",
+          "min_count": 1
+        },
+        {
+          "glob": "publish-verify/browser-hygiene.json",
+          "min_count": 1
         }
       ],
-      "validators": [],
+      "validators": [
+        "python3 scripts/validate_install.py {run_dir} publish"
+      ],
       "review_required": false,
       "min_scores": null,
       "reads": [
-        "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md"
+        "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md",
+        "references/automation-handoff.md",
+        "references/deliverables-manifest.md"
       ],
       "may_be_not_authorized": true
+    },
+    "automation-wiring": {
+      "depends_on": [
+        "publish-verify"
+      ],
+      "requires_artifacts": [],
+      "artifacts": [
+        {
+          "glob": "automation-wiring/checklist-*.md",
+          "min_count": 1
+        },
+        {
+          "glob": "automation-wiring/browser-hygiene.json",
+          "min_count": 1
+        }
+      ],
+      "validators": [],
+      "review_required": true,
+      "min_scores": {
+        "each": 8
+      },
+      "review_covers": "stage",
+      "reads": [
+        "references/automation-handoff.md",
+        "references/funnel-completion-checklist.md",
+        "handoff/automation-handoff.json",
+        "references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md"
+      ],
+      "may_be_not_authorized": false,
+      "conditional": {
+        "required_when": "intake.publish_target == \"ghl\" and intake.automation_scope == \"workflows\"",
+        "otherwise": "the gate records the stage not_applicable in state and REPORT.md, citing the intake values"
+      },
+      "uses_browser": true
     }
   }
 }

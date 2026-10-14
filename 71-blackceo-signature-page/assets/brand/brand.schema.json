@@ -74,10 +74,25 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["block_file", "min_mean_saturation", "min_luma_std"],
+      "description": "Signature grade screen thresholds enforced by scripts/validate_image_grade.py (Items 8 and 9). Every threshold is a floor: a generated image measuring below it FAILS the screen. A threshold set to null is UNCALIBRATED: the screen prints that metric's measurements as WARN and applies no gate for it, and the production gate refuses to close image-generation-qc for a non-test run while min_mean_saturation or min_luma_std is null (Item 8 close rule). Thresholds are never invented: they are derived by scripts/calibrate_grade.py from Trevor's approved gold set (assets/brand/gold-set/, floor = gold-set 5th percentile x 0.95), printed as a proposal, and written into the brand file only after Trevor approves or adjusts them. Two further checks in the screen are unconditional and need no threshold: near-duplicate detection (8x8 average hash, Hamming distance 4 or less fails unless the pair is declared in the inventory's continuity_group) and aspect-ratio truth against inventory slots (2 percent tolerance).",
       "properties": {
-        "block_file": {"type": "string", "minLength": 1},
-        "min_mean_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
-        "min_luma_std": {"type": ["number", "null"], "minimum": 0}
+        "block_file": {"type": "string", "minLength": 1, "description": "Path to the Signature Grade Block text the prompt validator requires verbatim on sauce-only pages."},
+        "min_mean_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "Floor for mean HSV saturation (0-1) over the image's 256px working copy. Null = uncalibrated."},
+        "min_luma_std": {"type": ["number", "null"], "minimum": 0, "description": "Floor for the standard deviation of luminance (0-255 scale). Null = uncalibrated."},
+        "min_sharpness": {"type": ["number", "null"], "minimum": 0, "description": "Item 9: floor for sharpness, the variance of Pillow FIND_EDGES over the grayscale 256px working copy. Optional key: absent is treated exactly like null (uncalibrated, WARN only) until Item 8's calibration procedure is extended to it and Trevor approves the number."},
+        "min_colorfulness": {"type": ["number", "null"], "minimum": 0, "description": "Item 9: floor for the Hasler-Susstrunk colorfulness metric over the rg/yb opponent channels of the 256px working copy. Optional key: absent is treated exactly like null (uncalibrated, WARN only) until calibrated and owner-approved like the other floors."},
+        "calibration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["date", "gold_set_manifest_sha256"],
+          "description": "Item 8 calibration record. Written by hand, once, when Trevor approves proposed floors and they are entered into this grade block; scripts never write it (calibrate_grade.py proposes only). Absent while thresholds are uncalibrated.",
+          "properties": {
+            "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Date Trevor approved the floors, ISO format."},
+            "gold_set_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of assets/brand/gold-set/gold-set.json as it stood at calibration time, so a later gold-set change is detectable against the floors it produced."},
+            "approved_by": {"type": "string", "minLength": 1, "description": "Who approved the floors (Trevor Otts for the BlackCEO brand)."},
+            "note": {"type": "string", "description": "Optional: adjustments Trevor made to the proposed floors and why."}
+          }
+        }
       }
     },
     "page_design_rules": {

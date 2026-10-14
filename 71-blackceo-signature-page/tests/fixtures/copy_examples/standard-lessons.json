@@ -1,0 +1,245 @@
+{
+ "guide_file": "BlackCEO-Signature-Landing-Page-Standard-v6.md",
+ "examples": {
+  "1": {
+   "A": {
+    "published_words": 37,
+    "published_chars": 211,
+    "guide_line": 313,
+    "copy_markdown": "**RECLAIM YOUR POWER. CHOOSE YOUR DIRECTION. BUILD A LIFE YOU ARE EXCITED TO LIVE.**\n\nReturn to Yourself: a live workshop to put your priorities, your voice, and your future back in your hands.\n\n**[CTA BUTTON: Choose My Next Chapter]**"
+   },
+   "B": {
+    "published_words": 42,
+    "published_chars": 224,
+    "guide_line": 325,
+    "copy_markdown": "**OWN YOUR BUSINESS. OWN YOUR TIME. BE THERE FOR THE LIFE YOU BUILT IT FOR.**\n\nOwn Your Week: a live owner lab to build clearer decisions, stronger handoffs, and the freedom to lead beyond the daily rush.\n\n**[CTA BUTTON: Build My Freedom to Lead]**"
+   },
+   "C": {
+    "published_words": 41,
+    "published_chars": 220,
+    "guide_line": 337,
+    "copy_markdown": "**TURN THE LIFE YOU HAVE LIVED INTO A STORY ONLY YOU CAN TELL.**\n\nThe Unwritten Chapter: a live virtual retreat to bring your memories onto the page, strengthen your voice, and give your story a future.\n\n**[CTA BUTTON: Bring My Story to Life]**"
+   }
+  },
+  "2": {
+   "A": {
+    "published_words": 31,
+    "published_chars": 187,
+    "guide_line": 385,
+    "copy_markdown": "Your calendar holds every promise except the one you made to yourself. At night, your untouched notebook reminds you how quietly your own plans keep disappearing.\n\n**[CTA BUTTON: Start Making Room for Me]**"
+   },
+   "B": {
+    "published_words": 31,
+    "published_chars": 183,
+    "guide_line": 395,
+    "copy_markdown": "Dinner is on the table, but your phone keeps lighting up with decisions only you can make. Another conversation slips past while you answer one more message.\n\n**[CTA BUTTON: Build a Different Workday]**"
+   },
+   "C": {
+    "published_words": 32,
+    "published_chars": 187,
+    "guide_line": 405,
+    "copy_markdown": "Your document opens to the same unfinished sentence. You close it before anyone notices, carrying another evening of words you wanted to say but could not begin.\n\n**[CTA BUTTON: Give My Story a Beginning]**"
+   }
+  },
+  "3": {
+   "A": {
+    "published_words": 33,
+    "published_chars": 190,
+    "guide_line": 449,
+    "copy_markdown": "You type a simple no, then replace it with another yes. The appointment lands on your calendar, and the small pocket of time you needed disappears before your eyes.\n\n**[CTA BUTTON: Practice Choosing My Time]**"
+   },
+   "B": {
+    "published_words": 29,
+    "published_chars": 188,
+    "guide_line": 459,
+    "copy_markdown": "You rewrite the instructions after another handoff goes wrong. It feels faster to do the work yourself, until your own priorities disappear beneath everyone else's.\n\n**[CTA BUTTON: Build a Clearer Handoff]**"
+   },
+   "C": {
+    "published_words": 33,
+    "published_chars": 192,
+    "guide_line": 469,
+    "copy_markdown": "You delete the detail that makes the memory yours. The paragraph looks cleaner, but your voice has disappeared beneath the sentences you thought a writer should use.\n\n**[CTA BUTTON: Make Room for My Own Voice]**"
+   }
+  },
+  "4": {
+   "A": {
+    "published_words": 34,
+    "published_chars": 195,
+    "guide_line": 513,
+    "copy_markdown": "Monday arrives with another promise to start over. By Thursday, your plan is buried beneath obligations, and you hesitate to believe yourself the next time you say soon.\n\n**[CTA BUTTON: Give My Next Step a Place]**"
+   },
+   "B": {
+    "published_words": 35,
+    "published_chars": 202,
+    "guide_line": 523,
+    "copy_markdown": "Sunday evening, you open next week's calendar and see nowhere to think. The business is moving, but the decisions about its future keep waiting until everyone else is done.\n\n**[CTA BUTTON: Make Room to Lead My Business]**"
+   },
+   "C": {
+    "published_words": 35,
+    "published_chars": 189,
+    "guide_line": 533,
+    "copy_markdown": "You attend an inspiring session, then return to a folder of unfinished drafts. The excitement fades when nobody shows you how to choose the next piece to write.\n\n**[CTA BUTTON: Build a Way Back to the Page]**"
+   }
+  },
+  "5": {
+   "A": {
+    "published_words": 29,
+    "published_chars": null,
+    "guide_line": 581,
+    "copy_markdown": "That is why I created Return to Yourself: being needed should not mean disappearing. Your life belongs to you, too. Come claim your place in it.\n\n**[CTA BUTTON: Choose My Life]**"
+   },
+   "B": {
+    "published_words": 29,
+    "published_chars": null,
+    "guide_line": 591,
+    "copy_markdown": "That is why I created Own Your Week: you built a business for freedom, not a life spent asking permission to leave it.\n\n**[CTA BUTTON: Put My Freedom Back to Work]**"
+   },
+   "C": {
+    "published_words": 27,
+    "published_chars": null,
+    "guide_line": 601,
+    "copy_markdown": "That is why I created The Unwritten Chapter: the voice you keep deleting is the reason this story matters. Bring it back.\n\n**[CTA BUTTON: Give My Story Its Voice]**"
+   }
+  },
+  "6": {
+   "A": {
+    "published_words": 24,
+    "published_chars": null,
+    "guide_line": 647,
+    "copy_markdown": "- Caregivers tired of disappearing inside everyone else's needs.\n- Professionals ready to protect personal time.\n- New starters seeking a week that reflects their own priorities."
+   },
+   "B": {
+    "published_words": 24,
+    "published_chars": null,
+    "guide_line": 657,
+    "copy_markdown": "- Service owners exhausted by constant interruptions.\n- Team leaders ready for clearer handoffs.\n- Founders who want time to build, not merely keep the business moving."
+   },
+   "C": {
+    "published_words": 22,
+    "published_chars": null,
+    "guide_line": 667,
+    "copy_markdown": "- First-time writers tired of starting over.\n- Returning writers ready to trust their voice.\n- Story keepers seeking space to begin a personal chapter."
+   }
+  },
+  "7": {
+   "A": {
+    "published_words": 104,
+    "published_chars": null,
+    "guide_line": 717,
+    "copy_markdown": "You deserve a starting place that reaches your actual week. In Return to Yourself, your live 90-minute workshop includes:\n\n- **Claim Your Priorities:** A priorities exercise to name what keeps getting pushed aside.\n- **Let Your Voice Count:** Boundary-script practice for requests that usually cost you your own time.\n- **Make the Time:** Guided calendar planning that gives one personal priority a real place.\n- **Continue the Change:** A seven-day practice plan for continuing after the session ends.\n- **Ask Your Questions:** Live Q&A to help you connect the exercises to your situation.\n- **Keep It Close:** An emailed workbook so your notes and next steps have somewhere to live."
+   },
+   "B": {
+    "published_words": 104,
+    "published_chars": null,
+    "guide_line": 732,
+    "copy_markdown": "Your business should not need your attention for every small decision. In the live two-hour Own Your Week owner lab, you receive:\n\n- **Find the Bottleneck:** A bottleneck audit to locate work that repeatedly comes back to you.\n- **Clarify Who Decides:** A decision-rule worksheet for clarifying which choices your team can make.\n- **Share the Responsibility:** A handoff template to define the result, owner, and next step.\n- **Give Leadership Time:** A guided weekly operating-plan exercise to protect leadership time.\n- **Ask Your Questions:** Live Q&A to connect the tools to your working reality.\n- **Keep It Close:** An emailed workbook that keeps the exercises together for use afterward."
+   },
+   "C": {
+    "published_words": 107,
+    "published_chars": null,
+    "guide_line": 747,
+    "copy_markdown": "Your story needs somewhere to begin, not another demand to be brilliant. The Unwritten Chapter is a one-day live virtual retreat with:\n\n- **Find Your Beginning:** A scene-selection exercise to choose one manageable memory.\n- **Bring It to Life:** Guided drafting time to put that scene into words.\n- **Strengthen Your Voice:** Revision prompts to help you hear what is already yours.\n- **Carry the Story Forward:** A next-page plan for returning to the draft after the retreat.\n- **Ask Your Questions:** Live Q&A about the writing process and the exercises.\n- **Keep It Close:** An emailed workbook to hold your notes and developing pages.\n\nSharing is optional; you choose what remains private."
+   }
+  },
+  "8": {
+   "A": {
+    "published_words": 23,
+    "published_chars": null,
+    "guide_line": 800,
+    "copy_markdown": "Open your calendar and see a life you recognize as yours. Your own plans belong beside the commitments you keep for everyone else."
+   },
+   "B": {
+    "published_words": 26,
+    "published_chars": null,
+    "guide_line": 808,
+    "copy_markdown": "Hear the whole story at dinner. Let clearer team decisions protect more than your time: your place in the life happening right in front of you."
+   },
+   "C": {
+    "published_words": 24,
+    "published_chars": null,
+    "guide_line": 816,
+    "copy_markdown": "Read a paragraph and recognize your own life in it. The memory you carried alone now has words, a shape, and somewhere to begin."
+   }
+  },
+  "9": {
+   "A": {
+    "published_words": 24,
+    "published_chars": null,
+    "guide_line": 860,
+    "copy_markdown": "Send an answer that includes you. Practice protecting your time without turning every boundary into an apology for having a life of your own."
+   },
+   "B": {
+    "published_words": 25,
+    "published_chars": null,
+    "guide_line": 868,
+    "copy_markdown": "Hand over responsibility without carrying every answer behind it. Give your team room to own the work, and yourself room to lead what comes next."
+   },
+   "C": {
+    "published_words": 25,
+    "published_chars": null,
+    "guide_line": 876,
+    "copy_markdown": "Strengthen your writing without editing yourself out of it. Keep the details that make the story yours, and give your voice room to be heard."
+   }
+  },
+  "10": {
+   "A": {
+    "published_words": 25,
+    "published_chars": null,
+    "guide_line": 920,
+    "copy_markdown": "Carry your decision into Monday. Build a seven-day plan that keeps your own life in the picture when the week gets loud.\n\n**[CTA BUTTON: Choose My Life]**"
+   },
+   "B": {
+    "published_words": 25,
+    "published_chars": null,
+    "guide_line": 930,
+    "copy_markdown": "Put your vision on next week's calendar. Give the business you believe in more than whatever attention survives the daily rush.\n\n**[CTA BUTTON: Make Room to Lead]**"
+   },
+   "C": {
+    "published_words": 27,
+    "published_chars": null,
+    "guide_line": 940,
+    "copy_markdown": "Open the document knowing where to return. Give your story a future beyond one inspired afternoon, with a plan for the next page.\n\n**[CTA BUTTON: Keep My Story Moving]**"
+   }
+  },
+  "11": {
+   "A": {
+    "published_words": 140,
+    "published_chars": null,
+    "guide_line": 986,
+    "copy_markdown": "Ready to give your own plans a place? Here is how to begin.\n\n1. Open the registration form for Return to Yourself, enter your details, and look for your confirmation.\n2. Follow your confirmation link into the optional community, where you can introduce yourself when ready.\n3. Check your email for the workshop workbook bonus, and save it somewhere you can find during our session.\n4. If you choose SMS updates, look for Maya's welcome text using the number you provided when registering.\n5. Add the live session to your calendar and save the access link from your email before the day arrives.\n6. Share the registration link with a friend who also needs some room to hear their own priorities again.\n7. Bring the priority you are ready to choose. Your own life belongs in these plans. Come give it a place you intend to keep."
+   },
+   "B": {
+    "published_words": 142,
+    "published_chars": null,
+    "guide_line": 1002,
+    "copy_markdown": "Ready for a more intentional working week? Here is the path into the lab.\n\n1. Open the Own Your Week registration form, enter your details, and look for your confirmation on screen.\n2. Use the optional community link in your confirmation to meet other owners working on clearer systems.\n3. Check your email for the owner-lab workbook bonus, and save the exercises before the live session begins.\n4. If you choose SMS updates, watch for Marcus's welcome text at the number you provided during registration.\n5. Add the lab to your calendar and save your access link, so joining does not become another last-minute job.\n6. Share the registration link with a fellow owner who is ready to stop being the answer to every question.\n7. Bring the business you built for freedom. Come ready to give that freedom a place in the week you are about to lead."
+   },
+   "C": {
+    "published_words": 139,
+    "published_chars": null,
+    "guide_line": 1018,
+    "copy_markdown": "Ready to give your story a day? Here is what comes next.\n\n1. Open The Unwritten Chapter registration form, enter your details, and look for your retreat confirmation.\n2. Join the optional participant community through your confirmation link, sharing only what feels right.\n3. Check your email for the retreat workbook bonus, and save a copy beside the document you plan to write in.\n4. If you choose SMS updates, look for Elena's welcome text using the number you supplied when registering.\n5. Add the retreat to your calendar and keep the emailed access link somewhere easy to find on the morning.\n6. Share the registration link with a friend carrying a story, without promising to share your own draft.\n7. Bring one memory and your own voice. The story does not need a perfect beginning. It needs you to give it a place to begin."
+   }
+  },
+  "12": {
+   "A": {
+    "published_words": 131,
+    "published_chars": null,
+    "guide_line": 1090,
+    "copy_markdown": "Before you join me, I want you to know why I care so much about the person you keep putting last: you.\n\n\nI remember closing my notebook after agreeing to another favor. My own plans were still there, untouched. I smiled when they thanked me. Then I sat alone, ashamed of how easily I had disappeared again.\n\n\nI chose an hour and kept it. My own name finally belonged beside a commitment I honored.\n\n\nThat is why Return to Yourself exists: to help you give your voice, your choices, and your time a place.\n\n\nJoin me in the live workshop. Bring the dream you have almost stopped mentioning.\n\n\nYou belong in the life you keep giving so much to. Come put your own name back in it.\n\nWith care, Maya Vale"
+   },
+   "B": {
+    "published_words": 131,
+    "published_chars": null,
+    "guide_line": 1122,
+    "copy_markdown": "Before you join me, I want you to know why this is personal: I know what it feels like to come home without arriving.\n\n\nI answered messages while my family talked around me. I nodded. I laughed. Later, I could not remember their conversation. Being needed at work had become my excuse for being absent everywhere else.\n\n\nI began handing over decisions, not just tasks. I wanted to hear the whole story at dinner again.\n\n\nOwn Your Week exists because the freedom we build should have room for the people we love.\n\n\nJoin me in the live lab. Bring the work you are ready to stop carrying alone.\n\n\nYou built this business. Now give yourself a way to be there for the life you built it for.\n\nWith respect, Marcus Reed"
+   },
+   "C": {
+    "published_words": 131,
+    "published_chars": null,
+    "guide_line": 1154,
+    "copy_markdown": "Before you bring your story here, I want you to know why your own voice matters to me. I once kept deleting mine.\n\n\nI erased a detail because it sounded too ordinary. Then another. The paragraph became polished, and the memory disappeared. I wanted to sound like an author. I had stopped sounding like myself.\n\n\nI put the detail back. For the first time that afternoon, I recognized the life I was trying to write.\n\n\nThat is why I created The Unwritten Chapter: your voice deserves room to grow, not instructions to disappear.\n\n\nJoin my virtual retreat. Bring the story you keep carrying. Let us put it on the page.\n\n\nYour life has already given you something to say. Come give those words a place to begin.\n\nWith warmth, Elena Brooks"
+   }
+  }
+ }
+}

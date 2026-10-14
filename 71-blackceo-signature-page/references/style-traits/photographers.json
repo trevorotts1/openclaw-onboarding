@@ -1,0 +1,812 @@
+{
+  "library": "photographers",
+  "library_file": "references/BlackCEO-Famous-Photographers-DNA-Style-Library-v1.1.md",
+  "library_version": "v1.1",
+  "extraction_status": "PENDING OWNER SPOT-CHECK (Trevor); acceptance gate per FIX-PLAN Amendment 6 Part B2",
+  "coverage": {
+    "extracted_entries": [
+      "VDL-005",
+      "VDL-006",
+      "VDL-015",
+      "VDL-029",
+      "VDL-036",
+      "VDL-045"
+    ],
+    "library_total_entries": 49,
+    "note": "Representative schema-proving set; loader accepts further entries without code change."
+  },
+  "review_form": {
+    "name": "Style Fidelity Check (library section 1)",
+    "source": "section 1 STYLE FIDELITY CHECK, lines 63-78",
+    "questions": [
+      "What makes the composition distinctive?",
+      "What is the camera's relationship to the subject?",
+      "What kind of light creates the look?",
+      "What is the tonal/color logic?",
+      "How should skin, fabric, objects, and surfaces render?",
+      "What role does the environment play?",
+      "How should the subject pose or move?",
+      "What emotional temperature should the frame carry?",
+      "What should the final image avoid?",
+      "Could the prompt still create the intended visual language if the branded style name were deleted?"
+    ],
+    "questions_note": "Verbatim from the library except question 2, where the library's curly apostrophe in \"camera's\" is rendered as a straight apostrophe. Closing rule, line 78: If the answer to the last question is no, the prompt is under-specified.",
+    "locks_dominance_rule": "Repeat until at least 4 of the 5 style locks are visibly dominant. If the image could plausibly belong to several unrelated styles in this library, the style is under-specified. Source: section 1 MODEL-DRIFT REPAIR LOOP, lines 93-104 (dominance rule at line 104, under-specification test at line 97). The five locks are Composition, Camera, Light, Tone, Behavior per section 1 STYLE LOCK PROTOCOL, lines 81-91.",
+    "scoring": "per FIX-PLAN B5: each artifact average >= 8.5 AND every criterion >= 8 AND zero auto-fails (stage arithmetic, image guide section 13)"
+  },
+  "entries": {
+    "VDL-005": {
+      "style_id": "VDL-005",
+      "branded_name": "White Field Intensity",
+      "source": {
+        "section": "VDL-005 AI-FACING EXECUTION LAYER",
+        "lines": "491-568"
+      },
+      "class": "standard",
+      "core_intent": "Remove the environment until the subject's face, body, clothing, and gesture become the entire psychological event.",
+      "core_intent_source": "VDL-005 AI-FACING EXECUTION LAYER, Core intent, line 503",
+      "locks": {
+        "composition": {
+          "text": "seamless white field, subject isolated, no environment.",
+          "check_tokens": [
+            "seamless",
+            "white field",
+            "isolated",
+            "no environment"
+          ]
+        },
+        "camera": {
+          "text": "frontal, deliberate, large-format-like clarity with natural proportions.",
+          "check_tokens": [
+            "frontal",
+            "large-format",
+            "natural proportions"
+          ]
+        },
+        "light": {
+          "text": "broad bright diffuse light with minimal theatrical shadow.",
+          "check_tokens": [
+            "broad",
+            "bright",
+            "diffuse",
+            "minimal shadow"
+          ]
+        },
+        "tone": {
+          "text": "luminous white field + highly detailed face/body/fabric.",
+          "check_tokens": [
+            "luminous",
+            "white field",
+            "highly detailed"
+          ]
+        },
+        "behavior": {
+          "text": "stillness, idiosyncratic posture, psychologically direct presence.",
+          "check_tokens": []
+        }
+      },
+      "locks_source": "VDL-005 Mandatory signature locks, lines 539-544",
+      "technical": {
+        "focal_band_portrait": "70-105mm-equivalent portrait perspective",
+        "focal_band_full_length": "50-70mm for full-length",
+        "depth_of_field": "f/8-f/16 behavior or equivalent broad sharpness",
+        "subject_to_white_field_distance": "1.5-3m from the white field to avoid hard cast shadows",
+        "light_source": "large frontal/45-degree soft source with minimal fill imbalance",
+        "drift_repair": "If the result becomes a beauty campaign, reduce smoothing, allow asymmetry, flatten the set further, and intensify directness of gaze/posture.",
+        "extraction_note": "The 1.5-3m subject-to-field distance is a recipe instruction a prompt can state; no checker can recover that distance from a flattened seamless image. Prompt-side check only.",
+        "source": "VDL-005 Technical recipe, lines 546-551"
+      },
+      "avoid": [
+        {
+          "text": "props",
+          "check_tokens": [
+            "props"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "elaborate backdrop texture",
+          "check_tokens": [
+            "backdrop texture"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "shallow-focus fashion haze",
+          "check_tokens": [
+            "shallow-focus",
+            "fashion haze"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "beauty retouching",
+          "check_tokens": [
+            "beauty retouching"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "gratuitous drama",
+          "check_tokens": [
+            "gratuitous drama"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "fake environmental storytelling",
+          "check_tokens": [
+            "environmental storytelling"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "avoid_source": "VDL-005 Avoid, lines 557-563",
+      "emotional_register": "Exposed, direct, elegant, unforgiving, psychologically immediate.",
+      "production_directive": "Isolate the subject against a seamless bright white field and make the person alone carry the image. Use broad clear light, normal perspective, large-format-like detail, minimal shadow, and precise rendering of skin, hair, hands, fabric, posture, and expression. Direct the subject toward stillness rather than performance. Preserve asymmetry and physical idiosyncrasy instead of correcting everything toward conventional beauty. The final portrait should feel stripped of distraction, psychologically immediate, and almost confrontational in its clarity.",
+      "production_directive_source": "VDL-005 AI production directive, line 565",
+      "uncheckable_by_design": [
+        {
+          "lock": "behavior",
+          "reason": "The lock's defining element is a psychological state (psychologically direct presence). Stillness and posture can be stated in a prompt, but no observable token expresses or evidences the psychological presence itself; it is judged in the image only. Reported, never silently passed."
+        }
+      ]
+    },
+    "VDL-006": {
+      "style_id": "VDL-006",
+      "branded_name": "Electric Social",
+      "source": {
+        "section": "VDL-006 AI-FACING EXECUTION LAYER",
+        "lines": "569-640"
+      },
+      "class": "standard",
+      "mode_required": true,
+      "mode_note": "Multi-mode verified in the library text. Scene modes, lines 584-586, state two modes: 'Party mode' and 'Studio mode'. The Technical recipe, lines 620-624, branches by the same two modes. The Mandatory signature locks, lines 613-618, do NOT give two separate lock sets: the Light lock is mode-conditional in one line ('direct flash for party mode; simple clean studio light for portrait mode', line 616), the Composition lock requires that 'party or studio mode must be obvious' (line 614), and the Camera, Tone, and Behavior locks are single shared lines. The per-mode lock sets below therefore split only the locks the library itself branches, using the library's own branch wording, and repeat the shared Composition, Camera, Tone, and Behavior lock text unchanged in both modes. Library wording variance: the scene-mode list says 'Studio mode' while the Light lock says 'portrait mode' for the same branch. Library internal tension: the shared Camera lock caps the band at 35-55mm (line 615) while the Studio recipe line gives 50-65mm (line 622), which exceeds that cap.",
+      "core_intent": "Photograph social confidence, youth, music, style, friendship, and movement with directness and infectious energy.",
+      "core_intent_source": "VDL-006 AI-FACING EXECUTION LAYER, Core intent, line 582",
+      "modes": {
+        "Party mode": {
+          "mode_source": "VDL-006 Scene modes item 1, line 585: crowded social space, dancing, interaction, music, motion, direct flash.",
+          "locks": {
+            "composition": {
+              "text": "social proximity and visible interaction; party or studio mode must be obvious.",
+              "check_tokens": [
+                "social proximity",
+                "visible interaction",
+                "party"
+              ]
+            },
+            "camera": {
+              "text": "close human distance, 35-55mm-equivalent perspective.",
+              "check_tokens": [
+                "close human distance",
+                "35",
+                "55mm"
+              ]
+            },
+            "light": {
+              "text": "direct flash for party mode",
+              "check_tokens": [
+                "direct flash",
+                "flash"
+              ]
+            },
+            "tone": {
+              "text": "energetic black-and-white with clear whites and solid blacks.",
+              "check_tokens": [
+                "black-and-white",
+                "clear whites",
+                "solid blacks"
+              ]
+            },
+            "behavior": {
+              "text": "dance, swagger, friendship, play, or visible enjoyment of being photographed.",
+              "check_tokens": [
+                "dance",
+                "swagger",
+                "friendship",
+                "play"
+              ]
+            }
+          },
+          "technical": {
+            "focal_band": "35-45mm equivalent",
+            "depth_of_field": "f/5.6-f/11 behavior",
+            "light": "direct flash",
+            "ambient": "dark ambient room allowed to fall off",
+            "motion": "Freeze gesture more than atmosphere; avoid cinematic motion blur.",
+            "source": "VDL-006 Technical recipe, Party line 621 and shared lines 623-624"
+          }
+        },
+        "Studio mode": {
+          "mode_source": "VDL-006 Scene modes item 2, line 586: simple patterned or graphic backdrop, full-body or three-quarter portrait, playful stance, strong fashion identity.",
+          "locks": {
+            "composition": {
+              "text": "social proximity and visible interaction; party or studio mode must be obvious.",
+              "check_tokens": [
+                "social proximity",
+                "visible interaction",
+                "studio",
+                "graphic backdrop"
+              ]
+            },
+            "camera": {
+              "text": "close human distance, 35-55mm-equivalent perspective.",
+              "check_tokens": [
+                "close human distance",
+                "35",
+                "55mm"
+              ]
+            },
+            "light": {
+              "text": "simple clean studio light for portrait mode",
+              "check_tokens": [
+                "studio light",
+                "clean",
+                "simple"
+              ]
+            },
+            "tone": {
+              "text": "energetic black-and-white with clear whites and solid blacks.",
+              "check_tokens": [
+                "black-and-white",
+                "clear whites",
+                "solid blacks"
+              ]
+            },
+            "behavior": {
+              "text": "dance, swagger, friendship, play, or visible enjoyment of being photographed.",
+              "check_tokens": [
+                "dance",
+                "swagger",
+                "friendship",
+                "play"
+              ]
+            }
+          },
+          "technical": {
+            "focal_band": "50-65mm equivalent",
+            "depth_of_field": "f/8 behavior",
+            "framing": "full-body framing against graphic backdrop",
+            "motion": "Freeze gesture more than atmosphere; avoid cinematic motion blur.",
+            "source": "VDL-006 Technical recipe, Studio line 622 and shared lines 623-624"
+          }
+        }
+      },
+      "locks_source": "VDL-006 Mandatory signature locks, lines 613-618",
+      "shared_drift_repair": "If the result feels solemn, add interpersonal interaction, dance-like stance, and more direct flash energy. Source: VDL-006 Technical recipe, line 624.",
+      "avoid": [
+        {
+          "text": "detached telephoto observation",
+          "check_tokens": [
+            "telephoto",
+            "detached"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "sterile minimalism in party scenes",
+          "check_tokens": [
+            "sterile minimalism"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "over-posed luxury fashion",
+          "check_tokens": [
+            "over-posed",
+            "luxury fashion"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "soft-focus nostalgia",
+          "check_tokens": [
+            "soft-focus",
+            "nostalgia"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "removing the social context",
+          "check_tokens": [
+            "social context"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "avoid_source": "VDL-006 Avoid, lines 630-635",
+      "emotional_register": "Youthful, communal, rhythmic, stylish, optimistic, immediate.",
+      "production_directive": "Create a lively social photograph driven by music, friendship, fashion, and physical rhythm. Use close human proximity, direct readable framing, and either straightforward flash in a dark social space or simple studio light against a graphic backdrop. Let clothing, stance, hand gestures, dancing, and peer interaction carry personality. Favor energetic black-and-white tonality with analog immediacy. The image should feel participatory rather than observational: the people know the camera is there, enjoy its presence, and turn being photographed into part of the social event.",
+      "production_directive_source": "VDL-006 AI production directive, line 637",
+      "uncheckable_by_design": []
+    },
+    "VDL-015": {
+      "style_id": "VDL-015",
+      "branded_name": "Sun-Sculpted Form",
+      "source": {
+        "section": "VDL-015 AI-FACING EXECUTION LAYER",
+        "lines": "1237-1314"
+      },
+      "class": "standard",
+      "core_intent": "Use hard natural light and simplified outdoor space to turn body, face, and garment into clean sculptural form.",
+      "core_intent_source": "VDL-015 AI-FACING EXECUTION LAYER, Core intent, line 1249",
+      "locks": {
+        "composition": {
+          "text": "clean full-body or three-quarter form against elemental outdoor space.",
+          "check_tokens": [
+            "full-body",
+            "three-quarter",
+            "elemental",
+            "outdoor"
+          ]
+        },
+        "camera": {
+          "text": "70-105mm-equivalent compression or 50-70mm for environmental body studies.",
+          "check_tokens": [
+            "70",
+            "105mm",
+            "50",
+            "compression"
+          ]
+        },
+        "light": {
+          "text": "hard directional sun is the primary sculptor.",
+          "check_tokens": [
+            "hard",
+            "directional",
+            "sun"
+          ]
+        },
+        "tone": {
+          "text": "crisp monochrome or restrained sun-warmed color.",
+          "check_tokens": [
+            "crisp",
+            "monochrome",
+            "sun-warmed"
+          ]
+        },
+        "behavior": {
+          "text": "strong body line, classical or athletic physicality, minimal gesture.",
+          "check_tokens": [
+            "strong body line",
+            "athletic",
+            "minimal gesture"
+          ]
+        }
+      },
+      "locks_source": "VDL-015 Mandatory signature locks, lines 1285-1290",
+      "technical": {
+        "sun_angle_to_camera_axis": "roughly 30-70 degrees to camera axis for sculptural shadow",
+        "depth_of_field": "f/5.6-f/11 behavior",
+        "shadow": "Preserve hard-edged shadows on body and ground.",
+        "background": "Keep horizon and background simple.",
+        "drift_repair": "If the result becomes beach-lifestyle photography, remove props, simplify wardrobe, harden shadow geometry, and strengthen body silhouette.",
+        "extraction_note": "The 30-70 degree sun angle is a recipe instruction a prompt can state; no checker can recover the sun angle from a flattened image. Prompt-side check only.",
+        "source": "VDL-015 Technical recipe, lines 1292-1297"
+      },
+      "avoid": [
+        {
+          "text": "complex set decoration",
+          "check_tokens": [
+            "set decoration"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "soft overcast mushiness",
+          "check_tokens": [
+            "overcast"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "colored studio gels",
+          "check_tokens": [
+            "studio gels",
+            "colored gels"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "heavy digital effects",
+          "check_tokens": [
+            "digital effects"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "excessive props",
+          "check_tokens": [
+            "excessive props"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "busy fashion-story narrative",
+          "check_tokens": [
+            "fashion-story"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "avoid_source": "VDL-015 Avoid, lines 1303-1309",
+      "emotional_register": "Elemental, confident, classical, physical, clean, glamorous without ornament.",
+      "production_directive": "Place the subject in a simplified outdoor environment and use bright directional sunlight to carve face, body, and clothing into strong sculptural shapes. Favor clean horizons, elemental surfaces, bold shadows, negative space, and full-body or three-quarter composition. Keep wardrobe graphically simple and allow wind, fabric, or posture to create elegant lines. Render the final photograph with crisp physicality and classical restraint, whether in bright monochrome or sun-warmed natural color. The image should feel made from light, form, and confidence rather than from decoration.",
+      "production_directive_source": "VDL-015 AI production directive, line 1311",
+      "uncheckable_by_design": []
+    },
+    "VDL-029": {
+      "style_id": "VDL-029",
+      "branded_name": "Haunted Collodion",
+      "source": {
+        "section": "VDL-029 AI-FACING EXECUTION LAYER",
+        "lines": "2290-2364"
+      },
+      "class": "standard",
+      "core_intent": "Create a large-format black-and-white photograph that feels chemically handmade, temporally ambiguous, and haunted by memory.",
+      "core_intent_source": "VDL-029 AI-FACING EXECUTION LAYER, Core intent, line 2302",
+      "locks": {
+        "composition": {
+          "text": "deliberate, slow, memory-laden large-format frame.",
+          "check_tokens": [
+            "deliberate",
+            "memory-laden",
+            "large-format"
+          ]
+        },
+        "camera": {
+          "text": "large-format perspective with optical discipline and possible long-exposure softness.",
+          "check_tokens": [
+            "large-format",
+            "long-exposure"
+          ]
+        },
+        "light": {
+          "text": "natural/subdued, never glossy.",
+          "check_tokens": [
+            "natural",
+            "subdued"
+          ]
+        },
+        "tone": {
+          "text": "chemically imperfect monochrome with organic wet-process artifacts.",
+          "check_tokens": [
+            "monochrome",
+            "chemically imperfect",
+            "wet-process",
+            "artifacts",
+            "scratches",
+            "streaks",
+            "emulsion"
+          ]
+        },
+        "behavior": {
+          "text": "still, meditative, slightly temporally displaced.",
+          "check_tokens": []
+        }
+      },
+      "locks_source": "VDL-029 Mandatory signature locks, lines 2335-2340",
+      "technical": {
+        "format": "8x10 or similar large-format discipline",
+        "focal_band": "50-90mm equivalent large-format feel",
+        "depth_of_field": "f/5.6-f/16 behavior depending selective focus",
+        "plate_flaws_placement": "Use organic plate flaws only at edges/localized regions.",
+        "defect_character": "Keep defects irregular in size, direction, and density.",
+        "motion": "Allow slight long-exposure motion when it supports mood.",
+        "materiality_tokens_from_entry": "uneven emulsion edges, fine scratches, chemical streaks, dust traces, plate blemishes, localized flare or veiling, occasional dark corners or edge failures",
+        "drift_repair": "If it looks like a vintage filter, reduce global sepia and make imperfections physically localized.",
+        "extraction_note": "Wet-plate collodion is a production process. A prompt can name its visible artifacts (scratches, streaks, emulsion gaps, dust, flare), and those artifact words are the tone lock's check tokens, but no token or image check can verify that the process itself occurred. Process fact reported, never silently passed.",
+        "source": "VDL-029 Technical recipe, lines 2342-2347; format from Camera / process, line 2305; materiality list from Collodion materiality, lines 2310-2318"
+      },
+      "avoid": [
+        {
+          "text": "fake antique borders",
+          "check_tokens": [
+            "antique borders"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "universal sepia filter",
+          "check_tokens": [
+            "sepia filter"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "horror-movie props",
+          "check_tokens": [
+            "horror-movie props"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "pristine digital sharpness",
+          "check_tokens": [
+            "pristine digital sharpness"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "identical scratches across the frame",
+          "check_tokens": [
+            "identical scratches"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "theatrical fog machine atmosphere",
+          "check_tokens": [
+            "fog machine"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "avoid_source": "VDL-029 Avoid, lines 2353-2359",
+      "emotional_register": "Memory-soaked, intimate, mortal, Southern, dreamlike, elegiac, unsettling without horror clichés.",
+      "production_directive": "Create a deliberate large-format black-and-white image that feels physically made through an imperfect historical wet process. Use natural or subdued directional light, long-exposure stillness, deep soft blacks, luminous but imperfect highlights, and organically irregular plate artifacts such as streaks, scratches, emulsion gaps, dust, and localized flare. Choose a subject or landscape with emotional weight but avoid costume-drama Gothic clichés. The image should feel less like a digitally aged photograph and more like a fragile physical object carrying memory, time, and mortality in its surface.",
+      "production_directive_source": "VDL-029 AI production directive, line 2361",
+      "uncheckable_by_design": [
+        {
+          "lock": "behavior",
+          "reason": "The lock is a temporal and meditative state (still, meditative, slightly temporally displaced). No observable token expresses temporal displacement; it is judged in the image only. Reported, never silently passed."
+        }
+      ]
+    },
+    "VDL-036": {
+      "style_id": "VDL-036",
+      "branded_name": "Archive of Self",
+      "source": {
+        "section": "VDL-036 AI-FACING EXECUTION LAYER",
+        "lines": "2833-2898"
+      },
+      "class": "standard",
+      "mode_required": true,
+      "mode_note": "Multi-mode verified in the library text. Mode selection, lines 2847-2850, states: 'Choose one of two connected modes: 1. Archive mode ... 2. Performance mode ...'. The Technical recipe, lines 2878-2882, branches by the same two modes. The Mandatory signature locks, lines 2871-2876, do NOT give two separate lock sets: the Composition lock is disjunctive ('either intimate archive snapshot or deliberate identity performance, never a vague midpoint', line 2872), the Camera lock gives both bands in one line (line 2873), and the Light lock is mode-conditional in one line (line 2874); the Tone and Behavior locks are single shared lines. The per-mode lock sets below split only the locks the library itself branches, using the library's own branch wording, and repeat the shared Tone and Behavior lock text unchanged in both modes.",
+      "core_intent": "Create an image that feels simultaneously personal, archival, performative, and self-questioning.",
+      "core_intent_source": "VDL-036 AI-FACING EXECUTION LAYER, Core intent, line 2845",
+      "modes": {
+        "Archive mode": {
+          "mode_source": "VDL-036 Mode selection item 1, line 2849: intimate slide/snapshot image from a social, family, studio, travel, or backstage life.",
+          "locks": {
+            "composition": {
+              "text": "intimate archive snapshot",
+              "check_tokens": [
+                "intimate",
+                "archive",
+                "snapshot"
+              ]
+            },
+            "camera": {
+              "text": "35-55mm snapshot behavior",
+              "check_tokens": [
+                "35",
+                "55mm",
+                "snapshot"
+              ]
+            },
+            "light": {
+              "text": "direct flash/available light for archive",
+              "check_tokens": [
+                "direct flash",
+                "available light"
+              ]
+            },
+            "tone": {
+              "text": "saturated slide/reversal-film character.",
+              "check_tokens": [
+                "saturated",
+                "slide",
+                "reversal-film"
+              ]
+            },
+            "behavior": {
+              "text": "identity layered through clothing, gesture, relation, mask, or persona.",
+              "check_tokens": [
+                "clothing",
+                "gesture",
+                "mask",
+                "persona"
+              ]
+            }
+          },
+          "technical": {
+            "focal_band": "35-55mm equivalent",
+            "depth_of_field": "f/2.8-f/8",
+            "palette": "Preserve rich reds/blues and deep blacks.",
+            "source": "VDL-036 Technical recipe, Archive mode line 2879 and shared line 2881"
+          }
+        },
+        "Performance mode": {
+          "mode_source": "VDL-036 Mode selection item 2, line 2850: deliberate self-staging using costume, mask, makeup, pose, or symbolic persona.",
+          "locks": {
+            "composition": {
+              "text": "deliberate identity performance",
+              "check_tokens": [
+                "deliberate",
+                "identity performance"
+              ]
+            },
+            "camera": {
+              "text": "70-100mm staged portrait behavior",
+              "check_tokens": [
+                "70",
+                "100mm",
+                "staged portrait"
+              ]
+            },
+            "light": {
+              "text": "simple controlled light for performance",
+              "check_tokens": [
+                "controlled light",
+                "simple"
+              ]
+            },
+            "tone": {
+              "text": "saturated slide/reversal-film character.",
+              "check_tokens": [
+                "saturated",
+                "slide",
+                "reversal-film"
+              ]
+            },
+            "behavior": {
+              "text": "identity layered through clothing, gesture, relation, mask, or persona.",
+              "check_tokens": [
+                "clothing",
+                "gesture",
+                "mask",
+                "persona"
+              ]
+            }
+          },
+          "technical": {
+            "focal_band": "70-100mm equivalent",
+            "depth_of_field": "f/5.6-f/11",
+            "palette": "Preserve rich reds/blues and deep blacks.",
+            "source": "VDL-036 Technical recipe, Performance mode line 2880 and shared line 2881"
+          }
+        }
+      },
+      "locks_source": "VDL-036 Mandatory signature locks, lines 2871-2876. Composition lock as printed (line 2872, em dash in the library rendered as a comma here): 'either intimate archive snapshot or deliberate identity performance, never a vague midpoint.' Per-mode composition texts above are its two branches.",
+      "shared_drift_repair": "If the image feels generically retro, make the identity-performance logic more specific. Source: VDL-036 Technical recipe, line 2882.",
+      "avoid": [
+        {
+          "text": "generic drag/fashion imagery without personal context",
+          "check_tokens": [
+            "personal context"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "polished branding photography",
+          "check_tokens": [
+            "branding photography"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "over-explained identity symbolism",
+          "check_tokens": [
+            "identity symbolism"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "uniform treatment that erases the distinction between archive and performance",
+          "check_tokens": [
+            "archive and performance"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "modern digital perfection",
+          "check_tokens": [
+            "digital perfection"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "avoid_source": "VDL-036 Avoid, lines 2888-2893",
+      "emotional_register": "Personal, unstable, intimate, performative, archival, self-aware.",
+      "production_directive": "Build the image as part of a living personal archive in which identity is both remembered and performed. Decide whether the frame is an intimate slide-like snapshot or a deliberately staged persona, then use saturated film color, direct or available light, clothing, gesture, mirrors, masks, friends, family, or private surroundings to create layered self-presentation. Allow contradictions in gender, glamour, class, seriousness, and intimacy to remain visible. The photograph should feel like evidence from a life that is actively constructing its own visual history.",
+      "production_directive_source": "VDL-036 AI production directive, line 2895",
+      "uncheckable_by_design": []
+    },
+    "VDL-045": {
+      "style_id": "VDL-045",
+      "branded_name": "Editorial Metamorphosis",
+      "source": {
+        "section": "VDL-045 AI-FACING EXECUTION LAYER",
+        "lines": "3493-3573"
+      },
+      "class": "procedural",
+      "core_intent": "Transform the subject into the protagonist of a fully coherent fashion narrative rather than applying one repeated visual recipe.",
+      "core_intent_source": "VDL-045 AI-FACING EXECUTION LAYER, Core intent, line 3506",
+      "declaration_block": {
+        "required_fields": [
+          "era or temporal reference",
+          "social world or subculture",
+          "character archetype",
+          "emotional tone",
+          "location/set",
+          "camera language",
+          "styling logic",
+          "beauty/hair logic",
+          "color/monochrome logic"
+        ],
+        "source": "VDL-045 Step 1, Declare the editorial world, lines 3508-3520: 'Before prompting, define' the nine fields above; 'Do not proceed until these agree.'",
+        "recipe_set_fields": [
+          "era",
+          "social world",
+          "character",
+          "location",
+          "camera language",
+          "light",
+          "styling",
+          "hair/makeup",
+          "finish"
+        ],
+        "recipe_set_fields_source": "VDL-045 Technical recipe, line 3553: 'Before generating, explicitly set' the nine items above. Note the recipe list differs from Step 1: it adds light and finish, and does not list emotional tone or color/monochrome logic separately.",
+        "procedural_lock_basis": "The entry's Mandatory signature locks, lines 3545-3550, are procedural, not traits: Composition must obey a declared editorial world with no default generic fashion layout; Camera, Light, and Tone are each chosen specifically for the concept or era/story; Behavior requires the subject to perform a character, not a pose. No fixed lock set exists to extract; the checkable artifact is this declaration block plus its internal consistency.",
+        "consistency_tokens": [],
+        "consistency_note": "The entry specifies no token-level consistency hooks. Its only consistency test is judgment-level: drift repair, line 3556, 'if any element feels from a different story, change that element instead of averaging the concept', and the Avoid item 'concept drift between set, hair, makeup, wardrobe, and camera', line 3568. Declaration-field presence is text-checkable; coherence among the declarations is judgment only."
+      },
+      "avoid": [
+        {
+          "text": "one generic luxury editorial look",
+          "check_tokens": [
+            "luxury editorial"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "fashionable styling with no story",
+          "check_tokens": [
+            "no story"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "random historical references",
+          "check_tokens": [
+            "historical references"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "beautiful lighting that contradicts the character",
+          "check_tokens": [
+            "contradicts the character"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "static catalog posing",
+          "check_tokens": [
+            "catalog posing"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "concept drift between set, hair, makeup, wardrobe, and camera",
+          "check_tokens": [
+            "concept drift"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "avoid_source": "VDL-045 Avoid, lines 3562-3568. First item is quoted here without the library's curly quotation marks around 'luxury editorial'.",
+      "emotional_register": "Transformative, fashion-literate, character-driven, narrative, controlled, versatile.",
+      "production_directive": "Begin by defining a complete editorial world (era, character, social context, emotional tone, location, styling, hair, makeup, camera language, and light), then make every visual decision obey that world. Direct the subject as a character rather than a clothes hanger. Choose composition and lighting specifically for the narrative, whether polished studio, documentary street, cinematic tableau, close beauty, flash-driven immediacy, or formal portraiture. Maintain high fashion precision while allowing dramatic transformation between stories. The signature is not one surface treatment; it is total coherence of concept, character, fashion, and photographic execution.",
+      "production_directive_source": "VDL-045 AI production directive, line 3570. Quoted with the library's em dashes rendered as parentheses and commas.",
+      "uncheckable_by_design": [
+        {
+          "lock": "all five locks (procedural)",
+          "reason": "No fixed trait or token set exists for this entry by design; each lock defers to the declared editorial world. Reported as a declaration-block check, never silently passed as a trait check."
+        }
+      ]
+    }
+  }
+}

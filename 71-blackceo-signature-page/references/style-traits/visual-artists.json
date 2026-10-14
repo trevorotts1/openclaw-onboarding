@@ -1,0 +1,1673 @@
+{
+  "library": "visual-artists",
+  "library_file": "references/BlackCEO-Visual-Artists-AI-Style-Intelligence-Guide-v1.0.md",
+  "library_version": "v1.0",
+  "extraction_status": "PENDING OWNER SPOT-CHECK (Trevor); acceptance gate per FIX-PLAN Amendment 6 Part B2",
+  "coverage": {
+    "extracted_entries": [
+      "ART-6",
+      "ART-21",
+      "ART-29",
+      "ART-31",
+      "ART-39",
+      "ART-41",
+      "ART-44",
+      "ART-48"
+    ],
+    "library_total_entries": 50,
+    "note": "Representative schema-proving set; loader accepts further entries without code change."
+  },
+  "review_form": {
+    "name": "Per-entry quality gate + originality gate",
+    "scoring": "each of the entry's own gate dimensions >= 8, NO averaging (guide universal quality rule); PLUS the image-guide per-artifact rule at stage level (FIX-PLAN B5)",
+    "originality_gate": {
+      "questions": [
+        "Does this resemble a specific known artwork?",
+        "Is the composition too close to a famous image?",
+        "Am I using a signature character/motif as a shortcut?",
+        "For contemporary-reference systems, is this an independent work based on broad formal principles?"
+      ],
+      "form": "reviewer attestation; the non-copying core is not artifact-verifiable (FIX-PLAN B6)",
+      "source": "Final Agent Execution Protocol, Step 6 - Run the originality gate, lines 2796-2801; the underlying rule is section 0 Universal originality rule, lines 43-45: 'Never reproduce a known artwork, exact pose, exact layout, signature character, famous prop arrangement, or recognizable source image.' Note: the four questions themselves are in the Final Protocol, not in section 0; section 0 contains the rule statement only."
+    },
+    "exactly_one_system_rule": "false unless the user explicitly requested a hybrid; a compliant prompt carries the selected system's branded name (assembly slot 1)"
+  },
+  "entries": {
+    "ART-6": {
+      "style_id": "ART-6",
+      "branded_name": "CHROMATIC GRISAILLE PORTRAIT",
+      "source": {
+        "section": "6. CHROMATIC GRISAILLE PORTRAIT",
+        "lines": "353-402"
+      },
+      "mandatory_traits": [
+        {
+          "text": "Skin rendered in warm neutral grayscale, broad tonal range but low chroma; skin entirely in nuanced warm grayscale with careful facial modeling",
+          "check_tokens": [
+            "warm",
+            "grayscale",
+            "grisaille",
+            "low chroma",
+            "skin"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Background is a simple, flat or nearly flat chromatic color field selected to create clean separation from clothing and flesh and to complement rather than match the garment",
+          "check_tokens": [
+            "flat",
+            "color field",
+            "background",
+            "separation"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Clothing is saturated, patterned, graphic, contemporary and compositionally important; vivid or patterned garment is the primary chromatic structure",
+          "check_tokens": [
+            "saturated",
+            "patterned",
+            "clothing",
+            "garment"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Pose is frontal or nearly frontal, quiet, balanced, dignified and contained rather than theatrical; restrained pose, no fashion-model exaggeration",
+          "check_tokens": [
+            "frontal",
+            "quiet",
+            "balanced",
+            "dignified",
+            "restrained"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Gaze is direct or psychologically self-contained; sitter looks at viewer or slightly away with self-contained expression",
+          "check_tokens": [
+            "direct gaze",
+            "self-contained",
+            "gaze"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Light is soft studio illumination with modest modeling; soft, even light, no hard cinema shadow unless the concept needs it",
+          "check_tokens": [
+            "soft",
+            "studio",
+            "light",
+            "even light"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Edges show clear figure-ground separation",
+          "check_tokens": [
+            "clear",
+            "figure-ground",
+            "separation",
+            "edges"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Props are few; any prop must add identity or narrative",
+          "check_tokens": [
+            "prop",
+            "identity",
+            "narrative"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Space is shallow; environment is intentionally withheld so viewer attends to sitter and clothing",
+          "check_tokens": [
+            "shallow",
+            "space",
+            "environment withheld"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Image feels painted and intentional, not like a photo with a grayscale filter applied to skin; hair, eyes, lips and hands integrated into the grayscale logic unless a deliberate small accent is conceptually necessary",
+          "check_tokens": [
+            "painted",
+            "grayscale",
+            "hair",
+            "eyes",
+            "lips",
+            "hands"
+          ],
+          "numeric": null
+        }
+      ],
+      "gate_dimensions": [
+        "grayscale flesh dimensionality",
+        "sitter psychology",
+        "garment color/pattern strength",
+        "background color intelligence",
+        "pose restraint",
+        "facial specificity",
+        "painterly coherence",
+        "originality",
+        "simplicity"
+      ],
+      "avoid": [
+        {
+          "text": "gray skin that reads as metallic, dead, or desaturated by accident",
+          "check_tokens": [
+            "metallic",
+            "dead skin",
+            "desaturated"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "busy environmental backgrounds",
+          "check_tokens": [
+            "busy",
+            "environmental background"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "generic beauty photography",
+          "check_tokens": [
+            "generic beauty"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "copying a known garment, color pairing, or pose",
+          "check_tokens": [
+            "copying",
+            "known garment",
+            "known pose"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "neon saturation on every element",
+          "check_tokens": [
+            "neon saturation"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "over-smoothed skin or excessive glamour retouching",
+          "check_tokens": [
+            "over-smoothed",
+            "glamour retouching"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "dramatic action poses",
+          "check_tokens": [
+            "dramatic action",
+            "action pose"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "pre_render_concept_fields": [],
+      "modes": [],
+      "representation_source": "entry",
+      "uncheckable_by_design": [
+        {
+          "text": "Mood: introspective, composed, specific, unforced",
+          "reason": "Mood is a reception/judgment property of the produced image; its words can be stated in a prompt but compliance can only be judged by looking, per diagnostic notes classification (b)."
+        }
+      ]
+    },
+    "ART-21": {
+      "style_id": "ART-21",
+      "branded_name": "RHYTHMIC NARRATIVE MODERNISM",
+      "source": {
+        "section": "21. RHYTHMIC NARRATIVE MODERNISM",
+        "lines": "1102-1151"
+      },
+      "mandatory_traits": [
+        {
+          "text": "Shape is angular, simplified and planar; bodies and architecture share a geometric vocabulary; scene reduced to large matte geometric shapes",
+          "check_tokens": [
+            "angular",
+            "simplified",
+            "planar",
+            "geometric"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Space is flattened and compressed; perspective can tilt or stack for narrative clarity",
+          "check_tokens": [
+            "flattened",
+            "compressed",
+            "space"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Palette uses recurring colors (black, brown, ochre, mustard, red, green, blue/turquoise, white, gray), matte rather than glossy, limited to 5 to 7 governing colors for the entire image",
+          "check_tokens": [
+            "matte",
+            "palette",
+            "black",
+            "brown",
+            "ochre",
+            "mustard",
+            "red",
+            "green"
+          ],
+          "numeric": {
+            "governing_colors": [
+              5,
+              7
+            ],
+            "unit": "colors"
+          }
+        },
+        {
+          "text": "Line uses dark contours and strong edges to organize and separate forms",
+          "check_tokens": [
+            "dark contours",
+            "strong edges"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Figures have simplified faces and limbs, clear actions, communal rather than portrait-focused; gesture and occupation remain unmistakable",
+          "check_tokens": [
+            "simplified",
+            "faces",
+            "limbs",
+            "clear actions",
+            "communal"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Narrative is a single historical or social action (labor, movement, migration, family, conflict, community, history or aspiration); one action only, unrelated subplots eliminated",
+          "check_tokens": [
+            "narrative",
+            "single action",
+            "labor",
+            "migration",
+            "community"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Rhythm created by repeating shape and color across the scene like musical phrases; repeated shape creates rhythm",
+          "check_tokens": [
+            "rhythm",
+            "repeat",
+            "repeated shape",
+            "repeated color"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Architecture (stairs, rails, doors, windows, tables, machinery, roads) creates diagonals and directional flow that move the viewer through the scene",
+          "check_tokens": [
+            "stairs",
+            "rails",
+            "doors",
+            "windows",
+            "diagonal",
+            "directional"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Light is represented through color/value blocks rather than realistic atmospheric modeling",
+          "check_tokens": [
+            "color blocks",
+            "value blocks",
+            "light"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Series logic: even a single image feels like one panel from a larger story; if a sequence, the full palette is established first and distributed across all panels",
+          "check_tokens": [
+            "panel",
+            "series",
+            "one panel"
+          ],
+          "numeric": null
+        }
+      ],
+      "gate_dimensions": [
+        "geometric clarity",
+        "narrative action",
+        "compressed-space intelligence",
+        "palette continuity",
+        "rhythmic repetition",
+        "figure readability",
+        "diagonal movement",
+        "matte tempera feel",
+        "originality"
+      ],
+      "avoid": [
+        {
+          "text": "realistic perspective and volumetric shading",
+          "check_tokens": [
+            "realistic perspective",
+            "volumetric shading"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "cartoon outlines with no geometric structure",
+          "check_tokens": [
+            "cartoon outlines",
+            "no geometric structure"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "overcrowded historical illustration",
+          "check_tokens": [
+            "overcrowded",
+            "historical illustration"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "copying an existing Migration Series panel",
+          "check_tokens": [
+            "copying",
+            "Migration Series panel"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "random bright colors that break palette continuity",
+          "check_tokens": [
+            "random bright colors",
+            "palette continuity"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "facial-detail obsession",
+          "check_tokens": [
+            "facial-detail"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "atmospheric blur or glossy digital rendering",
+          "check_tokens": [
+            "atmospheric blur",
+            "glossy digital"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "pre_render_concept_fields": [],
+      "modes": [],
+      "representation_source": "entry",
+      "uncheckable_by_design": []
+    },
+    "ART-29": {
+      "style_id": "ART-29",
+      "branded_name": "ATMOSPHERIC LIGHT MOSAIC",
+      "source": {
+        "section": "29. ATMOSPHERIC LIGHT MOSAIC",
+        "lines": "1548-1597"
+      },
+      "mandatory_traits": [
+        {
+          "text": "Brushwork is short broken strokes, dabs, commas, horizontal flicks on water, directional marks in vegetation; forms constructed from broken strokes rather than smooth gradients",
+          "check_tokens": [
+            "short broken strokes",
+            "broken strokes",
+            "dabs",
+            "horizontal flicks"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Color mixing favors optical adjacency of relatively pure colors over smooth digital blending",
+          "check_tokens": [
+            "optical",
+            "pure colors",
+            "adjacent color"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Light is the dominant subject; local object color shifts dramatically with hour and weather; a precise lighting condition (exact hour/weather) is defined before painting",
+          "check_tokens": [
+            "light",
+            "hour",
+            "weather",
+            "lighting condition"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Shadows are colored, never automatically gray/black; color exists inside the shadows",
+          "check_tokens": [
+            "colored shadows",
+            "shadows"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Edges are hard near selected focal areas and soft or dissolved in distance/atmosphere; distant contours softened through small value differences instead of blur filters",
+          "check_tokens": [
+            "edges",
+            "soft",
+            "dissolved",
+            "distance",
+            "atmosphere"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Palette varies with condition (cool violet/blue fog, warm peach/gold sunset, green/blue daylight, snow with colored shadows)",
+          "check_tokens": [
+            "violet",
+            "blue",
+            "fog",
+            "peach",
+            "gold",
+            "sunset",
+            "palette"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Water reflection is constructed from horizontal strokes that echo but distort vertical forms; water painted with mostly horizontal strokes broken by ripples and light, echoing major colors vertically",
+          "check_tokens": [
+            "water",
+            "reflection",
+            "horizontal strokes",
+            "ripples"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Space is believable but atmospheric; detail decreases with distance",
+          "check_tokens": [
+            "atmospheric",
+            "detail decreases",
+            "distance"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Composition uses an ordinary motif observed intensely; asymmetry and cropping can feel immediate",
+          "check_tokens": [
+            "ordinary motif",
+            "asymmetry",
+            "cropping"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Series logic: repeat one original motif across multiple conditions to study transformation; for a series, lock viewpoint and composition and change only time, weather, season and resulting palette",
+          "check_tokens": [
+            "series",
+            "repeat",
+            "motif",
+            "time",
+            "weather",
+            "season"
+          ],
+          "numeric": null
+        }
+      ],
+      "gate_dimensions": [
+        "light-condition specificity",
+        "broken-color behavior",
+        "colored shadows",
+        "atmospheric edge control",
+        "optical mixing",
+        "reflection logic when relevant",
+        "series consistency when relevant",
+        "observed rather than decorative palette",
+        "originality"
+      ],
+      "avoid": [
+        {
+          "text": "copying famous Monet locations/compositions",
+          "check_tokens": [
+            "copying",
+            "famous",
+            "locations",
+            "compositions"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "generic pastel filter",
+          "check_tokens": [
+            "pastel filter"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "smooth airbrushed gradients",
+          "check_tokens": [
+            "smooth",
+            "airbrushed",
+            "gradients"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "black shadows",
+          "check_tokens": [
+            "black shadows"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "crisp detail at every distance",
+          "check_tokens": [
+            "crisp detail",
+            "every distance"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "over-saturated rainbow color unrelated to observed light",
+          "check_tokens": [
+            "over-saturated",
+            "rainbow",
+            "unrelated to observed light"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "impasto so thick that color relationships disappear",
+          "check_tokens": [
+            "impasto",
+            "thick"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "pre_render_concept_fields": [],
+      "modes": [],
+      "representation_source": "image-guide-v5-section-7",
+      "uncheckable_by_design": []
+    },
+    "ART-31": {
+      "style_id": "ART-31",
+      "branded_name": "URBAN PARADOX STENCIL",
+      "source": {
+        "section": "31. URBAN PARADOX STENCIL",
+        "lines": "1648-1751"
+      },
+      "mandatory_traits": [
+        {
+          "text": "Stencil has hard graphic edges, simplified shapes, strong silhouette, limited tonal passes, selective interior detail, subtle overspray and plausible stencil bridges; main stencil graphic and readable, action reads from silhouette",
+          "check_tokens": [
+            "stencil",
+            "hard graphic edges",
+            "silhouette",
+            "overspray",
+            "stencil bridges"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Palette is 75 to 95 percent neutral (black, charcoal, dirty white, masonry gray, aged cream, brick); one strong accent color can carry symbolic importance and marks the conceptually important object",
+          "check_tokens": [
+            "neutral",
+            "black",
+            "charcoal",
+            "dirty white",
+            "masonry gray",
+            "accent"
+          ],
+          "numeric": {
+            "neutral_palette_percent": [
+              75,
+              95
+            ],
+            "unit": "percent"
+          }
+        },
+        {
+          "text": "Surface is real brick, concrete, peeling plaster, rust, grime, cracks, stains, patched masonry or old paint; intervention integrated into a real weathered architectural surface with wall visible",
+          "check_tokens": [
+            "brick",
+            "concrete",
+            "peeling plaster",
+            "rust",
+            "grime",
+            "weathered"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Composition has substantial negative space; artwork occupies only 15 to 40 percent of the architectural field, most of the frame is ordinary environment",
+          "check_tokens": [
+            "negative space",
+            "architectural field"
+          ],
+          "numeric": {
+            "field_occupation_percent": [
+              15,
+              40
+            ],
+            "unit": "percent"
+          }
+        },
+        {
+          "text": "Gesture/action must read from silhouette (walking, reaching, pulling, releasing, hiding, carrying, resisting, observing)",
+          "check_tokens": [
+            "silhouette",
+            "walking",
+            "reaching",
+            "pulling",
+            "releasing",
+            "carrying"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Environment participates: pipes, cracks, bars, doors, conduits, signs, curbs, windows, fences, shadows, fire escapes or utility boxes become metaphoric components; one environmental feature becomes a functional part of the visual metaphor",
+          "check_tokens": [
+            "environment",
+            "pipe",
+            "crack",
+            "window bars",
+            "door",
+            "environmental feature"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Irony uses one dominant contradiction rather than multiple unrelated messages; one primary contrast pairing chosen, do not combine more than two major oppositions",
+          "check_tokens": [
+            "one dominant contradiction",
+            "contrast",
+            "contradiction"
+          ],
+          "numeric": {
+            "major_oppositions_max": [
+              1,
+              2
+            ],
+            "unit": "oppositions"
+          }
+        },
+        {
+          "text": "Texture uses restrained overspray and broken edges; avoid expressive paint explosions",
+          "check_tokens": [
+            "restrained overspray",
+            "broken edges"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Text is optional, ideally 1 to 7 words; image must still work without it",
+          "check_tokens": [
+            "text",
+            "words"
+          ],
+          "numeric": {
+            "text_words": [
+              1,
+              7
+            ],
+            "unit": "words"
+          }
+        },
+        {
+          "text": "Physical plausibility: viewer should believe the intervention could exist on the wall; materially plausible with restrained spray irregularity",
+          "check_tokens": [
+            "plausible",
+            "wall",
+            "spray"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Concept is built before rendering from one main subject, one meaningful symbol, one dominant contradiction and one environmental feature (SUBJECT + SYMBOL + CONTRADICTION + ENVIRONMENT = CONCEPT)",
+          "check_tokens": [
+            "subject",
+            "symbol",
+            "contradiction",
+            "environment",
+            "concept"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Two-stage reading: first read literal scene registers immediately, second read a secondary relationship changes the meaning",
+          "check_tokens": [
+            "first read",
+            "second read"
+          ],
+          "numeric": null
+        }
+      ],
+      "gate_dimensions": [
+        "stencil readability",
+        "environmental realism",
+        "graphic economy",
+        "environmental integration",
+        "visual metaphor",
+        "conceptual contradiction",
+        "editorial meaning",
+        "first-read clarity",
+        "second-read discovery",
+        "physical plausibility",
+        "originality"
+      ],
+      "avoid": [
+        {
+          "text": "merely a stencil portrait (failure condition: reject and redesign)",
+          "check_tokens": [
+            "stencil portrait"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "environment is only background / wall treated as blank canvas (failure condition)",
+          "check_tokens": [
+            "environment is only background",
+            "blank canvas"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "no contradiction (failure condition)",
+          "check_tokens": [
+            "no contradiction"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "no second-read discovery (failure condition)",
+          "check_tokens": [
+            "no second-read"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "random grunge replaces design (failure condition)",
+          "check_tokens": [
+            "random grunge"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "decorative drips/splatter dominate (failure condition)",
+          "check_tokens": [
+            "decorative drips",
+            "splatter dominate"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "symbol requires a paragraph of explanation / symbol too obscure (failure condition)",
+          "check_tokens": [
+            "paragraph of explanation",
+            "symbol"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "color is ornamental rather than meaningful (failure condition)",
+          "check_tokens": [
+            "color is ornamental"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "image resembles a famous existing street artwork (failure condition)",
+          "check_tokens": [
+            "resembles",
+            "famous",
+            "street artwork"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "recreating a known artwork, signature character, phrase, composition, or motif (execution mode)",
+          "check_tokens": [
+            "known artwork",
+            "signature character",
+            "known composition"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "pre_render_concept_fields": [
+        "Subject",
+        "Expected meaning",
+        "Contradiction",
+        "Environmental hook",
+        "Second read"
+      ],
+      "modes": [],
+      "representation_source": "image-guide-v5-section-7",
+      "uncheckable_by_design": [
+        {
+          "text": "Second read / delayed second meaning: what the viewer realizes 1-3 seconds later",
+          "reason": "A reception property; presence of the field is checkable in the concept spec, but whether a viewer actually gets a second read can only be judged by looking, per diagnostic notes classification (b). The field itself is recorded in pre_render_concept_fields."
+        }
+      ]
+    },
+    "ART-39": {
+      "style_id": "ART-39",
+      "branded_name": "LUMINOUS MULTI-PERSPECTIVE MODERNISM",
+      "source": {
+        "section": "39. LUMINOUS MULTI-PERSPECTIVE MODERNISM",
+        "lines": "2120-2185"
+      },
+      "mandatory_traits": [
+        {
+          "text": "Color is flat brilliant acrylic-like color in painted mode, with scene palette exemplified by cyan/blue water, warm skin, cream concrete, green lawn, bright clothing, clear sky; select palette from the actual scene",
+          "check_tokens": [
+            "flat",
+            "brilliant",
+            "acrylic",
+            "cyan",
+            "blue water",
+            "cream concrete",
+            "green lawn"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Surface is smooth, controlled, minimal brush texture in painted mode; environment built from clean flat acrylic-like color masses",
+          "check_tokens": [
+            "smooth",
+            "controlled",
+            "minimal brush texture",
+            "flat color masses"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Geometry uses strong horizontals/verticals countered by fluid water marks or organic figures, with crisp architectural edges and clean rectilinear architecture",
+          "check_tokens": [
+            "horizontals",
+            "verticals",
+            "rectilinear",
+            "architecture",
+            "crisp edges"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Perspective is clean but slightly stylized in painted mode and deliberately plural in joiner mode",
+          "check_tokens": [
+            "perspective",
+            "stylized",
+            "plural",
+            "joiner"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Light is strong daylight with clear shadows; atmosphere bright rather than dramatic; hard California-like light in Mode A",
+          "check_tokens": [
+            "strong daylight",
+            "clear shadows",
+            "bright"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Water is rendered through repeated line motifs, broken reflections and flat color shifts; in generation, repeated graphic ripples, reflected color shards and selective white marks rather than photoreal simulation",
+          "check_tokens": [
+            "water",
+            "repeated",
+            "ripples",
+            "broken reflections",
+            "reflected",
+            "white marks"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Figure is ordinary leisure or portrait presence, integrated casually rather than heroically, behavior casual and psychologically understated; avoid melodrama",
+          "check_tokens": [
+            "figure",
+            "leisure",
+            "casual",
+            "understated"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Crop is a modern photographic crop; edges can feel casual yet calculated",
+          "check_tokens": [
+            "modern photographic crop",
+            "crop"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Time: in joiner mode, do not force all tiles to represent the identical instant; time advances across tiles and small time differences are permitted",
+          "check_tokens": [
+            "joiner",
+            "tiles",
+            "time",
+            "different instant"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Joiner mode (Mode B): divide the scene into 15 to 60 overlapping original photo rectangles, shift viewpoint gradually, preserve tile edges and overlaps, repeated body parts or moving objects can mark time",
+          "check_tokens": [
+            "joiner",
+            "overlapping",
+            "photo rectangles",
+            "tile edges",
+            "viewpoint shifts"
+          ],
+          "numeric": {
+            "joiner_tiles": [
+              15,
+              60
+            ],
+            "unit": "tiles"
+          }
+        }
+      ],
+      "gate_dimensions": [
+        "flat-color clarity",
+        "architectural geometry",
+        "water/reflection logic",
+        "daylight quality",
+        "viewpoint intelligence",
+        "temporal variation in joiner mode",
+        "spatial curiosity",
+        "compositional coherence",
+        "originality"
+      ],
+      "avoid": [
+        {
+          "text": "copying famous pool compositions",
+          "check_tokens": [
+            "copying",
+            "famous pool"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "generic retro California poster style",
+          "check_tokens": [
+            "retro California poster"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "single-perspective photo cut into arbitrary squares",
+          "check_tokens": [
+            "single-perspective",
+            "arbitrary squares"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "fisheye distortion pretending to be multiple viewpoint",
+          "check_tokens": [
+            "fisheye distortion"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "hyperreal water simulation in painted mode",
+          "check_tokens": [
+            "hyperreal water"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "painterly impasto",
+          "check_tokens": [
+            "impasto"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "identical duplicate tiles",
+          "check_tokens": [
+            "identical duplicate tiles"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "pre_render_concept_fields": [],
+      "modes": [
+        "Mode A - Luminous architectural leisure",
+        "Mode B - Multi-view joiner"
+      ],
+      "representation_source": "image-guide-v5-section-7",
+      "uncheckable_by_design": []
+    },
+    "ART-41": {
+      "style_id": "ART-41",
+      "branded_name": "TENEBRIST IMMEDIATE DRAMA",
+      "source": {
+        "section": "41. TENEBRIST IMMEDIATE DRAMA",
+        "lines": "2236-2285"
+      },
+      "mandatory_traits": [
+        {
+          "text": "Light is one dominant directional source with rapid transition from bright flesh/highlight into deep surrounding dark; one strong off-axis light source illuminates only the faces, hands and objects needed for the decisive moment",
+          "check_tokens": [
+            "one",
+            "directional",
+            "light",
+            "off-axis",
+            "faces",
+            "hands"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Darkness is large masses of low-information shadow with subtle reflected values preserved rather than pure digital black everywhere; darkness withholds information, shadows are not filled with decorative detail",
+          "check_tokens": [
+            "darkness",
+            "shadow",
+            "low-information",
+            "reflected"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Figures are ordinary human bodies with physical imperfections, believable age, weight, hands, feet, dirt and fabric; realistic flesh and worn fabric",
+          "check_tokens": [
+            "ordinary",
+            "bodies",
+            "imperfections",
+            "hands",
+            "feet",
+            "dirt",
+            "fabric"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Composition is tight crop, shallow space, diagonals, figures entering from the frame edge; bodies overlap and enter from frame edges, one strong diagonal through gesture or gaze",
+          "check_tokens": [
+            "tight crop",
+            "shallow space",
+            "diagonal",
+            "frame edge"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Gesture carries the narrative: hands, pointing, reaching, grasping, recoiling, leaning, turning",
+          "check_tokens": [
+            "gesture",
+            "hands",
+            "pointing",
+            "reaching",
+            "grasping",
+            "recoiling"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Moment is a revelatory decisive moment: recognition, accusation, conversion, discovery, risk, invitation, violence or sudden realization; light reveals a specific fact",
+          "check_tokens": [
+            "moment",
+            "recognition",
+            "discovery",
+            "realization",
+            "revealing"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Objects are tangible and rendered with physical specificity (fruit, glass, metal, cards, bread, cloth, tools, instruments, tableware)",
+          "check_tokens": [
+            "fruit",
+            "glass",
+            "metal",
+            "bread",
+            "cloth",
+            "tools",
+            "tactile"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Palette is black/brown ground, warm flesh, white linen, deep red, ochre, muted green, selective blue",
+          "check_tokens": [
+            "black",
+            "brown",
+            "warm flesh",
+            "white linen",
+            "deep red",
+            "ochre",
+            "muted green"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Foreshortening: arms, hands, legs or objects may project toward the viewer and must render scale and perspective convincingly",
+          "check_tokens": [
+            "foreshortening",
+            "project toward the viewer",
+            "hands",
+            "arms"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Emotion is immediate and bodily rather than remote idealization",
+          "check_tokens": [
+            "immediate",
+            "bodily",
+            "emotion"
+          ],
+          "numeric": null
+        }
+      ],
+      "gate_dimensions": [
+        "light-as-narrative",
+        "tenebrist value structure",
+        "bodily realism",
+        "gesture clarity",
+        "shallow-space immediacy",
+        "tactile objects",
+        "foreshortening",
+        "shadow restraint",
+        "originality"
+      ],
+      "avoid": [
+        {
+          "text": "copying The Calling of Saint Matthew, Judith, Supper at Emmaus, or other known arrangements",
+          "check_tokens": [
+            "copying",
+            "known arrangements"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "generic candlelight romance",
+          "check_tokens": [
+            "candlelight romance"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "beauty-retouched skin",
+          "check_tokens": [
+            "beauty-retouched"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "equal illumination across all figures",
+          "check_tokens": [
+            "equal illumination"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "fog or volumetric beams that make the light theatrical in a modern cinematic way",
+          "check_tokens": [
+            "fog",
+            "volumetric beams",
+            "theatrical"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "empty black backgrounds with no spatial logic",
+          "check_tokens": [
+            "empty black backgrounds",
+            "no spatial logic"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "idealized classical bodies",
+          "check_tokens": [
+            "idealized classical bodies"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "pre_render_concept_fields": [],
+      "modes": [],
+      "representation_source": "image-guide-v5-section-7",
+      "uncheckable_by_design": [
+        {
+          "text": "Emotion immediate and bodily rather than remote idealization, as a produced-image quality",
+          "reason": "Trait words are stated above with tokens for prompt-level checking; whether the produced image achieves bodily immediacy is judgment-only on the image, per diagnostic notes classification (b)."
+        }
+      ]
+    },
+    "ART-44": {
+      "style_id": "ART-44",
+      "branded_name": "PANORAMIC MORAL FANTASIA",
+      "source": {
+        "section": "44. PANORAMIC MORAL FANTASIA",
+        "lines": "2393-2442"
+      },
+      "mandatory_traits": [
+        {
+          "text": "Format is wide panorama or three-part progression with high horizon; foreground/middle/distance packed with episodes; world divided conceptually into three zones or stages",
+          "check_tokens": [
+            "wide panorama",
+            "three-part",
+            "high horizon",
+            "three zones"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Scale uses many small figures plus several larger anchor forms; 2 to 3 large anchor forms established first to help viewer navigate density",
+          "check_tokens": [
+            "small figures",
+            "anchor forms"
+          ],
+          "numeric": {
+            "anchor_forms": [
+              2,
+              3
+            ],
+            "unit": "large anchor forms"
+          }
+        },
+        {
+          "text": "Creature design: hybrids built from 2 to 4 recognizable source categories (for example bird + vessel + plant, human + architecture + fish), repeated so the world feels related rather than random",
+          "check_tokens": [
+            "hybrids",
+            "creatures",
+            "source categories"
+          ],
+          "numeric": {
+            "creature_source_categories": [
+              2,
+              4
+            ],
+            "unit": "source categories"
+          }
+        },
+        {
+          "text": "Architecture is invented organic towers, shells, ruins, transparent structures, machines, caves, vessels",
+          "check_tokens": [
+            "invented",
+            "towers",
+            "shells",
+            "ruins",
+            "transparent structures"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Palette uses clear blues, greens, warm earth, pale flesh, red accents, dark catastrophic zones where relevant; palette and material condition shift gradually if the image moves from benign to catastrophic",
+          "check_tokens": [
+            "blues",
+            "greens",
+            "warm earth",
+            "pale flesh",
+            "red accents",
+            "palette"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Narrative clusters: each local group performs an understandable mini-action; 8 to 15 mini-scenes support the governing theme",
+          "check_tokens": [
+            "narrative clusters",
+            "mini-action",
+            "mini-scenes"
+          ],
+          "numeric": {
+            "mini_scenes": [
+              8,
+              15
+            ],
+            "unit": "mini-scenes"
+          }
+        },
+        {
+          "text": "Symbol uses object consequences, bodily metaphors, appetite, vanity, labor, pleasure, fear, punishment or salvation, chosen appropriate to the prompt, under one governing moral, philosophical or psychological theme",
+          "check_tokens": [
+            "symbol",
+            "governing theme",
+            "moral",
+            "appetite",
+            "vanity",
+            "labor"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Perspective is stacked but legible landscape recession with visual paths between clusters through rivers, roads, architectural arcs, color bands or repeated motifs",
+          "check_tokens": [
+            "stacked",
+            "landscape recession",
+            "rivers",
+            "roads",
+            "visual paths"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Detail is extremely high and meticulous; tiny actions reward zooming, with clear daylight or zone-specific light",
+          "check_tokens": [
+            "meticulous detail",
+            "tiny actions",
+            "detail"
+          ],
+          "numeric": null
+        }
+      ],
+      "gate_dimensions": [
+        "panoramic structure",
+        "mini-scene readability",
+        "invented-creature coherence",
+        "symbolic theme",
+        "high-horizon depth",
+        "anchor-form navigation",
+        "meticulous detail",
+        "tonal range",
+        "originality"
+      ],
+      "avoid": [
+        {
+          "text": "copying creatures from The Garden of Earthly Delights",
+          "check_tokens": [
+            "copying creatures",
+            "Garden of Earthly Delights"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "random monster collage",
+          "check_tokens": [
+            "random monster collage"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "dark fantasy concept-art lighting across the whole scene",
+          "check_tokens": [
+            "dark fantasy",
+            "concept-art lighting"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "one giant creature dominating every narrative",
+          "check_tokens": [
+            "one giant creature",
+            "dominating"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "modern photoreal CGI surfaces",
+          "check_tokens": [
+            "photoreal CGI"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "symbol overload with no governing theme",
+          "check_tokens": [
+            "symbol overload",
+            "no governing theme"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "clutter that removes spatial hierarchy",
+          "check_tokens": [
+            "clutter",
+            "spatial hierarchy"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "pre_render_concept_fields": [],
+      "modes": [],
+      "representation_source": "image-guide-v5-section-7",
+      "uncheckable_by_design": [
+        {
+          "text": "Tone: wonder, absurdity, menace, satire and morality can coexist",
+          "reason": "Tonal coexistence is a judgment property of the produced image; no token in a prompt certifies it, per diagnostic notes classification (b). Extracted as a Visual DNA bullet in the guide (lines 2393-2442) but not forced into mandatory_traits with tokens."
+        }
+      ]
+    },
+    "ART-48": {
+      "style_id": "ART-48",
+      "branded_name": "LUMINOUS EMOTIONAL FIELD",
+      "source": {
+        "section": "48. LUMINOUS EMOTIONAL FIELD",
+        "lines": "2603-2652"
+      },
+      "mandatory_traits": [
+        {
+          "text": "Format is vertical or near-vertical large field, usually with major hovering zones (see zone_count_conflict; checkable band is the overlap 2 to 3)",
+          "check_tokens": [
+            "vertical",
+            "large field",
+            "hovering zones"
+          ],
+          "numeric": {
+            "major_zones_checkable_band": [
+              2,
+              3
+            ],
+            "unit": "zones"
+          }
+        },
+        {
+          "text": "Shape is approximate rectangle, softened, rounded, irregular, feathered, sometimes cut off by canvas edge; avoid hard graphic corners",
+          "check_tokens": [
+            "approximate rectangle",
+            "softened",
+            "rounded",
+            "irregular",
+            "feathered"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Ground is an active color, not a neutral backing; colored ground laid down in several thin uneven washes so subtle value variation remains, ground establishes the emotional state before fields are added",
+          "check_tokens": [
+            "ground",
+            "active color",
+            "thin",
+            "washes"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Layer uses many thin stains/glazes with undercolor visible through top color; each field contains at least one underlayer whose color appears through thin upper paint, especially near the edge",
+          "check_tokens": [
+            "thin",
+            "stains",
+            "glazes",
+            "undercolor",
+            "underlayer"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Edge is a transitional zone where colors mingle, vibrate or expose prior layers; boundaries softened with feathery transitions while preserving an irregular shape, soft and alive rather than blurred uniformly",
+          "check_tokens": [
+            "edge",
+            "transitional",
+            "feathery",
+            "mingling"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Surface is matte to softly luminous; avoid glossy graphic finish; surface quiet enough that small hue changes matter",
+          "check_tokens": [
+            "matte",
+            "softly luminous",
+            "surface"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Color relationships are emotionally coherent; relationships matter more than fashionable color matching; palette serves the chosen emotional objective",
+          "check_tokens": [
+            "color",
+            "emotionally coherent",
+            "relationships"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Scale is immersive; color areas feel bodily in proportion rather than logo-like or poster-like",
+          "check_tokens": [
+            "immersive",
+            "scale",
+            "bodily",
+            "proportion"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "Space is ambiguous hovering; forms can advance/recede without perspective",
+          "check_tokens": [
+            "hovering",
+            "advance",
+            "recede",
+            "without perspective"
+          ],
+          "numeric": null
+        },
+        {
+          "text": "An emotional objective is chosen first (one or two dominant states such as tragedy, ecstasy, dread, warmth, silence, radiance, gravity) and the palette serves it; one field feels heavier and one more luminous",
+          "check_tokens": [
+            "emotional",
+            "tragedy",
+            "ecstasy",
+            "dread",
+            "warmth",
+            "silence",
+            "radiance"
+          ],
+          "numeric": null
+        }
+      ],
+      "gate_dimensions": [
+        "ground activity",
+        "layered transparency",
+        "edge vibration",
+        "color-field presence",
+        "emotional coherence",
+        "hovering spatial effect",
+        "proportion/scale",
+        "matte-luminous surface",
+        "originality"
+      ],
+      "avoid": [
+        {
+          "text": "hard-edged modernist rectangles",
+          "check_tokens": [
+            "hard-edged",
+            "rectangles"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "flat digital fills",
+          "check_tokens": [
+            "flat digital fills"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "copying famous red/orange/black arrangements",
+          "check_tokens": [
+            "copying",
+            "red/orange/black"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "decorative gradient backgrounds",
+          "check_tokens": [
+            "decorative gradient"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "tiny poster-scale proportions",
+          "check_tokens": [
+            "tiny",
+            "poster-scale"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "equal spacing and perfect geometry",
+          "check_tokens": [
+            "equal spacing",
+            "perfect geometry"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "treating the system as simple color matching",
+          "check_tokens": [
+            "simple color matching"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "pre_render_concept_fields": [],
+      "modes": [],
+      "representation_source": "image-guide-v5-section-7",
+      "zone_count_conflict": {
+        "visual_dna": {
+          "text": "Format: vertical or near-vertical large field; usually 2-4 major hovering zones.",
+          "value": [
+            2,
+            4
+          ],
+          "unit": "major zones",
+          "source": {
+            "section": "48. LUMINOUS EMOTIONAL FIELD - Visual DNA",
+            "lines": "2603-2652"
+          }
+        },
+        "generation_instructions": {
+          "text": "Add two or three large hovering color fields.",
+          "value": [
+            2,
+            3
+          ],
+          "unit": "large hovering fields",
+          "source": {
+            "section": "48. LUMINOUS EMOTIONAL FIELD - Generation instructions",
+            "lines": "2603-2652"
+          }
+        },
+        "research_synthesis_note": "Research synthesis in the same entry also states 'two or three large, soft-edged zones of color stacked vertically against a colored ground' (lines 2603-2652), agreeing with the generation text, not the Visual DNA count.",
+        "checkable_band": [
+          2,
+          3
+        ],
+        "checkable_band_note": "Overlap of [2,4] and [2,3] is [2,3]; a validator must use 2 to 3 as the checkable band and must not fail a 3-zone image or certify a 4-zone image on either passage alone (FIX-PLAN conflict N5)."
+      },
+      "uncheckable_by_design": [
+        {
+          "text": "Mood / emotional presence: fields behaving like presences rather than graphic rectangles, rewarding sustained viewing",
+          "reason": "Emotional coherence and presence are judgment properties of the produced image; the recorded emotional choice is checkable in the spec, achievement is not, per diagnostic notes classification (b)."
+        }
+      ]
+    }
+  }
+}

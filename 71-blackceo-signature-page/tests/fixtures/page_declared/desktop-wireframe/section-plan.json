@@ -1,0 +1,8 @@
+{
+  "sections": [
+    {"section_id": "s1", "declared_traits": ["centered composition", "sparse negative space"]},
+    {"section_id": "s2", "declared_traits": ["centered composition", "sparse negative space"]},
+    {"section_id": "s3", "declared_traits": ["centered composition", "sparse negative space"]},
+    {"section_id": "s4", "declared_traits": ["centered composition", "sparse negative space"]}
+  ]
+}

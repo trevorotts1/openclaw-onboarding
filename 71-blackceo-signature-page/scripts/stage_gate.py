@@ -5,6 +5,9 @@ Commands:
   init <run_dir>                require intake.json, create private/state.json + private/receipts/
   check <run_dir> <stage>       gate for STARTING a stage (exit 0 = may start)
   close <run_dir> <stage>       gate for CLOSING a stage (exit 0 = closed; records hashes)
+  check-item <run_dir> <stage> <item-id>   gate for STARTING one item of an itemized stage
+  close-item <run_dir> <stage> <item-id>   gate for CLOSING one item of an itemized stage
+  block-item <run_dir> <stage> <item-id> --reason <text>   record an item as blocked
   report <run_dir>              write REPORT.md (exit 0 only if every required stage is closed)
 
 The gate owns the stage list (references/stage-contract.json). It never trusts a
@@ -14,10 +17,13 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
 import time
+import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -42,7 +48,8 @@ NOT_RUN = "NOT RUN"
 WARN = "WARN"
 
 # Validator tokens handled inside this script (no external script required).
-GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:noop"}
+GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:noop",
+                 "gate:grade_calibrated", "gate:image_grade_full_set"}
 
 
 def fail_exit(lines):
@@ -70,6 +77,7 @@ def load_state(run_dir):
         sys.exit(2)
     data.setdefault("stages", {})
     data.setdefault("receipts", {})
+    data.setdefault("items", {})
     return data, state_path
 
 
@@ -167,6 +175,20 @@ def resolve_brand_placeholder(cmd, run_dir, stage, receipt):
         "{run_dir}": str(run_dir),
         "{brand}": str(brand),
     }
+    if "{copy_version}" in cmd:
+        # S4 CR-2 / S1 copy wiring: the copy spec path is selected by the
+        # intake's copy_version. No recorded selection is a gate failure,
+        # never a silent default (S4 CR-1's fail-closed rule).
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        except Exception:
+            intake = {}
+        cv = intake.get("copy_version") if isinstance(intake, dict) else None
+        if cv not in ("standard", "long-form"):
+            return None, ["copy stage validator needs intake.json copy_version "
+                          "(\"standard\" or \"long-form\"), the required intake decision "
+                          "(Amendment 6, Items 18/19); none is recorded"]
+        substitutions["{copy_version}"] = cv
     files = []
     per_file = spec.get("per_file_glob")
     if per_file:
@@ -332,6 +354,18 @@ def verify_dep_receipt(run_dir, dep, state=None):
         if actual != recorded:
             lines.append(f"dependency {dep}: artifact changed after close: {rel} "
                          f"(recorded {recorded[:12]}... != on-disk {actual[:12]}...)")
+    # Review files recorded at close (Item 2) are evidence too: tampering with
+    # a review after close is caught by the same hash check.
+    recorded_reviews = dep_entry.get("review_hashes") or {}
+    for rel, recorded in recorded_reviews.items():
+        p = run_dir / rel
+        if not p.exists():
+            lines.append(f"dependency {dep}: recorded review file missing: {rel}")
+            continue
+        actual = sha256_file(p)
+        if actual != recorded:
+            lines.append(f"dependency {dep}: review changed after close: {rel} "
+                         f"(recorded {recorded[:12]}... != on-disk {actual[:12]}...)")
     return lines
 
 
@@ -414,7 +448,75 @@ def run_builtin(name, args, run_dir):
     if name == "gate:noop":
         # Test-only builtin: always passes.
         return None
+    if name == "gate:grade_calibrated":
+        # S2 GCR-S2-1 (Item 8/Item 6): a production close of
+        # image-generation-qc is refused while the grade thresholds it
+        # would be judged by are uncalibrated. Test runs are exempt (the
+        # condition is scoped to production exactly as the request wrote
+        # it); the publish-verify leg lives in check_publish_rules.
+        try:
+            intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        except Exception:
+            intake = {}
+        if isinstance(intake, dict) and intake.get("test_run") is True:
+            return None
+        brand = brand_path_for(run_dir)
+        try:
+            bdata = json.loads(brand.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return f"gate:grade_calibrated: brand file unreadable: {exc}"
+        grade = bdata.get("grade") or {}
+        if grade.get("min_mean_saturation") is None or grade.get("min_luma_std") is None:
+            return ("image grade thresholds are uncalibrated (grade.min_mean_saturation / "
+                    "grade.min_luma_std are null in the brand file): a production run cannot "
+                    "be certified against uncalibrated thresholds. Calibrate per Item 8 "
+                    "(scripts/calibrate_grade.py) or close this stage in a test run.")
+        return None
+    if name == "gate:image_grade_full_set":
+        # S2 GCR-S2-2: the per-file validator line sees one file at a
+        # time, so the set-level checks (duplicates across the set,
+        # ratio truth against the inventory) never run at the gate. This
+        # builtin runs the same validator once over the whole set.
+        if not args:
+            return "gate:image_grade_full_set: missing stage argument"
+        stage = args[0]
+        spec = STAGES.get(stage) or {}
+        glob_pat = spec.get("per_file_glob")
+        if not glob_pat:
+            return f"gate:image_grade_full_set: stage {stage} has no per_file_glob"
+        files = sorted(str(p) for p in run_dir.glob(glob_pat) if p.is_file())
+        if not files:
+            return None  # the per-file line already failed on the empty set
+        brand = brand_path_for(run_dir)
+        cmd = [sys.executable, str(SKILL_ROOT / "scripts" / "validate_image_grade.py"),
+               *files, "--brand", str(brand)]
+        inventory = run_dir / "desktop-wireframe" / "image-inventory.json"
+        if inventory.is_file():
+            cmd += ["--inventory", str(inventory)]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+                                  cwd=str(SKILL_ROOT))
+        except subprocess.TimeoutExpired:
+            return "gate:image_grade_full_set: full-set validator timed out"
+        if proc.returncode != 0:
+            detail = ((proc.stdout or "").strip() or (proc.stderr or "").strip()
+                      or "(no output)")[:600]
+            return (f"gate:image_grade_full_set: full-set image grade pass failed "
+                    f"(exit {proc.returncode}): {detail}")
+        return None
     if name == "gate:brand_fonts":
+        # S3 Request 3: a brand-fonts waiver recorded at intake excuses
+        # this check for the run; the waiver prints in REPORT.md via
+        # collect_warnings. An unrecorded absence is never a waiver.
+        try:
+            _intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        except Exception:
+            _intake = {}
+        if isinstance(_intake, dict) and any(
+                isinstance(w, dict) and w.get("gate") == "brand-fonts"
+                and str(w.get("reason") or "").strip()
+                for w in _intake.get("layout_waivers") or []):
+            return None
         font_map = None
         brand = None
         i = 0
@@ -466,54 +568,304 @@ def run_builtin(name, args, run_dir):
     return f"unknown builtin validator {name}"
 
 
+# Review Receipt v2 (fix plan Item 2): session ids that prove nothing.
+PLACEHOLDER_SESSIONS = {"", "-", "none", "null", "nil", "n/a", "na", "tbd", "todo",
+                        "native", "placeholder", "fake", "dummy", "test", "unknown",
+                        "unknown-author", "0"}
+MIN_REVIEW_NOTE_CHARS = 40
+# Amendment 6, Item 2 delta: when the reviewing environment cannot name its
+# session, write_review.py records reviewer_session as "UNKNOWN" with
+# independent_review false (the limitation is reported, not simulated).
+# "UNKNOWN" stays a placeholder for author sessions and for any claimed
+# independence, but it is not a missing-session failure for the reviewer.
+UNKNOWN_SESSION = "UNKNOWN"
+
+
+def _is_placeholder_session(value):
+    return not isinstance(value, str) or value.strip().lower() in PLACEHOLDER_SESSIONS
+
+
+def _is_unknown_session(value):
+    return isinstance(value, str) and value.strip().upper() == UNKNOWN_SESSION
+
+
+def required_review_items(run_dir, stage):
+    """Enumerate the items a stage's close requires review files for.
+
+    Returns a list of (item_id, artifact_rel_or_None). Per-file stages: one
+    item per file matched by per_file_glob. review_covers stages: one item
+    per covered file (covers may be a single glob string or a list mixing
+    globs, literal paths, and named items such as page-visual-bible, whose
+    artifact is resolved from the review file itself). All other stages:
+    the single item "stage".
+    """
+    spec = STAGES[stage]
+    per_file = spec.get("per_file_glob")
+    if per_file:
+        return [(p.stem, str(p.relative_to(run_dir)))
+                for p in sorted(run_dir.glob(per_file)) if p.is_file()]
+    covers = spec.get("review_covers")
+    if covers:
+        entries = [covers] if isinstance(covers, str) else list(covers)
+        raw = []
+        for entry in entries:
+            if any(ch in entry for ch in "*?["):
+                for p in sorted(run_dir.glob(entry)):
+                    if p.is_file():
+                        raw.append((p.stem, str(p.relative_to(run_dir)),
+                                    p.parent.name, p.suffix.lstrip(".")))
+            else:
+                candidate = run_dir / entry
+                if candidate.is_file():
+                    raw.append((candidate.stem, entry, candidate.parent.name,
+                                candidate.suffix.lstrip(".")))
+                elif "/" in entry:
+                    # A covered file path that is absent: name the item by
+                    # the file's base name (the stage's artifact check fails
+                    # the close separately for the missing artifact).
+                    raw.append((Path(entry).stem, None, Path(entry).parent.name,
+                                Path(entry).suffix.lstrip(".")))
+                else:
+                    raw.append((entry, None, "", ""))
+        # Stems can collide: one review file cannot evidence two different
+        # artifacts. Collisions across folders are disambiguated by parent
+        # folder (desktop-part-01, mobile-part-01); collisions inside one
+        # folder are disambiguated by file suffix (page-visual-bible-json,
+        # page-visual-bible-md).
+        stem_counts = {}
+        for stem, _, _, _ in raw:
+            stem_counts[stem] = stem_counts.get(stem, 0) + 1
+        parent_counts = {}
+        for stem, _, parent, _ in raw:
+            parent_counts[(parent, stem)] = parent_counts.get((parent, stem), 0) + 1
+        items = []
+        for stem, rel, parent, suffix in raw:
+            if stem_counts[stem] == 1:
+                item_id = stem
+            elif parent and parent_counts[(parent, stem)] == 1:
+                item_id = f"{parent}-{stem}"
+            elif suffix:
+                item_id = f"{stem}-{suffix}"
+            elif parent:
+                item_id = f"{parent}-{stem}"
+            else:
+                item_id = stem
+            items.append((item_id, rel))
+        return items
+    return [("stage", None)]
+
+
+def review_scores_summary(run_dir, stage):
+    """Aggregate the stage's v2 review criteria into a small summary dict."""
+    reviews_dir = run_dir / "private" / "reviews" / stage
+    values = []
+    if reviews_dir.is_dir():
+        for p in sorted(reviews_dir.glob("*.review.json")):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            criteria = data.get("criteria") or {}
+            if isinstance(criteria, dict):
+                for entry in criteria.values():
+                    if isinstance(entry, dict):
+                        score = entry.get("score")
+                        if isinstance(score, (int, float)) and not isinstance(score, bool):
+                            values.append(float(score))
+    if not values:
+        return None
+    return {"criteria_count": len(values), "min": min(values),
+            "mean": round(sum(values) / len(values), 3)}
+
+
 def check_review_scores(run_dir, stage, receipt):
-    """Review/score requirements for close."""
+    """Review Receipt v2 verification for close (fix plan Items 2 and 12).
+
+    Scores live only in per-item files private/reviews/<stage>/<item>.review.json
+    written by scripts/write_review.py. A stage receipt carrying v1 scores
+    fails close with the migration message; the scores path is deleted, not
+    deprecated.
+    """
     spec = STAGES[stage]
     failures = []
-    author = receipt.get("author_agent")
-    reviewer = receipt.get("reviewer_agent")
-    if spec.get("review_required"):
-        if not author:
-            failures.append(f"stage {stage}: receipt missing author_agent")
-        if not reviewer:
-            failures.append(f"stage {stage}: review_required but receipt missing reviewer_agent")
-        elif author and reviewer == author:
-            failures.append(f"stage {stage}: reviewer_agent equals author_agent "
-                            f"({author!r}); review must be independent")
-        # review_covers: every matched artifact must be listed by name in review_files with a score
-        covers = spec.get("review_covers")
-        if covers and author and reviewer and reviewer != author:
-            matched = sorted(run_dir.glob(covers))
-            listed = receipt.get("review_files") or {}
-            for p in matched:
-                rel = str(p.relative_to(run_dir))
-                entry = listed.get(rel)
-                if not isinstance(entry, dict) or entry.get("score") is None:
+    legacy_scores = receipt.get("scores")
+    if isinstance(legacy_scores, dict) and legacy_scores:
+        failures.append(
+            f"stage {stage}: receipt carries Review Receipt v1 scores; v1 is retired. "
+            f"Migration: remove scores from private/receipts/{stage}.json and write one "
+            f"Review Receipt v2 file per item at private/reviews/{stage}/<item-id>.review.json "
+            f"with scripts/write_review.py, from the reviewing session")
+    review_required = bool(spec.get("review_required")) or spec.get("min_scores") is not None
+    if not review_required:
+        return failures
+    author_agent = receipt.get("author_agent")
+    if not author_agent:
+        failures.append(f"stage {stage}: receipt missing author_agent")
+    receipt_author_session = receipt.get("author_session") or author_agent
+    items = required_review_items(run_dir, stage)
+    if not items:
+        failures.append(f"stage {stage}: review is required but no reviewable items "
+                        f"could be enumerated from the stage contract")
+        return failures
+    all_scores = []
+    for item_id, artifact_rel in items:
+        where = f"stage {stage} item {item_id}"
+        review_path = run_dir / "private" / "reviews" / stage / f"{item_id}.review.json"
+        if not review_path.exists():
+            named = f" (artifact {artifact_rel})" if artifact_rel else ""
+            failures.append(
+                f"{where}: missing review file private/reviews/{stage}/{item_id}.review.json"
+                f"{named}; uncovered items cannot close. Write it with "
+                f"scripts/write_review.py from the reviewing session")
+            continue
+        try:
+            review = json.loads(review_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            failures.append(f"{where}: review file unreadable: {exc}")
+            continue
+        if not isinstance(review, dict):
+            failures.append(f"{where}: review file is not a JSON object")
+            continue
+        if review.get("item") != item_id:
+            failures.append(f"{where}: review file item is {review.get('item')!r}, "
+                            f"expected {item_id!r}")
+        rel = review.get("artifact")
+        if not isinstance(rel, str) or not rel:
+            failures.append(f"{where}: review file names no artifact")
+            rel = None
+        if rel is not None and artifact_rel is not None and rel != artifact_rel:
+            failures.append(f"{where}: review covers artifact {rel!r} but the item's "
+                            f"artifact is {artifact_rel!r}")
+        if rel is not None:
+            artifact_path = run_dir / rel
+            if not artifact_path.is_file():
+                failures.append(f"{where}: reviewed artifact missing on disk: {rel}")
+            else:
+                actual = sha256_file(artifact_path)
+                if actual != review.get("artifact_sha256"):
                     failures.append(
-                        f"stage {stage}: review must list every {covers} file with a score; "
-                        f"missing or unscored: {rel}"
-                    )
-    min_scores = spec.get("min_scores")
-    if min_scores:
-        scores = receipt.get("scores") or {}
-        if not scores:
-            failures.append(f"stage {stage}: min_scores required but receipt.scores is empty")
+                        f"{where}: artifact hash mismatch for {rel} (review recorded "
+                        f"{str(review.get('artifact_sha256'))[:12]}..., on-disk "
+                        f"{actual[:12]}...); the graded bytes changed after review")
+        author_session = review.get("author_session")
+        reviewer_session = review.get("reviewer_session")
+        reviewer_unknown = _is_unknown_session(reviewer_session)
+        if _is_placeholder_session(author_session):
+            failures.append(f"{where}: review author_session is missing or a placeholder "
+                            f"({author_session!r})")
+        if _is_placeholder_session(reviewer_session) and not reviewer_unknown:
+            failures.append(f"{where}: review reviewer_session is missing or a placeholder "
+                            f"({reviewer_session!r}); reviews must be stamped by "
+                            f"scripts/write_review.py from a real session")
+        if (not _is_placeholder_session(author_session)
+                and not _is_placeholder_session(reviewer_session)
+                and reviewer_session == author_session):
+            failures.append(f"{where}: reviewer_session equals author_session "
+                            f"({reviewer_session!r}); review must be independent")
+        if (not _is_placeholder_session(reviewer_session)
+                and isinstance(receipt_author_session, str)
+                and reviewer_session == receipt_author_session):
+            failures.append(f"{where}: reviewer_session equals the stage receipt's author "
+                            f"session ({receipt_author_session!r}); review must be independent")
+        if review.get("verdict") != "pass":
+            failures.append(f"{where}: review verdict is {review.get('verdict')!r}, "
+                            f"not 'pass'")
+        # Amendment 6, Item 2 delta: the SOP's evidentiary fields are part
+        # of the v2 schema. A review without them is an incomplete record,
+        # and a review that records automatic failures cannot close its
+        # stage (zero auto-fails is one leg of the Item 12 per-artifact rule).
+        for list_field in ("automatic_failures", "specific_defects"):
+            if list_field not in review:
+                failures.append(f"{where}: review file is missing {list_field} "
+                                f"(Review Receipt v2 schema, Amendment 6)")
+            elif not isinstance(review[list_field], list):
+                failures.append(f"{where}: review {list_field} must be a list")
+        repair_attempt = review.get("repair_attempt")
+        if "repair_attempt" not in review:
+            failures.append(f"{where}: review file is missing repair_attempt "
+                            f"(Review Receipt v2 schema, Amendment 6)")
+        elif (not isinstance(repair_attempt, int) or isinstance(repair_attempt, bool)
+                or not 0 <= repair_attempt <= 3):
+            failures.append(f"{where}: review repair_attempt must be an integer "
+                            f"from 0 to 3, got {repair_attempt!r}")
+        for text_field in ("performed_check", "next_current_artifact"):
+            value = review.get(text_field)
+            if not isinstance(value, str) or not value.strip():
+                failures.append(f"{where}: review {text_field} is missing or empty "
+                                f"(Review Receipt v2 schema, Amendment 6)")
+        independent_flag = review.get("independent_review")
+        if "independent_review" not in review:
+            failures.append(f"{where}: review file is missing independent_review "
+                            f"(Review Receipt v2 schema, Amendment 6)")
+        elif not isinstance(independent_flag, bool):
+            failures.append(f"{where}: review independent_review must be a boolean")
+        elif reviewer_unknown and independent_flag:
+            failures.append(f"{where}: reviewer_session is UNKNOWN but "
+                            f"independent_review is true; the limitation must be "
+                            f"recorded, not simulated")
+        if (review.get("verdict") == "fail"
+                and isinstance(review.get("specific_defects"), list)
+                and not review["specific_defects"]):
+            failures.append(f"{where}: verdict is 'fail' but specific_defects is "
+                            f"empty; a fail verdict must name its defects")
+        recorded_autofails = review.get("automatic_failures")
+        if isinstance(recorded_autofails, list) and recorded_autofails:
+            failures.append(
+                f"{where}: review records {len(recorded_autofails)} automatic "
+                f"failure(s): " + "; ".join(str(x) for x in recorded_autofails)
+                + "; zero automatic failures are required to close "
+                  "(Item 12 per-artifact rule)")
+        criteria = review.get("criteria")
+        if not isinstance(criteria, dict) or not criteria:
+            failures.append(f"{where}: review file carries no criteria scores")
+            continue
+        for cname, entry in sorted(criteria.items()):
+            if not isinstance(entry, dict):
+                failures.append(f"{where}: criterion {cname!r} is not a {{score, note}} object")
+                continue
+            score = entry.get("score")
+            if not isinstance(score, (int, float)) or isinstance(score, bool):
+                failures.append(f"{where}: criterion {cname!r} score is not a number")
+            else:
+                all_scores.append((item_id, cname, float(score)))
+            note = entry.get("note")
+            if not isinstance(note, str) or not note.strip():
+                failures.append(f"{where}: criterion {cname!r} has no evidence note")
+            elif len(note.strip()) < MIN_REVIEW_NOTE_CHARS:
+                failures.append(f"{where}: criterion {cname!r} note is "
+                                f"{len(note.strip())} characters; at least "
+                                f"{MIN_REVIEW_NOTE_CHARS} required")
+    min_scores = spec.get("min_scores") or {}
+    each = min_scores.get("each")
+    if each is not None and all_scores:
+        bad = [(i, c, v) for i, c, v in all_scores if v < each]
+        for i, c, v in bad:
+            failures.append(f"stage {stage}: score below minimum {each}: "
+                            f"item {i} criterion {c} = {v:g}")
+    avg = min_scores.get("average")
+    if avg is not None:
+        if not all_scores:
+            failures.append(f"stage {stage}: min_scores average {avg} required but no "
+                            f"v2 review criteria were found")
         else:
-            each = min_scores.get("each")
-            if each is not None:
-                bad = [k for k, v in scores.items()
-                       if not isinstance(v, (int, float)) or isinstance(v, bool) or v < each]
-                if bad:
-                    failures.append(
-                        f"stage {stage}: scores below minimum {each}: " +
-                        ", ".join(f"{k}={scores[k]}" for k in sorted(bad))
-                    )
-            avg = min_scores.get("average")
-            if avg is not None:
-                vals = [v for v in scores.values() if isinstance(v, (int, float)) and not isinstance(v, bool)]
-                if not vals or (sum(vals) / len(vals)) < avg:
-                    shown = (sum(vals) / len(vals)) if vals else 0
-                    failures.append(f"stage {stage}: average score {shown:.2f} below minimum {avg}")
+            # Amendment 6, Item 12 delta: the average is PER ARTIFACT. Every
+            # reviewed file must reach the contract average with its own
+            # criteria; a strong file can no longer carry a weak one across
+            # the close (cross-file pooling is removed).
+            by_item = {}
+            for i, _c, v in all_scores:
+                by_item.setdefault(i, []).append(v)
+            for item_id, _rel in items:
+                values = by_item.get(item_id)
+                if not values:
+                    continue  # missing or empty reviews failed above by name
+                mean = sum(values) / len(values)
+                if mean < avg:
+                    failures.append(f"stage {stage}: item {item_id} average score "
+                                    f"{mean:.2f} across its {len(values)} reviewed "
+                                    f"criteria is below minimum {avg} (per-artifact "
+                                    f"rule: every file must reach the average "
+                                    f"itself; cross-file pooling is not allowed)")
     return failures
 
 
@@ -557,8 +909,15 @@ def _kie74_file(run_dir, task_id):
     return run_dir / KIE74_DIR / f"{safe}.json"
 
 
-def _kie74_problems(run_dir, stage, tasks):
-    """Each Skill 74 task id must be unique and backed by its own result file in receipts/kie74/."""
+def _kie74_problems(run_dir, stage, tasks, alias=False):
+    """Each Skill 74 task id must be unique and backed by its own result file in receipts/kie74/.
+
+    With alias=True (Item 28 step 3, a claude-nine run transported by
+    the 999 kie skill), the result file may name the kie skill as its
+    adapter and carries no adapter_mode (Skill 74's mode system is its
+    own); every other requirement is identical: unique task ids, a
+    readable result file per task, task_id match, state success.
+    """
     problems, seen = [], {}
     for x in tasks:
         if not isinstance(x, dict) or not _real_id(x.get("task_id")):
@@ -574,9 +933,14 @@ def _kie74_problems(run_dir, stage, tasks):
             problems.append(f"stage {stage}: task_id {tid!r} has no readable {KIE74_DIR}/{f.name} "
                             f"(record it with kie74_receipt.py)")
             continue
-        if not (isinstance(obj, dict) and obj.get("adapter") == "74-kie-live-adapter"
-                and obj.get("task_id") == tid and obj.get("state") == "success"
-                and obj.get("adapter_mode") == "active"):
+        ok = (isinstance(obj, dict) and obj.get("task_id") == tid
+              and obj.get("state") == "success")
+        if ok and alias:
+            ok = obj.get("adapter") in ("74-kie-live-adapter", "kie")
+        elif ok:
+            ok = (obj.get("adapter") == "74-kie-live-adapter"
+                  and obj.get("adapter_mode") == "active")
+        if not ok:
             problems.append(f"stage {stage}: {KIE74_DIR}/{f.name} is not a successful active Skill 74 result for {tid!r}")
     ids = {}
     d = run_dir / KIE74_DIR
@@ -597,6 +961,132 @@ def _agnes_selected(run_dir):
     except (OSError, ValueError):
         return False
     return isinstance(intake, dict) and str(intake.get("image_engine", "")).strip().lower() == "agnes"
+
+
+def _intake_runtime(run_dir):
+    try:
+        intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return intake.get("runtime") if isinstance(intake, dict) else None
+
+
+LAYOUT_REFERENCE_FILES = (
+    "Sales Page - Elevation Conference - Desktop(1).jpg",
+    "screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07.png",
+    "screencapture-blackceochallenge-reg-va-2026-09-29-15_52_07-2.png",
+)
+LAYOUT_GATE_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
+
+
+def _layout_references_waived(run_dir):
+    """A layout-references waiver counts only as recorded at intake.
+
+    Two recorded shapes are honored (reconciled at integration, S8):
+    the intake writer's layout_waivers list with a "layout-references"
+    entry (S3 Request 3), and the flat fields the page-references
+    README names (layout_references_waived true with a non-empty
+    layout_references_waiver_reason). An unrecorded absence is never
+    a waiver under either shape.
+    """
+    try:
+        intake = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(intake, dict):
+        return False
+    for w in intake.get("layout_waivers") or []:
+        if isinstance(w, dict) and w.get("gate") == "layout-references" and str(w.get("reason") or "").strip():
+            return True
+    return (intake.get("layout_references_waived") is True
+            and bool(str(intake.get("layout_references_waiver_reason") or "").strip()))
+
+
+def style_selection_problems(run_dir):
+    """GCR-S2-4 (Item 10, Amendment 6 Part B1): a run with no style
+    selection record cannot close image-inventory-prompts. The record
+    at image-inventory-prompts/style-selection.json must conform to
+    references/style-selection.schema.json and govern every image in
+    the run's inventory (a record's applies_to is "all" or a list of
+    inventory image ids)."""
+    stage = "image-inventory-prompts"
+    path = run_dir / stage / "style-selection.json"
+    if not path.is_file():
+        return [f"stage {stage}: no style selection record at "
+                f"{stage}/style-selection.json (Amendment 6, Part B1); "
+                "a run with no selection record cannot close this stage"]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return [f"stage {stage}: {stage}/style-selection.json is not "
+                "readable JSON"]
+    if (not isinstance(data, dict) or data.get("schema_version") != 1
+            or not isinstance(data.get("selections"), list)
+            or not data["selections"]):
+        return [f"stage {stage}: style-selection.json does not conform "
+                "to references/style-selection.schema.json (schema_version "
+                "1 with a non-empty selections list)"]
+    problems = []
+    try:
+        import jsonschema
+        schema = json.loads((SKILL_ROOT / "references"
+                             / "style-selection.schema.json").read_text(
+                                 encoding="utf-8"))
+        jsonschema.validate(data, schema)
+    except ImportError:
+        for i, rec in enumerate(data["selections"]):
+            if not isinstance(rec, dict) or any(
+                    k not in rec for k in ("applies_to", "source_library",
+                                           "style_id", "branded_name")):
+                problems.append(
+                    f"stage {stage}: style-selection.json selections[{i}] "
+                    "lacks a required field (applies_to, source_library, "
+                    "style_id, branded_name)")
+    except Exception as exc:
+        problems.append(f"stage {stage}: style-selection.json fails "
+                        f"references/style-selection.schema.json: {exc}")
+    if problems:
+        return problems
+    inventory_ids = []
+    inv_path = run_dir / "desktop-wireframe" / "image-inventory.json"
+    if inv_path.is_file():
+        try:
+            inventory_ids = [e.get("id") for e in
+                             json.loads(inv_path.read_text(
+                                 encoding="utf-8")).get("images", [])
+                             if isinstance(e, dict)]
+        except ValueError:
+            inventory_ids = []
+    governed = set()
+    for rec in data["selections"]:
+        applies = rec.get("applies_to")
+        if applies == "all":
+            governed.update(inventory_ids)
+        elif isinstance(applies, list):
+            governed.update(applies)
+    for image_id in inventory_ids:
+        if image_id not in governed:
+            problems.append(f"stage {stage}: inventory image {image_id} "
+                            "has no governing style selection record")
+    return problems
+
+
+def layout_gate_failures(run_dir):
+    """Item 13 / S3 Request 2: the three bundled layout reference files
+    must exist in the installed skill at wireframe and mockup close, or
+    the run's intake must carry the recorded waiver. The files are
+    owner-supplied; no substitute is accepted."""
+    missing = [name for name in LAYOUT_REFERENCE_FILES
+               if not (SKILL_ROOT / "assets" / "page-references" / name).is_file()]
+    if not missing:
+        return []
+    if _layout_references_waived(run_dir):
+        return []
+    return ["missing layout reference file(s) in assets/page-references/: "
+            + ", ".join(missing)
+            + "; the references are required reads for this stage (Item 13) "
+              "and no waiver is recorded in intake.json (layout_waivers or "
+              "layout_references_waived with a reason)"]
 
 
 def _ratio_problem(who, task):
@@ -629,10 +1119,20 @@ def check_transport(run_dir, stage, receipt):
     if not isinstance(t, dict):
         return [f"stage {stage}: receipt missing transport block (references/kie-generation-route.md section 3)"]
     skill = t.get("skill")
-    if skill not in TRANSPORTS:
+    # Item 28 step 3 environment alias: on a run whose intake declares
+    # runtime "claude-nine" (the 999 Claude Code harness edition), the
+    # 999 native kie skill may be recorded as the transport performing
+    # both the policy and transport roles, provided its receipt carries
+    # the same fields as the 74 route (task ids, per-task result files,
+    # ratio checks, preflight and budget flags). The evidence standard
+    # does not drop; only the skill's name changes. Skill 74's mode
+    # system is its own and is not required of the alias.
+    kie_alias = skill == "kie" and _intake_runtime(run_dir) == "claude-nine"
+    if skill not in TRANSPORTS and not kie_alias:
         return [f"stage {stage}: transport.skill {skill!r} is not an approved route {sorted(TRANSPORTS)}; "
                 f"a hand-rolled createTask is not"]
-    policy, provider = TRANSPORTS[skill]
+    policy, provider = TRANSPORTS[skill] if skill in TRANSPORTS else ("kie", "kie")
+    kie_like = skill == "74-kie-live-adapter" or kie_alias
     problems = []
     if t.get("policy") != policy:
         problems.append(f"stage {stage}: transport.policy must be {policy!r}, got {t.get('policy')!r}")
@@ -651,15 +1151,22 @@ def check_transport(run_dir, stage, receipt):
     got = sorted(str(x.get("file")) for x in tasks if isinstance(x, dict))
     if got != files:
         problems.append(f"stage {stage}: transport.tasks cover {got} but the stage has {files}")
-    if skill == "74-kie-live-adapter":
-        problems.extend(_kie74_problems(run_dir, stage, tasks))
+    if kie_like:
+        problems.extend(_kie74_problems(run_dir, stage, tasks, alias=kie_alias))
     for i, x in enumerate(tasks):
         who = f"stage {stage}: transport.tasks[{i}] ({x.get('file') if isinstance(x, dict) else '?'})"
         if not isinstance(x, dict):
             problems.append(f"{who} is not an object")
             continue
-        if skill != "74-kie-live-adapter":
+        if not kie_like:
             continue
+        if kie_alias and x.get("model_source") == "user-pin":
+            # Item 28 step 3 vocabulary mapping: on a claude-nine run
+            # the generated policy names the pin a user pin where the
+            # onboarding law says department pin. Validation maps the
+            # value on a working copy; the stored receipt keeps
+            # "user-pin" (references/kie-policy-999.json).
+            x = {**x, "model_source": "department-pin"}
         if not _real_id(x.get("task_id")):
             problems.append(f"{who}: task_id {x.get('task_id')!r} is missing or a placeholder")
         if x.get("preflight_ok") is not True:
@@ -676,23 +1183,1076 @@ def check_transport(run_dir, stage, receipt):
     return problems
 
 
+# ---------------------------------------------------------------------------
+# Item-level gates (fix plan Item 20).
+#
+# Itemized stages (contract flag "itemized": true; today
+# image-inventory-prompts and image-generation-qc) gain per-item state under
+# state["items"][stage][item_id] and three subcommands: check-item,
+# close-item, block-item. The canonical item id space is the inventory id
+# space (IMG-001, ...); an item's artifact and review files are located by
+# numeric suffix, because the stages name their files differently
+# (IMG-001.txt vs Image-001.png, whose review item id is its file stem).
+#
+# The weld this cuts: a generation item opens the moment ITS prompt item is
+# closed. Stage-level `check` for image-generation-qc is unchanged and still
+# requires the whole dependency chain; only item flow is finer-grained.
+# Stage `close` for an itemized stage gains fan-in verification (every item
+# in the universe closed at item level) ahead of the existing artifact /
+# validator / review / cost / transport checks, which still run in full.
+
+ITEMIZED_STAGES = ("image-inventory-prompts", "image-generation-qc")
+# Itemized stage -> the itemized stage whose items it feeds (and whose
+# stage-level, non-per-file artifacts it structurally requires).
+ITEM_FEEDS = {"image-generation-qc": "image-inventory-prompts"}
+
+
+def is_itemized(stage):
+    spec = STAGES.get(stage) or {}
+    return bool(spec.get("itemized")) or stage in ITEMIZED_STAGES
+
+
+def _item_number(item_id):
+    m = re.search(r"(\d+)\s*$", str(item_id))
+    return int(m.group(1)) if m else None
+
+
+def item_universe(run_dir, stage):
+    """Canonical item ids for an itemized stage, from its count_of inventory."""
+    spec = STAGES[stage]
+    rel = spec.get("count_of")
+    if not rel:
+        return []
+    path = run_dir / rel
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    entries = []
+    if isinstance(data, list):
+        entries = data
+    elif isinstance(data, dict):
+        for key in ("images", "inventory", "entries", "slots"):
+            if isinstance(data.get(key), list):
+                entries = data[key]
+                break
+    ids = []
+    for e in entries:
+        if isinstance(e, dict) and e.get("id"):
+            ids.append(str(e["id"]))
+        elif isinstance(e, str):
+            ids.append(e)
+    return ids
+
+
+def item_artifact_rel(run_dir, stage, item_id):
+    """The item's artifact path (run-relative), matched by numeric suffix."""
+    spec = STAGES[stage]
+    pattern = spec.get("per_file_glob")
+    want = _item_number(item_id)
+    if not pattern or want is None:
+        return None
+    for p in sorted(run_dir.glob(pattern)):
+        if p.is_file() and _item_number(p.stem) == want:
+            return str(p.relative_to(run_dir))
+    return None
+
+
+def item_review_item_id(run_dir, stage, item_id):
+    """The review-file item id for an item: its artifact's file stem."""
+    rel = item_artifact_rel(run_dir, stage, item_id)
+    if rel is None:
+        return None
+    return Path(rel).stem
+
+
+def host_shape():
+    """Amendment 1 profile detection (S6 emission spec section 6.1):
+    FLEET_SHAPE env wins; Darwin is fleet-mac; a container is
+    fleet-contabo; other Linux is fleet-hostinger."""
+    env = os.environ.get("FLEET_SHAPE")
+    if env in ("fleet-mac", "fleet-hostinger", "fleet-contabo"):
+        return env
+    import platform
+    if platform.system() == "Darwin":
+        return "fleet-mac"
+    if Path("/.dockerenv").exists():
+        return "fleet-contabo"
+    try:
+        if "container" in Path("/proc/1/cgroup").read_text(encoding="utf-8", errors="ignore"):
+            return "fleet-contabo"
+    except Exception:
+        pass
+    return "fleet-hostinger"
+
+
+def emit_event(run_dir, event):
+    """Append one event to the run's feed, per references/run-events-schema.md
+    (Items 24/25; S6's gate-side emission spec, implemented at integration).
+
+    Fills the frozen envelope (event_id, event_type, schema_version,
+    emitted_at, run_id). Also appends to the host index when
+    SKILL71_RUNS_INDEX is set (with run_dir added), and attempts the
+    Command Center POST when SKILL71_RUNS_SHIP_URL is set, falling back
+    to the SKILL71_RUNS_SPOOL spool on failure (the token is read from
+    SKILL71_RUNS_SHIP_TOKEN_FILE at send time and never printed or
+    stored). Emission failure never fails the gate command: events are
+    evidence about the gate, and a broken index path must not block a
+    client's page; the failure prints as a WARN line on stderr.
+    """
+    try:
+        state, _ = load_state(run_dir)
+        if not state.get("run_id"):
+            # A run initialized before Item 24 has no id; mint and store
+            # one at the first emission so every line carries a run_id.
+            state["run_id"] = str(uuid.uuid4())
+            save_state(run_dir, state)
+        full = dict(event)
+        full.setdefault("event_id", str(uuid.uuid4()))
+        full["schema_version"] = "1.0"
+        full["emitted_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        full["run_id"] = state.get("run_id")
+        line = json.dumps(full, sort_keys=True)
+        path = run_dir / "private" / "run-events.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        external = dict(full)
+        external["run_dir"] = str(run_dir)
+        ext_line = json.dumps(external, sort_keys=True)
+        index = os.environ.get("SKILL71_RUNS_INDEX")
+        if index:
+            ipath = Path(index)
+            ipath.parent.mkdir(parents=True, exist_ok=True)
+            with open(ipath, "a", encoding="utf-8") as f:
+                f.write(ext_line + "\n")
+        ship_url = os.environ.get("SKILL71_RUNS_SHIP_URL")
+        if ship_url:
+            delivered = False
+            try:
+                headers = {"Content-Type": "application/json"}
+                token_file = os.environ.get("SKILL71_RUNS_SHIP_TOKEN_FILE")
+                if token_file:
+                    token = Path(token_file).read_text(encoding="utf-8").strip()
+                    if token:
+                        headers["Authorization"] = f"Bearer {token}"
+                req = urllib.request.Request(
+                    ship_url, data=ext_line.encode("utf-8"), headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    delivered = 200 <= resp.status < 300
+            except Exception:
+                delivered = False
+            if not delivered:
+                spool = os.environ.get("SKILL71_RUNS_SPOOL")
+                if spool:
+                    sdir = Path(spool)
+                    sdir.mkdir(parents=True, exist_ok=True)
+                    with open(sdir / "gate-spool.jsonl", "a", encoding="utf-8") as f:
+                        f.write(ext_line + "\n")
+    except Exception as exc:
+        print(f"WARN: run event emission failed ({exc}); the gate command continues",
+              file=sys.stderr)
+
+
+def item_state(run_dir, stage, item_id, state=None):
+    if state is None:
+        state, _ = load_state(run_dir)
+    return (state.get("items") or {}).get(stage, {}).get(item_id, {})
+
+
+def item_dependency_failures(run_dir, stage, item_id):
+    """check-item core: the item's OWN dependencies, nothing wider."""
+    spec = STAGES[stage]
+    state, _ = load_state(run_dir)
+    lines = []
+    universe = item_universe(run_dir, stage)
+    if item_id not in universe:
+        lines.append(f"stage {stage}: unknown item {item_id!r}; the stage's item "
+                     f"universe comes from {spec.get('count_of')} "
+                     f"({', '.join(universe) or 'no inventory found'})")
+        return lines
+    upstream = ITEM_FEEDS.get(stage)
+    if upstream is None:
+        # Prompt items: the stage's contract dependencies, item-scoped: the
+        # depends_on stages closed, the requires_artifacts present.
+        for dep in spec.get("depends_on", []):
+            dep_state = state.get("stages", {}).get(dep, {})
+            if dep_state.get("status") != "closed":
+                lines.append(f"item {item_id} cannot start: stage dependency {dep} "
+                             f"is not closed (status: "
+                             f"{dep_state.get('status', 'not closed')})")
+            else:
+                lines.extend(verify_dep_receipt(run_dir, dep, state))
+        for rel in spec.get("requires_artifacts", []):
+            if not (run_dir / rel).exists():
+                lines.append(f"item {item_id} cannot start: required artifact "
+                             f"missing: {rel}")
+        return lines
+    # Generation items: the matching upstream ITEM must be closed (the weld
+    # cut), and the upstream stage's structural (non-per-file) artifacts must
+    # exist. The upstream STAGE does not have to be closed.
+    want = _item_number(item_id)
+    match = None
+    for uid, entry in (state.get("items") or {}).get(upstream, {}).items():
+        if _item_number(uid) == want:
+            match = (uid, entry)
+            break
+    if match is None or match[1].get("status") != "closed":
+        lines.append(f"item {item_id} cannot start: its {upstream} item "
+                     f"(number {want}) is not closed")
+    up_spec = STAGES[upstream]
+    for art in up_spec.get("artifacts", []):
+        if art["glob"] == up_spec.get("per_file_glob"):
+            continue
+        matches = sorted(run_dir.glob(art["glob"]))
+        if len(matches) < art.get("min_count", 1):
+            lines.append(f"item {item_id} cannot start: upstream structural "
+                         f"artifact missing: {art['glob']}")
+    return lines
+
+
+def run_item_validators(run_dir, stage, artifact_rel):
+    """Run the stage's validators against ONE item's file only (the same
+    placeholder substitutions resolve_brand_placeholder performs for the
+    per-file case, scoped to the single file)."""
+    spec = STAGES[stage]
+    failures = []
+    brand = brand_path_for(run_dir)
+    sauce = ""
+    bible_path = run_dir / "visual-mockup" / "page-visual-bible.json"
+    if bible_path.exists():
+        try:
+            bible = json.loads(bible_path.read_text(encoding="utf-8"))
+            sauce = "--sauce-only" if bible.get("selection_mode") == "SECRET_SAUCE_ONLY" else ""
+        except Exception:
+            sauce = ""
+    for raw in spec.get("validators", []):
+        cmd = (raw.replace("{run_dir}", str(run_dir))
+                  .replace("{brand}", str(brand))
+                  .replace("{file}", str(run_dir / artifact_rel))
+                  .replace("{sauce}", sauce))
+        line = run_one_validator(cmd, run_dir)
+        if line:
+            failures.append(line)
+    return failures
+
+
+def check_item_review(run_dir, stage, item_id, receipt):
+    """Verify ONE item's Review Receipt v2 file: the per-item slice of
+    check_review_scores, with Amendment 6 per-artifact scoring (this item's
+    mean must meet min_scores.average and every criterion min_scores.each).
+    Stage close re-verifies everything at fan-in; this replaces nothing."""
+    spec = STAGES[stage]
+    failures = []
+    review_required = bool(spec.get("review_required")) or spec.get("min_scores") is not None
+    if not review_required:
+        return failures
+    where = f"stage {stage} item {item_id}"
+    review_item = item_review_item_id(run_dir, stage, item_id)
+    if review_item is None:
+        return [f"{where}: cannot locate the item's artifact, so its review "
+                f"item id is unknown"]
+    review_path = run_dir / "private" / "reviews" / stage / f"{review_item}.review.json"
+    if not review_path.exists():
+        return [f"{where}: missing review file private/reviews/{stage}/"
+                f"{review_item}.review.json; uncovered items cannot close. Write "
+                f"it with scripts/write_review.py from the reviewing session"]
+    try:
+        review = json.loads(review_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return [f"{where}: review file unreadable: {exc}"]
+    if not isinstance(review, dict):
+        return [f"{where}: review file is not a JSON object"]
+    if review.get("item") != review_item:
+        failures.append(f"{where}: review file item is {review.get('item')!r}, "
+                        f"expected {review_item!r}")
+    artifact_rel = item_artifact_rel(run_dir, stage, item_id)
+    rel = review.get("artifact")
+    if not isinstance(rel, str) or not rel:
+        failures.append(f"{where}: review file names no artifact")
+        rel = None
+    if rel is not None and artifact_rel is not None and rel != artifact_rel:
+        failures.append(f"{where}: review covers artifact {rel!r} but the item's "
+                        f"artifact is {artifact_rel!r}")
+    if rel is not None:
+        artifact_path = run_dir / rel
+        if not artifact_path.is_file():
+            failures.append(f"{where}: reviewed artifact missing on disk: {rel}")
+        else:
+            actual = sha256_file(artifact_path)
+            if actual != review.get("artifact_sha256"):
+                failures.append(
+                    f"{where}: artifact hash mismatch for {rel} (review recorded "
+                    f"{str(review.get('artifact_sha256'))[:12]}..., on-disk "
+                    f"{actual[:12]}...); the graded bytes changed after review")
+    author_session = review.get("author_session")
+    reviewer_session = review.get("reviewer_session")
+    if _is_placeholder_session(author_session):
+        failures.append(f"{where}: review author_session is missing or a "
+                        f"placeholder ({author_session!r})")
+    if _is_placeholder_session(reviewer_session):
+        failures.append(f"{where}: review reviewer_session is missing or a "
+                        f"placeholder ({reviewer_session!r}); reviews must be "
+                        f"stamped by scripts/write_review.py from a real session")
+    if (not _is_placeholder_session(author_session)
+            and not _is_placeholder_session(reviewer_session)
+            and reviewer_session == author_session):
+        failures.append(f"{where}: reviewer_session equals author_session "
+                        f"({reviewer_session!r}); review must be independent")
+    receipt_author_session = receipt.get("author_session") or receipt.get("author_agent")
+    if (not _is_placeholder_session(reviewer_session)
+            and isinstance(receipt_author_session, str)
+            and reviewer_session == receipt_author_session):
+        failures.append(f"{where}: reviewer_session equals the stage receipt's "
+                        f"author session ({receipt_author_session!r}); review "
+                        f"must be independent")
+    if review.get("verdict") != "pass":
+        failures.append(f"{where}: review verdict is {review.get('verdict')!r}, "
+                        f"not 'pass'")
+    criteria = review.get("criteria")
+    if not isinstance(criteria, dict) or not criteria:
+        failures.append(f"{where}: review file carries no criteria scores")
+        return failures
+    scores = []
+    for cname, entry in sorted(criteria.items()):
+        if not isinstance(entry, dict):
+            failures.append(f"{where}: criterion {cname!r} is not a "
+                            f"{{score, note}} object")
+            continue
+        score = entry.get("score")
+        if not isinstance(score, (int, float)) or isinstance(score, bool):
+            failures.append(f"{where}: criterion {cname!r} score is not a number")
+        else:
+            scores.append((cname, float(score)))
+        note = entry.get("note")
+        if not isinstance(note, str) or not note.strip():
+            failures.append(f"{where}: criterion {cname!r} has no evidence note")
+        elif len(note.strip()) < MIN_REVIEW_NOTE_CHARS:
+            failures.append(f"{where}: criterion {cname!r} note is "
+                            f"{len(note.strip())} characters; at least "
+                            f"{MIN_REVIEW_NOTE_CHARS} required")
+    min_scores = spec.get("min_scores") or {}
+    each = min_scores.get("each")
+    if each is not None:
+        for cname, value in scores:
+            if value < each:
+                failures.append(f"{where}: score below minimum {each}: "
+                                f"criterion {cname} = {value:g}")
+    avg = min_scores.get("average")
+    if avg is not None:
+        if not scores:
+            failures.append(f"{where}: min_scores average {avg} required but "
+                            f"the review carries no numeric criteria")
+        else:
+            mean = sum(v for _, v in scores) / len(scores)
+            if mean < avg:
+                failures.append(f"{where}: per-artifact average score {mean:.2f} "
+                                f"across {len(scores)} criteria is below "
+                                f"minimum {avg}")
+    return failures
+
+
+def check_item_transport(run_dir, stage, item_id, receipt):
+    """Per-item slice of check_transport for close-item: the stage receipt's
+    transport block must cover THIS item's file with a valid Skill 74 task.
+    Stage close re-verifies the full task list at fan-in."""
+    spec = STAGES[stage]
+    if not spec.get("transport_required"):
+        return []
+    artifact_rel = item_artifact_rel(run_dir, stage, item_id)
+    t = receipt.get("transport")
+    if not isinstance(t, dict):
+        return [f"stage {stage}: receipt missing transport block "
+                f"(references/kie-generation-route.md section 3)"]
+    skill = t.get("skill")
+    # Item 28 step 3 transport alias, mirroring check_transport: on a
+    # claude-nine run the 999 kie skill performs both roles.
+    kie_alias = (skill == "kie"
+                 and (intake_data(run_dir) or {}).get("runtime") == "claude-nine")
+    if skill not in TRANSPORTS and not kie_alias:
+        return [f"stage {stage}: transport.skill {skill!r} is not an approved "
+                f"route {sorted(TRANSPORTS)}; a hand-rolled createTask is not"]
+    policy, provider = TRANSPORTS[skill] if skill in TRANSPORTS else ("kie", "kie")
+    problems = []
+    if t.get("policy") != policy:
+        problems.append(f"stage {stage}: transport.policy must be {policy!r}, "
+                        f"got {t.get('policy')!r}")
+    cost = receipt.get("cost")
+    if isinstance(cost, dict) and cost.get("provider") != provider:
+        problems.append(f"stage {stage}: cost.provider must be {provider!r} "
+                        f"for {skill}, got {cost.get('provider')!r}")
+    if skill == "63-agnes-image" and not _agnes_selected(run_dir):
+        problems.append(f"stage {stage}: the Agnes route needs intake.json "
+                        f"image_engine: \"agnes\" (the client must have "
+                        f"selected Agnes)")
+    if skill == "74-kie-live-adapter" and t.get("mode") != "active":
+        problems.append(f"stage {stage}: transport.mode must be 'active' "
+                        f"(shadow never dispatches), got {t.get('mode')!r}")
+    tasks = t.get("tasks")
+    if not isinstance(tasks, list) or not tasks:
+        return problems + [f"stage {stage}: transport.tasks must list one "
+                           f"entry per generated file"]
+    mine = [x for x in tasks
+            if isinstance(x, dict) and str(x.get("file")) == artifact_rel]
+    if not mine:
+        return problems + [f"stage {stage} item {item_id}: transport.tasks "
+                           f"has no entry for {artifact_rel}"]
+    x = mine[0]
+    who = f"stage {stage} item {item_id} ({artifact_rel})"
+    if kie_alias and x.get("model_source") == "user-pin":
+        # Validation-time vocabulary mapping (see check_transport).
+        x = {**x, "model_source": "department-pin"}
+    if skill == "74-kie-live-adapter" or kie_alias:
+        if not _real_id(x.get("task_id")):
+            problems.append(f"{who}: task_id {x.get('task_id')!r} is missing "
+                            f"or a placeholder")
+        else:
+            f = _kie74_file(run_dir, x["task_id"])
+            try:
+                obj = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                problems.append(f"{who}: task_id {x['task_id']!r} has no "
+                                f"readable {KIE74_DIR}/{f.name} (record it "
+                                f"with kie74_receipt.py)")
+            else:
+                if kie_alias:
+                    file_ok = (isinstance(obj, dict)
+                               and obj.get("adapter") in ("74-kie-live-adapter", "kie")
+                               and obj.get("task_id") == x["task_id"]
+                               and obj.get("state") == "success")
+                else:
+                    file_ok = (isinstance(obj, dict)
+                               and obj.get("adapter") == "74-kie-live-adapter"
+                               and obj.get("task_id") == x["task_id"]
+                               and obj.get("state") == "success"
+                               and obj.get("adapter_mode") == "active")
+                if not file_ok:
+                    problems.append(f"{who}: {KIE74_DIR}/{f.name} is not a "
+                                    f"successful active Skill 74 result for "
+                                    f"{x['task_id']!r}")
+        if x.get("preflight_ok") is not True:
+            problems.append(f"{who}: preflight_ok must be true (balance "
+                            f"covers price x 1.30)")
+        if x.get("budget_exit") != 0:
+            problems.append(f"{who}: budget_exit must be 0 "
+                            f"(prompt-budget --check passed)")
+        if not _real_id(x.get("model_id")):
+            problems.append(f"{who}: model_id is missing")
+        if x.get("model_source") not in MODEL_SOURCES:
+            problems.append(f"{who}: model_source must be one of "
+                            f"{list(MODEL_SOURCES)}")
+        rp = _ratio_problem(who, x)
+        if rp:
+            problems.append(rp)
+    return problems
+
+
+def _require_itemized(stage):
+    spec, errs = load_contract_stage(stage)
+    if errs:
+        return None, errs
+    if not is_itemized(stage):
+        return None, [f"stage {stage} is not itemized; item commands apply "
+                      f"only to stages marked \"itemized\": true in the "
+                      f"contract ({', '.join(s for s in ORDER if is_itemized(s))}). "
+                      f"Use check/close for whole-stage flow."]
+    return spec, []
+
+
+def cmd_check_item(run_dir, stage, item_id):
+    spec, errs = _require_itemized(stage)
+    if errs:
+        return fail_exit(errs)
+    entry = item_state(run_dir, stage, item_id)
+    if entry.get("status") == "closed":
+        print(f"PASS: item {item_id} of stage {stage} is already closed")
+        return 0
+    if entry.get("status") == "blocked":
+        return fail_exit([f"item {item_id} of stage {stage} is blocked: "
+                          f"{entry.get('blocked_reason', 'no reason recorded')}"])
+    failures = item_dependency_failures(run_dir, stage, item_id)
+    if failures:
+        return fail_exit(failures)
+    print(f"PASS: item {item_id} of stage {stage} may start (its own "
+          f"dependencies are satisfied; the stage need not be closed)")
+    return 0
+
+
+def cmd_close_item(run_dir, stage, item_id):
+    spec, errs = _require_itemized(stage)
+    if errs:
+        return fail_exit(errs)
+    failures = item_dependency_failures(run_dir, stage, item_id)
+    artifact_rel = item_artifact_rel(run_dir, stage, item_id)
+    if artifact_rel is None:
+        failures.append(f"stage {stage} item {item_id}: artifact not found "
+                        f"(per-file glob {spec.get('per_file_glob')!r}, numeric "
+                        f"suffix {_item_number(item_id)})")
+    entry = item_state(run_dir, stage, item_id)
+    if entry.get("status") == "closed" and artifact_rel is not None:
+        recorded = (entry.get("artifact_hashes") or {}).get(artifact_rel)
+        if recorded == sha256_file(run_dir / artifact_rel):
+            print(f"PASS: item {item_id} of stage {stage} is already closed "
+                  f"(artifact unchanged)")
+            return 0
+        failures.append(f"stage {stage} item {item_id}: item is closed but "
+                        f"its artifact changed after close; the item's review "
+                        f"must be redone against the new bytes")
+    status, receipt, rlines = receipt_status(run_dir, stage)
+    failures.extend(rlines)
+    if not receipt:
+        failures.append(f"stage {stage}: no receipt at "
+                        f"private/receipts/{stage}.json; the stage's agents "
+                        f"must write it before item close")
+    elif receipt.get("status") == "fail":
+        failures.append(f"stage {stage}: receipt status is 'fail'; item "
+                        f"close refused")
+    if not failures:
+        failures.extend(run_item_validators(run_dir, stage, artifact_rel))
+        failures.extend(check_item_review(run_dir, stage, item_id, receipt))
+        failures.extend(check_cost(run_dir, stage, receipt))
+        failures.extend(check_item_transport(run_dir, stage, item_id, receipt))
+    if failures:
+        return fail_exit(failures)
+    record_item_close(run_dir, stage, item_id, artifact_rel)
+    print(f"CLOSED item: {item_id} of stage {stage} (artifact verified, item "
+          f"validators re-run by the gate, item review checked)")
+    return 0
+
+
+def record_item_close(run_dir, stage, item_id, artifact_rel):
+    state, _ = load_state(run_dir)
+    review_item = item_review_item_id(run_dir, stage, item_id)
+    review_rel = f"private/reviews/{stage}/{review_item}.review.json"
+    review_path = run_dir / review_rel
+    entry = {
+        "status": "closed",
+        "closed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "artifact_hashes": {artifact_rel: sha256_file(run_dir / artifact_rel)},
+        "review": review_rel if review_path.exists() else None,
+        "review_item": review_item,
+    }
+    if review_path.exists():
+        entry["review_hash"] = sha256_file(review_path)
+    state.setdefault("items", {}).setdefault(stage, {})[item_id] = entry
+    save_state(run_dir, state)
+    emit_event(run_dir, {"event_type": "item_closed", "stage": stage,
+                         "item_id": item_id, "closed_at": entry["closed_at"],
+                         "artifact_hash": entry["artifact_hashes"][artifact_rel]})
+
+
+def cmd_block_item(run_dir, stage, item_id, reason):
+    spec, errs = _require_itemized(stage)
+    if errs:
+        return fail_exit(errs)
+    if item_id not in item_universe(run_dir, stage):
+        return fail_exit([f"stage {stage}: unknown item {item_id!r}"])
+    state, _ = load_state(run_dir)
+    entry = state.setdefault("items", {}).setdefault(stage, {}).setdefault(item_id, {})
+    entry["status"] = "blocked"
+    entry["blocked_reason"] = reason
+    entry["blocked_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    save_state(run_dir, state)
+    emit_event(run_dir, {"event_type": "item_blocked", "stage": stage,
+                         "item_id": item_id, "failures": [reason],
+                         "blocked_at": entry["blocked_at"]})
+    print(f"BLOCKED item: {item_id} of stage {stage}: {reason}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Browser teardown and hygiene gate (fix plan Item 33).
+#
+# A stage whose contract entry carries "uses_browser": true (today
+# ghl-install-test and publish-verify; automation-wiring gains the same
+# flag when its contract entry lands), and any stage the session
+# registry holds sessions for, may not close until the reaper pass has
+# accounted for every browser session the run opened for it. The
+# registry, probe, reaper, and receipt writer live in
+# scripts/browser_sessions.py, loaded by path the way validators resolve
+# against the skill root; the gate owns the verdict: unaccounted above
+# zero refuses the close, naming the sessions, and headed launches
+# refuse it too unless an owner override is on record in the receipt.
+# The pass runs before anything else in check and close (Item 33 HOW 2:
+# the gate is the recovery path when the runner died before teardown).
+# cmd_report prints the plan's REPORT.md line and, when a REPORT.json
+# already exists, fills its frozen hygiene object (S6 Item 25,
+# references/report-json.schema.json) from the same roll-up the Item 25
+# writer uses: report_hygiene_object() below.
+
+def _browser_sessions_module():
+    path = SKILL_ROOT / "scripts" / "browser_sessions.py"
+    if not path.exists():
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "skill71_browser_sessions", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def stage_uses_browser(run_dir, stage):
+    if STAGES[stage].get("uses_browser"):
+        return True
+    # Conditional browser use (publish-verify when a browser produced
+    # its evidence): sessions on record make the stage accountable.
+    mod = _browser_sessions_module()
+    return bool(mod and mod.stage_has_sessions(run_dir, stage))
+
+
+def browser_hygiene_pass(run_dir, stage):
+    """Reaper sweep + receipt for one stage; returns failure lines."""
+    mod = _browser_sessions_module()
+    if mod is None:
+        return [f"stage {stage}: browser hygiene cannot be verified: "
+                f"scripts/browser_sessions.py is missing from the skill; "
+                f"a browser-using stage cannot close without the Item 33 "
+                f"session accounting"]
+    receipt = mod.sweep_and_receipt(run_dir, stage)
+    lines = []
+    if receipt["unaccounted"] > 0:
+        names = ", ".join(receipt.get("_unaccounted_names") or [])
+        lines.append(
+            f"stage {stage}: browser hygiene: {receipt['unaccounted']} "
+            f"session(s) unaccounted ({names}); every browser session "
+            f"must be torn down or reaped before the stage closes "
+            f"(Item 33)")
+    if receipt["headed_launches"] > 0 \
+            and not receipt.get("owner_override_headed"):
+        lines.append(
+            f"stage {stage}: browser hygiene: "
+            f"{receipt['headed_launches']} headed browser launch(es) "
+            f"recorded and no owner override is on record in "
+            f"{stage}/browser-hygiene.json; headed launches violate the "
+            f"Browser Engine Contract (Item 33)")
+    return lines
+
+
+def report_hygiene_object(run_dir):
+    """The run's REPORT.json hygiene object (frozen field names, S6):
+    recorded counts summed from the per-stage browser-hygiene.json
+    receipts, or status not_recorded with null counts when no stage
+    receipt exists."""
+    mod = _browser_sessions_module()
+    if mod is None:
+        return {"status": "not_recorded", "opened": None, "closed": None,
+                "orphans_found": None, "reaped": None,
+                "unaccounted": None, "headed_launches": None}
+    return mod.run_rollup(run_dir, ORDER)
+
+
 def cmd_init(run_dir):
     intake = run_dir / "intake.json"
     if not intake.exists():
         return fail_exit([f"init requires {intake} (the intake stage writes it)"])
     state, _ = load_state(run_dir)
     (run_dir / "private" / "receipts").mkdir(parents=True, exist_ok=True)
+    # Item 24 (S6 emission spec 6.1): mint the run_id when the run has
+    # none and record the run identity; re-running init on an existing
+    # run emits nothing.
+    fresh = not state.get("run_id")
+    if fresh:
+        idata = intake_data(run_dir)
+        state["run_id"] = str(uuid.uuid4())
+        for key in ("page_name", "brand_id", "client"):
+            if idata.get(key) is not None:
+                state[key] = idata[key]
+        state["host_shape"] = host_shape()
     save_state(run_dir, state)
+    if fresh:
+        idata = intake_data(run_dir)
+        event = {"event_type": "run_initialized", "host_shape": state["host_shape"],
+                 "test_run": bool(idata.get("test_run"))}
+        for key in ("page_name", "brand_id", "client"):
+            if state.get(key) is not None:
+                event[key] = state[key]
+        emit_event(run_dir, event)
+        # Item 11 rider (spec 6.7): a drift recorded by a provisioning
+        # time pin check with no run context enters the feed of the
+        # first run initialized afterward, while it is still outstanding.
+        drift_path = run_dir / "private" / "pin-drift.json"
+        if drift_path.is_file():
+            try:
+                records = json.loads(drift_path.read_text(encoding="utf-8"))
+            except Exception:
+                records = []
+            for rec in records if isinstance(records, list) else []:
+                if isinstance(rec, dict) and rec.get("authority_id"):
+                    emit_event(run_dir, {
+                        "event_type": "pin_drift",
+                        "authority_id": rec["authority_id"],
+                        "pinned_sha": rec.get("pinned_sha"),
+                        "observed_sha": rec.get("observed_sha")})
     print(f"PASS: run initialized at {run_dir}")
     print(f"  state: {run_dir / 'private' / 'state.json'}")
     print(f"  receipts dir: {run_dir / 'private' / 'receipts'}")
     return 0
 
 
+# ---------------------------------------------------------------------------
+# S5 delivery and funnel checks (fix plan Items 5, 6, 31, 32, 34).
+# ---------------------------------------------------------------------------
+
+def intake_data(run_dir):
+    try:
+        data = json.loads((run_dir / "intake.json").read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def receipt_at(run_dir, stage):
+    try:
+        data = json.loads((run_dir / "private" / "receipts" / f"{stage}.json").read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def automation_wiring_applicability(run_dir):
+    """Item 31: automation-wiring is required exactly when the intake says
+    the page publishes into GHL and the automation scope is workflows."""
+    intake = intake_data(run_dir)
+    pt, scope = intake.get("publish_target"), intake.get("automation_scope")
+    required = pt == "ghl" and scope == "workflows"
+    reason = (f"intake.publish_target={pt!r}, intake.automation_scope={scope!r}: "
+              f"automation-wiring is required only when publish_target is \"ghl\" "
+              f"and automation_scope is \"workflows\" (fix plan Item 31)")
+    return required, reason
+
+
+def record_not_applicable(run_dir, stage, reason):
+    state, _ = load_state(run_dir)
+    state["stages"][stage] = {
+        "status": "not_applicable",
+        "receipt_status": "not_applicable",
+        "reason": reason,
+        "closed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    save_state(run_dir, state)
+
+
+def check_install_handoff(run_dir):
+    """Item 31 hand-off at ghl-install-test close: Skill 6 records
+    handoff/automation-handoff.json (IDs only, never credentials), and its
+    form IDs come from Item 32's funnel-completion receipt and nowhere
+    else. The hand-off hash is recorded into state at close (record_close)
+    and publish-verify verifies the file is unchanged."""
+    intake = intake_data(run_dir)
+    if intake.get("publish_target") != "ghl":
+        return []
+    failures = []
+    hp = run_dir / "handoff" / "automation-handoff.json"
+    if not hp.is_file():
+        return [f"stage ghl-install-test: GHL publish target requires "
+                f"handoff/automation-handoff.json at close (fix plan Item 31): "
+                f"location, funnel, page, and form IDs only, never credentials"]
+    try:
+        handoff = json.loads(hp.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return [f"stage ghl-install-test: handoff/automation-handoff.json unreadable: {exc}"]
+    for key in ("location_id", "funnel_id", "page_id"):
+        if not handoff.get(key):
+            failures.append(f"stage ghl-install-test: hand-off is missing {key}")
+    handoff_forms = handoff.get("forms")
+    if not isinstance(handoff_forms, list) or not handoff_forms:
+        failures.append("stage ghl-install-test: hand-off lists no forms")
+        handoff_forms = []
+    fc = {}
+    try:
+        fc = json.loads((run_dir / "ghl-install-test" / "funnel-completion.json").read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    if isinstance(fc, dict) and fc.get("status") != "not_applicable":
+        fc_ids = {f.get("form_id") for f in fc.get("forms") or [] if isinstance(f, dict)}
+        ho_ids = {f.get("form_id") for f in handoff_forms if isinstance(f, dict)}
+        if fc_ids != ho_ids:
+            failures.append(f"stage ghl-install-test: hand-off form IDs {sorted(map(str, ho_ids))} "
+                            f"do not equal funnel-completion.json form IDs "
+                            f"{sorted(map(str, fc_ids))}; Item 32's receipt is the sole "
+                            f"source of the hand-off's form IDs (fix plan Item 31)")
+    if intake.get("automation_scope") == "workflows" and "conversational_requirements" not in handoff:
+        failures.append("stage ghl-install-test: hand-off carries no "
+                        "conversational_requirements (Item 31 conversational rider)")
+    return failures
+
+
+def check_publish_rules(run_dir, receipt):
+    """Item 6 publish discipline, enforced at a publish-verify PASS close,
+    plus Item 31's hand-off carry-forward check."""
+    failures = []
+    if receipt.get("status") != "pass":
+        return failures
+    intake = intake_data(run_dir)
+    # Rule 1: a test run never closes as a production delivery.
+    if intake.get("test_run"):
+        failures.append("stage publish-verify: intake.test_run is true; a test run "
+                        "cannot close publish-verify as a production pass (fix plan "
+                        "Item 6). Close as not_authorized, or run production with "
+                        "test_run false.")
+    # Rule 2: derived fonts require an independent font review. When the
+    # bible's fonts came from the derive path, the bible's font_reviewer
+    # session must differ from the session that authored the font map
+    # (Item 2 session rules).
+    bible = {}
+    try:
+        bible = json.loads((run_dir / "visual-mockup" / "page-visual-bible.json").read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    if isinstance(bible, dict) and bible.get("fonts_source") == "derived":
+        reviewer = bible.get("font_reviewer")
+        fap = receipt_at(run_dir, "font-action-plan")
+        author_session = fap.get("author_session") or fap.get("author_agent")
+        if _is_placeholder_session(reviewer):
+            failures.append("stage publish-verify: the visual bible's fonts are derived "
+                            "(fonts_source \"derived\") but the bible names no real "
+                            "font_reviewer session; derived fonts require an independent "
+                            "font review record (fix plan Item 6)")
+        elif not _is_placeholder_session(author_session) and reviewer == author_session:
+            failures.append(f"stage publish-verify: the bible's font_reviewer session "
+                            f"({reviewer!r}) is the same session that authored the font "
+                            f"map; the font identity decision requires an independent "
+                            f"reviewer (fix plan Item 6, Item 2 session rules)")
+    # Rule 3: OWNER-ORDERED SCOPE CHANGE (Amendment 6, C11). Brand Law
+    # designs the uncalibrated-grade state as WARN-only. Trevor's Order 4(b)
+    # overrides that design for production closes: the pixel grade gate
+    # ships ON and fails CLOSED, so a production publish-verify refuses to
+    # close while the brand file's grade thresholds are uncalibrated. The
+    # only release is a recorded owner waiver in the receipt; any waiver
+    # prints in REPORT.md (collect_warnings below). A conforming Brand Law
+    # text amendment is queued in Item 30.
+    brand = brand_path_for(run_dir)
+    try:
+        b = json.loads(brand.read_text(encoding="utf-8"))
+        grade = b.get("grade") or {}
+        uncalibrated = grade.get("min_mean_saturation") is None or grade.get("min_luma_std") is None
+    except Exception:
+        uncalibrated = False
+    if uncalibrated:
+        waivers = receipt.get("publish_waivers") or []
+        waived = any(isinstance(w, dict)
+                     and w.get("rule") == "uncalibrated_grade_thresholds"
+                     and w.get("approved_by") == "owner"
+                     and isinstance(w.get("reason"), str) and w["reason"].strip()
+                     for w in waivers)
+        if not waived:
+            failures.append(f"stage publish-verify: brand grade thresholds are "
+                            f"uncalibrated in {brand.name} (grade.min_mean_saturation / "
+                            f"grade.min_luma_std are null); production close refused "
+                            f"under the owner-ordered grade gate (fix plan Item 6, "
+                            f"Amendment 6 C11). Calibrate the gold set (Item 8) or "
+                            f"record an owner waiver in the receipt's publish_waivers; "
+                            f"a waiver prints in REPORT.md.")
+    # Item 31: publish-verify carries the automation hand-off forward
+    # unchanged; the hash recorded at ghl-install-test close must match.
+    state, _ = load_state(run_dir)
+    recorded = (state.get("stages", {}).get("ghl-install-test") or {}).get("handoff_sha256")
+    if recorded:
+        hp = run_dir / "handoff" / "automation-handoff.json"
+        if not hp.is_file():
+            failures.append("stage publish-verify: handoff/automation-handoff.json is "
+                            "missing; publish-verify carries the install hand-off "
+                            "forward unchanged (fix plan Item 31)")
+        elif sha256_file(hp) != recorded:
+            failures.append("stage publish-verify: handoff/automation-handoff.json "
+                            "changed after ghl-install-test close (SHA-256 mismatch "
+                            "with the recorded hand-off hash); the hand-off is "
+                            "carried forward unchanged (fix plan Item 31)")
+    return failures
+
+
+def derive_conversational_triggers(run_dir):
+    """Item 31 conversational rider: the trigger set is derived from Item
+    32's funnel-completion receipt, never hand-listed. One opt-in trigger
+    per opt-in form, one purchase trigger per bound order form, one
+    booking trigger per booking or calendar step."""
+    fc = {}
+    try:
+        fc = json.loads((run_dir / "ghl-install-test" / "funnel-completion.json").read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    triggers = []
+    if isinstance(fc, dict) and fc.get("status") != "not_applicable":
+        for f in fc.get("forms") or []:
+            if isinstance(f, dict) and f.get("form_id"):
+                triggers.append({"trigger": "opt-in", "source_id": f["form_id"]})
+        for o in fc.get("order_forms") or []:
+            if isinstance(o, dict) and o.get("bound") is True and o.get("order_form_id"):
+                triggers.append({"trigger": "purchase", "source_id": o["order_form_id"]})
+        for s in fc.get("steps") or []:
+            if isinstance(s, dict) and s.get("type") in ("booking", "calendar"):
+                triggers.append({"trigger": "booking",
+                                 "source_id": s.get("step_id") or s.get("name")})
+    return triggers
+
+
+def check_automation_wiring(run_dir, receipt):
+    """Item 31 verification of the automation-wiring receipt against the
+    hand-off and the derived conversational trigger set."""
+    failures = []
+    hp = run_dir / "handoff" / "automation-handoff.json"
+    try:
+        handoff = json.loads(hp.read_text(encoding="utf-8"))
+    except Exception:
+        return ["stage automation-wiring: handoff/automation-handoff.json is missing "
+                "or unreadable; the stage executes against that hand-off and "
+                "nothing else (fix plan Item 31)"]
+    workflows = receipt.get("workflows")
+    if not isinstance(workflows, list):
+        failures.append("stage automation-wiring: receipt carries no workflows array")
+        workflows = []
+    covered = {}
+    for w in workflows:
+        if not isinstance(w, dict):
+            failures.append("stage automation-wiring: workflow entry is not an object")
+            continue
+        name = w.get("name") or w.get("workflow_id") or "?"
+        if not w.get("workflow_id"):
+            failures.append(f"stage automation-wiring: workflow {name!r} records no workflow_id")
+        trig = w.get("trigger") or {}
+        if trig.get("type") != "form_submitted" or not trig.get("form_id"):
+            failures.append(f"stage automation-wiring: workflow {name!r} trigger must be "
+                            f"{{type: \"form_submitted\", form_id}}")
+        else:
+            covered[trig["form_id"]] = w
+        if w.get("build_method") not in ("caf-cli", "tier4-browser-backstop"):
+            failures.append(f"stage automation-wiring: workflow {name!r} build_method must be "
+                            f"\"caf-cli\" (Tier 0, primary) or \"tier4-browser-backstop\", "
+                            f"got {w.get('build_method')!r}")
+        qc = w.get("qc") or {}
+        if qc.get("script") != "qc-built-workflow.sh":
+            failures.append(f"stage automation-wiring: workflow {name!r} qc.script must be "
+                            f"Skill 44's qc-built-workflow.sh")
+        if qc.get("exit_code") != 0:
+            failures.append(f"stage automation-wiring: workflow {name!r} QC exit_code is "
+                            f"{qc.get('exit_code')!r}, must be 0")
+        if qc.get("checklist_complete") is not True:
+            failures.append(f"stage automation-wiring: workflow {name!r} checklist is not "
+                            f"recorded complete")
+        inst = qc.get("checklist_instance")
+        if not inst or not (run_dir / inst).is_file():
+            failures.append(f"stage automation-wiring: workflow {name!r} QC checklist "
+                            f"instance {inst!r} is not on disk (a filled checklist "
+                            f"instance is a required artifact under automation-wiring/)")
+        rb = w.get("readback") or {}
+        if rb.get("exists") is not True:
+            failures.append(f"stage automation-wiring: workflow {name!r} read-back does "
+                            f"not confirm the workflow exists")
+    exceptions = {}
+    for e in receipt.get("form_exceptions") or []:
+        if isinstance(e, dict) and e.get("form_id"):
+            exceptions[e["form_id"]] = e
+    for form in handoff.get("forms") or []:
+        fid = form.get("form_id") if isinstance(form, dict) else None
+        if fid and fid not in covered:
+            ex = exceptions.get(fid)
+            if not (ex and isinstance(ex.get("no_workflow_reason"), str)
+                    and ex["no_workflow_reason"].strip()):
+                failures.append(f"stage automation-wiring: hand-off form {fid} is neither "
+                                f"trigger-covered by a recorded workflow nor carrying an "
+                                f"explicit no_workflow_reason")
+    # Amendment 4 credential scope: workflow writes through the caf CLI
+    # need the Firebase refresh token; without it, and without a declared
+    # backstop, only the backstop may have built the workflows.
+    intake = intake_data(run_dir)
+    creds = intake.get("credentials") or {}
+    firebase_present = (creds.get("firebase_refresh_token") or {}).get("present")
+    if firebase_present is False and not intake.get("firebase_backstop_declared"):
+        for w in workflows:
+            if isinstance(w, dict) and w.get("build_method") == "caf-cli":
+                failures.append(f"stage automation-wiring: workflow {w.get('name')!r} was "
+                                f"built via caf-cli but intake records the Firebase "
+                                f"refresh token absent and no Tier 4 backstop declared; "
+                                f"workflow writes require the token or the recorded "
+                                f"backstop (Amendment 4 credential rider)")
+    # Conversational rider: every derived trigger maps to a workflow with a
+    # named Skill 38 playbook on SMS and email tracks, or a recorded owner
+    # override (printed in REPORT.md by collect_warnings).
+    triggers = derive_conversational_triggers(run_dir)
+    conv = {}
+    for c in receipt.get("conversational") or []:
+        if isinstance(c, dict):
+            conv[(c.get("trigger"), c.get("source_id"))] = c
+    overrides = {}
+    for o in receipt.get("conversational_overrides") or []:
+        if isinstance(o, dict):
+            overrides[(o.get("trigger"), o.get("source_id"))] = o
+    derived_classes = set()
+    for t in triggers:
+        derived_classes.add(t["trigger"])
+        key = (t["trigger"], t["source_id"])
+        entry = conv.get(key)
+        if entry is None:
+            ov = overrides.get(key)
+            if not (ov and ov.get("approved_by") == "owner"
+                    and isinstance(ov.get("reason"), str) and ov["reason"].strip()):
+                failures.append(f"stage automation-wiring: conversational trigger "
+                                f"{t['trigger']} on {t['source_id']} maps to no workflow "
+                                f"with a Skill 38 playbook, and no owner override is "
+                                f"recorded (Item 31 conversational rider)")
+            continue
+        pb = entry.get("playbook") or {}
+        if pb.get("system") != "38-conversational-ai-system" or not pb.get("playbook_name"):
+            failures.append(f"stage automation-wiring: conversational entry for "
+                            f"{t['trigger']} on {t['source_id']} names no Skill 38 "
+                            f"playbook (system \"38-conversational-ai-system\" plus a "
+                            f"playbook_name)")
+        channels = set(pb.get("channels") or entry.get("channels") or [])
+        if not {"sms", "email"} <= channels:
+            failures.append(f"stage automation-wiring: conversational entry for "
+                            f"{t['trigger']} on {t['source_id']} must carry SMS and "
+                            f"email tracks, got {sorted(channels)}")
+        doc = pb.get("doc_artifact") or entry.get("doc_artifact")
+        if doc and not (run_dir / doc).is_file():
+            failures.append(f"stage automation-wiring: playbook document {doc!r} for "
+                            f"{t['trigger']} on {t['source_id']} is not on disk")
+        if not entry.get("workflow_id"):
+            failures.append(f"stage automation-wiring: conversational entry for "
+                            f"{t['trigger']} on {t['source_id']} names no workflow_id")
+    not_present = set(receipt.get("conversational_not_present") or [])
+    for cls in ("opt-in", "purchase", "booking"):
+        if cls not in derived_classes and cls not in not_present:
+            failures.append(f"stage automation-wiring: trigger class {cls!r} has no "
+                            f"instance in this funnel and is not recorded "
+                            f"conversational_not_present")
+    # Row 9: the GHL pack (Skills 6 + 44 + 38's conversational layer) ships
+    # and is versioned as ONE decision; a wiring run records its version.
+    if workflows and not receipt.get("ghl_pack_version"):
+        failures.append("stage automation-wiring: receipt records no ghl_pack_version "
+                        "(the GHL pack, Skills 6 + 44 + 38 conversational layer, is "
+                        "versioned as one)")
+    return failures
+
+
+def test_run_flag(run_dir):
+    return bool(intake_data(run_dir).get("test_run"))
+
+
+def run_deliverables_check(run_dir):
+    """Item 34: run scripts/check_deliverables.py against the run and
+    return (ok, summary, failures)."""
+    import subprocess
+    cmd = [sys.executable, str(SKILL_ROOT / "scripts" / "check_deliverables.py"),
+           str(run_dir), "--json"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        data = json.loads(proc.stdout or "{}")
+        return bool(data.get("ok")), data.get("summary") or {}, data.get("failures") or []
+    except Exception as exc:
+        return False, {}, [f"deliverables checker could not run: {exc}"]
+
+
 def cmd_check(run_dir, stage):
     spec, errs = load_contract_stage(stage)
     if errs:
         return fail_exit(errs)
+    if stage_uses_browser(run_dir, stage):
+        hygiene_failures = browser_hygiene_pass(run_dir, stage)
+        if hygiene_failures:
+            return fail_exit(hygiene_failures)
     failures = check_requires(run_dir, stage)
     if failures:
         return fail_exit(failures)
@@ -704,7 +2264,21 @@ def cmd_close(run_dir, stage):
     spec, errs = load_contract_stage(stage)
     if errs:
         return fail_exit(errs)
+    # Item 31: a conditional stage that does not apply closes as
+    # not_applicable, recorded in state (and cited in REPORT.md), never
+    # silently skipped and never forced through the receipt machinery.
+    if stage == "automation-wiring":
+        required, reason = automation_wiring_applicability(run_dir)
+        if not required:
+            record_not_applicable(run_dir, stage, reason)
+            print(f"NOT APPLICABLE: stage {stage} recorded in state.json ({reason})")
+            return 0
     failures = []
+    # Item 33: the reaper pass runs before anything else is evaluated,
+    # so a run whose runner died still gets its sessions accounted, and
+    # the receipt it writes satisfies the stage's artifact contract.
+    if stage_uses_browser(run_dir, stage):
+        failures.extend(browser_hygiene_pass(run_dir, stage))
     status, receipt, rlines = receipt_status(run_dir, stage)
     failures.extend(rlines)
     if not receipt:
@@ -731,14 +2305,51 @@ def cmd_close(run_dir, stage):
             return 0
 
     if not failures:
+        # Itemized stages (Item 20): stage close is fan-in verification:
+        # every item in the universe must be closed at item level first.
+        if is_itemized(stage):
+            state, _ = load_state(run_dir)
+            for uid in item_universe(run_dir, stage):
+                entry = (state.get("items") or {}).get(stage, {}).get(uid, {})
+                if entry.get("status") == "blocked":
+                    failures.append(f"stage {stage}: fan-in: item {uid} is blocked: "
+                                    f"{entry.get('blocked_reason', 'no reason recorded')}")
+                elif entry.get("status") != "closed":
+                    failures.append(f"stage {stage}: fan-in: item {uid} is not closed "
+                                    f"at item level (close it with close-item)")
         # Re-run validators
         failures.extend(run_validators(run_dir, stage, receipt))
         # Review / scores / cost
         failures.extend(check_review_scores(run_dir, stage, receipt))
         failures.extend(check_cost(run_dir, stage, receipt))
         failures.extend(check_transport(run_dir, stage, receipt))
+        # S5 delivery rules (Items 6, 31)
+        if stage == "ghl-install-test":
+            failures.extend(check_install_handoff(run_dir))
+        elif stage == "publish-verify":
+            failures.extend(check_publish_rules(run_dir, receipt))
+        elif stage == "automation-wiring":
+            failures.extend(check_automation_wiring(run_dir, receipt))
+        # Item 13 / S3 Request 2: layout reference existence at
+        # wireframe and mockup close (waiver path in layout_gate_failures).
+        if stage in LAYOUT_GATE_STAGES:
+            failures.extend(layout_gate_failures(run_dir))
+        # GCR-S2-4 (Item 10, Amendment 6 Part B1): the style selection
+        # record must exist, conform, and govern every inventory image
+        # before image-inventory-prompts can close. A stage-close hook
+        # (not a contract validator) because contract validators also
+        # run per item under Item 20, and the record is a run-level
+        # property.
+        if stage == "image-inventory-prompts":
+            failures.extend(style_selection_problems(run_dir))
 
     if failures:
+        # Item 25 (S6 emission spec 6.4): a refused close is a state
+        # transition too; emit stage_blocked with the failure lines.
+        emit_event(run_dir, {"event_type": "stage_blocked", "stage": stage,
+                             "failures": list(failures),
+                             "blocked_at": datetime.now(timezone.utc).strftime(
+                                 "%Y-%m-%dT%H:%M:%SZ")})
         return fail_exit(failures)
 
     record_close(run_dir, stage, receipt, "pass", counts)
@@ -755,28 +2366,75 @@ def record_close(run_dir, stage, receipt, status, counts):
             rel = str(p.relative_to(run_dir))
             if p.is_file():
                 hashes[rel] = sha256_file(p)
-    state["stages"][stage] = {
+    # Item 2: record the v2 review files' hashes too, so a review edited
+    # after close fails the downstream hash check like a changed artifact.
+    review_hashes = {}
+    reviews_dir = run_dir / "private" / "reviews" / stage
+    if reviews_dir.is_dir():
+        for p in sorted(reviews_dir.glob("*.review.json")):
+            if p.is_file():
+                review_hashes[str(p.relative_to(run_dir))] = sha256_file(p)
+    entry = {
         "status": "closed",
         "receipt_status": status,
         "closed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "artifact_counts": counts,
         "artifact_hashes": hashes,
+        "review_hashes": review_hashes,
         "receipt": {
             "author_agent": receipt.get("author_agent"),
             "reviewer_agent": receipt.get("reviewer_agent"),
+            "author_session": receipt.get("author_session"),
             "started_at": receipt.get("started_at"),
             "finished_at": receipt.get("finished_at"),
             "cost": receipt.get("cost"),
-            "scores": receipt.get("scores"),
+            "scores_summary": review_scores_summary(run_dir, stage),
+            "review_files": sorted(review_hashes),
         },
     }
+    # Item 31: record the automation hand-off's hash at install close so
+    # publish-verify can verify it is carried forward unchanged.
+    if stage == "ghl-install-test":
+        hp = run_dir / "handoff" / "automation-handoff.json"
+        if hp.is_file():
+            entry["handoff_sha256"] = sha256_file(hp)
+    state["stages"][stage] = entry
     state["receipts"][stage] = f"private/receipts/{stage}.json"
     save_state(run_dir, state)
+    # Item 25 (S6 emission spec 6.3): emit stage_closed from the values
+    # just recorded.
+    dur = None
+    started, finished = receipt.get("started_at"), receipt.get("finished_at")
+    if started and finished:
+        try:
+            dur = max(0, int((datetime.fromisoformat(str(finished).replace("Z", "+00:00"))
+                              - datetime.fromisoformat(str(started).replace("Z", "+00:00"))
+                              ).total_seconds()))
+        except Exception:
+            dur = None
+    cost_event = None
+    cost = receipt.get("cost")
+    if isinstance(cost, dict) and cost.get("provider") is not None:
+        before, after = cost.get("credits_before"), cost.get("credits_after")
+        if (isinstance(before, (int, float)) and isinstance(after, (int, float))
+                and not isinstance(before, bool) and not isinstance(after, bool)):
+            cost_event = {"provider": str(cost["provider"]),
+                          "credits_used": before - after}
+    emit_event(run_dir, {"event_type": "stage_closed", "stage": stage,
+                         "receipt_status": status,
+                         "closed_at": entry["closed_at"],
+                         "duration_s": dur,
+                         "scores_summary": entry["receipt"].get("scores_summary"),
+                         "cost": cost_event,
+                         "artifact_hashes": hashes,
+                         "review_files": sorted(review_hashes)})
 
 
 def stage_line(run_dir, stage, state):
     spec = STAGES[stage]
     st = state.get("stages", {}).get(stage, {})
+    if st.get("status") == "not_applicable":
+        return "NOT APPLICABLE"
     rstatus, receipt, rlines = receipt_status(run_dir, stage)
     closed = st.get("status") == "closed"
     rstatus = receipt.get("status") if receipt else None
@@ -814,6 +2472,19 @@ def collect_warnings(run_dir, state):
     if test_run:
         warns.append("intake.test_run is true: placeholder warnings are allowed this run "
                      "(validate_page.py reports them as WARN, not FAIL)")
+    # Items 13/14: recorded intake waivers are always visible in the report.
+    if intake.exists():
+        try:
+            _idata = json.loads(intake.read_text(encoding="utf-8"))
+        except Exception:
+            _idata = {}
+        if isinstance(_idata, dict):
+            for w in _idata.get("layout_waivers") or []:
+                if isinstance(w, dict):
+                    warns.append(f"layout waiver recorded ({w.get('gate')}): {w.get('reason')}")
+            if _idata.get("layout_references_waived") is True:
+                warns.append("layout waiver recorded (layout-references, flat form): "
+                             f"{_idata.get('layout_references_waiver_reason')}")
     # Uncalibrated grade thresholds
     brand = brand_path_for(run_dir)
     try:
@@ -825,7 +2496,90 @@ def collect_warnings(run_dir, state):
                          "WARN measurements only")
     except Exception:
         warns.append(f"brand file unreadable for WARN scan: {brand}")
+    # Item 31: a not_applicable stage is cited in the report with the intake
+    # values it was decided from, never silently absent.
+    aw_state = state.get("stages", {}).get("automation-wiring", {})
+    if aw_state.get("status") == "not_applicable":
+        warns.append(f"automation-wiring NOT APPLICABLE: {aw_state.get('reason', '')}")
+    # Item 6 downgrade rule: any publish-verify waiver prints in REPORT.md.
+    pv_receipt = receipt_at(run_dir, "publish-verify")
+    for w in pv_receipt.get("publish_waivers") or []:
+        if isinstance(w, dict):
+            warns.append(f"publish-verify waiver accepted ({w.get('rule')}): "
+                         f"{w.get('reason')} (approved by {w.get('approved_by')}); "
+                         f"the close proceeded under Item 6's downgrade rule")
+    # Item 31: Tier 4 backstop use and conversational owner overrides are
+    # always visible in the report, never silent.
+    aw_receipt = receipt_at(run_dir, "automation-wiring")
+    for w in aw_receipt.get("workflows") or []:
+        if isinstance(w, dict) and w.get("build_method") == "tier4-browser-backstop":
+            warns.append(f"automation workflow {w.get('name')!r} was built via the "
+                         f"Tier 4 browser backstop (Skill 44), not the Tier 0 caf CLI")
+    for o in aw_receipt.get("conversational_overrides") or []:
+        if isinstance(o, dict):
+            warns.append(f"conversational coverage owner override: trigger "
+                         f"{o.get('trigger')} on {o.get('source_id')}: {o.get('reason')} "
+                         f"(approved by {o.get('approved_by')})")
     return warns
+
+
+def compute_review_mode(run_dir):
+    """Item 7: derive the run's review mode from its v2 review files.
+
+    INDEPENDENT only when every review names a real reviewer session that
+    never overlaps an author session and every review records
+    independent_review true. SELF-REVIEWED when sessions overlap or any
+    review is not independent (stages named). UNKNOWN when the run carries
+    no v2 review data, or when every reviewer session is recorded as
+    UNKNOWN (Amendment 6, Item 2 delta: an environment that cannot name
+    its reviewing session reports the limitation; those reviews are never
+    independent). Derived from evidence only; no agent input.
+    """
+    reviews_root = run_dir / "private" / "reviews"
+    records = []
+    if reviews_root.is_dir():
+        for p in sorted(reviews_root.glob("*/*.review.json")):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            reviewer = data.get("reviewer_session")
+            author = data.get("author_session")
+            reviewer = reviewer.strip() if isinstance(reviewer, str) else ""
+            author = author.strip() if isinstance(author, str) else ""
+            flag = data.get("independent_review")
+            flag = flag if isinstance(flag, bool) else None
+            if reviewer or author:
+                records.append((p.parent.name, reviewer, author, flag))
+    if not records or not any(r for _, r, _, _ in records):
+        return "Review mode: UNKNOWN (no v2 review data)"
+    named = [(s, r, a, f) for s, r, a, f in records
+             if r and not _is_unknown_session(r)]
+    if not named:
+        return ("Review mode: UNKNOWN (reviewer sessions recorded as UNKNOWN; "
+                "the limitation is on record and independence is not claimed)")
+    reviewer_sessions = {r for _, r, _, _ in named}
+    author_sessions = {a for _, _, a, _ in records if a}
+    overlap_stages = sorted({stage for stage, r, a, _ in records
+                             if r and not _is_unknown_session(r)
+                             and (r == a or r in author_sessions)})
+    unverified_stages = sorted(
+        {stage for stage, r, _, f in records
+         if not r or _is_unknown_session(r) or f is False}
+        - set(overlap_stages))
+    if overlap_stages or unverified_stages:
+        reasons = []
+        if overlap_stages:
+            reasons.append(f"reviewer sessions overlap author sessions on "
+                           f"stages: {', '.join(overlap_stages)}")
+        if unverified_stages:
+            reasons.append(f"reviews not independent on stages: "
+                           f"{', '.join(unverified_stages)}")
+        return "Review mode: SELF-REVIEWED (" + "; ".join(reasons) + ")"
+    return (f"Review mode: INDEPENDENT ({len(reviewer_sessions)} reviewer sessions, "
+            f"{len(author_sessions)} author sessions, no overlap)")
 
 
 def cmd_report(run_dir):
@@ -834,6 +2588,8 @@ def cmd_report(run_dir):
     lines = []
     lines.append(f"# Skill 71 Run Report")
     lines.append("")
+    lines.append("Structured twin: REPORT.json (schema skill71/report-json/1.0)")
+    lines.append("")
     lines.append(f"Generated by scripts/stage_gate.py report at {now.isoformat(timespec='seconds')}")
     lines.append("")
     lines.append("## Stages")
@@ -841,6 +2597,7 @@ def cmd_report(run_dir):
     lines.append("| Stage | Status | Closed at | Duration |")
     lines.append("|---|---|---|---|")
     durations = {}
+    stage_rows = []
     required_closed = True
     for stage in ORDER:
         line = stage_line(run_dir, stage, state)
@@ -861,6 +2618,27 @@ def cmd_report(run_dir):
             except Exception:
                 dur = "-"
         lines.append(f"| {stage} | {line} | {closed_at} | {dur} |")
+        # REPORT.json twin (Item 25): the same row as data, with the
+        # close record behind it.
+        _cost = receipt.get("cost") if isinstance(receipt, dict) else None
+        _cost_json = None
+        if isinstance(_cost, dict) and _cost.get("provider") is not None:
+            _b, _a = _cost.get("credits_before"), _cost.get("credits_after")
+            if (isinstance(_b, (int, float)) and isinstance(_a, (int, float))
+                    and not isinstance(_b, bool) and not isinstance(_a, bool)):
+                _cost_json = {"provider": str(_cost["provider"]),
+                              "credits_used": _b - _a}
+        stage_rows.append({
+            "stage": stage,
+            "status": line,
+            "closed_at": st.get("closed_at"),
+            "duration_s": durations.get(stage),
+            "receipt_status": st.get("receipt_status"),
+            "scores_summary": (st.get("receipt") or {}).get("scores_summary"),
+            "cost": _cost_json,
+            "artifact_hashes": st.get("artifact_hashes") or {},
+            "review_files": (st.get("receipt") or {}).get("review_files") or [],
+        })
         if line in ("FAIL", "BLOCKED", NOT_RUN):
             required_closed = False
     lines.append("")
@@ -914,19 +2692,140 @@ def cmd_report(run_dir):
     else:
         lines.append("- (none; responsive-html not closed or compare_sheet.py not run)")
     lines.append("")
+    lines.append("## Browser hygiene")
+    lines.append("")
+    hygiene = report_hygiene_object(run_dir)
+    if hygiene["status"] == "recorded":
+        lines.append(f"Browser hygiene: {hygiene['opened']} sessions opened, "
+                     f"{hygiene['closed']} closed, {hygiene['reaped']} "
+                     f"orphans reaped.")
+    else:
+        lines.append("Browser hygiene: not recorded.")
+    lines.append("")
 
     overall = "RUN COMPLETE" if required_closed else "RUN INCOMPLETE"
+    # Item 6, rule 1: a test run's report never reads as a production
+    # delivery, even when every stage closed (a test run cannot close
+    # publish-verify as a production pass at all; see check_publish_rules).
+    if required_closed and test_run_flag(run_dir):
+        overall = "TEST RUN, NOT A PRODUCTION DELIVERY"
+    # Item 34: report generation refuses for a completed run while the
+    # deliverables checker fails; the Deliverables line is earned only by
+    # a clean, complete, manifest-verified folder.
+    if required_closed:
+        ok, summary, d_failures = run_deliverables_check(run_dir)
+        if not ok:
+            print("FAIL: report refused: the deliverables folder does not verify "
+                  "(fix plan Item 34)")
+            for line in d_failures:
+                print(f"- {line}")
+            return 1
+        lines.append(f"Deliverables: complete ({summary.get('files')} files, "
+                     f"manifest verified)")
+        lines.append("")
     if not required_closed:
         missing = [s for s in ORDER
                    if stage_line(run_dir, s, state) in ("FAIL", "BLOCKED", NOT_RUN)]
         lines.append(f"**{overall}** — not closed: {', '.join(missing)}")
     else:
         lines.append(f"**{overall}**")
+    rm_line = compute_review_mode(run_dir)
+    lines.append(rm_line)
     report_path = run_dir / "REPORT.md"
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # Item 25 (S6 emission spec 6.5): write the structured twin in the
+    # same pass, from the same values, then emit report_generated. The
+    # hygiene object comes from report_hygiene_object() (Item 33's
+    # roll-up, the function S7 named as this writer's source).
+    report_json_path = run_dir / "REPORT.json"
+    rm_data = _review_mode_data(run_dir, rm_line)
+    if test_run_flag(run_dir):
+        overall_json = "test-run"
+    elif required_closed:
+        overall_json = "complete"
+    else:
+        overall_json = "incomplete"
+    merged_artifacts = {}
+    for row in stage_rows:
+        merged_artifacts.update(row["artifact_hashes"])
+    idata = intake_data(run_dir)
+    twin = {
+        "schema_version": "1.0",
+        "run_id": state.get("run_id"),
+        "host_shape": state.get("host_shape") or host_shape(),
+        "generated_at": now.isoformat(timespec="seconds"),
+        "overall": overall_json,
+        "review_mode": rm_data,
+        "stages": stage_rows,
+        "warnings": warns,
+        "owner_blocked": [],
+        "waivers": [w for w in warns
+                    if w.startswith("layout waiver recorded")
+                    or w.startswith("publish-verify waiver accepted")],
+        "hygiene": hygiene,
+        "totals": {
+            "cost_by_provider": costs,
+            "slowest_stages": [{"stage": s, "duration_s": secs}
+                               for s, secs in sorted(
+                                   durations.items(), key=lambda kv: -kv[1])[:3]],
+        },
+        "artifacts": merged_artifacts,
+        "compare_sheets": ([str(p) for p in sorted(compare_dir.glob("*.png"))]
+                           if compare_dir.exists() else []),
+    }
+    # Identity fields are plain strings in the schema: include each
+    # only when the run actually carries a value.
+    for _key in ("page_name", "brand_id", "client"):
+        _val = state.get(_key, idata.get(_key))
+        if _val is not None:
+            twin[_key] = _val
+    report_json_path.write_text(json.dumps(twin, indent=2) + "\n", encoding="utf-8")
+    emit_event(run_dir, {"event_type": "report_generated",
+                         "overall": overall_json,
+                         "review_mode": rm_data["mode"],
+                         "report_json_path": str(report_json_path),
+                         "report_md_path": str(report_path)})
     print(f"wrote {report_path}")
     print(f"OVERALL: {overall}")
     return 0 if required_closed else 1
+
+
+def _review_mode_data(run_dir, line):
+    """Item 25: Item 7's review-mode stamp as data, beside its line.
+
+    Counts are recomputed from the run's v2 review files with the same
+    overlap rule compute_review_mode applies (a named reviewer session
+    that equals its author session or any author session overlaps).
+    """
+    mode = "UNKNOWN"
+    if line.startswith("Review mode: "):
+        mode = line[len("Review mode: "):].split(" (")[0].strip() or "UNKNOWN"
+    reviewers, authors, overlap = set(), set(), set()
+    reviews_root = run_dir / "private" / "reviews"
+    records = []
+    if reviews_root.is_dir():
+        for p in sorted(reviews_root.glob("*/*.review.json")):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            r = data.get("reviewer_session")
+            a = data.get("author_session")
+            r = r.strip() if isinstance(r, str) else ""
+            a = a.strip() if isinstance(a, str) else ""
+            records.append((p.parent.name, r, a))
+            if r:
+                reviewers.add(r)
+            if a:
+                authors.add(a)
+    for stage, r, a in records:
+        if r and not _is_unknown_session(r) and (r == a or r in authors):
+            overlap.add(stage)
+    return {"mode": mode, "reviewer_sessions": len(reviewers),
+            "author_sessions": len(authors),
+            "overlap_stages": sorted(overlap), "line": line}
 
 
 def main():
@@ -942,6 +2841,19 @@ def main():
     p_close.add_argument("stage")
     p_report = sub.add_parser("report", help="write REPORT.md")
     p_report.add_argument("run_dir", type=Path)
+    p_check_item = sub.add_parser("check-item", help="gate for starting one item of an itemized stage")
+    p_check_item.add_argument("run_dir", type=Path)
+    p_check_item.add_argument("stage")
+    p_check_item.add_argument("item_id")
+    p_close_item = sub.add_parser("close-item", help="gate for closing one item of an itemized stage")
+    p_close_item.add_argument("run_dir", type=Path)
+    p_close_item.add_argument("stage")
+    p_close_item.add_argument("item_id")
+    p_block_item = sub.add_parser("block-item", help="record an item of an itemized stage as blocked, with a named reason")
+    p_block_item.add_argument("run_dir", type=Path)
+    p_block_item.add_argument("stage")
+    p_block_item.add_argument("item_id")
+    p_block_item.add_argument("--reason", required=True)
     args = parser.parse_args()
     args.run_dir = args.run_dir.resolve()
     if not args.run_dir.exists():
@@ -955,6 +2867,12 @@ def main():
         return cmd_close(args.run_dir, args.stage)
     if args.cmd == "report":
         return cmd_report(args.run_dir)
+    if args.cmd == "check-item":
+        return cmd_check_item(args.run_dir, args.stage, args.item_id)
+    if args.cmd == "close-item":
+        return cmd_close_item(args.run_dir, args.stage, args.item_id)
+    if args.cmd == "block-item":
+        return cmd_block_item(args.run_dir, args.stage, args.item_id, args.reason)
     return 2
 
 

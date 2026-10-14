@@ -1,0 +1,10 @@
+{
+  "selections": [
+    {
+      "source_library": "cinematic",
+      "style_id": "CIS-35",
+      "declared_series": true,
+      "declared_style_traits": ["centered composition", "sparse negative space", "uniform ratio"]
+    }
+  ]
+}
