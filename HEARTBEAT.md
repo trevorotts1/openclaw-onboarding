@@ -227,7 +227,10 @@ to push it fleet-wide.
 
 ### How to wire the probe as an OpenClaw cron
 
-Run this once per box after Skill 32 is installed:
+Run this once per box after Skill 32 is installed. The cron deliberately
+carries no `--model` pin: it runs on the main agent's configured default
+model (the client's configured default), so the probe follows the client's
+own model choice instead of a prescribed model name.
 
 ```bash
 openclaw cron create \
@@ -236,7 +239,6 @@ openclaw cron create \
   --tz "America/New_York" \
   --agent main \
   --session isolated \
-  --model "ollama/deepseek-v4.1-flash:cloud" \
   --tools exec \
   --message "Run the fleet embedding health probe: exec python3 ~/.openclaw/skills/32-command-center-setup/scripts/heartbeat-embedding-probe.py && echo PROBE_OK || echo PROBE_FAIL"
 ```

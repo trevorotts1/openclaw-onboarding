@@ -59,15 +59,11 @@ The skill accepts FOUR source types. Route via `scripts/add-persona-from-source.
 
 **Goal:** Lift the book's structured content into `extraction-notes.md`: chapter outline, key frameworks, named techniques, quote bank, author voice characteristics, and stated philosophy.
 
-**Model chain (N1: NO Anthropic):**
-1. Ollama Cloud — latest Kimi (`ollama/kimi-k2.6` or newer)
-2. OpenRouter — latest Kimi (`openrouter/moonshotai/kimi-k2.6`)
-3. OpenRouter — DeepSeek V4.1 Flash (`openrouter/deepseek/deepseek-v4.1-flash`)
-4. OpenRouter — Gemini 3.1 Pro (`openrouter/google/gemini-3.1-pro`)
-5. OpenRouter — Gemini 3.1 Flash Lite (last-resort)
-6. OAuth GPT (codex / chatgpt-cli) — emergency only
+**Model (N1: NO Anthropic):** Ask the client which model they want to use for this phase. If the client has already configured a default model, use the client's configured default model. Do not prescribe a specific model by name. The selector (`shared-utils/select_model.py`) resolves the client's choice, or the client's configured default model, from the client's own `openclaw.json`.
 
-If none of these are available, **STOP** and ask the owner. Do not silently substitute a different model family. Anthropic is forbidden in this pipeline per N1.
+**Recommendation:** a model with a large context window on a subscription-billed route where available, because extraction passes the whole book at once and subscription billing keeps per-book cost flat.
+
+If no model is chosen or configured, **STOP** and ask the owner. Do not silently substitute a different model. Anthropic is forbidden in this pipeline per N1.
 
 **Inputs:** `<source>.txt`
 **Output:** `personas/<persona-slug>/extraction-notes.md`
@@ -77,7 +73,7 @@ If none of these are available, **STOP** and ask the owner. Do not silently subs
 
 **Goal:** Synthesize Phase 1's notes into a behavioral profile: how the author thinks, what they recommend, what they push back against, what their voice sounds like.
 
-**Model chain:** Same as Phase 1.
+**Model:** Same resolution as Phase 1: the client's choice, or the client's configured default model.
 
 **Inputs:** Phase 1's `extraction-notes.md`
 **Output:** `personas/<persona-slug>/analysis-notes.md`
@@ -86,11 +82,7 @@ If none of these are available, **STOP** and ask the owner. Do not silently subs
 
 **Goal:** Produce the **persona blueprint** (`persona-blueprint.md`) — the canonical artifact that downstream consumers (persona-selector-v2.py, intelligence-resolver.ts) use.
 
-**Model chain (Phase 3 prefers OAuth GPT):**
-1. OAuth GPT (codex / chatgpt-cli)
-2. Ollama Cloud — latest Kimi
-3. OpenRouter — latest Kimi
-4. OpenRouter — DeepSeek V4.1 Flash
+**Model:** Same resolution as Phase 1: the client's choice, or the client's configured default model. Recommendation: a subscription-billed model where the client has one, because synthesis is the longest generation in the pipeline and subscription billing carries no per-call cost.
 
 **Inputs:** `extraction-notes.md` + `analysis-notes.md`
 **Output:** `personas/<persona-slug>/persona-blueprint.md`
@@ -215,7 +207,7 @@ persona that is matchable-but-vector-less or one the agent never mentions.
 |---------|--------------|-----|
 | "Calibre not found" + auto-install fails | Linux box with no apt-get and no wget | Re-run with sudo, or install Calibre via your distro's package manager |
 | Phase 1 stalls / never returns | Ollama Cloud quota exhausted | Set `OLLAMA_CLOUD_DISABLED=1` to force OpenRouter; check `~/.openclaw/credentials/` |
-| `persona-blueprint.md` is empty or 200 chars | Phase 3 OAuth GPT was unavailable AND Kimi fallback silently no-op'd | Check `pipeline/run.log` for the actual failed model; resume with `--phase 3` |
+| `persona-blueprint.md` is empty or 200 chars | The Phase 3 resolved model was unavailable AND the runtime fallback silently no-op'd | Check `pipeline/run.log` for the actual failed model; resume with `--phase 3` |
 | Embedding step errors with `GOOGLE_API_KEY missing` | Gemini key absent | Per N18 the script auto-falls-back to OpenAI `text-embedding-3-small`. If OPENAI_API_KEY also missing → set one in `~/.openclaw/credentials/` |
 | Persona doesn't appear in dashboard | `coaching-personas` not re-indexed | Run `gemini-indexer.py --rebuild` |
 

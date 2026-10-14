@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boxy page fixture</title>
+<style>
+  :root { --gold: #C9A227; --navy: #1A1A2E; --cream: #F5F0E8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--navy); color: var(--cream); font-family: "Georgia", serif; }
+  .logo { display: block; margin: 12px auto; }
+  section { background: var(--cream); color: var(--navy); padding: 48px 100px; text-align: center; }
+  h2 { font-size: 30px; margin: 0 0 16px; text-align: center; }
+  h3 { font-size: 20px; margin: 12px 0 8px; text-align: center; }
+  p { font-size: 18px; line-height: 1.5; margin: 12px 0; text-align: center; }
+  .shot { display: block; margin: 16px auto; width: 800px; max-width: calc(100% - 40px); height: 450px; }
+  .cta { display: inline-block; margin: 16px auto 8px; padding: 19px 32px; background: var(--navy);
+         color: var(--cream); font-size: 18px; line-height: 1.2; border: none; font-family: "Georgia", serif; }
+  .cards { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+  .card { width: 260px; height: 340px; background: var(--cream); padding: 16px; }
+  .card img { display: block; margin: 0 auto; width: 228px; height: 128px; }
+  @media (max-width: 700px) {
+    section { padding: 32px 20px; }
+  }
+</style>
+</head>
+<body>
+<img class="logo" src="logo.png" alt="BlackCEO logo" data-brand="logo" width="120" height="40">
+<section>
+  <h2>One Standard Section</h2>
+  <p>Every section of this fixture repeats the same centered pattern with the same image shape.</p>
+  <img class="shot" src="img.png" alt="Standard section image" width="800" height="450">
+  <button class="cta" type="button">Join Now</button>
+</section>
+<section>
+  <h2>One Standard Section</h2>
+  <p>Every section of this fixture repeats the same centered pattern with the same image shape.</p>
+  <img class="shot" src="img.png" alt="Standard section image" width="800" height="450">
+  <button class="cta" type="button">Join Now</button>
+</section>
+<section>
+  <h2>One Standard Section</h2>
+  <p>Every section of this fixture repeats the same centered pattern with the same image shape.</p>
+  <img class="shot" src="img.png" alt="Standard section image" width="800" height="450">
+  <button class="cta" type="button">Join Now</button>
+</section>
+<section>
+  <h2>One Standard Section</h2>
+  <p>Every section of this fixture repeats the same centered pattern with the same image shape.</p>
+  <img class="shot" src="img.png" alt="Standard section image" width="800" height="450">
+  <button class="cta" type="button">Join Now</button>
+</section>
+<section>
+  <h2>One Standard Section</h2>
+  <p>Every section of this fixture repeats the same centered pattern with the same image shape.</p>
+  <img class="shot" src="img.png" alt="Standard section image" width="800" height="450">
+  <button class="cta" type="button">Join Now</button>
+</section>
+<section>
+  <h2>Four Identical Cards</h2>
+  <div class="cards">
+    <div class="card">
+      <img src="card.png" alt="Card image" width="228" height="128">
+      <h3>Same Card</h3>
+      <p>The same card, repeated.</p>
+    </div>
+    <div class="card">
+      <img src="card.png" alt="Card image" width="228" height="128">
+      <h3>Same Card</h3>
+      <p>The same card, repeated.</p>
+    </div>
+    <div class="card">
+      <img src="card.png" alt="Card image" width="228" height="128">
+      <h3>Same Card</h3>
+      <p>The same card, repeated.</p>
+    </div>
+    <div class="card">
+      <img src="card.png" alt="Card image" width="228" height="128">
+      <h3>Same Card</h3>
+      <p>The same card, repeated.</p>
+    </div>
+  </div>
+</section>
+</body>
+</html>

@@ -1,0 +1,193 @@
+--- a/71-blackceo-signature-page/scripts/stage_gate.py
++++ b/71-blackceo-signature-page/scripts/stage_gate.py
+@@ -1429,6 +1429,88 @@
+     return 0
+ 
+ 
++# ---------------------------------------------------------------------------
++# Browser teardown and hygiene gate (fix plan Item 33).
++#
++# A stage whose contract entry carries "uses_browser": true (today
++# ghl-install-test and publish-verify; automation-wiring gains the same
++# flag when its contract entry lands), and any stage the session
++# registry holds sessions for, may not close until the reaper pass has
++# accounted for every browser session the run opened for it. The
++# registry, probe, reaper, and receipt writer live in
++# scripts/browser_sessions.py, loaded by path the way validators resolve
++# against the skill root; the gate owns the verdict: unaccounted above
++# zero refuses the close, naming the sessions, and headed launches
++# refuse it too unless an owner override is on record in the receipt.
++# The pass runs before anything else in check and close (Item 33 HOW 2:
++# the gate is the recovery path when the runner died before teardown).
++# cmd_report prints the plan's REPORT.md line and, when a REPORT.json
++# already exists, fills its frozen hygiene object (S6 Item 25,
++# references/report-json.schema.json) from the same roll-up the Item 25
++# writer uses: report_hygiene_object() below.
++
++def _browser_sessions_module():
++    path = SKILL_ROOT / "scripts" / "browser_sessions.py"
++    if not path.exists():
++        return None
++    import importlib.util
++    spec = importlib.util.spec_from_file_location(
++        "skill71_browser_sessions", path)
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    return mod
++
++
++def stage_uses_browser(run_dir, stage):
++    if STAGES[stage].get("uses_browser"):
++        return True
++    # Conditional browser use (publish-verify when a browser produced
++    # its evidence): sessions on record make the stage accountable.
++    mod = _browser_sessions_module()
++    return bool(mod and mod.stage_has_sessions(run_dir, stage))
++
++
++def browser_hygiene_pass(run_dir, stage):
++    """Reaper sweep + receipt for one stage; returns failure lines."""
++    mod = _browser_sessions_module()
++    if mod is None:
++        return [f"stage {stage}: browser hygiene cannot be verified: "
++                f"scripts/browser_sessions.py is missing from the skill; "
++                f"a browser-using stage cannot close without the Item 33 "
++                f"session accounting"]
++    receipt = mod.sweep_and_receipt(run_dir, stage)
++    lines = []
++    if receipt["unaccounted"] > 0:
++        names = ", ".join(receipt.get("_unaccounted_names") or [])
++        lines.append(
++            f"stage {stage}: browser hygiene: {receipt['unaccounted']} "
++            f"session(s) unaccounted ({names}); every browser session "
++            f"must be torn down or reaped before the stage closes "
++            f"(Item 33)")
++    if receipt["headed_launches"] > 0 \
++            and not receipt.get("owner_override_headed"):
++        lines.append(
++            f"stage {stage}: browser hygiene: "
++            f"{receipt['headed_launches']} headed browser launch(es) "
++            f"recorded and no owner override is on record in "
++            f"{stage}/browser-hygiene.json; headed launches violate the "
++            f"Browser Engine Contract (Item 33)")
++    return lines
++
++
++def report_hygiene_object(run_dir):
++    """The run's REPORT.json hygiene object (frozen field names, S6):
++    recorded counts summed from the per-stage browser-hygiene.json
++    receipts, or status not_recorded with null counts when no stage
++    receipt exists."""
++    mod = _browser_sessions_module()
++    if mod is None:
++        return {"status": "not_recorded", "opened": None, "closed": None,
++                "orphans_found": None, "reaped": None,
++                "unaccounted": None, "headed_launches": None}
++    return mod.run_rollup(run_dir, ORDER)
++
++
+ def cmd_init(run_dir):
+     intake = run_dir / "intake.json"
+     if not intake.exists():
+@@ -1446,6 +1528,10 @@
+     spec, errs = load_contract_stage(stage)
+     if errs:
+         return fail_exit(errs)
++    if stage_uses_browser(run_dir, stage):
++        hygiene_failures = browser_hygiene_pass(run_dir, stage)
++        if hygiene_failures:
++            return fail_exit(hygiene_failures)
+     failures = check_requires(run_dir, stage)
+     if failures:
+         return fail_exit(failures)
+@@ -1458,6 +1544,11 @@
+     if errs:
+         return fail_exit(errs)
+     failures = []
++    # Item 33: the reaper pass runs before anything else is evaluated,
++    # so a run whose runner died still gets its sessions accounted, and
++    # the receipt it writes satisfies the stage's artifact contract.
++    if stage_uses_browser(run_dir, stage):
++        failures.extend(browser_hygiene_pass(run_dir, stage))
+     status, receipt, rlines = receipt_status(run_dir, stage)
+     failures.extend(rlines)
+     if not receipt:
+@@ -1749,6 +1840,16 @@
+     else:
+         lines.append("- (none; responsive-html not closed or compare_sheet.py not run)")
+     lines.append("")
++    lines.append("## Browser hygiene")
++    lines.append("")
++    hygiene = report_hygiene_object(run_dir)
++    if hygiene["status"] == "recorded":
++        lines.append(f"Browser hygiene: {hygiene['opened']} sessions opened, "
++                     f"{hygiene['closed']} closed, {hygiene['reaped']} "
++                     f"orphans reaped.")
++    else:
++        lines.append("Browser hygiene: not recorded.")
++    lines.append("")
+ 
+     overall = "RUN COMPLETE" if required_closed else "RUN INCOMPLETE"
+     if not required_closed:
+@@ -1760,6 +1861,21 @@
+     lines.append(compute_review_mode(run_dir))
+     report_path = run_dir / "REPORT.md"
+     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
++    # Item 33: when a REPORT.json twin already exists (Item 25), fill
++    # its hygiene object from the same roll-up, in the frozen field
++    # names. The gate does not fabricate a partial REPORT.json when the
++    # twin has not been written; report_hygiene_object() is the source
++    # the Item 25 writer emits.
++    report_json_path = run_dir / "REPORT.json"
++    if report_json_path.exists():
++        try:
++            twin = json.loads(report_json_path.read_text(encoding="utf-8"))
++            if isinstance(twin, dict):
++                twin["hygiene"] = report_hygiene_object(run_dir)
++                report_json_path.write_text(
++                    json.dumps(twin, indent=2) + "\n", encoding="utf-8")
++        except Exception:
++            pass
+     print(f"wrote {report_path}")
+     print(f"OVERALL: {overall}")
+     return 0 if required_closed else 1
+--- a/71-blackceo-signature-page/references/stage-contract.json
++++ b/71-blackceo-signature-page/references/stage-contract.json
+@@ -415,6 +415,7 @@
+       "may_be_not_authorized": false
+     },
+     "ghl-install-test": {
++      "uses_browser": true,
+       "depends_on": [
+         "responsive-html"
+       ],
+@@ -423,6 +424,10 @@
+         {
+           "glob": "ghl-install-test/install-steps.md",
+           "min_count": 1
++        },
++        {
++          "glob": "ghl-install-test/browser-hygiene.json",
++          "min_count": 1
+         }
+       ],
+       "validators": [],
+@@ -435,6 +440,7 @@
+       "may_be_not_authorized": true
+     },
+     "publish-verify": {
++      "uses_browser": true,
+       "depends_on": [
+         "ghl-install-test"
+       ],
+@@ -443,6 +449,10 @@
+         {
+           "glob": "publish-verify/receipts/*",
+           "min_count": 1
++        },
++        {
++          "glob": "publish-verify/browser-hygiene.json",
++          "min_count": 1
+         }
+       ],
+       "validators": [],

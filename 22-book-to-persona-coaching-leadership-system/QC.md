@@ -47,12 +47,12 @@ Confirm these specific folders exist inside the personas directory:
 - [ ] `pipeline/orchestrator.py` exists (or equivalent pipeline script)
 - [ ] `pipeline-status.json` exists (may be empty `{}` on first install — that is acceptable)
 
-### Secrets (Ollama Cloud preferred, OpenRouter as fallback)
+### Secrets (keys required depend on the route of the client's chosen or configured default model)
 - [ ] `secrets/.env` (in your agent workspace) exists
-- [ ] `GOOGLE_API_KEY` entry present in `.env` (Gemini indexing / retrieval) — always required
-- [ ] `OLLAMA_API_KEY` entry present (Tier 1 + 2 primary — Ollama Cloud Kimi / DeepSeek-pro)
-- [ ] `OPENROUTER_API_KEY` entry present (Tier 3 + 4 fallback only — used when Ollama Cloud is unavailable)
-- [ ] `OPENAI_API_KEY` entry present (Tier 5 OAuth GPT fallback for Phase 3)
+- [ ] `GOOGLE_API_KEY` entry present in `.env` (Gemini indexing / retrieval) - always required
+- [ ] `OLLAMA_API_KEY` entry present (required when the resolved model routes via Ollama Cloud)
+- [ ] `OPENROUTER_API_KEY` entry present (required when the resolved model routes via OpenRouter)
+- [ ] `OPENAI_API_KEY` entry present (required when the resolved model routes via OAuth GPT)
 
 **HARD FAIL:** Any missing file from skill root, agent-prompts, or pre-built personas folder = installation incomplete.
 
@@ -73,8 +73,8 @@ Verify that AGENTS.md, TOOLS.md, MEMORY.md, SOUL.md, and HEARTBEAT.md received t
 ### TOOLS.md
 - [ ] Contains section heading `## Book-to-Persona - Model Routing and Gemini Engine`
 - [ ] Phase 1 routing references DYNAMIC selection via `shared-utils/select_model.py` (no hardcoded model name)
-- [ ] Phase 2 routing references DYNAMIC selection — Kimi-first chain like Phase 1
-- [ ] Phase 3 routing notes OAuth GPT preferred, latest Kimi as runtime fallback
+- [ ] Phase 2 routing references DYNAMIC selection - same client-choice/default resolution as Phase 1
+- [ ] Phase 3 routing references the client's choice, or the client's configured default model (no model prescribed by name, in any phase)
 - [ ] Anthropic models explicitly flagged as FORBIDDEN
 - [ ] Temperature 1.0 requirement for Phase 1 is documented
 - [ ] Prompt templates were NOT pasted into TOOLS.md (rule: reference only)
@@ -106,9 +106,9 @@ Verify that AGENTS.md, TOOLS.md, MEMORY.md, SOUL.md, and HEARTBEAT.md received t
 Answer each question without looking at the files. These confirm the agent has internalized the skill, not just installed it.
 
 **Q1: What are the three pipeline phases and which model handles each?**
-- Expected: Phase 1 + Phase 2 = Ollama Cloud Kimi/DeepSeek-pro (per `shared-utils/select_model.py --purpose-tier heavy`), Phase 3 = OAuth GPT preferred. OpenRouter only appears as primary if the client's openclaw.json has NO Ollama Cloud models.
+- Expected: All three phases use the model the client selected, or the client's configured default model, resolved per phase by `shared-utils/select_model.py --purpose-tier heavy` from the client's own openclaw.json. No phase prescribes a model by name; if nothing is configured, the pipeline stops and asks the owner which model to use.
 
-**Q2: What triggers a Phase 3 fallback from OAuth GPT (latest Codex version) to Ollama Kimi (latest, e.g. 2.6)?**
+**Q2: What triggers a Phase 3 runtime fallback from the resolved model to the next model the selector returns?**
 - Expected: Any of — API error, rate limit (429), HTTP timeout (30 min Phases 1/2, 60 min Phase 3 — v9.5.2), output under 5,000 characters, any error message in the response
 
 **Q3: How many sections does a complete persona-blueprint.md have, and what are sections 3, 6, and 14?**
@@ -396,7 +396,7 @@ These are failure modes the skill is specifically designed to prevent. Verify no
 ### Anti-Pattern 7: Missing Fallback Awareness
 **Check:** Does the agent know that Phase 3 has a fallback model, and can it state the fallback trigger conditions?
 - [ ] Confirmed: Agent can state the 4 fallback triggers (429, timeout, <5000 chars, any error)
-- FAIL if agent believes GPT-5.4 Codex is the only option with no fallback
+- FAIL if agent believes one named model is the only option with no fallback (no model is prescribed by name; the selector resolves the client's choice or configured default, and re-runs with the failed model excluded)
 
 ### Anti-Pattern 8: Gemini Engine Not Used for Retrieval
 **Check:** Does the agent try to load entire persona files into context rather than using Gemini Engine surgical queries?
@@ -420,7 +420,7 @@ To declare this skill **INSTALLED AND OPERATIONAL**, ALL of the following must b
 - [ ] All skill root files present
 - [ ] All 3 agent prompt files present
 - [ ] Personas folder exists with at least 5 pre-built personas, each containing all 3 required files
-- [ ] Secrets `.env` file contains all required API key entries: `GOOGLE_API_KEY` (always required), `OLLAMA_API_KEY` (PRIMARY — Ollama Cloud Kimi / DeepSeek-pro), `OPENROUTER_API_KEY` (fallback only), `OPENAI_API_KEY` (OAuth GPT for Phase 3)
+- [ ] Secrets `.env` file contains all required API key entries: `GOOGLE_API_KEY` (always required), plus the key for the route of the client's chosen or configured default model (`OLLAMA_API_KEY` for Ollama Cloud, `OPENROUTER_API_KEY` for OpenRouter, `OPENAI_API_KEY` for OAuth GPT)
 
 **Core File Updates (Section 2)**
 - [ ] AGENTS.md updated with `## Book-to-Persona Skill (Installed)` and Persona Reflex

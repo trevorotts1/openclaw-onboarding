@@ -19,6 +19,19 @@ MODULES = [
     "test_validate_copy_prompt.py",
     "test_render_compare.py",
     "test_validate_page.py",
+    # Stream modules registered at integration (S8 assembly, Item 29):
+    "test_review_v2.py",
+    "test_image_grade_extended.py",
+    "test_item10_style_fidelity.py",
+    "test_layout_metrics.py",
+    "test_validate_copy_structure.py",
+    "test_delivery_funnel.py",
+    "test_item_gate.py",
+    "test_swarm_runner.py",
+    "test_browser_hygiene.py",
+    "test_shipper.py",
+    "test_suppress_fixture.py",
+    "test_assembly_integration.py",
 ]
 
 def main():

@@ -7,6 +7,7 @@ aria-label="Big Bold Pain 1", <h2>The Big Bold Claim</h2>,
 <!-- HANDOFF NOTE - NOT FOR PUBLICATION -->, alt="IMG-07 hero", [EVENT_DATE]
 must FAIL naming every reason; plain public copy must PASS.
 """
+import json
 import os
 import shutil
 import subprocess
@@ -95,17 +96,23 @@ REPEATED_SENTENCE = "Detailed production prompt control sentence. " * 150
 
 
 def build_no_grade_prompt(tmpdir):
-    """prompt_good.txt with the Signature Grade Block and negative block removed."""
+    """prompt_good.txt with the Signature Grade Block removed."""
     good = Path(GOOD_PROMPT).read_text(encoding="utf-8")
     grade = Path(GRADE_BLOCK).read_text(encoding="utf-8").rstrip("\n")
-    sents_start = good.index("\nOpen on a woman")
-    sents_end = good.index("\nRender this image")
-    sentences = good[sents_start + 1:sents_end]
-    head = good[:good.index("\nOpen on a woman")]
+    assert grade in good
     out = Path(tmpdir) / "prompt_no_grade.txt"
-    out.write_text(head + "\n" + sentences +
-                   "\nAvoid dull colors. Keep it vivid.\n", encoding="utf-8")
+    out.write_text(good.replace(grade, ""), encoding="utf-8")
     return str(out), grade
+
+
+def build_no_negative_prompt(tmpdir):
+    """prompt_good.txt with its Do-not statements replaced by two vague lines."""
+    good = Path(GOOD_PROMPT).read_text(encoding="utf-8")
+    cut = good.index("\nDo not produce flat")
+    out = Path(tmpdir) / "prompt_no_negative.txt"
+    out.write_text(good[:cut] + "\nAvoid dull colors. Keep it vivid.\n",
+                   encoding="utf-8")
+    return str(out)
 
 
 class TestPromptValidation(unittest.TestCase):
@@ -126,19 +133,14 @@ class TestPromptValidation(unittest.TestCase):
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("Padding detected", proc.stdout)
 
-    def fitted_good(self):
-        sys.path.insert(0, HERE)
-        import fit_prompt
-        return fit_prompt.fit_file(GOOD_PROMPT, self.tmp / "good_fitted.txt")
-
     def test_good_fixture_passes(self):
         self.assertTrue(Path(GOOD_PROMPT).exists(), "tests/fixtures/prompt_good.txt missing")
-        proc = run(PROMPT_SCRIPT, self.fitted_good())
+        proc = run(PROMPT_SCRIPT, GOOD_PROMPT)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("PASS", proc.stdout)
 
     def test_good_fixture_passes_sauce_only(self):
-        proc = run(PROMPT_SCRIPT, "--sauce-only", self.fitted_good())
+        proc = run(PROMPT_SCRIPT, "--sauce-only", GOOD_PROMPT)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("PASS", proc.stdout)
 
@@ -150,34 +152,126 @@ class TestPromptValidation(unittest.TestCase):
         self.assertIn("Grade Block", proc.stdout)
 
     def test_missing_negative_block_fails(self):
-        no_grade, _ = build_no_grade_prompt(self.tmp)
-        proc = run(PROMPT_SCRIPT, no_grade)
+        proc = run(PROMPT_SCRIPT, build_no_negative_prompt(self.tmp))
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("negative block", proc.stdout)
 
-    def test_rule_12_length_band(self):
-        # KIE prompt rule 12: 79 percent rejected naming the characters to add, 95 and 100 percent pass the
-        # length gate, 101 percent rejected naming the characters to cut. The model max (20,000 for GPT Image 2.5)
-        # comes from Skill 74 prompt-budget through the shared enforcer, not from this skill.
-        sys.path.insert(0, HERE)
-        import fit_prompt
-        mx = fit_prompt.vp.KPE.budget_for(fit_prompt.vp.IMAGE_MODEL_DEFAULT)["max"]
-        base = Path(self.fitted_good()).read_text(encoding="utf-8")
 
-        def sized(n):
-            p = self.tmp / ("sized_%d.txt" % n)
-            p.write_text(base[:n] if len(base) >= n else base + "q" * (n - len(base)), encoding="utf-8")
-            return str(p)
-        low = run(PROMPT_SCRIPT, sized(mx * 79 // 100))
-        self.assertEqual(low.returncode, 1)
-        self.assertIn("ADD at least", low.stdout)
-        for pct in (95, 100):
-            out = run(PROMPT_SCRIPT, sized(mx * pct // 100)).stdout
-            self.assertNotIn("floor is", out)
-            self.assertNotIn("CUT exactly", out)
-        high = run(PROMPT_SCRIPT, sized(mx * 101 // 100))
-        self.assertEqual(high.returncode, 1)
-        self.assertIn("CUT exactly", high.stdout)
+_SYL = ["ba", "ko", "ri", "mu", "te", "sa", "no", "vi",
+        "la", "pe", "do", "xu", "fi", "ga", "hu", "ze"]
+
+
+def _gword(n):
+    a, b, c = n % 16, (n // 16) % 16, (n // 256) % 16
+    return _SYL[a] + _SYL[b] + _SYL[c] + "n"
+
+
+def grow_to(text, target_chars):
+    """Insert distinct art-direction sentences into Element J's prose,
+    before its Do-not statements, until the text reaches target_chars.
+    Every sentence carries unique generated words, so no 8-word
+    sequence, 60-character substring, or vocabulary pattern repeats:
+    the padding screens stay silent because, under Part C, length
+    alone neither passes nor fails a prompt."""
+    anchor = "\nDo not produce flat"
+    head, tail = text.split(anchor, 1)
+    i = 0
+    while len(head) + len(tail) + 1 < target_chars:
+        ws = [_gword(i * 10 + k) for k in range(10)]
+        head += (f"Beat {i}: the {ws[0]} {ws[1]} beside the {ws[2]} keeps "
+                 f"the {ws[3]} light specific to scene {i}, with {ws[4]} "
+                 f"shadow, {ws[5]} air, {ws[6]} texture on the {ws[7]} "
+                 f"wall, and {ws[8]} {ws[9]} detail.\n")
+        i += 1
+    return head + anchor + tail
+
+
+SMALL_COMPLETE = """ASSET: editorial photograph | BAND: visual_long. One standalone scene image for the page.
+SUBJECT + SCENE: One woman at one dining table at one interrupted moment, the room lived-in and plausible.
+COMPOSITION GRID: Subject in the middle-right zone; text-safe zone upper-left; crop-safe margins of 5-10 percent.
+STYLE BLOCK: One locked creative direction governs this page and no second family is imported anywhere.
+TYPOGRAPHY + VERBATIM COPY: No text, no letters, no words anywhere in the image.
+LIGHTING + COLOR GRADE: One motivated window key, gentle fill, protected highlights, deliberate grade.
+PEOPLE / REPRESENTATION: One fictional adult, believable hands, natural unperformed expression, honest posture.
+LOGO / REFERENCE DIRECTIVE: No logo is approximated on any surface; references are style-only here.
+TECHNICAL: One independent master image; save the unmodified master file under its recorded name.
+NEGATIVE BLOCK:
+Do not produce flat, muted, pastel, desaturated, or low-contrast color.
+Do not distort hands, eyes, or teeth.
+Do not render any text, letters, or words anywhere in the image.
+Do not invent or mutate any brand logo.
+Do not render placeholder blocks or lorem text.
+Do not add any watermark, caption, or badge.
+"""
+
+
+class TestPartCBudget(unittest.TestCase):
+    """Amendment 6 Part C: element completeness governs; length is
+    telemetry; the enforcer's 95-to-100 percent band and 80 percent
+    floor are withdrawn (the old test_rule_12_length_band encoded that
+    withdrawn design and is replaced by this class)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="partc-test-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.base = Path(GOOD_PROMPT).read_text(encoding="utf-8")
+
+    def _write(self, name, text):
+        p = self.tmp / name
+        p.write_text(text, encoding="utf-8")
+        return str(p)
+
+    def test_no_length_floor_at_79_percent(self):
+        path = self._write("p79.txt", grow_to(self.base, 15800))
+        proc = run(PROMPT_SCRIPT, path)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotIn("ADD", proc.stdout)
+        self.assertNotIn("CUT", proc.stdout)
+
+    def test_overflow_warns_only_for_not_published_cap(self):
+        path = self._write("p103.txt", grow_to(self.base, 20600))
+        proc = run(PROMPT_SCRIPT, path)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("warns only", proc.stdout)
+
+    def test_verified_cap_fails_closed(self):
+        policy = {"models": [{"match": "gpt-image-2-5", "max_chars": 5000,
+                              "cap_status": "VERIFIED", "unit": "chars"}],
+                  "default": {"max_chars": None, "cap_status": "UNKNOWN",
+                              "unit": "chars"},
+                  "tripwire_chars": 2000}
+        policy_path = self._write("policy.json", json.dumps(policy))
+        proc = run(PROMPT_SCRIPT, "--policy", policy_path, GOOD_PROMPT)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("VERIFIED", proc.stdout)
+
+    def test_tripwire_flags_short_complete_prompt_without_failing(self):
+        path = self._write("small.txt", SMALL_COMPLETE)
+        proc = run(PROMPT_SCRIPT, path)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("TRIPWIRE", proc.stdout)
+
+    def test_9500_char_complete_prompt_passes_as_telemetry(self):
+        path = self._write("p9500.txt", grow_to(self.base, 9500))
+        proc = run(PROMPT_SCRIPT, "--json", path)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        data = json.loads(proc.stdout)
+        self.assertEqual(data["errors"], [])
+        chars = data["telemetry"]["characters"]
+        self.assertGreaterEqual(chars, 9400)
+        self.assertAlmostEqual(data["telemetry"]["percent_of_max"],
+                               round(100.0 * chars / 20000, 2), delta=0.2)
+
+    def test_padded_prompt_fails_on_padding_not_length(self):
+        anchor = "\nDo not produce flat"
+        head, tail = self.base.split(anchor, 1)
+        padded = head + ("The same generic sentence about beautiful light "
+                         "and nice colors repeated without any new "
+                         "direction. " * 120) + anchor + tail
+        path = self._write("padded.txt", padded)
+        proc = run(PROMPT_SCRIPT, path)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("Padding detected", proc.stdout)
 
 
 if __name__ == "__main__":
