@@ -52,6 +52,30 @@ sys.addaudithook(fixture_audit)
 '''
 exec(FIXTURE_GUARD)
 
+# Item 10 fixtures: a fake curl that answers ONLY the endpoint under test, so a
+# dry-run that silently reaches the invitation route fails the assertion.
+CURL_READY = '''#!PYBIN
+import sys,json
+config=sys.stdin.read()
+url=sys.argv[-1]
+assert "Authorization: Bearer fixture-secret" in config
+assert url.endswith("/api/auth/interview-ready"), "dry-run must not reach "+url
+print(json.dumps(RECEIPT))
+print("200")
+'''
+
+CURL_MINT = '''#!PYBIN
+import sys,json,time
+config=sys.stdin.read()
+url=sys.argv[-1]
+assert "Authorization: Bearer fixture-secret" in config
+if url.endswith("/api/auth/interview-invitation"):
+ print(json.dumps({"protocol":"interview-invitation.v1","tenantId":"tenant-a","companyId":"client-a","installationId":"install-a","host":"client.example.com","expiresAt":int(time.time())+900,"validUntil":"interview-complete","redeemable":"until-interview-complete","oneUse":True,"url":"https://client.example.com/interview?enroll=fixture.signature"}))
+else:
+ print(json.dumps(RECEIPT))
+print("200")
+'''
+
 class InvitationTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)
@@ -180,6 +204,28 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_missing_and_conflicting_origins_are_pending(self):
         for state,env in [(dict(self.state,commandCenterUrl=None),self.env),(self.state,dict(self.env,OPENCLAW_DASHBOARD_URL='https://other.example.com')),(self.state,dict(self.env,INTERVIEW_GATE_URL='https://other.example.com')),(self.state,dict(self.env,MC_COMPANY_ID='foreign'))]:
             with self.subTest(state=state,env=env),self.assertRaises(m.Pending):self.resolve(state=state,env=env)
+    def test_cc_public_url_only_origin_resolves(self):
+        # Item 12: CC_PUBLIC_URL-only (the name the app's configuredPublicOrigin
+        # prioritizes) resolves — the sender and the app never disagree about
+        # which host is self.
+        state=dict(self.state,commandCenterUrl=None)
+        env=dict(self.env,CC_PUBLIC_URL='https://client.example.com/')
+        result=self.resolve(state=state,env=env)
+        self.assertEqual(result['origin'],'https://client.example.com')
+        self.assertEqual(result['host'],'client.example.com')
+    def test_conflicting_cc_public_url_refuses(self):
+        # A genuine origin conflict never silently picks a winner.
+        env=dict(self.env,CC_PUBLIC_URL='https://other.example.com')
+        with self.assertRaises(m.Pending) as caught:
+            self.resolve(env=env)
+        self.assertIn('origin configuration conflict',str(caught.exception))
+    def test_pinned_service_env_may_carry_cc_public_url(self):
+        # The pinned service environment accepts the same origin name the app
+        # prioritizes, and the resolver actually reads it.
+        source=(ROOT/'shared-utils'/'interview_invitation.py').read_text()
+        self.assertIn("allowed={'MC_TENANT_ID','MC_COMPANY_ID','MC_INSTALLATION_ID','CC_PUBLIC_URL'",source)
+        self.assertIn("env.get('CC_PUBLIC_URL')",source)
+
     def test_canonical_origin_must_match_state_identity(self):
         record=dict(self.context,verified=True);record['installationId']='foreign'
         with self.assertRaises(m.Pending):self.resolve(state=dict(self.state,commandCenterPublicOrigin=record))
@@ -275,6 +321,68 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         self.assertEqual(run.returncode,0,run.stderr);self.assertIn('https://client.example.com/interview',run.stdout);self.assertNotIn('fixture-secret',run.stdout+run.stderr);self.assertFalse(self.capture.exists())
         sent=subprocess.run(['/bin/bash',str(ROOT/'23-ai-workforce-blueprint/scripts/send-interview-link.sh')],env=env,text=True,capture_output=True)
         self.assertEqual(sent.returncode,0,sent.stderr);self.assertEqual(json.loads(sent.stdout)['status'],'accepted');self.assertEqual(json.loads(self.capture.read_text())['target'],'123456789');self.assertIn('?enroll=fixture.signature',json.loads(self.capture.read_text())['message']);self.assertNotIn('fixture.signature',sent.stdout+sent.stderr)
+    def test_issuance_refusal_keeps_the_application_error_code(self):
+        # Item 10: a 409 keeps its own machine-readable name so the operator
+        # repairs the registration instead of retrying blindly; an unrecognised
+        # body stays generic and NEVER leaks raw response text.
+        resolved=self.resolve()
+        refused=subprocess.CompletedProcess([],0,json.dumps({'error':'access_identity_unregistered'})+'\n409','')
+        with patch.object(m.subprocess,'run',return_value=refused):
+            with self.assertRaisesRegex(m.Pending,'HTTP 409: access_identity_unregistered'):
+                m.issue_invitation(resolved,self.env,'123456789')
+        noisy=subprocess.CompletedProcess([],0,'<html>502 gateway junk secret-looking</html>\n502','')
+        with patch.object(m.subprocess,'run',return_value=noisy):
+            with self.assertRaises(m.Pending) as caught:
+                m.issue_invitation(resolved,self.env,'123456789')
+        self.assertNotIn('junk',str(caught.exception))
+        unknown=subprocess.CompletedProcess([],0,json.dumps({'error':'some_future_code','detail':'secret payload'})+'\n409','')
+        with patch.object(m.subprocess,'run',return_value=unknown):
+            with self.assertRaisesRegex(m.Pending,'authenticated invitation issuance failed') as caught2:
+                m.issue_invitation(resolved,self.env,'123456789')
+        self.assertNotIn('secret payload',str(caught2.exception))
+        self.assertNotIn('some_future_code',str(caught2.exception))
+
+    def _shell_fixture(self,curl_script):
+        fake=self.bin/'curl';fake.write_text(curl_script);fake.chmod(0o755)
+        service=self.root/'service.env'
+        service.write_text('MC_API_TOKEN=fixture-secret\nMC_COMPANY_ID=client-a\nMC_TENANT_ID=tenant-a\nMC_INSTALLATION_ID=install-a\n')
+        self.root.joinpath('.workforce-build-state.json').write_text(json.dumps(dict(self.state,launchBootstrap={'serviceEnvPath':str(service)})))
+        env=dict(os.environ,HOME=str(self.root),OPENCLAW_WORKSPACE_ROOT=str(self.root),OPENCLAW_OWNER_CHAT_ID='123456789')
+        env.pop('MC_API_TOKEN',None)
+        return env
+
+    def test_dry_run_proves_readiness_only_and_never_calls_issuance(self):
+        # Item 10: dry-run must say what it proved and must not touch the
+        # invitation route — it used to print an invitation preview that read
+        # as success while minting was impossible.
+        script=CURL_READY.replace('PYBIN',sys.executable).replace('RECEIPT',repr(self.receipt))
+        env=self._shell_fixture(script)
+        run=subprocess.run(['/bin/bash',str(ROOT/'23-ai-workforce-blueprint/scripts/send-interview-link.sh'),'--dry-run'],env=env,text=True,capture_output=True)
+        self.assertEqual(run.returncode,0,run.stderr)
+        self.assertIn('invitation=unproven',run.stdout)
+        self.assertIn('delivery=not-attempted',run.stdout)
+        self.assertIn('no invitation was minted',run.stdout)
+        self.assertNotIn('fixture-secret',run.stdout+run.stderr)
+        self.assertFalse(self.capture.exists())
+        self.assertFalse(self.ledger.exists())
+
+    def test_mint_only_issues_and_discards_the_ticket_without_sending(self):
+        # Items 10 + 04: mint-only proves issuance end-to-end, then discards the
+        # ticket: sanitized summary only, no CLI send, no ledger entry.
+        script=CURL_MINT.replace('PYBIN',sys.executable).replace('RECEIPT',repr(self.receipt))
+        env=self._shell_fixture(script)
+        run=subprocess.run(['/bin/bash',str(ROOT/'23-ai-workforce-blueprint/scripts/send-interview-link.sh'),'--mint-only'],env=env,text=True,capture_output=True)
+        self.assertEqual(run.returncode,0,run.stderr)
+        self.assertIn('delivery=not-attempted',run.stdout)
+        payload=json.loads([line for line in run.stdout.splitlines() if line.startswith('{')][-1])
+        self.assertEqual(payload['status'],'minted')
+        self.assertEqual(payload['delivery'],'not-attempted')
+        self.assertEqual(payload['ticket'],'discarded')
+        self.assertEqual(payload['host'],'client.example.com')
+        self.assertNotIn('fixture.signature',run.stdout+run.stderr)
+        self.assertFalse(self.capture.exists())
+        self.assertFalse(self.ledger.exists())
+
     def test_concurrent_invocations_send_once(self):
         script="import sys;sys.path.insert(0,sys.argv[1]);import interview_invitation as m,json;print(m.send_gateway('same message','123456789',sys.argv[2],json.loads(sys.argv[3]))[0])"
         args=[sys.executable,'-c',script,str(ROOT/'shared-utils'),str(self.ledger),json.dumps(self.context)]
@@ -354,6 +462,37 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_curl_http_errors_and_redirects_refused(self):
         for stdout in [json.dumps(self.receipt)+'\n302',json.dumps(self.receipt)+'\n403','{}\n200','not-json\n200']:
             with self.subTest(output=stdout),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,stdout,'')),self.assertRaises(m.Pending):m.resolve_public_origin(self.state,self.env)
+
+    def test_refusal_reasons_are_distinct_and_leak_nothing(self):
+        # Decision 2 (item 12): each refusal class keeps its OWN sanitized reason,
+        # the four are pairwise distinct (one vocabulary, never a collapsed
+        # catch-all), and none of them can carry a body, URL or ticket.
+        def reason_of(stdout, rc=0):
+            with patch.object(m.subprocess,'run',
+                              return_value=subprocess.CompletedProcess([],rc,stdout,'')):
+                try:
+                    m.resolve_public_origin(self.state,self.env)
+                except m.Pending as exc:
+                    return str(exc)
+            return None
+        redirect = reason_of(json.dumps(self.receipt)+'\n302')
+        malformed = reason_of('not-json\n200')
+        transport = reason_of('', rc=1)
+        for name, value in (('redirect',redirect),('malformed',malformed),('transport',transport)):
+            self.assertIsNotNone(value, name+' must refuse with a reason')
+            self.assertNotIn('enroll=', value, name)
+            self.assertNotIn('fixture.signature', value, name)
+        self.assertIn('redirect', redirect)
+        self.assertEqual(malformed, 'malformed readiness receipt')
+        self.assertEqual(transport, 'authenticated readiness transport failed')
+        self.assertEqual(len({redirect, malformed, transport}), 3, 'refusal reasons must stay distinct')
+        self.assertNotIn('not-json', malformed, 'a malformed body must never be echoed')
+        # Registration gap: the allowlisted application code only — unrecognised
+        # or injected codes yield no reason at all, never the raw body.
+        self.assertEqual(m.invitation_error_code(json.dumps({'error':'access_identity_unregistered'})),
+                         'access_identity_unregistered')
+        self.assertIsNone(m.invitation_error_code('not-json\n200'))
+        self.assertIsNone(m.invitation_error_code(json.dumps({'error':'x-trace secret-token-abc'})))
 
     def test_issuer_accepts_old_and_new_ttl_but_rejects_unbounded_expiry(self):
         resolved=self.resolve()
