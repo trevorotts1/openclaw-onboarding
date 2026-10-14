@@ -100,6 +100,11 @@ unset CLOUDFLARE_ZONE_ID 2>/dev/null || true
 SLUG=""
 EMAILS_RAW=""
 CLIENT_TZ=""
+# Convert and Flow location that receives the podcast snapshot. NEVER defaulted
+# from the ambient GOHIGHLEVEL_LOCATION_ID of the box running the provisioner:
+# that is the operator's own sandbox location on an operator box. Absent ->
+# the snapshot step records PENDING (manual import), never a push elsewhere.
+CLIENT_LOCATION_ID=""
 DRY_RUN="0"
 FORCE="0"
 SKIP_ACTIVATION="0"
@@ -123,6 +128,13 @@ USAGE:
 FLAGS:
   --tunnel-id <id>   Use this tunnel id instead of resolving it from the Command
                      Center CNAME (also settable via PODCAST_TUNNEL_ID).
+  --location-id <id> Convert and Flow (Go High Level) location id that RECEIVES the
+                     podcast snapshot push in STEP 0. Required for an automated
+                     push. Never inferred from the environment: the provisioner
+                     refuses to push to whatever location happens to be ambient on
+                     the box running it (that is the operator sandbox on an
+                     operator box). Omit -> STEP 0 records PENDING with the manual
+                     import instruction.
   --personal-channel-id <id>
                      The client's PERSONAL-show Podbean Channel ID (two-show
                      convention; also settable via PODCAST_PERSONAL_CHANNEL_ID).
@@ -181,6 +193,7 @@ POSITIONAL=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --tunnel-id) TUNNEL_ID_OVERRIDE="${2:-}"; shift 2 ;;
+    --location-id) CLIENT_LOCATION_ID="${2:-}"; shift 2 ;;
     --personal-channel-id) PERSONAL_CHANNEL_ID="${2:-}"; shift 2 ;;
     --interview-channel-id) INTERVIEW_CHANNEL_ID="${2:-}"; shift 2 ;;
     --interview-show-slug) INTERVIEW_SHOW_SLUG="${2:-}"; shift 2 ;;
@@ -381,14 +394,14 @@ log "provision: slug=$SLUG dash=$DASH_HOST tz=$CLIENT_TZ dry_run=$DRY_RUN"
 # --------------------------------------------------------------------------- #
 provision_snapshot() {
   local fire; fire="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." 2>/dev/null && pwd)/shared-utils/fire-provision-snapshot.sh"
-  local loc_id="${GOHIGHLEVEL_LOCATION_ID:-${GHL_LOCATION_ID:-}}"   # canonical label, legacy alias
+  local loc_id="$CLIENT_LOCATION_ID"
   local cemail="${EMAILS_RAW%%,*}"                                  # first client email
   if [ "$DRY_RUN" = "1" ]; then
     ledger_step "snapshot" "DRY-RUN" "would fire provision-snapshot webhook (engine=podcast; fail-closed until PODCAST_SNAPSHOT_ID set in n8n)"
     return 0
   fi
   if [ -z "$loc_id" ]; then
-    ledger_step "snapshot" "PENDING" "GOHIGHLEVEL_LOCATION_ID not set here; fire the snapshot webhook (engine=podcast) on the box before STEP 0"
+    ledger_step "snapshot" "PENDING" "--location-id not supplied; the snapshot is never pushed to an ambient location. Re-run with --location-id <client location id>"
     return 0
   fi
   if [ ! -f "$fire" ]; then
@@ -404,7 +417,12 @@ provision_snapshot() {
     --tenancy same_agency \
     --requested-by "provision-podcast-client.sh" \
     --ledger-file "$LEDGER" || true
-  ledger_step "snapshot" "OK" "provision-snapshot webhook fired (engine=podcast); box-side STEP 0 gate confirms genuine completion (fail-closed until PODCAST_SNAPSHOT_ID is set)"
+  local snap_state; snap_state="$(jq -r '.snapshot.state // "unknown"' "$LEDGER" 2>/dev/null || echo unknown)"
+  if [ "$snap_state" = "webhook-accepted" ]; then
+    ledger_step "snapshot" "OK" "provision-snapshot webhook accepted for location $loc_id; box-side STEP 0 gate confirms completion"
+  else
+    ledger_step "snapshot" "PENDING" "snapshot push not accepted (state=$snap_state); import the podcast snapshot into location $loc_id by hand, then run STEP 0"
+  fi
 }
 provision_snapshot
 
@@ -817,10 +835,16 @@ delegate "convertflow-card" "write-podcast-cf-field.sh"      "$SLUG" "https://${
 provision_cron() {
   if [ "$DRY_RUN" = "1" ]; then ledger_step "smoke-cron" "DRY-RUN" "would add one daily 06:00 ${CLIENT_TZ} cron (--no-deliver)"; return 0; fi
   if command -v openclaw >/dev/null 2>&1 && [ -f "$SCRIPT_DIR/podcast-smoke-test.py" ]; then
+    # Idempotent: exactly one furnace cron per client. A re-run must never create
+    # a second one, so an existing podcast-smoke-<slug> job is kept as-is.
+    if runas openclaw cron list --json 2>/dev/null | grep -q "\"podcast-smoke-${SLUG}\""; then
+      ledger_step "smoke-cron" "OK" "already present (kept)"
+      return 0
+    fi
     if runas openclaw cron add \
         --name "podcast-smoke-${SLUG}" \
-        --schedule "0 6 * * *" --timezone "$CLIENT_TZ" \
-        --command "python3 $SCRIPT_DIR/podcast-smoke-test.py $SLUG" \
+        --cron "0 6 * * *" --tz "$CLIENT_TZ" \
+        --command "python3 $SCRIPT_DIR/podcast-smoke-test.py --client $SLUG" \
         --no-deliver >/dev/null 2>&1; then
       # verify delivery mode is not announce (known CLI drift)
       if runas openclaw cron list 2>/dev/null | grep -A3 "podcast-smoke-${SLUG}" | grep -qi 'announce'; then
@@ -1034,7 +1058,7 @@ gate_hook
 gate_smoke() {
   if [ "$DRY_RUN" = "1" ]; then ledger_step "gate:smoke-fire" "DRY-RUN" "skipped in dry-run"; return 0; fi
   if command -v openclaw >/dev/null 2>&1 && [ -f "$SCRIPT_DIR/podcast-smoke-test.py" ]; then
-    if runas python3 "$SCRIPT_DIR/podcast-smoke-test.py" "$SLUG" >/dev/null 2>&1; then
+    if runas python3 "$SCRIPT_DIR"/podcast-smoke-test.py --client "$SLUG" >/dev/null 2>&1; then
       ledger_step "gate:smoke-fire" "PASS" "smoke test ran once"
     else
       ledger_step "gate:smoke-fire" "FAIL" "smoke test returned nonzero"
