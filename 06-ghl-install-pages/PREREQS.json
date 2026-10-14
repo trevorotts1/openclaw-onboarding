@@ -30,7 +30,7 @@
       "type": "manual",
       "label": "OpenClaw Chrome extension, installed and current (PRIMARY browser engine)",
       "check": { "note": "Run: bash scripts/check-openclaw-extension-version.sh — exit 0 means installed and current; exit 2 names the update path." },
-      "severity": "required",
+      "severity": "optional",
       "satisfy": "Install the OpenClaw extension from the Chrome Web Store (offered by the OpenClaw Foundation) into the Chrome profile OpenClaw is paired with, and keep it current. SKILL.md declares it the PRIMARY engine (operator decision 2026-10-13): the OpenClaw browser's extension driver on the operator's paired, already signed-in Chrome. Verify before every install run with scripts/check-openclaw-extension-version.sh. A host where the extension cannot be installed or kept current builds on the agent-browser fallback lane instead; the capability probe selects the lane and warns — it never silently treats a stale extension as the default."
     },
     {
@@ -78,7 +78,7 @@
       "type": "manual",
       "label": "OpenClaw browser + Chrome extension (PRIMARY lane runtime)",
       "check": { "note": "Advisory: requires OpenClaw >= 2026.8.1 with the browser plugin enabled AND the OpenClaw Chrome extension installed and current; verified with 'openclaw browser status' on the extension-driver profile and bash scripts/check-openclaw-extension-version.sh." },
-      "severity": "required",
+      "severity": "optional",
       "satisfy": "The PRIMARY lane runtime (operator decision 2026-10-13): OpenClaw >= 2026.8.1 with the browser plugin enabled, driving the operator's paired Chrome through the OpenClaw Chrome extension, with frame-scoped snapshots ('openclaw browser snapshot --frame'). Required for Lane 1. A host that cannot run this lane builds on the agent-browser fallback lane (Lane 2); the capability probe selects and warns. Do not remove the agent-browser pin: it carries the fallback lane."
     },
     {

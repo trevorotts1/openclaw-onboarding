@@ -11,7 +11,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v27.1.26"
+  version: "v27.1.27"
   priority: HIGH
 ---
 
@@ -431,7 +431,7 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   an isolated `--session <client>` (NO-COMINGLING), routed only through the
   gateway below. Playwright is the scripted escape hatch only; if you use
   it, `launchPersistentContext()` never `launch()`.
-- SINGLETON POOLED BROWSER (fallback-lane lifecycle) — one session, lock=1, TTL, guaranteed teardown, reaper backstop.
+- SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop. (This lifecycle governs the FALLBACK agent-browser lane.)
   Route EVERY agent-browser call through the single mandatory
   gateway `tools/browser_manager.sh` (`bash tools/browser_manager.sh ensure`
   then `... eval|open|snapshot ...`); NEVER invoke `agent-browser` directly and
