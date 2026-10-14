@@ -51,11 +51,13 @@ image with Black subjects, the entry records
 `representation_source: "image-guide-v5-section-7"` and the
 requirements come from Image Guide v5 section 7.
 
-Coverage is a representative, schema-proving set per library (the
-`coverage` field in each file states what is extracted and the library
-total). The validator's loader accepts further entries with no code
-change; extracting the remaining entries is the same one-time data
-build, gated on the same spot-check.
+Coverage is now the complete library set per library: all 49
+Photographers entries, all 50 Cinematic profiles, and all 50 Visual
+Artists entries (149 in total), extended from the original
+representative, schema-proving set by the Item 10 full extraction
+(Ruling 7, 2026-10-14). The `coverage` field in each file states what
+is extracted and the library total. The whole set, old and new entries
+alike, remains PENDING OWNER SPOT-CHECK, gated on the same spot-check.
 
 ## Review-side wiring (Part B5)
 
