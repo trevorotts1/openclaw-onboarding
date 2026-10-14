@@ -204,6 +204,28 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_missing_and_conflicting_origins_are_pending(self):
         for state,env in [(dict(self.state,commandCenterUrl=None),self.env),(self.state,dict(self.env,OPENCLAW_DASHBOARD_URL='https://other.example.com')),(self.state,dict(self.env,INTERVIEW_GATE_URL='https://other.example.com')),(self.state,dict(self.env,MC_COMPANY_ID='foreign'))]:
             with self.subTest(state=state,env=env),self.assertRaises(m.Pending):self.resolve(state=state,env=env)
+    def test_cc_public_url_only_origin_resolves(self):
+        # Item 12: CC_PUBLIC_URL-only (the name the app's configuredPublicOrigin
+        # prioritizes) resolves — the sender and the app never disagree about
+        # which host is self.
+        state=dict(self.state,commandCenterUrl=None)
+        env=dict(self.env,CC_PUBLIC_URL='https://client.example.com/')
+        result=self.resolve(state=state,env=env)
+        self.assertEqual(result['origin'],'https://client.example.com')
+        self.assertEqual(result['host'],'client.example.com')
+    def test_conflicting_cc_public_url_refuses(self):
+        # A genuine origin conflict never silently picks a winner.
+        env=dict(self.env,CC_PUBLIC_URL='https://other.example.com')
+        with self.assertRaises(m.Pending) as caught:
+            self.resolve(env=env)
+        self.assertIn('origin configuration conflict',str(caught.exception))
+    def test_pinned_service_env_may_carry_cc_public_url(self):
+        # The pinned service environment accepts the same origin name the app
+        # prioritizes, and the resolver actually reads it.
+        source=(ROOT/'shared-utils'/'interview_invitation.py').read_text()
+        self.assertIn("allowed={'MC_TENANT_ID','MC_COMPANY_ID','MC_INSTALLATION_ID','CC_PUBLIC_URL'",source)
+        self.assertIn("env.get('CC_PUBLIC_URL')",source)
+
     def test_canonical_origin_must_match_state_identity(self):
         record=dict(self.context,verified=True);record['installationId']='foreign'
         with self.assertRaises(m.Pending):self.resolve(state=dict(self.state,commandCenterPublicOrigin=record))
@@ -440,6 +462,37 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
     def test_curl_http_errors_and_redirects_refused(self):
         for stdout in [json.dumps(self.receipt)+'\n302',json.dumps(self.receipt)+'\n403','{}\n200','not-json\n200']:
             with self.subTest(output=stdout),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,stdout,'')),self.assertRaises(m.Pending):m.resolve_public_origin(self.state,self.env)
+
+    def test_refusal_reasons_are_distinct_and_leak_nothing(self):
+        # Decision 2 (item 12): each refusal class keeps its OWN sanitized reason,
+        # the four are pairwise distinct (one vocabulary, never a collapsed
+        # catch-all), and none of them can carry a body, URL or ticket.
+        def reason_of(stdout, rc=0):
+            with patch.object(m.subprocess,'run',
+                              return_value=subprocess.CompletedProcess([],rc,stdout,'')):
+                try:
+                    m.resolve_public_origin(self.state,self.env)
+                except m.Pending as exc:
+                    return str(exc)
+            return None
+        redirect = reason_of(json.dumps(self.receipt)+'\n302')
+        malformed = reason_of('not-json\n200')
+        transport = reason_of('', rc=1)
+        for name, value in (('redirect',redirect),('malformed',malformed),('transport',transport)):
+            self.assertIsNotNone(value, name+' must refuse with a reason')
+            self.assertNotIn('enroll=', value, name)
+            self.assertNotIn('fixture.signature', value, name)
+        self.assertIn('redirect', redirect)
+        self.assertEqual(malformed, 'malformed readiness receipt')
+        self.assertEqual(transport, 'authenticated readiness transport failed')
+        self.assertEqual(len({redirect, malformed, transport}), 3, 'refusal reasons must stay distinct')
+        self.assertNotIn('not-json', malformed, 'a malformed body must never be echoed')
+        # Registration gap: the allowlisted application code only — unrecognised
+        # or injected codes yield no reason at all, never the raw body.
+        self.assertEqual(m.invitation_error_code(json.dumps({'error':'access_identity_unregistered'})),
+                         'access_identity_unregistered')
+        self.assertIsNone(m.invitation_error_code('not-json\n200'))
+        self.assertIsNone(m.invitation_error_code(json.dumps({'error':'x-trace secret-token-abc'})))
 
     def test_issuer_accepts_old_and_new_ttl_but_rejects_unbounded_expiry(self):
         resolved=self.resolve()
