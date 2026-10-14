@@ -237,14 +237,22 @@ python3 shared-bridge/studio_bridge.py approval-answer --order "$ORDER" --stage 
 # prints the answer value; exit 3 = not answered yet
 ```
 
-**6. Send the personal link.** On the first drama order (and whenever the client
-asks), send the one personal link, printed by the bridge:
+**6. Send the personal link.** **WHEN:** on the first drama order for this
+client, and whenever the client asks for their studio page. **WHO:** the agent
+runs these commands and sends the result in the client's own chat - the client
+runs nothing and never types python:
 
 ```bash
 python3 shared-bridge/studio_bridge.py link            # prints the stored link
 python3 shared-bridge/studio_bridge.py link --new      # new one; the old link stops working
 openclaw message send --channel telegram --target <chat id> --message "<the link>"
 ```
+
+**Not enrolled:** when the bridge answers `NO_KEY` ("no machine key; run
+enroll first"), say plainly to the client that the studio is not set up on this
+computer yet and carry on with the normal chat intake and choice card. The
+drama order never waits on the studio, and no key, secret or enroll command is
+ever printed, invented or sent to the client.
 
 **7. Delivery goes to the page.** When `delivery/05 - Video Captioned.mp4`
 exists, record the deliverable and post the event with its link (GHL library

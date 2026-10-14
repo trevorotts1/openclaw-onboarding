@@ -143,6 +143,25 @@ shared guard: every runtime path invokes the same Python control entrypoint
 and the same exit codes BEFORE the affected action, not as an
 after-the-fact audit.
 
+## Hand over the personal studio page (first drama order, and on request)
+
+On the FIRST drama order for a client - and whenever the client asks - send
+them their personal studio page link in their own chat. **You run the
+command; the client runs nothing and never types python.** The commands are
+the bridge's own:
+
+```bash
+python3 shared-bridge/studio_bridge.py link          # the client's stored link
+python3 shared-bridge/studio_bridge.py link --new    # fresh link; old one dies
+openclaw message send --channel telegram --target <chat id> --message "<link>"
+```
+
+If the bridge answers `NO_KEY`, this computer is not enrolled with the
+studio yet: say so plainly to the client ("the studio is not set up on this
+computer yet"), then continue the drama work through the chat intake. A
+missing studio key never blocks an order, and no key is ever printed,
+invented or handed to the client.
+
 ## The control entrypoint
 
 `scripts/core/intake_preflight/factory.py` — one entrypoint, standard
