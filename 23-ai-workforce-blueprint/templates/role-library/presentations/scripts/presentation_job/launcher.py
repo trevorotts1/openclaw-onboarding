@@ -1321,6 +1321,58 @@ def model_plan_gate(run_path: Path, mode: Optional[str] = None) -> Optional[int]
     return None
 
 
+def _announce_route_honesty(run_path: Path) -> None:
+    """FIX 18 ROUTE HONESTY -- the launch restatement of the intake honesty
+    block (FIX-PLAN Item 18: the block fires at the resource_plan moment
+    AND again at launch). Prints the run's Ollama numbers, the speed
+    warning and the recorded route decision as part of the pre-launch
+    summary (beside the model-plan banner above and the mode line below),
+    and writes the .route-honesty.json sidecar -- the same record
+    launch_plan.py writes on the poller --new path, so both dispatch
+    paths leave the same evidence.
+
+    A summary, never a second ask and never a gate: the decision was the
+    client's at intake, and the launch proceeds on their selection either
+    way. Best-effort throughout -- any failure is a stderr note, never a
+    refused launch. B11 SEAM: B11's freshness summary line prints
+    immediately after this call, inside the same pre-launch summary."""
+    try:
+        try:
+            from . import route_honesty as _rh
+        except ImportError:
+            import route_honesty as _rh  # type: ignore[no-redef]
+    except ImportError:
+        return  # no honesty module deployed: pre-fix launch, byte-for-byte
+    try:
+        if not _rh.flag_enabled():
+            return
+        try:
+            from . import resource_profile as _rp
+        except ImportError:
+            import resource_profile as _rp  # type: ignore[no-redef]
+        profile = _rp.load_profile()
+        slides = None
+        try:
+            intake_path = run_path / "working" / "copy" / "intake.json"
+            if intake_path.is_file():
+                intake = json.loads(intake_path.read_text(encoding="utf-8"))
+                if isinstance(intake, dict):
+                    slides = _rh.coerce_deck_slides(
+                        intake.get("client_requested_slide_count"),
+                        intake.get("SLIDE_COUNT"), intake.get("slide_count"))
+        except (OSError, ValueError):
+            slides = None
+        summary = _rh.launch_summary(profile=profile, deck_slides=slides)
+        if summary is None:
+            return
+        print(f"launcher: {summary['text']}", flush=True)
+        _rh.write_launch_sidecar(run_path, profile=profile,
+                                 deck_slides=slides)
+    except Exception as exc:  # noqa: BLE001 -- a summary never blocks a launch
+        print(f"launcher: route honesty summary unavailable "
+              f"({exc.__class__.__name__}: {exc})", file=sys.stderr)
+
+
 def _as_text(chunk) -> str:
     """subprocess captures come back as str, bytes or None depending on where
     the exception was raised. All three have to land in the log readably."""
@@ -1711,6 +1763,15 @@ def dispatch(
     _plan_refusal = model_plan_gate(run_path, mode=mode)
     if _plan_refusal is not None:
         return _plan_refusal
+
+    # FIX 18 ROUTE HONESTY -- the launch restatement, immediately after
+    # the model-plan gate and before the mode-plan block: with the
+    # capacity line and the credit line above, the model-plan banner and
+    # the mode line below, this forms the pre-launch summary. It reports
+    # the recorded route decision and proceeds on the client's selection;
+    # it is not a gate and returns nothing. (B11's freshness line joins
+    # at exactly this point, immediately after the honesty summary.)
+    _announce_route_honesty(run_path)
 
     # FIX 11 MODE PLAN -- the run's mode is stamped as an honest launch plan:
     # concurrency from the measured client ceiling (Ultra never above the

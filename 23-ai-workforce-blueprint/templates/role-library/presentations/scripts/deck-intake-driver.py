@@ -1138,6 +1138,79 @@ def _import_resource_profile():
         return None
 
 
+def _import_route_honesty():
+    """Import presentation_job.route_honesty beside this driver.
+
+    Fail-soft on the same terms as _import_resource_profile(): a box that
+    carries the driver but not the engine package must still take the
+    interview. Absence is announced LOUDLY on stderr -- never swallowed.
+    The honesty block is presentation and record, never a gate: losing it
+    must never lose the client's answers."""
+    try:
+        if str(SCRIPTS_DIR) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS_DIR))
+        from presentation_job import route_honesty as _rh  # noqa: PLC0415
+        return _rh
+    except Exception as exc:  # noqa: BLE001 -- a partial deploy must not kill intake
+        print(f"  WARN  [ROUTE-HONESTY] presentation_job.route_honesty is not "
+              f"importable from {SCRIPTS_DIR} ({exc.__class__.__name__}: {exc}) "
+              f"-- the numeric honesty block for an Ollama route cannot be "
+              f"presented or recorded on this box. Fix the deploy; the "
+              f"interview itself proceeds.", file=sys.stderr)
+        return None
+
+
+def _route_honesty_pre_state():
+    """The honesty block's pre-answer state for the resource_plan turn:
+    whether it is owed, and the selection signature it is owed against,
+    read BEFORE the plan-tier / model-plan recorders below mutate the
+    profile. The decision recorder compares this against the selection in
+    force after the answer -- that comparison IS the accept/decline
+    verdict, so reading it after the recorders would erase the very
+    change it exists to detect. Fail-soft: None means no offer was
+    tracked for this answer and no decision will be recorded."""
+    rh = _import_route_honesty()
+    if rh is None or not rh.flag_enabled():
+        return None
+    try:
+        rp = _import_resource_profile()
+        prof = rp.load_profile() if rp is not None else {}
+        return {"owed": rh.block_owed(prof),
+                "signature": rh.selection_signature(prof)}
+    except Exception:  # noqa: BLE001 -- presentation state never kills intake
+        return None
+
+
+def _record_route_honesty(pre_state, entries) -> None:
+    """Record the client's route decision (FIX 18) after the resource_plan
+    answer has been durably recorded by the plan-tier / model-plan
+    recorders. Fail-soft with a loud WARN, deliberately unlike the
+    recorders above: the decision record is VISIBILITY over an answer
+    that already landed -- refusing the answer itself at this point
+    would punish the client for a bookkeeping failure, and the profile
+    write order (tier, then model plan, then this) means the answer is
+    already on disk either way."""
+    if not pre_state or not pre_state.get("owed"):
+        return
+    rh = _import_route_honesty()
+    if rh is None:
+        return
+    try:
+        answers = _answer_view(entries)
+        slides = rh.coerce_deck_slides(
+            answers.get("slide_count"), answers.get("SLIDE_COUNT"),
+            answers.get("client_requested_slide_count"))
+        rh.record_route_decision(pre_signature=pre_state.get("signature"),
+                                 pre_owed=True, deck_slides=slides,
+                                 source="intake")
+    except Exception as exc:  # noqa: BLE001 -- visibility must never kill intake
+        print(f"  WARN  [ROUTE-HONESTY] could not record the route decision "
+              f"({exc.__class__.__name__}: {exc}) -- the client's plan "
+              f"answer above IS recorded; only the honesty decision record "
+              f"is missing, so the block may be shown once more.",
+              file=sys.stderr)
+
+
 def _import_capacity():
     """Import presentation_job.capacity beside this driver.
 
@@ -1762,6 +1835,14 @@ def cmd_answer(args) -> int:
         # directory): the P4-PROMPT fan-out children re-resolve routes in a
         # separate process that inherits the profile path but has no run_dir.
         if qid == "resource_plan":
+            # FIX 18 ROUTE HONESTY -- capture the pre-answer offer state
+            # FIRST, before any recorder below mutates the profile: whether
+            # the numeric honesty block is owed for this account, and the
+            # selection signature it is owed against. The decision is
+            # recorded after the model plan lands (see _record_route_honesty
+            # below); without this snapshot the comparison that produces
+            # the accept/decline verdict has nothing to compare against.
+            _honesty_pre = _route_honesty_pre_state()
             # CLIENT PLAN TIER (F5) -- FIRST, because it is the ask-once lock.
             # Before this wire, production intake recorded the model plan and
             # the run mode and NOTHING about the plan tier, so the profile lock
@@ -1783,6 +1864,14 @@ def cmd_answer(args) -> int:
             rc = _record_client_model_plan(derived, entries)
             if rc != 0:
                 return rc
+            # FIX 18: the answer just recorded IS the client's decision
+            # about the route the honesty block priced for them -- kept
+            # Ollama means declined, moved off Ollama means accepted, and
+            # either way the run proceeds on their selection. Recorded
+            # LAST and fail-soft (see the helper): a refused answer above
+            # never reaches this, and a failure here never un-records the
+            # answer.
+            _record_route_honesty(_honesty_pre, entries)
 
         # STYLE-PICK AUTO OPT-IN (F5) rides the style turn -- the one turn that
         # is required + block_gate and therefore asked on EVERY deck (unlike
@@ -1943,6 +2032,38 @@ def _emit_question(qdef: Dict[str, Any],
         output["default"] = default
     if extra:
         output.update(extra)
+
+    # FIX 18 ROUTE HONESTY: the resource_plan turn carries the numeric
+    # honesty block when it is owed -- once per account-level answer set,
+    # and route_honesty owns that state machine (asked, remembered, and
+    # re-opened only by a changed selection). The block rides AFTER the
+    # bank's own help text and as its own field, so a consumer can present
+    # either. The showing is recorded (status "offered") at presentation
+    # time; the decision is recorded in cmd_answer when the turn is
+    # answered. B11 SEAM: B11's freshness offer for this same turn
+    # attaches immediately after this block, in this same output, under
+    # these numbers (route_honesty.py's docstring names the seam).
+    if qdef.get("id") == "resource_plan":
+        rh = _import_route_honesty()
+        if rh is not None:
+            try:
+                rp = _import_resource_profile()
+                prof = rp.load_profile() if rp is not None else {}
+                slides = rh.coerce_deck_slides(
+                    answers.get("slide_count"), answers.get("SLIDE_COUNT"),
+                    answers.get("client_requested_slide_count"))
+                pend = rh.pending_honesty(prof, deck_slides=slides)
+                if pend.get("owed") and pend.get("block"):
+                    output["route_honesty"] = pend["block"]
+                    output["help"] = (
+                        (help_text + "\n\n") if help_text else ""
+                    ) + pend["block"]
+                    rh.note_block_shown(deck_slides=slides, source="intake")
+            except Exception as exc:  # noqa: BLE001 -- presentation never kills intake
+                print(f"  WARN  [ROUTE-HONESTY] could not present the "
+                      f"honesty block ({exc.__class__.__name__}: {exc}) -- "
+                      f"the turn itself is unaffected.",
+                      file=sys.stderr)
 
     print(json.dumps(output, indent=2))
     return 0
