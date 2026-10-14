@@ -798,19 +798,28 @@ def build_page_html(*, page_role: str, brand: Dict[str, str], client_name: str,
       <p>{_cta_escape_text(fields.get('proof', ''))}</p>
     </div>"""
     else:
-        # Fix 1 (D3): the checkout form collects a phone number, so it
-        # carries the two SMS consent checkboxes (transactional +
-        # marketing). Both are unchecked by default and optional; buying
-        # never requires either one (TCPA). The live GHL form keeps its own
-        # "Terms & Conditions" element with the same wording (the contract
-        # "consent" block in checkout_form_builder.py).
+        # The checkout form collects a phone number, so it carries the two
+        # SMS consent checkboxes (transactional + marketing) resolved by
+        # checkout_form_builder.resolve_consent_copy. Owner ruling
+        # 2026-10-13 (superseding the 2026-09-27 D3 optional posture): both
+        # boxes are unchecked by default and REQUIRED to proceed -- the
+        # submit is blocked until every box is checked, with a branded error
+        # and a "Check here" tag on each unchecked box (Trevor's standing
+        # client-delivery pattern). The live GHL form keeps its own
+        # "Terms & Conditions" element with the same wording and the same
+        # required posture (the contract "consent" block in
+        # checkout_form_builder.py).
         from checkout_form_builder import (
             resolve_consent_copy as _consent_copy)
         _consent = _consent_copy({"company": client_name}, {})
         consent_html = "".join(
             f'<label class="consent"><input type="checkbox" '
-            f'name="consent_{b["kind"].replace("_sms", "")}" value="yes" />'
-            f"{_cta_escape_text(b['text'])}</label>"
+            f'class="consent-box" '
+            f'name="consent_{b["kind"].replace("_sms", "")}" value="yes" '
+            f'required />'
+            f"{_cta_escape_text(b['text'])}"
+            f'<span class="consent-check-tag" hidden>Check here</span>'
+            f"</label>"
             for b in _consent["boxes"]
         )
         body_extra = f"""
@@ -827,9 +836,54 @@ def build_page_html(*, page_role: str, brand: Dict[str, str], client_name: str,
         <label>Full Name <input type="text" name="full_name" required /></label>
         <label>Cell Phone <input type="tel" name="phone" /></label>
         {consent_html}
+        <p class="consent-error" id="checkout-consent-error" role="alert" hidden>Please check each box marked "Check here" above so we can complete your order and keep you updated.</p>
         <button type="submit" class="cta-button">{cta} — Complete Order</button>
       </form>
-    </div>"""
+    </div>
+    <script>
+    (function() {{
+      var form = document.getElementById('checkout-order-form');
+      if (!form) {{ return; }}
+      var err = document.getElementById('checkout-consent-error');
+      function refreshConsentGate() {{
+        var boxes = form.querySelectorAll('input.consent-box');
+        var firstMissing = null;
+        var missing = 0;
+        for (var i = 0; i < boxes.length; i++) {{
+          var label = boxes[i].closest ? boxes[i].closest('label') : null;
+          var tag = label ? label.querySelector('.consent-check-tag') : null;
+          if (!boxes[i].checked) {{
+            missing++;
+            if (!firstMissing) {{ firstMissing = label || boxes[i]; }}
+            if (label) {{ label.classList.add('consent-missing'); }}
+            if (tag) {{ tag.hidden = false; }}
+          }} else {{
+            if (label) {{ label.classList.remove('consent-missing'); }}
+            if (tag) {{ tag.hidden = true; }}
+          }}
+        }}
+        if (err) {{ err.hidden = missing === 0; }}
+        return {{ ok: missing === 0, firstMissing: firstMissing }};
+      }}
+      form.addEventListener('invalid', function(ev) {{
+        if (ev.target && ev.target.classList && ev.target.classList.contains('consent-box')) {{
+          ev.preventDefault();
+          var res = refreshConsentGate();
+          if (res.firstMissing && res.firstMissing.scrollIntoView) {{
+            res.firstMissing.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+          }}
+        }}
+      }}, true);
+      form.addEventListener('submit', function(ev) {{
+        if (!refreshConsentGate().ok) {{ ev.preventDefault(); }}
+      }});
+      form.addEventListener('change', function(ev) {{
+        if (ev.target && ev.target.classList && ev.target.classList.contains('consent-box')) {{
+          refreshConsentGate();
+        }}
+      }});
+    }})();
+    </script>"""
         cta_block = ""
     return f"""<!-- ZHC-SALES-CHECKOUT-BUILDER marker={safe_marker} page_role={page_role} -->
 <style>
@@ -840,6 +894,13 @@ def build_page_html(*, page_role: str, brand: Dict[str, str], client_name: str,
   .zhc-{page_role}-page .proof, .zhc-{page_role}-page .order-summary {{ background:#fff; border:1px solid {sec}; border-radius:10px; padding:18px; margin:24px 0; }}
   .zhc-{page_role}-page .order-form label {{ display:block; margin:0 0 12px; }}
   .zhc-{page_role}-page .order-form input {{ display:block; width:100%; box-sizing:border-box; margin:4px 0 0; padding:10px; border:1px solid {sec}; border-radius:6px; }}
+  .zhc-{page_role}-page .order-form label.consent {{ font-size:0.95em; line-height:1.5; }}
+  .zhc-{page_role}-page .order-form label.consent input {{ display:inline-block; width:auto; margin:0 8px 0 0; padding:0; border:0; }}
+  .zhc-{page_role}-page .order-form label.consent-missing {{ outline:2px solid {prim}; outline-offset:3px; border-radius:6px; }}
+  .zhc-{page_role}-page .consent-check-tag {{ display:inline-block; background:{prim}; color:#fff; font-weight:700; font-size:0.85em; border-radius:4px; padding:1px 7px; margin-left:8px; }}
+  .zhc-{page_role}-page .consent-check-tag[hidden] {{ display:none; }}
+  .zhc-{page_role}-page .consent-error {{ background:#fff; border:2px solid {prim}; color:{ink}; border-radius:8px; padding:12px 14px; font-weight:600; margin:0 0 16px; }}
+  .zhc-{page_role}-page .consent-error[hidden] {{ display:none; }}
   .zhc-{page_role}-page .reassurance {{ color:{sec}; font-size:0.95em; }}
 </style>
 <div class="zhc-{page_role}-page">
@@ -1666,6 +1727,39 @@ def _selftest() -> int:
         except Exception as exc:  # noqa: BLE001
             fails.append(f"build_ghl_push_plan() raised on valid input: {exc}")
 
+    # 4b) CONSENT POSTURE (owner ruling 2026-10-13, superseding D3): the
+    #     checkout page's two SMS consent boxes render unchecked and
+    #     REQUIRED, each tagged for the branded gate (error element +
+    #     "Check here" tags + invalid/submit handlers), and the sales page
+    #     carries no consent boxes at all.
+    co_html_consent = build_page_html(
+        page_role="checkout", brand=brand, client_name="Test Client",
+        fields=dict(checkout_fields, order_line="The Momentum Method - $997",
+                    reassurance="Secure checkout."),
+        hero_image_src=None, marker=marker,
+    )
+    consent_boxes = re.findall(r'<input type="checkbox"[^>]*>', co_html_consent)
+    if len(consent_boxes) != 2:
+        fails.append(f"checkout consent: expected 2 consent checkboxes, got "
+                     f"{len(consent_boxes)}: {consent_boxes}")
+    for bx in consent_boxes:
+        if "required" not in bx:
+            fails.append(f"checkout consent box not required (owner ruling "
+                         f"2026-10-13): {bx}")
+        if "checked" in bx:
+            fails.append(f"checkout consent box renders pre-checked: {bx}")
+    for needle in ('id="checkout-consent-error"', "Check here", "consent-box",
+                   "consent-missing", "addEventListener('invalid'",
+                   "addEventListener('submit'"):
+        if needle not in co_html_consent:
+            fails.append(f"checkout consent gate missing marker: {needle!r}")
+    if "consent_transactional" not in co_html_consent or \
+            "consent_marketing" not in co_html_consent:
+        fails.append("checkout consent boxes lost their transactional/"
+                     "marketing names")
+    if "consent_" in sales_html:
+        fails.append("sales page unexpectedly carries checkout consent boxes")
+
     # 5) receipt verification — absent / placeholder / real.
     import tempfile
     with tempfile.TemporaryDirectory() as td:
@@ -1733,7 +1827,8 @@ def _selftest() -> int:
           "through-to-flat, live Wave E flat-shape fixture -> build; copy content; "
           "prompt band + content-gate pass/zero-content-refuse/wireframe-refuse; HTML "
           "content + ghl_rest_canvas.html_fragment/images-as-media-links/new_page_blob/"
-          "funnel_create/step_create/page_autosave (all offline, no session); receipt "
+          "funnel_create/step_create/page_autosave (all offline, no session); consent "
+          "posture (2 SMS boxes unchecked + required + branded Check-here gate); receipt "
           "absent/placeholder/real; ledger round-trip; FIX-100 manifest/argparse "
           "reconciliation guard)")
     return 0

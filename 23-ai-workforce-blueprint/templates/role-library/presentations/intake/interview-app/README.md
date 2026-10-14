@@ -162,10 +162,17 @@ python3 payload/build_questions_payload.py --selftest
 
 ## Deploy
 
-See the `intake-miniapp` DEPLOY.md (same Worker + D1 + Pages pattern). Fill the
-`<PLACEHOLDER>` tokens in `worker/wrangler.toml` at deploy time. Suggested host:
-`presentation-interview.<FLEET_DOMAIN>`. Secrets: `INTAKE_ADMIN_TOKEN`,
-`COMMAND_CENTER_URL`, `CC_DEPT_START_TOKEN`.
+The LIVE deployment is the R2-backed single Worker in `deployed-r2/` (name
+`presentation-intake`, R2 bucket `presentation-intake`, UI served via Worker
+Static Assets) — see `deployed-r2/README.md` and the D2/D3 reconciliation
+section below. Do NOT deploy from `worker/` (the D1-backed design; its
+wrangler.toml says so itself: it would take over the live API) and do NOT
+follow `../../intake-miniapp/DEPLOY.md` (the deprecated mini-app's Worker + D1
++ Pages pattern; D1 was never provisionable). Deploy only with Trevor's
+explicit go (the repo direction is deployed → git, never the reverse).
+Secrets on the live Worker (per `deployed-r2/wrangler.toml`): `INTAKE_ADMIN_TOKEN`,
+`COMMAND_CENTER_URL` (optional), `CC_HANDOFF_SECRET` (REQUIRED for
+`/api/dept-start`), `CC_DEPT_START_TOKEN` (optional).
 
 ## D2/D3 reconciliation — canonical status (added 2026-08-19)
 

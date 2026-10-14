@@ -1,3 +1,8 @@
+### v1.0.16 -- model doctrine cleanup: client choice or configured default (2026-10-13)
+
+- INSTALL.md owner_pins example and the producer orchestrator role no longer pin named models: each role resolves to the model the client selected, or the client's configured default model, recorded in model-map.json; when neither exists the run stops and asks the client.
+- skill-version v1.0.15 -> v1.0.16. ENGINE-MANIFEST.json skill_version bumped in lockstep and ENGINE-PIN.sha256 restamped with `verify.sh stamp-pin` (the manifest is in the ENGINE-PIN set).
+
 ### v1.0.15 -- the fourth argparse choices crash: live_fields_reader's empty default (2026-10-14)
 
 - **Fix (u07 `live_fields_reader.py` `add_argument("cmd", nargs="?", default="", choices=[...])`).** On Python <= 3.13 argparse validates the EMPTY default against `choices`, so `main([])` raised `SystemExit(2)` instead of returning EX_STOP -- the CLI's own offline battery (`self_test()` calls `main([], environ=...)`) died on the fleet's Python 3.9.6. `default=""` -> `default=None`, semantically identical: `not args.cmd` still takes the STOP path (EX_STOP 2), the help text is unchanged, and an invalid verb is still refused with rc 2.

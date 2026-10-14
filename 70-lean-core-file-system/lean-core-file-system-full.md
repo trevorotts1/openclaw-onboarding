@@ -463,14 +463,17 @@ The job is an OpenClaw **cron job** (an "automation"), not a heartbeat task:
 | Session | isolated (fresh session every run) |
 | Thinking | high |
 | Delivery | none (`--no-deliver`); the agent messages the owner itself only under section 10 |
-| Primary model | DeepSeek V4.1 Flash on Ollama Cloud: `ollama/deepseek-v4.1-flash:cloud` (or `ollama-cloud/deepseek-v4.1-flash:cloud`, whichever this box has) |
-| Fallback model | DeepSeek V4.1 Flash on OpenRouter: `openrouter/deepseek/deepseek-v4.1-flash`, used only when the primary is full, rate-limited or unavailable |
+| Primary model | The client's choice (`--primary`), or their configured default model: the model tagged "default" in this box's own configured model list |
+| Fallback model | The client's choice (`--fallback`), or the box's own `agents.defaults.model.fallbacks` entries that are on the box's list, used only when the primary is full, rate-limited or unavailable |
 | Never | any Anthropic or Claude model |
 
 The installer (`scripts/install-weekly-cron.sh`) never guesses: it reads the
-box's own configured model list and refuses (exit 4) if either identifier is
-missing, and it checks every command-line flag against `--help` first (exit 5
-if one is missing). Commands:
+box's own configured model list and refuses (exit 4) if the primary identifier
+cannot be proven (no client choice passed and no configured default on the
+list), and it checks every command-line flag against `--help` first (exit 5
+if one is missing). Recommendation: a low-cost or subscription-billed model,
+because this is a weekly maintenance audit, not a reasoning showcase; the
+client's configured default normally fits. Commands:
 
 - check: `bash <skill>/scripts/install-weekly-cron.sh --check` (exit 0 = exactly one job, and it matches)
 - repair or create: `bash <skill>/scripts/install-weekly-cron.sh --apply`

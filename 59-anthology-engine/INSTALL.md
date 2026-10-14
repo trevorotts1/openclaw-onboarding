@@ -114,8 +114,8 @@ object to the box's RESOLVED `model-map.json`:
 ```json
 {
   "owner_pins": {
-    "HEAVY-WRITER": "ollama/kimi-k2.6:0711-cloud",
-    "JUDGE": "ollama/minimax-m3:cloud"
+    "HEAVY-WRITER": "<a model id from the client's own openclaw.json inventory, chosen by the client>",
+    "JUDGE": "<a different model id from the client's own inventory, so the JUDGE tier stays independent>"
   }
 }
 ```

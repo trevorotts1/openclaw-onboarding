@@ -17,7 +17,7 @@
     {
       "order": 0.15,
       "id": "P-SP-INTAKE",
-      "name": "Signature-Presentation Intake Gate (8 Questions in ONE block + frame)",
+      "name": "Signature-Presentation Intake Gate (8 Questions one at a time, ONE atomic record + frame)",
       "owning_role": "signature-presentation-architect"
     },
     {

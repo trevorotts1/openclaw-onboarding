@@ -782,14 +782,16 @@ def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 #        was measured the axis is inert and SAYS SO -- see
 #        mode_operator_ceiling() and _unmeasured_notice().
 #
-# U3 (2026-09-07) -- F16's 25 IS UNDONE; F15 STAYS. STANDARD_MODE_CEILING is
-#        back at the operator's 100. The 25 was a review SUGGESTION whose own
-#        text said "Trevor's call", shipped without that call and applied
-#        wider than the suggestion proposed (every width, not just the
-#        fan-out QC phases). F15's honesty -- the plan reporting the width
-#        that will actually be applied -- is untouched and must stay.
-#        FIX 61.5: ultra is 400, standard is 25 -- the axis is REAL, not
-#        cosmetic. Unmeasured clients get their mode's ceiling.
+# U3 (2026-09-07) undid F16's 25 at the time and put STANDARD_MODE_CEILING
+#        back at 100; F15 stayed. THAT STATE NO LONGER HOLDS. FIX 61.5
+#        (2026-09-27 fix orders, the operator's own decision this time)
+#        settled the numbers the other way: ultra 400, standard 25,
+#        economy 100 -- see MODE_OPERATOR_CEILING below. The axis is REAL
+#        and enforced, not cosmetic: mode_operator_ceiling() reads the
+#        table on every run, ultra never routes ollama-cloud (FIX 61.1 --
+#        it substitutes the OpenRouter served_id or is ineligible), and
+#        aliases resolve through served_ids matching. Unmeasured clients
+#        get their mode's own ceiling, not the ultra 400 (FIX 61.5).
 
 MODE_FLAG_ENV = "PRESENTATION_MODES"
 MODE_FLAG_DEFAULT = "1"
@@ -799,40 +801,23 @@ MODE_FLAG_DEFAULT = "1"
 #: FIX 48: per-department on purpose -- the social department's shared-utils/social_execution_policy.py uses ULTRA_APP_CEILING = 50.
 ULTRA_OPERATOR_CEILING = 400
 
-#: STANDARD's share of the operator ceiling.
+#: STANDARD's share of the operator ceiling: 25.
 #:
-#: U3 (2026-09-07) -- RESTORED TO 100. THIS IS AN UNDO, NOT A NEW DECISION.
+#: History, because this constant has been flipped twice and the record
+#: matters: FIX 16 set it to 25; U3 (2026-09-07) restored it to 100 on the
+#: grounds that the 25 had shipped without the operator's call; FIX 61.5
+#: (2026-09-27 fix orders) then set it back to 25 AS the operator's call,
+#: in the same orders that put ultra at 400 and kept economy at 100. The
+#: enforced truth today is the table below: ultra 400, standard 25,
+#: economy 100. The axis differentiates and is load-bearing:
+#: _mode_axis_differentiates() computes True from the table, and
+#: mode_operator_ceiling() applies each mode's own ceiling on measured
+#: and unmeasured clients alike (FIX 61.5). Any older text in this repo
+#: calling the axis COSMETIC or standard "restored to 100" describes the
+#: U3 interlude, not the current code.
 #:
-#: Standard reached 100 in every version of this module until FIX 16 (commit
-#: 86662bb67, 2026-09-06 20:50, on the operator box at 07:07 the next
-#: morning) set it to 25. That commit justified the 25 as "the review's own
-#: recommendation". The review's own words at that item are "Make ultra mean
-#: something, or delete it (Trevor's call; my recommendation below)" -- and
-#: that call was never made. The review also proposed the smaller share for
-#: the fan-out QC phases; the constant was wired into mode_ceiling() ->
-#: capped_width(), which cuts EVERY width decision including the P4-PROMPT
-#: wave. So it was applied both without approval and more broadly than the
-#: suggestion said. Narrowing standard was never a requirement of any fix: it
-#: was invented to make ultra look different from standard. The operator's
-#: number is 100 and it is restored here.
-#:
-#: FIX 15 IS DELIBERATELY KEPT. The other half of 86662bb67 -- the mode plan
-#: and the launcher banner reporting the width that will actually be applied,
-#: instead of printing "concurrency plan 8" next to a wave running 100 -- was
-#: a real fix and is untouched by this undo. Only the number changed.
-#:
-#: THE CONSEQUENCE, STATED INSTEAD OF ENGINEERED AROUND: with standard ==
-#: ultra == 100 the per-mode WIDTH axis differentiates nothing again, which
-#: is the very defect FIX 16 was written to remove. It is NOT fixed here.
-#: Both honest ways to fix it -- raise ultra above the human-ratified
-#: ULTRA_OPERATOR_CEILING, or let the operator set both numbers -- change a
-#: number the operator owns, and neither may be picked on his behalf; that is
-#: exactly how the 25 got here. What this module does instead is SAY SO,
-#: every time: _mode_axis_differentiates() reports the axis as NOT in force
-#: while the table is uniform, and the reason string that every record and
-#: the launcher banner print carries the word COSMETIC. A switch that does
-#: nothing may exist here only for as long as every record admits that it
-#: does nothing.
+#: FIX 15 IS DELIBERATELY KEPT throughout: the mode plan and the launcher
+#: banner report the width that will actually be applied.
 STANDARD_MODE_CEILING = 25
 
 #: FIX 16 -- the per-mode share of the operator ceiling, one table, read by
@@ -841,11 +826,10 @@ STANDARD_MODE_CEILING = 25
 #: (mode_concurrency's economy branch), not by a capacity allowance, and the
 #: review's instruction was "Economy stays as is".
 #:
-#: U3: the table is CURRENTLY UNIFORM (100/100/100) because standard was
-#: restored. The table is KEPT rather than deleted -- it is the one place an
-#: operator would set two different numbers, and deleting it would be a
-#: second unapproved decision -- but nothing pretends it is load-bearing
-#: while it is not: see _mode_axis_differentiates().
+#: FIX 61.5: the table is NOT uniform -- ultra 400, standard 25, economy
+#: 100 -- and it is load-bearing: mode_operator_ceiling() reads it on every
+#: run and _mode_axis_differentiates() computes True from it. (U3 had made
+#: it uniform at 100/100/100; the 2026-09-27 fix orders superseded that.)
 MODE_OPERATOR_CEILING: Dict[str, int] = {
     "ultra": ULTRA_OPERATOR_CEILING,
     "standard": STANDARD_MODE_CEILING,
@@ -1054,31 +1038,33 @@ def measured_client_ceiling(profile: Optional[Dict[str, Any]],
 
 
 def _mode_axis_differentiates() -> bool:
-    """U3: does the per-mode ceiling table actually produce different widths?
+    """Does the per-mode ceiling table actually produce different widths?
 
-    capped_width() is a min(). If every mode reads the same number out of
-    MODE_OPERATOR_CEILING it cannot tell the modes apart, and declaring
-    "ultra" changes nothing in the engine. Since U3 restored
-    STANDARD_MODE_CEILING to the operator's 100 that is once again the case,
-    and it is the state FIX 16 was written to remove -- reported here rather
-    than removed, because removing it means changing a number only the
-    operator may change.
+    capped_width() is a min(). If every mode read the same number out of
+    MODE_OPERATOR_CEILING it could not tell the modes apart, and declaring
+    "ultra" would change nothing in the engine. That WAS the state under
+    U3 (standard restored to 100, table uniform). It is not the state now:
+    FIX 61.5 set the table to ultra 400, standard 25, economy 100, so this
+    returns True.
 
-    COMPUTED from the table, never hard-coded: the day an operator ratifies
-    two different numbers, every "in force" flag and every reason string
-    below flips to the truth with no further edit to this module."""
+    COMPUTED from the table, never hard-coded: if the numbers ever go
+    uniform again, every "in force" flag and every reason string below
+    flips back to saying so with no further edit to this module."""
     return len({MODE_OPERATOR_CEILING.get(m, ULTRA_OPERATOR_CEILING)
                 for m in MODES}) > 1
 
 
 def _cosmetic_axis_notice() -> str:
-    """U3: the sentence a run gets when its capacity WAS measured but the mode
-    axis still buys nothing, because every mode shares one ceiling.
+    """The sentence a run gets when the mode axis buys nothing because every
+    mode shares one ceiling.
 
+    Retained for the uniform-table case only: since FIX 61.5 made the table
+    differentiate (ultra 400, standard 25, economy 100), both call sites
+    guard on _mode_axis_differentiates() and this notice is not emitted.
     It rides the same `reason` string the launcher banner already prints
     verbatim and `.mode-plan.json` already records, so no caller had to
-    change. F15's rule, applied to F16's undo: a record that cannot state a
-    difference must not imply one."""
+    change. F15's rule: a record that cannot state a difference must not
+    imply one."""
     return (f" MODE WIDTH AXIS: ultra runs at {ULTRA_OPERATOR_CEILING}, "
             f"standard at {STANDARD_MODE_CEILING} "
             f"(ULTRA_OPERATOR_CEILING {ULTRA_OPERATOR_CEILING}, "
@@ -1095,30 +1081,19 @@ def mode_operator_ceiling(mode: str, measured: Any) -> Tuple[int, bool]:
     """FIX 16: the per-mode share of the operator ceiling, and whether the
     mode axis is IN FORCE at all. Returns (ceiling, in_force).
 
-    U3: "in force" now requires BOTH a determined client ceiling AND a table
-    that actually differentiates (_mode_axis_differentiates()). With standard
-    restored to 100 the table is uniform, so in_force is False on every run
-    and the records say so. Reporting True while the axis changes no width
-    would be exactly the K3 lie F15 exists to prevent, reintroduced through
-    the back door by this undo.
+    "In force" requires BOTH a determined client ceiling AND a table that
+    actually differentiates (_mode_axis_differentiates()). Under FIX 61.5
+    the table differentiates (ultra 400, standard 25, economy 100), so on a
+    measured client in_force is True and each mode's own ceiling applies.
+    Reporting True while the axis changed no width would be exactly the K3
+    lie F15 exists to prevent.
 
-    A mode's own ceiling exists only once the client's concurrency ceiling is
-    a DETERMINED fact -- a measured integer, or the client's own UNBOUNDED
-    declaration (a bring-your-own client stating its capacity is a reading,
-    not an absence). On an UNMEASURED client every mode gets the full
-    ULTRA_OPERATOR_CEILING, for two reasons that point the same way:
-
-      1. narrowing standard there would cut a real width on the strength of
-         an ABSENCE -- and an absence of a reading is not evidence, any more
-         than it is a capability; and
-      2. it is the operator's 2026-09-04 ruling verbatim ("never re-clamp a
-         measured width down to a default", parallel_prompt_worker
-         ._workers_for's own comment): the wave on an unmeasured client runs
-         at whatever capacity.probe() reported, and no mode may shrink it.
-
-    So on an unmeasured client the mode axis is INERT -- ultra and standard
-    are the same run -- and every record this module writes says so out loud
-    rather than implying a mode was bought. See _unmeasured_notice()."""
+    FIX 61.5 settled the unmeasured case as well: on an UNMEASURED client
+    every mode gets its OWN ceiling from the table (ultra 400, standard 25,
+    economy 100), not the ultra 400 for all, and in_force is False because
+    no client ceiling was determined. _unmeasured_notice() says so out
+    loud in the banner and the plan rather than implying a measured width
+    was bought. See _unmeasured_notice()."""
     m = normalize_mode(mode)
     if measured is None:
         # FIX 61.5: unmeasured clients get the MODE's ceiling, not 400.
@@ -1156,8 +1131,9 @@ def _unmeasured_notice(mode: str) -> str:
                     "capacity probe that lands) and ultra becomes a real "
                     f"{ULTRA_OPERATOR_CEILING}-wide run against standard's "
                     f"{STANDARD_MODE_CEILING}.")
-        # U3: measuring would NOT buy anything either, and saying it would is
-        # the reassuring-direction lie all over again.
+        # Only reachable if the table ever goes uniform again: measuring
+        # would NOT buy anything either, and saying it would is the
+        # reassuring-direction lie all over again.
         return head + tail + _cosmetic_axis_notice()
     if m == "standard":
         if _mode_axis_differentiates():

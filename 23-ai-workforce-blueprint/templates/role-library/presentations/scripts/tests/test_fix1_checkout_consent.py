@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Fix 1 (D3) -- checkout form consent (checkout_form_builder.py).
+"""Fix 1 checkout consent (checkout_form_builder.py), as amended by the
+owner ruling of 2026-10-13.
 
 MUST-TEST: any type="tel" input means both consent boxes are present,
-unchecked and not required. The Skill44 contract keeps GHL's
-"Terms & Conditions" element (never deletes it) and carries the two SMS
-consent wordings (transactional + marketing); the wording never ships
-GHL's seeded placeholders.
+unchecked and REQUIRED to submit. The 2026-09-27 decision D3 (boxes
+optional) is superseded by Trevor's 2026-10-13 ruling that every consent
+box on every form this system ships is required to proceed. The Skill44
+contract keeps GHL's "Terms & Conditions" element (never deletes it) and
+carries the two SMS consent wordings (transactional + marketing); the
+wording never ships GHL's seeded placeholders.
 """
 from __future__ import annotations
 
@@ -36,7 +39,7 @@ def test_terms_and_conditions_kept_not_deleted():
             not in contract["form"]["default_fields_delete"])
 
 
-def test_tel_field_means_both_consent_boxes_unchecked_optional():
+def test_tel_field_means_both_consent_boxes_unchecked_required():
     contract = _contract(
         consent=cfb.resolve_consent_copy({"company": "Acme Co"}, {}))
     form = contract["form"]
@@ -46,7 +49,7 @@ def test_tel_field_means_both_consent_boxes_unchecked_optional():
     assert {"transactional_sms", "marketing_sms"} <= set(boxes)
     for box in boxes.values():
         assert box["default_unchecked"] is True
-        assert box["required"] is False
+        assert box["required"] is True
 
 
 def test_consent_copy_from_intake_never_placeholders():
@@ -66,5 +69,6 @@ def test_consent_copy_default_template_never_placeholders():
         assert "[USE_CASE_FROM_CAMPAIGN_DESCRIPTION]" not in box["text"]
         assert "Message and data rates may apply" in box["text"]
         assert "Reply STOP to opt out" in box["text"]
+        assert "not a condition of purchase" not in box["text"]
         assert box["default_unchecked"] is True
-        assert box["required"] is False
+        assert box["required"] is True

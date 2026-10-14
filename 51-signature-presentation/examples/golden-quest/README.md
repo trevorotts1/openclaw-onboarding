@@ -26,7 +26,7 @@ three SP provers and drives `prove-deck.py` to a process certificate.
 
 | File | Purpose |
 |---|---|
-| `sp_intake.json` | Runtime intake record (8 Questions in one block + Quest frame + offer ledger) — driver-produced, carries `turn_ledger_provenance` |
+| `sp_intake.json` | Runtime intake record (8 Questions asked one at a time, committed as ONE atomic record + Quest frame + offer ledger) — driver-produced, carries `turn_ledger_provenance` |
 | `sp_structure.json` | Deck copy ledger (103 slides: slide/phase/label_slide/title/body/suggested_image/tags) |
 | `slides_copy.md` | Human-readable copy ledger |
 | `working/copy/intake.json` | Type-picker record (`deck_type: signature_presentation` + derived legacy fields) — driver-produced; this is what `build_deck.py`'s `_sp_active` switch and `prove_sp_routing.py` actually read |
@@ -69,7 +69,7 @@ fixture's driver-run repair — the sanctioned way to prove structure and issue
 the certificate without rendering. The ONE exception: `sp_intake.json` /
 `working/copy/intake.json` are NOT hand-assembled. They are the real output of
 replaying this fixture's own q1-q8 + frame answers through
-`deck-intake-driver.py --signature --next/--answer` (the SACRED one-question-
+`deck-intake-driver.py --signature --sig-next/--sig-answer` (the SACRED one-question-
 at-a-time turn-gate) plus the standard `--next/--answer` flow for
 `presentation_type`/`signature_source` — see `working/interview/` for the
 resulting ledgers, per-question answer files, and transcript, and

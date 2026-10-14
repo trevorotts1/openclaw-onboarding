@@ -101,19 +101,19 @@ again before continuing.
 ```
 $ bash $S/scripts/install-weekly-cron.sh --dry-run
 [install-weekly-cron.sh] job 'lean-core-file-system-weekly' agent=main schedule='30 5 * * 0' session=isolated thinking=high delivery=none
-[install-weekly-cron.sh] primary model:  ollama/deepseek-v4.1-flash:cloud
-[install-weekly-cron.sh] fallback model: openrouter/deepseek/deepseek-v4.1-flash
+[install-weekly-cron.sh] primary model:  <this box's configured default model id>
+[install-weekly-cron.sh] fallback model: <the box's configured default fallbacks, or none>
 [install-weekly-cron.sh] existing jobs with this name: 0
 PLAN [install-weekly-cron.sh]: would ADD the job (dry run; pass --apply to create it)
 ```
 
-On a box whose model list lacks the OpenRouter model:
+On a box whose model list has no configured default model, and no `--primary` was passed:
 
 ```
 REFUSED [install-weekly-cron.sh]: the model identifiers could not be proven on this box, so no job was created or changed:
-  MISSING_FALLBACK=no id matching openrouter/deepseek/deepseek-v4\.1-flash
+  MISSING_PRIMARY=no configured default model on this box (no model tagged 'default' in its configured model list); pass --primary with an id on the list, or configure a default model
 ```
-Exit 4. The operator decides whether to add the model; nobody substitutes one.
+Exit 4. The operator decides whether to configure a default model or pass an explicit `--primary`; nobody substitutes one.
 
 ## Example 7: a contradiction, resolved
 

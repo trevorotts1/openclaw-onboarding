@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # =============================================================================
-# QC/HEALER TOOLING — AF-INTAKE-BATCH conversation-trace scanner.
+# AF-INTAKE-BATCH conversation-trace scanner -- the required P-SP-INTAKE-TRACE
+# preflight gate check (also run out-of-band by QC/Healer).
 # Deterministic, fail-closed-on-detection, stdlib-only. NO AI at runtime.
 # =============================================================================
 """
@@ -17,11 +18,17 @@ signature-presentation intake) and then ask exactly ONE bank question per
 assistant turn, waiting for the owner's answer before asking the next.
 
 SCOPE (per sp-8-questions.json delivery.conversation_contract.af_on_violation
-and the intake-conversation guard doctrine): this is a POST-HOC QC/Healer
-scan of a conversation TRANSCRIPT EXPORT. It NEVER inspects, runs inside, or
-gates build_deck.py / run_signature_deck.py / deck-intake-driver.py --
-those are the deterministic, real-time RECORD-layer gates
-(prove_sp_intake.py / AF-SP-8Q-SPLIT) and are unaffected by this file.
+and the intake-conversation guard doctrine): this scanner IS the check the
+department engine runs as the required fail-closed preflight
+P-SP-INTAKE-TRACE (build_deck._chk_sp_intake_trace, phase order 0.16) over
+the run's intake transcript -- a batched or choice-less intake conversation
+blocks the build, and an absent transcript is a fail. The QC/Healer duty
+runs the same scanner out-of-band as an additional post-hoc scan of a
+conversation TRANSCRIPT EXPORT. This file does not itself drive, edit, or
+replace build_deck.py / run_signature_deck.py / deck-intake-driver.py --
+those run the deterministic, real-time RECORD-layer gates
+(prove_sp_intake.py / AF-SP-8Q-SPLIT); this scanner's verdict is what the
+P-SP-INTAKE-TRACE preflight enforces.
 
 WHAT THIS DETECTS (AF-INTAKE-BATCH):
   1. BATCH-IN-TURN     — an assistant turn asks 2 or more distinct bank
@@ -112,7 +119,7 @@ BANNED_PHRASE = "give me whatever you have got"
 #     }
 #
 #   * qid_sequence is the strictly-ordered, non-duplicated list of bank
-#     question ids the turn-gate surfaced (one per --next) — a monotonic
+#     question ids the turn-gate surfaced (one per --sig-next) — a monotonic
 #     sequence a hand-written dump cannot reproduce without faking the whole
 #     one-at-a-time walk.
 #   * driver_signature is an HMAC-SHA256 over the canonical serialization of
@@ -642,7 +649,7 @@ def _provenance_to_violations(prov_fails) -> list:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="intake_trace_check.py",
-        description="QC/Healer scan of a conversation transcript for AF-INTAKE-BATCH.",
+        description="Scan an intake conversation transcript for AF-INTAKE-BATCH (the P-SP-INTAKE-TRACE preflight gate check; also run post-hoc by QC/Healer).",
     )
     parser.add_argument("transcript", nargs="?", help="Path to the transcript export (JSON or plain text).")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON only.")
