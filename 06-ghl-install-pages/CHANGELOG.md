@@ -13,6 +13,13 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v27.1.19 - 2026-10-13 - refactor: client-choice model doctrine across Skill 06 routing
+
+- Removed every prescribed model name from the Skill 06 routing doctrine. Models are now resolved from the client's own configuration: the client's explicit choice for the task first, then the client's configured default model; when neither is configured, resolution stops with an ask-the-client message instead of silently pinning a named model. Per-role recommendations (context size, code generation, tool calling, vision) are kept as guidance with their reasons, never as defaults or fallbacks in code.
+- `tools/model_router.py`: both ladder builders replaced by a single client-resolution hook (`resolve_client_models`); the router self-check now asserts the resolution behavior (choice before default, unconfigured stop, no prescribed names). `tools/ghl_form_builder.py` and `tools/ghl_survey_builder.py`: ladders built at plan time through the same hook. `tools/ghl_verify.py` seam docstrings, `SKILL.md`, `ghl-browser-builder-full.md`, and `ghl-install-pages-full.md` updated to the same pattern. Skill version bumped to v27.1.27 (repo-locked pair: `skill-version.txt` + SKILL.md metadata).
+
+---
+
 ## v27.1.17 - 2026-10-12 - fix: reconcile-cron job on a throwaway $HOME path is repaired on Hostinger too (SK6003)
 
 - `scripts/install-github-archive-reconcile-cron.sh`: repair now covers Hostinger (`/data`) as well as Contabo (`~/.openclaw`); `~/clawd/skill6-fix` links to `/data/clawd/skill6-fix` on Hostinger. Tests: `TestPersistentPathSK6002` Hostinger repair and link.
