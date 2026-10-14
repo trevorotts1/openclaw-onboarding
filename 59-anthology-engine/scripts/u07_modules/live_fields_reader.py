@@ -340,7 +340,7 @@ def main(argv=None, environ=None):
                     help="Convert and Flow location id (default: env labels "
                          "CONVERT_AND_FLOW_LOCATION_ID / "
                          "GOHIGHLEVEL_LOCATION_ID / GHL_LOCATION_ID)")
-    ap.add_argument("cmd", nargs="?", default="",
+    ap.add_argument("cmd", nargs="?", default=None,
                     choices=["list", "self-test"])
     args = ap.parse_args(argv)
 

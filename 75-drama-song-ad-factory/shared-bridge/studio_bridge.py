@@ -663,6 +663,47 @@ def _replay(skill_root, run_dir, replies):
     return EXIT["ok"], factory
 
 
+def _ensure_run_state(skill_root, run_dir, order_id):
+    """The run's state authority, created through the ONE writer (`state_store`).
+
+    poll claims the order and replays the card, so the run folder exists and
+    holds the client's answers; the very next command the agent is told to run
+    (`factory.py next`) reads `control/state.sqlite3` (factory.py:501) and
+    answers `state-file-missing` when it is not there. So poll creates it here,
+    with the SAME `state_store.Store` INSTRUCTIONS step 5 writes through -- never
+    a second writer, never a hand-written sqlite file. `init_run` is
+    INSERT-OR-IGNORE, so a run already initialised stays untouched.
+
+    Returns the stage list on success, or None when the store exists but
+    refused the write (the poll then fails loudly instead of printing a `next`
+    that cannot work). A skill copy with no store at all -- a test stub, a
+    partial install -- warns on stderr and returns `[]`: the order still reaches
+    the agent, who can run intake properly.
+    """
+    core = str(pathlib.Path(skill_root).expanduser() / "scripts" / "core")
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    try:
+        from state_store import Store  # noqa: PLC0415
+        from batch_mode.batch import STAGES  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001 - a store-less copy still runs
+        sys.stderr.write("studio_bridge: this skill copy has no state store "
+                         "(%s); the run has no state authority yet\n"
+                         % str(exc)[:200])
+        return []
+    db = pathlib.Path(run_dir) / "control" / "state.sqlite3"
+    stages = [str(s[0]) for s in STAGES]
+    try:
+        with Store(db) as store:
+            store.init_run(order_id, stages)
+    except Exception as exc:  # noqa: BLE001 - a refused write fails the claim
+        _emit({"code": "RUN_STATE_FAILED",
+               "message": "could not create the run state through state_store:"
+                          " %s" % str(exc)[:300],
+               "path": str(db)})
+        return None
+    return stages
+
 def cmd_poll(args):
     """Check in, claim one waiting order, replay it, print one JSON line."""
     key = load_key()
@@ -706,7 +747,10 @@ def cmd_poll(args):
     title = str(order.get("title") or title)
     client_id = str(order.get("client_id") or "")
 
-    run_dir = pathlib.Path(args.runs).expanduser() / order_id
+    # Absolute, always: the poll line's `next` is meant to be run as printed,
+    # from wherever the agent happens to be (a relative --runs would otherwise
+    # print a relative run_dir and a next that resolves somewhere else).
+    run_dir = (pathlib.Path(args.runs).expanduser() / order_id).resolve()
     control = run_dir / "control"
     control.mkdir(parents=True, exist_ok=True)
     # The run dir knows WHERE the studio is; it never holds the key.
@@ -714,6 +758,10 @@ def cmd_poll(args):
         json.dumps({"order_id": order_id, "client_id": client_id,
                     "title": title, "base_url": base}, sort_keys=True) + "\n",
         encoding="utf-8")
+
+    # The run's state authority, at claim time, so the very next command works.
+    if _ensure_run_state(args.skill_root, run_dir, order_id) is None:
+        return EXIT["error"]
 
     code, factory = _replay(args.skill_root, run_dir, order.get("replies") or [])
     if code != EXIT["ok"]:

@@ -1,8 +1,8 @@
 # Changelog — 32-command-center-setup
 
-## v13.1.57 - 2026-10-13 - model doctrine cleanup: client choice or configured default
+## v13.1.60 - 2026-10-14 - model doctrine cleanup: client choice or configured default
 
-`register-routing-dept.py` no longer writes a hardcoded model chain for a newly registered department: the entry takes the client's explicit `--model-primary` / `--model-fallbacks` choice, or inherits the client's configured default model (`agents.defaults.model` in openclaw.json), and stops with an ask-the-client error when neither exists. `run-full-install.sh` no longer rewrites a retired model id to a named successor: a retired id resolves to the box's own configured default model, and is left untouched with a `retired-unresolved` note when the box has no usable default. Anthropic/Claude exclusions unchanged. skill-version v13.1.56 -> v13.1.57.
+`register-routing-dept.py` no longer writes a hardcoded model chain for a newly registered department: the entry takes the client's explicit `--model-primary` / `--model-fallbacks` choice, or inherits the client's configured default model (`agents.defaults.model` in openclaw.json), and stops with an ask-the-client error when neither exists. `run-full-install.sh` no longer rewrites a retired model id to a named successor: a retired id resolves to the box's own configured default model, and is left untouched with a `retired-unresolved` note when the box has no usable default. Anthropic/Claude exclusions unchanged. skill-version v13.1.59 -> v13.1.60.
 
 ## v13.1.48 - 2026-10-08 - Standard placeholder company builds the board without an interview (STD001)
 

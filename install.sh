@@ -3093,7 +3093,11 @@ collect_onboarding_identity() {
     OPENCLAW_OWNER_NAME=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerName", ""))')
     OPENCLAW_COMPANY_NAME=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("companyName", ""))')
     OPENCLAW_COMPANY_SLUG=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("companySlug", ""))')
-    export OPENCLAW_OWNER_NAME OPENCLAW_COMPANY_NAME OPENCLAW_COMPANY_SLUG
+    # Item 06: the CONFIRMED intake owner email, when the intake supplied one.
+    # Absent means pending — Step 15c passes no email argument and the launch
+    # gate classifies it; nothing here ever invents a sign-in identity.
+    OPENCLAW_OWNER_EMAIL=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ownerEmail", ""))')
+    export OPENCLAW_OWNER_NAME OPENCLAW_COMPANY_NAME OPENCLAW_COMPANY_SLUG OPENCLAW_OWNER_EMAIL
 }
 collect_onboarding_identity || exit 8
 
@@ -8711,8 +8715,11 @@ step "Step 15c: Bootstrapping the locked Command Center shell (OQ-1 shell-first)
 bootstrap_command_center_shell() {
     local RUN_INSTALL="$SKILLS_DIR/32-command-center-setup/scripts/run-full-install.sh"
     if [ ! -x "$RUN_INSTALL" ]; then
-        note "run-full-install.sh not installed — skipping Command Center bootstrap trigger"
-        return 0
+        # Item 06: no child script means no launch happened — that is PENDING,
+        # not a silent success. (A second guard exists inside _bccs_resume for
+        # the resume paths, so neither can return a green claim here.)
+        warn "run-full-install.sh not installed at $RUN_INSTALL — Command Center launch PENDING (no child ran, nothing to report as done)"
+        return 8
     fi
 
     local CC_DIR="${CC_APP_DIR:-$HOME/projects/command-center}"
@@ -8720,13 +8727,19 @@ bootstrap_command_center_shell() {
         CC_DIR="/data/projects/command-center"
     fi
 
-    # Absence check 1 — a valid Command Center checkout already present.
+    # Item 06: absence checks below no longer mean "skipped = success". Each
+    # pre-existing condition (checkout, registered pm2 app, bound port) triggers
+    # an INSPECTION and a canonical resume of the SAME checkout — never a new
+    # installation, never a green claim, never touching an unrelated port owner.
+
+    # Condition 1 — a valid Command Center checkout already present.
     if [ -d "$CC_DIR/.git" ] && [ -f "$CC_DIR/package.json" ]; then
         local _bccs_remote
         _bccs_remote=$(git -C "$CC_DIR" remote get-url origin 2>/dev/null || echo "")
         if printf '%s' "$_bccs_remote" | grep -q 'blackceo-command-center'; then
-            note "Command Center already checked out at $CC_DIR — bootstrap trigger skipped"
-            return 0
+            note "Command Center already checked out at $CC_DIR — inspecting it and resuming the canonical installer (no new installation)"
+            _bccs_resume || _bccs_rc=$?
+            return "$_bccs_rc"
         fi
     fi
     # Absence check 2 — pm2 already runs a Command Center app.
@@ -8769,15 +8782,30 @@ bootstrap_command_center_shell() {
             _bccs_id=$(PM2_DISCRETE_MODE=true pm2 id "$_bccs_app" 2>/dev/null || echo "[]")
             _bccs_id_last=$(printf '%s' "$_bccs_id" | tail -n 1)
             if printf '%s' "$_bccs_id_last" | grep -qE '^\[[[:space:]]*[0-9]'; then
-                note "pm2 already runs a Command Center app — bootstrap trigger skipped"
-                return 0
+                note "pm2 already runs a Command Center app — inspecting and resuming the canonical installer (client board and saved state preserved)"
+                _bccs_resume || _bccs_rc=$?
+                return "$_bccs_rc"
             fi
         done
     fi
     # Absence check 3 — the dashboard port is already bound.
     if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:4000 -sTCP:LISTEN >/dev/null 2>&1; then
-        note "Port 4000 is already bound — bootstrap trigger skipped"
-        return 0
+        # Item 06: an occupied port is inspected, not skipped. Only THIS box's
+        # canonical Command Center app is resumed; an unrelated listener is left
+        # alone and reported as pending (never killed, never adopted).
+        local _bccs_owner _bccs_pid
+        _bccs_pid=$(lsof -nP -iTCP:4000 -sTCP:LISTEN -t 2>/dev/null | head -1 || true)
+        _bccs_owner=$(ps -o comm= -p "$_bccs_pid" 2>/dev/null || echo unknown)
+        # Only THIS box's canonical Command Center is resumed: the listener must
+        # be the CC's own runtime chain (cc-start.sh / next / node under it).
+        # Any other owner is preserved untouched and reported as pending.
+        if [ -n "$_bccs_pid" ] && ps -o command= -p "$_bccs_pid" 2>/dev/null | grep -qE 'cc-start\.sh|next( |-)server|command-center'; then
+            note "Port 4000 is bound by a node process — inspecting the canonical Command Center install and resuming it"
+            _bccs_resume || _bccs_rc=$?
+            return "$_bccs_rc"
+        fi
+        warn "Port 4000 is bound by an UNRELATED process ($_bccs_owner) — refusing to adopt, restart or kill it; Command Center launch stays PENDING on this run"
+        return 8
     fi
 
     local _bccs_slug="${OPENCLAW_COMPANY_SLUG:-}" _bccs_company="${OPENCLAW_COMPANY_NAME:-}"
@@ -8785,16 +8813,61 @@ bootstrap_command_center_shell() {
         warn "Client/company intake is missing — collect the two names before creating the Command Center"
         return 8
     fi
+    # Item 06: pass the CONFIRMED intake owner email when the intake supplied one.
+    # Absent means pending — the third argument is omitted entirely (no invented
+    # sign-in identity), and the child's launch gate reports exit 8. It never
+    # fabricates a pending+ address.
+    local _bccs_email="${OPENCLAW_OWNER_EMAIL:-}"
+    # A placeholder is not a confirmed address: pass NO third argument and let
+    # the child's launch gate classify it as pending (exit 8).
+    case "$_bccs_email" in pending+*) _bccs_email="" ;; esac
     note "Bootstrapping the locked Command Center for the saved company..."
-    if bash "$RUN_INSTALL" "$_bccs_slug" "$_bccs_company" "pending+${_bccs_slug}@zerohumanworkforce.com" --app-dir "$CC_DIR" >>"$LOG_FILE" 2>&1; then
-        success "Command Center interview prerequisites verified (slug=$_bccs_slug); provider turn and invitation delivery remain separate checks"
-    else
-        warn "Command Center launch is pending; installed skills do not certify interview readiness; bootstrap did not complete cleanly on this run — check $OC_WORKSPACE_DEFAULT/.command-center-install.log; update-skills.sh resumes the same checkout; no invitation is ready until its receipt passes"
-    fi
-    return 0
+    local _bccs_args=("$RUN_INSTALL")
+    [ -n "$_bccs_email" ] && _bccs_args+=("$_bccs_slug" "$_bccs_company" "$_bccs_email")                            || _bccs_args+=("$_bccs_slug" "$_bccs_company")
+    _bccs_args+=(--app-dir "$CC_DIR")
+    _bccs_rc=0
+    bash "${_bccs_args[@]}" >>"$LOG_FILE" 2>&1 || _bccs_rc=$?
+    case "$_bccs_rc" in
+        0)
+            success "Command Center interview prerequisites verified (slug=$_bccs_slug); provider turn, invitation delivery and interview completion remain three separate checks"
+            ;;
+        8)
+            # Propagated, never swallowed: the child recorded launch-pending.
+            warn "Command Center launch is PENDING (child exit 8) — no invitation exists and the interview has NOT started. See $OC_WORKSPACE_DEFAULT/.command-center-install.log; update-skills.sh resumes the same checkout."
+            ;;
+        *)
+            warn "Command Center bootstrap FAILED (exit $_bccs_rc) — no invitation is ready and no interview claim may be made; see $OC_WORKSPACE_DEFAULT/.command-center-install.log"
+            ;;
+    esac
+    return "$_bccs_rc"
 }
 
-bootstrap_command_center_shell
+# _bccs_resume — item 06: canonical resume of an EXISTING installation.
+# Inspection first (the child's own launch inspector), then run-full-install.sh
+# --resume, which re-runs the SAME launch gates instead of trusting any stored
+# phase flag. Preserves the client board, saved answers and canonical IDs: it
+# only ever runs against the existing checkout, never a new installation.
+_bccs_resume() {
+    local RUN_INSTALL="$SKILLS_DIR/32-command-center-setup/scripts/run-full-install.sh"
+    local CC_DIR="${CC_APP_DIR:-$HOME/projects/command-center}"
+    if [ -z "${CC_APP_DIR:-}" ] && [ "${OC_CONFIG:-}" = "/data/.openclaw" ]; then
+        CC_DIR="/data/projects/command-center"
+    fi
+    _bccs_rc=8
+    if [ ! -x "$RUN_INSTALL" ]; then
+        warn "run-full-install.sh not installed — cannot resume the existing Command Center; launch stays PENDING"
+        return 8
+    fi
+    _bccs_rc=0
+    bash "$RUN_INSTALL" --resume --app-dir "$CC_DIR" >>"$LOG_FILE" 2>&1 || _bccs_rc=$?
+    return "$_bccs_rc"
+}
+
+# Item 06: capture the bootstrap outcome WITHOUT letting set -e abort the
+# installer here — the final report must still print, carrying exit 8
+# (launch-pending) or a fatal code as its own explicit block.
+INSTALL_EXIT_CODE=0
+bootstrap_command_center_shell || INSTALL_EXIT_CODE=$?
 
 # ----------------------------------------------------------
 # Telegram diagnostic note (v10.0.1)
@@ -9201,6 +9274,75 @@ if [ "$OC_PLATFORM" = "mac" ]; then
 fi
 
 # ----------------------------------------------------------
+# DSR-101: Drama Studio enrollment + the 2-minute pickup timer (skill 75).
+# ----------------------------------------------------------
+# shared-bridge/studio_bridge.py refuses BOTH `link` and `poll` until the box
+# holds a machine key ("no machine key; run enroll first"), and the only thing
+# that creates that key is `studio_bridge.py enroll` with DS_ENROLLMENT_SECRET
+# in env. Nothing in the install path called it, so a client's personal studio
+# link could never resolve on this box. Two idempotent legs, in this order:
+# enroll, then the timer that polls for orders every 120s. Both are
+# reconciliation rather than one-shot installation, so they belong HERE, on
+# every pass, and never behind the .wired-<version> sentinel.
+#
+# Failure policy: both legs are fail-soft by design. A box with no
+# DS_ENROLLMENT_SECRET skips enrollment (exit 0, one line, box untouched) and a
+# `--register` that refuses (exit 2) only warns. A client box must never fail to
+# install because the operator has not injected a studio secret, and an already
+# enrolled box must never be re-enrolled. Missed legs retry on the next pass.
+_DSR_SKILL_DIR="$SKILLS_DIR/75-drama-song-ad-factory"
+if [ -d "$_DSR_SKILL_DIR/shared-bridge" ]; then
+    step "Drama Studio: enrolling this box + registering the 2-minute pickup timer (skill 75, idempotent)"
+
+    _dsr_rc=0
+    bash "$_DSR_SKILL_DIR/shared-bridge/enroll-on-install.sh" 2>&1 | tee -a "$LOG_FILE" || _dsr_rc=$?
+    if [ "$_dsr_rc" -ne 0 ]; then
+        # The helper is fail-soft and exits 0 on every documented path, so a
+        # non-zero here means the helper itself broke, not that the studio said no.
+        warn "drama-studio enrollment step could not run (rc=$_dsr_rc) -- see $LOG_FILE; the box is left unenrolled and the next pass retries it"
+    fi
+
+    # Timer platform, auto-detected the way the timer's own contract names it:
+    # mac, or the two Docker flavours by their persistent home (Hostinger
+    # /data, Contabo /home/node). Anything else is reported, never guessed.
+    _dsr_platform=""
+    case "$(uname -s 2>/dev/null)" in
+        Darwin) _dsr_platform="mac" ;;
+        Linux)
+            case "${HOME:-}" in
+                /data)       _dsr_platform="hostinger" ;;
+                /home/node)  _dsr_platform="contabo" ;;
+                *)
+                    if [ -d "/data" ]; then
+                        _dsr_platform="hostinger"
+                    elif [ -d "/home/node" ]; then
+                        _dsr_platform="contabo"
+                    fi
+                    ;;
+            esac
+            ;;
+    esac
+
+    if [ -z "$_dsr_platform" ]; then
+        warn "Drama Studio pickup timer: platform not determined (mac / hostinger / contabo) -- timer NOT registered; re-run this install on a box the timer contract recognises"
+    else
+        _dsr_timer_rc=0
+        bash "$_DSR_SKILL_DIR/timer-artifacts/install-timer.sh" --platform "$_dsr_platform" --register 2>&1 | tee -a "$LOG_FILE" || _dsr_timer_rc=$?
+        if [ "$_dsr_timer_rc" -eq 0 ]; then
+            success "Drama Studio pickup timer registered ($_dsr_platform, every 120s)"
+        else
+            # Exit 2 is the documented "this refuses to register" answer. It is a
+            # warning, never a failure: the operator registers the timer by hand
+            # (timer-artifacts/README.md) and the install continues normally.
+            warn "install-timer.sh --register refused for $_dsr_platform (rc=$_dsr_timer_rc) -- timer NOT registered; register it by hand per timer-artifacts/README.md. Install continues."
+        fi
+    fi
+    unset _dsr_platform _dsr_timer_rc _dsr_rc
+else
+    note "skill 75 shared-bridge not in bundle ($_DSR_SKILL_DIR) -- Drama Studio enrollment + timer skipped (older onboarding bundle, harmless)"
+fi
+
+# ----------------------------------------------------------
 # Final: Restart gateway (agent reloads AGENTS.md and sees the UPDATE PENDING flag on next session)
 # ----------------------------------------------------------
 note "Restarting OpenClaw gateway..."
@@ -9231,7 +9373,9 @@ print_install_summary() {
 
     echo ""
     echo "══════════════════════════════════════════════════════════════════════"
-    if [ "$err_count" -eq 0 ] && [ "$warn_count" -eq 0 ]; then
+    # Item 06: child launch-pending (8) and fatal (other non-zero) outcomes are
+    # carried into the final report — the CLEANLY claim must not paper over them.
+    if [ "${INSTALL_EXIT_CODE:-0}" -eq 0 ] && [ "$err_count" -eq 0 ] && [ "$warn_count" -eq 0 ]; then
         echo "  ✅ INSTALL COMPLETED CLEANLY — no warnings or errors detected"
         echo ""
         echo "     Log (durable, survives reboot):"
@@ -9240,6 +9384,15 @@ print_install_summary() {
         return 0
     fi
 
+    if [ "${INSTALL_EXIT_CODE:-0}" -eq 8 ]; then
+        echo "  ⏳ COMMAND CENTER LAUNCH PENDING (child exit 8)"
+        echo "     The interview has NOT started and is NOT complete. No invitation exists."
+        echo "     Nothing below claims interview completion — provider turn, invitation"
+        echo "     delivery and interview completion remain three separate facts."
+    elif [ "${INSTALL_EXIT_CODE:-0}" -ne 0 ]; then
+        echo "  ✗ COMMAND CENTER BOOTSTRAP FAILED (exit ${INSTALL_EXIT_CODE})"
+        echo "     No invitation is ready; no interview claim may be made."
+    fi
     echo "  ⚠️  PLEASE REPORT THE FOLLOWING TO THE TRACKER"
     echo "     ${err_count} error(s), ${warn_count} warning(s) detected during install."
     echo ""

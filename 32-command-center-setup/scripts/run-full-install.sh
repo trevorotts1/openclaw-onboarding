@@ -104,9 +104,13 @@ if [[ "$UPDATE_ONLY" != "true" ]]; then
   if [[ -z "$COMPANY_NAME" ]]; then
     echo "run-full-install.sh: missing company name" >&2; exit 1
   fi
-  if [[ -z "$CONTACT_EMAIL" ]]; then
-    echo "run-full-install.sh: missing contact email" >&2; exit 1
-  fi
+  # Item 06: an ABSENT contact email is a PENDING state, not a usage error.
+  # run-full-install no longer requires the third argument — the launch gate
+  # classifies a placeholder/absent email as launch-pending (exit 8) before any
+  # Access registration or invitation attempt, and register-access already
+  # refuses to derive Access subjects from a pending+ placeholder. Never invent
+  # a sign-in identity here.
+  : "${CONTACT_EMAIL:=}"
 fi
 
 # Resolve the actual OS/topology and preserve the selected installation roots.
@@ -441,6 +445,74 @@ cc_pm2_start_canonical() {
   else
     ( cd "$DASHBOARD_DIR" && CC_PORT="$DASHBOARD_PORT" pm2 start npm --name "$CC_PM2_NAME" -- start >>"$LOG_FILE" 2>&1 )
   fi
+}
+
+# _phase6_pm2_online — the CANONICAL app is online with a live pid.
+# `pm2 start` returning zero proves only that pm2 accepted the command; the
+# child may still be starting, may already have exited, or may never have bound.
+_phase6_pm2_online() {
+  pm2 jlist 2>/dev/null | CC_PHASE6_APP="$CC_PM2_NAME" python3 -c "
+import json,os,sys
+try: procs=json.load(sys.stdin)
+except Exception: sys.exit(1)
+name=os.environ['CC_PHASE6_APP']
+for p in procs:
+    if p.get('name')==name and p.get('pid') and p.get('pm2_env',{}).get('status')=='online':
+        sys.exit(0)
+sys.exit(1)"
+}
+
+# _phase6_manifest_verifies — the source-valid manifest exists AND the live
+# source tree still vouches for the served artifact (PRES-046). Never written
+# by hand; verified through CC's own library.
+_phase6_manifest_verifies() {
+  local inv="$DASHBOARD_DIR/.next/build-inventory.json"
+  local lib="$DASHBOARD_DIR/scripts/lib/build-inventory.sh"
+  [[ -f "$inv" && -f "$lib" ]] || return 1
+  bash "$lib" --verify "$DASHBOARD_DIR" >/dev/null 2>&1
+}
+
+# cc_phase6_serving_proof — phase 6 is DONE only when the box is proven serving.
+# Item 03: a zero exit from `pm2 start` used to set commandCenterPhase6Done=true
+# while the child was still starting — the install log showed pm2 start at line
+# 1228 and `phase=6 done` one second later at 1240, with zero health probes in
+# between, and the child then exited 78 (missing build-inventory.json).
+#
+# Three independent checks, all required:
+#   (a) canonical process online on two probes `wait_s` apart (an unrelated or
+#       short-lived listener fails this),
+#   (b) local /api/health answers the EXACT payload (status=ok, no pending
+#       migrations, no gap) via cc_live_health_ok,
+#   (c) the content manifest exists and verifies against the live source tree.
+#
+# A CURRENT PRES-046 refusal receipt (exit 78) is classified as rebuild /
+# config-repair required and returns 2 — never a blind restart loop.
+# Timeout returns 1; the caller must keep pending state, never stamp done.
+cc_phase6_serving_proof() {
+  local attempts="${1:-30}" wait_s="${2:-2}" attempt=0 rc=0
+  local refused="$DASHBOARD_DIR/.cc-state/cc-start-refused.json"
+  while (( attempt < attempts )); do
+    attempt=$((attempt+1))
+    if _phase6_pm2_online && sleep "$wait_s" && _phase6_pm2_online && cc_live_health_ok && _phase6_manifest_verifies; then
+      log "INFO" "phase=6 serving proof passed: canonical process online, local health exact, manifest verifies (attempt $attempt)"
+      return 0
+    fi
+    # Deterministic refusal: a fresh receipt means cc-start exited 78 for a
+    # content reason. Restarting cannot fix it, so stop and classify.
+    if [[ -f "$refused" ]]; then
+      local _rstat _rmtime
+      _rmtime=$(stat -f %m "$refused" 2>/dev/null) || _rmtime=$(stat -c %Y "$refused" 2>/dev/null) || _rmtime=0
+      local ref_age=$(( $(date +%s) - ${_rmtime:-0} ))
+      if (( ref_age < 300 )); then
+        log "ERROR" "phase=6 serving proof: cc-start refused deterministically (PRES-046 exit 78) — rebuild/config-repair required, NOT a restart loop. Receipt: $refused"
+        return 2
+      fi
+    fi
+    log "WARN" "phase=6 serving proof: not proven serving yet (attempt $attempt/$attempts)"
+    sleep "$wait_s"
+  done
+  log "ERROR" "phase=6 serving proof timed out after $attempts probes — phase stays pending; this is NOT a done state"
+  return 1
 }
 
 # ======================================================================
@@ -2380,13 +2452,19 @@ elif [[ "$(state_get '.commandCenterPhase6Done')" == "true" ]]; then
   cc_security_preflight --checkout "$DASHBOARD_DIR"
   log "INFO" "phase=6 dashboard-deploy: already done — skipping"
   # Item 02: commandCenterBuildFresh used to be stamped only by the build helper,
-  # which this branch never calls — so an already-done box could not be re-proved
+  # which this branch never calls - so an already-done box could not be re-proved
   # content-valid. The content oracle answers it directly.
   if cc_served_build_current; then
     state_set '.commandCenterBuildFresh = true'
   else
     state_set '.commandCenterBuildFresh = false'
-    log "WARN" "phase=6: already-done box does not verify its served content (manifest missing/mismatched/obsolete) — commandCenterBuildFresh=false"
+    log "WARN" "phase=6: already-done box does not verify its served content (manifest missing/mismatched/obsolete) - commandCenterBuildFresh=false"
+  fi
+  # Item 03: re-verify on every skip. A box whose serving proof later fails
+  # (exit 78, health gone) must not keep reporting done forever.
+  if ! cc_phase6_serving_proof 3 2; then
+    state_set '.commandCenterPhase6Pending = "serving-proof-pending"'
+    log "ERROR" "phase=6: previously-done box no longer passes serving proof - pending state recorded"
   fi
 else
   mkdir -p "$(dirname "$DASHBOARD_DIR")"
@@ -2465,8 +2543,22 @@ else
   fi
   pm2 save >>"$LOG_FILE" 2>&1 || true
 
-  state_set '.commandCenterPhase6Done = true'
-  log "INFO" "phase=6 dashboard-deploy: done"
+  # Item 03: `pm2 start` returning zero is NOT serving proof. Require the
+  # canonical process online, the exact local health payload and a source-valid
+  # manifest before the phase may be stamped done.
+  if cc_phase6_serving_proof 30 2; then
+    state_set '.commandCenterPhase6Done = true'
+    state_set '.commandCenterPhase6Pending = null'
+    log "INFO" "phase=6 dashboard-deploy: done (serving proof passed)"
+  else
+    _sp_rc=$?
+    if [[ "$_sp_rc" -eq 2 ]]; then
+      state_set '.commandCenterPhase6Pending = "rebuild-required"'
+      fail_install "phase=6: cc-start refused deterministically (PRES-046 exit 78) — rebuild/config-repair required. The receipt at $DASHBOARD_DIR/.cc-state/cc-start-refused.json names the reason. Restarting cannot fix it; commandCenterPhase6Done was NOT set."
+    fi
+    state_set '.commandCenterPhase6Pending = "serving-proof-pending"'
+    log "ERROR" "phase=6: serving proof did not pass (child start/health/manifest) — commandCenterPhase6Done stays unset. Re-run the installer once the box serves /api/health."
+  fi
 fi
 
 # ----------------------------------------------------------------------
@@ -2506,6 +2598,18 @@ log "INFO" "phase=6j cc-watchdog: done"
 # unambiguous. The STATE FIELD is renamed commandCenterPhase6bStatus →
 # commandCenterPhase6hStatus, but the READ falls back to the old key so the
 # duplicate-CC re-POST guard keeps working on boxes whose state predates this rename.
+# cc_interview_email_pending — item 06: a placeholder or absent contactEmail
+# means the CONFIRMED intake owner email was never collected. That is launch
+# pending, never a sign-in identity: register-access refuses to build Cloudflare
+# Access subjects from it (pending+ guard at the register-access stage) and the
+# invitation can never be minted until a real address lands.
+cc_interview_email_pending() {
+  case "$(state_get '.contactEmail')" in
+    pending+*|"") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 log "INFO" "phase=6h tunnel: starting"
 if [[ "$UPDATE_ONLY" == "true" && -z "$(state_get '.launchBootstrap')" ]]; then
   log "INFO" "phase=6h tunnel: --update-only mode — skipping (tunnel already established on prior run)"
@@ -2532,6 +2636,15 @@ else
       log "WARN" "phase=6h: create-tunnel.sh not executable at $TUNNEL_SCRIPT — marking tunnel as todo"
       state_set '.commandCenterPhase6hStatus = "skipped-script-missing"'
     else
+      # Item 06: decide BEFORE the request stamp. Never mark "requested" and
+      # never POST a pending+ placeholder as the client's contactEmail — that
+      # status is terminal for the re-POST guard, so a skipped run must record
+      # "email-pending" instead and converge on the run where the confirmed
+      # address exists. No invented sign-in identity anywhere.
+      if cc_interview_email_pending; then
+        state_set '.commandCenterPhase6hStatus = "email-pending"'
+        log "WARN" "phase=6h: contactEmail is a pending+ placeholder or empty — NOT registering the tunnel (no invented contact identity); re-run once the confirmed owner email exists"
+      else
       log "INFO" "phase=6h: invoking create-tunnel.sh $CLIENT_SLUG $COMPANY_NAME $CONTACT_EMAIL"
       # Record the request before the external effect. Interrupted/ambiguous calls
       # reconcile via the authenticated readiness probe; never blindly re-POST.
@@ -2553,6 +2666,7 @@ else
         # The requested URL was scoped before deployment; no .env-exists guessing.
         state_set '.commandCenterPhase6hStatus = "created"'
         log "INFO" "phase=6h tunnel: created; awaiting authenticated public verification"
+      fi
       fi
     fi
   fi
@@ -2627,6 +2741,15 @@ if [[ "$SP_ACTIVE" != "true" && ( "$UPDATE_ONLY" != "true" || ( -n "$(state_get 
   # multi-signal corroboration — the flag alone is set even on the fabricating path).
   INTERVIEW_COMPLETE=$(state_get '.interviewComplete')
   if [[ "$INTERVIEW_COMPLETE" != "true" ]]; then
+    # Item 06: placeholder/absent owner email is decided FIRST — before any
+    # Access registration, readiness probe or invitation attempt, which would
+    # all fail anyway. Completed interviews are untouched by this branch.
+    if cc_interview_email_pending; then
+      state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "owner-email-pending"'
+      log "WARN" "Interview launch pending: the confirmed intake owner email is absent (contactEmail is a pending+ placeholder or empty) — no Access identity can be registered and no invitation may be claimed. Collect the owner's real email, then re-run run-full-install.sh with it as the third argument."
+      echo "INTERVIEW_LAUNCH_PENDING: owner email not confirmed — AI Workforce interview has NOT started and is NOT complete. No invitation exists." >&2
+      exit 8
+    fi
     if ! cc_launch_stage prebuild; then
       state_set '.commandCenterStatus = "launch-pending" | .interviewLaunch.status = "foundation-pending"'
       log "WARN" "Interview launch pending: explicit lane/consent or foundation verification missing; see $LOG_FILE"
@@ -2681,7 +2804,7 @@ if [[ "$SP_ACTIVE" != "true" && ( "$UPDATE_ONLY" != "true" || ( -n "$(state_get 
     log "INFO" "startability gate: canonical process online, local health exact, authenticated public readiness with registered Access identity, invitation minted and ticket discarded (nothing sent)"
     log "INFO" "interview-gate: interviewComplete=${INTERVIEW_COMPLETE:-<unset>} — REPORTING 'interview not completed yet' and exiting clean. NOT seeding/scaffolding the real workforce."
     state_set '.commandCenterStatus = "interview-pending" | .commandCenterGateReason = "AI Workforce interview not completed (interviewComplete != true) — real-workforce materialization is gated until the owner finishes their interview. The CC stays in locked interview-mode (P0-5 middleware 302s to /interview) by design until buildCompletedAt at closeout."'
-    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview not completed yet. Real workforce NOT materialized (expected, not an error). The authenticated public interview prerequisites passed; provider liveness remains separately unverified. The shell remains in locked interview-mode by design until closeout." >&2
+    echo "INTERVIEW_NOT_COMPLETE: interviewComplete != true — AI Workforce interview is NOT complete (never claim completion from this state). Real workforce NOT materialized (expected, not an error). The authenticated public interview prerequisites passed; provider liveness remains separately unverified. The shell remains in locked interview-mode by design until closeout." >&2
     exit 0
   fi
   log "INFO" "interview-gate: fast pre-check passed (interviewComplete=true) — now CORROBORATING with qc-interview-completion.py (multi-signal, per SKILL.md)."

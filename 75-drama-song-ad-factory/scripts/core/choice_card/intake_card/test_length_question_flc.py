@@ -60,8 +60,10 @@ class T(unittest.TestCase):
             self.assertEqual("clip" in line, bool(clips_for(secs)), line)
 
     def test_recap_is_plain(self):
-        a = [{"text": "x"}, {"text": IC.QUESTIONS[1]["options"][2][0]}] + [{"text": "x"}] * (len(IC.QUESTIONS) - 2)
-        self.assertIn("2. Length: 3 minutes + 60s and 90s clips", IC.render_recap(a))
+        at = [q["id"] for q in IC.QUESTIONS].index("length")     # after the story brief (DSR-105)
+        a = [{"text": "x"}] * len(IC.QUESTIONS)
+        a[at] = {"text": IC.QUESTIONS[at]["options"][2][0]}
+        self.assertIn("%d. Length: 3 minutes + 60s and 90s clips" % (at + 1), IC.render_recap(a))
 
     def test_three_minute_price_includes_clips(self):
         from catalog_calculator import card_render as CR
