@@ -5,12 +5,15 @@ Joint plan section 5, row U6:
 > Direct-shell persistent Mac/Hostinger/Contabo timer, no idle model event,
 > correct user/paths and restart state.
 
-This directory holds the timer FILES and a checker for the three platforms the
-row names. **Nothing here is installed, loaded, scheduled or registered — not on
-this operator Mac, not on any fleet or client box, not in any container.** The
-installer renders files and prints the one registration command the OPERATOR
-would run; it never runs it. See "Install paths" below for what each platform's
-path is.
+This directory holds the timer FILES, their installer and a checker for the
+three platforms the row names. Every mode of `install-timer.sh` is read-only
+except **`--register`**, which is the one command that installs the timer and
+arms it. `--register` is check-first and idempotent: when the timer is already
+installed and correct it changes nothing and exits 0. Every other mode — and
+`--register` aimed at a scratch root — writes files and prints the scheduler
+command without arming anything, which is how this is proven without spending a
+launchd slot or a container on this machine. See "Install paths" and
+"Registering" below.
 
 It reuses existing installer shapes, not a new framework:
 
@@ -27,7 +30,7 @@ It reuses existing installer shapes, not a new framework:
 | File | What it is |
 | --- | --- |
 | `run-timer.sh` | The direct-shell poller the scheduler runs. Platform-aware; runs the U5 bridge's `poll`. |
-| `install-timer.sh` | Renders the platform definition into its install path. Files only — never registers. Modes: `--dry-run` (default), `--apply`, `--check-identity`, `--register` (always refused). |
+| `install-timer.sh` | Renders the platform definition into its install path, and with `--register` installs + arms it. Modes: `--dry-run` (default), `--apply`, `--check-identity`, `--register`. |
 | `mac/com.blackceo.drama-studio-bridge.plist.template` | macOS LaunchAgent definition. |
 | `hostinger/drama-studio-timer.cron.template` | Hostinger container crontab definition. |
 | `contabo/drama-studio-timer.cron.template` | Contabo container crontab definition. |
@@ -80,24 +83,72 @@ container layer (a recreate wipes it), so the key, address, state and log all
 live under the volume `/home/node/.openclaw`, never under `$HOME`. `run-timer.sh`
 and the installer both refuse a Contabo state path outside that root.
 
-## Install paths (stated, not performed)
+## Install paths
 
 - **macOS** — definition installs to
   `$HOME/Library/LaunchAgents/com.blackceo.drama-studio-bridge.plist`. The script
   ships inside the skill folder and is not copied (updates replace it in place, as
-  the plan requires). The operator registers it with:
-  `launchctl bootstrap gui/$(id -u) $HOME/Library/LaunchAgents/com.blackceo.drama-studio-bridge.plist`
+  the plan requires).
 - **Hostinger** — definition at
   `/data/.openclaw/scripts/drama-studio-timer.cron`, script at
-  `/data/.openclaw/scripts/run-timer.sh`. Operator registers:
-  `docker exec -u node <container> sh -c 'crontab /data/.openclaw/scripts/drama-studio-timer.cron'`
+  `/data/.openclaw/scripts/run-timer.sh`.
 - **Contabo** — definition at
   `/home/node/.openclaw/scripts/drama-studio-timer.cron`, script at
-  `/home/node/.openclaw/scripts/run-timer.sh`. Operator registers:
-  `docker exec -u node <container> sh -c 'crontab /home/node/.openclaw/scripts/drama-studio-timer.cron'`
+  `/home/node/.openclaw/scripts/run-timer.sh`.
 
-`install-timer.sh --register` refuses (exit 2) and prints the operator command; it
-contains no `launchctl`, `crontab -`, `systemctl` or `pm2` invocation.
+## Registering (`--register`)
+
+`--register` is the only mode that touches a scheduling surface, and it does it
+the same way the two installers this script models do:
+
+- **macOS** — writes the plist, then `launchctl bootstrap gui/$(id -u) <plist>`.
+  A job that is already loaded with an unchanged plist is success and changes
+  nothing; a changed plist is `launchctl bootout` first, then bootstrapped
+  (the shape of `platform/mac/service-selfheal/install-service-remediate.sh`).
+- **Hostinger / Contabo** — writes the definition and script, then merges
+  **one** line into the `node` user's crontab: any previous line containing the
+  tag `drama-studio-timer` is dropped first, then ours is appended, so a second
+  run can never double the timer. Any other crontab line is preserved (the shape
+  of `platform/vps/service-selfheal/install-host-watchdog-cron.sh`, which
+  replaces its own line the same way). It never installs the definition file
+  wholesale — that would clobber the box's other cron entries.
+
+**Contract.** `--register` exits **0** when the timer is installed or already
+installed, and **2** only for a genuine refusal: a wrong identity, an unsupported
+platform, or a missing template. It accepts the same flags as every other mode —
+`--platform`, `--root`, `--home`, `--skill-root`, `--identity-user`,
+`--identity-home` — and the identity rules of check `C` apply to it unchanged: a
+temp, non-contract or wrong-leaf HOME is refused, not installed.
+
+**Check-first.** Every `--register` run reads the current state before it writes:
+the plist is compared byte for byte, the crontab is read, stripped of our tag and
+re-compared. Nothing differing means nothing written, nothing loaded, exit 0.
+
+**Fixtures, never a bare install.** A `--root` that is not the platform's
+contract root (`/Users/<user>`, `/data`, `/home/node/.openclaw`) is a scratch
+install: the files are written under that root, the scheduler command is printed
+and **nothing is armed**. That is the supported way to prove `--register` on a
+machine with no launchd slot to spare and no container to run — temp roots and
+`--dry-run` only, never a load. On a real box leave `--root` alone (or pass its
+contract root) and the scheduler step runs normally.
+
+Manual equivalents, for an operator who would rather type it:
+
+```bash
+# macOS
+launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/com.blackceo.drama-studio-bridge.plist"
+# Hostinger / Contabo — run --register INSIDE the container, as the node user,
+# from wherever the skill folder lives on that box:
+docker exec -u node <container> bash <skill>/timer-artifacts/install-timer.sh --platform hostinger --register
+```
+
+On the containers prefer `--register` over a whole-file
+`crontab /path/drama-studio-timer.cron`: that form replaces the user's crontab
+outright and drops whatever else the box had scheduled, while `--register`
+merges one tagged line and leaves the rest alone.
+
+No other mode runs `launchctl`, `crontab -`, `systemctl` or `pm2`, and none of
+them ever will.
 
 ## Restart state
 
@@ -122,6 +173,14 @@ python3 75-drama-song-ad-factory/timer-artifacts/checks/run_checks.py
 # exit 0 = all pass; 1 = at least one failed (named). Writes only its own scratch.
 ```
 
+`--register`'s idempotency and its refusal codes are proven the same way, against
+temp roots: run it twice for each platform with `--root` pointed at a scratch
+directory and check that the second run reports "already installed", that the
+tagged crontab line is present exactly once, that `--check-identity` refuses a
+wrong pair with its real exit code, and that an unsupported platform, a wrong
+identity and a missing template each exit 2 — with the launchd list, this
+machine's crontab and `~/Library/LaunchAgents` identical before and after.
+
 Each good check is paired with a planted-bad negative control the same instrument
 must reject:
 
@@ -135,8 +194,9 @@ must reject:
 | G | the poller accepts a good identity then refuses an unpaired box (exit 2) | wrong platform/user and wrong state path refused non-zero |
 | F | no credential literal in any timer file | a planted `DS_KEY=...` literal is detected by the same scanner |
 
-Nothing here was installed, enabled, loaded or scheduled, and no launchd, cron,
-systemd, pm2 or Task Scheduler surface was written.
+The checks themselves install, enable, load and schedule nothing: they render,
+read and refuse, and write only inside their own scratch. Registering is done by
+`--register` on the target box, never by the checker.
 
 ## Deliberate limits
 
