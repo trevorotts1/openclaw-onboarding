@@ -3672,7 +3672,7 @@ else
     note "scripts/wire-run-retries.sh not found — skipping runRetries ceiling wiring (older bundle)"
 fi
 
-# 0.4, Model selection (advisory; the client selects, the agent resolves at runtime)
+# 0.4 — Model selection (advisory; the client selects, the agent resolves at runtime)
 note "Master orchestrator model selection (per INSTALL-CONTRACT.md Rule 10): the client's choice, or the client's configured default model."
 note "  Recommendation (cost): prefer the cheapest acceptable route among the client's available models:"
 note "  1. Subscription / OAuth routes (no per-call cost), recommended for orchestration, which runs continuously"
