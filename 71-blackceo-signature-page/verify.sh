@@ -28,6 +28,7 @@ for f in \
   scripts/validate_public_copy.py scripts/combine_review_pdf.py scripts/validate_review_pdf.py \
   scripts/stage_gate.py scripts/render_page.py scripts/compare_sheet.py \
   scripts/validate_page.py scripts/validate_visual_direction.py scripts/validate_image_grade.py \
+  scripts/calibrate_grade.py scripts/check_authority_pins.py \
   scripts/install_local.py scripts/write_intake.py \
   tests/run_tests.py tests/test_scripts.py \
   assets/brand/blackceo-brand.json assets/brand/brand.schema.json \
@@ -35,6 +36,8 @@ for f in \
   assets/page-references/README.md \
   references/BlackCEO-Page-Brand-Law.md references/stage-contract.json \
   references/swarm-plan.md references/html-qc-rubric.md references/private-label-list.txt \
+  references/external-authorities.json \
+  assets/brand/gold-set/README.md assets/brand/gold-set/gold-set.json \
   CHANGELOG.md VERSION START-HERE.md EVALUATION-CHECKLIST.md \
   references/runtime-adapters.md references/kie-generation-route.md agents/openai.yaml \
   adapters/claude-code/README.md adapters/claude-nine/README.md adapters/codex/README.md \
@@ -90,6 +93,12 @@ if python3 "$ROOT/scripts/validate_public_copy.py" "$TMP/public.md" >/dev/null; 
 else
   echo "[FAIL] public-copy validator sanity fixture" >&2
   fail=1
+fi
+
+# Pinned external authorities (Item 11): drift is a warning, never a
+# failure here. PIN OK / PIN DRIFT / PIN MISSING lines print as-is.
+if [ -f "$ROOT/scripts/check_authority_pins.py" ] && [ -f "$ROOT/references/external-authorities.json" ]; then
+  python3 "$ROOT/scripts/check_authority_pins.py" || true
 fi
 
 if [ "$fail" -eq 0 ]; then

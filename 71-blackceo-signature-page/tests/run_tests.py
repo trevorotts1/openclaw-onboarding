@@ -15,6 +15,7 @@ MODULES = [
     "test_scripts.py",
     "test_validate_visual_direction.py",
     "test_validate_manifest_grade.py",
+    "test_image_grade_extended.py",
     "test_stage_gate.py",
     "test_validate_copy_prompt.py",
     "test_render_compare.py",

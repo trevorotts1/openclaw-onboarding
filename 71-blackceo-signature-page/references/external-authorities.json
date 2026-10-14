@@ -1,0 +1,44 @@
+{
+  "authorities": [
+    {
+      "blob_sha": "5cf39e0a18aefe13f2714c961c7cf5fb765622e2",
+      "checked_on": "2026-10-13",
+      "description": "Skill 07 KIE setup common rules. Rule 12 (prompt-length band: 95 to 100 percent of the model maximum, never below 80 percent) is cited by references/authority-map.md as governing prompt length for this skill.",
+      "name": "kie-common-rules",
+      "path": "07-kie-setup/references/kie-common-rules.md",
+      "repo": "trevorotts1/openclaw-onboarding"
+    },
+    {
+      "blob_sha": "d4472c65219dcfc1577cac81d6b641732fe2ce72",
+      "checked_on": "2026-10-13",
+      "description": "Shared prompt-budget enforcer imported by this skill's prompt validation (budget_for / length band enforcement against Skill 74's adapter and registry).",
+      "name": "kie-prompt-enforcer",
+      "path": "shared-utils/kie_prompt_enforcer.py",
+      "repo": "trevorotts1/openclaw-onboarding"
+    },
+    {
+      "blob_sha": "11e9ab761f3e43d963c0c6543c67f99fdc31e59a",
+      "checked_on": "2026-10-13",
+      "description": "Skill 74 KIE live adapter: the transport, live model registry source, and prompt-budget authority this skill dispatches image generation through (see references/kie-generation-route.md).",
+      "name": "skill-74-kie-live-adapter",
+      "path": "74-kie-live-adapter/scripts/kie_live_adapter.py",
+      "repo": "trevorotts1/openclaw-onboarding"
+    },
+    {
+      "blob_sha": "a4f803ba2a551d100ca99472b1d6ef45db106a1d",
+      "checked_on": "2026-10-13",
+      "description": "Skill 66 KIE image model registry: the model selection and capability registry the generation route resolves against.",
+      "name": "skill-66-model-registry",
+      "path": "66-kie-image/models.json",
+      "repo": "trevorotts1/openclaw-onboarding"
+    }
+  ],
+  "checked_on": "2026-10-13",
+  "schema": "skill71-external-authorities/1",
+  "skill": "71-blackceo-signature-page",
+  "verified_against": {
+    "head_commit": "ea22ed88c368236b3680f03b2c6912c0b8730b3f",
+    "note": "Blob SHAs below are git blob SHAs (sha1 of 'blob <len>' + NUL + file bytes) resolved from GitHub HEAD at the commit above on checked_on. Verify an installed copy with scripts/check_authority_pins.py, which prints PIN OK or PIN DRIFT per authority. Updating a pin is a deliberate act: change the SHA, bump checked_on, note it in the skill CHANGELOG.",
+    "repo": "trevorotts1/openclaw-onboarding"
+  }
+}

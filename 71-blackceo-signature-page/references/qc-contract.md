@@ -23,6 +23,12 @@ Retain the stricter Graphics threshold:
 
 The deterministic scripts check measurable constraints only. They do not replace an independent qualitative review of copy, composition, style fidelity, representation quality, emotional effect, visual distinctness, or final pixels.
 
+## Deterministic image grade screen (Items 8 and 9)
+
+`scripts/validate_image_grade.py` is the pixel screen for generated images. It measures, per image, with Pillow only: mean HSV saturation, luminance standard deviation, sharpness (variance of the FIND_EDGES convolution), and Hasler-Susstrunk colorfulness. Each measure has a floor in the brand file's `grade` block (`min_mean_saturation`, `min_luma_std`, `min_sharpness`, `min_colorfulness`). A threshold that is null is uncalibrated: the screen prints the measurement as WARN and applies no gate for that metric; thresholds are set only through Item 8's calibration (gold-set floors proposed by `scripts/calibrate_grade.py`, approved by Trevor), and the production gate refuses to close `image-generation-qc` while the brand is uncalibrated.
+
+Two screen checks are unconditional and need no threshold: near-duplicate detection (8x8 average hash; a pair at Hamming distance 4 or less fails as a possible duplicate or near-identical shot, unless the pair is declared in the inventory's `continuity_group` as an intentional continuity series) and aspect-ratio truth (an image's actual ratio must match its inventory slot ratio within 2 percent, checked when the validator is given `--inventory`).
+
 ## Failed-only repair loop
 
 1. Run initial QC.
