@@ -1,0 +1,7 @@
+{
+  "seat_id": "oprah-winfrey",
+  "status": "not_yet_built",
+  "pack_owner_unit": "CWE-015",
+  "items": [],
+  "note": "The authored decision rules for this seat are built by CWE-015 from verified source material. An empty items list is the honest scaffold state; nothing here may be presented as authored content."
+}

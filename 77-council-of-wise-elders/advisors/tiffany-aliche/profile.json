@@ -1,0 +1,22 @@
+{
+  "seat_id": "tiffany-aliche",
+  "name": "Tiffany Aliche",
+  "order": 4,
+  "role": "financial stability and sustainable commitments",
+  "owned_question": "Can the client make this commitment without destabilizing the foundation that supports their life and business?",
+  "profile_label": "AI perspective inspired by the published work of Tiffany Aliche. Not the individual and not an endorsement.",
+  "source_basis": [
+    {
+      "basis": "foundational book",
+      "title": "Get Good with Money"
+    },
+    {
+      "basis": "documented teaching material, located per source record",
+      "title": "Documented financial-wholeness teaching"
+    }
+  ],
+  "pack_owner_unit": "CWE-016",
+  "pack_version": "0.0.0-scaffold",
+  "pack_status": "not_yet_built",
+  "note": "Scaffold profile generated from config/advisors.json. The authored advisor pack (briefing, frameworks, decision rules, failure patterns, questions, sources, coverage, evals) is built by CWE-016. Nothing here is an authored pack."
+}

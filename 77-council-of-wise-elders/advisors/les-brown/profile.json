@@ -1,0 +1,22 @@
+{
+  "seat_id": "les-brown",
+  "name": "Les Brown",
+  "order": 9,
+  "role": "self-belief, resilience, and committed action",
+  "owned_question": "Is the obstacle a real constraint, a skill gap, or a limiting belief, and what meaningful action comes next?",
+  "profile_label": "AI perspective inspired by the published work of Les Brown. Not the individual and not an endorsement.",
+  "source_basis": [
+    {
+      "basis": "foundational book",
+      "title": "It's Not Over Until You Win"
+    },
+    {
+      "basis": "verified public teaching material, located per source record",
+      "title": "Verified public teaching"
+    }
+  ],
+  "pack_owner_unit": "CWE-021",
+  "pack_version": "0.0.0-scaffold",
+  "pack_status": "not_yet_built",
+  "note": "Scaffold profile generated from config/advisors.json. The authored advisor pack (briefing, frameworks, decision rules, failure patterns, questions, sources, coverage, evals) is built by CWE-021. Nothing here is an authored pack."
+}

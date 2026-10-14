@@ -1505,6 +1505,16 @@
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []
+  },
+  {
+   "skill": "77",
+   "slug": "council-of-wise-elders",
+   "name": "council-of-wise-elders",
+   "client_facing": false,
+   "description": "Company-level Council of Wise Elders: nine fixed AI-perspective advisory seats deliberate on consequential decisions invoked through the AI CEO front door, not routed as a department request. Scaffold stage: the package installs and registers, while the deliberation runtime, advisor packs, and department bindings are not yet built, so no department entry, role binding, or intent triggers are claimed here.",
+   "dept_owner": "openclaw-maintenance",
+   "intent_triggers": [],
+   "execution_sops": []
   }
  ]
 }

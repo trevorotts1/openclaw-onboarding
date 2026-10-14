@@ -1,0 +1,666 @@
+{
+  "skill": "council-of-wise-elders",
+  "skill_version": "v1.0.0",
+  "generated_by": "scripts/build-bundles.mjs",
+  "source_commit": "82e34384042a3312c17318285c4bd71965204ec7",
+  "file_count": 130,
+  "aggregate_sha256": "fb73723b67f22d7f326528ed79e89d73844dfa04f4eb94ac1d35baba8ed83a30",
+  "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
+  "archive": {
+    "file": "council-of-wise-elders.skill",
+    "status": "deferred_to_final_integration",
+    "note": "The distributable archive is generated when the complete pack exists (runtime, advisor packs, schemas). This scaffold ships the verified source tree and this manifest only."
+  },
+  "files": [
+    {
+      "path": "CHANGELOG.md",
+      "sha256": "4ff3702aff5a0bc4f91ae8d3e3304bec991e4eb08ff8e485d7c62375f77fa888",
+      "bytes": 1401
+    },
+    {
+      "path": "CORE_UPDATES.md",
+      "sha256": "c25ed2d75c2de5321c39424c8f2bb5811891577a956df652a55cf18f02ad3be0",
+      "bytes": 2715
+    },
+    {
+      "path": "EXAMPLES.md",
+      "sha256": "d812d8b1e57b22aec9dd3003d029db85403dc914dd4780e359ecb26a5f23497a",
+      "bytes": 2607
+    },
+    {
+      "path": "INSTALL.md",
+      "sha256": "ddf499d30e46417b9f1ef6c8ea65416c997404b6d9a57e4da827af033359c0c5",
+      "bytes": 10987
+    },
+    {
+      "path": "INSTRUCTIONS.md",
+      "sha256": "0bd197814538cfbce7c38331361daf00006b809cee863abdf6bb5caeb4750bee",
+      "bytes": 4594
+    },
+    {
+      "path": "PREREQS.json",
+      "sha256": "109f69aaf58b4930c9947e6e5920d287cc4d221038bc39200ee850f46acb3519",
+      "bytes": 1796
+    },
+    {
+      "path": "QC.md",
+      "sha256": "3dc60a071dc498d5dca4e2177e3cdefc99c81c874fa122812d5411123a5e4230",
+      "bytes": 3629
+    },
+    {
+      "path": "SKILL.md",
+      "sha256": "c054061c0e9be813d71899a6f0f7c05a8b6f6d88e205ce1fd644d0e9acbcd6f5",
+      "bytes": 6344
+    },
+    {
+      "path": "advisors/brene-brown/briefing.md",
+      "sha256": "f69999ffac74fa15c1a65b14ee0c111c31fcfdc6939b2027e5f5ab2645019f3c",
+      "bytes": 972
+    },
+    {
+      "path": "advisors/brene-brown/communication.md",
+      "sha256": "2f425d57447814b542006e96d7d12f882cfbd3855840fc4e979cbac9dc3da14b",
+      "bytes": 699
+    },
+    {
+      "path": "advisors/brene-brown/coverage.json",
+      "sha256": "27ec6a3966583f2441efc3197828bc2ec1d8529c47aafa27987d43cc24897320",
+      "bytes": 602
+    },
+    {
+      "path": "advisors/brene-brown/decision-rules.json",
+      "sha256": "8e527cc7b831d9ca7a2117712ae2ee6c9e2fa97edc5cc97b074416612ce97c2a",
+      "bytes": 315
+    },
+    {
+      "path": "advisors/brene-brown/evals.json",
+      "sha256": "0bc61a3da81def135a33c6445794f33a3d8ad063e2ed90b6c2e07d076ad148a3",
+      "bytes": 719
+    },
+    {
+      "path": "advisors/brene-brown/failure-patterns.json",
+      "sha256": "8fbb8453035ca93fbdf4fb3f7a5fdf2195b488fc5d873648bc70c21acc694363",
+      "bytes": 317
+    },
+    {
+      "path": "advisors/brene-brown/frameworks.json",
+      "sha256": "132fc5914fd3ca6988b444eae45331a7e54742b5f3e11e7b8e76c485c4be9b44",
+      "bytes": 311
+    },
+    {
+      "path": "advisors/brene-brown/profile.json",
+      "sha256": "e5fad97267cf172cefd0d377acb4e99b02e0aa874794a812388de3e903313b25",
+      "bytes": 970
+    },
+    {
+      "path": "advisors/brene-brown/questions.json",
+      "sha256": "9186e15a0985c29bf0f5bfc634bc287b72423e372819bd60c6cc4d3d8c439745",
+      "bytes": 320
+    },
+    {
+      "path": "advisors/brene-brown/sources.json",
+      "sha256": "8d0bc55c8109ac67ca5d1e61965c34e10666cbf023579710538e12bcbc3431ea",
+      "bytes": 863
+    },
+    {
+      "path": "advisors/dennis-kimbro/briefing.md",
+      "sha256": "564d6c27cf4457338d416aa44f04395853ac531d7adc18f00b9badf88f2f30dc",
+      "bytes": 976
+    },
+    {
+      "path": "advisors/dennis-kimbro/communication.md",
+      "sha256": "f8bf1f2a92f99f128f3f3f493a0e4a25d8fe445e37e699eb2eafba1a42ae4786",
+      "bytes": 709
+    },
+    {
+      "path": "advisors/dennis-kimbro/coverage.json",
+      "sha256": "947c77e3083584dd09bc6968f8604102e805c96d5aa4a425b58bb2faeff29798",
+      "bytes": 604
+    },
+    {
+      "path": "advisors/dennis-kimbro/decision-rules.json",
+      "sha256": "109dc892c965e201bdda46ef064a55bc234b1776c4f9a37939f31ae093051f5f",
+      "bytes": 317
+    },
+    {
+      "path": "advisors/dennis-kimbro/evals.json",
+      "sha256": "e88766f9adc26a8e8c9805e42029e06246a59a123b80eace7d3180fddbf764e1",
+      "bytes": 721
+    },
+    {
+      "path": "advisors/dennis-kimbro/failure-patterns.json",
+      "sha256": "79125dfd5f7f80734767a3383abec76d02cac93d1e82c1f6149aef589760958f",
+      "bytes": 319
+    },
+    {
+      "path": "advisors/dennis-kimbro/frameworks.json",
+      "sha256": "8e39961deb82d73ac86940d49514175c265fa7c2436d1d9bbfde7fe77257b918",
+      "bytes": 313
+    },
+    {
+      "path": "advisors/dennis-kimbro/profile.json",
+      "sha256": "a8d778085512d6b4f9f245e18c709161dbca3e9b4c0ab8293f79d7fa460dbe38",
+      "bytes": 945
+    },
+    {
+      "path": "advisors/dennis-kimbro/questions.json",
+      "sha256": "d9195f06d37cb3a135ad277136ab9db1d01ad16b849f0e511697cb7bdf91a223",
+      "bytes": 322
+    },
+    {
+      "path": "advisors/dennis-kimbro/sources.json",
+      "sha256": "0bd1ef6abdbe7951633cc8566efd41648aa558bb31a195c7a2e3986f7ba56802",
+      "bytes": 839
+    },
+    {
+      "path": "advisors/les-brown/briefing.md",
+      "sha256": "18964625a4cb10a2ea48d1fa83cb929f42b6f2ad0281778e3bf9ae7cfee281eb",
+      "bytes": 963
+    },
+    {
+      "path": "advisors/les-brown/communication.md",
+      "sha256": "0d6922e2d3f0b2f683490d409b6ea434e75c92212162bf74089f82a633f06902",
+      "bytes": 693
+    },
+    {
+      "path": "advisors/les-brown/coverage.json",
+      "sha256": "bb790dea794b3b33b61e006746c5e7c8ee5b52d1c7805b1641049c6e05ed669c",
+      "bytes": 600
+    },
+    {
+      "path": "advisors/les-brown/decision-rules.json",
+      "sha256": "29ed1fed96ac82e3b95a50d48ae72921d9ed9d2bf1e8f2d2d3a12049679b3b42",
+      "bytes": 313
+    },
+    {
+      "path": "advisors/les-brown/evals.json",
+      "sha256": "e5424b566c13555340c851ccd7e1350d42e797b213736c375888ab450f1d49f3",
+      "bytes": 717
+    },
+    {
+      "path": "advisors/les-brown/failure-patterns.json",
+      "sha256": "b551977b560c0ebedc92993d0a6cf0717af552a164f2239e488cbe447e27840b",
+      "bytes": 315
+    },
+    {
+      "path": "advisors/les-brown/frameworks.json",
+      "sha256": "fa207872556b82d098a54693f0c6fc4a42782472b0296074725e795b06835c3b",
+      "bytes": 309
+    },
+    {
+      "path": "advisors/les-brown/profile.json",
+      "sha256": "aa740c0fa4718aa36a908bd1547f8ad41aaaa4c4d955eb4360f94ca19665dbb8",
+      "bytes": 978
+    },
+    {
+      "path": "advisors/les-brown/questions.json",
+      "sha256": "e4b7b1e4792352145cc99cada703a84791dda0379b78033fb66314eb7957a5d6",
+      "bytes": 318
+    },
+    {
+      "path": "advisors/les-brown/sources.json",
+      "sha256": "9f46e5f995c2c13f67f45ef046dc969b7dd0791fc012381c2d2f7fa0cdb3e3e6",
+      "bytes": 877
+    },
+    {
+      "path": "advisors/michelle-obama/briefing.md",
+      "sha256": "36a014f29df7e176b3d6a80aae98c84f3accf7fc512f6143ee48f42cdb5bbc3c",
+      "bytes": 969
+    },
+    {
+      "path": "advisors/michelle-obama/communication.md",
+      "sha256": "d0110d0388812e0ae2c5b0331e21232e36a353fb9c058f8204ff20f01a1e12f4",
+      "bytes": 703
+    },
+    {
+      "path": "advisors/michelle-obama/coverage.json",
+      "sha256": "3e80e831cbbe40f530cfecba63dc5d14b606661a3f4b5cdf2fadb0c890a1b260",
+      "bytes": 605
+    },
+    {
+      "path": "advisors/michelle-obama/decision-rules.json",
+      "sha256": "ac2c1ecbadd71104c7c5cb1c8c2355819e4b29179a1f41e4027f8d7a407531c8",
+      "bytes": 318
+    },
+    {
+      "path": "advisors/michelle-obama/evals.json",
+      "sha256": "423d6ac293bfd10b45f503a7105167aa685d10f011e7517112350d1c700aea58",
+      "bytes": 722
+    },
+    {
+      "path": "advisors/michelle-obama/failure-patterns.json",
+      "sha256": "ab5f03258b362a69458722ba43911f44cf297481d16f942ec930879041ccb499",
+      "bytes": 320
+    },
+    {
+      "path": "advisors/michelle-obama/frameworks.json",
+      "sha256": "3a1330726557712d161b084dfa60236adbc90f6a25d76dd1d42505dc4955c417",
+      "bytes": 314
+    },
+    {
+      "path": "advisors/michelle-obama/profile.json",
+      "sha256": "e3cb35990e5e03eb3872bc7d8a7f95f0b05a03b82f0084010370dba73855216f",
+      "bytes": 916
+    },
+    {
+      "path": "advisors/michelle-obama/questions.json",
+      "sha256": "e91baad76dfd2b8526d3508a1180120491d3b175d6c754ace905d179027c116d",
+      "bytes": 323
+    },
+    {
+      "path": "advisors/michelle-obama/sources.json",
+      "sha256": "2b8de729802ff53be2986a48dcdc3845e3dde0d001973d7154567a10e2643c0e",
+      "bytes": 814
+    },
+    {
+      "path": "advisors/oprah-winfrey/briefing.md",
+      "sha256": "70172fb57ddbda5acecd7fededa4d6b327b752f484f4e22aa09ea5948e44ea02",
+      "bytes": 972
+    },
+    {
+      "path": "advisors/oprah-winfrey/communication.md",
+      "sha256": "c3327b63b0a2db5d97bd8470a58270988c10376b61c86165486f042a1941b097",
+      "bytes": 701
+    },
+    {
+      "path": "advisors/oprah-winfrey/coverage.json",
+      "sha256": "0153df7b9943584eb2b090a265b979daf3479da9e23b997d3d201f8578b5e28a",
+      "bytes": 604
+    },
+    {
+      "path": "advisors/oprah-winfrey/decision-rules.json",
+      "sha256": "106bfcdfd9d30202ed5bda06b46ff961f059343beb4bf207e07fd80243d7c042",
+      "bytes": 317
+    },
+    {
+      "path": "advisors/oprah-winfrey/evals.json",
+      "sha256": "0669e06b167f6e11e146eef4e10f23e790a62b17e707065f9426329016ce491a",
+      "bytes": 721
+    },
+    {
+      "path": "advisors/oprah-winfrey/failure-patterns.json",
+      "sha256": "b1783dcb09dbc0322499fe4e2a60e698e3c1cd58f4b5eea31750126934cb058d",
+      "bytes": 319
+    },
+    {
+      "path": "advisors/oprah-winfrey/frameworks.json",
+      "sha256": "850e21e6d2adfe9ffc8b18f1c024d78dee4f953e43f8f94c8818a8ee88552f21",
+      "bytes": 313
+    },
+    {
+      "path": "advisors/oprah-winfrey/profile.json",
+      "sha256": "a0b5bd782cc4868436c33c420d5f44925f2f3c36dfe59b487090d642cfbe1411",
+      "bytes": 1000
+    },
+    {
+      "path": "advisors/oprah-winfrey/questions.json",
+      "sha256": "9707aa2f4a185bd9660cd2ab0668c7154af82f41fe23076316e0de1915caddec",
+      "bytes": 322
+    },
+    {
+      "path": "advisors/oprah-winfrey/sources.json",
+      "sha256": "89e749a4be321a8d4197168b2981ec1db7c89a3c0f574e1b55f3a72cf340801f",
+      "bytes": 894
+    },
+    {
+      "path": "advisors/russell-brunson/briefing.md",
+      "sha256": "c2f06c4f2c37a22109c4171b98967a1651df62bd63c98c6459838beb07cf951b",
+      "bytes": 956
+    },
+    {
+      "path": "advisors/russell-brunson/communication.md",
+      "sha256": "b41ee46e16b5af47aab0c03936410dcd95b5c321df5bb10355169bbe455d45a1",
+      "bytes": 705
+    },
+    {
+      "path": "advisors/russell-brunson/coverage.json",
+      "sha256": "0b0869c82214ddbb1f3d8c12b6c1163acd87d6894ac7393cc01fb3bf4eaaad21",
+      "bytes": 606
+    },
+    {
+      "path": "advisors/russell-brunson/decision-rules.json",
+      "sha256": "4e9c898120040e1d57f767e75e424984f2e351ea356a0e8c771b103eb6aec8f3",
+      "bytes": 319
+    },
+    {
+      "path": "advisors/russell-brunson/evals.json",
+      "sha256": "9c916baad58f5447fcac3aa29dd5931d4955b637bde727dc989c231e555c0959",
+      "bytes": 723
+    },
+    {
+      "path": "advisors/russell-brunson/failure-patterns.json",
+      "sha256": "f7bc207525513ce1a8bd83f834716d01bf9a6ffebbcd9901ca7cc4b8b07a7419",
+      "bytes": 321
+    },
+    {
+      "path": "advisors/russell-brunson/frameworks.json",
+      "sha256": "ce0c83486460e31051d49c6551a8d7f6f9cd7c151783782405eae4f3cba5c73b",
+      "bytes": 315
+    },
+    {
+      "path": "advisors/russell-brunson/profile.json",
+      "sha256": "662bad02f5ecf1a41edb105e80cfd58d422c9f3e2be228dcbbf2408d11111ff9",
+      "bytes": 905
+    },
+    {
+      "path": "advisors/russell-brunson/questions.json",
+      "sha256": "f918146a8dce2fc8cff04103b2415cfd95e5a799454d35d4e401c0d4e4eb394f",
+      "bytes": 324
+    },
+    {
+      "path": "advisors/russell-brunson/sources.json",
+      "sha256": "37209212f43dd562b5beaa759d1bb66c006be5568f232f6739e08c797be6766b",
+      "bytes": 817
+    },
+    {
+      "path": "advisors/simon-sinek/briefing.md",
+      "sha256": "c756aad16542b8f34032e0ced85860abb5ce933d3154282bfcd13ec68c73a776",
+      "bytes": 957
+    },
+    {
+      "path": "advisors/simon-sinek/communication.md",
+      "sha256": "0c015d57428d9360e3975d4b83c20c475bf8141f228e60238a7fb3ddf2cd3d26",
+      "bytes": 697
+    },
+    {
+      "path": "advisors/simon-sinek/coverage.json",
+      "sha256": "788b467fcb66e2cad3c9f65b12e6e2621f6d429e09b2271108ab536d9c3b2128",
+      "bytes": 602
+    },
+    {
+      "path": "advisors/simon-sinek/decision-rules.json",
+      "sha256": "efa985affed7b7bb9482bdbe1612be8f4053f9df9ec19b8551ba4bd681438a69",
+      "bytes": 315
+    },
+    {
+      "path": "advisors/simon-sinek/evals.json",
+      "sha256": "5c466525e5f426fa1e1bebac642475328f23f374deb43ccfb05a8dc9c48ccb58",
+      "bytes": 719
+    },
+    {
+      "path": "advisors/simon-sinek/failure-patterns.json",
+      "sha256": "265690c48367b02b62091d05e69bd22e4dc3f3450dbe4fe52575536f0c7c6ce0",
+      "bytes": 317
+    },
+    {
+      "path": "advisors/simon-sinek/frameworks.json",
+      "sha256": "d75ccaf316df46e05bef494db7474cab1ec588ae6f9e73e429b11c353ab45fed",
+      "bytes": 311
+    },
+    {
+      "path": "advisors/simon-sinek/profile.json",
+      "sha256": "0c551ee18abad416ae0d880cbd57c4ab07b305c24ee39e2374db117f6195a8c2",
+      "bytes": 825
+    },
+    {
+      "path": "advisors/simon-sinek/questions.json",
+      "sha256": "b0afec29e46afcdd63ce88df999c65c72a39907a27aa382f19da5802e30f403f",
+      "bytes": 320
+    },
+    {
+      "path": "advisors/simon-sinek/sources.json",
+      "sha256": "4d4b7fedff3b5d40da4deb65a041cd7e44a35f961538e85c62eb17fb1e80dd40",
+      "bytes": 462
+    },
+    {
+      "path": "advisors/td-jakes/briefing.md",
+      "sha256": "9b6bedff5a825878086a790e3377734bd068e9b676319fc57447bec402740074",
+      "bytes": 1330
+    },
+    {
+      "path": "advisors/td-jakes/communication.md",
+      "sha256": "869cc5ddb0218c25954d6256b0f05dbd3041258f4bdbcd09482bb4c3f111b031",
+      "bytes": 697
+    },
+    {
+      "path": "advisors/td-jakes/coverage.json",
+      "sha256": "ddcb3ac40ac59f1334839ae86a1f2965f0a84dc7adae3bc0f86c13f6c814a983",
+      "bytes": 599
+    },
+    {
+      "path": "advisors/td-jakes/decision-rules.json",
+      "sha256": "72abc9048490b46c38a12eb9708d4d743f8fa69a53ed1a486d3970455bbc3629",
+      "bytes": 312
+    },
+    {
+      "path": "advisors/td-jakes/evals.json",
+      "sha256": "3848786fee3c1f30fa54a3dac1ef723ec46b1f17dc4669fccef1377e1232a7d6",
+      "bytes": 716
+    },
+    {
+      "path": "advisors/td-jakes/failure-patterns.json",
+      "sha256": "f23b760b4d618cfc0bcfd7b1709b555a01df9a9414e1e1c26591c090895a3d30",
+      "bytes": 314
+    },
+    {
+      "path": "advisors/td-jakes/frameworks.json",
+      "sha256": "050ac855009bc80630296b3110d3d8120231bc1755f46399811eaa4617a5ae59",
+      "bytes": 308
+    },
+    {
+      "path": "advisors/td-jakes/profile.json",
+      "sha256": "42556c307e2a43d676afda35ff2addf90ab2cdbf021f8734251c3faa9b982146",
+      "bytes": 1572
+    },
+    {
+      "path": "advisors/td-jakes/questions.json",
+      "sha256": "502c9d0c49075ee2eddf5feefa3c9e169af66726b3f300ff330d5ee387ba15ca",
+      "bytes": 317
+    },
+    {
+      "path": "advisors/td-jakes/sources.json",
+      "sha256": "1fb2895c8bce88595ba46d5fdd3c4e2b88bd30132bd09b323074166e235a8db8",
+      "bytes": 1232
+    },
+    {
+      "path": "advisors/tiffany-aliche/briefing.md",
+      "sha256": "450621506250c0686f7713053ed6f6ebc73d7c67580650c1e53a1098f3bdf1b1",
+      "bytes": 983
+    },
+    {
+      "path": "advisors/tiffany-aliche/communication.md",
+      "sha256": "fe35460539c6ad81b4bb3022384390ccc74fc5892f5f6e76cc25736bf7510614",
+      "bytes": 703
+    },
+    {
+      "path": "advisors/tiffany-aliche/coverage.json",
+      "sha256": "06a977245ae33b572d9e3faa790d546e088bff388a0ccd24b24d6b86bbf940cd",
+      "bytes": 605
+    },
+    {
+      "path": "advisors/tiffany-aliche/decision-rules.json",
+      "sha256": "5772e7efe077d8f5aab92fcd4cb332eafbf652ed473cabced93a12062d104632",
+      "bytes": 318
+    },
+    {
+      "path": "advisors/tiffany-aliche/evals.json",
+      "sha256": "b6050318489277111d05b7989f46e01a07655216ba446f3bf09b8d2ae0845b91",
+      "bytes": 722
+    },
+    {
+      "path": "advisors/tiffany-aliche/failure-patterns.json",
+      "sha256": "f89bc1ee4a56e454b5a6b7b1f5269dc4d0e31624f87996f22108172de49e6a4e",
+      "bytes": 320
+    },
+    {
+      "path": "advisors/tiffany-aliche/frameworks.json",
+      "sha256": "f797723742a7a3734cccb6ce7f672f0acf487603eaba80cbb59a021b856fec3d",
+      "bytes": 314
+    },
+    {
+      "path": "advisors/tiffany-aliche/profile.json",
+      "sha256": "294f7f30bbc5b459f93753eeee22607a9ef0d71fd2fd7c382aef38c6c2412145",
+      "bytes": 1000
+    },
+    {
+      "path": "advisors/tiffany-aliche/questions.json",
+      "sha256": "805de9e55aa303600004cf2e6279fdef269b36073a07cacd61db89905dea5c31",
+      "bytes": 323
+    },
+    {
+      "path": "advisors/tiffany-aliche/sources.json",
+      "sha256": "049a00e9648b5fd5c7f352896e9f7bad9d0910a886dff902c6ddcf49dec5b4dc",
+      "bytes": 884
+    },
+    {
+      "path": "agents/openai.yaml",
+      "sha256": "66f4cd7707f5a931f3e7d03d8189e949a768bda6eab5c7027f30e6f0bf2c8c0c",
+      "bytes": 179
+    },
+    {
+      "path": "assets/icons/README.md",
+      "sha256": "da64aa789bd5cd240b6e529018c0b87187eb02db1e33d392a7f3edfb4cdc4aff",
+      "bytes": 280
+    },
+    {
+      "path": "assets/portrait-manifest.json",
+      "sha256": "56277727394e993fd08ad2372ea9838b519ccd90fbd3383fe1ed158598f29dbc",
+      "bytes": 621
+    },
+    {
+      "path": "assets/portraits/README.md",
+      "sha256": "dbf8e3b1342af96f25eaba5e4927cdd4877ee871a97955c7dc0b4741d4356991",
+      "bytes": 479
+    },
+    {
+      "path": "config/advisors.json",
+      "sha256": "bfa2ce4be8265125b079b9acf2afe4d348e893eaee85294095becd5eb7e3cf90",
+      "bytes": 7912
+    },
+    {
+      "path": "config/defaults.json",
+      "sha256": "62fdbb73baf336d9e22ecb9882e86ed221f3b4d6e377e219ee43f11b55e20530",
+      "bytes": 2106
+    },
+    {
+      "path": "qc-council-of-wise-elders.sh",
+      "sha256": "f90560b7858cb36927815fd87d13871f845eb2251eb1bc0d15412e16ca9c4e1f",
+      "bytes": 570
+    },
+    {
+      "path": "references/install-matrix.md",
+      "sha256": "eff0ceb9056f3e8f88ce13c2cc1bcc35429dcb6309163b78165763282391926c",
+      "bytes": 2791
+    },
+    {
+      "path": "references/model-routing.md",
+      "sha256": "b7b7990c9d9c71e7a35c847f2f3aa8d67bd90ed58301c508bbaf83b064f274f5",
+      "bytes": 1835
+    },
+    {
+      "path": "references/protocol.md",
+      "sha256": "68ab484ff74614dbd02d1e1ad9db3d1418f2be2b8dec53d08d352f4f7c1524ad",
+      "bytes": 4224
+    },
+    {
+      "path": "references/report-template.md",
+      "sha256": "0c83c7100ba957c6da8828f97c4ba8872ffdafb2ba88e894418f8fc4f940b10e",
+      "bytes": 1915
+    },
+    {
+      "path": "references/scoring.md",
+      "sha256": "055673b2f99bf404e76ecd360d06e678d3094210540feed67028066c7b1e7490",
+      "bytes": 1944
+    },
+    {
+      "path": "references/source-policy.md",
+      "sha256": "36388e8f4292f77f8eb430e1e8394fc4d95e4b3dfb2c1c2ee20669f0ef80f24f",
+      "bytes": 2860
+    },
+    {
+      "path": "references/troubleshooting.md",
+      "sha256": "1619d4fdb6b909fbb10d27f3db5520fcd9f9d4408806905a9fd5be6de7000c55",
+      "bytes": 2559
+    },
+    {
+      "path": "runtime/README.md",
+      "sha256": "b0d593cb6e101bc6fad61380aca21dc9e6fb29cbd292da644b1753a7c94bbda1",
+      "bytes": 1336
+    },
+    {
+      "path": "runtime/package-lock.json",
+      "sha256": "7ba61ffc848af1315b11ef145251c1b654d85eb47a0cde975dcb0b23481f1ada",
+      "bytes": 315
+    },
+    {
+      "path": "runtime/package.json",
+      "sha256": "cb764962a0d81c24a3a4b2b1b0eced4e2e7b256fcba9914db1d436dc48408878",
+      "bytes": 323
+    },
+    {
+      "path": "runtime/src/README.md",
+      "sha256": "b3d85467bd2442e90e8a62ce213bc934d7955b41272f66135da707c6a8d4bf1e",
+      "bytes": 366
+    },
+    {
+      "path": "runtime/tests/README.md",
+      "sha256": "ca2e467b810986a7981c9f92288a8826bbd750c095f2cfe8f71790fe519505ee",
+      "bytes": 246
+    },
+    {
+      "path": "runtime/tsconfig.json",
+      "sha256": "ebd3dee84beaa72723f1ba4f132e50f125a6d52a081de1bf6e1fa42eb9a6be4d",
+      "bytes": 199
+    },
+    {
+      "path": "schemas/README.md",
+      "sha256": "9954e8d3fdd545056379f2d458e719e86f5bb67c1f1d8cc590c7fc30a2f5a187",
+      "bytes": 720
+    },
+    {
+      "path": "scripts/build-bundles.mjs",
+      "sha256": "299a55121f9e8b596017307037f50f1c6a55674187b55474e6b951aa9aa5c963",
+      "bytes": 3277
+    },
+    {
+      "path": "scripts/doctor.mjs",
+      "sha256": "d792c4e38afd24f97e9ec4ac93b3fd6203d8dc542a288712d284c29df4bbfb09",
+      "bytes": 8759
+    },
+    {
+      "path": "scripts/export-skill22.mjs",
+      "sha256": "26b723d60dc9dc9fadbf60508d4563806fd0304d24e49954ad70516d8927619b",
+      "bytes": 800
+    },
+    {
+      "path": "scripts/install-runtime.mjs",
+      "sha256": "82f3954e12cc47f7a7ecde4ea4728a20c82a03f7136b46b3f268ce50c792b842",
+      "bytes": 2098
+    },
+    {
+      "path": "scripts/qc-council-of-wise-elders.ps1",
+      "sha256": "7d407045c21c31f8e28fd8f266a3288e8c87cc8a78a75a733d123b354f0a1863",
+      "bytes": 3447
+    },
+    {
+      "path": "scripts/qc-council-of-wise-elders.sh",
+      "sha256": "8c7b7e90fd7299c518c2b08c1ab2666f609c36edbf7589b1161f735b186473cb",
+      "bytes": 2872
+    },
+    {
+      "path": "scripts/verify-bundles.mjs",
+      "sha256": "c41c2e1143e3d503ca0f24032861d7bd31a60197e258ed5bec213c5d9741c427",
+      "bytes": 3299
+    },
+    {
+      "path": "skill-version.txt",
+      "sha256": "86f0555bccd069ac54e4c54a19a0f1aed9d328e13aa34aa090f3f3d43aaad441",
+      "bytes": 7
+    },
+    {
+      "path": "tests/fixtures/README.md",
+      "sha256": "3824564e070f8a95a1ef58adebe4ca63a6c7222001a79457232186e30d78ba36",
+      "bytes": 658
+    },
+    {
+      "path": "tests/fixtures/sample-decision-brief.synthetic.json",
+      "sha256": "0e3b9a9806d64e1fd538486bc59eb503edf864f112f9fb4201184327189c1b74",
+      "bytes": 1015
+    },
+    {
+      "path": "version",
+      "sha256": "86f0555bccd069ac54e4c54a19a0f1aed9d328e13aa34aa090f3f3d43aaad441",
+      "bytes": 7
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "seat_id": "russell-brunson",
+  "name": "Russell Brunson",
+  "order": 5,
+  "role": "offers, acquisition, and conversion",
+  "owned_question": "Who wants this, how will they find it, and what credible path turns interest into a purchase?",
+  "profile_label": "AI perspective inspired by the published work of Russell Brunson. Not the individual and not an endorsement.",
+  "source_basis": [
+    {
+      "basis": "foundational book",
+      "title": "DotCom Secrets"
+    },
+    {
+      "basis": "foundational book",
+      "title": "Expert Secrets"
+    }
+  ],
+  "pack_owner_unit": "CWE-017",
+  "pack_version": "0.0.0-scaffold",
+  "pack_status": "not_yet_built",
+  "note": "Scaffold profile generated from config/advisors.json. The authored advisor pack (briefing, frameworks, decision rules, failure patterns, questions, sources, coverage, evals) is built by CWE-017. Nothing here is an authored pack."
+}

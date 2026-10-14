@@ -1,0 +1,21 @@
+{
+  "seat_id": "oprah-winfrey",
+  "pack_owner_unit": "CWE-015",
+  "status": "not_yet_built",
+  "records": [
+    {
+      "title": "The Path Made Clear",
+      "basis": "foundational book",
+      "record_status": "bibliographic_only",
+      "verification_status": "not_ingested",
+      "note": "Named as a required anchor for this seat's pack. No content from this work has been ingested or verified by this scaffold, and no quotation or locator is claimed."
+    },
+    {
+      "title": "Verified first-person interviews and reflections",
+      "basis": "verified first-person material, located per source record",
+      "record_status": "bibliographic_only",
+      "verification_status": "not_ingested",
+      "note": "Named as a required anchor for this seat's pack. No content from this work has been ingested or verified by this scaffold, and no quotation or locator is claimed."
+    }
+  ]
+}

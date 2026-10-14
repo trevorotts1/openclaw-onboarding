@@ -1,0 +1,1 @@
+{"description":"Council of Wise Elders deliberation runtime. SCAFFOLD ONLY: proposed internal package identity, not yet built, not published. Owned by the runtime unit (CWE-004).","engines":{"node":">=18"},"license":"UNLICENSED","name":"@blackceo/wise-elders-core","private":true,"type":"module","version":"0.0.0-scaffold"}

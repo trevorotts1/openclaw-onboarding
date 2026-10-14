@@ -1,0 +1,21 @@
+{
+  "seat_id": "brene-brown",
+  "pack_owner_unit": "CWE-019",
+  "status": "not_yet_built",
+  "records": [
+    {
+      "title": "Dare to Lead",
+      "basis": "foundational book",
+      "record_status": "bibliographic_only",
+      "verification_status": "not_ingested",
+      "note": "Named as a required anchor for this seat's pack. No content from this work has been ingested or verified by this scaffold, and no quotation or locator is claimed."
+    },
+    {
+      "title": "Documented BRAVING material",
+      "basis": "documented framework material, located per source record",
+      "record_status": "bibliographic_only",
+      "verification_status": "not_ingested",
+      "note": "Named as a required anchor for this seat's pack. No content from this work has been ingested or verified by this scaffold, and no quotation or locator is claimed."
+    }
+  ]
+}

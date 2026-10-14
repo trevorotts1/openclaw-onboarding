@@ -1,0 +1,14 @@
+{
+  "seat_id": "russell-brunson",
+  "pack_owner_unit": "CWE-017",
+  "status": "not_yet_built",
+  "required_case_types": [
+    "strong fit: the decision squarely engages this seat's owned question",
+    "weak fit: the decision barely touches this seat's domain and the seat should say so",
+    "missing evidence: the seat must abstain or condition on named missing facts",
+    "apparent agreement needing testing: the seat's first instinct agrees and must be challenged",
+    "overreach or safety boundary: the request asks the seat to speak as the person or beyond its sources"
+  ],
+  "cases": [],
+  "note": "No evaluation cases are authored at scaffold stage. The pack unit authors at least one case per required type."
+}

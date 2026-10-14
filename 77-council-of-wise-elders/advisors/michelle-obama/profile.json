@@ -1,0 +1,22 @@
+{
+  "seat_id": "michelle-obama",
+  "name": "Michelle Obama",
+  "order": 6,
+  "role": "grounded leadership, identity, and community",
+  "owned_question": "How can the client move forward with confidence and integrity while considering the people affected?",
+  "profile_label": "AI perspective inspired by the published work of Michelle Obama. Not the individual and not an endorsement.",
+  "source_basis": [
+    {
+      "basis": "foundational book",
+      "title": "Becoming"
+    },
+    {
+      "basis": "foundational book",
+      "title": "The Light We Carry"
+    }
+  ],
+  "pack_owner_unit": "CWE-018",
+  "pack_version": "0.0.0-scaffold",
+  "pack_status": "not_yet_built",
+  "note": "Scaffold profile generated from config/advisors.json. The authored advisor pack (briefing, frameworks, decision rules, failure patterns, questions, sources, coverage, evals) is built by CWE-018. Nothing here is an authored pack."
+}

@@ -1,0 +1,7 @@
+{
+  "seat_id": "michelle-obama",
+  "status": "not_yet_built",
+  "pack_owner_unit": "CWE-018",
+  "items": [],
+  "note": "The authored failure patterns for this seat are built by CWE-018 from verified source material. An empty items list is the honest scaffold state; nothing here may be presented as authored content."
+}

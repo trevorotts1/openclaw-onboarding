@@ -1,0 +1,11 @@
+{
+  "seat_id": "td-jakes",
+  "pack_owner_unit": "CWE-014",
+  "status": "not_yet_built",
+  "required_minimum": "For each book anchor: at least three independently traceable concepts plus one application case, each linked to a verified source record. Seats grounded in interviews or documented teaching meet the equivalent bar per anchor named in sources.json.",
+  "covered": {
+    "concepts": 0,
+    "application_cases": 0
+  },
+  "note": "Zero coverage is the honest scaffold state. The pack unit fills this in from verified ingestion; a seat below its minimum abstains on source-grounded claims."
+}
