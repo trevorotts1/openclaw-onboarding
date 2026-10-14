@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.52
+version: v2.9.53
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -169,6 +169,22 @@ Nothing skips a gate. A runtime prompt or worker cannot bypass a failed
 shared guard: every runtime path invokes the same Python control entrypoint
 and the same exit codes BEFORE the affected action, not as an
 after-the-fact audit.
+
+Build hygiene never reaches the client: drift reports are operator-only and
+silent during a client run. Drift between the installed tree and its source
+(missing files, differing files, a stale distribution, a sync that would
+reconcile them) is build hygiene, never a client question. During a client run
+- intake included - the drift report is OPERATOR-ONLY and SILENT: no decision
+menu, no numbered choice such as report-only / add-files / full-re-sync /
+type-your-own, no prompt that stops and waits for an answer, and nothing about
+the drift is written into the client's chat. The sync continues
+non-interactively on its documented default, and the drift is reported to the
+OPERATOR only - named file, named path, in the operator's channel or in the
+run receipt - while the run carries on. The agent never shows a client a drift
+menu and never asks a client to decide a repo-drift question; the client
+answers creative and business questions only. The decision menu belongs to an
+explicit operator path - a named flag or an operator-run sync outside a client
+session - where it stays available and unchanged.
 
 ## Hand over the personal studio page (first drama order, and on request)
 

@@ -4,6 +4,34 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.53 - 2026-10-14 - INTAKE-FIXES item 12: build hygiene never reaches the client
+
+`#2065` (`unit/SWI-202`, W2-item12-U1) — the doctrine half of SPEC.md item 12. A drift
+decision menu was put in front of a client mid-intake; clients never decide
+repo-drift questions. `SKILL.md`, inside the enforced flow ("Start here: the
+enforced flow", right after the no-skip-gate paragraph, not an appendix), now
+states that drift between the installed tree and its source is build hygiene
+and, during a client run, the drift report is OPERATOR-ONLY and SILENT: no
+decision menu, no numbered report / add-files / full-re-sync / type-your-own
+choice, no prompt that waits for an answer, nothing about drift in the client's
+chat; the sync continues non-interactively on its documented default and the
+drift is reported to the operator only, by named file and path. The decision
+menu stays available on the explicit operator path (a named flag or an
+operator-run sync outside a client run).
+
+No code emitter exists in this repository to change: the four menu phrases
+("Report only" / "Add 5 files" / "Full re-sync" / "Type something") are absent
+from onboarding `origin/main`, from 999-setup `origin/main`, from the client
+box's `~/.claude/tools`, `~/.claude/skills` and `~/.openclaw`, and from the
+installed OpenClaw package, so the menu was composed at run time by the agent.
+The fix that binds an agent is therefore the doctrine in the enforced flow.
+The 999 packaged twin carries the same paragraph, because
+`references/parity-contract.md` lists creative doctrine and the enforced flow
+among the items that must be identical across both distributions (trevorotts1/999-setup `#226`). Version
+`v2.9.52` -> `v2.9.53` (G3 gates a skill-content change on that bump); the 999
+copy bumps its own VERSION train with its SKILL.md frontmatter, as its
+parity-contract re-sync procedure requires.
+
 ## v2.9.52 - 2026-10-14 - INTAKE-FIXES batch O-1: intake doctrine, count truth, sync manifest, keyless research gatherer
 
 Batch `BATCH-SWI-O-1` — four wave-1 units merged together (one version bump and
