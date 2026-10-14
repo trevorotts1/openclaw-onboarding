@@ -1,5 +1,10 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [2.1.5] - 2026-10-13 - model doctrine cleanup
+
+- The Step 0 owner recommendation and the Step 9.2 independent QC spawn no longer name models: work runs on the client's selected model or configured default, and the QC agent resolves to a different model than the build agent (independence is the requirement, kept as a recommendation with its reason).
+- skill-version v2.1.4 -> v2.1.5.
+
 ## [2.1.2] - 2026-09-17 - fix(shell): qc-built-workflow.sh re-execs under bash 4+ on macOS
 
 The QC script used four `declare -A` tables and two `${VAR^^}` case modifiers, all
