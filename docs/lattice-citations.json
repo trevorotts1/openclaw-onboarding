@@ -43,7 +43,7 @@
       "citations": [
         {
           "file": "35-social-media-planner/CHANGELOG.md",
-          "line": 189,
+          "line": 194,
           "must_contain": "funnel_matcher.py --match"
         }
       ]

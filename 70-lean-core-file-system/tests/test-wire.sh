@@ -74,8 +74,11 @@ OPENCLAW_WORKSPACE="$ROOT/ws3" bash "$SKILL/wire.sh" --idempotent >/dev/null 2>&
 [ "$rc" = "4" ] && grep -q 'BEGIN skill:70-lean-core-file-system:agents' "$ROOT/ws3/AGENTS.md" \
   && ok "refused cron job: wire.sh exits 4 after wiring the core files (retried next update)" || bad "refused cron path (exit $rc)"
 echo '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud"},{"key":"openrouter/deepseek/deepseek-v4.1-flash"}]}' > "$FAKE_MODELS_FILE"
+mkdir -p "$ROOT/oc"
+echo '{"agents":{"defaults":{"model":{"primary":"ollama/deepseek-v4.1-flash:cloud"}}}}' > "$ROOT/oc/openclaw.json"
 OPENCLAW_WORKSPACE="$ROOT/ws3" bash "$SKILL/wire.sh" --idempotent >/dev/null 2>&1; rc=$?
 [ "$rc" = "0" ] && [ "$(grep -c lean-core-file-system-weekly "$FAKE_JOBS_FILE")" = "1" ] && ok "provable models: wire.sh creates the job and exits 0" || bad "cron path (exit $rc)"
+rm -f "$ROOT/oc/openclaw.json"
 
 # UPF002/U3: a client box with its own default model (no DeepSeek pair) wires its cron in a sandbox HOME
 echo '[]' > "$FAKE_JOBS_FILE"

@@ -80,17 +80,18 @@ bash "$S/qc-70-lean-core-file-system.sh"             # must end with "PASS"
 bash "$S/scripts/install-weekly-cron.sh" --dry-run
 ```
 
-The dry run prints the two model identifiers it found on this box, for example:
+The dry run prints the model identifiers it resolved on this box (the client's `--primary` / `--fallback` choices, or the box's configured default model and its configured fallbacks), for example:
 
 ```
-[install-weekly-cron.sh] primary model:  ollama/deepseek-v4.1-flash:cloud
-[install-weekly-cron.sh] fallback model: openrouter/deepseek/deepseek-v4.1-flash
+[install-weekly-cron.sh] primary model:  <this box's configured default model id>
+[install-weekly-cron.sh] fallback model: <the box's configured default fallbacks, or none>
 PLAN [install-weekly-cron.sh]: would ADD the job (dry run; pass --apply to create it)
 ```
 
-If it exits **4**, one of the two models is not on this box's configured model
-list. Do NOT substitute another model and do NOT edit the model configuration:
-report it to the operator, who decides. If it exits **5**, this OpenClaw is too
+If it exits **4**, no primary model could be proven on this box: an explicit
+`--primary` was not on the box's configured model list, or the box has no
+configured default model. Do NOT substitute another model and do NOT edit the
+model configuration: report it to the operator, who decides. If it exits **5**, this OpenClaw is too
 old for a flag the job needs; report it. If it exits **2**, the gateway did not
 answer; check `openclaw gateway status` and retry later.
 
@@ -128,8 +129,9 @@ behave as shown.
 ## Step 4: Report
 
 Tell the operator, in plain English: the skill is installed, the weekly job
-runs Sundays at 05:30 box time on DeepSeek V4.1 Flash (Ollama Cloud first,
-OpenRouter if that is full), the current size of each core file, and that the
+runs Sundays at 05:30 box time on the client's configured default model (or
+the model the client chose with `--primary`), with the box's configured
+fallbacks if the primary is full, the current size of each core file, and that the
 first weekly run only prepares a proposal (a dry-run diff) and changes nothing.
 
 ## Undo

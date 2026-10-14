@@ -285,10 +285,10 @@ recommendations, and risk assessment.
 **What the dispatcher does:**
 
 1. Reads the task and classifies it as "complex strategy" (not routine)
-2. Spawns or routes to alice-worker with model override: Opus 4.6
+2. Spawns or routes to alice-worker with a model override: the client's selected heavy-tier model
 3. The more capable model handles the complex analysis
 
-For routine tasks like "check my email" or "upload this file," the dispatcher uses the cheaper default model (MiniMax M2.5 or Codex).
+For routine tasks like "check my email" or "upload this file," the dispatcher uses the client's selected fast-tier model (or their configured default model); recommendation: a low-cost model, because routine tasks are high-volume and simple.
 
 ---
 
@@ -321,8 +321,8 @@ Main session = dispatcher/router. Route all incoming messages by sender ID.
 - Tag: [Dispatcher] / [worker-label]
 
 ## Worker Config
-- Model: resolved at runtime via `shared-utils/select_model.py --purpose-tier heavy` (Kimi-first chain — Ollama Cloud preferred → OpenRouter Kimi → Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → OAuth GPT). NEVER Anthropic.
-- For mid-tier tasks call with `--purpose-tier mid` (Minimax/Mimo). For bulk/cheap call with `--purpose-tier fast` (DeepSeek-flash/Gemini-lite).
+- Model: resolved at runtime via `shared-utils/select_model.py --purpose-tier heavy`, which resolves to the model the client selected for the heavy tier in their own openclaw.json, or the client's configured default model where no tier selection exists. If neither exists, stop and ask the client which model to use. NEVER Anthropic.
+- For mid-tier tasks call with `--purpose-tier mid` (the client's selected mid-tier model). For bulk/cheap call with `--purpose-tier fast` (the client's selected fast-tier model; recommendation: a low-cost, fast model, because bulk tasks are cost-sensitive).
 - cleanup: keep
 - archiveAfterMinutes: 43200
 

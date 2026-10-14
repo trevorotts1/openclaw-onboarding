@@ -154,9 +154,9 @@ The agent should:
 - Re-read SKILL.md - the intake rules are explicit about one question at a time
 - Remind the agent: "Ask me ONE question at a time"
 
-**Agent tries to use Kimi K2.5:**
-- Kimi CANNOT make API calls (no tool calls)
-- Switch to MiniMax M2.5 or another model that supports tool calls
+**Agent tries to use a model that cannot make API calls:**
+- The executing agent's model MUST support tool calls; some reasoning-only models CANNOT make API calls (no tool calls)
+- Switch to the client's selected model or their configured default model, provided it supports tool calls. Recommendation: a model with reliable tool calling, because this skill executes through API calls
 
 **VEO returns errors:**
 - Check KIE.ai credit balance
@@ -188,8 +188,9 @@ The agent should:
 
 The agent executing Cinematic Forge MUST be a model that supports tool calls (API requests, file operations, etc.):
 
-**Recommended (client-available, Ollama Cloud first — never Anthropic):** `ollama/deepseek-v4.1-flash:cloud` or `ollama/minimax-m3:cloud` (primary), `openrouter/deepseek/deepseek-v4.1-flash` (fallback for clients with OpenRouter), GPT-5.2
-**BANNED:** Kimi K2.5 (cannot make tool calls); Anthropic models (operator-only, cost-prohibitive for clients)
+**Model: the client's choice, or the client's configured default model** (client-available, Ollama Cloud first, never Anthropic). If the client has not selected a model and no default is configured, ask the client which model to use before proceeding.
+**Recommendation:** a model with reliable tool calling and a large context window, because this skill executes through API calls and long multi-step tool chains.
+**BANNED:** any model that cannot make tool calls; Anthropic models (operator-only, cost-prohibitive for clients)
 
 ## Important Notes
 

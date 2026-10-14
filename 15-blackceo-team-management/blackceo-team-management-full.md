@@ -390,43 +390,36 @@ Model Roles (Sub-Agent Workers Only - Does Not Override Primary Agent)
 
 
 Cost Strategy
-Use OAuth/subscription models (GPT 5.3 Codex, Gemini) as defaults to keep per-token costs down
+Use OAuth/subscription-billed models as defaults to keep per-token costs down (whichever subscription models the client has configured on their own box)
 Reserve pay-per-token models for complex tasks only; for heavy reasoning prefer OAuth or Ollama-cloud models over OpenRouter to minimize cost
 Route creative work to the creative model, not the thinking model
 Route simple execution to the cheapest capable model
 Recommended Default Config (Sub-Agents Only - Does NOT Touch Primary Agent Model)
 
-Model selection is DYNAMIC via shared-utils/select_model.py (v9.5.0+). Three tier chains, NEVER Anthropic:
+Model selection is DYNAMIC via shared-utils/select_model.py (v9.5.0+). No model is prescribed by name. For each tier the selector resolves the model the client selected for that tier in their own openclaw.json; where the client has not made a tier selection, it uses the client's configured default model. If neither exists, stop and ask the client which model to use before proceeding. NEVER Anthropic:
 
-  Heavy reasoning (--purpose-tier heavy):
-    1. ollama/kimi-k*:cloud (latest, thinking=high) — PREFERRED
-    2. openrouter/moonshot/kimi-k* (thinking=high)
-    3. ollama/deepseek-v*-pro:cloud
-    4. openrouter/deepseek/deepseek-v*-pro (thinking=high)
-    5. (openai-)codex/gpt-* (OAuth, latest)
+  Heavy reasoning (--purpose-tier heavy): the client's selected heavy-tier model (thinking=high), or their configured default model.
+    Recommendation: a frontier reasoning model with a large context window, because heavy tasks are long strategy, architecture and debugging runs.
 
-  Mid-tier reasoning (--purpose-tier mid):
-    1. ollama/minimax-m*:cloud
-    2. openrouter/xiaomi/mimo-v*-pro (thinking=high)
+  Mid-tier reasoning (--purpose-tier mid): the client's selected mid-tier model (thinking=high), or their configured default model.
+    Recommendation: a mid-priced model with strong instruction following, because mid-tier tasks are creative and routine reasoning work.
 
-  Fast / cheap (--purpose-tier fast):
-    1. ollama/deepseek-v*-flash:cloud
-    2. openrouter/deepseek/deepseek-v*-flash
-    3. openrouter/google/gemini-*-flash-lite
+  Fast / cheap (--purpose-tier fast): the client's selected fast-tier model, or their configured default model.
+    Recommendation: a low-cost, fast model, because fast-tier tasks are bulk and cost-sensitive.
 
-Selector auto-picks the highest version found in the client's openclaw.json — when a new Kimi or GPT version ships and the client adds it, the selector picks it automatically. No skill update needed.
+When the client upgrades or swaps the models configured in their openclaw.json, the selector picks up their new selection automatically. No skill update needed.
 
 
 Important: This config block ONLY sets the model for sub-agent workers. The client's agents.defaults.model.primary (their main agent) is never modified by this protocol.
 
 Per-Task Model Override (Sub-Agent Spawn Only)
 The dispatcher can override the model per spawn when needed:
-Creative task → call select_model.py --purpose-tier mid (Minimax/Mimo chain)
-Complex reasoning → call select_model.py --purpose-tier heavy (Kimi-first; NEVER Anthropic)
-Routine execution → call select_model.py --purpose-tier fast (DeepSeek-flash/Gemini-lite)
+Creative task → call select_model.py --purpose-tier mid
+Complex reasoning → call select_model.py --purpose-tier heavy (the client's selected heavy-tier model; NEVER Anthropic)
+Routine execution → call select_model.py --purpose-tier fast (the client's selected fast-tier model)
 Model Selection Hierarchy (Decision Tree)
 
-Is this a complex strategy/architecture/debugging task?  YES → --purpose-tier heavy (Kimi-first chain)  NO ↓Is this creative writing (copy, emails, scripts, hooks)?  YES → --purpose-tier mid (Minimax/Mimo)  NO ↓Is this routine execution (file ops, uploads, API calls)?  YES → --purpose-tier mid  NO ↓Is this bulk/simple/cost-sensitive?  YES → --purpose-tier fast (DeepSeek-flash/Gemini-lite)  NO → --purpose-tier heavy. Anthropic FORBIDDEN at every tier
+Is this a complex strategy/architecture/debugging task?  YES → --purpose-tier heavy  NO ↓Is this creative writing (copy, emails, scripts, hooks)?  YES → --purpose-tier mid  NO ↓Is this routine execution (file ops, uploads, API calls)?  YES → --purpose-tier mid  NO ↓Is this bulk/simple/cost-sensitive?  YES → --purpose-tier fast  NO → --purpose-tier heavy. Anthropic FORBIDDEN at every tier
 
 
 Do NOT Use As Primary
@@ -555,7 +548,7 @@ blocks in CORE_UPDATES.md (reply-to-sender, {{OWNER_CHAT_ID}}). The
 - All team Telegram IDs: see TEAM_CONFIG.md
 - To check a worker's conversation: sessions_history(sessionKey) or sessions_list to find the session
 - To relay between workers: dispatcher reads source worker history, summarizes, sends to target worker or target DM
-- Worker sub-agent model must support tool calls (verified at selection time: Kimi 2.6+, Codex GPT, DeepSeek V4.1 Flash all support tools; reasoning-only models are filtered)
+- Worker sub-agent model must support tool calls (verified at selection time against the client's own configured models; reasoning-only models without tool support are filtered)
 
 
 [ADD TO MEMORY.md]
