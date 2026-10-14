@@ -31,7 +31,8 @@ SONG_N = IDS.index("song") + 1
 def ANS(song="1", upto=None):
     """Replies for every card question in order (AI models, length ... script): the
     spend question takes a dollar amount, SONG APPROVAL takes ``song``, the rest take 1."""
-    r = ["$25" if i == "spend" else song if i == "song" else "1" for i in IDS]
+    r = IC.example_replies()                     # the story brief is typed, the choices picked
+    r[SONG_N - 1] = song
     return r if upto is None else r[:upto]
 CLIENT = "I am not small. I never was. One seed of truth made me strong. She Found Power in the Climb."
 HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
@@ -148,7 +149,9 @@ def _pipeline(tmp, bad_first=(), bad_always=()):
 
 def test_card_has_song_approval_after_storyboard():
     labels = [q["label"] for q in IC.QUESTIONS]
-    assert N == 9 and labels[-3:] == ["STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"], labels
+    # five story-brief questions then the nine production choices (DSR-105)
+    assert N == 14 and labels[:5] == ["OFFER", "OFFER LINK", "AUDIENCE", "CHARACTER", "PHOTOS"], labels
+    assert labels[-3:] == ["STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"], labels
     block = IC.render_card().split("\n\n")[SONG_N - 1].split("\n")
     assert block[0] == "Question %d of %d - SONG APPROVAL" % (SONG_N, N)
     assert block[1] == "Do you want to hear and pick the song before any video is made?"

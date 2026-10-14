@@ -202,11 +202,25 @@ Common options:
                           instead of publishing, for full end-to-end verification
                           without going live. The draft is verified (fetched back)
                           and then deleted so it never accumulates on the feed.
-                          Wins over --status/--release-date. Ignored in proxy mode
-                          (n8n owns the publish there; use its own draft contract).
+                          Wins over --status/--release-date. Refused in proxy mode
+                          (the n8n v2 payload has no draft field, so n8n would
+                          publish live; use --dry-run or --test instead).
   --episode-type <value>  full | trailer | bonus (default full); the Podbean
                           episode type. Pre-flight validated against the allowed
                           set (U037) before any API call.
+  --mode <mode>           pick the show BY MODE instead of trusting a payload
+                          podcast_id: personal_podcast_style selects
+                          PODBEAN_PODCAST_ID (the personal show),
+                          interview_style_podcast selects
+                          PODBEAN_PODCAST_ID_<SHOW_SLUG>. Resolved from the box
+                          env AFTER the secrets load and exported as
+                          PODBEAN_PODCAST_ID for the rest of the run. Fails
+                          closed when that mode's variable is unset (the
+                          resolver never borrows the other show's channel).
+                          Omit for unchanged behavior.
+  --show-name <name>      the interview show name used to build
+                          PODBEAN_PODCAST_ID_<SHOW_SLUG> for --mode
+                          interview_style_podcast (ignored for personal mode).
 
 Idempotency and state (Step 15 double-publish guard):
   --ledger <path>         job ledger json; if it already holds a non-null
@@ -728,6 +742,9 @@ proxy_request() {
 # ------------------------------------------------------------- argument parse --
 AUDIO=""; TITLE=""; COVER=""; SPEAKER=""; DESCRIPTION=""
 RELEASE_DATE=""; STATUS_OVERRIDE=""; EP_TYPE="public"
+# Two-show channel selection: with --mode the channel is resolved BY MODE from
+# the box env AFTER the secrets load (see below), never taken from the payload.
+CHANNEL_MODE=""; CHANNEL_SHOW=""
 EPISODE_TYPE="full"   # U037: Podbean episode type (full|trailer|bonus), pre-flight validated
 LEDGER=""; JOB_ID=""; STATE_WRITER=""; OUT=""
 TEST_RUN=0; DRY_RUN=0; DRAFT_MODE=0
@@ -751,6 +768,8 @@ while [ $# -gt 0 ]; do
     --description)   DESCRIPTION="${2:-}"; shift 2 ;;
     --release-date)  RELEASE_DATE="${2:-}"; shift 2 ;;
     --status)        STATUS_OVERRIDE="${2:-}"; shift 2 ;;
+    --mode)          CHANNEL_MODE="${2:-}"; shift 2 ;;
+    --show-name)     CHANNEL_SHOW="${2:-}"; shift 2 ;;
     --type)          EP_TYPE="${2:-}"; shift 2 ;;
     --episode-type)  EPISODE_TYPE="${2:-}"; shift 2 ;;
     --ledger)        LEDGER="${2:-}"; shift 2 ;;
@@ -822,6 +841,19 @@ if ! command -v resolve_platform_paths >/dev/null 2>&1; then
 fi
 resolve_platform_paths
 if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u; fi
+
+# Two-show channel selection by mode. Runs AFTER the secrets load on purpose:
+# the load above can overwrite a channel the caller exported, so the mode's own
+# channel variable is the one resolved here and exported as PODBEAN_PODCAST_ID.
+# There is no cross-show fallback - podcast_channel.py names the missing
+# variable and exits nonzero, and that is a provisioning defect, not something
+# to publish around. Without --mode this block is inert (unchanged behavior).
+if [ -n "$CHANNEL_MODE" ]; then
+  _ch="$(python3 "$SCRIPT_DIR/podcast_channel.py" --mode "$CHANNEL_MODE" --show-name "$CHANNEL_SHOW")" || die "channel resolution failed for --mode $CHANNEL_MODE (that mode's PODBEAN_PODCAST_ID variable is not set on this box); refusing to publish to a guessed show"
+  [ -n "$_ch" ] || die "channel resolution returned empty for --mode $CHANNEL_MODE"
+  PODBEAN_PODCAST_ID="$_ch"; export PODBEAN_PODCAST_ID; unset _ch
+  log "channel selected by mode $CHANNEL_MODE (value not printed)"
+fi
 
 # Transport precedence (per box): PROXY, then BROKER, then LOCAL (S58-U14).
 # PROXY wins when both PODBEAN_PUBLISH_WEBHOOK_URL and PODBEAN_PUBLISH_TOKEN
@@ -970,6 +1002,10 @@ if [ "$TEST_RUN" = "1" ]; then
 fi
 
 if [ "$PROXY_MODE" = "1" ]; then
+  # Fail closed on a draft request: the publish-proxy contract v2 payload has
+  # NO status field, so n8n would publish LIVE no matter what was asked here.
+  # Refusing beats silently going live; use --dry-run or --test instead.
+  if [ "$DRAFT_MODE" = "1" ] || [ "$STATUS_OVERRIDE" = "draft" ]; then die "--draft / --status draft are refused in publish-proxy mode: the n8n proxy has no draft field and would publish live; use --dry-run or --test"; fi
   # -------------------------------------------------------- publish-proxy ----
   # Identity comes from the per-box env set by S58-U15 (never a CLI flag - the
   # operator provisions these once per box from the roster; the skill never

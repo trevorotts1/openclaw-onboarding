@@ -133,17 +133,26 @@ def _mask_id(rid: str) -> str:
 
 
 def rows_from_read(raw) -> list:
-    """The custom-field records of a rail read. A non-dict body, a missing
-    or non-list 'customFields' key, or a non-object record REFUSES (raises
+    """The custom-field records of a rail read. The proven public rail
+    (GET /locations/{id}/customFields) answers EITHER the envelope object
+    ({'customFields': [...]}) or the bare record array itself — the bare
+    array is what the live rail returns (756 rows on a provisioned box), so
+    both shapes parse. A scalar / null body, or an envelope whose
+    'customFields' key is missing or not an array, REFUSES (raises
     ValueError) — an unparseable body is a HELD, never an empty list (an
-    empty list would silently read as 'no fields')."""
-    if not isinstance(raw, dict):
-        raise ValueError("customFields read is not a JSON object")
-    rows = raw.get(FIELDS_KEY)
-    if rows is None:
-        raise ValueError("customFields read carries no %r array" % FIELDS_KEY)
-    if not isinstance(rows, list):
-        raise ValueError("customFields read's %r is not an array" % FIELDS_KEY)
+    empty list would silently read as 'no fields'). A non-object record
+    REFUSES too."""
+    if isinstance(raw, list):
+        rows = raw
+    elif isinstance(raw, dict):
+        if FIELDS_KEY not in raw:
+            raise ValueError("customFields read carries no %r array" % FIELDS_KEY)
+        rows = raw.get(FIELDS_KEY)
+        if not isinstance(rows, list):
+            raise ValueError("customFields read's %r is not an array" % FIELDS_KEY)
+    else:
+        raise ValueError("customFields read is neither a %r envelope nor a "
+                         "record array" % FIELDS_KEY)
     if not all(isinstance(r, dict) for r in rows):
         raise ValueError("customFields read carries a non-object record")
     return rows
@@ -181,7 +190,7 @@ def read_ok(raw) -> bool:
 # ---------------------------------------------------------------------------
 # The live list command — the ONLY network surface (proven public rail).
 # ---------------------------------------------------------------------------
-def _build_report(raw: dict, *, location_id: str) -> dict:
+def _build_report(raw, *, location_id: str) -> dict:
     """The machine report for a parsed read: sorted field-key inventory plus
     counts and the masked location. Each field row carries ONLY the record
     surface the read legitimately carries — name, masked id, fieldKey and
@@ -331,7 +340,7 @@ def main(argv=None, environ=None):
                     help="Convert and Flow location id (default: env labels "
                          "CONVERT_AND_FLOW_LOCATION_ID / "
                          "GOHIGHLEVEL_LOCATION_ID / GHL_LOCATION_ID)")
-    ap.add_argument("cmd", nargs="?", default="",
+    ap.add_argument("cmd", nargs="?", default=None,
                     choices=["list", "self-test"])
     args = ap.parse_args(argv)
 
@@ -410,6 +419,20 @@ def self_test():
     assert report_empty["ok"] is True and report_empty["field_count"] == 0 \
         and report_empty["rows"] == 0, "an empty inventory must be a PASS"
 
+    # 3b. THE LIVE SHAPE (reality, measured on a provisioned box): the rail
+    #     answers the BARE record array, not the envelope. Both shapes must
+    #     parse to the same inventory — a list-shaped read is a read, never a
+    #     malformed body.
+    bare_rows = golden_raw["customFields"]
+    kept_bare, dropped_bare = list_fields(bare_rows)
+    assert len(kept_bare) == len(kept) and dropped_bare == 0, \
+        "the bare-array read must keep the same records as the envelope read"
+    report_bare = _build_report(bare_rows, location_id="2HIKGNgsixWx0yds7Qnx")
+    assert report_bare["fields"] == report["fields"] and report_bare["rows"] == 3, \
+        "the bare-array report must byte-equal the envelope report"
+    assert _build_report([], location_id="loc")["field_count"] == 0, \
+        "an empty bare array must be a truthful empty inventory"
+
     # 4. an unknown dataType is surfaced, never judged
     odd = {"customFields": [
         {"name": "Odd", "fieldKey": "contact.odd", "id": "fld_9", "dataType": "WEIRD"}]}
@@ -435,10 +458,13 @@ def self_test():
     # 6. malformed reads refuse (never an empty list). A record that is a
     #    dict but misses name/fieldKey is NOT malformed — it is a ragged
     #    record and drops WITH the count (fixture 5); malformed means the
-    #    envelope or a row is not the expected shape at all.
-    for bad in (None, [], "text", {}, {"nope": True},
+    #    envelope or a row is not the expected shape at all. A BARE array is
+    #    the live rail's own shape (fixture 3b) and is NOT in this set.
+    for bad in (None, "text", {}, {"nope": True},
+                {"customFields": None}, {"customFields": {}},
                 {"customFields": "not-a-list"},
-                {"customFields": ["scalar"]}):
+                {"customFields": ["scalar"]},
+                {"customFields": [None]}):
         try:
             _build_report(bad, location_id="loc")
         except ValueError:
@@ -469,9 +495,10 @@ def self_test():
         "list without credentials must STOP (never a fabricated list), got %r" % rc_creds
 
     sys.stderr.write("live_fields_reader self-test: OK "
-                     "(golden read parsed/sorted/masked, empty-inventory "
-                     "PASS, unknown-data-type surfaced, ragged records "
-                     "dropped with the count, 7 malformed reads refused "
+                     "(golden read parsed/sorted/masked in BOTH envelope and "
+                     "bare-array shapes, empty-inventory PASS, "
+                     "unknown-data-type surfaced, ragged records "
+                     "dropped with the count, 8 malformed reads refused "
                      "fail-closed, credential-less list STOPS before any "
                      "network)\n")
     return EX_OK

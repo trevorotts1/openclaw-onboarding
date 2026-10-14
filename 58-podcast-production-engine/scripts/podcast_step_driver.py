@@ -581,13 +581,16 @@ def _emit_content_command(step, job_id: str, row: dict) -> str:
         # A content result is not an operator note: save the exact public router
         # result and atomically hand it back to the driver for artifact/state
         # persistence.  PODCAST_JOB_WORK_DIR is intentionally per-job, supplied
-        # by the registered worker, never a shared scratch directory.
-        result_file = "${PODCAST_JOB_WORK_DIR:?set a per-job work directory}/step-%s-model.json" % step
+        # by the registered worker, never a shared scratch directory; when no
+        # worker exported it, fall back to the client-owned per-job work path so
+        # the command still runs instead of aborting on an unset parameter.
+        work_dir = "${PODCAST_JOB_WORK_DIR:-$HOME/.openclaw/podcast-engine/work/%s}" % job_id
+        result_file = "%s/step-%s-model.json" % (work_dir, step)
         return (
-            "set -e\nmkdir -p \"${PODCAST_JOB_WORK_DIR:?set a per-job work directory}\"\n"
+            "set -e\nmkdir -p \"%s\"\n"
             "%s > \"%s\" <<'JSON'\n%s\nJSON\n"
             "%s record-content --job-id %s --step %s --file \"%s\""
-            % (route, result_file, json.dumps(payload, ensure_ascii=False),
+            % (work_dir, route, result_file, json.dumps(payload, ensure_ascii=False),
                Path(__file__).resolve(), shlex.quote(job_id), step, result_file)
         )
     return "%s <<'JSON'\n%s\nJSON" % (route, json.dumps(payload, ensure_ascii=False))
@@ -627,10 +630,17 @@ def _emit_step_command(step: int | str, job_id: str, row: dict, payload: dict,
         return "%s\n\n# Step 9 semantic QC (judge tier):\n%s" % (mechanical, judge)
 
     if step == 10:
+        # The survey's cover-art answer is already in the stored payload, so hand
+        # the agent the prompt itself rather than a placeholder file it must invent.
+        visual = (payload or {}).get("visual_description")
+        prompt_arg = (
+            "--prompt %s" % shlex.quote(visual) if visual
+            else "--prompt-file <visual_desc.txt>"
+        )
         return (
-            "bash %s --prompt-file <visual_desc.txt> --title \"%s\" --client \"%s\" "
+            "bash %s %s --title \"%s\" --client \"%s\" "
             "--out <cover.jpg> --receipt <cover-receipt.json>"
-            % (_script("generate_cover.sh"), title, client_name)
+            % (_script("generate_cover.sh"), prompt_arg, title, client_name)
         )
 
     if step == 11:
@@ -667,25 +677,35 @@ def _emit_step_command(step: int | str, job_id: str, row: dict, payload: dict,
 
     if step == 15:
         mode = row.get("mode") or "personal_podcast_style"
+        pl = payload or {}
+        show = pl.get("show_name") or row.get("show_name") or ""
         base = "bash %s" % _script("podbean_publish.sh")
-        speaker = ""
+        show_arg = ""
         if mode == "interview_style_podcast":
             # Interview titles append "Inspired by <speaker>" (SKILL.md Step 15
-            # title convention). The guest name is survey data the mapper never
-            # guesses, so the agent fills this placeholder from the intake
-            # survey's guest_first_name. Personal mode carries no speaker.
-            speaker = " --speaker \"<guest_first_name>\""
+            # title convention) and publish to the interview show's channel. The
+            # guest name is survey data the mapper never guesses, so the agent
+            # fills this placeholder when the payload carries no first_name.
+            # Personal mode carries no speaker and no show selection.
+            speaker = (
+                " --speaker %s" % shlex.quote(pl["first_name"])
+                if pl.get("first_name")
+                else " --speaker \"<guest_first_name>\""
+            )
+            show_arg = " --show-name %s" % shlex.quote(show)
+        else:
+            speaker = ""
         return (
             "%s --title \"%s\" --audio-url \"<mp3_media_url>\" "
             "--image-url \"<cover_image_url>\" --description \"<episode_description>\"%s "
-            "--job-id %s"
-            % (base, title, speaker, job_id)
+            "--job-id %s --mode %s%s"
+            % (base, title, speaker, job_id, shlex.quote(mode), show_arg)
         )
 
     if step == 16:
         return (
             "%s link-back --job-id %s --state-dir "
-            "\"${PODCAST_ENGINE_STATE_DIR:?set the client-owned state directory}\""
+            "\"${PODCAST_ENGINE_STATE_DIR:-$HOME/.openclaw/podcast-engine/state}\""
             % (Path(__file__).resolve(), shlex.quote(job_id))
         )
 
@@ -694,12 +714,12 @@ def _emit_step_command(step: int | str, job_id: str, row: dict, payload: dict,
         if mode == "personal_podcast_style":
             return (
                 "%s terminal-action --job-id %s --state-dir "
-                "\"${PODCAST_ENGINE_STATE_DIR:?set the client-owned state directory}\""
+                "\"${PODCAST_ENGINE_STATE_DIR:-$HOME/.openclaw/podcast-engine/state}\""
                 % (Path(__file__).resolve(), shlex.quote(job_id))
             )
         return (
             "%s terminal-action --job-id %s --state-dir "
-            "\"${PODCAST_ENGINE_STATE_DIR:?set the client-owned state directory}\""
+            "\"${PODCAST_ENGINE_STATE_DIR:-$HOME/.openclaw/podcast-engine/state}\""
             % (Path(__file__).resolve(), shlex.quote(job_id))
         )
 

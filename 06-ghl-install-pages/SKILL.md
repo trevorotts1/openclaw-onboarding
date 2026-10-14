@@ -2,14 +2,16 @@
 name: ghl-install-pages
 description: >
   How to deploy HTML pages into GoHighLevel (Go High Level) or Convert and Flow
-  using browser automation. This skill teaches the AI agent how to use
-  agent-browser (Vercel Labs, Skill 03) as the primary engine — Playwright as a
-  fallback — to start a session already logged-in via a seeded Firebase token,
+  using browser automation. This skill teaches the AI agent how to use the
+  OpenClaw Chrome extension (the OpenClaw browser's extension driver, on the
+  operator's paired, already signed-in Chrome) as the primary engine, with
+  agent-browser (Vercel Labs, Skill 03) as the fallback engine and Playwright
+  as the scripted escape hatch, to start a session already logged-in,
   navigate the funnel/website page builder, paste code, save, preview, and
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v27.1.26"
+  version: "v27.1.27"
   priority: HIGH
 ---
 
@@ -21,12 +23,20 @@ This skill is about deploying finished HTML code into the GoHighLevel (Go High
 Level) or Convert and Flow page builder using browser automation. The AI agent
 drives the browser, pastes the code, and handles all the clicks and navigation.
 
-> **ENGINE (v3.0 overhaul):** PRIMARY = `agent-browser` (Vercel Labs, the
-> repo-sanctioned tool from Skill 03), run **headless** with an **isolated
-> `--session <client>`** so it never touches a personal browser. FALLBACK =
-> self-hosted Playwright, a scripted escape hatch for known-hard flows only.
-> The previous raw-Playwright-only stack is replaced. The full hardened
-> procedure is in `ghl-browser-builder-full.md` (v3.0).
+> **ENGINE (v4.0 default, operator decision 2026-10-13):** PRIMARY = the
+> **OpenClaw Chrome extension**: the OpenClaw browser's extension driver on
+> the operator's paired, already signed-in Chrome, driven via
+> `openclaw browser`. The extension is the default because it now drives the
+> real signed-in browser better than an isolated session does. FALLBACK =
+> `agent-browser` (Vercel Labs, Skill 03) through the mandatory
+> `tools/browser_manager.sh` gateway, headless with an isolated
+> `--session <client>`, for when the extension channel is unavailable or a
+> flow defeats it. Playwright stays the scripted escape hatch for known-hard
+> flows and the CDP hybrid for cross-origin iframe drag. The full hardened
+> procedure is in `ghl-browser-builder-full.md`. **Standing preflight:**
+> `scripts/check-openclaw-extension-version.sh` must exit 0 before any
+> install run; an absent or out-of-date extension STOPs the run with the
+> update path named.
 
 > **STATUS — PENDING-LIVE-RUN (split claim — read each side, do not merge them).**
 > **PAID / OFFLINE EVIDENCE (captured — do not weaken):** the login-form DOM
@@ -139,7 +149,11 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 
 - Teach Yourself Protocol (TYP) must be learned first (skill 01)
 - Backup Protocol must be learned first (skill 02)
-- agent-browser must be installed (skill 03) - PRIMARY browser engine
+- OpenClaw Chrome extension installed in the operator's Chrome and CURRENT
+  (`bash scripts/check-openclaw-extension-version.sh` exits 0) - PRIMARY
+  browser engine (the OpenClaw browser extension driver)
+- agent-browser must be installed (skill 03) - FALLBACK browser engine
+  (via the `tools/browser_manager.sh` gateway)
 - GHL Setup must be complete (skill 05) - the account must already exist
 - Vercel Setup (skill 08) - only for Mode 2 iframe-embed of rich payloads
 - Playwright installed - FALLBACK engine for known-hard flows
@@ -408,10 +422,16 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 
 ## Critical Things to Know
 
-- PRIMARY engine is agent-browser, headless, with an isolated `--session
-  <client>`. It never touches a personal browser (NO-COMINGLING). Playwright is
-  the fallback only; if you use it, `launchPersistentContext()` never `launch()`.
-- SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop.
+- PRIMARY engine is the OpenClaw Chrome extension: the OpenClaw browser's
+  extension driver on the operator's paired, already signed-in Chrome (driven
+  via `openclaw browser`). The session starts logged in by construction; a
+  rendered GHL login form on ANY lane is the D7 stop signal, never a form to
+  fill. The extension must be CURRENT: `scripts/check-openclaw-extension-version.sh`
+  gates every install run. FALLBACK engine is agent-browser, headless, with
+  an isolated `--session <client>` (NO-COMINGLING), routed only through the
+  gateway below. Playwright is the scripted escape hatch only; if you use
+  it, `launchPersistentContext()` never `launch()`.
+- SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop. (This lifecycle governs the FALLBACK agent-browser lane.)
   Route EVERY agent-browser call through the single mandatory
   gateway `tools/browser_manager.sh` (`bash tools/browser_manager.sh ensure`
   then `... eval|open|snapshot ...`); NEVER invoke `agent-browser` directly and
@@ -460,15 +480,17 @@ Lanes are selected per host by the capability probe — never assumed:
 
 | # | Lane | Cross-origin drag? |
 |---|------|--------------------|
-| 1 | agent-browser via `browser_manager` (PRIMARY, pin 0.27.0) | Partial without Playwright |
-| 1b | agent-browser + Playwright CDP hybrid | Yes — required for iframe drag/drop |
-| 2 | OpenClaw managed browser `openclaw browser` + `--frame` | Proposed upgrade — experimental, not wired as PRIMARY |
+| 1 | OpenClaw Chrome extension (`openclaw browser`, extension driver on the paired signed-in Chrome) (PRIMARY) | Partial without Playwright |
+| 2 | agent-browser via `browser_manager` (FALLBACK, pin 0.27.0) | Partial without Playwright |
+| 2b | agent-browser + Playwright CDP hybrid | Yes — required for iframe drag/drop |
 | 3 | Playwright-only | Degraded escape hatch |
 | 4 | REST / fallback-ladder | Content ops without UI drag |
 | 5 | CUA | NOT in Skill 6 yet — future last resort only |
 
 Run the capability probe (`tools/capability_probe.py`) before a build; its JSON
-is the runtime source of truth. Capability-class mapping and lane detail live in
+is the runtime source of truth. The probe selects Lane 1 only when the extension
+is installed and current; otherwise it falls to Lane 2 and warns, naming the
+preflight script. Capability-class mapping and lane detail live in
 `ENV-MATRIX.md` ("Capability classes").
 
 - Always verify you are in the correct sub-account before building

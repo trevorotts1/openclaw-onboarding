@@ -1349,6 +1349,8 @@ def do_self_test(_args):
             fh.write(json.dumps({"preset": "interview"}))
         env = dict(os.environ)
         env["PODCAST_DB_PATH"] = gate_db
+        env["PODCAST_LEDGER_DIR"] = os.path.join(tmp, "intake-ledger")
+        env["PODCAST_JOBINDEX_DIR"] = os.path.join(tmp, "job-index")
 
         def _ps(*a):
             return subprocess.run([sys.executable, pstate, *a],
@@ -1391,6 +1393,8 @@ def do_self_test(_args):
         try:
             env2 = dict(os.environ)
             env2["PODCAST_DB_PATH"] = stale_db
+            env2["PODCAST_LEDGER_DIR"] = os.path.join(tmp, "intake-ledger")
+            env2["PODCAST_JOBINDEX_DIR"] = os.path.join(tmp, "job-index")
 
             def _ps2(*a):
                 return subprocess.run([sys.executable, pstate, *a],

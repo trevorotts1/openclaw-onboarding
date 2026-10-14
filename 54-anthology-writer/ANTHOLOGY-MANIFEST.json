@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "skill": "anthology-writer",
   "skill_number": 54,
-  "skill_version": "1.4.10",
+  "skill_version": "v2.0.5",
   "shared_tone_core": "shared-utils/tone-writing-core",
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Writer pipeline. The deterministic orchestrator run_anthology.py walks these phases IN ORDER (P0 -> P0A-AVATAR -> P1..P7) with NO phase skips, one contributor at a time. P0A-AVATAR is the pre-P1 avatar handoff (W1.2 extension): it DELEGATES to Skill 52 avatar-alchemist prompts 01-03 BY PATH (see avatar_handoff below; NO file copied, tone core untouched; the avatar handoff itself adds NO source_prompt_pins entry \u2014 the aw-11/aw-12 baked-IP pins are added by the separate W1.3 prompt-completion extension) and produces working/avatar.md, which run_anthology.py's _chk_avatar gate REQUIRES fail-closed via scripts/prove_aw_avatar.py (AF-AW-AVATAR-*) BEFORE P1-FIDELITY runs; the dossier is consumed by the downstream tone/chapter authoring templates (carried_values), not read by the P1-FIDELITY checker itself. Each phase declares its produces_artifact, its _chk_* preflight symbol, and its AF-AW-* gate codes. Every AF-AW-* code below is enforced by a fail-closed, model-free, stdlib-only prover in scripts/; py_symbol names the function that decides it. Editing this file is step (i) of any Anthology change: add the gate, add the AF code here with its trigger, add the checker, add the golden+attack fixture.",
   "design_law": "Enforcement, not description. Bands and counts are measured on the STRIPPED text of the artifact; a model's self-reported word count is NEVER trusted. Client runtime uses the CLIENT's own provider chain (assets/model-map.template.json) resolved to the strongest NON-Anthropic model per tier \u2014 NEVER Anthropic/claude-* ids or operator keys (build-fix: everywhere the source said 'OpenRouter primary'/anthropic-* is implemented as 'the client's strongest NON-Anthropic model'). The deterministic gates are provider-neutral Python that run identically everywhere. A client-exact override wins over a default band and is recorded on the certificate.",
@@ -13,7 +13,7 @@
     "assets/prompts/08-create-outline.md": "5a944eafea3c9d0dca504f05077ccfe9c1cc1664a8af226ffbb351a077c2335d",
     "assets/prompts/09-write-chapter.md": "340fd1be45a529529142f80123c8d18201bdff9b04ff80671d9efa6096af6cc7",
     "assets/prompts/10-chapter-rewrite.md": "56c4bf76d09a7169775f1123e043df7b5b420ccddc78c164adfc2eba11983a89",
-    "assets/prompts/11-cover-image-prompt.md": "a8658edb895248650a68c2182e602d248d277c6e683f9c4111c092cb1098591a",
+    "assets/prompts/11-cover-image-prompt.md": "05c3f0fa123952e8713ccba31e65f96c72fb1e5cec20313f3578d52dc26c4eaf",
     "assets/prompts/12-primary-goal-extraction.md": "ca09a4b82d63349586389cdb093c922489e70e88d3ea45bd3f7dc4a76cf811f3"
   },
   "source_prompt_pins_provenance": {

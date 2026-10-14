@@ -1,14 +1,13 @@
 ---
 name: book-to-persona-coaching-leadership-system
 description: >
-  Converts any bestselling book PDF into a dual-purpose persona blueprint — one that coaches
+  Converts any bestselling book PDF into a dual-purpose persona blueprint - one that coaches
   humans through personal and professional challenges AND governs AI agents executing professional
   work across departments. Runs a 3-phase pipeline with dynamic model selection via
-  shared-utils/select_model.py: Phase 1 (extraction) and Phase 2 (analysis) prefer
-  Ollama Cloud DeepSeek V4.1 Flash and Kimi 2.6 (latest versions auto-detected) with
-  OpenRouter same-model fallback. Phase 3 (synthesis) prefers OAuth GPT. Never
-  Anthropic. Output is Gemini Engine-indexed for retrieval. Wiki-enabled for
-  unified knowledge access. Uses the Teach Yourself Protocol before every run.
+  shared-utils/select_model.py: every phase uses the model the client selected, or the
+  client's configured default model, resolved from the client's own openclaw.json. No model
+  is prescribed by name. Never Anthropic. Output is Gemini Engine-indexed for retrieval.
+  Wiki-enabled for unified knowledge access. Uses the Teach Yourself Protocol before every run.
 ---
 
 > **Wiki Note:** This skill is integrated with the OpenClaw Memory Wiki system. All persona blueprints are searchable via `wiki_search` and `wiki_get` for unified knowledge retrieval alongside other memory sources.
@@ -58,7 +57,7 @@ All dependencies must be installed and verified before running the pipeline.
 | lxml | XML parsing (ebooklib uses this) | `pip3 install lxml` | `python3 -c "import lxml; print('PASS')"` |
 | Calibre (ebook-convert) | Kindle format conversion | Mac: `brew install --cask calibre`<br>Linux: `sudo apt-get install calibre` | `ebook-convert --version` |
 | GOOGLE_API_KEY env var | Gemini Engine | Add to `secrets/.env` (in your agent workspace) | `[ -n "$GOOGLE_API_KEY" ] && echo "GOOGLE_API_KEY: SET" \|\| echo "GOOGLE_API_KEY: NOT-SET"` |
-| Ollama Cloud (preferred) or OpenRouter (fallback) | Phase 1 extraction | Ollama: `OLLAMA_API_KEY` in env or `models.providers.ollama.apiKey` in openclaw.json. Fallback: OpenRouter via `OPENROUTER_API_KEY` | `[ -n "$OLLAMA_API_KEY" ] && echo "OLLAMA_API_KEY: SET" \|\| echo "OLLAMA_API_KEY: NOT-SET"` |
+| Provider key for the resolved model's route | All phases | Depends on the resolved model (the client's choice, or the client's configured default): Ollama Cloud via `OLLAMA_API_KEY` in env or `models.providers.ollama.apiKey` in openclaw.json; OpenRouter via `OPENROUTER_API_KEY`; OAuth GPT via the OpenClaw OAuth token | `[ -n "$OLLAMA_API_KEY" ] && echo "OLLAMA_API_KEY: SET" \|\| echo "OLLAMA_API_KEY: NOT-SET"` |
 
 > **Credential verification is presence-only.** These checks report `SET` or `NOT-SET` and emit no character of any key — the same pattern `qc-book-to-persona-coaching-leadership-system.sh` uses. Never `grep`, `echo`, `cat` or `head` a secrets file to confirm a credential: the matching line carries the value, and terminal transcripts, agent logs and shell history retain it.
 
@@ -88,10 +87,10 @@ Drop any supported format into the `books/` folder and the pipeline handles the 
 
 Takes any book (PDF, EPUB, MOBI, or Kindle) and produces a **dual-purpose persona blueprint** through a 3-phase sub-agent pipeline:
 
-- **Phase 1 - Extraction** (Ollama DeepSeek V4.1 Flash preferred, latest version auto-detected): Reads the full book text, extracts 30 structured items across THREE lenses — coaching methodology (1-11), agent governance frameworks (12-20), and the **Playbook Asset Lens (21-30)** that captures the book's actual reusable, swipe-able assets (headline/hook/subject formulas, funnel page recipes, scripts, frameworks, brand-voice patterns, swipe file) at full fidelity. Selector falls back to Ollama Kimi 2.6 → OpenRouter DeepSeek V4.1 Flash → OpenRouter Kimi 2.6 → OAuth GPT when higher tiers are unavailable.
-- **Phase 2 - Analysis** (DeepSeek V3.2): Deep analytical work across 13 dimensions including Amateur-to-Expert Gap, failure taxonomy, execution standards, decision logic, and Dimension 13 (Playbook Asset Inventory & Patternization) that organizes the reusable assets into clean PATTERN + worked-example form for the appendix.
-- **Phase 3 - Synthesis** (GPT-5.4 Codex via OAuth): Writes the complete 14-section persona blueprint - fully deployable for both human coaching and AI agent governance.
-- **Phase 3b - Playbook Appendix** (same chain as Phase 3): Writes a mandatory companion `PLAYBOOK-APPENDIX.md` alongside the blueprint. The blueprint DISTILLS the book; the appendix PRESERVES its reusable copy/funnel assets at full fidelity (8 sections A-H) so copy specialists write rich, brand-building copy — never the over-concise output the distilled blueprint alone produced. A quality floor is enforced in the orchestrator (fail-loud on the structure/honesty gate; one stricter retry on richness shortfall; no fabrication for thin books).
+- **Phase 1 - Extraction** (model resolved at runtime: the client's choice, or the client's configured default model): Reads the full book text, extracts 30 structured items across THREE lenses — coaching methodology (1-11), agent governance frameworks (12-20), and the **Playbook Asset Lens (21-30)** that captures the book's actual reusable, swipe-able assets (headline/hook/subject formulas, funnel page recipes, scripts, frameworks, brand-voice patterns, swipe file) at full fidelity. If the resolved model fails at runtime, the selector re-runs with it excluded. Recommendation: a large-context model, because extraction passes the whole book at once.
+- **Phase 2 - Analysis** (same runtime resolution as Phase 1): Deep analytical work across 13 dimensions including Amateur-to-Expert Gap, failure taxonomy, execution standards, decision logic, and Dimension 13 (Playbook Asset Inventory & Patternization) that organizes the reusable assets into clean PATTERN + worked-example form for the appendix.
+- **Phase 3 - Synthesis** (same runtime resolution as Phase 1): Writes the complete 14-section persona blueprint - fully deployable for both human coaching and AI agent governance.
+- **Phase 3b - Playbook Appendix** (same resolution as Phase 3): Writes a mandatory companion `PLAYBOOK-APPENDIX.md` alongside the blueprint. The blueprint DISTILLS the book; the appendix PRESERVES its reusable copy/funnel assets at full fidelity (8 sections A-H) so copy specialists write rich, brand-building copy — never the over-concise output the distilled blueprint alone produced. A quality floor is enforced in the orchestrator (fail-loud on the structure/honesty gate; one stricter retry on richness shortfall; no fabrication for thin books).
 
 Every persona supports:
 1. **Coaching Mode** - activates when a human needs guidance through a challenge
@@ -182,31 +181,27 @@ The script will:
 
 ## Model Routing
 
-**All model selection runs through `shared-utils/select_model.py` which enforces Ollama-Cloud-first priority. The selector picks whatever the client has installed, walking down the chain only when a higher tier is unavailable. See `PIPELINE.md` for the full per-phase chain.**
+**All model selection runs through `shared-utils/select_model.py`. The model for every phase is the one the client selected, or the client's configured default model, resolved by the selector from the client's own `openclaw.json`. No model is prescribed by name or family in this skill. See `PIPELINE.md` for the full resolution contract.**
 
-**Explicit priority for Phase 1 + Phase 2 (book extraction + analysis):**
+**Per-phase resolution:**
 
-| Tier | Model | Notes |
-|------|-------|-------|
-| **Tier 1 (Primary)** | `ollama/deepseek-v4.1-flash:cloud` (or latest `ollama/deepseek-v*-pro:cloud`) | Ollama Cloud DeepSeek V4.1 Flash — 1M context, subscription-billed, smartest for long-context analysis |
-| **Tier 2 (Primary)** | `ollama/kimi-k2.6:cloud` (or latest `ollama/kimi-k*:cloud`) | Ollama Cloud Kimi 2.6 — 262K context, subscription-billed, smartest for compact extraction |
-| **Tier 3 (Fallback)** | `openrouter/deepseek/deepseek-v4.1-flash` (or latest `openrouter/deepseek/deepseek-v*-pro`) | Same DeepSeek V4.1 Flash model via OpenRouter when Ollama Cloud is unavailable. Per-token billed. |
-| **Tier 4 (Fallback)** | `openrouter/moonshot/kimi-k2.6` (or latest `openrouter/moonshot/kimi-k*`) | Same Kimi 2.6 model via OpenRouter when Ollama Cloud is unavailable. Per-token billed. |
-| **Tier 5 (Last resort)** | `codex/gpt-*` or `openai-codex/gpt-*` (OAuth GPT) | Subscription-billed (ChatGPT plan), used only when both Ollama Cloud AND OpenRouter Kimi/DeepSeek are missing |
+| Phase | Model |
+|-------|-------|
+| Phase 1 - Extraction | The client's choice, or the client's configured default model |
+| Phase 2 - Analysis | The client's choice, or the client's configured default model |
+| Phase 3 - Synthesis | The client's choice, or the client's configured default model |
+| Phase 3b - Playbook Appendix | Same resolution as Phase 3 |
 
-**Per-phase tier preference:**
-
-| Phase | Tier preference (in order) |
-|-------|----------------------------|
-| Phase 1 - Extraction | Tier 1 (Ollama DeepSeek V4.1 Flash) → Tier 2 (Ollama Kimi 2.6) → Tier 3 (OpenRouter DeepSeek V4.1 Flash) → Tier 4 (OpenRouter Kimi 2.6) → Tier 5 (OAuth GPT) |
-| Phase 2 - Analysis | Tier 1 (Ollama DeepSeek V4.1 Flash) → Tier 2 (Ollama Kimi 2.6) → Tier 3 (OpenRouter DeepSeek V4.1 Flash) → Tier 4 (OpenRouter Kimi 2.6) → Tier 5 (OAuth GPT) |
-| Phase 3 - Synthesis | Tier 5 (OAuth GPT — no per-call cost) → Tier 2 (Ollama Kimi 2.6) → Tier 4 (OpenRouter Kimi 2.6) |
+**Recommendations (guidance only - the client's selection always wins):**
+- Prefer a model with a large context window for Phases 1 and 2, because extraction and analysis pass whole books and full extraction notes at once; a small-window model forces chunking and loses cross-chapter patterns.
+- Prefer a subscription-billed route over per-token billing where the client has one, because per-book cost stays flat instead of scaling with book length.
+- Prefer the same model via a direct route over an aggregator route when both are configured, because the direct route is usually cheaper for the identical model.
 
 **ABSOLUTE RULES (enforced by the selector):**
-- Ollama Cloud is ALWAYS preferred over OpenRouter when both are available. Same model, cheaper route. The selector matches on model family (DeepSeek V*-pro, Kimi K*) and prefers the Ollama-routed copy first.
-- If the client has Ollama Cloud DeepSeek V4.1 Flash AND OpenRouter DeepSeek V4.1 Flash, the selector picks Ollama. Same with Kimi 2.6.
-- Anthropic models (`anthropic/claude-*`) are FORBIDDEN by policy. Hardcoded filter at every tier.
-- The selector reads the client's actual `openclaw.json` and picks the highest available version at each tier. New Kimi/DeepSeek versions are picked up automatically when the client adds them — no code change needed.
+- Anthropic models (`anthropic/claude-*`) are FORBIDDEN by policy. Hardcoded filter at every step.
+- If nothing is configured, the selector stops and asks the owner which model to use. It never silently substitutes a model the client did not choose or configure.
+- The selector reads the client's actual `openclaw.json`. When the client configures a newer model, it is picked up automatically - no code change needed.
+- Runtime fallback: if the resolved model fails mid-run, the selector re-runs with the failed model excluded and resolves the next model from the client's remaining configured models.
 
 ---
 

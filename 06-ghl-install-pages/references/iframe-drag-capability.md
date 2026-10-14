@@ -43,7 +43,7 @@ This is a "cannot LOCATE the source across a cross-origin iframe" problem, not a
 fake a success — that fail-closed behavior is preserved; only the underlying reach
 limitation is fixed.
 
-## The fix (hybrid: agent-browser PRIMARY + Playwright for the drag only)
+## The fix (hybrid lane: agent-browser + Playwright for the drag only)
 
 Everything agent-browser already does well stays on agent-browser (the
 Firebase-token login injection, navigation, button/field clicks, waits, fills,

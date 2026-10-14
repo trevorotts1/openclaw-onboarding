@@ -362,14 +362,21 @@ function projectList() {
   }))];
 }
 
-function answerBox(value, onInput) {
+function answerBox(value, onInput, question) {
   const wrap = el("div", {});
   const id = "q-answer";
-  wrap.append(el("label", { for: id, text: "Your answer" }));
-  const input = el("input", { id, type: "text", autocomplete: "off" });
-  input.value = value;
-  input.addEventListener("input", () => onInput(input.value));
-  wrap.append(input);
+  // A story-brief answer is a sentence — an audience and an action, a character
+  // description, a list of photos — so it gets room to be one. The BUDGET's
+  // "a different maximum" is a dollar amount and stays a single line. The
+  // question's own `typed` flag decides; the option text is never sniffed.
+  const typed = Boolean(question && question.typed);
+  wrap.append(el("label", { for: id, text: typed ? "Your answer, in your own words" : "Your answer" }));
+  const box = typed
+    ? el("textarea", { id, rows: "3", autocomplete: "off" })
+    : el("input", { id, type: "text", autocomplete: "off" });
+  box.value = value;
+  box.addEventListener("input", () => onInput(box.value));
+  wrap.append(box);
   return wrap;
 }
 
@@ -405,7 +412,7 @@ function pageQuestions() {
     ]));
   }
   if (chosen && isFreeTextOption(chosen)) {
-    fieldset.append(answerBox(state.texts[i] || "", (v) => { state.texts[i] = v; }));
+    fieldset.append(answerBox(state.texts[i] || "", (v) => { state.texts[i] = v; }, q));
   }
 
   return [

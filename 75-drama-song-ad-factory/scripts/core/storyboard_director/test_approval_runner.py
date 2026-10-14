@@ -181,7 +181,9 @@ def card_then_run(storyboard_reply):
     from choice_card.intake_card import intake_card as IC
     run, w = make_run(None), World()
     ids = [q["id"] for q in IC.QUESTIONS]
-    replies = ["$25" if i == "spend" else storyboard_reply if i == "storyboard" else "1" for i in ids] + ["yes"]
+    replies = IC.example_replies()          # the story brief is typed, the choices picked
+    replies[ids.index("storyboard")] = storyboard_reply
+    replies += ["yes"]
     st = IC.conversation(replies, IC.QUESTIONS, run_dir=run, target="555")
     check("card done (%s)" % storyboard_reply, st["done"])
     return run, w, AR.run(run, w.send)

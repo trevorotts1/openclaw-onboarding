@@ -30,7 +30,7 @@
 import { AF_ID_INVALID, isClientId } from './ids.js';
 import { AF_ISO_CROSS, authorizeClient, enrollClient } from './isolation.js';
 import { AF_PAIR_LOCKED, PAIRING_MAX_TRIES, attemptPairing, buildKeyRecord, mintKey, mintPairingCode, pairRecordKey } from './keys.js';
-import { checkIn, writeInbox } from './inbox.js';
+import { MAX_WAITING_ORDERS, checkIn, readInbox, writeInbox } from './inbox.js';
 import { acceptUpload, pollUpload } from './uploads.js';
 import { resolveOrderState, transition, writeOperatorRecord } from './lifecycle.js';
 import { AF_OPT_APPROVAL, lastCheckIn, optionLine, setOption, staleVerdict } from './options.js';
@@ -44,6 +44,52 @@ import { approvalsRoute } from './approvals-api.js';
 
 export const SERVICE_VERSION = '0.1.0';
 export { randomConnectHex };
+
+// ---------------------------------------------------------------------------
+// DSR-105 — the story brief
+//
+// The chat intake asks for the offer, the link, the audience, the character
+// and the photos; the studio page used to ask only the nine production
+// choices, so an order placed here carried no brief and the crew had nothing
+// to write from. intake_card.py now asks those five first, and this reads them
+// back out of the leading replies.
+//
+// They are read positionally because the page's service client forwards only
+// `title`, `replies` and `upload_ids` — there is no separate brief field on
+// the wire, and adding one would have meant a second place that defines which
+// questions exist. `test/brief.test.mjs` reads the committed ui/questions.json
+// and fails if these ids ever stop being the card's first five questions, so
+// the position cannot drift without a red test.
+//
+// An order is NEVER refused for a thin brief: the answers are the client's
+// work, and a refusal would throw them away. It is stored marked, so the box
+// sees `brief_complete`/`brief_missing` and can ask for the rest.
+// ---------------------------------------------------------------------------
+
+/** The card's leading questions, in the order intake_card.py asks them. */
+export const BRIEF_QUESTION_IDS = ['offer', 'link', 'audience', 'character', 'photos'];
+
+/** Without these four the crew has no brief to write from. `photos` is asked
+ *  and stored but never required: plenty of ads use what the client already has. */
+export const BRIEF_REQUIRED_IDS = ['offer', 'link', 'audience', 'character'];
+
+/**
+ * @param {string[]} replies the client's answers, in card order
+ * @returns {{brief: Record<string,string>, complete: boolean, missing: string[]}}
+ */
+export function readBrief(replies) {
+  const list = Array.isArray(replies) ? replies : [];
+  const brief = {};
+  BRIEF_QUESTION_IDS.forEach((id, i) => {
+    const value = typeof list[i] === 'string' ? list[i].trim() : '';
+    // A bare number is an OPTION PICK, not an answer someone typed. A page
+    // loaded before this fix sends the nine production choices as numbers, so
+    // without this the number "1" would be stored as the client's offer.
+    if (value && !/^\d+$/.test(value)) brief[id] = value;
+  });
+  const missing = BRIEF_REQUIRED_IDS.filter((id) => !brief[id]);
+  return { brief, complete: missing.length === 0, missing };
+}
 
 // ---------------------------------------------------------------------------
 // Adapters — the shapes tests inject in memory
@@ -299,12 +345,19 @@ export async function handle(request, env, store, objects, deps = {}) {
     const checked = validateReplies(body.replies === undefined ? [] : body.replies, body.upload_ids);
     if (!checked.ok) return fail(400, checked.code, checked.message);
     const orderId = body.order_id || `r_${randomConnectHex(4)}`;
+    const read = readBrief(checked.replies);
     const order = {
       order_id: orderId,
       client_id: clientId,
       title: String(body.title || 'your video'),
       replies: checked.replies,
       upload_ids: checked.uploadIds,
+      // DSR-105 — the brief the card asked first, beside the replies the box
+      // replays. `brief` is what factory.py reads when the run starts; the
+      // replies stay the replay channel and are never rewritten.
+      brief: read.brief,
+      brief_complete: read.complete,
+      brief_missing: read.missing,
       state: 'waiting',
       paid_started: false,
       created_at: nowMs,
@@ -313,8 +366,22 @@ export async function handle(request, env, store, objects, deps = {}) {
     await store.kvPut(`order:${clientId}:${orderId}`, JSON.stringify(order));
     // Lock it in ends the draft: the order holds the answers now.
     await deleteDraft(objects, clientId);
-    const waiting = await waitingList(store, clientId);
-    await writeInbox(objects, { clientId, orders: waiting, nowMs });
+    // DSF-611 — the box must see this order on its VERY first poll.
+    // waitingList() is a KV LIST taken in the same request as the kvPut above;
+    // KV list is eventually consistent, so the brand-new key is not in it and
+    // the object was stored with orders:[] (live Worker, 11 min 49 s until an
+    // unrelated event rewrote it). Rebuild the inbox from the inbox object's
+    // own content — an R2 read is strongly consistent — plus THIS order. No
+    // list, no delay, no retry.
+    const seen = (await readInbox(objects, clientId)).waiting.filter((o) => o.order_id !== orderId);
+    const waiting = [...seen, order];
+    await writeInbox(objects, {
+      clientId,
+      // keep the newest if the cap is hit, so this order can never be the one
+      // waitingOrders() slices off — an invisible order is the bug itself.
+      orders: waiting.length > MAX_WAITING_ORDERS ? waiting.slice(-MAX_WAITING_ORDERS) : waiting,
+      nowMs,
+    });
     return ok({
       order: project(order, nowMs),
       option_line: optionLine(await clientRecord(store, clientId), nowMs, await lastCheckIn(objects, clientId)),

@@ -179,13 +179,13 @@
             {
               "id": "cfg-07",
               "name": "episode_type",
-              "value": "={{ $('Webhook  --  Receive Podcast Payload').item.json.episode_type || 'full' }}",
+              "value": "={{ $('Webhook  --  Receive Podcast Payload').item.json.body.episode_type || 'full' }}",
               "type": "string"
             },
             {
               "id": "cfg-08",
               "name": "explicit",
-              "value": "={{ $('Webhook  --  Receive Podcast Payload').item.json.explicit || 'clean' }}",
+              "value": "={{ $('Webhook  --  Receive Podcast Payload').item.json.body.explicit || 'clean' }}",
               "type": "string"
             },
             {
@@ -580,7 +580,7 @@
     },
     {
       "parameters": {
-        "sendTo": "={{ $('Set Upload Keys  --  Assemble Publish Payload').item.json.client_email }}",
+        "sendTo": "trevor@blackceo.com",
         "subject": "={{ '\\u274C Podcast Publish Failed  --  Episode #' + $('Set Upload Keys  --  Assemble Publish Payload').item.json.episode_number }}",
         "message": "=<html><body>Gmail message body omitted from repo export (built from live-execution expressions only). See config/n8n/README.md.</body></html>",
         "options": {}
@@ -684,7 +684,7 @@
     },
     {
       "parameters": {
-        "sendTo": "={{ $('Set Upload Keys  --  Assemble Publish Payload').item.json.client_email }}",
+        "sendTo": "trevor@blackceo.com",
         "subject": "={{ $json.episode?.permalink_url ? '\\u2705 Episode #' + $('Set Upload Keys  --  Assemble Publish Payload').item.json.episode_number + ' Is Live  --  ' + $('Set Upload Keys  --  Assemble Publish Payload').item.json.title : '\\u2705 Episode #' + $('Set Upload Keys  --  Assemble Publish Payload').item.json.episode_number + ' Scheduled  --  ' + $('Set Upload Keys  --  Assemble Publish Payload').item.json.title }}",
         "message": "=<html><body>Gmail message body omitted from repo export (built from live-execution expressions only). See config/n8n/README.md.</body></html>",
         "options": {}
@@ -938,7 +938,7 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { ok: true, permalink_url: $('Podbean  --  Publish Episode').first().json.episode?.permalink_url || '', episode_id: $('Podbean  --  Publish Episode').first().json.episode?.id || $('Podbean  --  Publish Episode').first().json.id || '', episode_number: $('Set Upload Keys  --  Assemble Publish Payload').first().json.episode_number, scheduled: $('Set Upload Keys  --  Assemble Publish Payload').first().json.publish_timestamp > Math.floor(Date.now() / 1000), idempotent_replay: false } }}",
+        "responseBody": "={{ { ok: !!(($('Podbean  --  Publish Episode').first().json.episode?.permalink_url || $('Readback Verdict  --  Assert Media + Description').first().json.readback_permalink_url || '') || ($('Set Upload Keys  --  Assemble Publish Payload').first().json.publish_timestamp > Math.floor(Date.now() / 1000))), reason: (($('Podbean  --  Publish Episode').first().json.episode?.permalink_url || $('Readback Verdict  --  Assert Media + Description').first().json.readback_permalink_url || '') || ($('Set Upload Keys  --  Assemble Publish Payload').first().json.publish_timestamp > Math.floor(Date.now() / 1000))) ? undefined : 'permalink_missing', permalink_url: ($('Podbean  --  Publish Episode').first().json.episode?.permalink_url || $('Readback Verdict  --  Assert Media + Description').first().json.readback_permalink_url || ''), episode_id: $('Podbean  --  Publish Episode').first().json.episode?.id || $('Podbean  --  Publish Episode').first().json.id || '', episode_number: $('Set Upload Keys  --  Assemble Publish Payload').first().json.episode_number, scheduled: $('Set Upload Keys  --  Assemble Publish Payload').first().json.publish_timestamp > Math.floor(Date.now() / 1000), idempotent_replay: false } }}",
         "options": {
           "responseCode": 200
         }
@@ -1004,7 +1004,7 @@
         850
       ],
       "parameters": {
-        "jsCode": "// U8  --  SERVER-SIDE IDEMPOTENCY (spec Section 5 U8 / Section 8). Runs after the\n// entry guard and before every Podbean action. A Data Table read failure is stopped by\n// the lookup node, so it cannot be mistaken for an unseen key. This is fail-closed\n// mitigation only: Data Table lookup plus upsert is not an atomic compare-and-set\n// claim, so concurrent first requests still require a durable claim backend.\n\nconst wh = $('Webhook  --  Receive Podcast Payload').first().json;\nconst body = wh.body || wh;\nconst idempotency_key = (body.idempotency_key || '').toString().trim();\nconst rows = $input.all().map(item => item.json).filter(r => r && r.idempotency_key);\nlet verdict = 'proceed';\nlet stored_permalink_url = '';\nlet stored_episode_number = '';\nif (rows.length > 0) {\n  const row = rows[0];\n  const status = (row.status || '').toString();\n  if (status === 'completed') {\n    verdict = 'replay';\n    stored_permalink_url = row.permalink_url || '';\n    stored_episode_number = row.episode_number || '';\n  } else if (status === 'received' || status === 'in_flight') {\n    verdict = 'in_flight';\n  }\n}\nreturn [{ json: {\n  idempotency_key,\n  idempotency_verdict: verdict,\n  idempotency_is_replay: verdict === 'replay',\n  idempotency_is_in_flight: verdict === 'in_flight',\n  stored_permalink_url,\n  stored_episode_number,\n  raw_channel_id: (body.podcast_id || '').toString().trim(),\n  raw_source: (body.source || 'unknown').toString()\n} }];"
+        "jsCode": "// U8  --  SERVER-SIDE IDEMPOTENCY (spec Section 5 U8 / Section 8). Runs after the\n// entry guard and before every Podbean action. A Data Table read failure is stopped by\n// the lookup node, so it cannot be mistaken for an unseen key. This is fail-closed\n// mitigation only: Data Table lookup plus upsert is not an atomic compare-and-set\n// claim, so concurrent first requests still require a durable claim backend.\n\nconst wh = $('Webhook  --  Receive Podcast Payload').first().json;\nconst body = wh.body || wh;\nconst idempotency_key = (body.idempotency_key || '').toString().trim();\nconst rows = $input.all().map(item => item.json).filter(r => r && r.idempotency_key);\nlet verdict = 'proceed';\nlet stored_permalink_url = '';\nlet stored_episode_number = '';\nif (rows.length > 0) {\n  const row = rows[0];\n  const status = (row.status || '').toString();\n  if (status === 'completed') {\n    verdict = 'replay';\n    stored_permalink_url = row.permalink_url || '';\n    stored_episode_number = row.episode_number || '';\n  } else if (status === 'received' || status === 'in_flight') {\n    // Pre-publish states. The run is bounded by executionTimeout 900 s, so a row untouched for\n    // 60 minutes belongs to a dead run that never reached Podbean create: safe to proceed.\n    // Unparseable timestamps stay in_flight (fail closed).\n    const ageMs = Date.now() - Date.parse(row.updatedAt || row.createdAt || '');\n    verdict = ageMs > 60 * 60 * 1000 ? 'proceed' : 'in_flight';\n  } else if (status === 'publishing') {\n    verdict = 'in_flight'; // Podbean create may have run: operator reconciles, never auto-retry\n  }\n}\nreturn [{ json: {\n  idempotency_key,\n  idempotency_verdict: verdict,\n  idempotency_is_replay: verdict === 'replay',\n  idempotency_is_in_flight: verdict === 'in_flight',\n  stored_permalink_url,\n  stored_episode_number,\n  raw_channel_id: (body.podcast_id || '').toString().trim(),\n  raw_source: (body.source || 'unknown').toString()\n} }];"
       }
     },
     {
@@ -1258,15 +1258,16 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "status": "completed",
-            "permalink_url": "={{ $json.episode?.permalink_url || '' }}",
+            "status": "={{ (($('Podbean  --  Publish Episode').first().json.episode?.permalink_url || $('Readback Verdict  --  Assert Media + Description').first().json.readback_permalink_url || '') || ($('Set Upload Keys  --  Assemble Publish Payload').first().json.publish_timestamp > Math.floor(Date.now() / 1000))) ? 'completed' : 'publishing' }}",
+            "permalink_url": "={{ ($('Podbean  --  Publish Episode').first().json.episode?.permalink_url || $('Readback Verdict  --  Assert Media + Description').first().json.readback_permalink_url || '') }}",
             "episode_number": "={{ $('Set Upload Keys  --  Assemble Publish Payload').item.json.episode_number }}",
             "completed_at": "={{ new Date().toISOString() }}",
-            "reason": ""
+            "reason": "={{ (($('Podbean  --  Publish Episode').first().json.episode?.permalink_url || $('Readback Verdict  --  Assert Media + Description').first().json.readback_permalink_url || '') || ($('Set Upload Keys  --  Assemble Publish Payload').first().json.publish_timestamp > Math.floor(Date.now() / 1000))) ? '' : 'permalink_missing: Podbean episode ' + ($('Podbean  --  Publish Episode').first().json.episode?.id || '?') + ' exists; operator sets permalink_url and status completed' }}"
           }
         },
         "options": {}
-      }
+      },
+      "alwaysOutputData": true
     },
     {
       "id": "d6b095a8-6243-4ccf-9d69-4fa13f55a33d",
@@ -1761,7 +1762,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// PURPOSE: U2.3 POST-PUBLISH READBACK VERDICT (2026-08-04, master plan unit 2.3; F-01 fix 2026-08-05).\n// The single fix that guarantees an empty publish can NEVER report success, regardless\n// of how degenerate the input is. After Podbean returns an episode id, we GET the\n// episode back and assert the three things that define a real published episode:\n//   1. media_url present and non-empty  (audio actually attached -- Podbean's GET returns media_url, not media_key)\n//   2. logo present and non-empty       (cover actually attached -- Podbean's GET returns logo, not logo_key)\n//   3. content/description length >= the floor (a real show note, not a stub)\n// On failure this returns readback_failed:true (no throw) so the workflow can route to the\n// rollback path (flip the just-created episode to draft, failure gmail, mark failed).\n// The publish response is spread through so downstream success nodes keep their data.\n//\n// FIELD SHAPE (verified against live execution data, Phase-4 canary 129675 + incident 129803):\n//   GET /v1/episodes/{id} -> { episode: { media_url: \"<mcdn.podbean.com/...mp3>\", logo: \"<mcdn.podbean.com/...jpg>\", content: \"...\" } }\n//   media_url and logo are plain URL strings. logo is also tolerated as an object with a .url\n//   member (future-response drift); both are normalized to a trimmed string by extractUrl().\n\nconst published = $('Podbean  --  Publish Episode').first().json;\nconst readbackItem = $('Podbean  --  Readback Created Episode').first();\nconst rb = readbackItem ? readbackItem.json : null;\n\n// Normalize a Podbean media/logo value that may be a plain URL string or an object\n// carrying the URL under .url/.value/.href/.src. Returns a trimmed string ('' when absent).\nfunction extractUrl(value) {\n  if (value == null) return '';\n  if (typeof value === 'string') return value.trim();\n  if (typeof value === 'object') {\n    const u = value.url || value.value || value.href || value.src;\n    return u ? String(u).trim() : '';\n  }\n  return String(value).trim();\n}\n\nconst errors = [];\nlet raw = null;\n\nif (!rb) {\n  errors.push('readback GET returned no response for episode ' + (published.episode?.id || published.id || '?'));\n} else if (typeof rb.statusCode === 'number' && (rb.statusCode < 200 || rb.statusCode >= 300)) {\n  errors.push('readback GET returned HTTP ' + rb.statusCode + ' for episode ' + (published.episode?.id || published.id || '?'));\n} else {\n  raw = (rb.body && typeof rb.body === 'object') ? rb.body : rb;\n  raw = (raw.episode && typeof raw.episode === 'object') ? raw.episode : raw;\n\n  const mediaUrl = extractUrl(raw.media_url);\n  const logoUrl = extractUrl(raw.logo);\n  const content = (raw.content || raw.description || '').toString().trim();\n\n  if (!mediaUrl) errors.push('readback: media_url is empty -- audio is NOT attached to the episode');\n  if (!logoUrl) errors.push('readback: logo is empty -- cover image is NOT attached to the episode');\n  if (content.length < 150) {\n    errors.push('readback: description is only ' + content.length + ' chars (< 150 floor) -- the episode did not receive a real show note');\n  }\n}\n\nconst readback_failed = errors.length > 0;\n\nreturn [{\n  json: Object.assign({}, published, {\n    readback_failed,\n    readback_errors: errors,\n    readback_media_url: raw ? extractUrl(raw.media_url) : '',\n    readback_logo_url: raw ? extractUrl(raw.logo) : '',\n    readback_description_length: raw ? (raw.content || raw.description || '').toString().trim().length : 0\n  })\n}];"
+        "jsCode": "// PURPOSE: U2.3 POST-PUBLISH READBACK VERDICT (2026-08-04, master plan unit 2.3; F-01 fix 2026-08-05).\n// The single fix that guarantees an empty publish can NEVER report success, regardless\n// of how degenerate the input is. After Podbean returns an episode id, we GET the\n// episode back and assert the three things that define a real published episode:\n//   1. media_url present and non-empty  (audio actually attached -- Podbean's GET returns media_url, not media_key)\n//   2. logo present and non-empty       (cover actually attached -- Podbean's GET returns logo, not logo_key)\n//   3. content/description length >= the floor (a real show note, not a stub)\n// On failure this returns readback_failed:true (no throw) so the workflow can route to the\n// rollback path (flip the just-created episode to draft, failure gmail, mark failed).\n// The publish response is spread through so downstream success nodes keep their data.\n//\n// FIELD SHAPE (verified against live execution data, Phase-4 canary 129675 + incident 129803):\n//   GET /v1/episodes/{id} -> { episode: { media_url: \"<mcdn.podbean.com/...mp3>\", logo: \"<mcdn.podbean.com/...jpg>\", content: \"...\" } }\n//   media_url and logo are plain URL strings. logo is also tolerated as an object with a .url\n//   member (future-response drift); both are normalized to a trimmed string by extractUrl().\n\nconst published = $('Podbean  --  Publish Episode').first().json;\nconst readbackItem = $('Podbean  --  Readback Created Episode').first();\nconst rb = readbackItem ? readbackItem.json : null;\n\n// Normalize a Podbean media/logo value that may be a plain URL string or an object\n// carrying the URL under .url/.value/.href/.src. Returns a trimmed string ('' when absent).\nfunction extractUrl(value) {\n  if (value == null) return '';\n  if (typeof value === 'string') return value.trim();\n  if (typeof value === 'object') {\n    const u = value.url || value.value || value.href || value.src;\n    return u ? String(u).trim() : '';\n  }\n  return String(value).trim();\n}\n\nconst errors = [];\nlet raw = null;\n\nif (!rb) {\n  errors.push('readback GET returned no response for episode ' + (published.episode?.id || published.id || '?'));\n} else if (typeof rb.statusCode === 'number' && (rb.statusCode < 200 || rb.statusCode >= 300)) {\n  errors.push('readback GET returned HTTP ' + rb.statusCode + ' for episode ' + (published.episode?.id || published.id || '?'));\n} else {\n  raw = (rb.body && typeof rb.body === 'object') ? rb.body : rb;\n  raw = (raw.episode && typeof raw.episode === 'object') ? raw.episode : raw;\n\n  const mediaUrl = extractUrl(raw.media_url);\n  const logoUrl = extractUrl(raw.logo);\n  const content = (raw.content || raw.description || '').toString().trim();\n\n  if (!mediaUrl) errors.push('readback: media_url is empty -- audio is NOT attached to the episode');\n  if (!logoUrl) errors.push('readback: logo is empty -- cover image is NOT attached to the episode');\n  if (content.length < 150) {\n    errors.push('readback: description is only ' + content.length + ' chars (< 150 floor) -- the episode did not receive a real show note');\n  }\n}\n\nconst readback_failed = errors.length > 0;\n\nreturn [{\n  json: Object.assign({}, published, {\n    readback_failed,\n    readback_errors: errors,\n    readback_media_url: raw ? extractUrl(raw.media_url) : '',\n    readback_logo_url: raw ? extractUrl(raw.logo) : '',\n    readback_permalink_url: raw ? extractUrl(raw.permalink_url) : '',\n    readback_description_length: raw ? (raw.content || raw.description || '').toString().trim().length : 0\n  })\n}];"
       },
       "id": "b8c4d0e2-3f5a-6b7c-9d0e-1f2a3b4c5d6e",
       "name": "Readback Verdict  --  Assert Media + Description",
@@ -1884,7 +1885,7 @@
         1668
       ],
       "parameters": {
-        "sendTo": "={{ $('Set Upload Keys  --  Assemble Publish Payload').item.json.client_email }}",
+        "sendTo": "trevor@blackceo.com",
         "subject": "={{ '\\u274C Podcast Publish FAILED READBACK  --  Episode #' + $('Set Upload Keys  --  Assemble Publish Payload').item.json.episode_number }}",
         "message": "=<html><body>Gmail message body omitted from repo export (built from live-execution expressions only). See config/n8n/README.md.</body></html>",
         "options": {}
@@ -1934,6 +1935,44 @@
         "options": {}
       },
       "onError": "continueRegularOutput"
+    },
+    {
+      "id": "6b1f7a52-6a43-4d55-9d3e-2f6c0f0e5a11",
+      "name": "Idempotency  --  Mark Publishing",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -658,
+        1696
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "mode": "id",
+          "value": "3anOzegbKtLcgVud"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "idempotency_key",
+              "condition": "eq",
+              "keyValue": "={{ $('Idempotency  --  Determine Verdict').item.json.idempotency_key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "publishing"
+          }
+        },
+        "options": {}
+      },
+      "onError": "stopWorkflow",
+      "alwaysOutputData": true,
+      "notes": "FAIL-CLOSED: last write before the Podbean create call. A row left in 'publishing' may have a live episode, so it is never auto-retried; a row left in 'received'/'in_flight' older than 60 minutes is dead (executionTimeout 900 s, box curl max 180 s) and may proceed."
     }
   ],
   "connections": {
@@ -2095,7 +2134,7 @@
       "main": [
         [
           {
-            "node": "Set Upload Keys  --  Assemble Publish Payload",
+            "node": "Idempotency  --  Mark Publishing",
             "type": "main",
             "index": 0
           }
@@ -2535,10 +2574,23 @@
           }
         ]
       ]
+    },
+    "Idempotency  --  Mark Publishing": {
+      "main": [
+        [
+          {
+            "node": "Set Upload Keys  --  Assemble Publish Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "errorWorkflow": "QMNXZrNvXG0nn2U7",
+    "executionTimeout": 900
   },
   "versionId": "f00a5bb9-b33a-4683-b352-571327af9a46",
   "meta": {

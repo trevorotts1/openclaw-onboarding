@@ -32,10 +32,18 @@ WHAT IS PINNED HERE:
                   default AND when OLLAMA_CLOUD_URL still carries the old
                   https://ollama.com/api base. Any other override is honoured
                   verbatim.
-  2. MODEL     -- the request body carries deepseek-v4.1-flash by default,
-                  OLLAMA_CLOUD_SCORING_MODEL overrides it, step 2 defaults to
-                  deepseek/deepseek-v4.1-flash with OPENROUTER_SCORING_MODEL
-                  overriding, and the dead :cloud tag appears nowhere.
+  2. MODEL     -- no model id is pinned in code (client-choice doctrine).
+                  The request body carries the tag this box resolves:
+                  OLLAMA_CLOUD_SCORING_MODEL (the client's explicit choice)
+                  wins, else the client's configured default model
+                  (agents.defaults.model in openclaw.json) when it names an
+                  Ollama Cloud model, else nothing resolves: the step is
+                  omitted with a loud ask-the-client warning and no call is
+                  made. openrouter_model() resolves the same way, through
+                  OPENROUTER_SCORING_MODEL and an openrouter/ configured
+                  default, and likewise yields the bare slug its surface
+                  posts (an openrouter/ prefix is stripped). The dead
+                  :cloud tag appears nowhere.
   3. FALLBACK  -- with no OLLAMA_CLOUD_API_KEY anywhere, the gateway's
                   provider key from openclaw.json is what gets sent.
   4. 401 RETRY -- a 401 on the env key retries exactly once, with the provider
@@ -110,9 +118,15 @@ def box(tmp_path, monkeypatch):
     return home
 
 
-def write_openclaw(home: Path, providers) -> Path:
+def write_openclaw(home: Path, providers, default_model=None) -> Path:
+    """Write the scratch box's openclaw.json: models.providers, plus the
+    client's configured default model (agents.defaults.model) when one is
+    given. Scoring-model resolution reads the default from this same file."""
     path = home / ".openclaw" / "openclaw.json"
-    path.write_text(json.dumps({"models": {"providers": providers}}), encoding="utf-8")
+    doc = {"models": {"providers": providers}}
+    if default_model is not None:
+        doc["agents"] = {"defaults": {"model": default_model}}
+    path.write_text(json.dumps(doc), encoding="utf-8")
     return path
 
 
@@ -178,6 +192,9 @@ def test_a_real_override_is_honoured_verbatim(box, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_request_body_carries_the_live_flash_tag(box, monkeypatch):
+    """The tag in the body is the one this box resolves: here the client's
+    configured default model is ollama/deepseek-v4.1-flash, the live tag."""
+    write_openclaw(box, {}, default_model="ollama/deepseek-v4.1-flash")
     monkeypatch.setenv("OLLAMA_CLOUD_API_KEY", ENV_KEY)
     calls = capture_posts(monkeypatch, [_SCORE_REPLY])
     result = llm_score._attempt_ollama_cloud("score this")
@@ -189,15 +206,43 @@ def test_request_body_carries_the_live_flash_tag(box, monkeypatch):
 
 def test_both_scoring_model_ids_are_env_overridable(box, monkeypatch):
     """A provider renaming a tag must be a config change on the box, never a
-    code change and a fleet roll. That is the whole lesson of :cloud."""
+    code change and a fleet roll. That is the whole lesson of :cloud.
+
+    Resolution order (client-choice doctrine): the env name (the client's
+    explicit choice) wins; before that, the client's configured default
+    model serves the one surface it names; with neither, nothing resolves
+    and there is deliberately no named pin underneath."""
+    assert llm_score.ollama_cloud_model() == ""
+    assert llm_score.ollama_cloud_model_id() == ""
+    assert llm_score.openrouter_model() == ""
+
+    write_openclaw(box, {}, default_model="ollama/deepseek-v4.1-flash")
     assert llm_score.ollama_cloud_model() == "deepseek-v4.1-flash"
+    assert llm_score.ollama_cloud_model_id() == "ollama/deepseek-v4.1-flash"
+    assert llm_score.openrouter_model() == "", \
+        "an ollama/ default does not leak onto the OpenRouter surface"
+
+    write_openclaw(box, {}, default_model="openrouter/deepseek/deepseek-v4.1-flash")
+    # Like ollama_cloud_model(), which strips the provider prefix and
+    # returns the bare tag its surface posts, openrouter_model() strips
+    # the openrouter/ prefix and returns the bare slug: the value is
+    # handed to OpenRouter as a model id, and OpenRouter ids carry no
+    # provider prefix.
     assert llm_score.openrouter_model() == "deepseek/deepseek-v4.1-flash"
+    assert llm_score.ollama_cloud_model() == "", \
+        "an openrouter/ default does not leak onto the Ollama Cloud surface"
 
     monkeypatch.setenv("OLLAMA_CLOUD_SCORING_MODEL", "deepseek-v4.1-flash:0900")
     monkeypatch.setenv("OPENROUTER_SCORING_MODEL", "deepseek/deepseek-v4.1-flash-x")
     assert llm_score.ollama_cloud_model() == "deepseek-v4.1-flash:0900"
     assert llm_score.ollama_cloud_model_id() == "ollama/deepseek-v4.1-flash:0900"
     assert llm_score.openrouter_model() == "deepseek/deepseek-v4.1-flash-x"
+
+    monkeypatch.setenv("OPENROUTER_SCORING_MODEL",
+                       "openrouter/deepseek/deepseek-v4.1-flash-x")
+    assert llm_score.openrouter_model() == "deepseek/deepseek-v4.1-flash-x", \
+        "an openrouter/ prefix on the explicit choice is stripped too: " \
+        "the surface posts the bare slug either way"
 
     monkeypatch.setenv("OLLAMA_CLOUD_API_KEY", ENV_KEY)
     calls = capture_posts(monkeypatch, [_SCORE_REPLY])
@@ -235,7 +280,8 @@ def test_the_deleted_cloud_tag_is_gone_from_the_module():
 def test_provider_key_is_used_when_the_env_key_is_empty(box, monkeypatch):
     write_openclaw(box, {"ollama": {"api": "ollama",
                                     "baseUrl": "https://ollama.com",
-                                    "apiKey": PROVIDER_KEY}})
+                                    "apiKey": PROVIDER_KEY}},
+                   default_model="ollama/deepseek-v4.1-flash")
     assert llm_score._env("OLLAMA_CLOUD_API_KEY") == "", "control: no env key"
     assert llm_score.ollama_cloud_api_keys() == [PROVIDER_KEY]
 
@@ -287,7 +333,8 @@ def test_401_on_the_env_key_retries_once_with_the_provider_key(box, monkeypatch)
     """THE LIVE-BOX CASE. The resolved env key is rejected; the gateway's own
     key is the one that works."""
     write_openclaw(box, {"ollama": {"baseUrl": "https://ollama.com",
-                                    "apiKey": PROVIDER_KEY}})
+                                    "apiKey": PROVIDER_KEY}},
+                   default_model="ollama/deepseek-v4.1-flash")
     monkeypatch.setenv("OLLAMA_CLOUD_API_KEY", ENV_KEY)
     calls = capture_posts(monkeypatch, [http_401(), _SCORE_REPLY])
 
@@ -303,6 +350,7 @@ def test_401_on_the_env_key_retries_once_with_the_provider_key(box, monkeypatch)
 def test_401_with_no_second_key_does_not_retry(box, monkeypatch):
     """CONTROL for the retry: one key means one attempt, and the failure is
     reported without either key in it."""
+    write_openclaw(box, {}, default_model="ollama/deepseek-v4.1-flash")
     monkeypatch.setenv("OLLAMA_CLOUD_API_KEY", ENV_KEY)
     calls = capture_posts(monkeypatch, [http_401()])
 
@@ -317,7 +365,8 @@ def test_a_non_401_failure_does_not_burn_the_second_key(box, monkeypatch):
     """A 500 is the provider being down, not this key being wrong. Retrying
     would double every outage's cost for nothing."""
     write_openclaw(box, {"ollama": {"baseUrl": "https://ollama.com",
-                                    "apiKey": PROVIDER_KEY}})
+                                    "apiKey": PROVIDER_KEY}},
+                   default_model="ollama/deepseek-v4.1-flash")
     monkeypatch.setenv("OLLAMA_CLOUD_API_KEY", ENV_KEY)
     boom = urllib.error.HTTPError(
         "https://ollama.com/v1/chat/completions", 500, "Server Error", {}, None)
@@ -329,10 +378,43 @@ def test_a_non_401_failure_does_not_burn_the_second_key(box, monkeypatch):
 
 
 def test_no_key_anywhere_degrades_without_a_call(box, monkeypatch):
-    """CONTROL. With nothing to send, the documented degraded answer, and no
+    """CONTROL. A model IS resolved (the client's configured default) but
+    there is nothing to send with: the documented degraded answer, and no
     HTTPS attempt at all."""
+    write_openclaw(box, {}, default_model="ollama/deepseek-v4.1-flash")
     calls = capture_posts(monkeypatch, [_SCORE_REPLY])
     result = llm_score._attempt_ollama_cloud("score this")
     assert result["ok"] is False
     assert result["model"] == "ollama-cloud/deepseek-v4.1-flash"
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# 5. NOTHING CONFIGURED (client-choice doctrine, D3 step 3)
+# ---------------------------------------------------------------------------
+
+def test_no_model_configured_resolves_empty_and_the_step_is_omitted(
+        box, monkeypatch, capsys):
+    """No explicit choice and no configured default means NO model: the
+    resolvers return "", a direct attempt fails as an ordinary step failure
+    without opening a socket, and the default chain omits the step-5
+    backstop while saying loudly, once, that the client must be asked. A
+    named constant must never silently reappear underneath."""
+    monkeypatch.setattr(llm_score, "_SCORING_MODEL_WARNED", False)
+    assert llm_score.ollama_cloud_model() == ""
+    assert llm_score.ollama_cloud_model_id() == ""
+    assert llm_score.openrouter_model() == ""
+
+    monkeypatch.setenv("OLLAMA_CLOUD_API_KEY", ENV_KEY)
+    calls = capture_posts(monkeypatch, [_SCORE_REPLY])
+    result = llm_score._attempt_ollama_cloud("score this")
+    assert result["ok"] is False
+    assert result["model"] == ""
+    assert "no scoring model resolved" in result["error"]
+    assert calls == [], "an unresolved step must not open a socket"
+
+    chain = llm_score.default_scoring_chain()
+    ollama_steps = [step for step in chain if step[0] == "ollama-cloud"]
+    assert ollama_steps == [("ollama-cloud", llm_score.OLLAMA_CLOUD_CHAIN_MODEL)], \
+        "only the step-1 chain entry remains; the step-5 backstop is omitted"
+    assert "Ask the client" in capsys.readouterr().err

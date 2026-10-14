@@ -27,17 +27,17 @@ python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs
 - [ ] pdfplumber installed (`python3 -c "import pdfplumber; print('OK')"`)
 - [ ] Master files folder located or confirmed
 - [ ] PDF file exists and is readable
-- [ ] `OLLAMA_API_KEY` set (Tier 1 + 2 primary — Ollama Cloud Kimi / DeepSeek-pro)
-- [ ] `OPENROUTER_API_KEY` set (Tier 3 + 4 fallback only)
-- [ ] Codex OAuth token valid and not expired (Tier 5 fallback)
+- [ ] `OLLAMA_API_KEY` set (required when the client's chosen or configured default model routes via Ollama Cloud)
+- [ ] `OPENROUTER_API_KEY` set (required when the client's chosen or configured default model routes via OpenRouter)
+- [ ] Codex OAuth token valid and not expired (required when the client's chosen or configured default model routes via OAuth GPT)
 
 ---
 
 ## Phase 1 - Extraction Checklist (Smart Model Selection)
 
 - [ ] Book text extracted to .txt file (check file exists and is not empty)
-- [ ] Sub-agent spawned with the model returned by `shared-utils/select_model.py --skill book-to-persona --purpose "Phase 1 extraction" --format id` (Tier 1-4 result, or owner-provided if Tier 5)
-- [ ] Selector did NOT return an Anthropic model (it's filtered at every tier)
+- [ ] Sub-agent spawned with the model returned by `shared-utils/select_model.py --skill book-to-persona --purpose "Phase 1 extraction" --format id` (the client's choice, or the client's configured default model; owner-provided if nothing is configured)
+- [ ] Selector did NOT return an Anthropic model (it's filtered at every step)
 - [ ] Sub-agent received: extraction prompt + full book text
 - [ ] Output file exists: extraction-notes.md in persona folder
 - [ ] Output is over 8,000 characters (not truncated; 15,000+ for copy/marketing books)
@@ -53,7 +53,7 @@ python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs
 ## Phase 2 - Analysis Checklist (Smart Model Selection)
 
 - [ ] extraction-notes.md exists and is complete before Phase 2 starts
-- [ ] Sub-agent spawned with the model returned by `select_model.py` for Phase 2 (same Kimi-first chain as Phase 1)
+- [ ] Sub-agent spawned with the model returned by `select_model.py` for Phase 2 (same client-choice/default resolution as Phase 1)
 - [ ] Output file exists: analysis-notes.md in persona folder
 - [ ] Output is over 5,000 characters
 - [ ] All 13 analytical dimensions present
@@ -65,10 +65,10 @@ python3 -c "import google.genai, numpy, pdfplumber, pypdf, ebooklib, aiohttp, bs
 
 ---
 
-## Phase 3 - Synthesis Checklist (GPT-5.3 Codex / Kimi fallback)
+## Phase 3 - Synthesis Checklist (Smart Model Selection)
 
 - [ ] Both extraction-notes.md and analysis-notes.md exist before Phase 3 starts
-- [ ] Sub-agent spawned - check which model was used (Codex or fallback)
+- [ ] Sub-agent spawned with the model returned by `select_model.py` for Phase 3 (the client's choice, or the client's configured default model)
 - [ ] Output file exists: persona-blueprint.md in persona folder
 - [ ] Output is over 10,000 characters (a complete blueprint is much larger)
 - [ ] Header block present with version, date, QC status

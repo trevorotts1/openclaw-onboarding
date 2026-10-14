@@ -65,6 +65,11 @@ PERSONAL_CHANNEL_ID="chan-personal-123"
 INTERVIEW_CHANNEL_ID="chan-interview-456"
 INTERVIEW_SHOW_SLUG="SOFT_GIRL_ERA"
 DRY_RUN="0"
+# Globals the extracted STEP 5.5 block reads at source time (set by the real
+# argument parser before this block runs in the provisioner).
+SLUG="tclient"
+SHOW_SLUGS=()
+SHOW_CHANNELS=()
 run_block
 has_step "channels:personal" "OK" || { echo "FAIL: channels:personal not OK"; cat "$STEPS_FILE"; exit 1; }
 has_step "channels:interview" "OK" || { echo "FAIL: channels:interview not OK"; cat "$STEPS_FILE"; exit 1; }

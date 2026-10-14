@@ -1,5 +1,20 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## v2.0.5 - 2026-10-14 - stamp-pin subcommand + pin/version reconciliation
+
+- verify.sh gained a `stamp-pin` subcommand that recomputes ENGINE-PIN.sha256 over
+  scripts/ENFORCEMENT-FILES.list in list order (exit 4 on a missing enforcement
+  file), so update-skills.sh's post-copy re-stamp succeeds instead of WARNing on
+  every roll.
+- `source_prompt_pins` for `assets/prompts/11-cover-image-prompt.md` re-pinned to
+  the committed bytes: commit 5070ba221 changed that prompt with the Kie
+  GPT-image-2.5 migration without moving the pin, so AF-AW-PROMPT-DRIFT fired on a
+  pristine tree.
+- `skill_version` in ANTHOLOGY-MANIFEST.json synced to v2.0.5 (it still read
+  1.4.10 while skill-version.txt, SKILL.md and this changelog read a newer one).
+- The version-consistency check now reads `## vX.Y.Z` and `## [vX.Y.Z]` headers,
+  the formats CI's G2 accepts.
+
 ## v2.0.4 - 2026-10-09 - operator wording scrub
 
 - Wording scrub, behavior identical: the two-strike gate block in SKILL.md says the unlock is operator-only (no personal name).
