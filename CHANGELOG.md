@@ -1,3 +1,5 @@
+## [v27.1.27]  -  2026-10-14  -  Skill 06: OpenClaw Chrome extension becomes the default browser engine (PR #1990)
+
 ## [v27.1.26]  -  2026-10-13  -  D26c: every reader of the Telegram bot token resolves it like OpenClaw (accounts.default first, then top-level, then env) so boxes repaired by D26 keep working
 
 ##### What Changed
