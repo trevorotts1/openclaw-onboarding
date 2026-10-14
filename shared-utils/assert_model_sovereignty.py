@@ -17,7 +17,7 @@ The single assertion this gate enforces:
 This is the ONE place the gate logic lives. It is imported by:
   - the onboarding QC sweep (scripts/repair-model-sovereignty.sh, qc-system-integrity)
   - the Command Center runtime gate (mirrored in TypeScript as assertModelSovereignty;
-    the CC build consumes the SAME capability map + cascade rules — see PLAN.md §10
+    the CC build consumes the SAME capability map + resolution rules, see PLAN.md §10
     "remaining for CC repo").
 
 Usage (library):
@@ -41,7 +41,7 @@ import os
 import re
 import sys
 
-# Reuse the authoritative cascade + capability logic. Works whether imported as
+# Reuse the authoritative resolution + capability logic. Works whether imported as
 # a package member or run as a loose script next to select_model.py.
 # The import is OPTIONAL: the standalone Anthropic detector below (is_anthropic_model
 # / text_has_anthropic_model_id) is pure-stdlib and MUST remain importable by the
@@ -124,7 +124,7 @@ def assert_model_sovereignty(
     """
     if sm is None:
         raise RuntimeError(
-            "assert_model_sovereignty requires select_model.py (cascade/capability "
+            "assert_model_sovereignty requires select_model.py (resolution/capability "
             "logic) alongside this module; it was not importable."
         )
     rm = required_modality or "text"
