@@ -3266,6 +3266,15 @@
       "py_symbol": "_spelling_lock_present"
     },
     {
+      "code": "AF-P24",
+      "stage": "Prompt",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a slide prompt casts a Black / African-descended subject (named directly, or via a SOP-GIP-01 v2.0 skin-tone library label) but its negative block does not name one or more of the five BlackCEO classes adopted under the Item 26 GIP doctrine weave (skin chromatic depth, hair strand integrity, skin microtexture, hairstyle fidelity, skin-tone direction lock). Prompts with no Black subject are not bound by this code; the 8 base classes under AF-P13 still bind every prompt.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_blackceo_negative_class_problems"
+    },
+    {
       "code": "AF-P-DENSITY",
       "stage": "Prompt",
       "level": "slide",

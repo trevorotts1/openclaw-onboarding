@@ -72,7 +72,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ## 4. Weekly Operations
 
-After each deck run, review all prompt QC reports. Compile a per-code auto-fail tally (AF-P1 char floor, AF-P3 verbatim mismatch, AF-P8 missing NEGATIVE BLOCK, AF-P13 incomplete NEGATIVE BLOCK, AF-P14 missing spelling-lock, AF-P15 logo directive does not match the logo mechanism, etc.) and report to the Director with a trend note: which codes fire most frequently, and whether the Prompt Author's pre-handoff checks are catching the right things.
+After each deck run, review all prompt QC reports. Compile a per-code auto-fail tally (AF-P1 char floor, AF-P3 verbatim mismatch, AF-P8 missing NEGATIVE BLOCK, AF-P13 incomplete NEGATIVE BLOCK, AF-P14 missing spelling-lock, AF-P15 logo directive does not match the logo mechanism, AF-P24 BlackCEO class missing on a Black-subject prompt, etc.) and report to the Director with a trend note: which codes fire most frequently, and whether the Prompt Author's pre-handoff checks are catching the right things.
 
 ---
 
@@ -96,6 +96,7 @@ Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md), `build_deck.
 | AF-P1 (char under floor) escaped to render | 0 |
 | AF-P3 (verbatim mismatch -- headline paraphrase) escaped to render | 0 |
 | AF-P8 / AF-P13 (missing or incomplete NEGATIVE BLOCK) escaped to render | 0 |
+| AF-P24 (BlackCEO class missing on a Black-subject prompt) escaped to render | 0 |
 | AF-P14 (missing spelling-lock) escaped to render | 0 |
 | AF-P15 (logo directive does not match the logo mechanism) escaped to render | 0 |
 | AF-R3 (hardcoded demographic split in a prompt) escaped to render | 0 |
@@ -250,6 +251,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
    - Class 7: demographic or skin-tone fidelity failure (no mono-cast, no lightened deep skin)
    - Class 8: universal baseline (watermarks, em dashes, dark backgrounds unless DARK_OK, clipart, emoji, text within 5% of edge, text over face, basic/default font)
    A NEGATIVE BLOCK missing any of the 8 classes = AF-P13.
+2b. **BlackCEO classes 9-13 audit (CONDITIONAL; Item 26 GIP weave; slide-image-creator SOP 9.8 / 9.12):** For every prompt casting a Black / African-descended subject, verify the FIVE BlackCEO sentences are also present (skin chromatic depth; hair strand integrity; skin microtexture; hairstyle fidelity; skin-tone direction lock), each with its positive twin in the people spec (chromatic-depth direction, library hairstyle, microtexture preservation). A Black-subject prompt missing any of the five = AF-P24 (the deterministic measurer also emits it as check C6b; your verdict and the measurer must agree). On the same prompts, verify the GIP representation ORDER (woman: role, skin tone, hairstyle, attire, expression/posture; man: role, skin tone, hairstyle, facial hair, attire, expression/posture), that the skin-tone / hairstyle / facial-hair terms are casting-ledger library vocabulary (SOP-CAST-01 Section 8), that expressions are physical cues rather than a generic emotion label alone, and that camera direction is stated (shot distance, angle, 3x3 anchor, lens/aperture). Order, vocabulary, and camera findings are verdict findings under this step (route back with the named gap); only the five negative classes carry the mechanical AF-P24 code.
 3. **Positive-twin verification:** For each critical negative clause, verify a positive instruction stating the correct behavior is present EARLIER in the same prompt. A "Do not render a garbled headline" negative with no prior "Render this exact string letter-for-letter" positive = a missing positive twin (AF-P13 variant per NEGATIVE-PROMPTING-SOP).
 4. **No-contradiction audit:** Scan the prompt for any case where a positive instruction directly contradicts a negative instruction. For example: "Use a dark dramatic background" in the scene description paired with "Do not use a dark background" in the NEGATIVE BLOCK without a DARK_OK = true exception. A contradiction = AF-P13 variant.
 5. **Demographic-default audit:** Scan the prompt for any hardcoded demographic percentage split (60/30/10 or any other fixed percentage applied to a group). Any fixed-percentage demographic encoding = AF-R3 (demographic default landmine / casting-ledger violation).
@@ -304,7 +306,7 @@ All 15 structural elements present. Auto-fail codes AF-P6, AF-P7, AF-P10, AF-P12
 Every verbatim on-slide string has an explicit per-string spelling-lock instruction (AF-P14). No bracket placeholders as renderable copy (AF-P16). All strings verbatim-matched to slides_copy.md (AF-P3).
 
 ### Gate 4 -- NEGATIVE BLOCK Integrity (Hard)
-8-class NEGATIVE BLOCK present (AF-P13), all 8 classes covered, each with a positive twin earlier in the prompt, no contradictions.
+8-class NEGATIVE BLOCK present (AF-P13), all 8 classes covered, each with a positive twin earlier in the prompt, no contradictions. On every prompt casting a Black / African-descended subject, the five BlackCEO classes 9-13 are also present (AF-P24).
 
 ### Gate 5 -- No Demographic Hardcoding (Hard)
 No fixed-percentage demographic split in any prompt (AF-R3).

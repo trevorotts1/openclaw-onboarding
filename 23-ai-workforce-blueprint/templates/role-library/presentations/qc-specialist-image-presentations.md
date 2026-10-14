@@ -107,6 +107,8 @@ Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md) and the image
 | AF-I2 (logo mutation or invented mark) escaping to the assembled deck | 0 |
 | AF-I5 (anatomical artifacts: extra fingers, warped face) reaching the owner | 0 |
 | AF-I9 (demographic default / mono-cast) reaching the owner | 0 |
+| AF-I9 BlackCEO sub-check escapes (skin / hair / microtexture / hairstyle / direction lock) reaching the owner | 0 |
+| SOP 9.5 pixel-QC (7 checks) + post-generation verification (8 checks) completed per accepted slide | 100% |
 | AF-AUD-6 (bracket/placeholder token on a rendered slide) reaching the owner | 0 |
 | QC independence: graded_by set to anything other than "qc-specialist-image-presentations" | 0 |
 | Self-graded image QC reports | 0 |
@@ -168,7 +170,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
    - **AF-I6**: Bracket or placeholder token rendered as visible on-slide text (`[...]`, "INSERT", "TBD", "placeholder", "owner to confirm", "real result", "to supply", "pending", "client win").
    - **AF-I7**: Dark or black background present on a slide where `DARK_OK` is not set to true in intake.json (AF-DARK-SLIDE).
    - **AF-I8**: Generic / ungrounded scene: the image depicts an interchangeable stock-photo moment with no connection to the client's method, story, or offer (when the brief specified a grounded moment). The scene could belong to ANY business's deck with no edits.
-   - **AF-I9**: Demographic default / mono-cast: the image defaults to a single demographic group when the casting called for representation variety, OR renders a human subject with lightened, ashy, or off-tone deep skin (skin-tone fidelity failure).
+   - **AF-I9**: Demographic default / mono-cast: the image defaults to a single demographic group when the casting called for representation variety, OR renders a human subject with lightened, ashy, or off-tone deep skin (skin-tone fidelity failure). **BlackCEO sub-checks (Item 26 GIP weave; adopted from SOP-GIP-02 v2.0's AF-G7 representation expansion, living under this pipeline's AF-I9 per SOP-SLIDE-00's no-parallel-namespace rule):** on any slide rendering a Black / African-descended subject, AF-I9 also fires for each of: (i) melanated skin rendered gray, ashy, muddy, dull, or desaturated; (ii) Black hair crushed to featureless black with no individual strands or shape; (iii) skin smoothed to plastic, wax, or CGI with fine microtexture erased; (iv) the hairstyle specified in the prompt replaced with a generic one, or braids fused into shoulders or clothing; (v) deep skin lightened in an aspirational scene or darkened for a dramatic or pain beat. Any one sub-check hit = AF-I9 FAIL for the slide, named in the report by its sub-check.
    - **AF-I10**: Hook text rendered as a footer band or recurring bottom strip on a slide not designated as a hook-anchor slide (per `hook_variants.json`).
    - **AF-LOCAL-CANVAS** (cream-template): The slide is a flat cream / typography card with no photographic or designed visual subject -- the local-Pillow signature (a bare `#FFFBF1` fill with type dropped on a blank surface, typically tiny / under-byte). Pure-typography hook and section slides are kie.ai bakes with real surface depth, lighting, and treatment; a bare flat cream card is AF-LOCAL-CANVAS. This applies to EVERY slide, including cover and section dividers -- none are exempt.
    - **AF-OVERLAY-DELIVERED** (words-overlaid / double-print): Any native PowerPoint text layer stamped over the image, OR the same headline/copy appearing both baked into the image and as a separate native run on top (two overlapping copies). The only legitimate words are baked inside the single kie.ai image; the only legitimate native text is the off-slide notes pane.
@@ -282,6 +284,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 2. Perform the representation and casting fidelity audit:
    - Compare the rendered human subjects against the casting specification in the prompt. Does the rendered person match the described hair, clothing, and approximate demographic intent (without enforcing a fixed split)?
    - Check for skin-tone fidelity failure: a human subject specified as having dark skin rendered with lightened, washed-out, or ashy skin tone = AF-I9 (demographic default landmine).
+   - Check the BlackCEO fidelity sub-checks (Item 26 GIP weave; SOP 9.1 AF-I9): for each Black / African-descended subject, compare the render against the prompt's people spec: skin chromatic depth (warm, dimensional, never gray/ashy/muddy/dull/desaturated), hair strand integrity (individual strands and the specified shape visible), skin microtexture (present, never plastic/wax/CGI), hairstyle fidelity (the specified library hairstyle, braids distinct from clothing), and the skin-tone direction lock (the rendered depth matches the specified library label for this scene's mood). Any miss = AF-I9 with the sub-check named.
    - Check for mono-cast: if the slide renders only one demographic group in a multi-figure scene when the casting called for representation variety = AF-I9.
    - Check for the demographic-default landmine: a scene that silently defaults to a single demographic without any casting instruction having been given (the prompt specified "professional at a desk" and the render chose a mono-cast default) = AF-I9.
 3. Assign the AI artifact score (0 artifacts = 10; each category of artifact = -2; a hard auto-fail artifact = AF-I5 or AF-I9, not scored).
@@ -295,6 +298,29 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 **Hand to:** Report compilation. After all 4 SOPs complete for all slides, compile `working/qc/image_qc_report.json` and deliver to the Director.
 
 **Failure mode:** If a slide has no human subjects (a pure-typography or abstract scene slide), the representation audit section records "no human subjects -- N/A" and is not scored. The 5 scored criteria from SOP 9.1 are weighted accordingly (criterion (e) standalone art quality absorbs the composition weight).
+
+---
+
+### SOP 9.5 -- GIP Pixel QC + Post-Generation Verification (Item 26 weave)
+
+**When to run:** On every candidate render, alongside SOPs 9.1 to 9.4, before a slide is accepted. The full woven doctrine lives in slide-image-creator SOP 9.12 part 6; this SOP is the Image QC execution of it.
+
+**The cap rule (binding).** GIP's "failed images must be redone" is executed INSIDE this pipeline's existing per-slide attempt cap (SOP-IMG-01 Sections 7A and 8: max 3 generation attempts per slide, then escalate to the Director). This SOP adds check lists, never attempts. There is no uncapped reject-and-regenerate loop in this pipeline.
+
+**Steps:**
+
+1. **7-check Pixel QC** (SOP-GIP-01 v2.0) on every candidate render, logged per slide in `working/qc/image_qc_report.json`: (1) Skin check (chromatic depth and microtexture per the AF-I9 BlackCEO sub-checks where applicable; skin-tone fidelity for every subject); (2) Hair check (strand integrity and specified-style fidelity); (3) Style fidelity (the render matches the deck's ONE locked Creative Direction recorded in the STYLE BLOCK; score against the style's anchors); (4) Anatomy check; (5) Text check (every rendered character verified against the spelling lock, with SOP 9.2); (6) Brand check (palette, logo, type law); (7) Composition check (subject sits per the prompt's 3x3 plan; the text-safe area is clear).
+2. **8-check post-generation verification** (SOP-GIP-01 v2.0) before accepting the slide: (1) Style verification (one style selected, its anchors visible, its avoid list respected); (2) Character count (the prompt met rule 12, verified with the prompt budget tooling); (3) Prompt order (on Black-subject slides: role, skin tone, hairstyle, facial hair, attire, expression/posture, as authored); (4) Skin check; (5) Hair check; (6) Color grade check (the render matches the deck grade and the slide-purpose recipe in slide-image-creator SOP 9.12 part 3); (7) Negative block check (the prompt addressed all 13 classes where applicable); (8) Template completeness (every bracketed choice in the prompt template was filled with a specific value).
+3. Any failed check: the slide FAILS this SOP. Write a REPAIR DELTA in the routeback naming exactly what must change (the failing check, the observed defect, the required correction) and return the slide to the Slide Image Creator inside its remaining attempts. "No close enough": a failed check is never averaged away by the 8.5 score.
+4. Record per-slide: which checks ran, which failed, the repair delta issued, and the attempt number consumed.
+
+**Outputs:**
+- Per-slide pixel-QC and verification results in `working/qc/image_qc_report.json`
+- Repair deltas for every failed slide
+
+**Hand to:** Slide Image Creator (re-render inside the attempt cap) or the Director (cap exhausted, per SOP-IMG-01 Section 8).
+
+**Failure mode:** If the deck's Creative Direction is not recorded in the STYLE BLOCK, style fidelity cannot be graded: record the gap, flag the Director, and grade the remaining checks; do not invent a style to grade against.
 
 ---
 
