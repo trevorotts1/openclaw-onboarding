@@ -2,9 +2,9 @@
   "skill": "council-of-wise-elders",
   "skill_version": "v1.0.0",
   "generated_by": "scripts/build-bundles.mjs",
-  "source_commit": "82e34384042a3312c17318285c4bd71965204ec7",
-  "file_count": 130,
-  "aggregate_sha256": "fb73723b67f22d7f326528ed79e89d73844dfa04f4eb94ac1d35baba8ed83a30",
+  "source_commit": "2f46e4edbc88c09f8f99038003e218bb4c180c14",
+  "file_count": 150,
+  "aggregate_sha256": "9b0825d138df6b8eb5cf4669d0b720fe54896211866484496a2fd8206c84da25",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -593,6 +593,101 @@
       "bytes": 366
     },
     {
+      "path": "runtime/src/contracts/README.md",
+      "sha256": "92d80937f0dfbc54f2ddac0ac1719ca7a209f020aa3e6c99cd9d9cee0c8f8d18",
+      "bytes": 4178
+    },
+    {
+      "path": "runtime/src/contracts/canonical-json.ts",
+      "sha256": "12b72d689d407f1331b289c85eac56272264a98a9f491e8f64908e2446aaff4f",
+      "bytes": 9038
+    },
+    {
+      "path": "runtime/src/contracts/contracts.test.ts",
+      "sha256": "23433f48bb040c2db25635203deb185d245472a340242db2669fe8f51775d109",
+      "bytes": 21683
+    },
+    {
+      "path": "runtime/src/contracts/diagnostic-retention.ts",
+      "sha256": "27958e5ee03f04c3b9892c41b85a90199d06e95b803f986afb8223a54d073f02",
+      "bytes": 4267
+    },
+    {
+      "path": "runtime/src/contracts/enums.ts",
+      "sha256": "6b03d081399e18fd071db947f1b8d65e182b2613ec6f53f9cd163a49ef8d6fc0",
+      "bytes": 7899
+    },
+    {
+      "path": "runtime/src/contracts/errors.ts",
+      "sha256": "d21dc1991223e876ca51af9930de5d16d1fd52e67bbc8c71d0e5a36a3147eab0",
+      "bytes": 1401
+    },
+    {
+      "path": "runtime/src/contracts/fixtures/examples.ts",
+      "sha256": "f935fca281ed102e32c418086b7d8ef52279750059bf5dfd552f7d8888538973",
+      "bytes": 7705
+    },
+    {
+      "path": "runtime/src/contracts/generate.ts",
+      "sha256": "a3477537e29a6ffa2901f42d2690e3a4df827f78e8bbad968469e03bf20df237",
+      "bytes": 3963
+    },
+    {
+      "path": "runtime/src/contracts/golden-vectors.ts",
+      "sha256": "372068267904aec25fa1528bd50aafee75b78774e4b920d3a6a330786164c3c7",
+      "bytes": 3158
+    },
+    {
+      "path": "runtime/src/contracts/index.ts",
+      "sha256": "c674a8eb60b6d1be6bedb2812424afc03b0d06220aec88ba976cf08d4b12f260",
+      "bytes": 909
+    },
+    {
+      "path": "runtime/src/contracts/primitives.ts",
+      "sha256": "3ca8d00886e5533aa86e24c33cba3e495e508f3b9c8a9099d19efaa127f34483",
+      "bytes": 4080
+    },
+    {
+      "path": "runtime/src/contracts/schemas.ts",
+      "sha256": "67246fc1533f041d7ac5e7f902a52a1da90e0f84165940a3c76dc8797418d4ae",
+      "bytes": 38957
+    },
+    {
+      "path": "runtime/src/contracts/scoring.ts",
+      "sha256": "260654dfc4e2b65434cb0b4a603e502d31455fc10154f6244343f90cd03d8cbe",
+      "bytes": 3732
+    },
+    {
+      "path": "runtime/src/contracts/sha256.ts",
+      "sha256": "9fd5eb68302e112395e4c4c0101874ed24d3000d77ae85d3915d53a3ae7bcd72",
+      "bytes": 3383
+    },
+    {
+      "path": "runtime/src/contracts/state-machine.ts",
+      "sha256": "31d815fdd062eaeafb45306cb5c9e6adb9bd6022a1e1110db6a9594073411425",
+      "bytes": 5545
+    },
+    {
+      "path": "runtime/src/contracts/tools/cc-consumer-README.md",
+      "sha256": "8fa0945c34af6c063851189265ef34303600a4b9ae93d9f4d27fbfd2bbfada03",
+      "bytes": 3109
+    },
+    {
+      "path": "runtime/src/contracts/tools/generate-cc-consumer.mjs",
+      "sha256": "cde72dd3783bf17b11fc03abf806988738b098d2bd474deebf9a6bd64b1a35e8",
+      "bytes": 6123
+    },
+    {
+      "path": "runtime/src/contracts/tools/verify-cc-parity.mjs",
+      "sha256": "878a11088a28c50cfac11e217c4732a529ea236623e4eeb48ecde21ee219b43b",
+      "bytes": 2952
+    },
+    {
+      "path": "runtime/src/contracts/types.ts",
+      "sha256": "e541eaa465fc27ef2d0dfbda3b100109898c8ccf442cfd1b10bc584d12a98aac",
+      "bytes": 1869
+    },
+    {
       "path": "runtime/tests/README.md",
       "sha256": "ca2e467b810986a7981c9f92288a8826bbd750c095f2cfe8f71790fe519505ee",
       "bytes": 246
@@ -604,8 +699,13 @@
     },
     {
       "path": "schemas/README.md",
-      "sha256": "9954e8d3fdd545056379f2d458e719e86f5bb67c1f1d8cc590c7fc30a2f5a187",
-      "bytes": 720
+      "sha256": "f2cf06bfad1ef3a2a74e7a723c7cde1dd7a9aab2f956553013e452bc741f3e85",
+      "bytes": 1069
+    },
+    {
+      "path": "schemas/json-schemas.json",
+      "sha256": "4f64da0a61aa58f46c9c63da56f31e0c7ddb827971e76dc03bf298f50c559b70",
+      "bytes": 74503
     },
     {
       "path": "scripts/build-bundles.mjs",
