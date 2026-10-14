@@ -36,6 +36,7 @@ import http.server
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import sqlite3
 import stat
@@ -261,6 +262,40 @@ class HandoffTests(unittest.TestCase):
                             " WHERE run_id=?", (out["order_id"],)).fetchone()[0], 12)
         finally:
             con.close()
+
+    def test_the_printed_next_command_works_from_anywhere(self):
+        """The poll line's `next` is run as printed, so the paths in it must be
+        absolute even when the timer handed poll a relative --runs."""
+        STUDIO["line"] = 'DRAMA_ORDER r_relpath01 "Spring Sale"'
+        STUDIO["order"] = {"order_id": "r_relpath01", "client_id": CLIENT,
+                           "title": "Spring Sale", "replies": ["yes"]}
+        elsewhere = self.tmp / "elsewhere"
+        elsewhere.mkdir(parents=True, exist_ok=True)
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": str(self.tmp / "home"),
+               "DRAMA_STUDIO_STATE": str(self.state), "PYTHONDONTWRITEBYTECODE": "1",
+               "DS_KEY": MACHINE_KEY}
+        p = subprocess.run(
+            [PY, BRIDGE, "poll", "--skill-root", str(SKILL_ROOT),
+             "--runs", "drama-runs", "--db", str(self.claims),
+             "--base-url", self.base],
+            capture_output=True, text=True, env=env, cwd=str(elsewhere))
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        out = json.loads([l for l in p.stdout.splitlines() if l.strip()][0])
+        self.assertTrue(pathlib.Path(out["run_dir"]).is_absolute(), out)
+        # and the printed command really runs from an unrelated working directory
+        argv = shlex.split(out["next"])
+        nxt = subprocess.run(argv, capture_output=True, text=True, env=env,
+                             cwd=str(elsewhere))
+        self.assertEqual(nxt.returncode, 0, nxt.stdout + nxt.stderr)
+        self.assertEqual(json.loads(nxt.stdout)["reason_code"], "next-stage")
+        # the same folder addressed RELATIVELY only works from poll's own
+        # working directory -- which is why the printed path must be absolute
+        ghost = subprocess.run(
+            [PY, FACTORY, "next", "--run-dir", "drama-runs/r_relpath01"],
+            capture_output=True, text=True, env=env, cwd=str(self.tmp))
+        self.assertEqual(ghost.returncode, 1, ghost.stdout + ghost.stderr)
+        self.assertEqual(json.loads(ghost.stdout)["reason_code"],
+                         "state-file-missing")
 
     def test_next_still_refuses_a_run_that_was_never_claimed(self):
         """Negative control on the SAME instrument: no poll -> no run -> the

@@ -747,7 +747,10 @@ def cmd_poll(args):
     title = str(order.get("title") or title)
     client_id = str(order.get("client_id") or "")
 
-    run_dir = pathlib.Path(args.runs).expanduser() / order_id
+    # Absolute, always: the poll line's `next` is meant to be run as printed,
+    # from wherever the agent happens to be (a relative --runs would otherwise
+    # print a relative run_dir and a next that resolves somewhere else).
+    run_dir = (pathlib.Path(args.runs).expanduser() / order_id).resolve()
     control = run_dir / "control"
     control.mkdir(parents=True, exist_ok=True)
     # The run dir knows WHERE the studio is; it never holds the key.
