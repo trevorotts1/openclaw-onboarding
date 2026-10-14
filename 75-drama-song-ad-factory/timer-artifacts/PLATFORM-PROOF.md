@@ -1,5 +1,11 @@
 # PLATFORM-PROOF — skill 75 timer, platform by platform (W4-e2e-proof-U2, unit DSF-302)
 
+> **Receipt, not current behaviour (note added by DSR-103, 2026-10-13).** This
+> file captures a run made when `install-timer.sh --register` always refused.
+> That has since changed: `--register` now installs and arms the timer, and is
+> proven against temp roots. See `README.md` → "Registering". Every transcript
+> below is left exactly as it was run.
+
 Receipt for `W4-e2e-proof-U2`, rebuilt without Docker on Trevor's order of
 2026-10-13 16:38. Each platform is simulated by running the shipped code with
 that platform's own environment and paths mapped into a **temp root** on this
