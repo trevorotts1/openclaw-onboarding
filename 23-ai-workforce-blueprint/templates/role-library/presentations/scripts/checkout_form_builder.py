@@ -704,9 +704,13 @@ def build_skill44_contract(*, offer: dict, intent: str, scope: dict,
         "owner_skill": "44-convert-and-flow-operator",
         "cli": "caf (PIT-authenticated)",
         "mechanism": "SKILL44_WIDGET -> FORM",
-        "status": ("REAL GHL object contract -- NOT a stub. Skill 44 builds a "
-                   "live form, live custom fields, and a live Form-Submitted "
-                   "workflow; every creation is receipted."),
+        "status": ("REAL GHL object contract -- NOT a stub. PLAN contract: "
+                   "a delegated Skill 44 execution builds the live form, "
+                   "live custom fields, and the live Form-Submitted "
+                   "workflow under Skill 44's own gates; every creation is "
+                   "then receipted with live ids. Until execution this "
+                   "phase's receipt reads plan_emitted and no live object "
+                   "exists."),
         "scope": scope,
         "offer": {k: offer.get(k) for k in
                   ("name", "price_display", "amount_minor", "currency", "price_mode")},
