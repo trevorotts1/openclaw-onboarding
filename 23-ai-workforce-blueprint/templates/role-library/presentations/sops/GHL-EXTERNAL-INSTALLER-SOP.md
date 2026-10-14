@@ -68,7 +68,8 @@ wave (TODO PRES-011).
   sales_page_id + checkout_page_id + readback + bindings).
 - P-U-GHL-VSL (order 6.4, elected on WANT_VSL_PAGE=yes): vsl.html -> VSL
   page. Reuses this run's verified sales funnel_id when present (one
-  funnel per client, mirroring vsl_builder.resolve_shared_funnel_id).
+  funnel per client, via this installer's own shared_funnel_id(), proven
+  from the run's sales install receipt).
   Receipt `working/vsl/ghl_build_receipt.json`.
 - P-U-FORM-GATE (order 5.6, elected on WANT_VSL_PAGE=yes): gate form +
   tag workflow. Receipts `ecosystem/gate-form.json` +
