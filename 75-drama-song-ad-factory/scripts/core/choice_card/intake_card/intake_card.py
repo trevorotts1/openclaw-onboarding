@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""intake_card: the intake questions (nine; ten with a saved character) as a card a client can read (H9).
+"""intake_card: the intake questions (fourteen: the five story-brief questions
+then the nine production choices) as a card a client can read (H9).
+
+DSR-105: the studio page used to ask only the nine production choices, so an
+order placed on the page carried no brief at all -- no offer, no link, no
+audience, no character, no photos -- while an order started in chat did. The
+five BRIEF questions close that gap. They are typed answers, not picks, so each
+one carries a single option whose detail starts "Reply with" (the studio reads
+that as "type it in"), and this module stays the one place their text lives.
 
 Trevor 2026-10-08: the questions arrived "smashed together, no spaces, nothing
 on different lines". Cause: nothing built the card -- the agent wrote it free
@@ -42,6 +50,10 @@ if _CORE not in sys.path:
 #: Telegram's hard limit is 4096 characters per message; stay under it.
 TELEGRAM_LIMIT = 4000
 
+#: A typed (brief) answer is capped at the studio service's own per-reply
+#: limit, so an answer the card accepts is an answer the order can store.
+MAX_TYPED_ANSWER_CHARS = 2000
+
 _CLOSING_FMT = ('How to answer: reply with one number per question, in order, '
                 'like "{ex}". Say "all recommended" to take every RECOMMENDED choice.')
 
@@ -50,10 +62,23 @@ _SHORT_CLOSING_FMT = ('How to answer: reply with one number per question, in ord
 
 REC = "(RECOMMENDED)"
 
+#: The line a typed (brief) question ends with. The studio reads the same
+#: sentence off that question's single option detail, so the card and the page
+#: always agree about which answers are typed rather than picked.
+FREE_TEXT_HINT = "Reply with your own words."
+
 
 def _closing(qs):
     """'all recommended' is offered only when every question has a recommended option."""
-    fmt = _CLOSING_FMT if all(q.get("recommended") is not None for q in qs) else _SHORT_CLOSING_FMT
+    choices = [q for q in qs if not q.get("free_text")]
+    shortcut = (' Say "all recommended" to take every RECOMMENDED choice.'
+                if all(q.get("recommended") is not None for q in choices) else "")
+    typed = [q["label"].title() for q in qs if q.get("free_text")]
+    if typed:
+        return ("How to answer: type your own words for %s, one number for the "
+                "choice questions, and a dollar amount for the BUDGET.%s"
+                % (", ".join(typed), shortcut))
+    fmt = _CLOSING_FMT if shortcut else _SHORT_CLOSING_FMT
     return fmt.format(ex=", ".join(["1"] * len(qs)))
 
 #: (label, question, [(option, one short sentence)], recommended option index)
@@ -218,8 +243,64 @@ def _priced(qs, answers):
     return [_model_question(length_text) if q["id"] == "model" else q for q in qs]
 
 
-QUESTIONS = _questions()
-CLOSING_LINE = _CLOSING_FMT.format(ex=", ".join(["1"] * len(QUESTIONS)))
+# --- DSR-105: the story brief --------------------------------------------------
+#: The five questions the chat intake asks and the studio page never did
+#: (operator trace section 1: "It sends no offer, no link, no audience, no
+#: character and no photos"). They open the card, in the Client Guide's own
+#: order (STEP 4, 5, 6), so a run started on the page carries the same brief a
+#: run started in chat carries.
+BRIEF_IDS = ("offer", "link", "audience", "character", "photos")
+#: Without these four the crew has no brief to write from. `photos` is asked
+#: and stored but never required: plenty of ads are made from what the client
+#: already has, and a client with nothing to send must still be able to lock in.
+BRIEF_REQUIRED = ("offer", "link", "audience", "character")
+
+
+def _typed(id_, label, why, ask):
+    """One typed brief question. The single option is what the studio renders
+    and what the card's parser keys off; its detail opens "Reply with" so the
+    page knows to show a text box instead of a menu."""
+    return {"id": id_, "label": label, "why": why, "ask": ask, "free_text": True,
+            "options": [("Type it in", FREE_TEXT_HINT)]}
+
+
+def _brief_questions():
+    return [
+        _typed("offer", "OFFER",
+               "The story, the song and the call to action are all built around this.",
+               "What are we promoting? Give the exact name of your offer."),
+        _typed("link", "OFFER LINK",
+               "The link goes on screen at the end, so it has to be exact.",
+               "What web address should the video send people to? Paste it rather than typing it from memory."),
+        _typed("audience", "AUDIENCE",
+               "One audience and one action beat ten of each.",
+               "Who is this video for, and what should they do after watching it?"),
+        _typed("character", "CHARACTER",
+               "Your characters are the actors, and viewers spend the whole video with them.",
+               "Who stars in your video? Describe them by name, age, look and clothing."),
+        _typed("photos", "PHOTOS",
+               "A real photo makes the story feel true instead of invented.",
+               "Which photos or proof should we use - your logo, a product shot, a testimonial? Reply \"none\" if you have none."),
+    ]
+
+
+QUESTIONS = _brief_questions() + _questions()
+
+
+def example_replies(questions=None):
+    """One plausible reply per question, in order: the typed answer for a brief
+    question, a dollar amount for BUDGET, the recommended pick for a choice.
+    Fixtures and tests use it so a complete card needs no hand-counting."""
+    out = []
+    for q in (questions or QUESTIONS):
+        if q["id"] == "spend":
+            out.append("$25")
+        elif q.get("free_text"):
+            out.append("Sweet Details Cookie-Decorating Class")
+        else:
+            out.append("recommended")
+    return out
+CLOSING_LINE = _closing(QUESTIONS)     # whatever the whole card actually closes with
 SHORT_CLOSING_LINE = _SHORT_CLOSING_FMT.format(ex=", ".join(["1"] * len(QUESTIONS)))
 
 
@@ -244,7 +325,21 @@ def _option_lines(q):
     return out
 
 
+def _typed_block(i, total, q, why=False):
+    """A brief question's block: the ask, then the one line that says the
+    answer is typed. There is no menu to number, so there is no menu to mark,
+    and no blank line inside the block -- the blank line is what separates one
+    question from the next."""
+    lines = ["Question %d of %d - %s" % (i, total, q["label"])]
+    if why:
+        lines += [q["why"], ""]
+    lines += [q["ask"], FREE_TEXT_HINT]
+    return "\n".join(lines)
+
+
 def _block(i, total, q):
+    if q.get("free_text"):                 # brief question: a typed answer
+        return _typed_block(i, total, q)
     if "body" in q:                       # saved-character question: fixed text
         return "\n".join(["Question %d of %d - %s" % (i, total, q["label"])] + q["body"])
     lines = ["Question %d of %d - %s" % (i, total, q["label"]), q["ask"]]
@@ -265,6 +360,8 @@ def render_step(i, questions=None):
     explained, then how to answer."""
     qs = questions or QUESTIONS
     q = qs[i - 1]
+    if q.get("free_text"):
+        return _typed_block(i, len(qs), q, why=True)
     if "body" in q:
         return _block(i, len(qs), q)
     lines = ["Question %d of %d - %s" % (i, len(qs), q["label"]), q["why"], "", q["ask"]]
@@ -293,6 +390,10 @@ def render_recap(answers, questions=None):
 
 _YES = ("yes", "y", "yep", "go", "ok", "okay", "start", "approve", "approved")
 
+#: The words that mean "take the recommended option". A typed brief question
+#: refuses them too, so they can never be stored as an answer.
+_PICK_WORDS = ("recommended", "recommend", "rec")
+
 
 def _parse(reply, q):
     """Reply -> {"n": option number, "text": ..., "value": ...} or None."""
@@ -305,7 +406,14 @@ def _parse(reply, q):
             return {"error": err}
         return {"n": 1 if c == AM.recommended() else 2, "value": c,
                 "text": AM.label(c["build"]) + " builds, " + AM.label(c["check"]) + " checks"}
-    if t in ("recommended", "recommend", "rec") or (t in _YES and len(opts) > 0):
+    if q.get("free_text"):                 # a brief question: the answer IS the text
+        raw = (reply or "").strip()
+        # A mistyped "1", a stray "yes" or a stray "recommended" must never be
+        # stored as somebody's offer, so none of the pick words is an answer.
+        if len(raw) < 2 or t in _YES or t in _PICK_WORDS or len(raw) > MAX_TYPED_ANSWER_CHARS:
+            return None
+        return {"n": 1, "text": raw, "value": raw, "id": q["id"]}
+    if t in _PICK_WORDS or (t in _YES and len(opts) > 0):
         if q.get("recommended") is None:
             return None
         n = q.get("recommended", 0) + 1
@@ -625,16 +733,20 @@ def _render_fit(card):
 
 
 def _with_saved_character(client_dir):
-    """QUESTIONS, with the saved-character question first when the client has
-    saved characters (Part I, I6). With a client folder but no saved characters
-    the plain nine open with one short line (``NO_SAVED_LINE``). No folder: plain nine."""
+    """QUESTIONS, with the saved-character question where the brief's typed
+    CHARACTER question sat when the client has saved characters (Part I, I6).
+    Exactly one "who stars" question is ever asked: the pick replaces the typed
+    description. With a client folder but no saved characters the fourteen open
+    with one short line (``NO_SAVED_LINE``). No folder: plain fourteen."""
     if not client_dir:
         return QUESTIONS
     from character_library import character_library as CL
     q = CL.saved_character_question(client_dir)
     if not q:
         return [dict(QUESTIONS[0], preface=NO_SAVED_LINE)] + QUESTIONS[1:]
-    return QUESTIONS[:1] + [q] + QUESTIONS[1:]      # AI MODELS stays the first question
+    plain = [x for x in QUESTIONS if x["id"] != "character"]
+    i = len(BRIEF_IDS) - 1              # the brief's CHARACTER question's own slot
+    return plain[:i] + [q] + plain[i:]  # AI MODELS stays the first of the nine
 
 
 try:
@@ -658,6 +770,10 @@ except ImportError:                                # run as a plain script
 GUIDE_STEP = {
     "models": 3, "saved_character": 6, "length": 7, "music": 8, "look": 9,
     "model": 10, "spend": 11, "script": 13, "song": 14, "storyboard": 15,
+    # DSR-105: the brief. STEP 4 covers the offer name, its web address and the
+    # assets to use (logo, photos, one proof), so offer, link and photos all
+    # take its example; STEP 5 is the audience and the action, STEP 6 casting.
+    "offer": 4, "link": 4, "audience": 5, "character": 6, "photos": 4,
 }
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -732,6 +848,10 @@ def studio_questions(questions=None, guide=None):
             "id": q.get("id"), "label": q.get("label", ""), "question": ask,
             "price": q.get("price"),
             "example": example,
+            #: DSR-105: a brief question's answer is typed, not picked. The
+            #: page reads this rather than sniffing the option text, so a
+            #: reworded hint can never turn a text box back into a menu.
+            "typed": bool(q.get("free_text")),
             "options": [_studio_option(q, n, o) for n, o in enumerate(options, 1)],
         })
     return out
