@@ -230,7 +230,24 @@ echo ""
 # verification.
 echo "--- Step 6: Write Rule-Zero budget cap into config.yaml ---"
 CONFIG_FILE="$OPENMONTAGE_DIR/config.yaml"
-CONFIG_FILE="$CONFIG_FILE" python3 - <<'PYEOF' || { red "Failed to write budget cap into config.yaml."; exit 1; }
+# PyYAML is installed by `make setup` into the OpenMontage venv (same convention as
+# provision-render-deps.sh), so the bare system python3 — PEP 668 externally-managed
+# on macOS — cannot see it. Pick the FIRST candidate that is executable AND can
+# import yaml; fail loud if none can (the gate must not silently pass).
+PY=""
+for cand in "$OPENMONTAGE_DIR/.venv/bin/python" "${VIRTUAL_ENV:-}/bin/python" "$(command -v python3 || true)"; do
+  if [ -n "$cand" ] && [ -x "$cand" ] && "$cand" -c 'import yaml' >/dev/null 2>&1; then
+    PY="$cand"
+    break
+  fi
+done
+if [ -z "$PY" ]; then
+  red "Failed to write budget cap into config.yaml."
+  info "PyYAML is required to write config.yaml (installed by make setup). Run \`pip install pyyaml\` into the OpenMontage venv and re-run install.sh."
+  exit 1
+fi
+info "Step 6 interpreter: $PY"
+CONFIG_FILE="$CONFIG_FILE" "$PY" - <<'PYEOF' || { red "Failed to write budget cap into config.yaml."; exit 1; }
 import os, sys
 try:
     import yaml
