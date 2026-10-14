@@ -277,7 +277,13 @@ def main() -> None:
     # --model-primary (with optional --model-fallbacks) is the client's choice
     # for this department; otherwise the entry inherits the client's own
     # configured default model (agents.defaults.model in openclaw.json).
-    # If neither exists, stop and ask the client: never invent a model.
+    # If neither exists, registration still completes and records NO model
+    # (empty primary): registration is the department ledger, not a model
+    # prescription, and the fleet-critical sidecar write (plus the legacy
+    # root-block self-heal) must never be gated on model configuration. The
+    # department's model resolves from the client's choice or configured
+    # default when it first runs, and that run stops and asks the client if
+    # neither exists by then. Never invent a model.
     _banned = ("anthropic", "claude")
     def _is_banned(mid: str) -> bool:
         low = str(mid).lower()
@@ -299,10 +305,12 @@ def main() -> None:
         else:
             _primary = ""
     if not _primary:
-        die("No model resolved for this department: pass --model-primary with the "
-            "client's chosen model, or configure the client's default model "
-            "(agents.defaults.model) in openclaw.json first. No model is "
-            "prescribed by name; ask the client which model to use.")
+        info("No model recorded for this department: the client has not chosen "
+             "one (--model-primary) and no default model is configured "
+             "(agents.defaults.model) in openclaw.json. Registering with an "
+             "empty model primary; the model resolves from the client's choice "
+             "or configured default when the department first runs, and that "
+             "run stops and asks the client if neither exists by then.")
     if _is_banned(_primary):
         die(f"Resolved primary model '{_primary}' is an Anthropic or Claude model, "
             "which the fleet never uses for pipeline agents. Ask the client to "
