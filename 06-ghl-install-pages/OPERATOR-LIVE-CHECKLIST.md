@@ -31,7 +31,7 @@ Ground rules for every step:
       Expected evidence: the `--check` exit code 0 in this transcript; NO token
       material anywhere in it.
 
-- [ ] **2. One Mac build, Lane 1 (agent-browser via browser_manager).**
+- [ ] **2. One Mac build, Lane 1 (OpenClaw Chrome extension; the browser_manager commands below apply when the run is on the Lane 2 fallback).**
       ```bash
       bash 06-ghl-install-pages/tools/browser_manager.sh ensure
       bash 06-ghl-install-pages/tools/browser_manager.sh probe
