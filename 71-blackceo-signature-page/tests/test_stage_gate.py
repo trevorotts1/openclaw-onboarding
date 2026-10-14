@@ -246,6 +246,12 @@ class StageGateTest(unittest.TestCase):
             "fonts": {"display": "Test", "body": "Test", "accent": "Test"},
             "logo": {"files": "test.png", "masthead_files": "test.png"},
             "founder_photos": "test.png",
+            # Grade object present with null thresholds: the Item 8
+            # uncalibrated state (owner supplies calibration values).
+            # A brand file with NO grade object fails closed in the
+            # grade validator; nulls pass as uncalibrated.
+            "grade": {"min_mean_saturation": None, "min_luma_std": None,
+                      "min_sharpness": None, "min_colorfulness": None},
         }))
         write(run / "intake.json", json.dumps({
             "page_version": "standard", "brand_owner": "blackceo",
@@ -264,7 +270,13 @@ class StageGateTest(unittest.TestCase):
         write(run / "mobile-tablet" / "part-01.png", "stub")
         write(run / "mobile-tablet" / "tablet-rules.md", "rules")
         write(run / "visual-mockup" / "page-visual-bible.json",
-              json.dumps({"selection_mode": "SECRET_SAUCE_ONLY"}))
+              json.dumps({"selection_mode": "SECRET_SAUCE_ONLY",
+                          "visual_direction": (
+                              "Editorial photograph of a woman founder at a dining "
+                              "table with her book manuscript, pens and sticky notes; "
+                              "window daylight, warm amber grade, deep brown skin, "
+                              "natural hair, tweed jacket and cream blouse; cinematic "
+                              "master image, no logo invention on any surface.")}))
         write(run / "visual-mockup" / "mockup.html", "<html></html>")
         write(run / "visual-mockup" / "desktop" / "part-01.png", "stub")
         write(run / "visual-mockup" / "mobile" / "part-01.png", "stub")

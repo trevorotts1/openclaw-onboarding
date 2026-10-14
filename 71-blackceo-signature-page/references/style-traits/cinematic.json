@@ -1,0 +1,881 @@
+{
+  "library": "cinematic",
+  "library_file": "references/BlackCEO-Cinematic-Image-Style-Systems-v2.0.md",
+  "library_version": "v2.0",
+  "extraction_status": "PENDING OWNER SPOT-CHECK (Trevor); acceptance gate per FIX-PLAN Amendment 6 Part B2",
+  "coverage": {
+    "extracted_entries": [
+      "CIS-01",
+      "CIS-04",
+      "CIS-26",
+      "CIS-35",
+      "CIS-38",
+      "CIS-50"
+    ],
+    "library_total_entries": 50,
+    "note": "Representative schema-proving set; loader accepts further entries without code change."
+  },
+  "compiled_prompt_schema_0a": {
+    "fields": [
+      "SUBJECT LOCK",
+      "ACTION LOCK",
+      "ENVIRONMENT LOCK",
+      "STYLE SYSTEM",
+      "CORE ANCHORS",
+      "CAMERA",
+      "COMPOSITION",
+      "LIGHT",
+      "COLOR/MATERIALS",
+      "ENVIRONMENT",
+      "CHARACTER DIRECTION",
+      "STYLE CONTRAST",
+      "ANTI-DRIFT",
+      "FINAL GENERATION INSTRUCTION"
+    ],
+    "field_count_in_manual_text": 14,
+    "field_count_note": "FIX-PLAN Amendment 6 conflict N4 and the supporting full-read notes call section 0A the fifteen-field schema, but the code block in the manual at lines 86-102 enumerates 14 labeled fields in the order above and no fifteenth label appears in the manual text. All 14 enumerated labels are recorded in order; no fifteenth field was invented.",
+    "source": "section 0A, Compiled prompt schema, lines 83-103",
+    "plan_decision": "Section 0A fifteen-field schema adopted as superset over the ten-field per-profile checklist (FIX-PLAN conflict N4, labeled plan decision)"
+  },
+  "global_rules": {
+    "rule_a": {
+      "summary": "Never reduce a style to its palette: the selected system must affect at least six of the following nine dimensions: camera position; composition; lens/spatial behavior; depth of field; lighting logic; color architecture; material/texture treatment; environment/production design; character direction / implied movement. If only color changes, the style has not been applied.",
+      "minimum_affected_dimensions": 6,
+      "dimensions": [
+        "camera position",
+        "composition",
+        "lens/spatial behavior",
+        "depth of field",
+        "lighting logic",
+        "color architecture",
+        "material/texture treatment",
+        "environment/production design",
+        "character direction / implied movement"
+      ],
+      "source": "Global Agent Instructions, section A. Never reduce a style to its palette, lines 5703-5715"
+    },
+    "rule_d": {
+      "summary": "Do not stack unrelated style systems by default. One style system should be dominant. If two are deliberately combined, identify a Primary system (controls camera/composition/lighting) and a Secondary system (may contribute only 1-3 specified traits). Do not average two systems into generic 'cinematic' imagery.",
+      "primary_system": "controls camera/composition/lighting",
+      "secondary_traits_range": [
+        1,
+        3
+      ],
+      "selection_record": {
+        "requires": [
+          "primary_style_id",
+          "secondary_style_id",
+          "secondary_traits (1 to 3 named traits)",
+          "owner_authorized"
+        ],
+        "owner_authorized": "required: a declared rule D blend is recorded and passed only when the run also records Trevor's explicit authorization for the blend, per FIX-PLAN conflict N2; the existence of rule D in the manual is not standing permission, because Image Guide v5's master rule (exactly one external branded style per page for signature-page work) is the higher authority until Trevor changes it"
+      },
+      "source": "Global Agent Instructions, section D. Do not stack unrelated style systems by default, lines 5723-5728; authorization requirement per FIX-PLAN Amendment 6 conflict N2"
+    }
+  },
+  "review_form": {
+    "name": "Eight-dimension Fidelity Gate (manual section 0B)",
+    "source": "section 0B, lines 116-161",
+    "dimensions": [
+      "Content preservation",
+      "Camera + composition",
+      "Lens + spatial behavior",
+      "Lighting logic",
+      "Color + material architecture",
+      "Environment + production design",
+      "Character/action direction",
+      "Signature fidelity"
+    ],
+    "thresholds": {
+      "average_min": 8.0,
+      "content_preservation_min": 9.0,
+      "signature_fidelity_min": 8.0,
+      "dimension_floor": 7.5,
+      "anchors_visible_min": "4 of 5",
+      "avoid": "no dominant Avoid violation"
+    },
+    "repair_loop": {
+      "scope": "repair delta for failed dimensions only",
+      "max_automatic_cycles": 2,
+      "source": "section 0B, Correction loop and Repair-delta template, lines 141-161: identify only the failed dimensions, name the visible failure precisely, write a repair delta containing only corrective instructions for those failed dimensions, preserve all locked user content and all dimensions that already scored 8+, regenerate with the original compiled prompt plus the repair delta, re-score; after two failed cycles report the persistent failure"
+    }
+  },
+  "entries": {
+    "CIS-01": {
+      "style_id": "CIS-01",
+      "branded_name": "SOVEREIGN HUMAN LIGHT",
+      "source": {
+        "section": "01. SOVEREIGN HUMAN LIGHT",
+        "lines": "236-346"
+      },
+      "anchors": [
+        {
+          "name": "Dimensional dark skin rendering",
+          "concrete_expression": "Render dark skin with dimensional highlight rolloff and meaningful shadow detail and natural texture; never flatten the face into a single exposure value; protect skin tone separation in shadows.",
+          "check_tokens": [
+            "dark skin",
+            "dimensional highlight rolloff",
+            "meaningful shadow detail",
+            "skin texture"
+          ]
+        },
+        {
+          "name": "Human dignity ahead of visual gimmickry",
+          "concrete_expression": "Frame the person as a full psychological subject at a respectful camera distance, with posture and eye line, dimensional skin rendering and non-exploitative framing, and expressions observed rather than posed; no decorative gimmick separates the person from the scene. Translation of 'dignity' per section 0A lines 111-112, applied with this profile's Composition and camera and Character direction rules, lines 255-268.",
+          "check_tokens": [
+            "full psychological subject",
+            "respectful camera distance",
+            "eye line",
+            "non-exploitative framing",
+            "observed rather than posed"
+          ]
+        },
+        {
+          "name": "Environment communicates social context",
+          "concrete_expression": "The environment visibly communicates social position, institutional pressure, family structure or community context: a socially meaningful, lived-in location (street, home, public building, courtroom, classroom, transit space or gathering place) with relationships and power revealed by group blocking; where institutional pressure is meant, rigid architecture, authority figures controlling foreground space, compressed blocking or restrictive sightlines. Translation per section 0A lines 111-112 and this profile's invariants and Texture and environment rules, lines 244-265.",
+          "check_tokens": [
+            "lived-in",
+            "institutional pressure",
+            "family",
+            "community",
+            "relationships"
+          ]
+        },
+        {
+          "name": "Controlled camera movement: still observation to fluid emotional attachment",
+          "concrete_expression": "Use controlled camera movement that can shift between still observation and fluid emotional attachment.",
+          "check_tokens": []
+        },
+        {
+          "name": "Naturalistic or plausibly motivated light",
+          "concrete_expression": "Favor naturalistic or plausibly motivated light even when the result is visually rich: a named in-scene source (window, practical lamp, overcast daylight, late sun or institutional fixture) appears to be the reason the scene is lit, soft but directional, with shadow carrying emotional weight without erasing facial information.",
+          "check_tokens": [
+            "window",
+            "practical lamp",
+            "overcast daylight",
+            "late sun",
+            "institutional fixture",
+            "motivated light"
+          ]
+        }
+      ],
+      "uncheckable_by_design": [
+        {
+          "anchor": "Controlled camera movement: still observation to fluid emotional attachment",
+          "reason": "A shift between still observation and fluid attachment is a motion/sequence property. A single still image and its compiled prompt can encode one mode, not the shift between modes, so no prompt token can verify this anchor as written. Residual judgment per FIX-PLAN B6."
+        }
+      ],
+      "micro_rules": {},
+      "micro_rules_source": "No numeric micro-rule is stated in this profile (checked in full, lines 236-346); no value invented.",
+      "vocabularies": {
+        "light_sources": [
+          "windows",
+          "practical lamps",
+          "overcast daylight",
+          "late sun",
+          "institutional fixtures"
+        ]
+      },
+      "vocabularies_source": {
+        "light_sources": "section 01, Lighting, line 259"
+      },
+      "avoid": [
+        {
+          "text": "cosmetic beauty lighting that disconnects the person from the scene",
+          "check_tokens": [
+            "cosmetic beauty lighting",
+            "beauty lighting"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "gratuitous shallow focus on every portrait",
+          "check_tokens": [
+            "shallow focus"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "generic prestige-drama desaturation",
+          "check_tokens": [
+            "prestige-drama desaturation",
+            "desaturation"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "movement with no emotional purpose",
+          "check_tokens": [
+            "movement with no emotional purpose"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "flattening Black skin or crushing it into shadow",
+          "check_tokens": [
+            "flattening Black skin",
+            "crushing it into shadow"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "social environments treated as anonymous backdrops",
+          "check_tokens": [
+            "anonymous backdrops"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "declared_traits_available": [],
+      "trait_source": {},
+      "declared_traits_note": "None of centered composition, spacious framing, sparse negative space or uniform ratio is mandated by this profile (checked in full, lines 236-346)."
+    },
+    "CIS-04": {
+      "style_id": "CIS-04",
+      "branded_name": "PRECISION STORYBOOK GEOMETRY",
+      "source": {
+        "section": "04. PRECISION STORYBOOK GEOMETRY",
+        "lines": "579-690"
+      },
+      "anchors": [
+        {
+          "name": "Frontal or profile staging",
+          "concrete_expression": "Subject staged frontally or in profile, camera square to walls, facades, tables, hallways, vehicles or stages; diagonal naturalism is reduced.",
+          "check_tokens": [
+            "frontal",
+            "profile",
+            "square to"
+          ]
+        },
+        {
+          "name": "Bilateral symmetry or balanced asymmetry",
+          "concrete_expression": "Strong bilateral symmetry or deliberately balanced asymmetry around a strong central axis, in a centered or carefully balanced tableau.",
+          "check_tokens": [
+            "bilateral symmetry",
+            "balanced asymmetry",
+            "central axis"
+          ]
+        },
+        {
+          "name": "Centered subjects and repeated rectangles",
+          "concrete_expression": "Subject centered, with repeated rectangles, shelves, doorways, windows, elevators, desks and facades arranged in clean rows or compartments.",
+          "check_tokens": [
+            "centered",
+            "repeated rectangles",
+            "shelves",
+            "doorways",
+            "windows"
+          ]
+        },
+        {
+          "name": "Rectilinear camera movement",
+          "concrete_expression": "Camera movement tends to be rectilinear: horizontal track, vertical move, 90-degree turn, snap zoom. In a still image this is expressed as its still-image residue, straight-on orthogonal framing square to architecture with the rectilinear logic named; movement itself is not a property a still can exhibit.",
+          "check_tokens": [
+            "rectilinear",
+            "horizontal track",
+            "90-degree",
+            "snap zoom",
+            "straight-on"
+          ]
+        },
+        {
+          "name": "Production design and costume color-planned as a unified system",
+          "concrete_expression": "Production design and costume are color-planned as a unified system: a limited, intentional family of 3-6 principal colors repeated across walls, wardrobe, furniture, vehicles, stationery and small props.",
+          "check_tokens": [
+            "principal colors",
+            "unified",
+            "wardrobe",
+            "walls",
+            "furniture"
+          ]
+        }
+      ],
+      "micro_rules": {
+        "palette_color_count": [
+          3,
+          6
+        ]
+      },
+      "micro_rules_source": {
+        "palette_color_count": "section 04, Color, line 605: 'Choose a limited, intentional family of 3-6 principal colors.'"
+      },
+      "vocabularies": {
+        "framing_devices": [
+          "shelves",
+          "doorways",
+          "windows",
+          "elevators",
+          "desks",
+          "facades"
+        ]
+      },
+      "vocabularies_source": {
+        "framing_devices": "section 04, Five non-negotiable visual anchors, anchor 3, lines 627-632 (repeated rectangles list)"
+      },
+      "avoid": [
+        {
+          "text": "handheld chaos",
+          "check_tokens": [
+            "handheld"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "random shallow focus",
+          "check_tokens": [
+            "shallow focus"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "clutter without organization",
+          "check_tokens": [
+            "clutter"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "generic pastel grading detached from production design",
+          "check_tokens": [
+            "pastel grading",
+            "pastel filter"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "diagonal compositions that destroy the axial structure",
+          "check_tokens": [
+            "diagonal composition"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "faux-quaint props without coherent world-building",
+          "check_tokens": [
+            "faux-quaint"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "declared_traits_available": [
+        "centered composition"
+      ],
+      "trait_source": {
+        "centered composition": {
+          "text": "Centered subjects, repeated rectangles, shelves, doorways, windows, elevators, desks, and facades; 'Build a centered or carefully balanced tableau.'",
+          "source": "section 04, Persistent visual invariants, lines 587-595, and Composition, line 599"
+        }
+      }
+    },
+    "CIS-26": {
+      "style_id": "CIS-26",
+      "branded_name": "POP CHIAROSCURO MELODRAMA",
+      "source": {
+        "section": "26. POP CHIAROSCURO MELODRAMA",
+        "lines": "2965-3071"
+      },
+      "anchors": [
+        {
+          "name": "Color embedded in objects before grading",
+          "concrete_expression": "Color is embedded in wardrobe, walls, furniture, art, food, flowers and objects before grading: 3-5 principal colors with strong separation assigned to actual surfaces (wall, sofa, dress, phone, flower, curtain, kitchen tile, artwork), not a saturation of the entire image.",
+          "check_tokens": [
+            "wardrobe",
+            "walls",
+            "furniture",
+            "flowers",
+            "object-level color"
+          ]
+        },
+        {
+          "name": "Intensely separated principal colors",
+          "concrete_expression": "Reds, blues, yellows, greens, black and cream may be intensely separated as the principal color family.",
+          "check_tokens": [
+            "red",
+            "blue",
+            "yellow",
+            "green",
+            "black",
+            "cream",
+            "separated"
+          ]
+        },
+        {
+          "name": "Readable, emotionally significant backgrounds",
+          "concrete_expression": "Backgrounds remain readable and emotionally significant: enough background focus that the room contributes to the emotion rather than the subject being blurred away from it.",
+          "check_tokens": [
+            "background readable",
+            "background focus",
+            "room contributes"
+          ]
+        },
+        {
+          "name": "Graphic, sensual, character-specific domestic interiors",
+          "concrete_expression": "Domestic interiors are graphic, sensual and character-specific, treated as designed emotional diagrams using doorways, mirrors, tables, beds, kitchens, corridors and art as structured graphic elements.",
+          "check_tokens": [
+            "domestic interior",
+            "doorways",
+            "mirrors",
+            "corridors",
+            "graphic"
+          ]
+        },
+        {
+          "name": "Painterly, contrasty light with real skin",
+          "concrete_expression": "Light can be painterly and contrasty while skin remains flattering but real, using windows, lamps, practicals, daylight and painterly directional sources, preserving color integrity.",
+          "check_tokens": [
+            "painterly",
+            "contrasty",
+            "windows",
+            "lamps",
+            "practicals",
+            "daylight"
+          ]
+        }
+      ],
+      "micro_rules": {
+        "palette_color_count": [
+          3,
+          5
+        ]
+      },
+      "micro_rules_source": {
+        "palette_color_count": "section 26, Color architecture, line 2985: 'Choose 3-5 principal colors with strong separation.'"
+      },
+      "vocabularies": {
+        "light_sources": [
+          "windows",
+          "lamps",
+          "practicals",
+          "daylight",
+          "painterly directional sources"
+        ]
+      },
+      "vocabularies_source": {
+        "light_sources": "section 26, Lighting, line 2991"
+      },
+      "avoid": [
+        {
+          "text": "'red everywhere' as a shortcut",
+          "check_tokens": [
+            "red everywhere"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "random maximalist clutter",
+          "check_tokens": [
+            "maximalist clutter",
+            "clutter"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "shallow bokeh that erases the room",
+          "check_tokens": [
+            "shallow bokeh",
+            "bokeh"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "generic soap-opera lighting",
+          "check_tokens": [
+            "soap-opera lighting"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "color with no object-level logic",
+          "check_tokens": [],
+          "judgment_only": true
+        }
+      ],
+      "declared_traits_available": [],
+      "trait_source": {},
+      "declared_traits_note": "None of centered composition, spacious framing, sparse negative space or uniform ratio is mandated by this profile (checked in full, lines 2965-3071)."
+    },
+    "CIS-35": {
+      "style_id": "CIS-35",
+      "branded_name": "INVITATIONAL DISTANCE",
+      "source": {
+        "section": "35. INVITATIONAL DISTANCE",
+        "lines": "3933-4039"
+      },
+      "anchors": [
+        {
+          "name": "Wide or medium-wide respectful distance",
+          "concrete_expression": "Wide or medium-wide distance respects people and place: people placed as meaningful figures within the environment rather than filling the image with faces, at patient eye-level or slightly distant observation.",
+          "check_tokens": [
+            "wide",
+            "medium-wide",
+            "eye-level",
+            "figures within the environment",
+            "distant observation"
+          ]
+        },
+        {
+          "name": "Landscape allowed to breathe, not postcard spectacle",
+          "concrete_expression": "Landscape is allowed to breathe in a spacious frame with clean visual paths, anchored by a specific human action or detail (conversation, work, waiting, grief, play, bureaucracy, prayer, music or sport) so it does not become tourism or postcard spectacle.",
+          "check_tokens": [
+            "spacious",
+            "landscape",
+            "human action",
+            "breathe"
+          ]
+        },
+        {
+          "name": "Violence remains distant, viewer as witness",
+          "concrete_expression": "Violence may remain distant, making the viewer witness rather than consume it.",
+          "check_tokens": []
+        },
+        {
+          "name": "Natural light carries the image",
+          "concrete_expression": "Natural late-afternoon, desert, courtyard, sea or town light often carries the image: natural sun, dusk or shade with pale earth, sky, sand, water, white cloth, modest saturated accents and real environmental contrast.",
+          "check_tokens": [
+            "late-afternoon",
+            "natural sun",
+            "dusk",
+            "desert",
+            "courtyard",
+            "sea"
+          ]
+        },
+        {
+          "name": "Minimal camera intervention",
+          "concrete_expression": "Minimal camera intervention encourages observation: patient eye-level or slightly distant observation, no aggressive lens intrusion, important action happening within the frame rather than the camera forcing toward it.",
+          "check_tokens": [
+            "patient eye-level",
+            "distant observation",
+            "within the frame"
+          ]
+        }
+      ],
+      "uncheckable_by_design": [
+        {
+          "anchor": "Violence remains distant, viewer as witness",
+          "reason": "The anchor is conditional ('Violence may remain distant') and applies only when violence is depicted; a prompt with no violence cannot encode it, and witness-rather-than-consume is a viewer-effect judgment, not a token-expressible prompt property. Residual judgment per FIX-PLAN B6."
+        }
+      ],
+      "micro_rules": {},
+      "micro_rules_source": "No numeric micro-rule is stated in this profile (checked in full, lines 3933-4039); no value invented.",
+      "vocabularies": {},
+      "vocabularies_note": "This profile supplies no closed framing-device, macro-narrative-object or light-source vocabulary of the kinds extracted for other profiles; its Composition list (line 3953) and Lighting/color list (line 3959) are open scene examples, not closed vocabularies, so none is recorded.",
+      "avoid": [
+        {
+          "text": "exotic postcard framing",
+          "check_tokens": [
+            "postcard"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "telephoto voyeurism",
+          "check_tokens": [
+            "telephoto"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "melodramatic violence coverage",
+          "check_tokens": [
+            "melodramatic violence"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "oversaturated desert orange",
+          "check_tokens": [
+            "oversaturated desert",
+            "desert orange"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "constant close-ups",
+          "check_tokens": [
+            "close-up",
+            "close-ups"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "declared_traits_available": [
+        "spacious framing"
+      ],
+      "trait_source": {
+        "spacious framing": {
+          "text": "'Create spacious frames with clean visual paths'; 'Use spacious, patient frames that invite the viewer into a place without visually possessing it.'",
+          "source": "section 35, Composition, line 3953, and AI Deployment Block, line 3972"
+        }
+      }
+    },
+    "CIS-38": {
+      "style_id": "CIS-38",
+      "branded_name": "ORNATE GAZE MECHANICS",
+      "source": {
+        "section": "38. ORNATE GAZE MECHANICS",
+        "lines": "4251-4357"
+      },
+      "anchors": [
+        {
+          "name": "Gaze is a structural element",
+          "concrete_expression": "Gaze is a structural element: watcher, watched, reflected, recorded or imagined, and it is clear who can see whom.",
+          "check_tokens": [
+            "watcher",
+            "watched",
+            "reflected",
+            "gaze"
+          ]
+        },
+        {
+          "name": "Architecture provides nested frames",
+          "concrete_expression": "Architecture provides nested frames: doors, screens, windows, mirrors, railings, stairs and corridors, with at least two framing devices from the profile's closed vocabulary in the prompt.",
+          "check_tokens": [
+            "nested frames",
+            "doorway",
+            "mirror",
+            "window",
+            "screen"
+          ]
+        },
+        {
+          "name": "Elegant, motivated camera movement translated to stills",
+          "concrete_expression": "Camera movement is elegant and motivated, often revealing new spatial information, translated to a still as: a foreground object partially hides a face, a reflection reveals a second figure, a corridor creates a visual path, or a hand/object detail leads toward the main subject. Translation per this profile's Movement translated to stills rule, lines 4273-4274.",
+          "check_tokens": [
+            "foreground object partially hides",
+            "reflection reveals",
+            "corridor",
+            "visual path",
+            "reveal"
+          ]
+        },
+        {
+          "name": "Macro details carry sensual/narrative weight",
+          "concrete_expression": "Macro details of objects, hands, fabric, food, wounds, tools or writing carry sensual/narrative weight, and one macro-scale narrative object from the profile's closed vocabulary should matter.",
+          "check_tokens": [
+            "macro",
+            "narrative object",
+            "hands",
+            "fabric",
+            "food"
+          ]
+        },
+        {
+          "name": "Symmetry disturbed by an off-axis element",
+          "concrete_expression": "Symmetry and meticulous design can be disturbed by an off-axis element expressing desire or threat.",
+          "check_tokens": [
+            "symmetry",
+            "off-axis",
+            "meticulous"
+          ]
+        }
+      ],
+      "micro_rules": {
+        "framing_devices_min": 2,
+        "macro_narrative_object_count": 1
+      },
+      "micro_rules_source": {
+        "framing_devices_min": "section 38, Composition, line 4271: 'Include at least two of: mirror, glass, doorway, screen, banister, window, curtain, photograph, phone, telescope, camera, shadow, framed opening.'",
+        "macro_narrative_object_count": "section 38, Detail, line 4280: 'One macro-scale narrative object should matter.'"
+      },
+      "vocabularies": {
+        "framing_devices": [
+          "mirror",
+          "glass",
+          "doorway",
+          "screen",
+          "banister",
+          "window",
+          "curtain",
+          "photograph",
+          "phone",
+          "telescope",
+          "camera",
+          "shadow",
+          "framed opening"
+        ],
+        "macro_narrative_objects": [
+          "cigarette",
+          "glove",
+          "shoe",
+          "rope",
+          "notebook",
+          "photograph",
+          "knife",
+          "jewelry",
+          "food",
+          "pill",
+          "phone"
+        ]
+      },
+      "vocabularies_source": {
+        "framing_devices": "section 38, Composition, line 4271",
+        "macro_narrative_objects": "section 38, Detail, line 4280"
+      },
+      "avoid": [
+        {
+          "text": "empty 'luxury thriller' gloss",
+          "check_tokens": [
+            "luxury thriller"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "symmetry with no gaze relationship",
+          "check_tokens": [
+            "symmetry with no gaze"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "gratuitous gore",
+          "check_tokens": [
+            "gore"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "random mirror effects",
+          "check_tokens": [
+            "mirror effects"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "color that does not belong to the set/materials",
+          "check_tokens": [],
+          "judgment_only": true
+        }
+      ],
+      "declared_traits_available": [],
+      "trait_source": {},
+      "declared_traits_note": "None of centered composition, spacious framing, sparse negative space or uniform ratio is mandated by this profile (checked in full, lines 4251-4357). Symmetry is mandated, but centered composition as such is not stated."
+    },
+    "CIS-50": {
+      "style_id": "CIS-50",
+      "branded_name": "PSYCHOLOGICAL FACE CHAMBER",
+      "source": {
+        "section": "50. PSYCHOLOGICAL FACE CHAMBER",
+        "lines": "5535-5640"
+      },
+      "anchors": [
+        {
+          "name": "Faces are primary landscapes",
+          "concrete_expression": "The human face is the primary landscape: close or extreme-close portraiture moved close enough that tiny facial changes matter, preserving skin texture, eye moisture, wrinkles and asymmetry.",
+          "check_tokens": [
+            "close portraiture",
+            "extreme-close",
+            "face",
+            "skin texture",
+            "eye moisture"
+          ]
+        },
+        {
+          "name": "Extreme or very close two-face compositions",
+          "concrete_expression": "Extreme or very close two-face compositions can collapse personal boundaries: full face, profile, overlapping faces, face beside face, or one face emerging from shadow.",
+          "check_tokens": [
+            "two-face",
+            "overlapping faces",
+            "face beside face",
+            "profile"
+          ]
+        },
+        {
+          "name": "Window/natural light reveals the face",
+          "concrete_expression": "Window/natural light reveals skin, eyes, age, fatigue and emotional contradiction: soft window light, overcast daylight, single practical lamp, candle or a severe directional source.",
+          "check_tokens": [
+            "window light",
+            "natural light",
+            "skin",
+            "eyes",
+            "age",
+            "fatigue"
+          ]
+        },
+        {
+          "name": "Sparse interiors and negative space",
+          "concrete_expression": "Sparse interiors and negative space prevent distraction from psychology: a simplified room (bed, wall, curtain, doorway, chair, table, window or bare landscape) where negative space and stillness concentrate the face.",
+          "check_tokens": [
+            "sparse",
+            "negative space",
+            "stillness",
+            "simplified room"
+          ]
+        },
+        {
+          "name": "High-contrast black-and-white or controlled symbolic color",
+          "concrete_expression": "High-contrast black-and-white or controlled symbolic color are both valid: for black-and-white protect luminous midtones and deep but readable blacks; for color choose a severe symbolic field such as crimson/white/black rather than many competing hues.",
+          "check_tokens": [
+            "high-contrast black-and-white",
+            "symbolic color",
+            "crimson",
+            "white",
+            "black",
+            "luminous midtones"
+          ]
+        }
+      ],
+      "micro_rules": {},
+      "micro_rules_source": "No numeric micro-rule is stated in this profile (checked in full, lines 5535-5640); the crimson/white/black field at line 5558 is given as an example ('such as'), not as a color-count rule, so no count was invented from it.",
+      "vocabularies": {
+        "light_sources": [
+          "soft window light",
+          "overcast daylight",
+          "single practical lamp",
+          "candle",
+          "severe directional source"
+        ]
+      },
+      "vocabularies_source": {
+        "light_sources": "section 50, Lighting, line 5558"
+      },
+      "avoid": [
+        {
+          "text": "generic vintage-film filters",
+          "check_tokens": [
+            "vintage-film filter",
+            "vintage filter"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "ornate set decoration that competes with faces",
+          "check_tokens": [
+            "ornate set decoration"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "beauty retouching",
+          "check_tokens": [
+            "beauty retouching"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "random expressionist shadows",
+          "check_tokens": [
+            "expressionist shadows"
+          ],
+          "judgment_only": false
+        },
+        {
+          "text": "melodramatic crying as a shortcut for depth",
+          "check_tokens": [
+            "melodramatic crying"
+          ],
+          "judgment_only": false
+        }
+      ],
+      "declared_traits_available": [
+        "sparse negative space"
+      ],
+      "trait_source": {
+        "sparse negative space": {
+          "text": "'Sparse interiors and negative space prevent distraction from psychology'; 'Let negative space and stillness concentrate the face.'",
+          "source": "section 50, Five non-negotiable visual anchors, anchor 4, lines 5579-5584, and Composition, line 5561"
+        }
+      }
+    }
+  }
+}
