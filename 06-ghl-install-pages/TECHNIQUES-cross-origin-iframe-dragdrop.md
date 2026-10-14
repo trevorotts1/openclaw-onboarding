@@ -121,7 +121,7 @@ re-drive the canvas per client box.
 OpenClaw 2.0+ ships a managed browser with native frame scoping. This is the
 **experimental upgrade lane** — selected ONLY when the capability probe picks the
 `openclaw_managed_browser` lane. It **NEVER silently substitutes** for the
-agent-browser PRIMARY path (§2) — the 5-rung ladder above stays the Skill 6
+hybrid drag path (§2, fallback lane) — the 5-rung ladder above stays the Skill 6
 doctrine until the managed lane is proven per client.
 
 ```bash
