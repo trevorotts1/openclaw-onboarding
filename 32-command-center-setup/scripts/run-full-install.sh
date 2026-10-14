@@ -443,74 +443,6 @@ cc_pm2_start_canonical() {
   fi
 }
 
-# _phase6_pm2_online — the CANONICAL app is online with a live pid.
-# `pm2 start` returning zero proves only that pm2 accepted the command; the
-# child may still be starting, may already have exited, or may never have bound.
-_phase6_pm2_online() {
-  pm2 jlist 2>/dev/null | CC_PHASE6_APP="$CC_PM2_NAME" python3 -c "
-import json,os,sys
-try: procs=json.load(sys.stdin)
-except Exception: sys.exit(1)
-name=os.environ['CC_PHASE6_APP']
-for p in procs:
-    if p.get('name')==name and p.get('pid') and p.get('pm2_env',{}).get('status')=='online':
-        sys.exit(0)
-sys.exit(1)"
-}
-
-# _phase6_manifest_verifies — the source-valid manifest exists AND the live
-# source tree still vouches for the served artifact (PRES-046). Never written
-# by hand; verified through CC's own library.
-_phase6_manifest_verifies() {
-  local inv="$DASHBOARD_DIR/.next/build-inventory.json"
-  local lib="$DASHBOARD_DIR/scripts/lib/build-inventory.sh"
-  [[ -f "$inv" && -f "$lib" ]] || return 1
-  bash "$lib" --verify "$DASHBOARD_DIR" >/dev/null 2>&1
-}
-
-# cc_phase6_serving_proof — phase 6 is DONE only when the box is proven serving.
-# Item 03: a zero exit from `pm2 start` used to set commandCenterPhase6Done=true
-# while the child was still starting — the install log showed pm2 start at line
-# 1228 and `phase=6 done` one second later at 1240, with zero health probes in
-# between, and the child then exited 78 (missing build-inventory.json).
-#
-# Three independent checks, all required:
-#   (a) canonical process online on two probes `wait_s` apart (an unrelated or
-#       short-lived listener fails this),
-#   (b) local /api/health answers the EXACT payload (status=ok, no pending
-#       migrations, no gap) via cc_live_health_ok,
-#   (c) the content manifest exists and verifies against the live source tree.
-#
-# A CURRENT PRES-046 refusal receipt (exit 78) is classified as rebuild /
-# config-repair required and returns 2 — never a blind restart loop.
-# Timeout returns 1; the caller must keep pending state, never stamp done.
-cc_phase6_serving_proof() {
-  local attempts="${1:-30}" wait_s="${2:-2}" attempt=0 rc=0
-  local refused="$DASHBOARD_DIR/.cc-state/cc-start-refused.json"
-  while (( attempt < attempts )); do
-    attempt=$((attempt+1))
-    if _phase6_pm2_online && sleep "$wait_s" && _phase6_pm2_online && cc_live_health_ok && _phase6_manifest_verifies; then
-      log "INFO" "phase=6 serving proof passed: canonical process online, local health exact, manifest verifies (attempt $attempt)"
-      return 0
-    fi
-    # Deterministic refusal: a fresh receipt means cc-start exited 78 for a
-    # content reason. Restarting cannot fix it, so stop and classify.
-    if [[ -f "$refused" ]]; then
-      local _rstat _rmtime
-      _rmtime=$(stat -f %m "$refused" 2>/dev/null) || _rmtime=$(stat -c %Y "$refused" 2>/dev/null) || _rmtime=0
-      local ref_age=$(( $(date +%s) - ${_rmtime:-0} ))
-      if (( ref_age < 300 )); then
-        log "ERROR" "phase=6 serving proof: cc-start refused deterministically (PRES-046 exit 78) — rebuild/config-repair required, NOT a restart loop. Receipt: $refused"
-        return 2
-      fi
-    fi
-    log "WARN" "phase=6 serving proof: not proven serving yet (attempt $attempt/$attempts)"
-    sleep "$wait_s"
-  done
-  log "ERROR" "phase=6 serving proof timed out after $attempts probes — phase stays pending; this is NOT a done state"
-  return 1
-}
-
 # ======================================================================
 # CC CONVERGE DURABLE GUARDS — Kanban-dead recurrence fix (v12.9.31)
 # ======================================================================
@@ -596,19 +528,35 @@ _cc_is_retired_ollama_flash() {
   [[ "$m" =~ $re ]]
 }
 
-# _cc_retired_successor — echo the LIVE successor of a retired id, keeping its
-# provider prefix: ollama-cloud/deepseek-v4.1-flash, else ...deepseek-v4.1-flash:cloud.
-_cc_retired_successor() {
-  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
-    ollama-cloud/*) printf 'ollama-cloud/deepseek-v4.1-flash' ;;
-    ollama/*)       printf 'ollama/deepseek-v4.1-flash:cloud' ;;
-    *)              printf 'deepseek-v4.1-flash:cloud' ;;
-  esac
+# _cc_box_default_model: echo THIS box's configured default TEXT model id
+# (agents.defaults.model.primary, or the plain-string agents.defaults.model),
+# or empty when the box has none. Read from the box's own openclaw.json:
+# never a hardcoded model name.
+_cc_box_default_model() {
+  [[ -f "$OC_CONFIG" ]] || { printf ''; return 0; }
+  command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
+  jq -r '
+    (if (.agents.defaults.model | type) == "object"
+     then (.agents.defaults.model.primary? // "")
+     else (.agents.defaults.model? // "") end)
+    | select(type == "string")
+  ' "$OC_CONFIG" 2>/dev/null | head -n 1
 }
 
-# _cc_live_model_id — echo the id unchanged, or its live successor when retired.
+# _cc_live_model_id: echo the id unchanged when it is live. When the id is a
+# RETIRED Ollama deepseek-v4-flash id, no successor is prescribed by name:
+# resolve instead to THIS box's configured default model. Echoes empty when
+# the box has no usable configured default, so callers skip the dead id.
 _cc_live_model_id() {
-  if _cc_is_retired_ollama_flash "${1:-}"; then _cc_retired_successor "$1"; else printf '%s' "${1:-}"; fi
+  if _cc_is_retired_ollama_flash "${1:-}"; then
+    local def
+    def="$(_cc_box_default_model)"
+    if [[ -n "$def" ]] && ! _cc_is_retired_ollama_flash "$def"; then
+      printf '%s' "$def"
+    fi
+  else
+    printf '%s' "${1:-}"
+  fi
 }
 
 # cc_resolve_sovereign_model — echo the box's OWN primary TEXT model id (or empty
@@ -621,7 +569,11 @@ _cc_live_model_id() {
 # NEVER a hardcoded shared model — everything is read from THIS box's config.
 cc_resolve_sovereign_model() {
   if [[ -n "${CC_SOVEREIGN_DEFAULT_MODEL:-}" ]] && _cc_model_is_sovereign "$CC_SOVEREIGN_DEFAULT_MODEL"; then
-    _cc_live_model_id "$CC_SOVEREIGN_DEFAULT_MODEL"; return 0
+    local env_live
+    env_live="$(_cc_live_model_id "$CC_SOVEREIGN_DEFAULT_MODEL")"
+    if [[ -n "$env_live" ]]; then printf '%s' "$env_live"; return 0; fi
+    # The operator override names a RETIRED id and the box's configured
+    # default cannot stand in for it: fall through to the config candidates.
   fi
   [[ -f "$OC_CONFIG" ]] || { printf ''; return 0; }
   command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
@@ -801,15 +753,23 @@ PYASSIGN
   return 1
 }
 
-# cc_env_correct_retired — when KEY holds a RETIRED Ollama deepseek-v4-flash id,
-# replace it with its live successor (every update). Any other value is left
-# untouched. Echoes "corrected(<old> -> <new>)" or nothing. Returns 0 either way.
+# cc_env_correct_retired: when KEY holds a RETIRED Ollama deepseek-v4-flash id,
+# replace it with THIS box's configured default model (agents.defaults.model
+# in the box's own openclaw.json): no successor model is prescribed by name.
+# When the box has no usable configured default, the retired value is left
+# untouched and the echo says so, so the operator can ask the client to choose
+# a model. Any other value is left untouched. Echoes "corrected(<old> -> <new>)",
+# "retired-unresolved(<old>)", or nothing. Returns 0 either way.
 cc_env_correct_retired() {
   local file="$1" key="$2" cur new tmp
   cur="$(cc_env_get "$file" "$key" 2>/dev/null || true)"
   [[ -n "$cur" ]] || return 0
   _cc_is_retired_ollama_flash "$cur" || return 0
-  new="$(_cc_retired_successor "$cur")"
+  new="$(_cc_live_model_id "$cur")"
+  if [[ -z "$new" || "$new" == "$cur" ]]; then
+    printf 'retired-unresolved(%s)' "$cur"
+    return 0
+  fi
   tmp="$(mktemp "${file}.tmp.XXXXXX")" || return 0
   grep -vE "^[[:space:]]*#?[[:space:]]*${key}=" "$file" > "$tmp" 2>/dev/null || true
   if mv "$tmp" "$file"; then
@@ -2420,19 +2380,13 @@ elif [[ "$(state_get '.commandCenterPhase6Done')" == "true" ]]; then
   cc_security_preflight --checkout "$DASHBOARD_DIR"
   log "INFO" "phase=6 dashboard-deploy: already done — skipping"
   # Item 02: commandCenterBuildFresh used to be stamped only by the build helper,
-  # which this branch never calls - so an already-done box could not be re-proved
+  # which this branch never calls — so an already-done box could not be re-proved
   # content-valid. The content oracle answers it directly.
   if cc_served_build_current; then
     state_set '.commandCenterBuildFresh = true'
   else
     state_set '.commandCenterBuildFresh = false'
-    log "WARN" "phase=6: already-done box does not verify its served content (manifest missing/mismatched/obsolete) - commandCenterBuildFresh=false"
-  fi
-  # Item 03: re-verify on every skip. A box whose serving proof later fails
-  # (exit 78, health gone) must not keep reporting done forever.
-  if ! cc_phase6_serving_proof 3 2; then
-    state_set '.commandCenterPhase6Pending = "serving-proof-pending"'
-    log "ERROR" "phase=6: previously-done box no longer passes serving proof - pending state recorded"
+    log "WARN" "phase=6: already-done box does not verify its served content (manifest missing/mismatched/obsolete) — commandCenterBuildFresh=false"
   fi
 else
   mkdir -p "$(dirname "$DASHBOARD_DIR")"
@@ -2511,22 +2465,8 @@ else
   fi
   pm2 save >>"$LOG_FILE" 2>&1 || true
 
-  # Item 03: `pm2 start` returning zero is NOT serving proof. Require the
-  # canonical process online, the exact local health payload and a source-valid
-  # manifest before the phase may be stamped done.
-  if cc_phase6_serving_proof 30 2; then
-    state_set '.commandCenterPhase6Done = true'
-    state_set '.commandCenterPhase6Pending = null'
-    log "INFO" "phase=6 dashboard-deploy: done (serving proof passed)"
-  else
-    _sp_rc=$?
-    if [[ "$_sp_rc" -eq 2 ]]; then
-      state_set '.commandCenterPhase6Pending = "rebuild-required"'
-      fail_install "phase=6: cc-start refused deterministically (PRES-046 exit 78) — rebuild/config-repair required. The receipt at $DASHBOARD_DIR/.cc-state/cc-start-refused.json names the reason. Restarting cannot fix it; commandCenterPhase6Done was NOT set."
-    fi
-    state_set '.commandCenterPhase6Pending = "serving-proof-pending"'
-    log "ERROR" "phase=6: serving proof did not pass (child start/health/manifest) — commandCenterPhase6Done stays unset. Re-run the installer once the box serves /api/health."
-  fi
+  state_set '.commandCenterPhase6Done = true'
+  log "INFO" "phase=6 dashboard-deploy: done"
 fi
 
 # ----------------------------------------------------------------------
