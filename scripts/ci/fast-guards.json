@@ -3338,5 +3338,27 @@
     ]
    }
   }
+ },
+ {
+  "name": "podcast-activation-secretref-guard",
+  "was": "podcast-activation-secretref-guard.yml",
+  "script": "scripts/ci/fast-guards.d/podcast-activation-secretref-guard.sh",
+  "python311": false,
+  "events": {
+   "push": {
+    "branches": null,
+    "paths": [
+     "58-podcast-production-engine/scripts/guard-activation-health.py",
+     "scripts/ci/fast-guards.d/podcast-activation-secretref-guard.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": null,
+    "paths": [
+     "58-podcast-production-engine/scripts/guard-activation-health.py",
+     "scripts/ci/fast-guards.d/podcast-activation-secretref-guard.sh"
+    ]
+   }
+  }
  }
 ]
