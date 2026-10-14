@@ -16,6 +16,14 @@ triggers:
   - "create my AI company structure"
   - "set up my departments"
   - "hire my AI team"
+  - "can she start the interview"
+  - "can <client> start the interview"
+  - "where is the interview link"
+  - "what is the link"
+  - "is the link working"
+  - "my interview link expired"
+  - "resume my interview"
+  - "can the interview start"
 version: 27.1.26
 ---
 
@@ -32,6 +40,16 @@ Required read order:
 6. CORE_UPDATES.md - what to add to your workspace files
 
 **Branding questions - single source of truth:** `interview/branding-questions.json` defines the structured branding question set (ids, prompts, storage targets, drill requirements). The Command Center vendors a copy of this file. INSTRUCTIONS.md Phase 3 themes reference the question ids. Do NOT hardcode branding question prompts anywhere outside that file.
+
+
+**Interview STATUS questions use a shorter authoritative read order.** For "can she start", "what is the link", "is the link working", "my link expired", "resume" and every startability question, read **SKILL.md then the authoritative INSTRUCTIONS.md before answering** — an actual build still requires all six reads above. Then state THREE separate facts, never one:
+1. the stable public bookmark `https://<host>/interview` (does not authenticate by itself);
+2. the privately minted sign-in link (issued per invitation; `--mint-only` proves issuance and discards the ticket);
+3. verified delivery to the owner (acknowledged gateway message).
+
+Install, invitation delivery, provider answer and workforce completion are four further facts and are never reported as one.
+
+**⛔ Never derive "no interview link" from a local port probe.** Probing `127.0.0.1:4000` (or any local port) says nothing about the interview link, its validity or its delivery. The authoritative answers are the exact authenticated public readiness receipt, the invitation route, and the scoped delivery receipt. **A down application is a Command Center deployment fault** — a missing or stale `build-inventory.json` refuses at start with exit 78 — never a workforce-completion fault and never a 9Router fault.
 
 Do NOT run the scaffold script or create any folders before completing all 6 reads.
 Do NOT claim the skill is installed until CORE_UPDATES.md has been applied.
