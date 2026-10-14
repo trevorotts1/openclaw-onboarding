@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Fix 1 (D3) -- sales checkout page consent (sales_checkout_builder.py).
+"""Fix 1 sales checkout page consent (sales_checkout_builder.py), as
+amended by the owner ruling of 2026-10-13.
 
 MUST-TEST: any type="tel" input means both consent boxes are present,
-unchecked and not required. The offline checkout page form carries the two
+unchecked and REQUIRED. The offline checkout page form carries the two
 SMS consent checkboxes (transactional + marketing); neither is checked by
-default and neither is required to submit or to buy (TCPA).
+default, and the submit is gated until every box is checked (owner ruling
+2026-10-13, superseding the 2026-09-27 D3 optional posture), with a branded
+error and a "Check here" tag on each unchecked box.
 """
 from __future__ import annotations
 
@@ -42,7 +45,18 @@ def test_tel_input_carries_both_consent_boxes():
         tag = _input_tag(html, name)
         assert "type=\"checkbox\"" in tag
         assert "checked" not in tag
-        assert "required" not in tag
+        assert "required" in tag
+
+
+def test_checkout_submit_is_gated_on_consent():
+    html = _html()
+    # the branded gate: error element + per-box "Check here" tags + the JS
+    # handlers that block the submit while any consent box is unchecked.
+    assert "id=\"checkout-consent-error\"" in html
+    assert "Check here" in html
+    assert "consent-box" in html
+    assert "addEventListener('invalid'" in html
+    assert "addEventListener('submit'" in html
 
 
 def test_consent_boxes_carry_wording_not_placeholders():

@@ -203,6 +203,19 @@ ID_TO_FIELD = {
     # upsell yes-no (the new sales/checkout + VSL questions)
     "want_sales_checkout": "WANT_SALES_CHECKOUT",
     "want_vsl_page": "WANT_VSL_PAGE",
+    # U026 waiver follow-ups (FIX-PLAN Item 12): the client's VERBATIM
+    # declined reasons. Mapped explicitly, like run_mode below, rather than
+    # left to field_for()'s qid.upper() fallback, and carried in
+    # PRE_CAPTURE_FIELDS so they land at their canonical
+    # pre_presentation_capture.* home. Before this mapping existed, the
+    # fallback produced the right key but PRE_CAPTURE_FIELDS did not contain
+    # it, so the reason was filed into deck_brief -- a section neither
+    # builder gate reads -- and a hosted "no" could never produce the
+    # waiver the gates require. The value is the client's own words, stored
+    # byte-for-byte: never inferred, never written by the assistant, and a
+    # blank answer stays blank (the builder gates fail closed on it).
+    "sales_checkout_declined_reason": "SALES_CHECKOUT_DECLINED_REASON",
+    "vsl_page_declined_reason": "VSL_PAGE_DECLINED_REASON",
     # speech speed lives flat on the intake record (not deck_brief)
     "speech_speed_preference": "speech_speed_preference",
     # FIX 11 (hosted path): the client's run-mode declaration. Mapped
@@ -220,7 +233,13 @@ ID_TO_FIELD = {
 # working/copy/intake.json's deck_brief"). pre_presentation_capture.RUN_MODE is
 # a location presentation-intake-poll.sh's read_run_mode() already reads
 # (candidate 2), so this routing costs the poller no change.
-PRE_CAPTURE_FIELDS = {"WANT_SALES_CHECKOUT", "WANT_VSL_PAGE", "RUN_MODE"}
+# The two DECLINED_REASON fields ride with their upsell toggles (FIX-PLAN
+# Item 12): pre_presentation_capture.* is their canonical home per
+# upsell-questions.json's storeTarget and the PRES-006 contract, and it is
+# the first location both builder gates read.
+PRE_CAPTURE_FIELDS = {"WANT_SALES_CHECKOUT", "WANT_VSL_PAGE", "RUN_MODE",
+                      "SALES_CHECKOUT_DECLINED_REASON",
+                      "VSL_PAGE_DECLINED_REASON"}
 
 
 # ===========================================================================
@@ -283,15 +302,22 @@ REQUIRED_CANONICAL_FIELDS = (
     "pre_presentation_capture.WANT_VSL_PAGE",
 )
 
-#: Version-aware legacy migration: version-1 records stored the upsell flags
-#: (and RUN_MODE) in inconsistent locations. Each canonical field's aliases,
-#: in the order the JS contract declares them. A legacy alias is moved to the
-#: canonical path when the canonical path is empty; a legacy value that
-#: CONTRADICTS a present canonical value refuses the migration (never
-#: arbitrarily chosen). Pinned to schema/intake_fields.js's legacy_aliases.
+#: Version-aware legacy migration: version-1 records stored the upsell flags,
+#: their declined reasons, and RUN_MODE in inconsistent locations. Each
+#: canonical field's aliases, in the order the JS contract declares them. A
+#: legacy alias is moved to the canonical path when the canonical path is
+#: empty; a legacy value that CONTRADICTS a present canonical value refuses
+#: the migration (never arbitrarily chosen). Pinned to
+#: schema/intake_fields.js's legacy_aliases.
 LEGACY_ALIASES = {
     "want_sales_checkout": ("deck_brief.WANT_SALES_CHECKOUT", "WANT_SALES_CHECKOUT"),
+    "sales_checkout_declined_reason": (
+        "deck_brief.SALES_CHECKOUT_DECLINED_REASON",
+        "SALES_CHECKOUT_DECLINED_REASON"),
     "want_vsl_page": ("deck_brief.WANT_VSL_PAGE", "WANT_VSL_PAGE"),
+    "vsl_page_declined_reason": (
+        "deck_brief.VSL_PAGE_DECLINED_REASON",
+        "VSL_PAGE_DECLINED_REASON"),
     "run_mode": ("deck_brief.RUN_MODE", "RUN_MODE", "run_mode"),
     "presentation_type": ("deck_brief.PRESENTATION_TYPE", "PRESENTATION_TYPE"),
 }

@@ -16,6 +16,22 @@
     "ts": "2026-07-02T09:05:00+00:00"
   },
   {
+    "phase_id": "P-SP-CLAIM",
+    "kind": "start",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P-SP-CLAIM \u2014 starting",
+    "ts": "2026-07-02T09:09:00+00:00"
+  },
+  {
+    "phase_id": "P-SP-CLAIM",
+    "kind": "done",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P-SP-CLAIM \u2014 complete",
+    "ts": "2026-07-02T09:10:00+00:00"
+  },
+  {
     "phase_id": "P-SP-INTAKE",
     "kind": "start",
     "gateway_msg_id": "",
@@ -30,6 +46,22 @@
     "sent": false,
     "text": "P-SP-INTAKE \u2014 complete",
     "ts": "2026-07-02T09:15:00+00:00"
+  },
+  {
+    "phase_id": "P-SP-INTAKE-TRACE",
+    "kind": "start",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P-SP-INTAKE-TRACE \u2014 starting",
+    "ts": "2026-07-02T09:19:00+00:00"
+  },
+  {
+    "phase_id": "P-SP-INTAKE-TRACE",
+    "kind": "done",
+    "gateway_msg_id": "",
+    "sent": false,
+    "text": "P-SP-INTAKE-TRACE \u2014 complete",
+    "ts": "2026-07-02T09:20:00+00:00"
   },
   {
     "phase_id": "P4-COPY",

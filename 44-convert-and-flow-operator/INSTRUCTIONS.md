@@ -56,8 +56,9 @@ or any model NOT identified as a high-reasoning model) **OR thinking is not set 
 Surface this recommendation to the owner BEFORE proceeding:
 
 > ⚠️ **GHL workflow builds are complex and error-prone on lighter models.**
-> It is HIGHLY RECOMMENDED to switch to a high-reasoning model (e.g. DeepSeek V4.1 Flash
-> or GLM 5.2 — Ollama Cloud preferred, OpenRouter backup) with thinking set to HIGH before proceeding — for the best
+> It is HIGHLY RECOMMENDED to switch to a high-reasoning model (the client's selected
+> high-reasoning model, or their configured default model if it is a high-reasoning one;
+> Ollama Cloud preferred, OpenRouter backup) with thinking set to HIGH before proceeding, for the best
 > possible output and to avoid hard-to-catch hallucinations in workflow logic.
 > *(A lighter model previously turned a 2-minute fix into a 12-hour loop by
 > hallucinating a failure cause, a fake link, and a wrong number.)*
@@ -514,21 +515,24 @@ Send via the client's own gateway (`openclaw message send --channel telegram`):
 > "I've built the workflow. Before I call it done, I'm running an independent QC agent to
 > verify it against the checklist item-by-item. One moment."
 
-### Step 9.2 — Spawn an independent QC sub-agent on MiniMax
+### Step 9.2: Spawn an independent QC sub-agent on a different model
 
 Dispatch a fresh sub-agent via OpenClaw's agent-to-agent dispatch (`sessions_send` — same
 mechanism as skill 38's subagent-delegation-pattern.md), in a fresh session, on an
-INDEPENDENT MiniMax model (independent = a DIFFERENT model than the build agent, so QC cannot
-inherit the builder's own hallucinations).
+INDEPENDENT model (independent = a DIFFERENT model than the build agent, so QC cannot
+inherit the builder's own hallucinations): the client's selected QC model, or their configured
+default model where it differs from the build model.
 
 **Model resolution (in order):**
-1. Prefer `minimax/minimax-m3` via OpenRouter (the repo's established MiniMax extraction model,
-   per skill 38 Step 9.24).
-2. Or `minimax-m3:cloud` if an Ollama-Cloud MiniMax slug is configured.
-3. VERIFY the MiniMax model is actually configured + reachable before spawning (per
+1. The model the client selected for QC work, where it is a DIFFERENT model than the build agent's.
+2. Or the client's configured default model, where it differs from the build model.
+3. VERIFY the QC model is actually configured + reachable before spawning (per
    subagent-delegation-pattern.md: "Verify the chosen model exists in the OpenClaw config and
-   has an API key available"; per MEMORY ollama-cloud-baseurl-trap). If no MiniMax model is
-   available, fall back to the next independent high-reasoning model and RECORD which model QC'd.
+   has an API key available"; per MEMORY ollama-cloud-baseurl-trap). If no independent model is
+   available, ask the client which model should run QC; never silently QC on the build model
+   itself. RECORD which model QC'd.
+   Recommendation: a high-reasoning model from a different family than the build model, because
+   independence is the point of the QC pass.
 
 The QC sub-agent receives: the filled checklist artifact, the workflow id, and read-only `caf`
 access.
@@ -669,14 +673,14 @@ WF-20 ("NO HALLUCINATED ARTIFACTS") is the dedicated detector.
 
 2. **REQUIRE a high-reasoning model at thinking HIGH for the redo.** This is the v12.3.5
    Step 0 recommendation FLIPPED FROM RECOMMENDATION TO REQUIREMENT for this case. The redo
-   MUST run on a high-reasoning model (e.g. DeepSeek V4.1 Flash / GLM 5.2, Ollama Cloud preferred, OpenRouter backup) with thinking=HIGH;
+   MUST run on a high-reasoning model (the client's selected high-reasoning model, or their configured default model if it is a high-reasoning one; Ollama Cloud preferred, OpenRouter backup) with thinking=HIGH;
    if the current build session is on a lighter model, the build does NOT proceed until
    switched (cross-references and strengthens INSTRUCTIONS.md Step 0).
 
 3. **RE-DO** the affected build steps on the reasoning model at thinking HIGH, restoring from
    the pre-build snapshot if the workflow state is suspect.
 
-4. **RE-RUN QC** (fresh independent MiniMax sub-agent) from scratch against the FULL checklist
+4. **RE-RUN QC** (fresh independent QC sub-agent on a different model than the build agent) from scratch against the FULL checklist
    — a hallucination invalidates the whole build agent's report, so QC re-verifies ALL items,
    not just the flagged one.
 

@@ -331,6 +331,10 @@ export const INTAKE_CONTRACT = {
       required: true,
       block_gate: true,
       conditional_on: { id: "want_sales_checkout", equals: "no" },
+      // Legacy records filed the reason where the pre-fix writer's
+      // flat-answers fallback put it (deck_brief.*) or flat at top level
+      // (the chat/driver shape); both migrate to the canonical path.
+      legacy_aliases: ["deck_brief.SALES_CHECKOUT_DECLINED_REASON", "SALES_CHECKOUT_DECLINED_REASON"],
       question: {
         id: "sales_checkout_declined_reason",
         order: 10.1,
@@ -374,6 +378,10 @@ export const INTAKE_CONTRACT = {
       required: true,
       block_gate: true,
       conditional_on: { id: "want_vsl_page", equals: "no" },
+      // Legacy records filed the reason where the pre-fix writer's
+      // flat-answers fallback put it (deck_brief.*) or flat at top level
+      // (the chat/driver shape); both migrate to the canonical path.
+      legacy_aliases: ["deck_brief.VSL_PAGE_DECLINED_REASON", "VSL_PAGE_DECLINED_REASON"],
       question: {
         id: "vsl_page_declined_reason",
         order: 11.1,

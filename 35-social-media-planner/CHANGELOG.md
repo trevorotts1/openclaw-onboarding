@@ -1,5 +1,10 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.7.2] - 2026-10-13 - model doctrine cleanup
+
+- Per-role model tiering no longer prescribes named models: each role uses the client's selected model, or the client's configured default model, with tier recommendations stated as guidance. Spawn examples use client-selected placeholders and stop to ask the client when no model is selected or configured.
+- skill-version v3.7.1 -> v3.7.2.
+
 ## [3.6.16] - 2026-10-08 - INF002
 
 - Install QC uses the shared credential lookup (every store, every location id name, pit- token to its location through the GHL API); neither found installs with a note (INF002).

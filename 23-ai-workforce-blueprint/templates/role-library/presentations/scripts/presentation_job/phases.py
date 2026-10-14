@@ -975,7 +975,10 @@ def _verdict_check_ids(text: str) -> set:
     return {m.upper() for m in _VERDICT_AUTOFAIL_RE.findall(text or "")}
 
 
-def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+def readmit_retryable_phases(state: Dict[str, Any], *,
+                             orphan_running_disposition: str = "pending",
+                             only_orphaned_running: bool = False
+                             ) -> List[Dict[str, Any]]:
     """Reset FAILED/QUARANTINED phases -- and verifier-parked BLOCKED phases
     (PD-TEST-135) -- to PENDING so the next run re-enters them.
     Returns one record per re-admitted phase; each record is also
@@ -990,7 +993,28 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
     `orphaned_park_marker` / `orphaned_park_marker_retired`).
 
     Called from __main__._reset_parked_state, the shared --run/--resume
-    unpark helper (FIX 22), so both entry verbs stay identical."""
+    unpark helper (FIX 22), so both entry verbs stay identical.
+
+    ITEM 9(b) -- THE SUPERVISOR-SWEEP MODE. supervisor.supervise() calls this
+    with only_orphaned_running=True and orphan_running_disposition="failed"
+    when it finds, mid-run, a phase left `running` by a dead engine on a path
+    where it will NOT restart one (stale run, restart budget spent). The
+    adjudication is this function's own -- same _running_worker_owner_state
+    verdict, same honoured set, same reclaim record -- because a second,
+    drifting orphan definition is exactly what PD-TEST-155's fix forbids.
+    Two deliberate differences, both forced by the caller's shape:
+      * only_orphaned_running: FAILED/QUARANTINED/verifier-BLOCKED phases are
+        NOT touched. Re-admitting them is the startup path's job, where a
+        fresh engine exists to service the pending phase; a sweep that
+        flipped them with no engine present would just re-bury them.
+      * disposition "failed": the startup path re-opens to PENDING because
+        an engine is starting NOW to service it. The sweep's whole premise
+        is that no engine is coming, so PENDING would leave the subtree in
+        waiting_dependency forever -- the forever state being fixed. FAILED
+        is terminal-bad (_phase_terminal_bad), so the subtree is released
+        to the run's normal failure path, with the orphan reason recorded
+        as the phase's failed_reason.
+    The defaults preserve the startup path's behaviour exactly."""
     run_dir = state.get("run_dir") or "."
     readmitted: List[Dict[str, Any]] = []
     for ps in state.get("phases") or []:
@@ -998,6 +1022,8 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not pid:
             continue
         status = ps.get("status")
+        if only_orphaned_running and status != PHASE_STATUS_RUNNING:
+            continue
         _reclaimed_running: Optional[str] = None
         if status == PHASE_STATUS_RUNNING:
             # PD-TEST-155: a phase left `running` by an engine that died mid-wait
@@ -1072,7 +1098,20 @@ def readmit_retryable_phases(state: Dict[str, Any]) -> List[Dict[str, Any]]:
                 run_dir, pid)
         ps.setdefault("readmissions", []).append(record)
         ps["readmitted_at"] = record["at"]
-        ps["status"] = PHASE_STATUS_PENDING
+        if _reclaimed_running and orphan_running_disposition == "failed":
+            # ITEM 9(b) supervisor disposition (see the docstring): no
+            # engine is coming to service this phase, so it is marked
+            # FAILED with the orphan reason -- terminal-bad, releasing its
+            # subtree to the normal failure path -- instead of PENDING,
+            # which would re-bury the subtree in waiting_dependency.
+            ps["status"] = PHASE_STATUS_FAILED
+            ps["failed_reason"] = (
+                f"orphaned running phase reclaimed by the supervisor "
+                f"sweep: {_reclaimed_running}")
+            ps["failed_at"] = record["at"]
+            record["orphan_disposition"] = "failed"
+        else:
+            ps["status"] = PHASE_STATUS_PENDING
         readmitted.append(record)
     if readmitted:
         state.setdefault("resume_readmissions", []).extend(readmitted)
@@ -2826,9 +2865,26 @@ class Engine:
         # failed twice with visible output -- and its stderr is exactly what
         # classify_failure needs (a bare "exit 146" names no class; the 402 the
         # executor printed does).
-        _final_attempt = heal.HEAL_CAP_TRANSIENT
         _captured = None
-        for attempt in range(1, heal.HEAL_CAP_TRANSIENT + 1):
+        # ITEM 9(d): rung 1's RETRY budget is per phase per rolling window
+        # (heal.HEAL_WINDOW_HOURS, auto_resume's precedent), not per engine
+        # invocation. Transient attempts a previous invocation already
+        # spent are persisted in this phase's heal_events, so a
+        # crash-looping phase arrives here with its retries already gone
+        # instead of a fresh slice. The ONE floor: a phase always gets a
+        # single primary execution attempt per invocation. Rung 1's first
+        # attempt is the phase's own work, not a heal, and the pinned
+        # PD-TEST-060/080 property -- a re-admitted phase EXECUTES on
+        # resume, so a deployed repair can actually reach it -- forbids
+        # locking a phase out of executing at all. What the persisted
+        # budget removes is the RETRYING: with the window spent, one failed
+        # attempt goes straight to the class dispatch below, and rungs
+        # 2/3/4 (pure heals, capped the same way in heal.py) refuse too.
+        _prior_transient = heal.heal_attempts_in_window(ps, rung=1)
+        _attempts_this_invocation = max(
+            1, heal.HEAL_CAP_TRANSIENT - _prior_transient)
+        _final_attempt = _attempts_this_invocation
+        for attempt in range(1, _attempts_this_invocation + 1):
             try:
                 # FIX-21 (D21): process-group exec with cleanup — on budget expiry the
                 # whole group dies, so a timed-out phase never leaves a stray orphan.
@@ -2902,7 +2958,7 @@ class Engine:
                                  f"{phase.id} retrying — attempt {attempt} of "
                                  f"{heal.HEAL_CAP_TRANSIENT} ({reason}).",
                                  stage=phase.id)
-            if attempt < heal.HEAL_CAP_TRANSIENT:
+            if attempt < _attempts_this_invocation:
                 time.sleep(min(60, 5 * (2 ** (attempt - 1))))
 
         # FIX 10: class-dispatch the exhaustion. The reason from the LAST
@@ -2910,7 +2966,7 @@ class Engine:
         # alternate-provider rung (cap x1, ledger records route_change with
         # both providers -- the QC FIX 10 proof row), any other class falls
         # through to the alternate-route rung (cap x1) exactly as before.
-        last_reason = reason  # always bound: HEAL_CAP_TRANSIENT >= 1 attempt ran
+        last_reason = reason  # always bound: >= 1 attempt ran (Item 9(d) floor)
         if heal.classify_failure(last_reason) == heal.FAILURE_PROVIDER_ERROR:
             with self._state_lock:
                 rc_pf = heal.rung2_provider_failover(self, phase, last_reason,
