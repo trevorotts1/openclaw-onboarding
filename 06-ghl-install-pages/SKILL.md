@@ -397,7 +397,7 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
      docstring: large context for content and reasoning, strong code
      generation for html/code, reliable tool calling for execution
      (probe-gated), a vision-capable model for qc (probe-gated). MiniMax M2
-     is PURGED from every rung.
+     is BANNED fleet-wide and is never used.
 6. **ghl-install-pages-full.md** - LEGACY v2.0 raw-Playwright reference, kept for
    historical click-path detail only. Superseded by ghl-browser-builder-full.md.
 7. **INSTRUCTIONS.md** - Operational quick-start.
