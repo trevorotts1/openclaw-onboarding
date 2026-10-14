@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Declared-style page fixture</title>
+<style>
+  :root { --gold: #C9A227; --navy: #1A1A2E; --cream: #F5F0E8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--navy); color: var(--cream); font-family: "Georgia", serif; }
+  .logo { display: block; margin: 12px auto; }
+  section { padding: 48px 100px; text-align: center; }
+  .wrap { width: 640px; max-width: 100%; margin: 0 auto; }
+  h2 { font-size: 30px; margin: 0 0 16px; text-align: center; }
+  p { font-size: 18px; line-height: 1.5; margin: 12px 0; text-align: center; }
+  .shot { display: block; margin: 16px auto; width: 640px; max-width: 100%; height: 360px; }
+  .cta { display: inline-block; margin: 16px auto 8px; padding: 19px 32px; background: var(--gold);
+         color: var(--navy); font-size: 18px; line-height: 1.2; border: none; font-family: "Georgia", serif; }
+  .s-navy { background: var(--navy); color: var(--cream); }
+  .s-cream { background: var(--cream); color: var(--navy); }
+  .s-gold { background: var(--gold); color: var(--navy); }
+  @media (max-width: 700px) {
+    section { padding: 32px 20px; }
+  }
+</style>
+</head>
+<body>
+<img class="logo" src="logo.png" alt="BlackCEO logo" data-brand="logo" width="120" height="40">
+<section class="s-navy">
+  <div class="wrap">
+    <h2>A Quiet Opening Frame</h2>
+    <p>This fixture page declares a centered, sparse style, so its narrow centered columns are the design, not a defect.</p>
+    <img class="shot" src="img.png" alt="Declared style frame" width="640" height="360">
+  </div>
+</section>
+<section class="s-cream">
+  <div class="wrap">
+    <h2>A Quiet Middle Frame</h2>
+    <p>The same declared treatment continues here on purpose.</p>
+    <p>Every frame in the series keeps the uniform ratio.</p>
+    <img class="shot" src="img.png" alt="Declared style frame" width="640" height="360">
+  </div>
+</section>
+<section class="s-gold">
+  <div class="wrap">
+    <h2>A Quiet Turning Frame</h2>
+    <p>The series holds its single ratio from frame to frame.</p>
+    <img class="shot" src="img.png" alt="Declared style frame" width="640" height="360">
+    <p>Declared in the selection record before any prompt was written.</p>
+  </div>
+</section>
+<section class="s-navy">
+  <div class="wrap">
+    <h2>A Quiet Closing Frame</h2>
+    <p>The closing frame keeps the declared composition to the end.</p>
+    <img class="shot" src="img.png" alt="Declared style frame" width="640" height="360">
+    <button class="cta" type="button">Join Now</button>
+  </div>
+</section>
+</body>
+</html>

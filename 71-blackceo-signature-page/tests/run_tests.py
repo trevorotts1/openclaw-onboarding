@@ -19,6 +19,7 @@ MODULES = [
     "test_validate_copy_prompt.py",
     "test_render_compare.py",
     "test_validate_page.py",
+    "test_layout_metrics.py",
 ]
 
 def main():

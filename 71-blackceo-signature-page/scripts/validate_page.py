@@ -33,6 +33,17 @@ after the same eager-load routine render_page.py uses:
                    (whitespace-normalized) appears in the DOM innerText.
   9. Mobile 390    body text >= 18px, microcopy ([data-microcopy], small,
                    figcaption, cite, footer) >= 16px, buttons >= 56px tall.
+ 10. Layout        (Item 15) six structural metrics measured at the widest
+                   viewport (1440 when requested): section signature
+                   diversity, image ratio diversity, centering ratio,
+                   repeated card grids, empty section width, CTA sameness.
+                   Thresholds come from the brand file's `layout_thresholds`
+                   object, falling back to DEFAULT_LAYOUT_THRESHOLDS. Each
+                   metric prints its measured value on PASS (`LAYOUT PASS:`)
+                   and a named `LAYOUT:` failure line on FAIL. The metric
+                   functions are pure Python over the geometry extracted by
+                   LAYOUT_JS, so they are unit-testable without a browser;
+                   compare_sheet.py imports section_signature from here.
 
 Writes <run_dir>/responsive-html/validate-page.json (page mode) or
 <run_dir>/visual-mockup/validate-page.json (mockup mode).
@@ -55,8 +66,14 @@ from pathlib import Path
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 except ImportError:  # pragma: no cover
-    print("FAIL: playwright is required (import playwright).", file=sys.stderr)
-    sys.exit(2)
+    # Non-fatal at import time: this module is also imported as a library
+    # (compare_sheet.py imports the Item 15 signature function, and the
+    # layout-metric unit tests import the pure geometry functions). The CLI
+    # still fails closed with exit 2 in main() when Playwright is absent.
+    sync_playwright = None
+
+    class PWTimeout(Exception):  # type: ignore[no-redef]
+        pass
 
 DEFAULT_WIDTHS = [320, 390, 768, 1440]
 VIEWPORT_H = 800
@@ -304,6 +321,765 @@ MOBILE_BUTTONS_JS = """() => {
   }
   return issues;
 }"""
+
+# --------------------------------------------------------------------------
+# Item 15: layout metrics (pure geometry layer + browser extraction).
+#
+# LAYOUT_JS extracts raw geometry only. Every metric below is a pure Python
+# function over that data, so the whole layer is unit-testable without a
+# browser (tests/test_layout_metrics.py). compare_sheet.py imports
+# section_signature / image_placement_class / heading_body_ratio from here:
+# one implementation, two callers.
+# --------------------------------------------------------------------------
+
+LAYOUT_JS = """() => {
+  const vis = (el) => {
+    const st = getComputedStyle(el);
+    return st.display !== 'none' && st.visibility !== 'hidden';
+  };
+  const rectOf = (el) => {
+    const r = el.getBoundingClientRect();
+    return {x: r.x + window.scrollX, y: r.y + window.scrollY,
+            width: r.width, height: r.height,
+            left: r.left + window.scrollX, right: r.right + window.scrollX,
+            top: r.top + window.scrollY, bottom: r.bottom + window.scrollY};
+  };
+  const selOf = (el) => {
+    let s = el.tagName.toLowerCase();
+    if (el.id) return s + '#' + el.id;
+    if (typeof el.className === 'string' && el.className.trim())
+      return s + '.' + el.className.trim().split(/ +/).filter(Boolean).slice(0, 2).join('.');
+    return s;
+  };
+  const skeleton = (el, depth) => {
+    const kids = Array.from(el.children || []);
+    if (depth <= 0 || kids.length === 0) return el.tagName.toLowerCase();
+    return el.tagName.toLowerCase() + '(' +
+      kids.slice(0, 8).map(c => skeleton(c, depth - 1)).join(',') + ')';
+  };
+  const hasDirectText = (el) => {
+    for (const n of el.childNodes)
+      if (n.nodeType === 3 && n.textContent.trim()) return true;
+    return false;
+  };
+  const sections = Array.from(document.querySelectorAll('section'))
+    .filter(s => !s.parentElement || !s.parentElement.closest('section'))
+    .filter(vis);
+  const sectionData = sections.map((sec, idx) => {
+    const sr = rectOf(sec);
+    const st = getComputedStyle(sec);
+    let layoutKids = Array.from(sec.children).filter(vis);
+    if (layoutKids.length === 1) {
+      const inner = Array.from(layoutKids[0].children).filter(vis);
+      if (inner.length >= 2) layoutKids = inner;
+    }
+    const children = layoutKids.map(ch => {
+      const cst = getComputedStyle(ch);
+      return {selector: selOf(ch), rect: rectOf(ch), textAlign: cst.textAlign,
+              display: cst.display, hasText: hasDirectText(ch)};
+    });
+    const images = Array.from(sec.querySelectorAll('img')).filter(vis).map(im => {
+      const r = rectOf(im);
+      return {selector: selOf(im), rect: r, width: r.width, height: r.height,
+              slot: im.getAttribute('data-image-slot')};
+    });
+    const texts = Array.from(sec.querySelectorAll('*'))
+      .filter(el => vis(el) && hasDirectText(el))
+      .map(el => {
+        const tst = getComputedStyle(el);
+        return {selector: selOf(el), textAlign: tst.textAlign,
+                fontSize: parseFloat(tst.fontSize)};
+      });
+    const heads = Array.from(sec.querySelectorAll('h1,h2,h3,h4,h5,h6'))
+      .filter(vis)
+      .map(h => parseFloat(getComputedStyle(h).fontSize)).filter(v => v > 0);
+    const paras = Array.from(sec.querySelectorAll('p')).filter(vis)
+      .map(p => parseFloat(getComputedStyle(p).fontSize)).filter(v => v > 0);
+    const contentRects = [];
+    sec.querySelectorAll('*').forEach(el => {
+      if (!vis(el)) return;
+      const tag = el.tagName.toLowerCase();
+      if (hasDirectText(el) || ['img', 'button', 'video', 'input'].includes(tag)) {
+        const r = rectOf(el);
+        if (r.width > 0) contentRects.push(r);
+      }
+    });
+    return {index: idx, selector: selOf(sec), id: sec.id || null, rect: sr,
+            background: st.backgroundColor, display: st.display,
+            gridColumns: st.gridTemplateColumns,
+            flexDirection: st.flexDirection,
+            children: children, images: images, texts: texts,
+            headingFontSize: heads.length ? heads[0] : null,
+            bodyFontSize: paras.length ? paras[Math.floor(paras.length / 2)] : null,
+            contentRects: contentRects};
+  });
+  const groups = [];
+  const walk = (el) => {
+    const kids = Array.from(el.children || []).filter(vis);
+    if (kids.length >= 3) {
+      groups.push({parent: selOf(el), children: kids.map(k => {
+        const r = rectOf(k);
+        return {selector: selOf(k), width: r.width, height: r.height,
+                structure: skeleton(k, 3)};
+      })});
+    }
+    kids.forEach(walk);
+  };
+  if (document.body) walk(document.body);
+  const ctaSel = 'button, [role="button"], input[type="submit"], ' +
+    'input[type="button"], a.cta, a.btn, a.button, .cta';
+  const ctaSeen = new Set();
+  const ctas = [];
+  document.querySelectorAll(ctaSel).forEach(el => {
+    if (ctaSeen.has(el) || !vis(el)) return;
+    ctaSeen.add(el);
+    const r = rectOf(el);
+    if (r.width === 0 && r.height === 0) return;
+    ctas.push({selector: selOf(el), width: r.width, height: r.height,
+               background: getComputedStyle(el).backgroundColor});
+  });
+  const contentImages = [];
+  document.querySelectorAll('img').forEach(im => {
+    if (!vis(im)) return;
+    if (im.closest && im.closest('[data-brand="logo"]')) return;
+    const r = rectOf(im);
+    if (r.width === 0 || r.height === 0) return;
+    contentImages.push({selector: selOf(im), width: r.width, height: r.height,
+                        ratio: r.width / r.height,
+                        slot: im.getAttribute('data-image-slot')});
+  });
+  return {sections: sectionData, siblingGroups: groups, ctas: ctas,
+          contentImages: contentImages};
+}"""
+
+WRAP_JS = """() => {
+  const out = {scrollWidth: document.scrollingElement.scrollWidth,
+               innerWidth: window.innerWidth, clipped: []};
+  for (const el of Array.from(document.body.querySelectorAll('*'))) {
+    if (el instanceof SVGElement) continue;
+    const st = getComputedStyle(el);
+    if (st.display === 'none' || st.visibility === 'hidden') continue;
+    if (el.children.length > 0) continue;
+    if (el.scrollWidth > el.clientWidth + 2) {
+      let s = el.tagName.toLowerCase();
+      if (typeof el.className === 'string' && el.className.trim())
+        s += '.' + el.className.trim().split(/ +/)[0];
+      out.clipped.push({selector: s, scrollWidth: el.scrollWidth,
+                        clientWidth: el.clientWidth});
+      if (out.clipped.length >= 10) break;
+    }
+  }
+  return out;
+}"""
+
+DEFAULT_LAYOUT_THRESHOLDS = {
+    "signature_monotony_max_share": 0.60,
+    "image_ratio_same_class_tolerance": 0.05,
+    "image_ratio_min_images": 3,
+    "centering_max_share": 0.70,
+    "card_grid_min_repetitions": 3,
+    "card_grid_size_tolerance": 0.02,
+    "empty_width_min_span": 0.60,
+    "cta_size_tolerance_px": 2,
+    "single_cta_design": False,
+    "card_grid_allowlist": [],
+}
+
+_LAYOUT_FLOAT_KEYS = (
+    "signature_monotony_max_share",
+    "image_ratio_same_class_tolerance",
+    "centering_max_share",
+    "card_grid_size_tolerance",
+    "empty_width_min_span",
+)
+_LAYOUT_INT_KEYS = ("image_ratio_min_images", "card_grid_min_repetitions",
+                    "cta_size_tolerance_px")
+
+
+def load_layout_thresholds(brand):
+    """Merge the brand file's layout_thresholds over the plan defaults.
+
+    Reads the top-level `layout_thresholds` object; if page_design_rules is
+    ever converted from a list to an object, its nested layout_thresholds is
+    honored too. Unknown keys are ignored; unparseable values fall back to
+    the code defaults (which are the FIX-PLAN Item 15 defaults)."""
+    merged = dict(DEFAULT_LAYOUT_THRESHOLDS)
+    sources = []
+    if isinstance(brand.get("layout_thresholds"), dict):
+        sources.append(brand["layout_thresholds"])
+    rules = brand.get("page_design_rules")
+    if isinstance(rules, dict) and isinstance(rules.get("layout_thresholds"), dict):
+        sources.append(rules["layout_thresholds"])
+    for src in sources:
+        for key, value in src.items():
+            if key in merged and value is not None:
+                merged[key] = value
+    for key in _LAYOUT_FLOAT_KEYS:
+        try:
+            merged[key] = float(merged[key])
+        except (TypeError, ValueError):
+            merged[key] = DEFAULT_LAYOUT_THRESHOLDS[key]
+    for key in _LAYOUT_INT_KEYS:
+        try:
+            merged[key] = int(merged[key])
+        except (TypeError, ValueError):
+            merged[key] = DEFAULT_LAYOUT_THRESHOLDS[key]
+    merged["single_cta_design"] = bool(merged.get("single_cta_design"))
+    merged["card_grid_allowlist"] = [
+        str(x) for x in (merged.get("card_grid_allowlist") or [])
+    ]
+    return merged
+
+
+def _norm_align(value):
+    v = (value or "").strip().lower()
+    if v in ("start", "-webkit-left"):
+        return "left"
+    if v in ("end", "-webkit-right"):
+        return "right"
+    return v or "left"
+
+
+def _vertical_overlap_ratio(a, b):
+    top = max(a["top"], b["top"])
+    bottom = min(a["bottom"], b["bottom"])
+    overlap = bottom - top
+    denom = min(a["height"], b["height"])
+    if denom <= 0:
+        return 0.0
+    return overlap / denom
+
+
+def column_count(section):
+    """Column structure class input: how many of the section's direct
+    children sit side by side (grid columns when the section is a grid)."""
+    children = [c for c in (section.get("children") or [])
+                if (c.get("rect") or {}).get("width", 0) > 0]
+    if not children:
+        return 0
+    if section.get("display") == "grid":
+        gc = (section.get("gridColumns") or "").strip()
+        if gc and gc != "none":
+            return max(1, len(gc.split()))
+    import itertools
+
+    rects = [c["rect"] for c in children]
+
+    def side_by_side(i, j):
+        a, b = rects[i], rects[j]
+        disjoint_x = a["right"] <= b["left"] + 1 or b["right"] <= a["left"] + 1
+        return disjoint_x and _vertical_overlap_ratio(a, b) > 0.5
+
+    best = 1
+    for size in range(min(len(rects), 8), 1, -1):
+        found = False
+        for combo in itertools.combinations(range(len(rects)), size):
+            if all(side_by_side(i, j)
+                   for i, j in itertools.combinations(combo, 2)):
+                found = True
+                break
+        if found:
+            best = size
+            break
+    return best
+
+
+def primary_image(section):
+    imgs = section.get("images") or []
+    if not imgs:
+        return None
+    return max(imgs, key=lambda im: im["width"] * im["height"])
+
+
+def image_placement_class(section, image=None):
+    """Where the section's (primary) image sits: none, full-bleed, left,
+    center, right; prefixed multi- when the section carries >1 image."""
+    imgs = section.get("images") or []
+    if not imgs:
+        return "none"
+    img = image or primary_image(section)
+    sec = section["rect"]
+    if sec["width"] <= 0:
+        return "center"
+    prefix = "multi-" if len(imgs) > 1 else ""
+    if img["width"] >= 0.95 * sec["width"]:
+        return prefix + "full-bleed"
+    center_rel = ((img["rect"]["left"] + img["rect"]["right"]) / 2 - sec["left"]) / sec["width"]
+    if center_rel < 0.4:
+        return prefix + "left"
+    if center_rel > 0.6:
+        return prefix + "right"
+    return prefix + "center"
+
+
+def alignment_class(section):
+    texts = section.get("texts") or []
+    if not texts:
+        return "none"
+    vals = {_norm_align(t.get("textAlign")) for t in texts}
+    if len(vals) == 1:
+        return next(iter(vals))
+    return "mixed"
+
+
+def is_center_aligned_section(section):
+    """Fully center-aligned: every text element centered and no offset
+    media (a left/right placed image breaks the centering)."""
+    texts = section.get("texts") or []
+    if not texts:
+        return False
+    if alignment_class(section) != "center":
+        return False
+    placement = image_placement_class(section)
+    return not placement.endswith("left") and not placement.endswith("right")
+
+
+def section_signature(section):
+    """Item 15 signature: (column structure, image placement, alignment,
+    background token) as one comparable string."""
+    return "cols={}|img={}|align={}|bg={}".format(
+        column_count(section),
+        image_placement_class(section),
+        alignment_class(section),
+        (section.get("background") or "").replace(" ", ""),
+    )
+
+
+def heading_body_ratio(section):
+    head = section.get("headingFontSize")
+    body = section.get("bodyFontSize")
+    if head and body:
+        return head / body
+    return None
+
+
+def cluster_ratio_classes(ratios, tolerance):
+    """Group aspect ratios: within `tolerance` (relative) of the group's
+    first ratio counts as the same class (the plan's 5% rule)."""
+    classes = []
+    for ratio in sorted(ratios):
+        placed = False
+        for group in classes:
+            ref = group[0]
+            if ref > 0 and abs(ratio - ref) / ref <= tolerance:
+                group.append(ratio)
+                placed = True
+                break
+        if not placed:
+            classes.append([ratio])
+    return classes
+
+
+def load_declared_exemptions(run_dir, html_path):
+    """Amendment 6, Item 15 delta (a): declared exemptions as data.
+
+    Sources: the run's style-selection record
+    (<run_dir>/image-inventory-prompts/style-selection.json, Part B1 fields
+    declared_style_traits / declared_series / style_id) and the section
+    plan (<run_dir>/desktop-wireframe/section-plan.json or
+    mobile-tablet/section-plan.json; per-section `declared_traits`).
+    Returns {traits: set of normalized trait strings, style_ids: [...],
+    series: bool, per_section: {index or section_id: set of traits},
+    sources: [paths read]}. Absent records mean no exemptions: the plain
+    FAIL behavior is the default and exemptions are never assumed."""
+    result = {"traits": set(), "style_ids": [], "series": False,
+              "per_section": {}, "sources": []}
+    candidates = []
+    search_roots = []
+    if run_dir:
+        search_roots.append(Path(run_dir))
+    if html_path is not None:
+        search_roots += [html_path.parent, html_path.parent.parent]
+    for root in search_roots:
+        candidates.append(root / "image-inventory-prompts" / "style-selection.json")
+        candidates.append(root / "desktop-wireframe" / "section-plan.json")
+        candidates.append(root / "mobile-tablet" / "section-plan.json")
+    seen = set()
+    for path in candidates:
+        if path in seen or not path.is_file():
+            continue
+        seen.add(path)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        result["sources"].append(str(path))
+        if path.name == "style-selection.json":
+            records = []
+            if isinstance(data, list):
+                records = data
+            elif isinstance(data, dict):
+                if isinstance(data.get("selections"), list):
+                    records = data["selections"]
+                else:
+                    records = [data]
+            for rec in records:
+                if not isinstance(rec, dict):
+                    continue
+                for trait in rec.get("declared_style_traits") or []:
+                    result["traits"].add(str(trait).strip().lower())
+                if rec.get("declared_series"):
+                    result["series"] = True
+                if rec.get("style_id"):
+                    result["style_ids"].append(str(rec["style_id"]))
+        else:  # section plan
+            sections = data.get("sections") if isinstance(data, dict) else data
+            if isinstance(sections, list):
+                for pos, entry in enumerate(sections):
+                    if not isinstance(entry, dict):
+                        continue
+                    traits = {str(t).strip().lower()
+                              for t in (entry.get("declared_traits") or [])}
+                    if not traits:
+                        continue
+                    result["per_section"][pos] = traits
+                    if entry.get("section_id"):
+                        result["per_section"][str(entry["section_id"])] = traits
+    return result
+
+
+def _trait_matches(traits, *needles):
+    for trait in traits:
+        for needle in needles:
+            if needle in trait:
+                return trait
+    return None
+
+
+def compute_layout_metrics(data, thresholds, reference_width=1440, exemptions=None):
+    """The six Item 15 metrics over LAYOUT_JS data. Returns
+    {measured, failures, passes, declared}: failures are named LAYOUT
+    lines; passes carry measured values; declared lists Amendment 6
+    DECLARED exemptions (metric governed by a declared trait or series,
+    cited by name, never a failure). Guards: signature and centering are
+    share metrics and are only evaluated at 3+ sections (below that the
+    share is reported as measured, not failed); the plan's own guards
+    apply elsewhere (>=3 images, >=3 siblings, >=2 CTAs)."""
+    th = thresholds
+    ex = exemptions or {"traits": set(), "style_ids": [], "series": False,
+                        "per_section": {}}
+    measured = {}
+    failures = []
+    passes = []
+    declared = []
+    sections = data.get("sections") or []
+    n = len(sections)
+    measured["section_count"] = n
+    measured["viewport_width"] = reference_width
+    style_cite = ", ".join(ex.get("style_ids") or []) or "selection record"
+
+    def section_traits(idx, section):
+        traits = set(ex.get("traits") or set())
+        per = ex.get("per_section") or {}
+        traits |= per.get(idx, set())
+        traits |= per.get(str(idx), set())
+        if section.get("id"):
+            traits |= per.get(str(section["id"]), set())
+        return traits
+
+    # 1. section signature diversity
+    sigs = [section_signature(s) for s in sections]
+    measured["signatures"] = sigs
+    if n >= 3:
+        from collections import Counter
+
+        top_sig, top_count = Counter(sigs).most_common(1)[0]
+        share = top_count / n
+        measured["signature_top_share"] = round(share, 4)
+        measured["signature_top"] = top_sig
+        if share > th["signature_monotony_max_share"]:
+            failures.append(
+                "LAYOUT: section signature monotony: {} of {} sections share "
+                "signature {} ({:.0%} over the {:.0%} max)".format(
+                    top_count, n, top_sig, share,
+                    th["signature_monotony_max_share"]))
+        else:
+            passes.append(
+                "LAYOUT PASS: section signature diversity: top signature "
+                "share {:.0%} ({} of {} sections), max allowed {:.0%}".format(
+                    share, top_count, n, th["signature_monotony_max_share"]))
+    else:
+        measured["signature_top_share"] = None
+
+    # 2. image ratio diversity (declared series exempt, Amendment 6)
+    images = [im for im in (data.get("contentImages") or [])
+              if im.get("ratio", 0) > 0]
+    ratios = [im["ratio"] for im in images]
+    classes = cluster_ratio_classes(ratios, th["image_ratio_same_class_tolerance"])
+    measured["image_count"] = len(ratios)
+    measured["image_ratio_class_count"] = len(classes)
+    series_trait = _trait_matches(ex.get("traits") or set(), "uniform")
+    if len(ratios) >= th["image_ratio_min_images"] and len(classes) == 1:
+        if ex.get("series") or series_trait:
+            declared.append(
+                "LAYOUT DECLARED: image ratio diversity: all {} content "
+                "images share one aspect-ratio class (ratio {:.2f}), exempt "
+                "under declared series (style {})".format(
+                    len(ratios), ratios[0], style_cite))
+            measured["image_ratio_status"] = "declared"
+        else:
+            failures.append(
+                "LAYOUT: image ratio monotony: all {} content images share "
+                "one aspect-ratio class (ratio {:.2f}); the brand bans the "
+                "same image ratio everywhere".format(len(ratios), ratios[0]))
+            measured["image_ratio_status"] = "fail"
+    elif ratios:
+        passes.append(
+            "LAYOUT PASS: image ratio diversity: {} ratio class(es) across "
+            "{} content images".format(len(classes), len(ratios)))
+        measured["image_ratio_status"] = "pass"
+    else:
+        measured["image_ratio_status"] = "not-evaluated"
+
+    # 3. centering ratio (declared centered composition exempt per section)
+    if n >= 3:
+        centered_idx = []
+        exempt_centered = []
+        for idx, s in enumerate(sections):
+            if not is_center_aligned_section(s):
+                continue
+            trait = _trait_matches(section_traits(idx, s), "center")
+            if trait:
+                exempt_centered.append((idx, trait))
+            else:
+                centered_idx.append(idx)
+        share = len(centered_idx) / n
+        measured["centered_sections"] = len(centered_idx)
+        measured["centered_share"] = round(share, 4)
+        for idx, trait in exempt_centered:
+            declared.append(
+                "LAYOUT DECLARED: centering: section {} is fully "
+                "center-aligned, exempt under declared style trait "
+                "'{}' (style {})".format(idx + 1, trait, style_cite))
+        if share > th["centering_max_share"]:
+            failures.append(
+                "LAYOUT: centering monotony: {} of {} sections are fully "
+                "center-aligned ({:.0%} over the {:.0%} max)".format(
+                    len(centered_idx), n, share, th["centering_max_share"]))
+        else:
+            passes.append(
+                "LAYOUT PASS: centering ratio: {:.0%} of sections fully "
+                "center-aligned ({} of {}), max allowed {:.0%}".format(
+                    share, len(centered_idx), n, th["centering_max_share"]))
+    else:
+        measured["centered_share"] = None
+
+    # 4. repeated card grid
+    allowlist = th["card_grid_allowlist"]
+    card_failures = 0
+    for group in data.get("siblingGroups") or []:
+        kids = group.get("children") or []
+        by_structure = {}
+        for kid in kids:
+            by_structure.setdefault(kid.get("structure", ""), []).append(kid)
+        for structure, members in by_structure.items():
+            members = sorted(members, key=lambda k: (k["width"], k["height"]))
+            clusters = []
+            for kid in members:
+                placed = False
+                for cluster in clusters:
+                    ref = cluster[0]
+                    if ref["width"] > 0 and ref["height"] > 0 and \
+                            abs(kid["width"] - ref["width"]) / ref["width"] <= th["card_grid_size_tolerance"] and \
+                            abs(kid["height"] - ref["height"]) / ref["height"] <= th["card_grid_size_tolerance"]:
+                        cluster.append(kid)
+                        placed = True
+                        break
+                if not placed:
+                    clusters.append([kid])
+            for cluster in clusters:
+                if len(cluster) < th["card_grid_min_repetitions"]:
+                    continue
+                keys = {group.get("parent", ""), structure,
+                        "{} {}".format(group.get("parent", ""), structure)}
+                if any(entry in keys for entry in allowlist):
+                    passes.append(
+                        "LAYOUT PASS: repeated card grid allowlisted: {} "
+                        "near-identical siblings under {} (structure {})".format(
+                            len(cluster), group.get("parent"), structure))
+                    continue
+                card_failures += 1
+                failures.append(
+                    "LAYOUT: repeated card grid: {} near-identical sibling "
+                    "elements under {} share structure {} and size {:.0f}x"
+                    "{:.0f}px ({} or more is a banned repeated card grid "
+                    "unless allowlisted)".format(
+                        len(cluster), group.get("parent"), structure,
+                        cluster[0]["width"], cluster[0]["height"],
+                        th["card_grid_min_repetitions"]))
+    measured["card_grid_failures"] = card_failures
+    if not card_failures and not any("card grid" in p for p in passes):
+        passes.append(
+            "LAYOUT PASS: repeated card grid: no sibling group of {} or "
+            "more near-identical elements".format(th["card_grid_min_repetitions"]))
+
+    # 5. empty width per section (declared spacious/sparse exempt per section)
+    empty_failures = 0
+    for idx, s in enumerate(sections):
+        rect = s["rect"]
+        if rect["width"] <= 0:
+            continue
+        rects = s.get("contentRects") or []
+        if rects:
+            span = (max(r["right"] for r in rects)
+                    - min(r["left"] for r in rects)) / rect["width"]
+        else:
+            span = 0.0
+        measured.setdefault("section_content_spans", []).append(round(span, 4))
+        if span < th["empty_width_min_span"]:
+            trait = _trait_matches(section_traits(idx, s),
+                                   "spacious", "sparse", "negative space")
+            if trait:
+                declared.append(
+                    "LAYOUT DECLARED: empty width: section {} ({}) content "
+                    "spans {:.0%} of section width, exempt under declared "
+                    "style trait '{}' (style {})".format(
+                        idx + 1, s.get("selector"), span, trait, style_cite))
+                continue
+            empty_failures += 1
+            failures.append(
+                "LAYOUT: empty width: section {} ({}) content spans {:.0%} "
+                "of section width at {}px (under the {:.0%} minimum; the "
+                "brand bans 40% or more empty section width)".format(
+                    idx + 1, s.get("selector"), span, reference_width,
+                    th["empty_width_min_span"]))
+    measured["empty_width_failures"] = empty_failures
+    if sections and not empty_failures and not any(
+            "empty width" in d for d in declared):
+        passes.append(
+            "LAYOUT PASS: empty width: every section's content spans at "
+            "least {:.0%} of its width at {}px (min measured {:.0%})".format(
+                th["empty_width_min_span"], reference_width,
+                min(measured.get("section_content_spans") or [1.0])))
+    elif sections and not empty_failures:
+        passes.append(
+            "LAYOUT PASS: empty width: no non-exempt section under the "
+            "{:.0%} span minimum at {}px".format(
+                th["empty_width_min_span"], reference_width))
+
+    # 6. CTA sameness (brand-declared single-CTA design exempt: this is
+    # also the Amendment 6 home for v6's one-CTA-treatment continuity)
+    ctas = data.get("ctas") or []
+    measured["cta_count"] = len(ctas)
+    if len(ctas) >= 2:
+        first = ctas[0]
+        tol = th["cta_size_tolerance_px"]
+        same = all(
+            abs(c["width"] - first["width"]) <= tol
+            and abs(c["height"] - first["height"]) <= tol
+            and c["background"] == first["background"]
+            for c in ctas[1:])
+        if same and th["single_cta_design"]:
+            declared.append(
+                "LAYOUT DECLARED: CTA sameness: {} CTAs share identical "
+                "dimensions {:.0f}x{:.0f}px and background {}, exempt "
+                "under the brand-declared single-CTA design".format(
+                    len(ctas), first["width"], first["height"],
+                    first["background"]))
+            measured["cta_status"] = "declared"
+        elif same:
+            failures.append(
+                "LAYOUT: CTA sameness: {} CTAs share identical dimensions "
+                "{:.0f}x{:.0f}px and identical background {} (the brand "
+                "bans identical CTA rectangles unless a single-CTA design "
+                "is declared)".format(
+                    len(ctas), first["width"], first["height"],
+                    first["background"]))
+            measured["cta_status"] = "fail"
+        else:
+            passes.append(
+                "LAYOUT PASS: CTA variety: {} CTAs differ in dimensions "
+                "or background".format(len(ctas)))
+            measured["cta_status"] = "pass"
+    else:
+        measured["cta_status"] = "not-evaluated"
+
+    return {"measured": measured, "failures": failures, "passes": passes,
+            "declared": declared}
+
+
+def compute_v6_baseline(data_by_width, image_map_entries, thresholds):
+    """Amendment 6, Item 15 delta (b): Standard v6's own checkable layout
+    law as a WARN-only family (v6 labels its geometry a baseline, not
+    requirements). Returns warning lines named V6-BASELINE plus measured
+    data. Checks: (1) frame-ratio truth: a slot's declared ratio (from the
+    image map's desktop_slot_px / desktop_slot_h_px pair, or an explicit
+    declared_ratio / aspect_ratio field) must equal the rendered ratio;
+    (2) wrap checks at 320/360/390/430: no horizontal overflow and no
+    clipped leaf text at those widths; (3) the 56px full-width button
+    target at the widest width."""
+    warnings_out = []
+    measured = {}
+    tol = thresholds["image_ratio_same_class_tolerance"]
+    base = data_by_width.get(1440) or {}
+    # (1) frame-ratio truth
+    declared_by_slot = {}
+    for entry in image_map_entries or []:
+        if not isinstance(entry, dict) or not entry.get("id"):
+            continue
+        ratio = None
+        w = entry.get("desktop_slot_px") or entry.get("intended_desktop_slot")
+        h = entry.get("desktop_slot_h_px")
+        if w and h:
+            ratio = float(w) / float(h)
+        elif entry.get("declared_ratio"):
+            ratio = float(entry["declared_ratio"])
+        elif entry.get("aspect_ratio"):
+            ratio = float(entry["aspect_ratio"])
+        if ratio:
+            declared_by_slot[str(entry["id"])] = ratio
+    frame_checked = 0
+    for img in base.get("contentImages") or []:
+        slot = img.get("slot")
+        if not slot or slot not in declared_by_slot:
+            continue
+        frame_checked += 1
+        declared_ratio = declared_by_slot[slot]
+        actual = img["ratio"]
+        if declared_ratio > 0 and abs(actual - declared_ratio) / declared_ratio > tol:
+            warnings_out.append(
+                "V6-BASELINE: frame ratio: image {} declared ratio {:.2f} "
+                "but renders at {:.2f} (frame-ratio truth: a declared frame "
+                "must match its actual geometry)".format(
+                    slot, declared_ratio, actual))
+    measured["frame_ratio_checked"] = frame_checked
+    # (2) wrap checks
+    wrap = {}
+    for width in (320, 360, 390, 430):
+        res = data_by_width.get("wrap", {}).get(width)
+        if res is None:
+            continue
+        wrap[width] = res
+        if res["scrollWidth"] > res["innerWidth"]:
+            warnings_out.append(
+                "V6-BASELINE: wrap: horizontal overflow at {}px "
+                "(scrollWidth {} over innerWidth {})".format(
+                    width, res["scrollWidth"], res["innerWidth"]))
+        for item in res.get("clipped") or []:
+            warnings_out.append(
+                "V6-BASELINE: wrap: {} text clipped at {}px "
+                "(scrollWidth {} over clientWidth {})".format(
+                    item["selector"], width, item["scrollWidth"],
+                    item["clientWidth"]))
+    measured["wrap_widths_checked"] = sorted(wrap.keys())
+    # (3) 56px full-width button target at the widest width
+    sections = base.get("sections") or []
+    full_width_checked = 0
+    for cta in base.get("ctas") or []:
+        is_full = False
+        for s in sections:
+            if s["rect"]["width"] > 0 and cta["width"] >= 0.9 * s["rect"]["width"]:
+                is_full = True
+                break
+        if is_full:
+            full_width_checked += 1
+            if cta["height"] < 56:
+                warnings_out.append(
+                    "V6-BASELINE: button target: full-width CTA {} is "
+                    "{:.0f}px tall, under the 56px full-width button "
+                    "target".format(cta["selector"], cta["height"]))
+    measured["full_width_ctas_checked"] = full_width_checked
+    return {"warnings": warnings_out, "measured": measured}
 
 
 def hex_to_rgb(value):
@@ -625,6 +1401,8 @@ def main():
     brand = load_brand(args.brand)
     palette, logo_only = brand_colors(brand)
     fonts, fonts_derived = brand_fonts(brand)
+    layout_thresholds = load_layout_thresholds(brand)
+    declared_exemptions = load_declared_exemptions(args.run_dir, html_path)
     banned = [str(f) for f in (brand.get("banned_fonts") or [])]
     try:
         tolerance = int(brand.get("color_tolerance", 0))
@@ -662,7 +1440,13 @@ def main():
         "test_run": test_run,
         "image_map": str(image_map_path) if image_map_path else None,
         "public_copy": str(copy_path) if copy_path else None,
+        "layout_thresholds": layout_thresholds,
+        "declared_exemption_sources": declared_exemptions["sources"],
     }
+    layout_report = None
+    v6_baseline_report = None
+    layout_pass_lines = []
+    layout_declared_lines = []
 
     page_url = html_path.resolve().as_uri()
     page_url_dir = html_path.resolve().parent
@@ -677,10 +1461,15 @@ def main():
 
     inner_text_max = ""
     max_width = max(widths)
+    layout_width = 1440 if 1440 in widths else max_width
+    layout_data_by_width = {}
     logo_missing_widths = []
     logo_hidden_widths = []
     overflow_widths = []
     width_results = {}
+
+    if sync_playwright is None:
+        die2("playwright is required (import playwright).")
 
     try:
         with sync_playwright() as pw:
@@ -888,8 +1677,44 @@ def main():
                                 f"below the 56px floor at 390px"
                             )
 
+                    # 10. layout metrics (Item 15) at the reference width
+                    if width == layout_width:
+                        layout_data = page.evaluate(LAYOUT_JS)
+                        layout_data_by_width[width] = layout_data
+                        layout_report = compute_layout_metrics(
+                            layout_data, layout_thresholds,
+                            reference_width=width,
+                            exemptions=declared_exemptions)
+                        width_results[width]["layout"] = layout_report
+                        errors.extend(layout_report["failures"])
+                        layout_pass_lines = layout_report["passes"]
+                        layout_declared_lines = layout_report["declared"]
+
+                    # V6-BASELINE wrap capture at baseline widths that are
+                    # part of this pass; the remaining widths run below.
+                    if width in (320, 360, 390, 430):
+                        layout_data_by_width.setdefault("wrap", {})[width] = (
+                            page.evaluate(WRAP_JS))
+
                     if width == max_width:
                         inner_text_max = page.evaluate(INNERTEXT_JS) or ""
+
+                # V6-BASELINE wrap widths not covered by the main pass
+                wrap_done = layout_data_by_width.get("wrap", {})
+                for extra_width in (320, 360, 390, 430):
+                    if extra_width in wrap_done or extra_width in widths:
+                        continue
+                    page.set_viewport_size(
+                        {"width": extra_width, "height": VIEWPORT_H})
+                    page.goto(page_url, wait_until="load",
+                              timeout=LOAD_TIMEOUT_MS)
+                    page.evaluate(EAGER_JS)
+                    page.evaluate(SCROLL_JS)
+                    layout_data_by_width.setdefault("wrap", {})[
+                        extra_width] = page.evaluate(WRAP_JS)
+                if layout_data_by_width.get(1440) is None and \
+                        layout_data_by_width.get(layout_width) is not None:
+                    layout_data_by_width[1440] = layout_data_by_width[layout_width]
             finally:
                 if context is not None:
                     try:
@@ -899,6 +1724,16 @@ def main():
                 shutil.rmtree(udd, ignore_errors=True)
     except Exception as exc:
         die2(f"Playwright failure while validating {html_path}: {exc}")
+
+    # Item 15 results into the report; the v6-native baseline family
+    # (Amendment 6 delta b) is WARN-only and runs for built pages.
+    if layout_report is not None:
+        checks["layout"] = layout_report
+    if args.mode == "page" and layout_report is not None:
+        v6_baseline_report = compute_v6_baseline(
+            layout_data_by_width, image_map, layout_thresholds)
+        warnings.extend(v6_baseline_report["warnings"])
+        checks["v6_baseline"] = v6_baseline_report
 
     # 3. logo verdicts
     if is_blackceo:
@@ -973,6 +1808,10 @@ def main():
     else:
         status = "PASS" if not errors else f"FAIL ({len(errors)} reasons)"
         print(f"{status}: {html_path} [{args.mode}]")
+        for item in layout_pass_lines:
+            print(item)
+        for item in layout_declared_lines:
+            print(item)
         for item in warnings:
             print(f"WARNING: {item}")
         for item in errors:
