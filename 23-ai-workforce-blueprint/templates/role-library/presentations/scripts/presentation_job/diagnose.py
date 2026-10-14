@@ -9,6 +9,18 @@ def describe_park(state: dict, run_dir=None) -> list[str]:
     Never mutates state. Returns [] when the job is not parked."""
     lines: list[str] = []
 
+    # PRES-039 engine origin is reported for EVERY state, including live
+    # (terminal None) runs: provenance must not depend on the job parking.
+    _eo0 = state.get("engine_origin") or {}
+    if _eo0:
+        _commit0 = (_eo0.get("distributor_commit") or {}).get("commit", "?")
+        lines.append(f"engine   : distributor={_eo0.get('distributor')} "
+                     f"role={_eo0.get('copy_role')} "
+                     f"digest={str(_eo0.get('package_digest'))[:12]} "
+                     f"commit={str(_commit0)[:12]} "
+                     f"contract v{_eo0.get('contract_version')}")
+    else:
+        lines.append("engine   : origin NOT RECORDED (pre-PRES-039 run)")
     terminal = state.get("terminal")
     if terminal is None:
         lines.append("terminal : in progress")
