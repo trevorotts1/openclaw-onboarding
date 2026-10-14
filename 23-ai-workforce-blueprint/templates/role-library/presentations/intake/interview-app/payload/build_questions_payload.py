@@ -34,9 +34,12 @@ _PASSTHROUGH = ("id", "order", "prompt", "help", "kind", "required",
                 "conditional_on", "ask_if", "block_gate", "storeOn", "key",
                 "refuse_values", "refuse_message")
 
-# The curated core set the Presentation Interview app asks (15 <= cap 20).
-# Every id must exist in deck-intake-questions.json, upsell-questions.json, or
-# APP_ONLY_QUESTIONS below.
+# The curated set the Presentation Interview app asks: 19 core questions plus
+# the two conditional U026 declined-reason follow-ups (21 total). The
+# follow-ups render only when their toggle reads "no" (conditional_on), so a
+# client who accepts both upsells never sees them. Every id must exist in
+# deck-intake-questions.json, upsell-questions.json, or APP_ONLY_QUESTIONS
+# below.
 DEFAULT_CURATED = [
     "presentation_type",          # type-picker (order 0) -- MUST be first, see selftest guard
     "offer_name",                 # company/offer
@@ -54,7 +57,18 @@ DEFAULT_CURATED = [
     "final_price",                # price
     "speech_speed_preference",    # speech speed (order 7.5)
     "want_sales_checkout",        # new sales/checkout yes-no (order 7.6)
+    "sales_checkout_declined_reason",  # U026 waiver follow-up (order 7.61) --
+                                   # conditional_on want_sales_checkout = "no";
+                                   # the client's VERBATIM reason. Without it in
+                                   # the minted payload the hosted flow never
+                                   # asks, so a hosted "no" could never carry
+                                   # the waiver the builder gate requires
+                                   # (FIX-PLAN Item 12).
     "want_vsl_page",              # new VSL yes-no (order 7.7)
+    "vsl_page_declined_reason",   # U026 waiver follow-up (order 7.71) --
+                                   # conditional_on want_vsl_page = "no"; same
+                                   # verbatim discipline as the sales/checkout
+                                   # reason above.
     "run_mode",                   # FIX 11 run mode (projected from the bank's
                                    # resource_plan.run_mode subfield) -- the
                                    # hosted app's only way to reach Ultra
@@ -342,12 +356,27 @@ def selftest() -> int:
     if specs.get("questions"):
         payload = build_curated_payload("RUNTEST", specs, DEFAULT_CURATED, store_target)
         ids = [q["id"] for q in payload["questions"]]
-        assert len(ids) <= 20, "curated set must respect cap 20"
+        assert len(ids) <= 21, ("curated set may pass the old cap of 20 only by "
+                                "the two conditional U026 waiver follow-ups")
         assert len(ids) >= 7, "curated set must keep 7-9 core"
         assert ids[0] == "presentation_type", "first standard question must be the type-picker (presentation_type)"
         assert "speech_speed_preference" in ids, "speech-speed question must be included"
         assert "want_sales_checkout" in ids, "sales/checkout yes-no must be included"
         assert "want_vsl_page" in ids, "VSL yes-no must be included"
+        # FIX-PLAN Item 12: the hosted payload must ASK both declined-reason
+        # questions, conditional on a "no", storing to the canonical nested
+        # location the builder gates read first. Without these, the verbatim
+        # waiver was unobtainable on the hosted path.
+        for _rid, _toggle, _field in (
+                ("sales_checkout_declined_reason", "want_sales_checkout",
+                 "SALES_CHECKOUT_DECLINED_REASON"),
+                ("vsl_page_declined_reason", "want_vsl_page",
+                 "VSL_PAGE_DECLINED_REASON")):
+            assert _rid in ids, f"U026 declined-reason question {_rid} must be included"
+            _q = next(q for q in payload["questions"] if q["id"] == _rid)
+            assert _q.get("conditional_on") == {"id": _toggle, "equals": "no"}, _q
+            assert _q.get("storeOn") == f"pre_presentation_capture.{_field}", _q
+            assert _q.get("required") is True, _q
         assert "run_mode" in ids, "FIX 11 run-mode question must be included"
         rm = next(q for q in payload["questions"] if q["id"] == "run_mode")
         assert rm["allowed_values"] == ["ultra", "standard", "economy"], rm
