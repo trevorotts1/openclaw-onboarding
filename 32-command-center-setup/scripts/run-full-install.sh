@@ -533,14 +533,14 @@ _cc_is_retired_ollama_flash() {
 # or empty when the box has none. Read from the box's own openclaw.json:
 # never a hardcoded model name.
 _cc_box_default_model() {
-  [[ -f "$OC_CONFIG" ]] || { printf ''; return 0; }
+  [[ -n "${OC_CONFIG:-}" && -f "${OC_CONFIG:-}" ]] || { printf ''; return 0; }
   command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
   jq -r '
     (if (.agents.defaults.model | type) == "object"
      then (.agents.defaults.model.primary? // "")
      else (.agents.defaults.model? // "") end)
     | select(type == "string")
-  ' "$OC_CONFIG" 2>/dev/null | head -n 1
+  ' "${OC_CONFIG:-}" 2>/dev/null | head -n 1
 }
 
 # _cc_live_model_id: echo the id unchanged when it is live. When the id is a
