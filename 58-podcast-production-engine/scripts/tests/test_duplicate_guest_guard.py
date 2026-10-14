@@ -425,6 +425,38 @@ class CliEndToEndTests(_DbCase):
         ).fetchone()[0]
         self.assertGreaterEqual(audited, 1, "a hand-lifted gate must never be silent")
 
+    def test_second_personal_episode_for_the_same_contact_is_created(self):
+        # Personal mode: the contact id IS the client's own, so every episode
+        # of the show shares it. The guest-identity guard is interview-only, or
+        # it refuses every Personal episode after the first one (rc=4).
+        self._insert_job("pj_personal_1", "ClientOwnContact01", "pd-personal-1",
+                         status="complete",
+                         permalink="https://example.invalid/e/personal-one/",
+                         published_at="2026-09-01T15:00:00Z",
+                         mode="personal_podcast_style")
+        payload = self._payload_file({"q1_answer": "a completely different answer"})
+        res = self._ps("create", "--client-id", "thesoftgirlera", "--location-id", "loc",
+                       "--contact-id", "ClientOwnContact01",
+                       "--mode", "personal_podcast_style", "--style", "vulnerable",
+                       "--payload-file", payload, "--job-key", "k-personal-second")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        count = self.conn.execute("SELECT count(*) FROM podcast_jobs").fetchone()[0]
+        self.assertEqual(count, 2, "the second Personal submission must have been created")
+
+    def test_personal_advance_to_publishing_is_not_blocked_by_a_prior_personal_episode(self):
+        self._insert_job("pj_personal_1", "ClientOwnContact01", "pd-personal-1",
+                         status="complete",
+                         permalink="https://example.invalid/e/personal-one/",
+                         published_at="2026-09-01T15:00:00Z",
+                         mode="personal_podcast_style")
+        self._insert_job("pj_personal_2", "ClientOwnContact01", "9f2c" + "0" * 60,
+                         status="producing_audio", mode="personal_podcast_style")
+        res = self._ps("advance", "--job-id", "pj_personal_2", "--to", "publishing")
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertEqual(self._row("pj_personal_2")["status"], "publishing",
+                         "an earlier Personal episode for the same contact must not "
+                         "refuse this one; Personal dedups by submission fingerprint")
+
 
 if __name__ == "__main__":
     unittest.main()
