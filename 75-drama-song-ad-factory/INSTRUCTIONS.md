@@ -196,26 +196,46 @@ python3 shared-bridge/studio_bridge.py poll --base-url "$DS_BASE_URL" \
 `/home/node/.openclaw/drama-runs`. Nothing on this path opens an interactive
 shell.
 
-**2. The run folder already holds the replayed answers.** Before it prints,
-`poll` claims the order (one winner; the loser exits 2), creates
-`<runs>/<order_id>/` and replays the client's answers through
+**2. The run folder is already usable.** Before it prints, `poll` claims the
+order (one winner; the loser exits 2), creates `<runs>/<order_id>/`, writes
+`control/studio-order.json`, creates the run's state authority
+`control/state.sqlite3` through the skill's own single writer
+(`scripts/core/state_store.py`, the same store step 5 of the runtime steps
+writes through — never a second writer) and replays the client's answers through
 `factory.py card --step --reply … --run-dir`, so `card-answers.json`, the recap
 and `control/` are already in the run folder. Never restart intake and never
 ask those questions again.
 
-**3. Wake the agent with the line.** One order, one instruction:
+**3. Wake the agent with the line, and let the client hear it.** One order, one
+turn, one delivery:
 
 ```bash
 "$SKILL_ROOT/shared-bridge/wake_agent.sh" '<the one JSON line>'
-# -> openclaw agent --message "A Drama Studio order is ready: order <id>, run dir <dir>. Run skill 75 from `<next command>` to the first approval stop. Approvals for this run also publish to the studio page."
+# -> openclaw agent --agent <the agent this channel binds> --deliver --channel telegram \
+#      --message "Your video has started. … It is on your Drama Studio page, at <link>. … -- \
+#      For the agent: hand the client their personal studio link now (INSTRUCTIONS.md step 6: \
+#      `studio_bridge.py link`), then run skill 75 from `<next command>` to the first approval stop."
 ```
+
+The message leads with the client's own words — the video has started, the
+approvals land here in the chat and on the studio page, with that page's URL
+when the box holds one — and only then the instruction for the agent.
+`--deliver` sends the agent's reply back to the client's channel (it defaults to
+false, so without it the client never hears anything), and `--agent` names the
+agent the gateway binds that channel to (`openclaw agents bindings`; one agent
+on a box needs no name, and a box that binds more than one is told to set
+`DS_AGENT_ID` rather than guessed at).
 
 `openclaw agent --message` is the command OpenClaw already documents for
 starting an agent turn ("Run an agent turn via the Gateway"; `openclaw agent
---help`). The wake script builds nothing else: exit 64 when the line is missing,
-65 when it is not JSON or lacks `order_id` / `run_dir` / `next`, otherwise the
-agent command's own exit code. `OPENCLAW_BIN=<path>` swaps the binary (tests
-point it at a recording stub).
+--help`). The wake script builds nothing else and never loops: exit 64 when the
+line is missing, 65 when it is not JSON or lacks `order_id` / `run_dir` /
+`next`, otherwise the agent command's own exit code. When delivery is impossible
+(no OpenClaw on PATH, or an OpenClaw with no `--deliver`) it says so on stderr
+and leaves 0 — a missing reply path must never fail the timer, which reports the
+poll's own exit code. `OPENCLAW_BIN=<path>` swaps the binary (tests point it at
+a recording stub); `DS_CHANNEL` swaps the channel (default `telegram`, the one
+the rest of this skill sends on).
 
 **4. Continue from `next`.** Run what the poll line printed - or the same
 command by hand - and keep the normal stage loop going until the first approval
@@ -237,14 +257,22 @@ python3 shared-bridge/studio_bridge.py approval-answer --order "$ORDER" --stage 
 # prints the answer value; exit 3 = not answered yet
 ```
 
-**6. Send the personal link.** On the first drama order (and whenever the client
-asks), send the one personal link, printed by the bridge:
+**6. Send the personal link.** **WHEN:** on the first drama order for this
+client, and whenever the client asks for their studio page. **WHO:** the agent
+runs these commands and sends the result in the client's own chat - the client
+runs nothing and never types python:
 
 ```bash
 python3 shared-bridge/studio_bridge.py link            # prints the stored link
 python3 shared-bridge/studio_bridge.py link --new      # new one; the old link stops working
 openclaw message send --channel telegram --target <chat id> --message "<the link>"
 ```
+
+**Not enrolled:** when the bridge answers `NO_KEY` ("no machine key; run
+enroll first"), say plainly to the client that the studio is not set up on this
+computer yet and carry on with the normal chat intake and choice card. The
+drama order never waits on the studio, and no key, secret or enroll command is
+ever printed, invented or sent to the client.
 
 **7. Delivery goes to the page.** When `delivery/05 - Video Captioned.mp4`
 exists, record the deliverable and post the event with its link (GHL library

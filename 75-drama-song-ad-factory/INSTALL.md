@@ -69,6 +69,46 @@ The second command downloads `face_landmarker.task` from Google's official URL, 
 pinned sha256, and places it in `assets/face_landmarker.task` (or `$LIPSYNC_FACE_MODEL`).
 Re-run it after every skill update (an update replaces the skill folder).
 
+## Step 2c: Drama Studio enrollment and the pickup timer
+
+A personal studio link only resolves when this box holds a machine key, and
+only `shared-bridge/studio_bridge.py enroll` creates one. Both `install.sh`
+and `update-skills.sh` run that step for you, then register the timer that
+polls the studio every 120 seconds. Both are idempotent and both run on every
+pass - never gated on a version bump - so a box can be re-installed or
+re-updated at any time without re-enrolling.
+
+What gets enrolled: this box, once. The key is written to
+`~/.drama-studio/machine.key` (`$DRAMA_STUDIO_STATE` when set), folder mode
+700 and file mode 600, and it is never written into any settings file, log or
+receipt. If that file already exists the step does nothing - enroll is once
+per box - and says so.
+
+What happens when the secret is absent: the step skips. It exits 0, prints one
+line to stderr (`skipped: DS_ENROLLMENT_SECRET not set`) and leaves the box
+untouched. A client box must still install cleanly before the operator has
+injected a studio secret; the operator adds it to
+`~/.openclaw/secrets/.env` (Mac) or `/data/.openclaw/secrets/.env` (VPS) and
+the next install or update pass picks it up. The secret is read, never
+printed, never written to a file and never passed on a command line.
+
+The timer is registered idempotently with
+`install-timer.sh --platform <mac|hostinger|contabo> --register`, which exits
+0 when the timer is already installed. It refuses (exit 2) rather than
+registering, and that refusal is a warning, not a failure - the install and
+the update both continue, and the operator registers the timer by hand
+(`timer-artifacts/README.md`). The platform is auto-detected from the box; if
+it cannot be determined the timer call is skipped with a warning rather than
+guessed.
+
+To check either leg by hand:
+
+```bash
+ls -l ~/.drama-studio/machine.key      # enrolled, or absent (not enrolled)
+launchctl list | grep drama-studio     # Mac: the loaded 2-minute timer
+crontab -l | grep drama-studio         # VPS: the 2-minute poll line
+```
+
 ## Step 3: Credentials (canonical paths, canonical names)
 
 Needed for paid KIE paths (required):

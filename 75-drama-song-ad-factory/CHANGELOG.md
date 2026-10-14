@@ -4,15 +4,35 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
-## v2.9.50 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #10 (R2-B): the studio page collects the story brief
+## v2.9.51 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #10 (R2-B): the studio page collects the story brief
 
 Batch `BATCH-DSF-10` — release group R2-B, one member merged in (one version
-bump and one entry for the whole batch, per the swarm plan):
+bump and one entry for the whole batch, per the swarm plan). Cut at v2.9.51
+because batch #8 (R2-A, #2010) took v2.9.50 on `main` while this batch was
+building; this entry sits above it.
 
 - `#2003` (`unit/DSR-105`, DSR-105) — the story brief. `scripts/core/choice_card/intake_card/intake_card.py` stays the only question source and gains five typed BRIEF questions (`offer`, `link`, `audience`, `character`, `photos`), so the card asks 14 instead of 9. `mini-app/ui/questions.json` was regenerated from it and the drift check passes; `mini-app/service/src/index.js` reads the brief out of the leading replies and stores it BESIDE the replies, marking `brief_complete` false with `brief_missing` rather than refusing an order; `mini-app/ui/studio.js` passes the question into `answerBox`, so the textarea shape comes from the typed contract instead of from sniffing option wording.
 - Carries the `DSR-107` repair commits (`5b661c55a` .. `4d730e5b45e6828ff914709604fc65797ebd93c0`): the typed box's wording still gates whether it appears, and `mini-app/service/test/brief.test.mjs` plus `studio-render.test.mjs` assert the input listener rather than a value we just set.
 
 No behaviour outside SPEC.md was added and no bridge file was touched.
+
+## v2.9.50 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #8: the box enrols, the link is handed over, the timer installs, the client hears the pickup
+
+Batch `BATCH-DSF-8` - release group R2-A, four Round 2 units merged together
+(one version bump and one entry for the whole batch, per the swarm plan):
+
+- `#1998` (`unit/DSR-101`) enrols the box and registers the studio timer at install: `shared-bridge/enroll-on-install.sh` plus `shared-bridge/checks/test_enroll_on_install.py`, and the call sites in `install.sh`, `update-skills.sh` and `INSTALL.md`.
+- `#1993` (`unit/DSR-102`) makes the agent hand the client the personal studio link: `SKILL.md`, step 6 of STUDIO ORDERS in `INSTRUCTIONS.md` (who runs it, when, and what to say when the bridge answers `NO_KEY`) and the video department SOP.
+- `#1997` (`unit/DSR-103`) makes `--register` actually install the studio timer on mac, hostinger and contabo: everything under `timer-artifacts/` (`install-timer.sh`, the launchd plist template, both cron templates, `README.md`, `PLATFORM-PROOF.md`).
+- `#2000` (`unit/DSR-104`) lets the agent start after pickup and tells the client: `shared-bridge/studio_bridge.py`, `shared-bridge/wake_agent.sh`, `shared-bridge/checks/test_studio_handoff.py`, and `INSTRUCTIONS.md` steps 2-3.
+
+`INSTRUCTIONS.md` overlap: `#1993` and `#2000` both edit that file. `#1993`'s hunks
+sit in the step 6 link hand-over and `#2000`'s in steps 2-3, so git auto-merged them
+and both survive on this head - the link hand-over wording and the poll/wake
+wording are all present, and no conflict marker was ever written.
+
+No behaviour outside SPEC.md was added; every unit's own tests and the area
+regressions pass on this batch head.
 
 ## v2.9.49 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #7: proof receipts plus inbox freshness
 

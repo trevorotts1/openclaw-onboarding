@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.50
+version: v2.9.51
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -142,6 +142,25 @@ Nothing skips a gate. A runtime prompt or worker cannot bypass a failed
 shared guard: every runtime path invokes the same Python control entrypoint
 and the same exit codes BEFORE the affected action, not as an
 after-the-fact audit.
+
+## Hand over the personal studio page (first drama order, and on request)
+
+On the FIRST drama order for a client - and whenever the client asks - send
+them their personal studio page link in their own chat. **You run the
+command; the client runs nothing and never types python.** The commands are
+the bridge's own:
+
+```bash
+python3 shared-bridge/studio_bridge.py link          # the client's stored link
+python3 shared-bridge/studio_bridge.py link --new    # fresh link; old one dies
+openclaw message send --channel telegram --target <chat id> --message "<link>"
+```
+
+If the bridge answers `NO_KEY`, this computer is not enrolled with the
+studio yet: say so plainly to the client ("the studio is not set up on this
+computer yet"), then continue the drama work through the chat intake. A
+missing studio key never blocks an order, and no key is ever printed,
+invented or handed to the client.
 
 ## The control entrypoint
 
