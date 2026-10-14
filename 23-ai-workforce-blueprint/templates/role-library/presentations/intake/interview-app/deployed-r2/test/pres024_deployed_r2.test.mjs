@@ -4,7 +4,7 @@
 //   node --test deployed-r2/test/pres024_deployed_r2.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { R2Shim, WorkerHarness, PAYLOAD } from "../../../../intake-miniapp/test/pres024_env.mjs";
+import { R2Shim, WorkerHarness, PAYLOAD } from "../../test/pres024_env.mjs";
 import worker from "../src/index.js";
 
 function makeEnv() {

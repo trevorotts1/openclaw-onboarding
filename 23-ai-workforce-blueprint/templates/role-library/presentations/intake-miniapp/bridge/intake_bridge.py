@@ -135,8 +135,6 @@ def cmd_mint(args) -> int:
         "questions_payload": payload,
         "want_confirm_code": bool(args.confirm_code),
     }
-    if args.company_id:
-        body["company_id"] = args.company_id
     if args.recipient_chat_id:
         body["recipient_chat_id"] = args.recipient_chat_id
     if args.ttl_days:
@@ -319,12 +317,18 @@ def main(argv: list[str]) -> int:
     m.add_argument("--worker-url", required=True)
     m.add_argument("--run-id", required=True, help="DISPLAY-ONLY human run name; the worker mints the durable run id")
     m.add_argument("--box-id", required=True)
+    # Item 13: --company-id is registered ONCE. A second registration
+    # (default=None, "bind the session to a company") used to follow this
+    # one; argparse raises ArgumentError (conflicting option string) at
+    # parser construction, so EVERY invocation of this bridge crashed
+    # before parsing. Fix 63 repaired the same bug on the live
+    # interview-app bridge by keeping only the required=True instance;
+    # this deprecated copy now matches.
     m.add_argument("--company-id", required=True, help="PRES-009: tenant company id (opaque, 3-64 chars)")
     m.add_argument("--installation-id", required=True, help="PRES-009: fleet installation id (opaque, 3-64 chars)")
     m.add_argument("--presentation-id", required=True, help="PRES-009: deck/presentation id (opaque, 3-64 chars)")
     m.add_argument("--questions", required=True, help="path to a questions_payload.json (from build_questions_payload.py)")
     m.add_argument("--confirm-code", action="store_true", help="mint a 6-digit high-trust code")
-    m.add_argument("--company-id", default=None, help="bind the session to a company (renewal must present the same one)")
     m.add_argument("--recipient-chat-id", default=None, help="bind the delivery recipient for retry links")
     m.add_argument("--ttl-days", type=float, default=None)
     m.set_defaults(func=cmd_mint)
