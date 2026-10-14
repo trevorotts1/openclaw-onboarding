@@ -145,6 +145,7 @@ import io
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 # Sibling import bootstrap (house convention, identical to the u07 siblings):
@@ -389,6 +390,45 @@ def _cover_style_names() -> tuple:
 BROWSER_UA = reg.CAF_BROWSER_UA
 
 
+# WHERE THE PICKLIST LIVES. The LIST rail (GET /locations/{id}/customFields)
+# returns NO options key for ANY field — measured 0 of 756 records on a live
+# provisioned box — so a check that reads picklists off the listing always
+# sees "no options". The picklist rides the SINGLE-FIELD GET
+# (GET /locations/{id}/customFields/{fieldId}) as 'picklistOptions'. The check
+# therefore reads options from THAT surface for exactly the fields that need
+# them (the two dropdowns), PAUSED: one single-field read per dropdown with a
+# short pause between them — never a hammer, never a sweep of the 756.
+PICKLIST_READ_PAUSE_S = 0.5
+
+
+def _live_picklist(client, location_id: str, livef: dict):
+    """The picklist of ONE live SINGLE_OPTIONS field, fail-closed:
+      1. the options the record itself already carries (a rail version that
+         returns them inline, or a fixture) — no extra read needed;
+      2. else a SINGLE-FIELD GET for that field's id, reading 'picklistOptions'
+         (falling back to an inline 'options' on that record);
+      3. else None — the surface carries no options and this never fabricates
+         one (the caller records the violation).
+    The single-field read is PAUSED (PICKLIST_READ_PAUSE_S) so the two
+    dropdown reads never fire back-to-back; a rail error (scope denial, edge
+    block, transport) propagates fail-closed, never a silent empty picklist."""
+    opts = livef.get("options")
+    if isinstance(opts, list):
+        return list(opts)
+    fid = str(livef.get("id") or "").strip()
+    getter = getattr(client, "get_custom_field", None)
+    if not fid or not callable(getter):
+        return None
+    time.sleep(PICKLIST_READ_PAUSE_S)
+    rec = getter(location_id, fid)
+    if not isinstance(rec, dict):
+        return None
+    got = rec.get("picklistOptions")
+    if not isinstance(got, list):
+        got = rec.get("options")
+    return list(got) if isinstance(got, list) else None
+
+
 # ---------------------------------------------------------------------------
 # The check — returns the machine report dict; raises on STOP / HELD /
 # fail-closed refusal. NEVER prints a token (it holds none: credentials are
@@ -526,11 +566,12 @@ def check_dropdowns_live(client, location_id: str, field_map: dict,
                 "%s dataType %r != SINGLE_OPTIONS (the picklist law: a "
                 "dropdown must be SINGLE_OPTIONS)" % (spec["key"], got_type))
             continue
-        got_opts = livef.get("options")
+        got_opts = _live_picklist(client, location_id, livef)
         if not isinstance(got_opts, list):
             violations.append(
                 "%s carries no options list (a picklist field must ship its "
-                "options)" % spec["key"])
+                "options; the list rail ships none, so they are read from "
+                "the single-field GET)" % spec["key"])
         elif list(got_opts) != list(spec["options"]):
             violations.append(
                 "%s options do not byte-equal the %s picklist in order"
@@ -561,6 +602,9 @@ def check_dropdowns_live(client, location_id: str, field_map: dict,
             "missing_without_execute_stop": True,
             "wrong_type_never_recreated": True,
             "options_byte_exact_in_order": True,
+            "picklist_source": "single-field GET picklistOptions (the list "
+                               "rail carries no options for any field); one "
+                               "paused read per dropdown field",
             "decision_law_source": "gate_engine s5_gate actions "
                                    "(byte-exact, 2 options)",
             "choice_law_source": "cover_render.STYLE_NAMES (byte-exact, "
@@ -670,9 +714,12 @@ class _FakeCaf:
     the READ-ONLY path performs zero writes and that the --execute path
     creates exactly the missing keys, then re-reads)."""
 
-    def __init__(self, fields=None, behavior=None):
+    def __init__(self, fields=None, behavior=None, picklists=None):
         self._fields = list(fields) if isinstance(fields, list) else fields
         self.behavior = behavior  # None | scope | edge | transport
+        # The per-field-id picklists the SINGLE-FIELD GET would answer
+        # (None -> the record's own inline 'options' stands in for it).
+        self._picklists = dict(picklists) if isinstance(picklists, dict) else None
         self.calls = []
         self._n = 0
 
@@ -682,6 +729,22 @@ class _FakeCaf:
         if isinstance(self._fields, list):
             return [dict(f) for f in self._fields]
         return self._fields
+
+    def get_custom_field(self, location_id, field_id):
+        """The single-field rail: GET /locations/{id}/customFields/{fieldId}.
+        MIRRORED REALITY — the answer carries the picklist under
+        'picklistOptions', never under the listing's 'options'."""
+        self.calls.append(("field", location_id, field_id))
+        self._maybe_raise()
+        rec = next((dict(f) for f in (self._fields or [])
+                    if isinstance(f, dict) and f.get("id") == field_id), None)
+        if rec is None:
+            return None
+        inline = rec.pop("options", None)
+        pl = self._picklists.get(field_id) if self._picklists is not None else inline
+        if pl is not None:
+            rec["picklistOptions"] = list(pl)
+        return rec
 
     def create_custom_field(self, location_id, name, data_type, options=None):
         self.calls.append(("create", location_id, name, data_type))
@@ -753,6 +816,12 @@ def self_test(out=None) -> int:
 
 
 def _self_test_body(dev) -> None:
+    global PICKLIST_READ_PAUSE_S
+    # The offline battery exercises the single-field picklist path several
+    # times; the PRODUCTION pacing (one paused read per dropdown) must not
+    # cost the self-test wall-clock. Saved and restored below.
+    _saved_pause = PICKLIST_READ_PAUSE_S
+    PICKLIST_READ_PAUSE_S = 0.0
     field_map = _fake_field_map()
     styles = _cover_style_names()
     decision = _decision_option_law()
@@ -1125,6 +1194,47 @@ def _self_test_body(dev) -> None:
     assert p["choice_key"] == "contact.anthology_cover_choice"
     assert p["choice_options"] == list(styles)
 
+    # 19. THE LIVE LIST RAIL SHAPE (measured on a provisioned box: 0 of 756
+    #     listing records carry an options key). The picklist therefore rides
+    #     the SINGLE-FIELD GET as 'picklistOptions' — one paused read per
+    #     dropdown field, and the check still PASSes byte-exact.
+    reality = [dict(rec) for rec in golden]
+    for rec in reality:
+        rec.pop("options", None)
+    choice_key = _choice_key_law(field_map)
+    picklists = {rec["id"]: (list(styles) if rec["fieldKey"] == choice_key
+                             else list(decision))
+                 for rec in reality
+                 if rec["fieldKey"] in (DECISION_KEY, choice_key)}
+    caf19 = _FakeCaf(fields=reality, picklists=picklists)
+    report = check_dropdowns_live(caf19, "loc_fx", field_map)
+    assert report["verdict"] == "PASS", \
+        "the single-field picklist read must PASS: %r" % report["violations"]
+    single_reads = [c for c in caf19.calls if c[0] == "field"]
+    assert len(single_reads) == 2 and {c[2] for c in single_reads} == set(picklists), \
+        "exactly the two dropdown fields get a single-field read: %r" % single_reads
+
+    # 20. ... and the single-field surface is JUDGED, never trusted: a picklist
+    #     that DIVERGES there is still a FAIL (byte-exact in order, both laws).
+    bad_picklists = {fid: (list(reversed(list(decision)))
+                           if picklists[fid] == list(decision)
+                           else list(picklists[fid]))
+                     for fid in picklists}
+    report = check_dropdowns_live(_FakeCaf(fields=reality, picklists=bad_picklists),
+                                  "loc_fx", field_map)
+    assert report["verdict"] == "FAIL" and report["violations"], \
+        "a diverged single-field picklist must FAIL"
+
+    # 21. neither surface carries a picklist -> FAIL (never a silent pass,
+    #     never a fabricated empty picklist)
+    report = check_dropdowns_live(_FakeCaf(fields=reality, picklists={}),
+                                  "loc_fx", field_map)
+    assert report["verdict"] == "FAIL" and any(
+        "no options list" in v for v in report["violations"]), \
+        "a picklist no surface returns must FAIL as a violation"
+
+    PICKLIST_READ_PAUSE_S = _saved_pause
+
     dev.write("[dropdown] self-test: OK (contract: decision "
               "contact.anthology_review_decision 2-option approve_as_is / "
               "request_rewrite_with_notes from gate_engine, MAP-OWNED "
@@ -1139,7 +1249,10 @@ def _self_test_body(dev) -> None:
               "missing STOP exit 2 with zero writes, --execute "
               "create-only-missing at SINGLE_OPTIONS with the exact "
               "picklists then re-read, wrong-type never re-created even "
-              "with --execute, 20 attack fixtures refused or FAIL-recorded "
+              "with --execute, picklists read from the SINGLE-FIELD GET "
+              "(picklistOptions; the list rail carries no options for any "
+              "field) with exactly one paused read per dropdown, "
+              "23 attack fixtures refused or FAIL-recorded "
               "(decision-TEXT / choice-TEXT / decision-options-reordered / "
               "decision-options-extra / decision-options-renamed / "
               "choice-options-reordered / choice-options-extra / "
@@ -1149,7 +1262,9 @@ def _self_test_body(dev) -> None:
               "review_decision_field-block-deleted / "
               "review_decision_field-options-drift / "
               "style-law-unavailable / decision-law-unavailable / "
-              "scope-denied / edge-block / transport), no-writes on the "
+              "scope-denied / edge-block / transport / "
+              "single-field-picklist-diverged / "
+              "single-field-picklist-absent), no-writes on the "
               "read-only path, masked-location, plan offline)\n")
 
 

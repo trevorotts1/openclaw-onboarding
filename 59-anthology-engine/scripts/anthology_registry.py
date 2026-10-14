@@ -417,7 +417,28 @@ class CafClient:
     # ---- custom fields ----------------------------------------------------
     def list_custom_fields(self, location_id: str):
         out = self._request("GET", "/locations/%s/customFields" % urllib.parse.quote(location_id, safe=""))
+        # Some rail versions answer the BARE record array instead of the
+        # {'customFields': [...]} envelope; both are the same inventory.
+        if isinstance(out, list):
+            return out
         return out.get("customFields") or []
+
+    def get_custom_field(self, location_id: str, field_id: str):
+        """SINGLE-FIELD read — GET /locations/{id}/customFields/{fieldId}.
+        The LIST rail carries no picklist options for any field (measured 0 of
+        756 on a live provisioned box); the picklist rides THIS surface as
+        'picklistOptions'. Read-only, browser UA on every request (CF 1010).
+        Returns the field record (the 'customField' object when the rail
+        wraps it)."""
+        out = self._request(
+            "GET", "/locations/%s/customFields/%s" % (
+                urllib.parse.quote(location_id, safe=""),
+                urllib.parse.quote(field_id, safe="")))
+        if isinstance(out, dict):
+            rec = out.get("customField")
+            if isinstance(rec, dict):
+                return rec
+        return out
 
     def create_custom_field(self, location_id: str, name: str, data_type: str, options=None):
         body = {"name": name, "dataType": data_type, "model": "contact"}
@@ -615,6 +636,16 @@ class RailFallbackClient:
                               % urllib.parse.quote(location_id, safe=""))
         rows = out.get("customFields")
         return rows if isinstance(rows, list) else []
+
+    def get_custom_field(self, location_id: str, field_id: str):
+        out = self._rail._get("/locations/%s/customFields/%s" % (
+            urllib.parse.quote(location_id, safe=""),
+            urllib.parse.quote(field_id, safe="")))
+        if isinstance(out, dict):
+            rec = out.get("customField")
+            if isinstance(rec, dict):
+                return rec
+        return out
 
     def list_custom_values(self, location_id: str):
         out = self._rail._get("/locations/%s/customValues"
@@ -1398,9 +1429,25 @@ def _standard_pipeline_fixture() -> dict:
 
 
 def _tmp_field_map() -> Path:
-    """Copy the committed template into a temp file so the self-test never
-    dirties the real field-map.json."""
+    """A TEMPLATE-STATE copy of the field-map in a temp file, so the
+    self-test never dirties the real field-map.json. The on-disk map is the
+    committed template on a fresh tree and the STAMPED per-box map on a
+    provisioned box (field_key/field_id resolved, and the pipeline bound),
+    so the copy is NORMALIZED back to the template state here: every
+    provisioning slot nulled and the pipeline resolution cleared. Every
+    provisioning fixture below then starts from the same known state and its
+    "nothing may be stamped" / "exactly this gets stamped" assertions mean
+    the same thing on every box."""
     src = load_field_map(FIELD_MAP_PATH)
+    for row in (src.get("provisioning") or {}).get("fields") or []:
+        if isinstance(row, dict):
+            row["field_key"] = None
+            row["field_id"] = None
+    resolved = (src.get("pipeline") or {}).get("resolved")
+    if isinstance(resolved, dict):
+        for slot in ("pipeline_id", "stage_ids", "provisioned_at", "location_masked"):
+            if slot in resolved:
+                resolved[slot] = None
     d = Path(tempfile.mkdtemp(prefix="ae-reg-selftest-"))
     p = d / "field-map.json"
     with open(p, "w", encoding="utf-8") as fh:
@@ -1424,7 +1471,21 @@ def self_test() -> int:
     assert len(keys) == 38, "duplicate intended_key in inventory"
     for i in inv:
         assert derive_field_key(i["create_name"]) == i["intended_key"], i["intended_key"]
-        assert i["field_key"] is None and i["field_id"] is None, "template must ship resolved=null"
+        # THE TWO LEGAL DISK STATES — both verify; neither is drift.
+        #   * the committed TEMPLATE: field_key/field_id null (key-only law)
+        #   * the PROVISIONED-BOX STAMP: field_key byte-equal to its
+        #     intended_key and a non-empty field_id (what provision-fields
+        #     writes back on the box it just provisioned).
+        # A HALF-stamp (one resolved, the other null), a drifted field_key or
+        # a blank field_id is never legal — this is the template-shape law,
+        # not a template-VALUES law: a legitimately provisioned box must not
+        # fail its own self-test.
+        _fk, _fid = i.get("field_key"), i.get("field_id")
+        if not (_fk is None and _fid is None):
+            assert _fk == i["intended_key"], \
+                "%s: the stamped field_key drifted from its intended_key" % i["intended_key"]
+            assert isinstance(_fid, str) and _fid.strip(), \
+                "%s: a resolved field_key stamp must carry a non-empty field_id" % i["intended_key"]
         # Gap G11: every FREE-TEXT key is declared LARGE_TEXT (matches live), not TEXT.
         # The two exceptions are the U8 cover-choice picklist and the U15-absorbed
         # review-decision picklist, which are SINGLE_OPTIONS.
