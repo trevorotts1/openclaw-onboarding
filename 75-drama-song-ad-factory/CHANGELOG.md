@@ -4,6 +4,16 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.50 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #10 (R2-B): the studio page collects the story brief
+
+Batch `BATCH-DSF-10` — release group R2-B, one member merged in (one version
+bump and one entry for the whole batch, per the swarm plan):
+
+- `#2003` (`unit/DSR-105`, DSR-105) — the story brief. `scripts/core/choice_card/intake_card/intake_card.py` stays the only question source and gains five typed BRIEF questions (`offer`, `link`, `audience`, `character`, `photos`), so the card asks 14 instead of 9. `mini-app/ui/questions.json` was regenerated from it and the drift check passes; `mini-app/service/src/index.js` reads the brief out of the leading replies and stores it BESIDE the replies, marking `brief_complete` false with `brief_missing` rather than refusing an order; `mini-app/ui/studio.js` passes the question into `answerBox`, so the textarea shape comes from the typed contract instead of from sniffing option wording.
+- Carries the `DSR-107` repair commits (`5b661c55a` .. `4d730e5b45e6828ff914709604fc65797ebd93c0`): the typed box's wording still gates whether it appears, and `mini-app/service/test/brief.test.mjs` plus `studio-render.test.mjs` assert the input listener rather than a value we just set.
+
+No behaviour outside SPEC.md was added and no bridge file was touched.
+
 ## v2.9.49 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #7: proof receipts plus inbox freshness
 
 Batch `BATCH-DSF-7` — three W4 units merged together (one version bump and one
