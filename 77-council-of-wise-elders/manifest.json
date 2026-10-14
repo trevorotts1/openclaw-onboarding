@@ -2,9 +2,9 @@
   "skill": "council-of-wise-elders",
   "skill_version": "v1.0.0",
   "generated_by": "scripts/build-bundles.mjs",
-  "source_commit": "fe3ee2b68dfcc5adb69aa4b69aed4fd02c89e2e0",
+  "source_commit": "307319e637cf0017d1ee9df8d754f214276d22ad",
   "file_count": 290,
-  "aggregate_sha256": "3b670a3f19feeb7b4857d0a621e418d4ff0fc8ff1d6d3886bf161f5730aaf712",
+  "aggregate_sha256": "caea4cee3e2f48e98438bce28bc6503fb2c0c0d5adce6ebb3734a1250dbae4be",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -249,8 +249,8 @@
     },
     {
       "path": "advisors/michelle-obama/sources.json",
-      "sha256": "82fe4cc59bdb36e4bae5b40d2e1db94da87b929d412974a03703802b10d5e7aa",
-      "bytes": 33983
+      "sha256": "dc0823a6b1e0179f2c3011d7a8eb4936078cd41e13178e5543266663f2f2c088",
+      "bytes": 33973
     },
     {
       "path": "advisors/oprah-winfrey/briefing.md",
