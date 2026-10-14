@@ -54,10 +54,16 @@ Any other figure anywhere in the repo is wrong.
 
 ## 4. Polling
 
-Production batches use Skill 46 callbacks. One-off polling starts at about 3 seconds, backs off,
+Production batches dispatched through the Skill 74 production route use Skill 46 callbacks.
+One-off polling starts at about 3 seconds, backs off,
 and has a deadline sized to the media (image about 300 seconds; video and music longer).
-A department whose code implements a specific ladder (for example Presentations `build_deck.py`)
-is authoritative for that department, and its SOPs must describe that code.
+A department whose code implements a specific ladder is authoritative for that department, and
+its SOPs must describe that code. Presentations is that department, decided 2026-10-14:
+deck runs poll `recordInfo` through `build_deck.py` (batch poll) and `kie_generate.py` /
+`kie_tasks.py` (round-robin poll), never send `callBackUrl`, and never use the Skill 46 relay;
+the Skill 74 submit route the relay's production path requires is barred from deck runs by
+Presentations doctrine (SOP-IMG-01 section 1A, decision record
+`DECISION-2026-10-14-KIE-COMPLETION-POLLING.md` in the Presentations department home).
 
 ## 5. Limits authority (prompt length, enums, required fields)
 
