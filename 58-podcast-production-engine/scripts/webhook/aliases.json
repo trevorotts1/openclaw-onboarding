@@ -12,6 +12,7 @@
     "show_name": ["show_name", "showName", "podcast_name", "show_title", "showTitle", "podcast_show_name"],
     "host_name": ["host_name", "hostName", "host", "guest_first_name", "guestFirstName", "guest_name", "podcast_host_name", "podcast_survey_host_name"],
     "additional_info": ["additional_info", "podcast_survey__additional_info", "additional_information", "additionalInfo"],
+    "visual_description": ["visual_description", "quick_visual_description", "podcast_survey__quick_visual_description", "podcast_survey_quick_visual_description", "visualDescription"],
     "transparency_answer": ["podcast_interview_smiq", "smiq", "transparency_answer", "podcast_survey_smiq"],
     "q1_answer": ["q1_answer", "q1", "question_1", "answer_1", "q1answer"],
     "q2_answer": ["q2_answer", "q2", "question_2", "answer_2", "q2answer"],
