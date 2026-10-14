@@ -173,7 +173,25 @@ test('studio render: identical option wording, opposite shape, decided by typed'
     'typing in the box never reached the answer store');
 });
 
-// ── 4. every question the page is served is drawn from the contract ──────────
+// ── 4. the other half: the wording still gates whether a box appears ─────────
+//
+// The PR says the shape comes from `typed` and the presence of a text box
+// still comes from reading the option's own detail. This pins that second half
+// so neither half can drift silently: typed:true is NOT enough on its own.
+
+test('studio render: typed:true with non-typeable wording draws no text box', () => {
+  const tree = renderQuestion({
+    id: 'probe-gate', label: 'PROBE', typed: true, question: 'Pick one.',
+    options: [{ n: 1, text: 'Option A', detail: 'A or B, not a sentence', price: null, recommended: false }],
+  });
+  assert.equal(byTag(tree, 'TEXTAREA').length, 0,
+    'a typed question whose option is not typeable grew a textarea');
+  assert.equal(textInputs(tree).length, 0,
+    'a typed question whose option is not typeable grew a text box');
+  assert.equal(byTag(tree, 'INPUT').length, 1, 'the option itself is still a plain radio');
+});
+
+// ── 5. every question the page is served is drawn from the contract ──────────
 
 test('studio render: all served brief questions draw the textarea', () => {
   const brief = committed.questions.filter((q) => q.typed);
