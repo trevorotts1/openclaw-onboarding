@@ -74,10 +74,38 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["block_file", "min_mean_saturation", "min_luma_std"],
+      "description": "Signature grade screen thresholds enforced by scripts/validate_image_grade.py (Items 8 and 9, Calibration Redesign Rulings 1 to 3). Calibration is PER FAMILY and PER POSTURE CLASS: the nested `floors` block carries, for each rendering family (photographic, cinematic, visual-artist), a FULL class (color floors), an ADAPT class (a two-sided saturation/colorfulness band plus a luma_std tonal floor, optionally provisional), and non-color floors (luma_std, sharpness) pooled across the family's postures. SUPPRESS never carries color floors (Guide section 13). Brand calibration requires per-family anchors for every family in families_used; there is no family-scoped calibration mode (Ruling 2). Every threshold is a floor (or, for ADAPT, a band bound; for max_protected_saturation, a ceiling): a generated image measuring outside it FAILS the screen. A threshold set to null (or a class/family block absent) is UNCALIBRATED: the screen prints that metric's measurements as WARN and applies no gate for it, and the production gate refuses to close image-generation-qc for a non-test run while min_mean_saturation or min_luma_std is null (Item 8 close rule). Thresholds are never invented: they are derived by scripts/calibrate_grade.py from Trevor's approved gold set (assets/brand/gold-set/, floor = gold-set 5th percentile x 0.95 within the family and class), printed as a proposal, and written into the brand file only after Trevor approves or adjusts them. Transition: the flat keys below remain the production gate's close-rule keys and the validator's legacy fallback; at approval time the photographic family's FULL floors are mirrored into them alongside the nested write. Two further checks in the screen are unconditional and need no threshold: near-duplicate detection (8x8 average hash, Hamming distance 4 or less fails unless the pair is declared in the inventory's continuity_group) and native-ratio + crop-plan truth against the inventory (Amendment 6).",
       "properties": {
-        "block_file": {"type": "string", "minLength": 1},
-        "min_mean_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
-        "min_luma_std": {"type": ["number", "null"], "minimum": 0}
+        "block_file": {"type": "string", "minLength": 1, "description": "Path to the Signature Grade Block text the prompt validator requires verbatim on sauce-only pages."},
+        "min_mean_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "Legacy flat floor for mean HSV saturation (0-1) over the image's 256px working copy. Null = uncalibrated. Kept as the production gate's close-rule key and the validator's legacy fallback for the photographic FULL class; at calibration approval it mirrors floors.photographic.full.min_mean_saturation."},
+        "min_luma_std": {"type": ["number", "null"], "minimum": 0, "description": "Legacy flat floor for the standard deviation of luminance (0-255 scale). Null = uncalibrated. Mirrors floors.photographic.noncolor.min_luma_std at approval time (see min_mean_saturation)."},
+        "min_sharpness": {"type": ["number", "null"], "minimum": 0, "description": "Item 9: legacy flat floor for sharpness, the variance of Pillow FIND_EDGES over the grayscale 256px working copy. Optional key: absent is treated exactly like null (uncalibrated, WARN only)."},
+        "min_colorfulness": {"type": ["number", "null"], "minimum": 0, "description": "Item 9: legacy flat floor for the Hasler-Susstrunk colorfulness metric over the rg/yb opponent channels of the 256px working copy. Optional key: absent is treated exactly like null (uncalibrated, WARN only)."},
+        "max_protected_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "Option B selectivity ceiling (Ruling 3): the maximum allowed mean HSV saturation of an image's protected region (near-neutral pixels plus the skin-hue band) for FULL-posture images, enforced as a ceiling. Null or absent = uncalibrated: the screen measures and reports the protected-region saturation and saturated-intrusion share as WARN only. A family's FULL block may carry its own max_protected_saturation, which wins over this brand-wide key. The Item 12 judgment gate remains the enforcement of record for selective saturation; this ceiling is a screen proxy (Sauce 2, 23.2)."},
+        "families_used": {"type": "array", "uniqueItems": true, "items": {"type": "string", "enum": ["photographic", "cinematic", "visual-artist"]}, "description": "The rendering families this brand uses, declared once at gold-set designation time. Brand calibration (scripts/calibrate_grade.py) refuses until every family listed here has per-family anchors and a derivable floor set (Ruling 2). Absent: the calibrator falls back to the gold manifest's families_used, then to all three Router families."},
+        "floors": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Per-family, per-posture-class floors (Calibration Redesign, Rulings 1 and 2). Written by hand at approval time from calibrate_grade.py's proposal; scripts never write it. A family absent here is uncalibrated for every class: the screen WARNs and production close is refused for it (Item 8 close rule).",
+          "properties": {
+            "photographic": {"$ref": "#/definitions/family_floors"},
+            "cinematic": {"$ref": "#/definitions/family_floors"},
+            "visual-artist": {"$ref": "#/definitions/family_floors"}
+          }
+        },
+        "calibration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["date", "gold_set_manifest_sha256"],
+          "description": "Item 8 calibration record. Written by hand, once, when Trevor approves proposed floors and they are entered into this grade block; scripts never write it (calibrate_grade.py proposes only). Absent while thresholds are uncalibrated.",
+          "properties": {
+            "date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Date Trevor approved the floors, ISO format."},
+            "gold_set_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of assets/brand/gold-set/gold-set.json as it stood at calibration time, so a later gold-set change is detectable against the floors it produced."},
+            "approved_by": {"type": "string", "minLength": 1, "description": "Who approved the floors (Trevor Otts for the BlackCEO brand)."},
+            "families_calibrated": {"type": "array", "uniqueItems": true, "items": {"type": "string", "enum": ["photographic", "cinematic", "visual-artist"]}, "description": "The families whose per-family floors were derived and approved in this calibration. Bookkeeping for the approved state (not a scoped-calibration mode: under Ruling 2 a brand calibration is complete only when this lists every family in grade.families_used)."},
+            "note": {"type": "string", "description": "Optional: adjustments Trevor made to the proposed floors and why."}
+          }
+        }
       }
     },
     "page_design_rules": {
@@ -89,6 +117,44 @@
       "type": "array",
       "minItems": 1,
       "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "definitions": {
+    "family_floors": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One family's calibrated floor blocks. full: color floors for the FULL posture class. adapt: the ADAPT class's two-sided band plus its luma_std tonal floor; provisional=true records a 1 to 3 anchor class the calibrator printed as provisional (the validator WARNs instead of failing for it). noncolor: luma_std and sharpness floors pooled across the family's postures. SUPPRESS has no block: its color floors are N/A by doctrine.",
+      "properties": {
+        "full": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min_mean_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+            "min_colorfulness": {"type": ["number", "null"], "minimum": 0},
+            "max_protected_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "This family's approved Option B ceiling; wins over the brand-wide grade.max_protected_saturation."}
+          }
+        },
+        "adapt": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min_mean_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "ADAPT band floor for mean saturation (deliberateness bound, Guide section 13 check 1)."},
+            "max_mean_saturation": {"type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "ADAPT band ceiling for mean saturation (an image above it has drifted toward FULL wash)."},
+            "min_colorfulness": {"type": ["number", "null"], "minimum": 0},
+            "max_colorfulness": {"type": ["number", "null"], "minimum": 0},
+            "min_luma_std": {"type": ["number", "null"], "minimum": 0, "description": "ADAPT tonal floor: the measurable residue of the tonal authority section 13 requires in place of hero color."},
+            "provisional": {"type": "boolean", "description": "True when the class was derived from 1 to 3 anchors: the band is recorded, the class stays uncalibrated, and the validator WARNs instead of failing."}
+          }
+        },
+        "noncolor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min_luma_std": {"type": ["number", "null"], "minimum": 0},
+            "min_sharpness": {"type": ["number", "null"], "minimum": 0}
+          }
+        }
+      }
     }
   }
 }
