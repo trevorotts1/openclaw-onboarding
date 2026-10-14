@@ -84,7 +84,7 @@ Review the prompt QC trend data for the past month. If the same auto-fail codes 
 
 ## 6. Quarterly Operations
 
-Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md), `build_deck.py` (PROMPT_CHAR_FLOOR, PROMPT_CHAR_CEILING), and the full prompt auto-fail battery (AF-P1 through AF-P23). Verify the 15-element spec is still current. Update this document if anything has shifted.
+Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md), `build_deck.py` (the prompt length gate: rule 12 through shared-utils/kie_prompt_enforcer.py), and the full prompt auto-fail battery (AF-P1 through AF-P23). Verify the 15-element spec is still current. Update this document if anything has shifted.
 
 ---
 
@@ -115,7 +115,7 @@ Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md), `build_deck.
 - `working/typography/design_system.json` (read: per-slide archetype and expected type treatment)
 - `working/copy/intake.json` (read: LOGO_ON_SLIDES flag, LOGO_URL, DARK_OK)
 - `hook_variants.json` (read: which slides are scheduled hook beats -- AF-P12 check)
-- `scripts/build_deck.py` (reference: PROMPT_CHAR_FLOOR = 9000, PROMPT_CHAR_CEILING = 18000)
+- `scripts/build_deck.py` (reference: the prompt length gate is rule 12 through shared-utils/kie_prompt_enforcer.py; no band constants)
 - `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <the image.t2i id in presentation_job/model_catalog.json> --check --prompt-file working/prompts/slide-NN.txt` (read-only; run it from the Skill 74 folder; NEVER copy the adapter into a run directory, the render guard blocks it)
 - `working/qc/prompt_qc_report.json` (write: the QC report gating Phase Prompt-QC)
 - universal-sops/CLIENT-WEBINAR-DECK-SOP.md (master authority)
@@ -139,13 +139,13 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 
 **Inputs:**
 - All `working/prompts/slide-NN.txt` files
-- `scripts/build_deck.py` (PROMPT_CHAR_FLOOR = 9000, PROMPT_CHAR_CEILING = 18000) and the `prompt-budget` output for the pinned image model (rule 12 of `07-kie-setup/references/kie-common-rules.md`: target 95 to 100 percent of the model maximum, hard floor 80 percent)
+- `scripts/build_deck.py` (the prompt length gate is rule 12 through the shared enforcer shared-utils/kie_prompt_enforcer.py, which `build_deck.py` and `prompt_gate.py` import; no band constants) and the `prompt-budget` output for the pinned image model (rule 12 of `07-kie-setup/references/kie-common-rules.md`: target 95 to 100 percent of the model maximum, hard floor 80 percent)
 
 **Steps:**
 
 1. For each `working/prompts/slide-NN.txt`, compute the character count (total characters in the file). Record the exact count.
-2. Check the char floor: run `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <the image.t2i id in presentation_job/model_catalog.json> --check --prompt-file working/prompts/slide-NN.txt`. A prompt under the model's floor (80 percent of the maximum: 16,000 for the current 20,000-character pin; the tool exits 3 and prints the characters to add) or under the renderer's 9,000-character floor is AF-P1 (char under floor) and FAILS immediately. A prompt that short cannot carry all 15 structural elements, a full NEGATIVE BLOCK, and per-line spelling-locks for every on-slide string -- it is by definition a thin stub.
-3. Check the char ceiling: a prompt over the model maximum (the tool exits 4 and prints the characters to cut) or over the renderer's 18,000-character ceiling while that gate stands is AF-P2 (char over ceiling) and FAILS immediately. Until the renderer gate is migrated to rule 12, the window that passes both gates for the current pin is 16,000 to 18,000 characters; a prompt between 80 and 95 percent of the maximum is a warning to expand, not a failure.
+2. Check the char floor: run `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <the image.t2i id in presentation_job/model_catalog.json> --check --prompt-file working/prompts/slide-NN.txt`. A prompt under the model's floor (80 percent of the maximum: 16,000 for the current 20,000-character pin; the tool exits 3 and prints the characters to add) is AF-P1 (char under floor) and FAILS immediately. A prompt that short cannot carry all 15 structural elements, a full NEGATIVE BLOCK, and per-line spelling-locks for every on-slide string -- it is by definition a thin stub.
+3. Check the char ceiling: a prompt over the model maximum (the tool exits 4 and prints the characters to cut) is AF-P2 (char over ceiling) and FAILS immediately. The renderer gate enforces this same rule 12 band through the ONE shared enforcer, shared-utils/kie_prompt_enforcer.py (the old 9,000 to 18,000 renderer band is retired); a prompt between 80 and 95 percent of the maximum is a warning to expand, not a failure.
 4. There is no length exception for a near-empty transition slide: the renderer refuses a sub-floor prompt and rule 12's floor is hard. A prompt that claims such an exception FAILS AF-P1 and is returned for deepening.
 5. Record the char count and gate result (PASS / FAIL with AF-P1 or AF-P2) per prompt.
 
@@ -271,8 +271,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 ### SOP 9.5 -- Deterministic Engine Check + Route Failures Back (you are a CHECKER, not a word-counter)
 
 **The core re-calibration (v15.0.0).** You do not "pass" a prompt because it is long. You grade against **TWO independent floors, and BOTH must pass:**
-1. **LENGTH floor (the easy half):** inside the prompt budget (rule 12; `prompt-budget --check` exits 0) AND, while the renderer gate stands, `9,000 <= chars <= 18,000`. A prompt under the floor is `AF-P1`; over the ceiling is `AF-P2`. This is necessary but NEVER sufficient.
-2. **QUALITY floor (the half that actually matters):** every IMAGE engine is present as a baked token, the slide is in HARMONY with the deck, and the EXCELLENCE bar is cleared. A **9,000-char prompt missing one engine, or off-harmony, or boilerplate-padded, STILL FAILS** — exactly as a 500-char stub does. Length never buys a pass; engines never buy a pass.
+1. **LENGTH floor (the easy half):** inside the prompt budget (rule 12; `prompt-budget --check` exits 0: floor 16,000 and target 19,000 to 20,000 for the current pin, read from the shared enforcer shared-utils/kie_prompt_enforcer.py). A prompt under the floor is `AF-P1`; over the ceiling is `AF-P2`. This is necessary but NEVER sufficient.
+2. **QUALITY floor (the half that actually matters):** every IMAGE engine is present as a baked token, the slide is in HARMONY with the deck, and the EXCELLENCE bar is cleared. A **prompt that clears the length floor but is missing one engine, or off-harmony, or boilerplate-padded, STILL FAILS** -- exactly as a 500-char stub does. Length never buys a pass; engines never buy a pass.
 
 **The engine token gate (mechanical, per people/scene prompt).** Confirm each is present, naming the code on a miss:
 - Facial expression token (`AF-FACE-PROMPT-MISSING`)
@@ -295,7 +295,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md. Independence doctri
 ## 10. Quality Gates
 
 ### Gate 1 -- Char Floor and Ceiling (Hard)
-Every prompt inside the prompt budget and >= the renderer's 9,000-char floor (AF-P1) and <= the 18,000-char renderer ceiling (AF-P2), AND it clears the QUALITY gate (engines present + in harmony + EXCELLENCE) -- length never buys a pass. Checked mechanically before any other gate opens.
+Every prompt inside the prompt budget (rule 12: at or above the floor, 16,000 characters for the current pin (AF-P1), and at or below the model maximum (AF-P2)), AND it clears the QUALITY gate (engines present + in harmony + EXCELLENCE) -- length never buys a pass. Checked mechanically before any other gate opens.
 
 ### Gate 2 -- 15-Element Structural Completeness (Hard + Soft)
 All 15 structural elements present. Auto-fail codes AF-P6, AF-P7, AF-P10, AF-P12, AF-P13, AF-P15 checked as hard gates. Remaining elements scored 1-10 with a 7.0 per-item floor.
@@ -385,7 +385,7 @@ Per-prompt average >= 8.5 across all scored criteria. No single scored item belo
   "slide": "22",
   "char_count": 8400,
   "auto_fails": ["AF-P1"],
-  "defect_detail": "AF-P1: char count 8,400 is below the 16,000-char prompt-budget floor and the 9,000-char renderer floor (PROMPT_CHAR_FLOOR). The scene description (element 2) is generic ('a person at a desk') and does not reference the client's method or source material. The NEGATIVE BLOCK (element 15) is present but covers only 5 of 8 defect classes (missing Class 5 anatomical, Class 7 skin-tone fidelity, Class 8 universal baseline). Remediation: expand the scene to a grounded client-method moment; add the 3 missing NEGATIVE BLOCK classes with positive twins.",
+  "defect_detail": "AF-P1: char count 8,400 is below the 16,000-char rule 12 prompt-budget floor. The scene description (element 2) is generic ('a person at a desk') and does not reference the client's method or source material. The NEGATIVE BLOCK (element 15) is present but covers only 5 of 8 defect classes (missing Class 5 anatomical, Class 7 skin-tone fidelity, Class 8 universal baseline). Remediation: expand the scene to a grounded client-method moment; add the 3 missing NEGATIVE BLOCK classes with positive twins.",
   "verdict": "FAIL"
 }
 ```
@@ -421,7 +421,7 @@ Per-prompt average >= 8.5 across all scored criteria. No single scored item belo
 
 **Tier 1:**
 - universal-sops/CLIENT-WEBINAR-DECK-SOP.md (master authority -- prompt auto-fail codes AF-P1 through AF-P23)
-- `scripts/build_deck.py` (PROMPT_CHAR_FLOOR = 9000, PROMPT_CHAR_CEILING = 18000)
+- `scripts/build_deck.py` (the prompt length gate is rule 12 through shared-utils/kie_prompt_enforcer.py; no band constants)
 - NEGATIVE-PROMPTING-SOP (8-class block specification, positive-twin requirement, no-contradiction audit)
 
 **Tier 2:**
@@ -439,7 +439,7 @@ Per-prompt average >= 8.5 across all scored criteria. No single scored item belo
 ## 17. Edge Cases for This Role
 
 ### Edge Case 17.1 -- Transition Slide Exception
-There is no length exception for a near-empty transition slide. The renderer refuses a prompt under its 9,000-character floor and rule 12's floor is hard, so AF-P1 stands for every slide; return the prompt to the Prompt Author to deepen atmosphere, grade, composition, the negative block and the spelling-lock.
+There is no length exception for a near-empty transition slide. The renderer refuses a prompt under the rule 12 floor (16,000 characters for the current pin) and that floor is hard, so AF-P1 stands for every slide; return the prompt to the Prompt Author to deepen atmosphere, grade, composition, the negative block and the spelling-lock.
 
 ### Edge Case 17.2 -- Archetype Drift (Prompt vs Design System)
 If the archetype declared in a prompt does not match the archetype in `design_system.json` for that slide, the prompt may have been authored before a design-system update. Return the prompt to the Prompt Author AND notify the Typography Architect. Both need to reconcile the drift before remediation.
@@ -454,7 +454,7 @@ A price or offer slide that does not specify a gold gradient, glow, or strike-th
 
 ## 18. Update Triggers (When to Revise This Document)
 
-1. The PROMPT_CHAR_FLOOR or PROMPT_CHAR_CEILING in `build_deck.py` changes, or the pinned image model's prompt maximum changes.
+1. The rule 12 band enforced by shared-utils/kie_prompt_enforcer.py changes, or the pinned image model's prompt maximum changes.
 2. The 15-element prompt spec is extended or modified by the Director.
 3. The NEGATIVE BLOCK 8-class specification changes (a new class is added or an existing class is revised).
 4. The prompt auto-fail battery (AF-P1 through AF-P23) is extended.
