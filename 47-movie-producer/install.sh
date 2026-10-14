@@ -230,13 +230,32 @@ echo ""
 # verification.
 echo "--- Step 6: Write Rule-Zero budget cap into config.yaml ---"
 CONFIG_FILE="$OPENMONTAGE_DIR/config.yaml"
-CONFIG_FILE="$CONFIG_FILE" python3 - <<'PYEOF' || { red "Failed to write budget cap into config.yaml."; exit 1; }
+# FIX (venv): Step 3 `make setup` installs PyYAML into the clone's OWN virtualenv
+# (OpenMontage Makefile: ensure-venv -> VENV_DIR=.venv), so a bare `python3` with
+# a clean system interpreter has no yaml and this step aborted with "PyYAML is
+# required ... installed by make setup". Run the writer with the very interpreter
+# `make setup` provisions; fall back to python3 only when no clone venv exists.
+OM_PYTHON=""
+for _om_py in "$OPENMONTAGE_DIR/.venv/bin/python" "$OPENMONTAGE_DIR/.venv/Scripts/python.exe"; do
+  if [ -x "$_om_py" ]; then OM_PYTHON="$_om_py"; break; fi
+done
+if [ -z "$OM_PYTHON" ]; then
+  OM_PYTHON="$(command -v python3 || true)"
+fi
+if [ -z "$OM_PYTHON" ]; then
+  red "No python interpreter: neither $OPENMONTAGE_DIR/.venv/bin/python nor python3 on PATH."
+  info "Re-run Step 3 (cd $OPENMONTAGE_DIR && make setup) to recreate the clone venv, then re-run install.sh."
+  exit 1
+fi
+info "Step 6 python: $OM_PYTHON (the make setup venv interpreter when present)"
+CONFIG_FILE="$CONFIG_FILE" "$OM_PYTHON" - <<'PYEOF' || { red "Failed to write budget cap into config.yaml."; exit 1; }
 import os, sys
 try:
     import yaml
 except ImportError:
-    sys.stderr.write("PyYAML is required to write config.yaml (installed by make setup). "
-                     "Run `pip install pyyaml` and re-run install.sh.\n")
+    sys.stderr.write("PyYAML is required to write config.yaml (installed by make setup into "
+                     "the clone venv). Re-run Step 3 (cd %s && make setup) and re-run install.sh.\n"
+                     % os.path.dirname(os.path.abspath(os.environ["CONFIG_FILE"])))
     sys.exit(1)
 
 path = os.environ["CONFIG_FILE"]

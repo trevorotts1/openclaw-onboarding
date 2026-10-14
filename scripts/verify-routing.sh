@@ -7,9 +7,13 @@
 #   G3  PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V4_3) present in the resolved SOUL.md
 #   G3b (V4.3) heading present in the installed ceo-routing-doctrine plugin dist
 #   G4  default agent has skills:[] in openclaw.json (pptx skill physically blocked)
-#       "default agent" = default:true -> id="main" -> router id -> the id the CLI
-#       prints as "(default)" -> a single-entry agents.entries (2026.10.x removed
-#       the per-entry default marker, so those last two are the live path now)
+#       "default agent" = agents.defaults.systemAgent.agentId -> default:true ->
+#       `agents list --json` isDefault -> id="main" -> router id ->
+#       the id the CLI prints as "(default)" -> a single-entry agents.entries
+#       (2026.10.x removed the per-entry default marker, so the config/JSON
+#       sources are the live path now; they work with openclaw off PATH and
+#       resolve agents that live as files under <oc-root>/agents/ instead of in
+#       agents.list)
 #   G5  workspace real-path is in skills.load.allowSymlinkTargets
 #   G6  at least one department workspace row exists in mission-control.db
 #   G7  CEO/main agent tools policy. The production-tool deny (write/edit/
@@ -288,16 +292,19 @@ else
 fi
 
 # ─── G4: default agent has skills:[] ─────────────────────────────────────────
-# The "default agent" is the first entry in agents.list with default:true;
-# if none carries that flag, fall back to id=="main" (pre-v10 convention), then
-# a router id, then the id `openclaw agents list` prints as "(default)", then a
-# single-entry agents.entries (2026.10.x has no default marker at all).
+# The "default agent" is agents.defaults.systemAgent.agentId (config-only,
+# works with openclaw off PATH), then the first entry in agents.list with
+# default:true, then the isDefault flag from `agents list --json` (structured:
+# survives CLI text reformatting and resolves file-backed agents), then
+# id=="main" (pre-v10 convention), then a router id, then the id
+# `openclaw agents list` prints as "(default)", then a single-entry
+# agents.entries (2026.10.x has no default marker at all).
 # Boxes whose primary agent is named "ceo", "dept-master-orchestrator", or any
 # other router id are gated; a PERSONAL-ASSISTANT-default box (default agent is
 # NOT a router) is a VALID topology — skills:[] is NOT required there and its
 # absence must NOT FATAL (v13.2.2 PA-freeze guard).
 _info "G4: detecting default agent and checking skills:[] in $OC_CONFIG"
-G4_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
+G4_RESULT=$(python3 - "$OC_CONFIG" "$OC_ROOT" <<'PYEOF'
 import json, sys
 
 def _oc_agents(cfg):
@@ -329,6 +336,19 @@ def _oc_id(ag, default="<unknown>"):
         return default
     return _OC_IDS.get(id(ag)) or ag.get("id") or default
 
+def _oc_agent_on_disk(cid):
+    """True when <oc-root>/agents/<cid>/ exists. OpenClaw 2026.10.x keeps
+    agents as files there and openclaw.json may carry NO list/entries row for
+    them, so an id from systemAgent.agentId or `agents list --json` is a real
+    resolution even when it matches no config entry."""
+    from pathlib import Path as _P
+    if not isinstance(cid, str) or not cid or "/" in cid or cid in (".", ".."):
+        return False
+    try:
+        return (_P(sys.argv[2]) / "agents" / cid).is_dir()
+    except Exception:
+        return False
+
 from pathlib import Path
 
 # Router identity — keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS.
@@ -350,21 +370,68 @@ try:
     cfg = json.loads(Path(sys.argv[1]).read_text())
     agents_list, _OC_IDS = _oc_agents(cfg)
 
-    # Priority 1: agent with default:true
+    # Priority 1 (config-only, works with openclaw OFF PATH): the system-agent
+    # pointer agents.defaults.systemAgent.agentId — the runtime's own choice,
+    # the same resolution order scripts/onboarding-state.sh obs_default_agent()
+    # already uses. Accepted when it names a config entry OR an on-disk agent
+    # dir (2026.10.x keeps agents as files under <oc-root>/agents/ and
+    # agents.list can be empty), so a file-backed agent resolves instead of
+    # reading "no default agent".
     default_agent = None
-    for ag in agents_list:
-        if ag.get("default") is True:
-            default_agent = ag
-            break
+    _sa = ((cfg.get("agents", {}) or {}).get("defaults", {}) or {}).get("systemAgent", {}) or {}
+    _sa_id = _sa.get("agentId") if isinstance(_sa, dict) else None
+    if isinstance(_sa_id, str) and _sa_id:
+        default_agent = next((ag for ag in agents_list
+                              if _oc_id(ag) == _sa_id), None)
+        if default_agent is None and _oc_agent_on_disk(_sa_id):
+            default_agent = {"id": _sa_id}
 
-    # Priority 2: fall back to id=="main" (legacy convention)
+    # Priority 2: agent with default:true (legacy marker; 2026.10.x strips it)
+    if default_agent is None:
+        for ag in agents_list:
+            if ag.get("default") is True:
+                default_agent = ag
+                break
+
+    # Priority 3 (OpenClaw 2026.10.x, verified 2026-10-13 on a live box): the
+    # per-entry `default` marker no longer exists — the config schema rejects it
+    # and `openclaw doctor --fix` strips it. The CLI still resolves and PRINTS
+    # the default, so ask the runtime. `--json` + isDefault is the structured
+    # answer (survives CLI text reformatting and sees file-backed agents) and
+    # outranks the id-guessing fallbacks below, so a non-router default is read
+    # as the PA topology it actually is; the "(default)" text line stays as the
+    # last resort.
+    if default_agent is None:
+        try:
+            import json as _json, shutil as _sh, subprocess as _sp
+            if _sh.which("openclaw"):
+                _out = _sp.run(["openclaw", "agents", "list", "--json"],
+                               capture_output=True, text=True, timeout=30).stdout or ""
+                try:
+                    _rows = _json.loads(_out)
+                    if isinstance(_rows, dict):
+                        _rows = _rows.get("agents") or _rows.get("list") or []
+                    for _r in (_rows if isinstance(_rows, list) else []):
+                        if isinstance(_r, dict) and _r.get("isDefault") is True:
+                            _rid = _r.get("id") or _r.get("agentId") or _r.get("name")
+                            default_agent = next((ag for ag in agents_list
+                                                  if _oc_id(ag) == _rid), None)
+                            if default_agent is None and isinstance(_rid, str) and _oc_agent_on_disk(_rid):
+                                default_agent = {"id": _rid}
+                            break
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # Priority 4: fall back to id=="main" (legacy convention)
     if default_agent is None:
         for ag in agents_list:
             if _oc_id(ag) == "main":
                 default_agent = ag
                 break
 
-    # Priority 3: a known router/CEO id (mirrors G7). A box whose router is not
+    # Priority 5: a known router/CEO id (mirrors G7). A box whose router is not
     # literally named "main" must not read as "no default agent".
     if default_agent is None:
         for ag in agents_list:
@@ -372,11 +439,8 @@ try:
                 default_agent = ag
                 break
 
-    # Priority 4 (OpenClaw 2026.10.x, verified 2026-10-13 on a live box): the
-    # per-entry `default` marker no longer exists — the config schema rejects it
-    # and `openclaw doctor --fix` strips it. The CLI still resolves and PRINTS
-    # the default, so ask the runtime; a single-agent box is unambiguous anyway
-    # (one entry IS the default agent).
+    # Priority 6: the id `openclaw agents list` prints as "(default)" (text form,
+    # the pre-`--json` path — kept for CLIs that only emit the table).
     if default_agent is None:
         try:
             import re as _re, shutil as _sh, subprocess as _sp
@@ -388,6 +452,8 @@ try:
                 if _m:
                     default_agent = next((ag for ag in agents_list
                                           if _oc_id(ag) == _m.group(1)), None)
+                    if default_agent is None and _oc_agent_on_disk(_m.group(1)):
+                        default_agent = {"id": _m.group(1)}
         except Exception:
             pass
     if default_agent is None and len(agents_list) == 1:
@@ -440,7 +506,7 @@ case "$G4_RESULT" in
     _pass "G4: default agent (id=${_G4_ID}) retains owner-configured skills: ${_G4_SKILLS}"
     ;;
   NO_DEFAULT_AGENT)
-    _fail "G4: no default agent resolved (no default:true entry, no id=main, no CLI '(default)' line, not a single-agent box)"
+    _fail "G4: no default agent resolved (no default:true entry, no id=main, no systemAgent.agentId, no --json isDefault / CLI '(default)' line, not a single-agent box)"
     FAILURES=$((FAILURES + 1))
     ;;
   ERROR:*)
@@ -582,8 +648,12 @@ fi
 # (exec is now a normal member of CEO_TOOL_ALLOW — the routing path — so the old
 # INTERIM_EXEC fail-warn would fire on every correctly-configured box).
 #
-# The CEO agent is resolved as default:true → id=="main" → known CEO ids → the
-# id `openclaw agents list` prints as "(default)" → a single-agent box.
+# The CEO agent is resolved as agents.defaults.systemAgent.agentId → default:true
+# → the isDefault flag from `agents list --json` → id=="main" → known CEO ids →
+# the id `openclaw agents list` prints as "(default)" → a single-agent
+# box (mirrors G4; config-entry matching only — a file-backed agent with no
+# openclaw.json entry still resolves to NO_CEO_AGENT, so the tools/GHL checks
+# are never loosened).
 _info "G7: CEO production-tool deny RETIRED (Trevor 2026-08-05) — not enforced; still checking per-agent tools schema validity + GHL MCP deny-by-provider."
 _pass "G7: CEO production-tool deny intentionally absent (retired fleet-wide per Trevor 2026-08-05) — no longer a requirement"
 
@@ -652,15 +722,47 @@ try:
     agents, _OC_IDS = _oc_agents(cfg)
 
     # DEFECT 2 (v13.1.3) + v13.2.2 PA-FREEZE FIX: resolve the box's default agent
-    # (default:true FIRST, then id=="main", then a known CEO id). If that default
+    # (agents.defaults.systemAgent.agentId FIRST — the runtime's own choice —
+    # then default:true, then the `agents list --json` isDefault flag, then
+    # id=="main", then a known CEO id). If that default
     # agent is NOT a router (it is a hands-on personal assistant / owner agent),
     # this is a PA-DEFAULT topology: the CEO tool-gate intentionally does NOT
     # apply, so G7 PASSES (it must NOT FATAL on a PA default — that false-FATAL is
     # what the v13.1.3 over-broadening caused downstream).
+    # The systemAgent/--json sources match CONFIG entries only — no file-backed
+    # id is invented here, so the tools/GHL checks below stay exactly as strict.
     ceo = None
-    for ag in agents:
-        if ag.get("default") is True:
-            ceo = ag; break
+    _sa = ((cfg.get("agents", {}) or {}).get("defaults", {}) or {}).get("systemAgent", {}) or {}
+    _sa_id = _sa.get("agentId") if isinstance(_sa, dict) else None
+    if isinstance(_sa_id, str) and _sa_id:
+        ceo = next((ag for ag in agents if _oc_id(ag) == _sa_id), None)
+    if ceo is None:
+        for ag in agents:
+            if ag.get("default") is True:
+                ceo = ag; break
+    # 2026.10.x: the per-entry default marker is gone (schema rejects it, doctor
+    # --fix strips it). `agents list --json` isDefault is the runtime's structured
+    # answer (it survives CLI table-text reformatting); the "(default)" text
+    # line stays as the last resort below.
+    if ceo is None:
+        try:
+            import json as _json, shutil as _sh, subprocess as _sp
+            if _sh.which("openclaw"):
+                _out = _sp.run(["openclaw", "agents", "list", "--json"],
+                               capture_output=True, text=True, timeout=30).stdout or ""
+                try:
+                    _rows = _json.loads(_out)
+                    if isinstance(_rows, dict):
+                        _rows = _rows.get("agents") or _rows.get("list") or []
+                    for _r in (_rows if isinstance(_rows, list) else []):
+                        if isinstance(_r, dict) and _r.get("isDefault") is True:
+                            _rid = _r.get("id") or _r.get("agentId") or _r.get("name")
+                            ceo = next((ag for ag in agents if _oc_id(ag) == _rid), None)
+                            break
+                except Exception:
+                    pass
+        except Exception:
+            pass
     if ceo is None:
         for ag in agents:
             if _oc_id(ag) == "main":
@@ -669,9 +771,8 @@ try:
         for ag in agents:
             if _oc_id(ag) in CEO_IDS:
                 ceo = ag; break
-    # 2026.10.x: no per-entry default marker exists (schema rejects it, doctor
-    # --fix strips it). Ask the CLI for its resolved default, then accept the
-    # only agent on the box. Mirrors G4's priority chain.
+    # Legacy CLI text parse (pre-`--json` CLIs), then accept the only agent on
+    # the box. Mirrors G4's priority chain.
     if ceo is None:
         try:
             import re as _re, shutil as _sh, subprocess as _sp

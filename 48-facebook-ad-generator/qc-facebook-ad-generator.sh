@@ -4,13 +4,26 @@
 # post-install client box as HARD assertions. Exits 0 in repo/CI AND on an installed
 # box; FAILS loudly only on a real defect.
 set -u
-PASS=0; FAIL=0; WARN=0
+PASS=0; FAIL=0; WARN=0; PREFLAG=0
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="${SKILL_DIR}/.."
+# FIX-S36-38 (mirrors qc-movie-producer.sh): scripts/unpark-ad-run.sh and the
+# .github/ CI workflow live at the REPO ROOT and are intentionally NOT copied to
+# client boxes by any installer (only the skill dir + its universal-sops
+# clusters are). HARD asserts here aborted EVERY client install (install.sh
+# "4) Install QC"). Gate them behind repo detection: HARD in the repo / CI
+# (where a .git or .github tree exists beside the skill), a non-blocking PRE
+# note on a client box where those files legitimately do not exist.
+if [ -d "${REPO_ROOT}/.github" ] || [ -d "${REPO_ROOT}/.git" ]; then
+  REPO_TOOLING=1
+else
+  REPO_TOOLING=0
+fi
 
 red()   { printf "\033[31m%s\033[0m\n" "$1"; }
 green() { printf "\033[32m%s\033[0m\n" "$1"; }
 yellow(){ printf "\033[33m%s\033[0m\n" "$1"; }
+blue()  { printf "\033[34m%s\033[0m\n" "$1"; }
 
 assert() {
   if eval "$2" >/dev/null 2>&1; then green "  PASS -- $1"; PASS=$((PASS+1));
@@ -66,16 +79,28 @@ assert "test_ad_recovery.py recovery proof suite present" "[ -f \"${AD_RECOVERY_
 assert "cc_board.py producer-side board caller present" "[ -f \"${CC_BOARD}\" ]"
 assert "test_cc_board.py board-caller test suite present" "[ -f \"${CC_BOARD_TEST}\" ]"
 assert "ad_model_sovereignty.py no-Anthropic/model-tier gate present" "[ -f \"${AD_MODELSOV}\" ]"
-assert "unpark-ad-run.sh operator un-park tool present" "[ -f \"${AD_UNPARK}\" ]"
+if [ "$REPO_TOOLING" = "1" ]; then
+  assert "unpark-ad-run.sh operator un-park tool present" "[ -f \"${AD_UNPARK}\" ]"
+else
+  blue "  PRE  -- unpark-ad-run.sh (repo-only; not copied to client boxes)"; PREFLAG=$((PREFLAG+1))
+fi
 assert "make-ad-fixtures.sh GOOD/BAD fixtures present" "[ -f \"${AD_FIXTURES}\" ]"
-assert "ad-pipeline-lockstep.yml CI workflow present" "[ -f \"${AD_CI}\" ]"
+if [ "$REPO_TOOLING" = "1" ]; then
+  assert "ad-pipeline-lockstep.yml CI workflow present" "[ -f \"${AD_CI}\" ]"
+else
+  blue "  PRE  -- ad-pipeline-lockstep.yml CI workflow (repo-only; not copied to client boxes)"; PREFLAG=$((PREFLAG+1))
+fi
 
 # ---- The enforcement code must parse ----
 for py in "${AD_DRIVER}" "${AD_BUILDCHK}" "${AD_SYNC}" "${AD_GUARDA}" "${AD_TEST}" \
           "${AD_RECOVERY}" "${AD_RECOVERY_TEST}" "${AD_MODELSOV}"; do
   assert "$(basename "$py") parses" "python3 -c \"import ast; ast.parse(open('${py}').read())\""
 done
-assert "unpark-ad-run.sh is valid bash" "bash -n \"${AD_UNPARK}\""
+if [ "$REPO_TOOLING" = "1" ]; then
+  assert "unpark-ad-run.sh is valid bash" "bash -n \"${AD_UNPARK}\""
+else
+  blue "  PRE  -- unpark-ad-run.sh bash -n (repo-only; not copied to client boxes)"; PREFLAG=$((PREFLAG+1))
+fi
 
 # ---- The 8 creative SOPs exist ----
 for n in 01-INTAKE 02-OVERLAYS 03-PICK-10 04-PRIMARY-TEXT 05-HEADLINES \
@@ -141,5 +166,5 @@ assert "No literal long API-key value committed in skill payload" \
   "! grep -rIE '(KIE_API_KEY|GOHIGHLEVEL_API_KEY)\\s*=\\s*[\"'\"'\"']?[A-Za-z0-9]{20,}' \"${SKILL_DIR}\" 2>/dev/null | grep -qv 'YOUR_CLIENT'"
 
 echo ""
-echo "=== Result: $PASS passed | $FAIL failed | $WARN warnings ==="
+echo "=== Result: $PASS passed | $FAIL failed | $WARN warnings | $PREFLAG pre-install notes ==="
 [ "$FAIL" -gt 0 ] && { red "Skill 48 QC FAILED"; exit 1; } || { green "Skill 48 QC PASS"; exit 0; }
