@@ -30,7 +30,7 @@ reset() { echo '[]' > "$FAKE_JOBS_FILE"; : > "$FAKE_CALLS_FILE"; unset FAKE_DROP
 models() { # models <json>
   printf '%s\n' "$1" > "$FAKE_MODELS_FILE"
 }
-GOOD_MODELS='{"models":[{"key":"deepseek/deepseek-flash"},{"key":"ollama/deepseek-v4.1-flash:cloud"},{"key":"openrouter/deepseek/deepseek-v4.1-flash"},{"key":"9router/ollama/deepseek-v4.1-flash"},{"key":"anthropic/claude-opus-4"}]}'
+GOOD_MODELS='{"models":[{"key":"deepseek/deepseek-flash"},{"key":"ollama/deepseek-v4.1-flash:cloud","tags":["default"]},{"key":"openrouter/deepseek/deepseek-v4.1-flash"},{"key":"9router/ollama/deepseek-v4.1-flash"},{"key":"anthropic/claude-opus-4"}]}'
 
 expect() { # expect <name> <want-exit> <needle> -- args
   local name="$1" want="$2" needle="$3"; shift 4
@@ -55,6 +55,11 @@ PY
 echo "install-weekly-cron battery"
 
 reset; models "$GOOD_MODELS"
+# The box designates its configured default through openclaw.json
+# (agents.defaults.model): that designation, not a name pattern, is what
+# resolution reads. The fallbacks list is the box's own configured list.
+mkdir -p "$ROOT/oc"
+echo '{"agents":{"defaults":{"model":{"primary":"ollama/deepseek-v4.1-flash:cloud","fallbacks":["openrouter/deepseek/deepseek-v4.1-flash"]}}}}' > "$ROOT/oc/openclaw.json"
 expect "dry run plans an add" 0 "would ADD the job" -- --dry-run
 [ "$(job_field count)" = "0" ] && ok "dry run created nothing" || bad "dry run created a job"
 expect "discovers the Ollama Cloud primary" 0 "primary model:  ollama/deepseek-v4.1-flash:cloud" -- --dry-run
@@ -84,8 +89,9 @@ expect "apply edits the drifted job in place" 0 "edited job job-1 in place (mode
 python3 -c "import json;p='$FAKE_JOBS_FILE';j=json.load(open(p));k=dict(j[0]);k['id']='job-2';j.append(k);json.dump(j,open(p,'w'))"
 expect "duplicates are reported, never deleted" 1 "2 jobs named 'lean-core-file-system-weekly'" -- --apply
 [ "$(job_field count)" = "2" ] && ok "no job was deleted" || bad "a job was deleted"
+rm -f "$ROOT/oc/openclaw.json"
 
-reset; models '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud"}]}'
+reset; models '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud","tags":["default"]}]}'
 expect "missing OpenRouter fallback degrades to no fallback (UPF002/U3)" 0 "fallback model: none" -- --apply
 [ "$(job_field count)" = "1" ] && ok "job created without a fallback" || bad "job not created"
 grep -q -- '--fallbacks' "$FAKE_CALLS_FILE" && bad "--fallbacks was passed" || ok "no --fallbacks flag passed"
@@ -95,7 +101,7 @@ expect "fallback id forced but absent still refuses" 4 "MISSING_FALLBACK" -- --a
 # (listed ids only; the Claude id, the primary itself and an unlisted id are dropped).
 reset; models '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud"},{"key":"agnes/agnes-2.5"},{"key":"zai/glm-5.3"},{"key":"anthropic/claude-opus-4"}]}'
 mkdir -p "$ROOT/oc"
-echo '{"agents":{"defaults":{"model":{"fallbacks":["anthropic/claude-opus-4","ollama/deepseek-v4.1-flash:cloud","agnes/agnes-2.5","not/on-the-list","zai/glm-5.3"]}}}}' > "$ROOT/oc/openclaw.json"
+echo '{"agents":{"defaults":{"model":{"primary":"ollama/deepseek-v4.1-flash:cloud","fallbacks":["anthropic/claude-opus-4","ollama/deepseek-v4.1-flash:cloud","agnes/agnes-2.5","not/on-the-list","zai/glm-5.3"]}}}}' > "$ROOT/oc/openclaw.json"
 expect "missing twin uses the box default fallbacks (D20)" 0 "fallback model: agnes/agnes-2.5,zai/glm-5.3" -- --apply
 [ "$(job_field payload.fallbacks)" = "['agnes/agnes-2.5', 'zai/glm-5.3']" ] && ok "box default fallbacks stored on the job" || bad "fallbacks wrong: $(job_field payload.fallbacks)"
 expect "re-apply with box fallbacks is a no-op (D20)" 0 "job is current; nothing changed" -- --apply
@@ -111,10 +117,13 @@ reset; models '{"models":[{"key":"openrouter/deepseek/deepseek-v4.1-flash"}]}'
 expect "missing Ollama primary refuses" 4 "MISSING_PRIMARY" -- --apply
 
 reset; models '{"models":[{"provider":"ollama-cloud","id":"deepseek-v4.1-flash:cloud"},{"provider":"openrouter","id":"deepseek/deepseek-v4.1-flash"}]}'
+mkdir -p "$ROOT/oc"
+echo '{"agents":{"defaults":{"model":{"primary":"ollama-cloud/deepseek-v4.1-flash:cloud"}}}}' > "$ROOT/oc/openclaw.json"
 expect "provider+id shape and ollama-cloud provider are discovered" 0 "primary model:  ollama-cloud/deepseek-v4.1-flash:cloud" -- --dry-run
+rm -f "$ROOT/oc/openclaw.json"
 
 reset; models '{"models":[{"key":"ollama/deepseek-v4.1-flash:cloud"},{"key":"ollama-cloud/deepseek-v4.1-flash:cloud"},{"key":"openrouter/deepseek/deepseek-v4.1-flash"}]}'
-expect "ambiguous primary refuses" 4 "AMBIGUOUS_PRIMARY" -- --apply
+expect "ambiguous primary refuses" 4 "MISSING_PRIMARY" -- --apply
 expect "explicit --primary resolves the ambiguity" 0 "primary model:  ollama-cloud/deepseek-v4.1-flash:cloud" -- --dry-run --primary ollama-cloud/deepseek-v4.1-flash:cloud
 
 reset; models "$GOOD_MODELS"
