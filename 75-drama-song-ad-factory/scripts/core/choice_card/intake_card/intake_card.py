@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""intake_card: the intake questions (fourteen: the five story-brief questions
-then the nine production choices) as a card a client can read (H9).
+"""intake_card: the intake questions (the story-brief questions then the
+production choices) as a card a client can read (H9).
 
-DSR-105: the studio page used to ask only the nine production choices, so an
+SWI-002 count truth: the card's own total -- len(QUESTIONS) -- is the only
+number any string here may repeat, and it is printed from the live list, never
+written into prose. A docstring cannot read the live count, so no docstring
+here states one. test_intake_card_h9.py carries the count and goes red the
+moment a hardcoded total disagrees with the card.
+
+DSR-105: the studio page used to ask only the production choices, so an
 order placed on the page carried no brief at all -- no offer, no link, no
 audience, no character, no photos -- while an order started in chat did. The
-five BRIEF questions close that gap. They are typed answers, not picks, so each
+BRIEF questions close that gap. They are typed answers, not picks, so each
 one carries a single option whose detail starts "Reply with" (the studio reads
 that as "type it in"), and this module stays the one place their text lives.
 
@@ -15,7 +21,7 @@ hand, the JSON envelope carried it as one escaped string, and the only joiner
 (``"\\n".join``) gave no blank line between questions. This module is the one
 place the text is built, with a fixed layout:
 
-    Question 1 of 9 - LENGTH
+    Question 1 of <total> - LENGTH
     How long should the ad be?
     1. 60 seconds - one sentence. (RECOMMENDED)
     2. 90 seconds - one sentence.
@@ -244,11 +250,12 @@ def _priced(qs, answers):
 
 
 # --- DSR-105: the story brief --------------------------------------------------
-#: The five questions the chat intake asks and the studio page never did
+#: The questions the chat intake asks and the studio page never did
 #: (operator trace section 1: "It sends no offer, no link, no audience, no
 #: character and no photos"). They open the card, in the Client Guide's own
 #: order (STEP 4, 5, 6), so a run started on the page carries the same brief a
-#: run started in chat carries.
+#: run started in chat carries. BRIEF_IDS below is the count; nothing here
+#: writes it out a second time.
 BRIEF_IDS = ("offer", "link", "audience", "character", "photos")
 #: Without these four the crew has no brief to write from. `photos` is asked
 #: and stored but never required: plenty of ads are made from what the client
@@ -736,8 +743,11 @@ def _with_saved_character(client_dir):
     """QUESTIONS, with the saved-character question where the brief's typed
     CHARACTER question sat when the client has saved characters (Part I, I6).
     Exactly one "who stars" question is ever asked: the pick replaces the typed
-    description. With a client folder but no saved characters the fourteen open
-    with one short line (``NO_SAVED_LINE``). No folder: plain fourteen."""
+    description, so the total never moves -- the swap-in takes the typed
+    CHARACTER question's own slot. With a client folder but no saved characters
+    the card opens with one short line (``NO_SAVED_LINE``). No folder: the
+    plain card. SWI-002: len() of every branch here equals len(QUESTIONS), and
+    test_intake_card_h9.py asserts it."""
     if not client_dir:
         return QUESTIONS
     from character_library import character_library as CL
@@ -746,7 +756,7 @@ def _with_saved_character(client_dir):
         return [dict(QUESTIONS[0], preface=NO_SAVED_LINE)] + QUESTIONS[1:]
     plain = [x for x in QUESTIONS if x["id"] != "character"]
     i = len(BRIEF_IDS) - 1              # the brief's CHARACTER question's own slot
-    return plain[:i] + [q] + plain[i:]  # AI MODELS stays the first of the nine
+    return plain[:i] + [q] + plain[i:]  # AI MODELS is still the first production choice
 
 
 try:
@@ -866,7 +876,11 @@ def studio_json(questions=None, guide=None):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Print the intake card (nine questions, ten with a saved character).")
+    # SWI-002: the total is read off QUESTIONS here, so this line cannot go
+    # stale; a saved character swaps into an existing slot, never adds one.
+    ap = argparse.ArgumentParser(
+        description="Print the intake card (%d questions, the same total with "
+                    "a saved character)." % len(QUESTIONS))
     ap.add_argument("--format", choices=("text", "openclaw-json", "telegram-json", "studio-json"),
                     default="text",
                     help="text: raw card for the Claude Code chat. "

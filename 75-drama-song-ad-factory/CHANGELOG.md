@@ -4,6 +4,20 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.52 - 2026-10-14 - INTAKE-FIXES batch O-1: intake doctrine, count truth, sync manifest, keyless research gatherer
+
+Batch `BATCH-SWI-O-1` — four wave-1 units merged together (one version bump and
+one entry for the whole batch, per the swarm plan):
+
+- `#2051` (`unit/SWI-001`, W1-doctrine-U1) — the intake doctrine, the count truth and the overwork rule in prose in `SKILL.md`: dramatizations rather than true stories, no client fact-checking, the card's own total is the only number anyone may say, and the card's questions are the whole client load.
+- `#2053` (`unit/SWI-002`, W1-doctrine-U2) — the same count truth in the card strings (`choice_card/intake_card/__init__.py`, `intake_card.py`, `intake_preflight/factory.py` no longer say "six-question") plus the `test_intake_card_h9.py` companion test encoding 14.
+- `#2054` (`unit/SWI-006`, W1-recon-U1) — tree reconciliation: `references/sync-manifest.json` and `references/sync-manifest.md`, the per-file digest and disposition record the box roll consumes.
+- `#2055` (`unit/SWI-005`, W1-research-U1) — the keyless web-search gatherer wired into the research stage (7 files under `scripts/core/research_engine/`), same JSON envelope and exit contract as the validator it feeds.
+
+This single version bump satisfies G3 ("skill content change requires
+`skill-version.txt` bump") for `#2055`. No behaviour outside SPEC.md was added,
+and no older CHANGELOG entry was rewritten.
+
 ## v2.9.51 - 2026-10-13 - DRAMA-FIXES-OCT-13 batch #10 (R2-B): the studio page collects the story brief
 
 Batch `BATCH-DSF-10` — release group R2-B, one member merged in (one version

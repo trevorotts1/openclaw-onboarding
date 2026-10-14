@@ -10,6 +10,16 @@ lands UNAVAILABLE in evidence.json. Claims without source never pass.
 Sub-avatar brief is JSON: avatar, emotional_wound, desired_transformation.
 Outputs render to a run dir: research/{market,audience,competitors}.md +
 evidence.json, brief/sub_avatar.json.
+
+A BARE brief carries no sources[] — the client never had search URLs. The stage
+therefore runs the keyless gatherer (gather.py) first: when evaluate() reports
+SOURCES_MISSING the gatherer searches the web without any API key, fills
+sources[] + claims[], and the merged brief is re-evaluated against the unchanged
+validator. A brief that still has no source (offline box, exhausted stage budget,
+no results) leaves as "waiting", exit 2, with its reason. SOURCES_MISSING stays
+reachable only where no gathering happened at all (--no-gather, or a direct
+evaluate() call). Exit contract unchanged: ok 0 / waiting 2 / parked 3 /
+rejected 4 / error 1.
 """
 from __future__ import annotations
 
@@ -19,6 +29,11 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+
+if __package__:
+    from . import gather as gatherer
+else:                            # run as a script: sibling module on sys.path
+    import gather as gatherer
 
 SCHEMA_VERSION = "blackceo.research/v1"
 TOOL_VERSION = "1.0.0"
@@ -209,9 +224,65 @@ def envelope(command, run_id, outcome, reason_code, next_action,
             "state_version": state_version or {"expected": None, "current": run_id}}
 
 
-def run_stage(brief, outdir, run_id="research-1"):
-    """Evaluate + render. Returns (envelope, exit_code)."""
+# Keyless gatherer outcomes that mean "not yet, ask again" rather than "the
+# brief is invalid": a bare brief with no usable source leaves as waiting
+# (exit 2) with its reason, never as rejected (exit 4).
+GATHER_WAITING = {
+    "empty": ("search-no-results",
+              "Keyless search found no usable source. Add a source URL to the brief, or re-run."),
+    "offline": ("search-offline",
+                "No network reach for keyless search. Re-run the research stage when the box is online."),
+    "budget": ("search-budget-exhausted",
+               "Stage network budget ran out before a source could be read. Raise --budget, or re-run."),
+}
+
+
+def _gather_or_reason(brief, transport, gather_opts, run_id):
+    """Run the keyless gatherer over a brief whose sources[] is empty.
+
+    Returns (merged brief, None) when sources came back, else (None, envelope)
+    for a waiting result. Never raises: every network path is guarded inside
+    gather.gather().
+    """
+    opts = dict(gather_opts or {})
+    try:
+        g = gatherer.gather(brief if isinstance(brief, dict) else {},
+                            transport=transport, **opts)
+    except Exception as e:                    # noqa: BLE001 - stage must not crash
+        return None, envelope("research", run_id, "waiting", "search-unavailable",
+                              "Keyless search could not run: %s" % str(e)[:200],
+                              data={"errors": [str(e)[:200]]})
+    if g["status"] == gatherer.STATUS_CLIENT:   # defensive: client sources win
+        merged = dict(brief)
+        merged["sources"] = g["sources"]
+        return merged, None
+    if not g["sources"]:
+        reason, action = GATHER_WAITING.get(
+            g["status"], ("search-unavailable", "Re-run the research stage."))
+        return None, envelope("research", run_id, "waiting", reason, action,
+                              data={"errors": g["errors"], "queries": g["queries"],
+                                    "gather_status": g["status"],
+                                    "urls_seen": len(g["urls"])})
+    merged = dict(brief)
+    merged["sources"] = g["sources"]
+    merged["claims"] = g["claims"]
+    return merged, None
+
+
+def run_stage(brief, outdir, run_id="research-1", transport=None, gather=True,
+              gather_opts=None):
+    """Evaluate + gather when the brief is bare + render. Returns (envelope,
+    exit_code). `gather=False` restores the validator-only behaviour (empty
+    sources -> SOURCES_MISSING -> rejected, exit 4); `transport` injects the
+    network for tests.
+    """
     r = evaluate(brief)
+    if r["reason_code"] == "SOURCES_MISSING" and gather:
+        merged, waiting = _gather_or_reason(brief, transport, gather_opts, run_id)
+        if waiting is not None:
+            return waiting, EXIT["waiting"]
+        brief = merged
+        r = evaluate(brief)
     if r["outcome"] != "ok":
         return (envelope("research", run_id, r["outcome"], r["reason_code"],
                          r["next_action"], data={"errors": r["errors"]}), EXIT[r["outcome"]])
@@ -230,6 +301,18 @@ def main(argv=None):
     ap.add_argument("--brief", default=None, help="Brief JSON file.")
     ap.add_argument("--outdir", default=None, help="Run dir for research/ + brief/.")
     ap.add_argument("--run-id", default="research-1")
+    ap.add_argument("--no-gather", action="store_true",
+                    help="Skip the keyless web-search gatherer: an empty "
+                         "sources[] stays SOURCES_MISSING (exit 4).")
+    ap.add_argument("--budget", type=float, default=gatherer.DEFAULT_BUDGET,
+                    help="Total stage network budget in seconds "
+                         "(default: %(default)s).")
+    ap.add_argument("--timeout", type=float, default=gatherer.DEFAULT_TIMEOUT,
+                    help="Per-URL timeout in seconds (default: %(default)s).")
+    ap.add_argument("--max-sources", type=int, default=gatherer.DEFAULT_MAX_SOURCES,
+                    help="Cap on gathered sources (default: %(default)s).")
+    ap.add_argument("--max-urls", type=int, default=gatherer.DEFAULT_MAX_FETCHES,
+                    help="Cap on candidate pages fetched (default: %(default)s).")
     a = ap.parse_args(argv)
     if not a.brief or not a.outdir:
         ap.error("--brief and --outdir are required")
@@ -241,7 +324,10 @@ def main(argv=None):
         json.dump(env, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
         return EXIT["error"]
-    env, code = run_stage(brief, a.outdir, a.run_id)
+    opts = {"budget": a.budget, "timeout": a.timeout,
+            "max_sources": a.max_sources, "max_fetches": a.max_urls}
+    env, code = run_stage(brief, a.outdir, a.run_id, gather=not a.no_gather,
+                          gather_opts=opts)
     json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)
     sys.stdout.write("\n")
     return code
