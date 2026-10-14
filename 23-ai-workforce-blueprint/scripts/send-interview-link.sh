@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Verified public interview invitation through the OpenClaw gateway.
-# Usage: send-interview-link.sh [--dry-run] [--resume] [--renew]
+# Usage: send-interview-link.sh [--dry-run | --mint-only] [--resume] [--renew]
+# --dry-run proves readiness ONLY: nothing is minted and nothing is sent, and
+#   the output says exactly that (invitation=unproven delivery=not-attempted).
+# --mint-only proves issuance through the real invitation route, then DISCARDS
+#   the private ticket: a sanitized summary only, no message, no ledger entry.
+#   This is the mode the installer's startability gate uses (item 04/10).
 # --renew (or FORCE=1) bypasses only accepted-send cooldown. Unknown delivery must be reconciled and is never retried automatically.
 # Identity/origin: canonical workforce state plus matching MC_* compatibility env.
 # OPENCLAW_DASHBOARD_URL is accepted only after exact authenticated readiness.
@@ -14,10 +19,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 DRY_RUN=0
+MINT_ONLY=0
 RESUME_REQUESTED=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
+    --mint-only) MINT_ONLY=1; shift ;;
     --resume) RESUME_REQUESTED=1; shift ;;
     --renew) export FORCE=1; RESUME_REQUESTED=1; shift ;;
     -h|--help) sed -n '1,10p' "$0"; exit 0 ;;
@@ -168,8 +175,21 @@ if [ -z "$CHAT_ID" ]; then
 fi
 MASKED="…${CHAT_ID: -4}"
 
+# Mint-only (item 10): prove the whole issuance path — same readiness receipt,
+# same invitation route, same validator — with zero delivery. The ticket is
+# discarded inside the helper; only its sanitized summary reaches this output.
+if [ "$MINT_ONLY" -eq 1 ]; then
+  echo "[send-interview-link] MINT-ONLY lane=$LANE mode=$MODE chat=$MASKED invitation=proving delivery=not-attempted"
+  python3 "$HELPER" mint --state "$STATE_FILE" --target "$CHAT_ID"
+  exit $?
+fi
+
+# Dry-run (item 10): readiness proof only. It used to print a full invitation
+# preview while issuance was impossible, which read as success to a human and
+# to a log scanner. It now says what it proved and what it did not.
 if [ "$DRY_RUN" -eq 1 ]; then
-  echo "[send-interview-link] DRY-RUN lane=$LANE mode=$MODE chat=$MASKED"
+  echo "[send-interview-link] DRY-RUN lane=$LANE mode=$MODE chat=$MASKED invitation=unproven delivery=not-attempted"
+  echo "readiness-only proof: no invitation was minted and no message was sent."
   echo "----- preview only: enrollment is issued at send time -----"
   sed 's/{{INVITATION_VALIDITY}}/The link'"'"'s validity is stated in the message when the private sign-in link is issued./g' "$TMP_MSG"
   echo "-------------------"

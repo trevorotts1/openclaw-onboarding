@@ -126,6 +126,36 @@ export. A successful manual POST from browser developer tools proves only that
 the endpoint works; it does not prove that the page automatically redeems the
 link or that the interview UI works without manual intervention.
 
+## What the invitation actually authenticates
+
+Four distinct facts, never one. Correct them separately:
+
+- **Access identity registration is a PROVISIONING prerequisite.** The host's
+  registry entry must carry `issuer`, `audience` and the exact `subjects`
+  before an invitation can be minted at all; the issuer refuses with
+  `409 access_identity_unregistered` without it. It is not, by itself, proof
+  that any particular human opened the link.
+- **The full-host Cloudflare Access application supplies the owner login** at
+  the edge (with this client's own service-token policy for same-client
+  automation). Edge acceptance is a separate fact from app-side redemption and
+  is verified separately.
+- **The private signed ticket grants the app session.** Redemption in
+  `interview-session` authenticates a signed, host/company/installation-scoped
+  enrollment grant in-process — a bearer capability — and the middleware
+  exempts that route from the generic outer-edge Access check. No Access
+  identity is re-proven in the redemption route. Tampered or foreign tickets
+  fail signature or scope; completing the interview is the one thing that ends
+  the ticket.
+- **`recipientHash` binds the intended DELIVERY DESTINATION** (a hash of the
+  resolved owner chat), not an independently proven Telegram identity of the
+  person who opens the link. Anyone holding the ticket text can redeem it
+  until the interview completes — that is the forwarding exposure, and why
+  delivery is an acknowledged gateway send to the resolved owner rather than a
+  claim about the opener.
+
+Never add a surprise login gate to the redemption path, and never remove the
+registration gate: both halves of the contract above are load-bearing.
+
 ## Empty closeout state and bounded installation checks
 
 Resume/closeout verification must not create a build before client identity exists. The launcher recognizes only the exact historical empty pending-verification receipt (matching UUID, empty-input digest, unmet requirements and null ownership/artifact fields), preserves its build ID and initializes the actual client once. Any answers, identity or unknown fields retain the existing-state guard. Do not delete state or replace a UUID with a company name to get past verification.
@@ -137,6 +167,15 @@ Each `openclaw skills info` process group is limited to 30 seconds and each skil
 ## Stale CLI and Cloudflare Access recovery
 
 The invitation sender checks the selected client's `openclaw.json` version metadata before using a CLI. It considers that root's `npm-global/bin/openclaw` and the current runtime user's native npm bins, avoiding a stale executable that shadows the current installation on a noninteractive PATH. `OPENCLAW_BIN` may explicitly pin an absolute current executable; an invalid or older pin stops before invitation issuance. Do not uninstall another CLI or restart/repoint a gateway to send an interview invitation.
+
+Two different refusals look alike in a log and need different repairs.
+
+- **Edge redirect.** The host is behind Cloudflare Access and the caller carries no service-token headers: the request is answered by the edge, the Command Center never runs, and the sender reports a redirect rather than a receipt. Repair is Access-side — the client's OWN existing service token gets a narrow `non_identity` policy on that client's application (`scripts/cloudflare/setup-access-app.sh` with `ACCESS_SERVICE_TOKEN_ID`), and the same pair is persisted as `CF_ACCESS_CLIENT_ID`/`CF_ACCESS_CLIENT_SECRET` in the bootstrap-pinned service environment. Credentials are never created, rotated or printed for this.
+- **Application refusal.** The bearer did reach the Command Center, which answered `409 access_identity_unregistered` because the host's registry entry carries no `issuer`, `audience` or `subjects`. Repair is registry-side: complete the Access registration (`register-access`) so the entry names the live Access login, then restart the canonical process, which reads the registry at boot only.
+
+Filling the registry does not fix an edge redirect, and adding Access does not fix an unregistered identity. An authenticated readiness answer that still carries `missing_registry_identity` is not permission to attempt issuance: readiness must report the invitation as not issuable, and the sender must refuse before minting.
+
+Origin resolution is `CC_PUBLIC_URL`-first on both sides — the app's `configuredPublicOrigin` and the sender's pinned environment and candidates take the same name first, then `MC_TENANT_PUBLIC_URL`, the verified receipt, `commandCenterUrl` and `OPENCLAW_DASHBOARD_URL`. Every candidate must agree: a genuine origin conflict refuses rather than silently picking a winner.
 
 For a public origin protected by Cloudflare Access, supply both `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` in the selected client's bootstrap-pinned service environment or explicit sender environment. The service environment must match the stored company, tenant and installation. The sender passes this pair and `MC_API_TOKEN` as curl configuration through stdin for both readiness and ticket issuance. A partial pair is rejected before the request. Redirects to an Access sign-in page mean public authentication is required; they do not count as a readiness receipt. Never place credential values in command arguments, logs or client chat.
 

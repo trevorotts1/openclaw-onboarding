@@ -63,6 +63,7 @@ on:
       - 'docs/portable-onboarding-platforms.md'
       - 'tests/unit/interview-launch.test.py'
       - 'tests/unit/test_interview_invitation.py'
+      - 'tests/unit/interview-paired-acceptance.test.py'
       - 'shared-utils/interview_completion.py'
       - 'tests/unit/interview-completion.test.py'
       - '.github/workflows/interview-launch-contract.yml'
@@ -197,6 +198,52 @@ jobs:
                              return_value=subprocess.CompletedProcess([], 0, json.dumps(receipt) + '\n200', '')):
               assert module.issue_invitation(resolved, {'MC_API_TOKEN': 'fixture-secret'}, '123456789') == receipt['url']
           print('paired CC query-form invitation accepted by onboarding validator')
+          PY
+      # Item 08 — the mocked receipt above proves the URL FORM; this step proves
+      # the REAL PATH. A fresh checkout is really built and sealed through CC's
+      # own manifest writer, the real cc-start refusal on a missing manifest is
+      # exercised, a real fixture install with a missing Access triple refuses
+      # issuance, and a real install with the full triple reaches a real mint
+      # through the real onboarding validator behind a fixture edge. Missing,
+      # skipped or unexercised proof fails this step. The proof records paired
+      # revisions and never the ticket.
+      - name: Real paired fresh-install invitation acceptance (build, manifest refusal, real mint)
+        env:
+          CC_REPO: ${{ github.workspace }}/paired-command-center
+          PAIRED_CC_REF: v7.6.65
+          INTERVIEW_ACCEPTANCE_PROOF: ${{ runner.temp }}/interview-paired-acceptance-proof.json
+        run: |
+          python3 - <<'PY'
+          import importlib.util, json, os, pathlib, sys, unittest
+          spec = importlib.util.spec_from_file_location('paired_acceptance', 'tests/unit/interview-paired-acceptance.test.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          suite = unittest.defaultTestLoader.loadTestsFromModule(module)
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              raise SystemExit('skips are forbidden in the paired acceptance: an unexercised proof is a failed proof')
+          if result.errors or result.failures or result.testsRun == 0:
+              raise SystemExit(1)
+          proof_path = os.environ.get('INTERVIEW_ACCEPTANCE_PROOF', '')
+          if not proof_path or not pathlib.Path(proof_path).is_file():
+              raise SystemExit('paired acceptance proof was not written — unexercised proof fails CI')
+          raw = pathlib.Path(proof_path).read_text()
+          if 'enroll=' in raw:
+              raise SystemExit('paired acceptance proof leaked a ticket')
+          proof = json.loads(raw)
+          checks = proof.get('checks') or {}
+          if not checks or any(not v.get('ok') for v in checks.values()):
+              bad = [k for k, v in checks.items() if not v.get('ok')]
+              raise SystemExit(f'paired acceptance proof carries failed/absent checks: {bad}')
+          print('paired revisions:', json.dumps(proof.get('pairedRevisions', {})))
+          print('paired acceptance checks:', json.dumps({k: v['ok'] for k, v in checks.items()}))
+          summary = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary:
+              with open(summary, 'a') as handle:
+                  handle.write('### Real paired invitation acceptance\n')
+                  handle.write('- checks: **%d/%d passed**\n' % (len(checks), len(checks)))
+                  handle.write('- paired revisions: `%s`\n' % json.dumps(proof.get('pairedRevisions', {})))
+                  handle.write('- ticket: never printed, never recorded\n')
           PY
       - name: Canonical company identity through real post-interview builder
         run: python3 tests/unit/test_build_company_identity.py
