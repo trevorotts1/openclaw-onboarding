@@ -370,6 +370,8 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 
 Every row is a binary trigger with an exact detection method and a verbatim failure message (Section 1 and 2). Wire them as auto-fails, checked before scoring. A deck that trips any DECK-level row, or any slide that trips a slide-level row, cannot be marked final.
 
+**Item 26 note (AF-P24 and the GIP doctrine weave, 2026-10-14).** AF-P24 is this ruleset's one code adopted from another department's doctrine: the five BlackCEO negative classes of SOP-GIP-01 v2.0 Element 10, woven into this pipeline by slide-image-creator SOP 9.12 (FIX-PLAN Item 26). It is deliberately conditional (Black-subject prompts only) so the base gate's verdicts on existing decks do not move. Its render-side twin is NOT a new code: SOP-GIP-02 v2.0's AF-G7 representation expansion is adopted as the five named sub-checks of AF-I9 in qc-specialist-image-presentations SOP 9.1, because this department does not run parallel namespaces: a GIP check adopted here lives under a presentations code, with its source cited. The same rule governed the weave's other adoptions (the representation prompt order, the GIP library vocabulary in SOP-CAST-01 Section 8, camera direction, pixel QC, and the post-generation verification list in qc-specialist-image SOP 9.5): doctrine lands in the SOPs and QC verdicts; only AF-P24 needed a new mechanical code, because the prompt gate is where prompt shape is enforced.
+
 ---
 
 ## 7. NEW AUTO-FAIL CODES -- 2026-06-15 PRESENTATION-DEPT-V2 ENFORCEMENT OVERHAUL
