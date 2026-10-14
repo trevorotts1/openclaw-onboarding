@@ -1123,7 +1123,10 @@ cc_ensure_fresh_build() {
 
   if [[ "$need_build" -eq 0 ]]; then
     log "INFO" "cc-build: .next bundle is fresh vs source — skipping rebuild (idempotent)"
-    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
+    # Item 02: this function no longer stamps commandCenterBuildFresh. An mtime
+    # says nothing about whether build-inventory.json exists or matches the
+    # source; every routing path stamps the key from `build-inventory.sh
+    # --verify` (the content oracle) instead.
     return 0
   fi
 
@@ -1133,16 +1136,62 @@ cc_ensure_fresh_build() {
     # Verify a FRESH BUILD_ID landed (mtime >= build start) — guards against a
     # build that exits 0 yet produced no new output.
     if [[ -f "$nextid" ]] && [[ "$(_cc_mtime "$nextid")" -ge "$build_start" ]]; then
-      log "INFO" "cc-build: next build done — fresh .next/BUILD_ID verified"
-      [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
+      log "INFO" "cc-build: next build done — fresh .next/BUILD_ID landed (return-code signal only; commandCenterBuildFresh is stamped from content verification, never from this timestamp)"
       return 0
     fi
     log "WARN" "cc-build: npm run build exited 0 but .next/BUILD_ID is missing/stale"
   else
     log "WARN" "cc-build: npm run build FAILED (see $LOG_FILE)"
   fi
-  [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = false' 2>/dev/null || true
   if [[ -f "$nextid" ]]; then return 1; else return 2; fi
+}
+
+# cc_fresh_deploy_atomic — FRESH-INSTALL DEPLOY (hardening plan item 02).
+#
+# The old fresh path ran a bare `npm run build` and treated a fresh .next/BUILD_ID
+# mtime as proof of success. cc-start.sh's content gate (PRES-046) demands
+# .next/build-inventory.json, which a bare build never writes — so a fresh box
+# could finish "built" and still exit 78 on first boot. A green build followed
+# by a deterministic startup refusal.
+#
+# This routes the fresh deploy through CC's OWN atomic-deploy path instead:
+# private candidate build, frozen-source proof, IMMUTABLE manifest written by
+# scripts/lib/build-inventory.sh (never hand-written, never skipped), atomic
+# promotion, pm2 switch with --update-env (this shell's already-provisioned
+# env), health check, auto-rollback on failure. Same Node runtime (atomic
+# resolves scripts/lib/node-runtime.sh itself) and same port (--port below).
+#
+# Reached ONLY after service env, migrations and canonical company binding —
+# the exact point where the old bare build used to run. There is no legacy
+# `npm run build` fallback here: an un-inventoriable checkout must fail loudly.
+#
+# Returns 0 only when atomic-deploy reports GREEN (its own exit contract:
+# 0 green, 1 rolled back to the prior release, 2 pre-flight/build/manifest
+# failure with nothing promoted, 3 new build live but health indeterminate).
+# Any non-zero is a real failure for the caller to fail_install — never a
+# timestamp-only success, never a blind restart loop.
+cc_fresh_deploy_atomic() {
+  local atomic="$DASHBOARD_DIR/scripts/atomic-deploy.sh" bash4 rc
+  if [[ ! -f "$atomic" ]]; then
+    log "ERROR" "phase=6 (fresh): $atomic missing — this checkout cannot be inventoried-atomically deployed, and item 02 forbids the bare 'npm run build' fallback (it produces no manifest, so cc-start would exit 78 on first boot)."
+    return 1
+  fi
+  bash4="$(_cc_resolve_bash4)" || bash4=""
+  if [[ -z "$bash4" ]]; then
+    log "ERROR" "phase=6 (fresh): no bash 4+ available to run $atomic — refusing the un-inventoried legacy build path (item 02)."
+    return 1
+  fi
+  cc_reconcile_pm2_names
+  log "INFO" "phase=6 (fresh): inventoried atomic deployment — $bash4 $atomic --app-dir $DASHBOARD_DIR --pm2-app $CC_PM2_NAME --port $DASHBOARD_PORT"
+  "$bash4" "$atomic" --app-dir "$DASHBOARD_DIR" --pm2-app "$CC_PM2_NAME" --port "$DASHBOARD_PORT" >>"$LOG_FILE" 2>&1
+  rc=$?
+  case "$rc" in
+    0) log "INFO" "phase=6 (fresh): atomic-deploy GREEN — immutable manifest written, service health-verified, nothing half-deployed"; return 0 ;;
+    1) log "ERROR" "phase=6 (fresh): atomic-deploy rolled back — the prior release was restored and verified green instead (a degraded old build, NOT a fresh deployment); see $LOG_FILE"; return 1 ;;
+    2) log "ERROR" "phase=6 (fresh): atomic-deploy pre-flight/build/manifest failure — candidate discarded, live release untouched; see $LOG_FILE"; return 1 ;;
+    3) log "ERROR" "phase=6 (fresh): atomic-deploy new build live but health INDETERMINATE — not a success; see $LOG_FILE"; return 1 ;;
+    *) log "ERROR" "phase=6 (fresh): atomic-deploy unexpected exit $rc; see $LOG_FILE"; return 1 ;;
+  esac
 }
 
 # cc_verify_db_parity — DATA-08 decoy-DB guard, wired into deploy.
@@ -1395,7 +1444,8 @@ cc_resolve_pinned_target() {
 #      on a failed post-check) — so even the last-resort tier never leaves a
 #      half-updated CC standing.
 # Sets state keys .commandCenterLastUpdateVerified AND .commandCenterBuildFresh
-# (true/false) either way -- tiers 1/2 never run cc_ensure_fresh_build, and the
+# (true/false) either way -- tiers 1/2 never run cc_ensure_fresh_build (they stamp
+# commandCenterBuildFresh from build-inventory --verify), and the
 # FINAL degraded check requires commandCenterBuildFresh.
 # Returns 0 if the RUNNING CC ends the call healthy (/api/health 200, status ok,
 # migrations current) — a failed rebuild in this call is then a WARNING, not a
@@ -1478,10 +1528,14 @@ cc_route_update_through_canonical_path() {
     # auto-rollback internally via atomic-deploy.sh).
     build_id_mtime=0; [[ -f "$build_id_file" ]] && build_id_mtime="$(_cc_mtime "$build_id_file")"
     health_code="$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:${DASHBOARD_PORT}/api/health" 2>/dev/null || echo "000")"
-    if [[ "$build_id_mtime" -gt "$pull_ts" && "$health_code" == "200" ]]; then
+    # Item 02: a fresh BUILD_ID timestamp is NOT deploy proof. Require the served
+    # content to verify against this tree (the oracle cc-start.sh enforces).
+    if cc_served_build_current && [[ "$build_id_mtime" -gt "$pull_ts" && "$health_code" == "200" ]]; then
+      [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
       [[ "$snapshotted" -eq 1 ]] && rm -rf "$snapshot_dir" 2>/dev/null || true
     else
-      log "ERROR" "phase=6 (update-only): tier-3 post-update assertion FAILED (BUILD_ID mtime=$build_id_mtime pull_ts=$pull_ts health=$health_code) — reverting via manual snapshot restore (no atomic-deploy.sh available on this box)"
+      log "ERROR" "phase=6 (update-only): tier-3 post-update assertion FAILED (content-verify + BUILD_ID mtime=$build_id_mtime pull_ts=$pull_ts health=$health_code) — reverting via manual snapshot restore (no atomic-deploy.sh available on this box)"
+      [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = false' 2>/dev/null || true
       if [[ "$snapshotted" -eq 1 ]]; then
         rm -rf "$DASHBOARD_DIR/.next" 2>/dev/null || true
         mv "$snapshot_dir" "$DASHBOARD_DIR/.next" 2>/dev/null \
@@ -1492,6 +1546,19 @@ cc_route_update_through_canonical_path() {
         log "ERROR" "phase=6 (update-only): CRITICAL — no pre-update snapshot existed (first deploy on this box); cannot revert. Manual intervention required."
       fi
     fi
+  fi
+
+  # ---- Item 02: content, not timestamp. The served bundle must verify against
+  # this tree (build-inventory.sh --verify — the same oracle cc-start.sh's
+  # PRES-046 gate runs). This is what stamps commandCenterBuildFresh now that
+  # cc_ensure_fresh_build no longer stamps it. Tier 1/2 return before this line
+  # only on the early CC_AT_PIN pass, which never stamps.
+  if cc_served_build_current; then
+    log "INFO" "phase=6 (update-only): content verification PASSED — served .next verifies against $DASHBOARD_DIR (build-inventory VERIFIED)"
+    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = true' 2>/dev/null || true
+  else
+    log "WARN" "phase=6 (update-only): content verification FAILED — served .next does not verify against $DASHBOARD_DIR (missing/mismatched/obsolete manifest) — commandCenterBuildFresh=false"
+    [[ -f "$STATE_FILE" ]] && state_set '.commandCenterBuildFresh = false' 2>/dev/null || true
   fi
 
   # ---- Final assertion (belt-and-suspenders for ALL tiers): BUILD_ID must be
@@ -1510,8 +1577,11 @@ cc_route_update_through_canonical_path() {
   # about the one thing it exists to answer.
   build_id_mtime=0; [[ -f "$build_id_file" ]] && build_id_mtime="$(_cc_mtime "$build_id_file")"
   health_code="$(curl -fsS -o /dev/null -w '%{http_code}' "http://localhost:${DASHBOARD_PORT}/api/health" 2>/dev/null || echo "000")"
-  if [[ "$build_id_mtime" -gt "$pull_ts" && "$health_code" == "200" ]]; then
-    log "INFO" "phase=6 (update-only): post-update assertion — tier=$tier BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=200 (FRESH build, verified GREEN — the update took effect)"
+  # Item 02: the timestamp+HTTP verdict alone can no longer declare a fresh build
+  # — the content must verify too (a fresh BUILD_ID beside a mismatched or
+  # hand-written manifest is exactly the item-02 failure).
+  if cc_served_build_current && [[ "$build_id_mtime" -gt "$pull_ts" && "$health_code" == "200" ]]; then
+    log "INFO" "phase=6 (update-only): post-update assertion — tier=$tier content VERIFIED + BUILD_ID_mtime=$build_id_mtime pull_ts=$pull_ts health=200 (FRESH build, verified GREEN — the update took effect)"
     [[ -f "$STATE_FILE" ]] && state_set '.commandCenterLastUpdateVerified = true | .commandCenterBuildFresh = true' 2>/dev/null || true
     return 0
   fi
@@ -2285,6 +2355,15 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
 elif [[ "$(state_get '.commandCenterPhase6Done')" == "true" ]]; then
   cc_security_preflight --checkout "$DASHBOARD_DIR"
   log "INFO" "phase=6 dashboard-deploy: already done — skipping"
+  # Item 02: commandCenterBuildFresh used to be stamped only by the build helper,
+  # which this branch never calls — so an already-done box could not be re-proved
+  # content-valid. The content oracle answers it directly.
+  if cc_served_build_current; then
+    state_set '.commandCenterBuildFresh = true'
+  else
+    state_set '.commandCenterBuildFresh = false'
+    log "WARN" "phase=6: already-done box does not verify its served content (manifest missing/mismatched/obsolete) — commandCenterBuildFresh=false"
+  fi
 else
   mkdir -p "$(dirname "$DASHBOARD_DIR")"
   if [[ ! -d "$DASHBOARD_DIR/.git" ]]; then
@@ -2308,15 +2387,16 @@ else
     cc_load_launch_environment
   fi
   cc_prepare_database_environment
-  # (1) build the `.next` bundle so `next start` serves code matching the checkout
-  # (registers the intake-advance + backlog-redispatch sweeps). A fresh full
-  # install has NO `.next` at all — so a hard build failure with no usable bundle
-  # is fatal here (next start would EADDR/no-build crash-loop otherwise).
-  cc_ensure_fresh_build; _bfrc=$?
-  if [[ "$_bfrc" -ge 2 ]]; then
-    fail_install "phase=6: next build failed and no usable .next bundle exists — next start would crash-loop (see $LOG_FILE)"
-  elif [[ "$_bfrc" -eq 1 ]]; then
-    log "WARN" "phase=6: next build failed but a prior .next bundle exists — continuing (board may be stale; resume cron retries)"
+  # (1) FRESH DEPLOY — item 02. Build + manifest + promotion + pm2 switch now go
+  # through CC's own atomic-deploy path (which also registers the intake-advance
+  # + backlog-redispatch sweeps, compiled INTO .next). It runs AFTER service env,
+  # migrations and canonical company binding, so its health check proves a box
+  # that is actually startable, not merely built.
+  # The bare `npm run build` + BUILD_ID-timestamp proof is gone: a bare build
+  # writes no build-inventory.json, so cc-start's PRES-046 content gate refused
+  # the very deploy the installer had just called successful.
+  if ! cc_fresh_deploy_atomic; then
+    fail_install "phase=6: inventoried atomic deployment failed — the fresh Command Center was not deployed green (no manifest / rolled back / health indeterminate). This is NOT a fresh deployment; see $LOG_FILE. Not retried by a restart loop."
   fi
 
   log "INFO" "phase=6: npm run db:push (runs migrations via getDb())"
