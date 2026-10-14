@@ -2419,22 +2419,20 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
 elif [[ "$(state_get '.commandCenterPhase6Done')" == "true" ]]; then
   cc_security_preflight --checkout "$DASHBOARD_DIR"
   log "INFO" "phase=6 dashboard-deploy: already done — skipping"
-<<<<<<< HEAD
-  # Re-verify on every skip: a box whose serving proof later fails (exit 78,
-  # health gone) must not keep reporting done forever.
-  if ! cc_phase6_serving_proof 3 2; then
-    state_set '.commandCenterPhase6Pending = "serving-proof-pending"'
-    log "ERROR" "phase=6: previously-done box no longer passes serving proof — pending state recorded"
-=======
   # Item 02: commandCenterBuildFresh used to be stamped only by the build helper,
-  # which this branch never calls — so an already-done box could not be re-proved
+  # which this branch never calls - so an already-done box could not be re-proved
   # content-valid. The content oracle answers it directly.
   if cc_served_build_current; then
     state_set '.commandCenterBuildFresh = true'
   else
     state_set '.commandCenterBuildFresh = false'
-    log "WARN" "phase=6: already-done box does not verify its served content (manifest missing/mismatched/obsolete) — commandCenterBuildFresh=false"
->>>>>>> origin/main
+    log "WARN" "phase=6: already-done box does not verify its served content (manifest missing/mismatched/obsolete) - commandCenterBuildFresh=false"
+  fi
+  # Item 03: re-verify on every skip. A box whose serving proof later fails
+  # (exit 78, health gone) must not keep reporting done forever.
+  if ! cc_phase6_serving_proof 3 2; then
+    state_set '.commandCenterPhase6Pending = "serving-proof-pending"'
+    log "ERROR" "phase=6: previously-done box no longer passes serving proof - pending state recorded"
   fi
 else
   mkdir -p "$(dirname "$DASHBOARD_DIR")"
