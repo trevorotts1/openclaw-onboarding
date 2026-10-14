@@ -90,7 +90,7 @@ def load_service_environment(state, env):
     filename=launch.get('serviceEnvPath') if isinstance(launch,dict) else None
     if filename is None:return result
     if not isinstance(filename,str) or not Path(filename).is_absolute(): raise Pending('service environment path invalid')
-    allowed={'MC_TENANT_ID','MC_COMPANY_ID','MC_INSTALLATION_ID','MC_TENANT_PUBLIC_URL','MC_API_TOKEN','CF_ACCESS_CLIENT_ID','CF_ACCESS_CLIENT_SECRET'}
+    allowed={'MC_TENANT_ID','MC_COMPANY_ID','MC_INSTALLATION_ID','CC_PUBLIC_URL','MC_TENANT_PUBLIC_URL','MC_API_TOKEN','CF_ACCESS_CLIENT_ID','CF_ACCESS_CLIENT_SECRET'}
     stored={}
     try:
         file=Path(filename)
@@ -146,7 +146,12 @@ def resolve_public_origin(state, env, fetch=None):
         if record.get('protocol') != PROTOCOL: raise Pending('canonical origin protocol mismatch')
         if any(record.get(k) != v for k,v in expected.items()): raise Pending('canonical origin identity mismatch')
         candidate = record.get('origin')
-    candidates = [v for v in [candidate, env.get('MC_TENANT_PUBLIC_URL'), state.get('commandCenterUrl'), env.get('OPENCLAW_DASHBOARD_URL')] if v]
+    # Item 12: the app's own configured origin resolves CC_PUBLIC_URL-first
+    # (tenant-context configuredPublicOrigin), so the sender must accept the
+    # SAME name — a box configured only with CC_PUBLIC_URL could never reach
+    # readiness from here while the app itself served that origin. Every
+    # candidate must still agree: a genuine origin conflict refuses.
+    candidates = [v for v in [candidate, env.get('CC_PUBLIC_URL'), env.get('MC_TENANT_PUBLIC_URL'), state.get('commandCenterUrl'), env.get('OPENCLAW_DASHBOARD_URL')] if v]
     if not candidates: raise Pending('public interview origin pending')
     origins = [public_origin(v)[0] for v in candidates]
     if len(set(origins)) != 1: raise Pending('public origin configuration conflict')
@@ -219,6 +224,29 @@ def invitation_validity_sentence(expiry, reopenable=False):
     return 'This private sign-in link expires on '+datetime.fromtimestamp(expiry,timezone.utc).strftime('%b %d, %Y at %H:%M UTC')+'.'
 
 
+INVITATION_APPLICATION_ERRORS = frozenset({
+    # Application refusals whose name alone is a repair instruction. Bodies are
+    # parsed ONLY to read this key; every other field is discarded unread.
+    'access_identity_unregistered', 'interview_not_ready', 'recipient_binding_required',
+    'public_origin_unconfigured', 'public_origin_mismatch', 'operator_required',
+    'invitation_unavailable',
+})
+
+def invitation_error_code(body):
+    """The allowlisted machine-readable error code of a refusal, or None.
+
+    Never returns a raw body, URL, ticket or secret: only a code from the
+    allowlist above ever reaches an operator-facing reason string.
+    """
+    try:
+        payload = json.loads(body)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    code = payload.get('error')
+    return code if isinstance(code, str) and code in INVITATION_APPLICATION_ERRORS else None
+
 def issue_invitation(resolved, env, target, metadata=None):
     config=curl_auth_config(env)
     body=json.dumps({'recipientHash':hashlib.sha256(target.encode()).hexdigest()})
@@ -226,7 +254,16 @@ def issue_invitation(resolved, env, target, metadata=None):
         result=subprocess.run(['curl','--disable','--max-filesize','65536','--config','-','--silent','--show-error','--max-time','15','--max-redirs','0','--proto','=https','--header','Content-Type: application/json','--data',body,'--write-out','\n%{http_code}',resolved['origin']+'/api/auth/interview-invitation'],input=config,text=True,capture_output=True,timeout=20)
         data,_,status=result.stdout.rstrip('\r\n').rpartition('\n')
         reject_public_redirect(status)
-        if result.returncode or status!='200' or len(data)>65536: raise Pending('authenticated invitation issuance failed')
+        # An application refusal keeps its own name and status. Collapsing every
+        # failure into one sentence hid the difference between "the registry has
+        # no Access identity" (fix the registration) and "the app is unavailable"
+        # (fix the deployment) — the operator then retried the wrong repair. Only
+        # an ALLOWLISTED machine-readable code is surfaced, never a raw body,
+        # URL, ticket or secret; anything unrecognised stays the generic refusal.
+        if result.returncode or status!='200' or len(data)>65536:
+            code = invitation_error_code(data) if status else None
+            raise Pending(('authenticated invitation HTTP ' + str(status or '000') + ': ' + code) if code else 'authenticated invitation issuance failed')
+        receipt=json.loads(data)
         receipt=json.loads(data)
         if not isinstance(receipt,dict): raise Pending('invalid invitation receipt')
         for key in ['tenantId','companyId','installationId','host']:
@@ -425,7 +462,7 @@ def send_gateway(message, target, ledger, context, force=False, timeout=30, prep
         return 0,outcome
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('action',choices=['resolve','send']);parser.add_argument('--state',required=True);parser.add_argument('--message-file');parser.add_argument('--target');parser.add_argument('--ledger');parser.add_argument('--resolution-file');parser.add_argument('--mode',default='start');parser.add_argument('--lane',default='legacy')
+    parser=argparse.ArgumentParser(); parser.add_argument('action',choices=['resolve','send','mint']);parser.add_argument('--state',required=True);parser.add_argument('--message-file');parser.add_argument('--target');parser.add_argument('--ledger');parser.add_argument('--resolution-file');parser.add_argument('--mode',default='start');parser.add_argument('--lane',default='legacy')
     args=parser.parse_args()
     try:
         state=json.loads(Path(args.state).read_text())
@@ -434,6 +471,20 @@ def main():
         if args.action=='resolve':
             if args.resolution_file: atomic_json(args.resolution_file,{key:resolved[key] for key in ['origin','companyId','tenantId','installationId']})
             print(resolved['origin']);return 0
+        if args.action=='mint':
+            # Mint-only smoke (item 10): proves the whole issuance path — the
+            # same readiness receipt, the same invitation route, the same
+            # validator — while sending NOTHING and writing no ledger entry. The
+            # private ticket is discarded here: only a sanitized summary leaves
+            # this process, so an operator can prove issuance works without a
+            # client-facing send and without a link existing anywhere on disk.
+            if not args.target or not isinstance(args.target,str): raise Pending('mint requires the intended recipient target for binding')
+            if prompt_status(json.loads(Path(args.state).read_text()), env) != 'INCOMPLETE':
+                raise Pending('completion changed or unavailable; invitation suppressed')
+            metadata={}
+            issue_invitation(resolved,env,args.target,metadata)
+            print(json.dumps({'status':'minted','invitation':'issued','delivery':'not-attempted','ticket':'discarded','host':resolved['host'],'origin':resolved['origin'],'companyId':resolved['companyId'],'tenantId':resolved['tenantId'],'installationId':resolved['installationId'],'invitationExpiresAt':metadata.get('invitationExpiresAt'),'invitationReopenable':metadata.get('invitationReopenable'),'recipientHash':hashlib.sha256(args.target.encode()).hexdigest()}))
+            return 0
         if not args.resolution_file: raise Pending('verified message origin snapshot missing')
         pinned=json.loads(Path(args.resolution_file).read_text())
         if pinned != {key:resolved[key] for key in ['origin','companyId','tenantId','installationId']}:
