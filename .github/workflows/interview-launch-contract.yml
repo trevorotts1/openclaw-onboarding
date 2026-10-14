@@ -82,13 +82,13 @@ jobs:
       # while the paired acceptance asserts the hardened 503 contract — the
       # cross-repo mirror deadlock with CC batch PR
       # trevorotts1/blackceo-command-center#541. Follow-up obligation: once
-      # #541 merges and v7.6.121 is tagged, this pin moves to `ref: v7.6.121`
+      # v7.6.121 released with items 07+13; pin is now the durable tag
       # (the durable released pin; a branch ref is temporary).
       - name: Check out the paired Command Center under test
         uses: actions/checkout@v4
         with:
           repository: trevorotts1/blackceo-command-center
-          ref: batch/interview-hardening
+          ref: v7.6.121
           path: paired-command-center
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -217,7 +217,7 @@ jobs:
       - name: Real paired fresh-install invitation acceptance (build, manifest refusal, real mint)
         env:
           CC_REPO: ${{ github.workspace }}/paired-command-center
-          PAIRED_CC_REF: batch/interview-hardening
+          PAIRED_CC_REF: v7.6.121
           INTERVIEW_ACCEPTANCE_PROOF: ${{ runner.temp }}/interview-paired-acceptance-proof.json
         run: |
           python3 - <<'PY'
