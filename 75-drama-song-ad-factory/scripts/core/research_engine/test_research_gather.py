@@ -13,14 +13,27 @@ de-duplication and junk filtering, already-non-empty sources[] short-circuit
 (no transport call at all), offline / budget degradation to exit 2 "waiting",
 the JSON envelope + full exit contract, and one bounded call per URL.
 """
+import contextlib
 import datetime
+import inspect
+import io
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
+from pathlib import Path
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    # The repo also runs skill-75 tests script-style (`python3 <test>.py`) in
+    # an empty-HOME environment that has no pytest. Every test below is written
+    # to run in BOTH modes: no pytest-only fixture is used without a stdlib
+    # stand-in supplied by _run_all() at the bottom of this file.
+    pytest = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -463,9 +476,14 @@ def test_binary_and_claimless_pages_never_become_sources():
 
 # -------------------------------------------------------------- live (opt-in)
 
-@pytest.mark.skipif(os.environ.get("DSAF_RESEARCH_LIVE_SMOKE") != "1",
-                    reason="live smoke gated on DSAF_RESEARCH_LIVE_SMOKE=1")
 def test_live_smoke_one_keyless_search():
+    """Opt-in only: skipped unless DSAF_RESEARCH_LIVE_SMOKE=1, and never run
+    by the script-style runner (which has no pytest to skip through)."""
+    if os.environ.get("DSAF_RESEARCH_LIVE_SMOKE") != "1":
+        if pytest is not None:
+            pytest.skip("live smoke gated on DSAF_RESEARCH_LIVE_SMOKE=1")
+        print("skip: live smoke gated on DSAF_RESEARCH_LIVE_SMOKE=1")
+        return
     g = G.gather({"offer": "sleep and stress guide for adults",
                   "audience": "adults over 50", "action": "read the guide"},
                  budget=20.0, timeout=6.0, max_queries=1, max_fetches=3)
@@ -477,5 +495,86 @@ def test_live_smoke_one_keyless_search():
         assert source["retrieved"]
 
 
+class _Captured:
+    """capsys stand-in: buffers sys.stdout from construction to readouterr()."""
+
+    def __init__(self):
+        self._buf = io.StringIO()
+        self._old = sys.stdout
+        sys.stdout = self._buf
+
+    def readouterr(self):
+        out = self._buf.getvalue()
+        self._buf.seek(0)
+        self._buf.truncate(0)
+        return type("Captured", (), {"out": out, "err": ""})()
+
+    def close(self):
+        sys.stdout = self._old
+
+
+class _Patch:
+    """monkeypatch stand-in: records every setattr and restores on undo()."""
+
+    def __init__(self):
+        self._undo = []
+
+    def setattr(self, obj, name, value):
+        self._undo.append((obj, name, getattr(obj, name)))
+        setattr(obj, name, value)
+
+    def close(self):
+        for obj, name, old in reversed(self._undo):
+            setattr(obj, name, old)
+        self._undo.clear()
+
+
+def _run_all():
+    """Script-style runner (no pytest): injects stdlib stand-ins for the three
+    pytest fixtures these tests use and reports one line per test. Returns an
+    exit code, so `python3 test_research_gather.py` is still a real test run."""
+    passed, failures = 0, []
+    for name, fn in sorted(globals().items()):
+        if not (name.startswith("test_") and callable(fn)):
+            continue
+        kwargs, teardown = {}, []
+        unknown = [p for p in inspect.signature(fn).parameters
+                   if p not in ("tmp_path", "capsys", "monkeypatch")]
+        if unknown:
+            failures.append(name)
+            print("FAIL: %s: no script-style runner for fixture(s) %s"
+                  % (name, unknown))
+            continue
+        for param in inspect.signature(fn).parameters:
+            if param == "tmp_path":
+                kwargs[param] = Path(tempfile.mkdtemp(prefix="research-engine-"))
+            elif param == "capsys":
+                kwargs[param] = _Captured()
+                teardown.append(kwargs[param])
+            else:
+                kwargs[param] = _Patch()
+                teardown.append(kwargs[param])
+        error = None
+        try:
+            fn(**kwargs)
+        except Exception as exc:            # noqa: BLE001 - report, keep running
+            error = exc
+        finally:
+            for item in teardown:
+                item.close()
+            if "tmp_path" in kwargs:
+                shutil.rmtree(kwargs["tmp_path"], ignore_errors=True)
+        if error is None:
+            passed += 1
+            print("ok: %s" % name)
+        else:
+            failures.append(name)
+            print("FAIL: %s: %s" % (name, error))
+    print("%d passed, %d failed" % (passed, len(failures)))
+    return 1 if failures else 0
+
+
 if __name__ == "__main__":
-    sys.exit(pytest.main([__file__, "-q"]))
+    if pytest is not None:
+        sys.exit(pytest.main([__file__, "-q"]))
+    sys.exit(_run_all())
