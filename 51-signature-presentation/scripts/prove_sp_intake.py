@@ -878,7 +878,7 @@ def _evaluate_turn_pacing(intake, today=None):
                  "intake record carries no turn_ledger_provenance — the driver's turn-gate stamp "
                  "(per-question turn id + asked_at/validated_at) is required after the %s migration "
                  "window closed; assemble the intake through deck-intake-driver.py --signature "
-                 "--next/--answer, never by hand or via a bare --record with no ledger behind it."
+                 "--sig-next/--sig-answer, never by hand or via a bare --record with no ledger behind it."
                  % GRACE_WINDOW_UNTIL.isoformat())]
 
     if not isinstance(prov, dict):
@@ -1402,7 +1402,7 @@ def self_test():
     check_fail("unpaced-bad-signature", f, AF_UNPACED)
 
     # 13) an answered required question with no corresponding turn-ledger entry
-    # (answered outside the turn gate, e.g. direct --answer with no --next).
+    # (answered outside the turn gate, e.g. direct --sig-answer with no --sig-next).
     f = _valid_runtime_fixture_provenanced()
     f["turn_ledger_provenance"]["turns"] = [
         t for t in f["turn_ledger_provenance"]["turns"] if t["question_id"] != "q3"
@@ -1626,7 +1626,7 @@ def self_test():
 # ---- main -------------------------------------------------------------------
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Fail-closed prover for the Signature Presentation 8-Questions-in-ONE-block intake gate.",
+        description="Fail-closed prover for the Signature Presentation 8-Questions atomic-RECORD intake gate.",
     )
     parser.add_argument(
         "intake",
