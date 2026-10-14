@@ -1296,7 +1296,9 @@ def _sync_ledger(job_id: str, status: str, queue_state: str) -> str:
             record = json.loads(raw)
             if isinstance(record, dict) and ROSTER_CHECKSUM_KEY in record:
                 verify_checksum(raw)
-        record["state"] = ledger_state
+        # A designated test intake stays in the terminal ledger "test" state.
+        if record.get("state") != "test":
+            record["state"] = ledger_state
         record["updated_at"] = iso(now_utc())
         record["sqlite_job_id"] = job_id
         # U035: embed an integrity checksum so truncation / corruption is

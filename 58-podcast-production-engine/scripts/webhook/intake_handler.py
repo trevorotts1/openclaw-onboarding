@@ -374,7 +374,7 @@ def _bridge_to_sqlite(jk, canonical, base, config):
             "--client-id", client_id, "--location-id", location_id,
             "--contact-id", contact_id, "--mode", mode, "--style", style,
             "--payload-file", payload_file, "--job-key", jk,
-            "--ledger-dir", str(base)]
+            "--ledger-dir", str(ledger.ledger_dir(base))]
     if not os.path.isfile(STATE_BRIDGE_SCRIPT):
         return False, "state writer absent (%s)" % STATE_BRIDGE_SCRIPT
     try:
@@ -620,6 +620,9 @@ def main(argv=None):
 # =============================================================================
 def self_test():
     import tempfile
+    _iso = tempfile.mkdtemp(prefix="pd-handler-iso-")
+    for _k, _v in (("PODCAST_DB_PATH", "podcast-engine.db"), ("PODCAST_LEDGER_DIR", "intake-ledger"), ("PODCAST_JOBINDEX_DIR", "job-index")):
+        os.environ[_k] = os.path.join(_iso, _v)
     from flow_client import _FakeGateway
     ok = True
 
