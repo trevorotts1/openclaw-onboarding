@@ -106,6 +106,14 @@ client-side JS mechanic (pause + seek-block + reveal-on-submit) that a governed 
 wires to the client's real GHL contact/workflow endpoint at deployment time; a fleet
 template cannot carry a client's live endpoint (documented TODO left in the emitted
 HTML, never fabricated as if wired).
+CONSENT ON THE GATE FORM (owner ruling 2026-10-13, superseding the 2026-09-27 D3
+optional posture): the gate form also carries Trevor's standing two consent
+statements (email; SMS + voice AI combined) as checkboxes whose text IS the consent
+sentence -- unchecked by default, ALL required: the gate's submit handler refuses to
+unlock playback until every box is checked, with a branded error + "Check here" tags
+on the unchecked boxes. The boxes are named form fields (consent_email /
+consent_sms_voice), so the deployment-time GHL wiring captures them with the rest of
+the submit (see resolve_gate_consent_copy()).
 
 NO CLIENT NAMES OR CLIENT-SPECIFIC CONTENT — this is a fleet-wide template. Loop 2C's
 real pages were built for one client and deliberately kept out of this repo.
@@ -623,7 +631,8 @@ def build_vsl_copy(brief: Dict[str, Any], client_name: str) -> str:
         "",
         "## The Viewer Gate",
         "A lead-capture gate appears partway through the video, after the first big "
-        "revelation, requesting first name / email / cell before playback continues.",
+        "revelation, requesting first name / email / cell and the two required "
+        "consent statements (email; SMS + voice AI) before playback continues.",
         "",
         "## Objection Handled",
         str(objection),
@@ -857,6 +866,47 @@ page, so the full set reads as one designed system end to end.
 
 
 # ---------------------------------------------------------------------------
+# GATE-FORM CONSENT: resolve_gate_consent_copy() (owner ruling 2026-10-13)
+# ---------------------------------------------------------------------------
+def resolve_gate_consent_copy(client_name: str) -> List[dict]:
+    """The viewer gate form's two consent statements: Trevor's standing
+    two-statement pattern (1: email; 2: SMS + voice AI combined), adapted to
+    the brand name this builder already resolves for the page. Benefit-first
+    copy; the checkbox text IS the consent sentence (no separate label); at
+    most two uses of "AI" per statement. Both boxes render unchecked by
+    default and are REQUIRED -- owner ruling 2026-10-13 (his standing
+    client-delivery pattern; it supersedes the 2026-09-27 D3 optional
+    posture, which never applied here: this form previously carried NO
+    consent at all). The gate's submit handler refuses to unlock playback
+    until every box is checked."""
+    who = str(client_name or "").strip() or "this business"
+    return [
+        {
+            "kind": "email",
+            "name": "consent_email",
+            "text": (
+                f"Yes, keep me in the loop: {who} and its partners may use "
+                "AI to enhance service quality, and may send me follow-up "
+                "emails and marketing follow-up by email and other "
+                "platforms, so I never miss an update about this training."
+            ),
+        },
+        {
+            "kind": "sms_voice",
+            "name": "consent_sms_voice",
+            "text": (
+                f"Yes, reach me directly: {who} and its approved partners "
+                "may use AI to serve me excellently, including voice AI "
+                "calls and text messages with follow-up and marketing "
+                "about this training. Message frequency varies. Message "
+                "and data rates may apply. Reply STOP to opt out, HELP "
+                "for help."
+            ),
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
 # HTML — body-level fragment (ghl_rest_canvas.html_fragment-compatible: no
 # <!DOCTYPE>/<html>/<head>/<body> wrapper). Inline <style>/<script> are fine inside a
 # bare fragment (mirrors sales_checkout_builder.py's build_page_html; lint_ghl_fragment
@@ -890,6 +940,18 @@ def build_vsl_html(*, brand: Dict[str, str], client_name: str, fields: Dict[str,
     )
     gate_id = f"zhc-vsl-gate-{deck_slug}"
     form_id = f"zhc-vsl-gate-form-{deck_slug}"
+    # Gate-form consent (owner ruling 2026-10-13): the two statements render
+    # as checkboxes whose text IS the consent sentence, unchecked by default,
+    # each carrying a hidden "Check here" tag the gate JS reveals on a submit
+    # attempt that leaves the box unchecked.
+    consent_html = "".join(
+        f'<label class="zhc-vsl-consent"><input type="checkbox" '
+        f'name="{c["name"]}" value="yes" required />'
+        f'{c["text"]}'
+        f'<span class="zhc-consent-check-tag" hidden>Check here</span>'
+        f"</label>"
+        for c in resolve_gate_consent_copy(client_name)
+    )
     return f"""<!-- ZHC-VSL-BUILDER marker={marker} deck_slug={deck_slug} -->
 <style>
   .zhc-vsl-page {{ font-family: 'Montserrat', Arial, sans-serif; background:{base}; color:{ink}; padding:32px 24px; }}
@@ -903,6 +965,13 @@ def build_vsl_html(*, brand: Dict[str, str], client_name: str, fields: Dict[str,
   .zhc-vsl-gate-form {{ background:{base}; border:1px solid {sec}; border-radius:10px; padding:24px; width:90%; max-width:360px; }}
   .zhc-vsl-gate-form h3 {{ color:{ink}; margin:0 0 16px; font-size:1.1em; }}
   .zhc-vsl-gate-form input {{ display:block; width:100%; box-sizing:border-box; margin:0 0 12px; padding:10px; border:1px solid {sec}; border-radius:6px; }}
+  .zhc-vsl-gate-form label.zhc-vsl-consent {{ display:block; margin:0 0 12px; font-size:0.85em; line-height:1.5; color:{ink}; text-align:left; }}
+  .zhc-vsl-gate-form label.zhc-vsl-consent input {{ display:inline-block; width:auto; margin:0 6px 0 0; padding:0; border:0; }}
+  .zhc-vsl-gate-form label.zhc-consent-missing {{ outline:2px solid {prim}; outline-offset:2px; border-radius:6px; }}
+  .zhc-vsl-gate-form .zhc-consent-check-tag {{ display:inline-block; background:{prim}; color:#fff; font-weight:700; font-size:0.85em; border-radius:4px; padding:1px 6px; margin-left:6px; }}
+  .zhc-vsl-gate-form .zhc-consent-check-tag[hidden] {{ display:none; }}
+  .zhc-vsl-gate-form .zhc-vsl-gate-consent-error {{ background:#fff; border:2px solid {prim}; color:{ink}; border-radius:6px; padding:10px; font-size:0.9em; font-weight:600; margin:0 0 12px; text-align:left; }}
+  .zhc-vsl-gate-form .zhc-vsl-gate-consent-error[hidden] {{ display:none; }}
   .zhc-vsl-gate-form button {{ display:block; width:100%; background:{prim}; color:#fff; font-weight:700; padding:12px; border:0; border-radius:6px; cursor:pointer; }}
 </style>
 <div class="zhc-vsl-page" id="zhc-vsl-{deck_slug}">
@@ -917,6 +986,8 @@ def build_vsl_html(*, brand: Dict[str, str], client_name: str, fields: Dict[str,
         <input type="text" name="first_name" placeholder="First Name" required>
         <input type="email" name="email" placeholder="Email Address" required>
         <input type="tel" name="phone" placeholder="Cell Phone" required>
+        {consent_html}
+        <p class="zhc-vsl-gate-consent-error" id="{form_id}-consent-error" role="alert" hidden>Please check each box marked "Check here" above so we can keep you posted about this training, then tap Continue Watching.</p>
         <button type="submit">Continue Watching</button>
       </form>
     </div>
@@ -942,13 +1013,61 @@ def build_vsl_html(*, brand: Dict[str, str], client_name: str, fields: Dict[str,
         video.currentTime = GATE_SEC;
       }}
     }});
+    /* Consent gate (owner ruling 2026-10-13): both consent boxes are
+       required. refreshConsentGate() tags each unchecked box "Check here",
+       shows the branded error, and reports whether the form may proceed;
+       the submit handler below refuses to unlock while any box is
+       unchecked. */
+    var consentBoxes = form.querySelectorAll('input[type="checkbox"][required]');
+    var consentError = document.getElementById('{form_id}-consent-error');
+    function refreshConsentGate() {{
+      var firstMissing = null;
+      var missing = 0;
+      for (var i = 0; i < consentBoxes.length; i++) {{
+        var box = consentBoxes[i];
+        var label = box.closest ? box.closest('label') : null;
+        var tag = label ? label.querySelector('.zhc-consent-check-tag') : null;
+        if (!box.checked) {{
+          missing++;
+          if (!firstMissing) {{ firstMissing = label || box; }}
+          if (label) {{ label.classList.add('zhc-consent-missing'); }}
+          if (tag) {{ tag.hidden = false; }}
+        }} else {{
+          if (label) {{ label.classList.remove('zhc-consent-missing'); }}
+          if (tag) {{ tag.hidden = true; }}
+        }}
+      }}
+      if (consentError) {{ consentError.hidden = missing === 0; }}
+      return {{ ok: missing === 0, firstMissing: firstMissing }};
+    }}
+    form.addEventListener('invalid', function(ev) {{
+      if (ev.target && ev.target.type === 'checkbox') {{
+        ev.preventDefault();
+        var res = refreshConsentGate();
+        if (res.firstMissing && res.firstMissing.scrollIntoView) {{
+          res.firstMissing.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+        }}
+      }}
+    }}, true);
+    for (var ci = 0; ci < consentBoxes.length; ci++) {{
+      consentBoxes[ci].addEventListener('change', function() {{ refreshConsentGate(); }});
+    }}
     form.addEventListener('submit', function(ev) {{
       ev.preventDefault();
+      var consent = refreshConsentGate();
+      if (!consent.ok) {{
+        if (consent.firstMissing && consent.firstMissing.scrollIntoView) {{
+          consent.firstMissing.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+        }}
+        return;
+      }}
       /* ZHC-VSL: wire this submit to the client's real GHL contact-upsert endpoint or
          native GHL form embed at deployment time -- a fleet template does not carry a
          client's live endpoint. This gate mechanic (pause + seek-block + reveal-on-
          submit) is fully functional client-side; only the lead-delivery wiring is a
-         deployment-time step, intentionally left unfabricated here. */
+         deployment-time step, intentionally left unfabricated here. The consent
+         boxes are named fields (consent_email / consent_sms_voice) on this same
+         form, so the deployment-time wiring captures them with the submit. */
       unlocked = true;
       overlay.classList.remove('zhc-vsl-gate-active');
       video.play();
@@ -1746,6 +1865,36 @@ def _selftest() -> int:
         if needle not in html:
             fails.append(f"vsl HTML missing expected gate mechanic marker: {needle!r}")
 
+    # 6b) GATE-FORM CONSENT (owner ruling 2026-10-13): the two statements
+    #     (email; SMS + voice AI combined) render as named, unchecked,
+    #     REQUIRED checkboxes whose text IS the consent sentence and carries
+    #     the client/brand name, with the branded gate wired (error element,
+    #     "Check here" tags, refreshConsentGate gating the unlock).
+    gate_consent = resolve_gate_consent_copy("Test Client")
+    if [c["name"] for c in gate_consent] != ["consent_email", "consent_sms_voice"]:
+        fails.append(f"gate consent statements wrong: {gate_consent}")
+    for c in gate_consent:
+        if "Test Client" not in c["text"]:
+            fails.append(f"gate consent statement carries no client/brand "
+                         f"name: {c}")
+        if c["text"].count("AI") > 2:
+            fails.append(f"gate consent statement uses 'AI' more than twice: {c}")
+    vsl_boxes = re.findall(r'<input type="checkbox"[^>]*>', html)
+    if len(vsl_boxes) != 2:
+        fails.append(f"gate form consent: expected 2 checkboxes, got "
+                     f"{len(vsl_boxes)}: {vsl_boxes}")
+    for bx in vsl_boxes:
+        if "required" not in bx:
+            fails.append(f"gate consent box not required (owner ruling "
+                         f"2026-10-13): {bx}")
+        if "checked" in bx:
+            fails.append(f"gate consent box renders pre-checked: {bx}")
+    for needle in ('name="consent_email"', 'name="consent_sms_voice"',
+                   "Check here", "consent-error", "refreshConsentGate",
+                   "voice AI calls"):
+        if needle not in html:
+            fails.append(f"gate form consent missing marker: {needle!r}")
+
     try:
         rc = _import_ghl_rest_canvas()
     except Exception as exc:  # noqa: BLE001
@@ -1899,6 +2048,7 @@ def _selftest() -> int:
           "dependency: missing/empty/bad-magic/valid + url cross-check; gate timestamp: "
           "no-track/in-window/short-talk; copy content; prompt band + content-gate "
           "pass/zero-content-refuse/wireframe-refuse; HTML content + gate markup + "
+          "gate-form consent (2 statements unchecked + required + branded gate) + "
           "ghl_rest_canvas.html_fragment/new_page_blob/funnel_create/step_create/"
           "page_autosave (all offline, no session); push plan own-funnel/shared-funnel "
           "branches; shared-funnel-id resolution; receipt absent/placeholder/real; "
