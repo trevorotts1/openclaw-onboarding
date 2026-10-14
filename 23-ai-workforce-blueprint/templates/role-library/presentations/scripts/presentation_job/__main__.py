@@ -608,6 +608,14 @@ def cmd_status(args) -> int:
     if undelivered:
         print(f"UNDELIVERABLE messages: {len(undelivered)} "
               "(the requester was NOT told — see F2)")
+    # Item 9(e): dead-lettered notifications are part of the run's report,
+    # not a jsonl a human has to know to grep -- same one-line surfacing as
+    # the undeliverable queue above, and the watchdog reports the count on
+    # its normal cadence as well.
+    dead_lettered = st.get("dead_letter")
+    if dead_lettered:
+        print(f"DEAD-LETTERED messages: {len(dead_lettered)} "
+              "(the requester was NOT told -- see state['dead_letter'])")
     return EXIT_OK
 
 
