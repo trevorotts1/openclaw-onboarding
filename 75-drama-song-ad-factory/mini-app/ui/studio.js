@@ -412,7 +412,7 @@ function pageQuestions() {
     ]));
   }
   if (chosen && isFreeTextOption(chosen)) {
-    fieldset.append(answerBox(state.texts[i] || "", (v) => { state.texts[i] = v; }));
+    fieldset.append(answerBox(state.texts[i] || "", (v) => { state.texts[i] = v; }, q));
   }
 
   return [
