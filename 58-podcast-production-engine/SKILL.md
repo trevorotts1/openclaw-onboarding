@@ -781,8 +781,10 @@ value.
 The resolver never guesses a channel id and never borrows the other show's
 channel: when the mode's channel env var is absent it refuses, naming the
 exact missing variable (a provisioning defect to fix, never something the
-engine works around). A podcast_id already carried on the payload wins
-as-is, which is how the controller hands its own resolution through.
+engine works around). Step 15 runs podbean_publish.sh --mode <mode>
+--show-name <show>, which resolves the channel from the box env by mode
+after loading the box secrets. A podcast_id carried on the intake payload
+is never used for routing.
 Provisioning (provision-podcast-client.sh, STEP 5.5 two-show channel
 capture) records both channel ids in the provision ledger and prints the
 box-side env contract for the operator to apply; it never invents a channel
