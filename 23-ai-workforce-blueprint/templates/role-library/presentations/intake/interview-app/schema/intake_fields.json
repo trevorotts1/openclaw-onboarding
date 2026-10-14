@@ -180,7 +180,10 @@
       "required": true,
       "block_gate": true,
       "allowed_values": null,
-      "legacy_aliases": []
+      "legacy_aliases": [
+        "deck_brief.SALES_CHECKOUT_DECLINED_REASON",
+        "SALES_CHECKOUT_DECLINED_REASON"
+      ]
     },
     {
       "id": "want_vsl_page",
@@ -206,7 +209,10 @@
       "required": true,
       "block_gate": true,
       "allowed_values": null,
-      "legacy_aliases": []
+      "legacy_aliases": [
+        "deck_brief.VSL_PAGE_DECLINED_REASON",
+        "VSL_PAGE_DECLINED_REASON"
+      ]
     },
     {
       "id": "run_mode",
