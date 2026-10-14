@@ -8,10 +8,12 @@
 // tests). Both are GENERATED here from schema/intake_fields.js — the UI never
 // restates a field path, so form and validators cannot drift.
 //
-// PRES-005 DISJOINT-OWNERSHIP NOTE: deployed-r2/public/index.html is owned by
-// PRES-005 and deliberately NOT regenerated here — its capability-session UI
-// fetches questions from the server (no embedded block), so there is nothing
-// for this generator to splice.
+// DISJOINT-OWNERSHIP NOTE: deployed-r2/public/index.html is deliberately NOT
+// regenerated here. As of the FIX-PLAN Item 13/14 reconciliation it is the
+// deployed copy of pages/index.html (byte-identical; the guard workflow's
+// cmp step enforces the identity), so it carries the same generated block
+// this tool splices into pages/index.html. Sync it by copying the
+// regenerated pages/index.html, never by editing it in place.
 //
 // Usage:
 //   node tools/gen_ui_questions.mjs --check     # exit 1 when generated != on disk

@@ -6,9 +6,11 @@
 > **`../intake/interview-app/`**, not this directory. Specifically —
 > the deployed working copy's `intake_bridge.py` is a 19-line diff from
 > `interview-app/bridge/intake_bridge.py` vs a 413-line diff from this
-> directory's `bridge/intake_bridge.py`; `interview-app/README.md` names the
-> deployed working copy as its own; and `DEPARTMENT-COUNTS-CANONICAL.md`
-> cites `interview-app/` as "the deployed interview app." Full evidence in
+> directory's `bridge/intake_bridge.py`; and `interview-app/README.md` names
+> the deployed working copy as its own. (An earlier version of this banner
+> also cited `DEPARTMENT-COUNTS-CANONICAL.md` as naming interview-app the
+> deployed app; that document contains no mention of interview-app, and
+> the citation has been removed as part of FIX-PLAN Item 14.) Full evidence in
 > `../intake/interview-app/README.md`'s "D2/D3 reconciliation" section and
 > `../intake/interview-app/deployed-r2/README.md`.
 >
@@ -20,8 +22,9 @@
 > `../intake/interview-app/deployed-r2/`, so nothing here is at risk of being
 > lost if this directory is later removed.
 
-The **primary intake surface** for a deck run: a hosted, one-question-per-screen
-web form. Chat (the §3 `deck-intake-driver.py` turn-gate) remains the fallback.
+The **deprecated predecessor** of the live interview app (see the banner
+above): a hosted, one-question-per-screen web form. Chat (the §3
+`deck-intake-driver.py` turn-gate) remains the fallback.
 
 ## Why it exists
 
