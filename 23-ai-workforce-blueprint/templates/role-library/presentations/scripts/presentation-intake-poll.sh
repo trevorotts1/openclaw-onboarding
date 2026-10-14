@@ -1349,7 +1349,22 @@ for phase_id, cap in router.PHASE_CAPABILITY.items():
                 PREFLIGHT_RC=$ULTRA_CHECK_RC
             fi
         fi
-        if [ -n "${RUN_MODE:-}" ]; then
+        # FIX 61.4 TERMINALITY: a REFUSED verdict from the ultra checks above
+        # is TERMINAL for this launch attempt. This block therefore runs ONLY
+        # while no refusal stands (PREFLIGHT_RC still 0). It used to run
+        # unconditionally whenever RUN_MODE was set, and its
+        # `PREFLIGHT_RC=${PIPESTATUS[0]}` below overwrote the ultra refusal:
+        # a run the FIX 61.4 validation had just refused (unknown or retired
+        # OpenRouter model, or a non-mechanical phase with no route) was
+        # launched anyway whenever the standalone credit preflight passed --
+        # the validation silently never validated -- and the run was counted
+        # REFUSED above and then launched, breaking the
+        # seen == launched + refused + skips tally; when the preflight ALSO
+        # refused, the same run was counted refused TWICE. The first refusal
+        # now stands alone: logged with its reason, counted once, and the
+        # create guard below (keyed on this same PREFLIGHT_RC) never starts
+        # the engine.
+        if [ -n "${RUN_MODE:-}" ] && [ "$PREFLIGHT_RC" -eq 0 ]; then
             ( cd "$SCRIPTS_DIR" && python3 -m presentation_job.credit_preflight \
                 --run-dir "$run_dir" --mode "$RUN_MODE" ) 2>&1 | while IFS= read -r line; do
                 log "  [credit-preflight] $line"
