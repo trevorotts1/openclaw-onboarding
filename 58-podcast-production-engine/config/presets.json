@@ -77,8 +77,8 @@
       "derives_default_from_mode": true,
       "description": "Full episode run minus the book teaser and minus workflow enrollment; the client's own weekly episode in their own cloned voice. The running episode spreadsheet is updated instead of any customer messaging.",
       "pipeline": {
-        "steps_run": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18],
-        "steps_skipped": [13]
+        "steps_run": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 17, 18],
+        "steps_skipped": [13, 16]
       },
       "flags": {
         "research_stage": true,
@@ -86,7 +86,7 @@
         "publish_podbean": true,
         "book_teaser": false,
         "store_media": true,
-        "link_back": true,
+        "link_back": false,
         "workflow_enrollment": false,
         "running_spreadsheet_update": true,
         "requires_existing_episode": false,

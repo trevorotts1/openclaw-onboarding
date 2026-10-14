@@ -1,12 +1,13 @@
 # QC Checklist: GHL Install Pages
 
 ## 1. Purpose
-This checklist verifies install + readiness for deploying finished HTML pages into Convert and Flow / GHL funnels or websites. PRIMARY lane = **agent-browser** (Skill 03) routed through the mandatory `tools/browser_manager.sh` gateway, classified by the capability probe. Self-hosted Playwright is the **FALLBACK lane only** (known-hard flows, e.g. cross-origin iframe drag) — never the primary, never install Step 1.
+This checklist verifies install + readiness for deploying finished HTML pages into Convert and Flow / GHL funnels or websites. PRIMARY lane = the **OpenClaw Chrome extension** (the OpenClaw browser's extension driver on the operator's paired signed-in Chrome), classified by the capability probe and gated by the extension version preflight. FALLBACK lane = **agent-browser** (Skill 03) routed through the mandatory `tools/browser_manager.sh` gateway. Self-hosted Playwright is the **escape hatch only** (known-hard flows, e.g. cross-origin iframe drag), never the primary.
 
 ## 2. Installation Checks
 - [ ] Skill folder exists and contains `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, the full reference `.md`, and the `.skill` package.
-- [ ] agent-browser (Skill 03, PRIMARY engine) is installed and matches the repo pin **0.27.0** (`tools/gates.json` → `agent_browser_version_pin`; drift only via the documented `GHL_AB_ALLOW_VERSION_DRIFT=1` / `GHL_AB_PINNED_VERSION` overrides).
-- [ ] The mandatory gateway `tools/browser_manager.sh` (+ `tools/browser_manager.py`) is present — agent-browser is NEVER invoked directly; every call goes through the gateway.
+- [ ] OpenClaw Chrome extension (PRIMARY engine) is installed in the operator's Chrome and CURRENT: `bash scripts/check-openclaw-extension-version.sh` exits 0.
+- [ ] agent-browser (Skill 03, FALLBACK engine) is installed and matches the repo pin **0.27.0** (`tools/gates.json` → `agent_browser_version_pin`; drift only via the documented `GHL_AB_ALLOW_VERSION_DRIFT=1` / `GHL_AB_PINNED_VERSION` overrides).
+- [ ] The mandatory gateway `tools/browser_manager.sh` (+ `tools/browser_manager.py`) is present — on the fallback lane agent-browser is NEVER invoked directly; every call goes through the gateway.
 - [ ] The credential store exists at the documented location (`~/.openclaw/secrets/.env`).
 - [ ] No standalone script in the skill folder is required; if a local deployment helper was created, confirm it is executable.
 
@@ -26,7 +27,7 @@ This checklist verifies install + readiness for deploying finished HTML pages in
 - [ ] QC fails if the agent hardcodes credentials into a script or ignores an existing reusable session.
 
 ## 5. Functional Checks
-- [ ] Capability probe JSON exists with `selectedLane` non-null naming an available lane, AND at least one browser lane is real: agent-browser present via `browser_manager.sh` OR the OpenClaw managed-browser lane OK.
+- [ ] Capability probe JSON exists with `selectedLane` non-null naming an available lane, AND at least one browser lane is real: the OpenClaw Chrome extension lane OK (PRIMARY) OR agent-browser present via `browser_manager.sh` (fallback).
 - [ ] **NO FALSE GREEN: QC cannot pass with zero browser lanes.** `selectedLane == null` (no lane available) is a hard QC FAIL — an assert, never a warning.
 - [ ] `bash tools/browser_manager.sh ensure` succeeds for the selected lane and the singleton session starts and tears down clean (direct `agent-browser` invocation = FAIL).
 - [ ] Open the GHL dashboard and confirm the agent checks the current sub-account before editing any page.

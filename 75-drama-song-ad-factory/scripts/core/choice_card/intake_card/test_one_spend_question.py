@@ -19,7 +19,8 @@ import intake as I  # noqa: E402
 MONEY = re.compile(r"spend|budget|cost|price|\$|dollar", re.I)
 N = len(IC.QUESTIONS)
 SPEND_AT = [q["id"] for q in IC.QUESTIONS].index("spend")
-BEFORE = ["1"] * SPEND_AT
+#: the answers that come before BUDGET -- the story brief is typed, the choices picked
+BEFORE = IC.example_replies()[:SPEND_AT]
 
 
 def _qs(price=None, limit=None):
@@ -82,7 +83,7 @@ def test_no_reply_means_no_spend():
 
 
 def test_recap_shows_the_limit():
-    full = ["1"] * N
+    full = IC.example_replies()
     full[SPEND_AT] = "1"
     recap = IC.conversation(full, _qs(18.5, 25))["message"]
     assert "Budget: up to $25.00" in recap, recap
@@ -127,8 +128,8 @@ def QUESTION_TEXT():
 
 
 def test_recap_line_exact():
-    recap = IC.conversation(["1"] * N, _qs(18.5, 25))["message"]
-    assert "6. Budget: up to $25.00\n" in recap and "Spend" not in recap, recap
+    recap = IC.conversation(IC.example_replies(), _qs(18.5, 25))["message"]
+    assert "%d. Budget: up to $25.00\n" % (SPEND_AT + 1) in recap and "Spend" not in recap, recap
 
 
 def _factory(*args):

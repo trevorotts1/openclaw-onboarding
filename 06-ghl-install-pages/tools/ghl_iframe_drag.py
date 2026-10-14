@@ -11,7 +11,7 @@ inside a CROSS-ORIGIN iframe embedded in the ``app.convertandflow.com`` shell:
   • Surveys → ``leadgen-apps-form-survey-builder.leadconnectorhq.com/survey-builder-v2/<id>``
   • Pages   → ``page-builder.leadconnectorhq.com`` (Quick-Add "Code" tile; gates.json)
 
-``agent-browser`` (the Skill-6 PRIMARY engine, v0.27.0) auto-inlines the iframe's
+``agent-browser`` (the Skill-6 fallback-lane engine, v0.27.0) auto-inlines the iframe's
 ACCESSIBILITY tree into a top-frame snapshot and gives CDP ``@ref``s to real
 interactive ARIA leaves (buttons / textboxes / links / menuitems) — those work.
 But the drag-SOURCE tiles (Quick-Add field tiles, Add-Object-Field rows) are
@@ -28,7 +28,7 @@ re-verified against a two-origin fixture during this fix:
     0.27.0 has NO working frame-scoping primitive for LOCATING or DRAGGING a
     non-interactive element inside a cross-origin child frame.
 
-THE FIX (hybrid: agent-browser PRIMARY, Playwright for JUST the drag)
+THE FIX (hybrid lane: agent-browser + Playwright for JUST the drag)
 ---------------------------------------------------------------------
 This is NOT a "drag is unsupported" problem — it is a "cannot LOCATE the source
 across a cross-origin iframe" problem. Playwright solves exactly that with

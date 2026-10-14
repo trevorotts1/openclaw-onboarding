@@ -30,6 +30,29 @@
 #   8. The update lock is ALWAYS released and the script's own exit status
 #      is kept, even when the stash cleanup itself fails (rm refused), on
 #      both the exit path and the normal path, and the log names the stash.
+#   9. EXCEPTION to 4 (the 2026-10 field-map wound): 59's
+#      config/field-map.json is stamped IN PLACE by the provisioner
+#      (anthology_registry.py provision-fields writes field_key / field_id /
+#      verified_at / location_masked) while the repo ships the pristine
+#      template. A STAMPED box copy survives the update BYTE-IDENTICAL
+#      (oc_skill_box_state_overrides_shipped puts it back over the shipped
+#      template), and template-state boxes are unaffected: a fresh box gets
+#      the shipped template, an already-template box keeps valid template
+#      state. Every other path keeps contract 4.
+#  10. THE CONTENT GATE MUST AGREE WITH 9. Putting the stamped copy back over
+#      the shipped template made DEST bytes differ from SRC bytes on every
+#      provisioned box, so the A2.5 early content-gate aborted the roll before
+#      any sentinel was written (live roll fleet-roll-20261014-063709:
+#        59-anthology-engine: expected=5510a154... found=4c570d46...
+#        A2.5 EARLY CONTENT-GATE FAILED ... No version stamp has been written.).
+#      scripts/skill-content-hash.sh therefore waives a field-map.json that is
+#      in one of skill 59's TWO LEGAL states -- shipped TEMPLATE, or fully
+#      STAMPED -- and only those. A HALF-stamp, a drifted field_key, a blank
+#      field_id, a row count that drifted from provisioning.total_keys or
+#      unparseable JSON stays IN SCOPE and still fails the gate, so the waiver
+#      costs no discrimination. Proven three ways: stamped PASSES, template
+#      PASSES, each corruption FAILS, and the pre-fix hasher (the field-map
+#      arm neutralised) reproduces the live MISMATCH on the very same tree.
 #
 # METHOD. The wipe+copy step is EXTRACTED VERBATIM from the updater's skill
 # install loop (between the "# Remove old version if exists." anchor and the
@@ -196,6 +219,78 @@ else
   bad "stale box state overwrote a shipped file"
 fi
 
+# --- 9. the field-map exception (the 2026-10 every-roll wipe) -----------------
+# The provisioner stamps 59's config/field-map.json IN PLACE (38 rows:
+# field_key, field_id, verified_at, location_masked -> values) while the repo
+# ships the pristine template (all four null). Before the fix every roll
+# re-templated the stamped copy and verify-fields exited 1 until re-stamped.
+FM_REL="config/field-map.json"
+stamp_field_map() {  # $1 = a field-map.json path; stamps it like the provisioner
+  python3 - "$1" <<'PY'
+import json, sys
+p = sys.argv[1]
+fm = json.load(open(p))
+for i, item in enumerate(fm["provisioning"]["fields"]):
+    item["field_key"] = item["intended_key"]
+    item["field_id"] = 90000 + i
+    item["verified_at"] = "2026-10-14T00:00:00Z"
+    item["location_masked"] = "••••4242"
+with open(p, "w") as fh:
+    json.dump(fm, fh, indent=2, sort_keys=True)
+PY
+}
+
+hdr "a STAMPED field-map.json survives the update byte-identical"
+BOXF="$WORK/boxf"; new_box "$BOXF"
+stamp_field_map "$BOXF/skills/$SKILL/$FM_REL"
+cp "$BOXF/skills/$SKILL/$FM_REL" "$WORK/field-map-stamped-want"
+rm -rf "$TMPDIR"/oc-skill-box-state.*
+simulate_update "$BOXF" "$RELEASE"
+if cmp -s "$WORK/field-map-stamped-want" "$BOXF/skills/$SKILL/$FM_REL"; then
+  ok "stamped field-map survived the copy pass byte-identical"
+else
+  bad "stamped field-map was re-templated by the update"
+fi
+if cmp -s "$RELEASE/$SKILL/$FM_REL" "$BOXF/skills/$SKILL/$FM_REL"; then
+  bad "field-map equals the shipped pristine template -- the stamp was wiped"
+else
+  ok "field-map is the stamped box copy, not the shipped template"
+fi
+python3 - "$BOXF/skills/$SKILL/$FM_REL" <<'PY' \
+  && ok "all 38 rows still carry field_key/field_id/verified_at/location_masked" \
+  || bad "a stamped row lost its stamps"
+import json, sys
+rows = json.load(open(sys.argv[1]))["provisioning"]["fields"]
+assert len(rows) == 38, len(rows)
+for r in rows:
+    assert r["field_key"] and r["field_id"] and r["verified_at"] and r["location_masked"], r
+PY
+grep -qF "box state preserved over the shipped template: $SKILL/$FM_REL" "$WORK/sim.log" \
+  && ok "log names the override restore" || bad "no override-restore log line: $(tail -3 "$WORK/sim.log")"
+[ "$(stash_left)" = 0 ] && ok "no stash dir left after the field-map update" || bad "stash dir left"
+
+hdr "template-state field-map stays legal (fresh box and already-template box)"
+# Fresh box: no field-map on the box at all -- the shipped template simply lands.
+BOXG="$WORK/boxg"; new_box "$BOXG"; rm -f "$BOXG/skills/$SKILL/$FM_REL"
+rm -rf "$TMPDIR"/oc-skill-box-state.*
+simulate_update "$BOXG" "$RELEASE"
+cmp -s "$RELEASE/$SKILL/$FM_REL" "$BOXG/skills/$SKILL/$FM_REL" \
+  && ok "fresh box: shipped template installed unchanged" \
+  || bad "fresh box: shipped template did not land"
+# Already-template box: the update stays clean and the file stays template
+# state (all stamps null), exactly as before this fix.
+BOXH="$WORK/boxh"; new_box "$BOXH"
+rm -rf "$TMPDIR"/oc-skill-box-state.*
+simulate_update "$BOXH" "$RELEASE" || bad "template-state box update exited non-zero: $(tail -3 "$WORK/sim.log")"
+python3 - "$BOXH/skills/$SKILL/$FM_REL" <<'PY' \
+  && ok "template-state box: valid JSON, every stamp still null" \
+  || bad "template-state box: file is not template-state valid"
+import json, sys
+rows = json.load(open(sys.argv[1]))["provisioning"]["fields"]
+assert all(r["field_key"] is None and r["field_id"] is None for r in rows), "unexpected stamp on a template-state box"
+PY
+[ "$(stash_left)" = 0 ] && ok "no stash dir left (template-state box)" || bad "stash dir left (template-state box)"
+
 # --- 6. the stash is never orphaned when the run dies mid-step ----------------
 pinned_box() {  # $1 = box dir, installed with a pinned map
   new_box "$1"
@@ -277,6 +372,124 @@ stash_cleanup_case() {  # $1 = label, $2 = box, $3 = remover body, $4 = expected
 stash_cleanup_case "exit path: guard refuses" "$WORK/box7" 'exit 1' 1
 stash_cleanup_case "exit path: partial removal" "$WORK/box8" 'rm -f "$1/model-map.json"; exit 1' 1
 stash_cleanup_case "normal path" "$WORK/box9" '' 0
+
+# --- 10. the content gate agrees with the preservation contract ---------------
+# SRC is what the release ships (EXTRACTED_DIR); DEST is the box's skills dir
+# after the simulated update above, i.e. the release copy PLUS the preserved
+# box state. Same two trees the updater feeds to scripts/skill-content-hash.sh
+# for A2.5 and A3 -- that helper is the ONLY hasher in the updater (A2.5, A3
+# and the same-version content recheck all shell out to it, as do
+# scripts/verify-skills-complete.sh and 60-zhc's ews_baseline.py).
+HASH_TOOL="$REPO/scripts/skill-content-hash.sh"
+[ -f "$HASH_TOOL" ] || { echo "FATAL: $HASH_TOOL not found"; exit 2; }
+gt_src_root() { rm -rf "$1"; mkdir -p "$1"; cp -R "$RELEASE/$SKILL" "$1/"; }
+digest_of() { bash "$HASH_TOOL" "$1" 2>/dev/null | awk -F'|' -v n="$2" '$1==n {print $2; exit}'; }
+
+corrupt_field_map() {  # $1 = case, $2 = path. Leaves the file in a state that
+                       # is neither the template nor a complete stamp.
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+case, p = sys.argv[1], sys.argv[2]
+if case == "garbage":
+    open(p, "w").write("{ this is not json")
+    sys.exit(0)
+fm = json.load(open(p))
+rows = fm["provisioning"]["fields"]
+if case == "half-stamp":          # field_key stamped, field_id left null
+    rows[3]["field_id"] = None
+elif case == "row-deleted":       # count drifts from provisioning.total_keys
+    rows.pop()
+elif case == "drifted-key":       # stamped, but the key no longer equals intended_key
+    for i, r in enumerate(rows):
+        r["field_key"], r["field_id"] = "contact.wrong_key_%d" % i, "fid%d" % i
+elif case == "blank-field-id":    # stamped, but every field_id is blank
+    for r in rows:
+        r["field_key"], r["field_id"] = r["intended_key"], ""
+else:
+    raise SystemExit("unknown corruption case: %s" % case)
+json.dump(fm, open(p, "w"), indent=2, sort_keys=True)
+PY
+}
+
+GT_SRC="$WORK/gt-src"; gt_src_root "$GT_SRC"
+SRC_D="$(digest_of "$GT_SRC" "$SKILL")"
+[ -n "$SRC_D" ] || { echo "FATAL: skill-content-hash.sh produced no digest for $SKILL"; exit 2; }
+
+hdr "content gate: the preserved STAMPED field-map PASSES"
+D="$(digest_of "$BOXF/skills" "$SKILL")"
+if [ "$D" = "$SRC_D" ]; then
+  ok "stamped + preserved-over-shipped DEST digest == SRC digest (A2.5 passes)"
+else
+  bad "stamped field-map still fails the content gate: expected=$SRC_D found=$D"
+fi
+
+hdr "content gate: template-state boxes PASS"
+D="$(digest_of "$BOXH/skills" "$SKILL")"
+[ "$D" = "$SRC_D" ] && ok "already-template box digest == SRC digest" \
+                    || bad "template-state box fails the gate: expected=$SRC_D found=$D"
+D="$(digest_of "$BOXG/skills" "$SKILL")"
+[ "$D" = "$SRC_D" ] && ok "fresh box digest == SRC digest" \
+                    || bad "fresh box fails the gate: expected=$SRC_D found=$D"
+
+hdr "content gate: a genuinely corrupted preserved file still FAILS"
+FM_BOX="$BOXF/skills/$SKILL/$FM_REL"
+for _case in half-stamp row-deleted garbage drifted-key blank-field-id; do
+  corrupt_field_map "$_case" "$FM_BOX"
+  D="$(digest_of "$BOXF/skills" "$SKILL")"
+  if [ -n "$D" ] && [ "$D" != "$SRC_D" ]; then
+    ok "$_case: gate FAILS (discrimination kept)"
+  else
+    bad "$_case: gate PASSED on a corrupted preserved field-map"
+  fi
+  cp -p "$WORK/field-map-stamped-want" "$FM_BOX"   # put the legal stamp back
+done
+D="$(digest_of "$BOXF/skills" "$SKILL")"
+[ "$D" = "$SRC_D" ] && ok "restored stamped map passes again (the failures were the corruptions)" \
+                    || bad "restored stamped map no longer passes: expected=$SRC_D found=$D"
+
+hdr "control: the pre-fix hasher reproduces the live A2.5 failure"
+# Neutralise ONLY the field-map arm -- the pattern can never match, so the
+# file stays in scope exactly as it did before the fix. Everything else in the
+# helper is byte-identical, so this is the pre-fix instrument, not a rewrite.
+PREFIX_HASH="$WORK/skill-content-hash-prefix.sh"
+python3 - "$HASH_TOOL" "$PREFIX_HASH" <<'PY'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+t = open(src).read()
+needle = "    field-map.json)\n"
+assert t.count(needle) == 1, "field-map arm not found exactly once"
+open(dst, "w").write(t.replace(needle, "    no-exclude-field-map.json)\n"))
+PY
+bash -n "$PREFIX_HASH" || { echo "FATAL: control hasher does not parse"; exit 2; }
+cp -p "$WORK/field-map-stamped-want" "$FM_BOX"
+D="$(bash "$PREFIX_HASH" "$BOXF/skills" 2>/dev/null | awk -F'|' -v n="$SKILL" '$1==n {print $2; exit}')"
+if [ -n "$D" ] && [ "$D" != "$SRC_D" ]; then
+  ok "pre-fix control: expected=$SRC_D found=$D -> A2.5 would abort, stamp withheld"
+else
+  bad "pre-fix control did NOT reproduce the live mismatch (got: ${D:-<empty>})"
+fi
+D="$(bash "$PREFIX_HASH" "$GT_SRC" 2>/dev/null | awk -F'|' -v n="$SKILL" '$1==n {print $2; exit}')"
+D_T="$(bash "$PREFIX_HASH" "$BOXH/skills" 2>/dev/null | awk -F'|' -v n="$SKILL" '$1==n {print $2; exit}')"
+if [ -n "$D" ] && [ "$D" = "$D_T" ]; then
+  ok "control instrument is sound: pre-fix hasher agrees with itself on a template-state box"
+else
+  bad "control instrument broken (src=${D:-<empty>} template=${D_T:-<empty>}) — the mismatch above would prove nothing"
+fi
+
+hdr "control: the hasher can fail at all (a non-excluded file)"
+CTL_FILE="$(find "$BOXF/skills/$SKILL" -maxdepth 1 -type f -name '*.md' 2>/dev/null | LC_ALL=C sort | head -1)"
+[ -n "$CTL_FILE" ] || { echo "FATAL: no top-level .md in $SKILL to use as a control"; exit 2; }
+printf '\ncontrol-corruption\n' >> "$CTL_FILE"
+D="$(digest_of "$BOXF/skills" "$SKILL")"
+if [ -n "$D" ] && [ "$D" != "$SRC_D" ]; then
+  ok "corrupting a non-excluded shipped file fails the gate"
+else
+  bad "corrupting a non-excluded shipped file did NOT fail the gate (got: ${D:-<empty>})"
+fi
+cp -p "$GT_SRC/$SKILL/$(basename "$CTL_FILE")" "$CTL_FILE"
+D="$(digest_of "$BOXF/skills" "$SKILL")"
+[ "$D" = "$SRC_D" ] && ok "control file restored, gate passes again" \
+                    || bad "control file restore failed: expected=$SRC_D found=$D"
 
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

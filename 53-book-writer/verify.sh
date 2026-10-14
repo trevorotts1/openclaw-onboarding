@@ -22,6 +22,8 @@
 #
 # Usage:  bash 53-book-writer/verify.sh            (full gate)
 #         bash 53-book-writer/verify.sh --mini-app (mini-app gate ONLY — the U20 gate)
+#         bash 53-book-writer/verify.sh stamp-pin  (re-mint ENGINE-PIN.sha256;
+#                                                   update-skills.sh runs this after each copy)
 # Exit:   0 = all runnable checks passed;  nonzero = at least one check failed.
 # ==============================================================================
 set -uo pipefail
@@ -43,6 +45,46 @@ EX="$SKILL_DIR/examples/golden-marcus-halloway"
 EBV="$EX/broken-variants"
 PY="${PYTHON:-python3}"
 NODE="${NODE:-node}"
+
+# -- stamp-pin: recompute the enforcement-set hash and write ENGINE-PIN.sha256.
+# update-skills.sh calls this after every skill copy so a box never lands with a
+# stale pin (the entry's AF-BK-HASH-PIN refuses a mismatch). Single source of
+# truth: the SAME list, framing and digests the prover uses (prove_bw_process
+# ENFORCE_FILES + _framed_digest / legacy concat), so this can never drift from
+# the gate it feeds. Keeps the shipped framing (v2 header vs bare hex); a missing
+# enforcement file is a hard exit 4 (never mint a pin over an absent file).
+if [ "${1:-}" = "stamp-pin" ]; then
+    if ! "$PY" - "$SCRIPTS" "$SKILL_DIR" <<'PY'
+import hashlib, os, sys
+scripts, skill_dir = sys.argv[1], sys.argv[2]
+sys.path.insert(0, scripts)
+import prove_bw_process as m
+missing = [rel for rel in m.ENFORCE_FILES
+           if not os.path.isfile(os.path.join(skill_dir, rel))]
+if missing:
+    sys.stderr.write("verify stamp-pin: missing enforcement candidate %s\n" % missing[0])
+    sys.exit(4)
+files = m._enforce_files_bytes(skill_dir)
+pinfile = os.path.join(skill_dir, "ENGINE-PIN.sha256")
+framing_v2 = True
+if os.path.isfile(pinfile):
+    first = open(pinfile, encoding="utf-8").read().split("\n", 1)[0].strip()
+    framing_v2 = (first == "framing: v2")
+if framing_v2:
+    digest = m._framed_digest(files)
+    body = "framing: v2\n%s\n" % digest
+else:
+    digest = hashlib.sha256(b"".join(d for _n, d in files)).hexdigest()
+    body = "%s\n" % digest
+with open(pinfile, "w", encoding="utf-8") as fh:
+    fh.write(body)
+print("verify stamp-pin: ENGINE-PIN.sha256 written (%s)" % digest)
+PY
+    then
+        exit 4
+    fi
+    exit 0
+fi
 
 # MODE selection: full (default) runs every section including the mini-app gate;
 # --mini-app runs ONLY the mini-app gate (isolation prover + worker node --test

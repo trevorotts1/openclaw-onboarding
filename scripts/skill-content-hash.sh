@@ -48,6 +48,60 @@ _hash_stdin() {
 }
 
 # ----------------------------------------------------------
+# _field_map_legal PATH — exit 0 when a config/field-map.json is in one of
+# skill 59's two LEGAL disk states (shipped TEMPLATE, or fully STAMPED by the
+# provisioner), 1 when it is neither.
+#
+# It re-states — it does not import — the template-shape law that
+# 59-anthology-engine/scripts/anthology_registry.py self_test already enforces
+# ("the two legal disk states ... a HALF-stamp, a drifted field_key or a blank
+# field_id is never legal"), plus the row count pinned by
+# provisioning.total_keys. Keeping the two definitions in agreement is what
+# makes the exclusion safe: a box that passes skill 59's own self-test can
+# never be judged illegal here, so this gate cannot withhold a stamp that the
+# skill itself would accept.
+#
+# Nothing is written to stdout (this runs inside the manifest's stdout path).
+# python3 absent -> exit 0 (out of scope): the first duty of this gate is to
+# never withhold the stamp fleet-wide over a file another verifier owns.
+# ----------------------------------------------------------
+_field_map_legal() {
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 - "$1" <<'PY' 2>/dev/null
+import json, sys
+
+_MISSING = object()
+
+try:
+    fm = json.load(open(sys.argv[1], encoding="utf-8"))
+    prov = fm["provisioning"]
+    rows = prov["fields"]
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("no rows")
+    total = prov.get("total_keys")
+    if isinstance(total, int) and len(rows) != total:
+        raise ValueError("row count drifted from provisioning.total_keys")
+    for r in rows:
+        if not isinstance(r, dict):
+            raise ValueError("row is not an object")
+        fk = r.get("field_key", _MISSING)
+        fid = r.get("field_id", _MISSING)
+        if fk is _MISSING or fid is _MISSING:
+            raise ValueError("stamp key missing")
+        if fk is None and fid is None:
+            continue                      # the shipped TEMPLATE state
+        if not isinstance(fk, str) or not fk or not fid:
+            raise ValueError("half-stamp or blank stamp")
+        intended = r.get("intended_key")
+        if intended is not None and fk != intended:
+            raise ValueError("drifted field_key")
+except Exception:
+    sys.exit(1)
+sys.exit(0)
+PY
+}
+
+# ----------------------------------------------------------
 # Volatile / local-only files to exclude from content hash.
 #
 # A3 HASH-RACE FIX (v12.39.0): install-time post-processors (hash-content-manifest.py,
@@ -106,6 +160,36 @@ _should_exclude() {
     # class as the */OpenMontage/*, */node_modules/*, and */working/* exclusions.
     model-map.json)
       return 0 ;;
+    # A2.5 EARLY CONTENT-GATE FIX (sibling to PR #2041): the updater's
+    # box-state allow-list now puts the box's STAMPED
+    # 59-anthology-engine/config/field-map.json back OVER the shipped template
+    # on every roll (anthology_registry.py provision-fields writes field_key /
+    # field_id / verified_at / location_masked into it in place). The release
+    # ships the pristine TEMPLATE (every resolved slot null), so on any
+    # provisioned box DEST bytes could never equal SRC bytes and A2.5/A3
+    # withheld the version stamp deterministically (live roll
+    # fleet-roll-20261014-063709:
+    #   59-anthology-engine: expected=5510a154... found=4c570d46...
+    #   A2.5 EARLY CONTENT-GATE FAILED ... No version stamp has been written.).
+    # Same class and same basename-scoping style as model-map.json above; one
+    # fix here covers every consumer of this helper (update-skills.sh A2.5,
+    # A3 and the same-version content recheck, scripts/verify-skills-complete.sh,
+    # 60-zhc-early-warning-system/scripts/ews_baseline.py), because they all
+    # shell out to this single script.
+    #
+    # ONLY A LEGAL MAP IS OUT OF SCOPE. A HALF-stamp, a drifted field_key, a
+    # blank field_id, a row count that drifted from provisioning.total_keys or
+    # unparseable JSON is neither legal state, so it stays IN SCOPE and a
+    # genuinely corrupted preserved copy still fails this gate — discrimination
+    # is kept, only the two states the skill itself calls legal are waived.
+    # The waived states keep their own enforcement (verify-fields,
+    # anthology_registry self_test, qc-snapshot-fixture.sh), exactly as
+    # preflight.sh --check owns model-map.json's.
+    field-map.json)
+      if _field_map_legal "$f"; then
+        return 0
+      fi
+      return 1 ;;
     # A3 INSTALL-NOTE FIX: the installers of 48-facebook-ad-generator
     # (install.sh -> kie_install_note.py) and 59-anthology-engine (install.sh)
     # write an install-status.txt note INTO the installed skill dir at install

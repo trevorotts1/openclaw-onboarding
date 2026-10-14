@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fixture: keyless search results page (html endpoint)</title>
+  <style>body { font: 16px sans-serif; }</style>
+</head>
+<body class="serp">
+  <div class="serp__header">
+    <a class="header__logo" href="/">Fixture home</a>
+    <form action="/html/"><input name="q" value="sample"></form>
+  </div>
+  <div class="results">
+    <div class="result results_links deep_r1">
+      <h2 class="result__title">
+        <a rel="nofollow" class="result__a"
+           href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.invalid%2Fback-pain-guide&amp;rut=aaa">Back pain guide for adults</a>
+      </h2>
+      <a class="result__snippet">A plain-language guide to evening routines.</a>
+    </div>
+    <div class="result results_links deep_r1">
+      <h2 class="result__title">
+        <a rel="nofollow" class="result__a" href="https://docs.example.org/guide">Documentation index</a>
+      </h2>
+    </div>
+    <!-- ordinary site navigation, not a result: must be ignored -->
+    <a href="/html/?q=navigation-only">Navigation</a>
+    <a href="https://tracker.example.net/pixel">tracker</a>
+    <div class="result">
+      <a class="result__a" href="javascript:void(0)">scripted link</a>
+      <a class="result__a" href="mailto:sales@example.invalid">mail link</a>
+      <a class="result__a" href="https://html.duckduckgo.com/html/?q=self-link">self link</a>
+      <a class="result__a" href="https://cdn.example.org/logo.png">asset link</a>
+    </div>
+    <div class="result results_links deep_r1">
+      <h2 class="result__title">
+        <a rel="nofollow" class="result__a"
+           href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.invalid%2Fsleep-and-stress&amp;rut=bbb">Sleep and stress</a>
+      </h2>
+    </div>
+    <div class="result results_links deep_r1">
+      <h2 class="result__title">
+        <a rel="nofollow" class="result__a"
+           href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.invalid%2Fsleep-and-stress%23top&amp;rut=ccc">Sleep and stress (anchor repeat)</a>
+      </h2>
+    </div>
+  </div>
+</body>
+</html>

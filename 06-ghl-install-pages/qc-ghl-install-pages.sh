@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Skill 06 — GHL Install Pages — Install QC (agent-browser PRIMARY + Playwright FALLBACK + GHL auth)
+# Skill 06 — GHL Install Pages — Install QC (OpenClaw Chrome extension PRIMARY + agent-browser FALLBACK lane + Playwright escape hatch + GHL auth)
 set -u
 PASS=0; FAIL=0; WARN=0
 SKILL_DIR="$(dirname "$0")"
@@ -104,12 +104,20 @@ warn_only "GHL manual-only login password set (operator last resort, optional)" 
 assert "Secrets file chmod 600"         "[ \"\$(stat -c %a \"$SECRETS_ENV\" 2>/dev/null || stat -f %A \"$SECRETS_ENV\" 2>/dev/null)\" = '600' ]"
 assert "Node.js installed" "command -v node"
 assert "npm installed" "command -v npm"
-# Plan 2.2: fail closed when zero browser lanes — agent-browser (PRIMARY lane 1,
-# with its Mac npm-global fallback path) is now a hard assert.
-assert "agent-browser installed (PRIMARY engine)" "command -v agent-browser || [ -x \"$HOME/.npm-global/bin/agent-browser\" ]"
-# Playwright stays warn_only — it is the FALLBACK lane (D7-adjacent doctrine;
-# SKILL.md: known-hard flows only), so its absence degrades but must not fail QC.
-warn_only "Playwright installed (FALLBACK)"   "npm list -g playwright 2>/dev/null | grep -q playwright || npm list playwright 2>/dev/null | grep -q playwright || command -v playwright"
+# Engine order (2026-10-13): the OpenClaw Chrome extension is the PRIMARY
+# engine. Its version preflight is warn_only HERE because a fallback-lane-only
+# install is valid (INSTALL.md rule: the extension lane is not an install
+# gate); the hard stop lives at run time — the capability probe will not
+# select Lane 1 unless the extension is installed and current.
+warn_only "OpenClaw Chrome extension installed + current (PRIMARY engine)" "bash \"$SKILL_DIR/scripts/check-openclaw-extension-version.sh\" >/dev/null 2>&1"
+# Plan 2.2: fail closed when zero browser lanes — agent-browser (FALLBACK
+# lane 2, with its Mac npm-global fallback path) stays a hard assert: without
+# it, a host whose extension lane is unavailable has no full browser lane.
+assert "agent-browser installed (FALLBACK engine)" "command -v agent-browser || [ -x \"$HOME/.npm-global/bin/agent-browser\" ]"
+# Playwright stays warn_only — it is the escape-hatch lane (D7-adjacent
+# doctrine; SKILL.md: known-hard flows only), so its absence degrades but
+# must not fail QC.
+warn_only "Playwright installed (escape hatch)"   "npm list -g playwright 2>/dev/null | grep -q playwright || npm list playwright 2>/dev/null | grep -q playwright || command -v playwright"
 # Plan 2.4-1: the Firebase refresh token is the ONLY unattended auth path
 # (TOKEN-ONLY doctrine) — now a hard assert. CAF_FIREBASE_REFRESH_TOKEN stays as
 # a legacy-compat alias in this test string; it is NOT secret canon (the
