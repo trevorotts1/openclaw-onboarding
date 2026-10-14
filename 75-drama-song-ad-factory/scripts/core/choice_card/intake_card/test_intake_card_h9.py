@@ -23,20 +23,24 @@ def _blocks(text):
     return text.split("\n\n")
 
 
-def test_nine_questions_each_own_block():
-    assert N == 9
+def test_fourteen_questions_each_own_block():
+    assert N == 14                                  # five story brief + nine production choices
     blocks = _blocks(CARD)
-    assert len(blocks) == N + 1                       # nine questions + closing
+    assert len(blocks) == N + 1                       # fourteen questions + closing
     for i, b in enumerate(blocks[:N], 1):
         first = b.split("\n")[0]
         assert first.startswith("Question %d of %d - " % (i, N)), first
     labels = [b.split("\n")[0].split(" - ")[1] for b in blocks[:N]]
-    assert labels == ["AI MODELS", "LENGTH", "MUSIC STYLE", "VIDEO STYLE", "VIDEO MODEL",
+    assert labels == ["OFFER", "OFFER LINK", "AUDIENCE", "CHARACTER", "PHOTOS",
+                      "AI MODELS", "LENGTH", "MUSIC STYLE", "VIDEO STYLE", "VIDEO MODEL",
                       "BUDGET", "STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"]
 
 
 def test_each_option_on_its_own_numbered_line_recommended_marked():
     for q, b in zip(IC.QUESTIONS, _blocks(CARD)):
+        if q.get("free_text"):              # a brief block has no menu to number
+            assert b.split("\n")[-1] == IC.FREE_TEXT_HINT, b
+            continue
         lines = b.split("\n")
         opts = [l for l in lines[2:] if not l.startswith("   Watch: ")]   # sample links sit under their option
         assert len(opts) == len(q["options"])
@@ -52,7 +56,7 @@ def test_each_option_on_its_own_numbered_line_recommended_marked():
 
 def test_closing_line_last():
     assert _blocks(CARD)[-1] == IC._closing(IC.QUESTIONS)
-    assert CARD.startswith("Question 1 of 9")
+    assert CARD.startswith("Question 1 of 14")
 
 
 def test_no_markup_that_a_sender_could_strip():
@@ -61,16 +65,19 @@ def test_no_markup_that_a_sender_could_strip():
 
 def test_messages_under_limit_and_split_between_questions():
     one = IC.render_messages()
-    assert len(one) == 1 and one[0] == CARD
+    # fourteen questions no longer fit one Telegram message; they split only on
+    # the blank-line seams, so joining them back gives the whole card.
+    assert "\n\n".join(one) == CARD and all(len(m) <= IC.TELEGRAM_LIMIT for m in one)
     # 1000 not 400: the video question now carries five sample links (FU-STYLE-QUESTIONS)
     small = IC.render_messages(limit=1000)
     assert len(small) > 1
     assert all(len(m) <= 1000 for m in small)
     assert "\n\n".join(small) == CARD         # only blank-line seams were cut
     for m in small:                       # never starts a message mid-question
-        assert m.startswith("Question") or m == IC.CLOSING_LINE
+        assert m.startswith("Question") or m == IC._closing(IC.QUESTIONS)
     # a single oversize question still splits on line boundaries
-    big = [dict(IC.QUESTIONS[0], options=[("Opt %d" % i, "x" * 60) for i in range(80)])]
+    models = next(q for q in IC.QUESTIONS if q["id"] == "models")
+    big = [dict(models, options=[("Opt %d" % i, "x" * 60) for i in range(80)])]
     parts = IC.render_messages(big, limit=500)
     assert all(len(p) <= 500 for p in parts) and len(parts) > 1
 
@@ -117,10 +124,24 @@ def test_intake_question_message_uses_it():
 
 
 def test_closing_example_answer_count_matches_question_count():
-    for qs in (IC.QUESTIONS, IC.QUESTIONS[:-1] + [dict(IC.QUESTIONS[-1], recommended=None)],
-               IC.QUESTIONS + [IC.QUESTIONS[0]]):
+    # The "like a, a, a" example belongs to the all-choice card; a card with a
+    # typed question closes with its own sentence instead (see below).
+    choices = [q for q in IC.QUESTIONS if not q.get("free_text")]
+    for qs in (choices, choices[:-1] + [dict(choices[-1], recommended=None)],
+               choices + [choices[0]]):
         ex = re.search(r'like "([^"]+)"', IC._closing(qs)).group(1)
         assert len(ex.split(", ")) == len(qs)
+
+
+def test_a_card_with_typed_questions_closes_with_its_own_sentence():
+    closing = IC._closing(IC.QUESTIONS)
+    assert closing.startswith("How to answer: type your own words for Offer, Offer Link, "
+                               "Audience, Character, Photos"), closing
+    # the unpriced BUDGET has nothing to recommend, so the shortcut stays off
+    assert "all recommended" not in closing, closing
+    priced = [IC.spend_question(18.5) if q["id"] == "spend" else q for q in IC.QUESTIONS]
+    assert 'Say "all recommended"' in IC._closing(priced)
+    assert IC.CLOSING_LINE == IC._closing(IC.QUESTIONS)     # the exported line is the real one
 
 
 if __name__ == "__main__":
