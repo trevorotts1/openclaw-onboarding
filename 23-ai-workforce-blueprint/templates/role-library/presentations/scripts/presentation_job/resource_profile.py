@@ -2001,3 +2001,779 @@ def reconcile_profile(declarations: Dict[str, Any],
                 "write_error": f"{exc.__class__.__name__}: {exc}",
                 "changes": changed}
     return {"reconciled": True, "persisted": True, "changes": changed}
+
+
+# ---------------------------------------------------------------------------
+# FIX-PLAN Item 17: fleet shapes as first-class profile values, the
+# remembered system gauge, and the model-choice record.
+#
+# THREE additions, all additive (schema stays version 1; a profile written
+# before this section simply lacks the new keys, and every reader below
+# treats absence as "not recorded yet", never as a claim):
+#
+#   1. THE FLEET SHAPE (profile["fleet"]). The install's fleet shape is a
+#      first-class remembered value with the EXACT labels Trevor's fleet
+#      operates by -- fleet-mac, fleet-hostinger, fleet-contabo -- never
+#      renamed. It is remembered the way the existing profile answers are:
+#      asked ONCE, then locked (record_fleet_shape), and per decision D8
+#      it is an account-level fact that carries over between runs. What
+#      detection can settle on its own (fleet-mac on a Mac) is recorded as
+#      a DETECTED, refreshable value; what it cannot (a Linux container is
+#      fleet-hostinger OR fleet-contabo and nothing inside the container
+#      says which) stays unrecorded until the one question is answered --
+#      hardware_budget.detect_fleet_shape() returns the candidates and the
+#      evidence, and this section never guesses between them.
+#
+#   2. THE SYSTEM GAUGE (profile["system_gauge"]). Gauging results --
+#      MEASURED, from hardware_budget's snapshot and the capacity refresh
+#      -- persist into the profile with the measurement date, so a second
+#      run on the same box starts from measured truth instead of re-deriving
+#      (or worse, re-asserting) it. A gauge is trusted only while it is
+#      FRESH: gauge_status() reports missing / stale-age / shape-changed /
+#      hardware-changed / fresh, and a stale or superseded gauge is
+#      re-gauged, never trusted (record_system_gauge() overwrites it; the
+#      locked fleet-shape answer is never touched by a re-gauge).
+#
+#   3. THE MODEL-CHOICE RECORD (profile["model_choices"]). Per provider
+#      family, the profile records the client's SELECTED model or their
+#      CONFIGURED DEFAULT (owner decision 4, 2026-10-13: select-or-default),
+#      and separately every RECOMMENDATION the system showed, with its
+#      reason and the client's response (offered / accepted / declined --
+#      the record Item 18's honesty layer writes and Item 31's freshness
+#      check reads). A recommendation is recorded as a recommendation
+#      shown, NEVER as the selection: record_recommendation_shown() has
+#      no code path that writes the selection field, and
+#      effective_model_choice() reads the selection field only.
+#
+# Writers follow this module's store convention: hand a profile dict in
+# and it is mutated in place (the caller's transaction saves); omit it and
+# the function loads, writes and saves itself. All keys below were chosen
+# to survive redact_record() (no secret-named substring anywhere -- see
+# the KEY NAMING note on the model plan), and model_choices is a LIST of
+# per-family rows, never a dict keyed by family, so a family name can
+# never be dropped by the redaction filter either.
+# ---------------------------------------------------------------------------
+
+#: The fleet shapes, with Trevor's exact labels, in fleet order. Never
+#: renamed, never extended silently: a fourth shape is an owner decision.
+FLEET_SHAPES: tuple = ("fleet-mac", "fleet-hostinger", "fleet-contabo")
+
+#: The install-time declaration channel for the shape (an installer or the
+#: client states it once; the gauge records it as a declared answer). An
+#: invalid value is ignored and noted in the gauge, never recorded.
+FLEET_SHAPE_ENV = "PRESENTATION_FLEET_SHAPE"
+
+#: Per-shape gauging defaults: what the shape MEANS for gauging, derived
+#: from the code's existing per-environment behavior (hardware_budget's
+#: readers and capacity's account model), not invented numbers.
+#:   fleet-mac       -- native hardware read; live memory-pressure
+#:                      monitoring matters most here (the Mac has no
+#:                      cgroup to hide behind), so pressure is a live
+#:                      signal, re-read every run, never a stored number.
+#:                      The workflow expectation is Trevor's verified
+#:                      reference profile for the shape (Mac Mini M4,
+#:                      24 GB), recorded AS a reference -- it is an
+#:                      expectation to gauge against, never a cap any
+#:                      dispatch path consumes.
+#:   fleet-hostinger -- container limits (cgroup) ARE the box budget:
+#:                      single-tenant VPS, so no host ceiling is recorded
+#:                      (there is no shared host to slice from).
+#:   fleet-contabo   -- per-container budget under a SHARED host ceiling:
+#:                      the gauge records BOTH the container budget and
+#:                      the host ceiling it was sliced from, because
+#:                      sibling containers contend for the same host.
+#: Where the code cannot supply a shape's numbers (workflow expectations
+#: for the container shapes), the value is None -- unknown, gauged live --
+#: never an asserted number.
+FLEET_SHAPE_DEFAULTS: Dict[str, Dict[str, Any]] = {
+    "fleet-mac": {
+        "memory_model": "native-hardware",
+        "budget_derivation": ("native hardware read (total RAM, cores, "
+                              "live memory pressure)"),
+        "concurrency_posture": ("hardware-budget classes against the "
+                                "box's own RAM and cores"),
+        "pressure_monitoring": ("live: memory pressure is re-read every "
+                                "run on a Mac; a stored pressure reading "
+                                "is never trusted"),
+        "workflow_expectations": {
+            "reference_box": "Mac Mini M4, 24 GB",
+            "agents_per_workflow": 10,
+            "concurrent_workflows": 50,
+            "basis": ("owner reference profile (Trevor, verified): a "
+                      "reference to gauge against, not a dispatch cap"),
+        },
+    },
+    "fleet-hostinger": {
+        "memory_model": "container-cgroup",
+        "budget_derivation": ("container limits (cgroup memory.max / "
+                              "cpu.max) are the box budget"),
+        "concurrency_posture": ("hardware-budget classes against the "
+                                "container limit"),
+        "pressure_monitoring": ("cgroup pressure (PSI) where the host "
+                                "exposes it"),
+        "workflow_expectations": None,
+    },
+    "fleet-contabo": {
+        "memory_model": "container-under-shared-host",
+        "budget_derivation": ("per-container budget (cgroup) under a "
+                              "shared host ceiling; both recorded"),
+        "concurrency_posture": ("hardware-budget classes against the "
+                                "container limit; the host ceiling is "
+                                "recorded because sibling containers "
+                                "share it"),
+        "pressure_monitoring": ("cgroup pressure (PSI) where the host "
+                                "exposes it"),
+        "workflow_expectations": None,
+    },
+}
+
+#: The unknown-shape defaults block: every field says unknown, and the
+#: gauge's job is to measure live instead of asserting. Returned (as a
+#: copy) for an unrecorded or unrecognized shape.
+_UNKNOWN_SHAPE_DEFAULTS: Dict[str, Any] = {
+    "memory_model": "unknown",
+    "budget_derivation": ("unknown shape: budgets come from the live "
+                          "hardware reading alone"),
+    "concurrency_posture": "unknown: gauge live",
+    "pressure_monitoring": "unknown: gauge live",
+    "workflow_expectations": None,
+}
+
+
+def fleet_shape_defaults(shape: Optional[str]) -> Dict[str, Any]:
+    """The gauging defaults for one fleet shape (a copy). None or an
+    unrecognized label yields the honest unknown block -- this function
+    never asserts a shape's numbers the code cannot support."""
+    known = FLEET_SHAPE_DEFAULTS.get(shape or "")
+    if known is None:
+        return dict(_UNKNOWN_SHAPE_DEFAULTS)
+    out = dict(known)
+    if isinstance(out.get("workflow_expectations"), dict):
+        out["workflow_expectations"] = dict(out["workflow_expectations"])
+    return out
+
+
+def _hardware_module():
+    """The hardware_budget module, or None (partial deploy). Its readers
+    are the one definition of what this box measures; this section never
+    re-implements a reading."""
+    try:
+        from . import hardware_budget as _hb  # package-relative
+        return _hb
+    except ImportError:  # pragma: no cover - direct file run
+        try:
+            import hardware_budget as _hb  # type: ignore[no-redef]
+            return _hb
+        except ImportError:
+            return None
+
+
+def _fleet_record(profile: Dict[str, Any]) -> Dict[str, Any]:
+    rec = (profile or {}).get("fleet")
+    return rec if isinstance(rec, dict) else {}
+
+
+def fleet_shape(profile: Optional[Dict[str, Any]] = None,
+                config_dir: Optional[Path] = None) -> Optional[str]:
+    """The recorded fleet shape, or None when none is recorded. A recorded
+    shape is a statement (an answer or a certain detection); None means
+    the profile honestly does not know yet -- callers gauge live and, at
+    the install/gauge moment, ask the one question."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    shape = _fleet_record(prof).get("shape")
+    return shape if shape in FLEET_SHAPES else None
+
+
+def record_fleet_shape(shape: str, *, source: str = "interview",
+                       config_dir: Optional[Path] = None,
+                       profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """THE one fleet-shape answer -- persisted ONCE, then LOCKED, exactly
+    like record_plan_answer.
+
+    Raises ValueError on a label that is not one of the three fleet
+    shapes: the labels are Trevor's, exact, and never renamed, so a
+    near-miss spelling is refused rather than folded into a shape it is
+    not. The FIRST answer decides and locks; a later call with a
+    different shape is appended to the interview audit log
+    (interview["fleet_shape"]) as an explicit re-record and DOES update
+    the stored shape -- that later call is the operator/client action,
+    never something a probe or a gauge performs on its own (detection
+    refresh writes through record_system_gauge's detected path, which
+    never overwrites a locked record)."""
+    if shape not in FLEET_SHAPES:
+        raise ValueError(
+            f"refusing to record fleet shape {shape!r}: the fleet shapes "
+            f"are {list(FLEET_SHAPES)} (exact labels, never renamed)")
+    prof = profile if profile is not None else load_profile(config_dir)
+    existing = _fleet_record(prof)
+    record = dict(existing)
+    record["shape"] = shape
+    record["source"] = str(source or "interview")
+    record["recorded_at"] = _now()
+    if not existing.get("locked"):
+        record["locked"] = True
+        record["answered_at"] = _now()
+    prof["fleet"] = record
+    interview = prof.setdefault("interview", {})
+    interview.setdefault("fleet_shape", []).append(
+        {"shape": shape, "source": record["source"], "answered_at": _now()})
+    if profile is None and flag_enabled():
+        save_profile(prof, config_dir)
+    return prof
+
+
+def fleet_shape_question(profile: Optional[Dict[str, Any]] = None,
+                         detection: Optional[Dict[str, Any]] = None,
+                         config_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """The one fleet-shape question the install still owes, or None.
+
+    None when a shape is already recorded (asked once, never again) and
+    None when detection settles the shape on its own (fleet-mac on a
+    Mac). A question exists exactly when the box is a Linux container:
+    detection proves the container, cannot prove WHICH container shape,
+    and says so in the question text itself."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    if fleet_shape(prof) is not None:
+        return None
+    det = detection
+    if det is None:
+        hb = _hardware_module()
+        if hb is not None:
+            try:
+                det = hb.detect_fleet_shape()
+            except Exception:  # noqa: BLE001 -- detection never breaks intake
+                det = None
+    if isinstance(det, dict) and det.get("certain") and det.get("shape"):
+        return None  # detection settles it; the gauge records it
+    candidates = []
+    if isinstance(det, dict):
+        candidates = [c for c in (det.get("candidates") or [])
+                      if c in FLEET_SHAPES]
+    if not candidates:
+        candidates = list(FLEET_SHAPES)
+    if len(candidates) == len(FLEET_SHAPES):
+        text = ("Which fleet shape is this install? fleet-mac (your own "
+                "Mac, OpenClaw running natively), fleet-hostinger (your "
+                "own Hostinger VPS, OpenClaw in Docker), or fleet-contabo "
+                "(a container on the shared Contabo host). Detection "
+                "could not settle it from this box.")
+    else:
+        text = ("This install runs in a Linux container, which is one of "
+                "two fleet shapes, and nothing readable from inside the "
+                "container says which: fleet-hostinger (your own "
+                "Hostinger VPS, OpenClaw in Docker) or fleet-contabo (a "
+                "container sliced from the shared Contabo host). Which "
+                "one is this?")
+    return {
+        "id": "fleet_shape",
+        "question": text,
+        "candidates": candidates,
+        "asked_once_then_locked": True,
+        "detection": redact_record(det) if isinstance(det, dict) else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# The remembered system gauge
+# ---------------------------------------------------------------------------
+#: How long a persisted gauge stays trustworthy. The codebase's own
+#: convention for a persisted measurement window is the rolling 24h used
+#: by the heal budget and the forever-state flag (24h windows in heal.py
+#: and auto_resume.py): long enough that a second run the next day starts
+#: from measured truth, short enough that a quietly changed box is
+#: re-measured within a day. The in-process caches are a different axis
+#: (capacity.INVENTORY_TTL_S bounds a models list in memory;
+#: hardware_budget.SNAPSHOT_TTL_S bounds a live snapshot) and are NOT
+#: reused here: neither was ever a persisted-record window.
+GAUGE_MAX_AGE_S = 24 * 3600.0
+
+
+def _gauge_fingerprint(snap: Optional[Dict[str, Any]],
+                       det: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The stable hardware facts a gauge is cut against. A later gauge
+    check re-reads these live; any difference means the hardware changed
+    and the old gauge describes a different box. Instantaneous readings
+    (available RAM, load, pressure) are deliberately NOT fingerprint
+    fields: they move minute to minute on the same box."""
+    snap = snap if isinstance(snap, dict) else {}
+    det = det if isinstance(det, dict) else {}
+    signals = det.get("signals") if isinstance(det.get("signals"), dict) else {}
+    return {
+        "platform": snap.get("platform") or det.get("platform"),
+        "ram_total_bytes": snap.get("ram_total_bytes"),
+        "host_ram_bytes": det.get("host_ceiling_bytes") or signals.get("host_ram_bytes"),
+        "cgroup_limit_bytes": det.get("container_budget_bytes")
+        if det.get("container_budget_bytes") is not None
+        else signals.get("cgroup_limit_bytes"),
+        "cores": snap.get("cores"),
+    }
+
+
+def _normalize_capacity_reading(reading: Any) -> Optional[Dict[str, Any]]:
+    """One capacity reading (a capacity.resolve_capacity()/probe()-shaped
+    dict) -> the compact row the gauge persists. `available` keeps
+    capacity's UNBOUNDED sentinel as the string "UNBOUNDED" (the profile
+    is JSON; the sentinel itself is not serializable, and a magic integer
+    would be a lie). Returns None for a reading that names no provider."""
+    if not isinstance(reading, dict):
+        return None
+    provider = reading.get("provider")
+    if not isinstance(provider, str) or not provider.strip():
+        return None
+    available = reading.get("available", reading.get("dispatchable"))
+    if _capacity is not None and _capacity.is_unbounded(available):
+        available = "UNBOUNDED"
+    elif isinstance(available, bool) or not isinstance(available, int):
+        available = None
+    factors = reading.get("account_factors") or {}
+    row: Dict[str, Any] = {
+        "provider": provider,
+        "plan": reading.get("plan"),
+        "status": reading.get("status"),
+        "available": available,
+    }
+    if isinstance(factors, dict):
+        if factors.get("account_limit") is not None:
+            row["account_limit"] = factors["account_limit"]
+        if factors.get("reserve") is not None:
+            row["reserve"] = factors["reserve"]
+    return row
+
+
+def record_system_gauge(config_dir: Optional[Path] = None, *,
+                        profile: Optional[Dict[str, Any]] = None,
+                        capacity_readings: Optional[Any] = None,
+                        snap: Optional[Dict[str, Any]] = None,
+                        detection: Optional[Dict[str, Any]] = None,
+                        measured_at: Optional[str] = None) -> Dict[str, Any]:
+    """Measure this box once and REMEMBER the measurement in the profile.
+
+    The gauge moment is install/gauge time (the resource_plan moment):
+    hardware from hardware_budget.snapshot(), capacity from the capacity
+    refresh (capacity_readings: one resolve_capacity()/probe() result or
+    a list of them; omitted, the primary route's pure resolve_capacity()
+    reading is taken -- zero discovery, per PRES-015). The fleet shape
+    resolves in this order, and the order is the doctrine:
+
+      1. a shape already recorded on the profile (an answer or an
+         earlier gauge) -- a re-gauge NEVER unsettles it;
+      2. an install-time declaration ($PRESENTATION_FLEET_SHAPE with a
+         valid exact label) -- recorded as a declared, locked answer;
+      3. a CERTAIN detection (fleet-mac) -- recorded as detected;
+      4. otherwise the shape stays unrecorded (None): the gauge carries
+         the detection candidates and fleet_shape_question() still owes
+         the client its one question.
+
+    Per-shape budget derivation (Item 17): fleet-mac records the native
+    totals and no container budget; fleet-hostinger records the
+    container (cgroup) budget as the box budget and no host ceiling
+    (single-tenant); fleet-contabo records BOTH the container budget and
+    the host ceiling it was sliced from. An unmeasured reading records
+    None (unknown), never a filled-in number. Returns the gauge record
+    (also persisted at profile["system_gauge"])."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    hb = _hardware_module()
+    det = detection
+    if det is None and hb is not None:
+        try:
+            det = hb.detect_fleet_shape()
+        except Exception:  # noqa: BLE001 -- measurement must never raise here
+            det = None
+    det = det if isinstance(det, dict) else {}
+    snapshot = snap
+    if snapshot is None and hb is not None:
+        try:
+            snapshot = hb.snapshot()
+        except Exception:  # noqa: BLE001
+            snapshot = None
+    snapshot = snapshot if isinstance(snapshot, dict) else {}
+    notes: List[str] = []
+
+    # --- the fleet shape, in doctrine order -------------------------------
+    shape = fleet_shape(prof)
+    shape_source = _fleet_record(prof).get("source") if shape else None
+    if shape is None:
+        env_shape = (os.environ.get(FLEET_SHAPE_ENV) or "").strip()
+        if env_shape:
+            if env_shape in FLEET_SHAPES:
+                record_fleet_shape(env_shape, source="declared",
+                                   profile=prof)
+                shape = env_shape
+                shape_source = "declared"
+            else:
+                notes.append(
+                    f"{FLEET_SHAPE_ENV}={env_shape!r} is not one of "
+                    f"{list(FLEET_SHAPES)}; ignored, never recorded")
+    if shape is None and det.get("certain") and det.get("shape") in FLEET_SHAPES:
+        record = {
+            "shape": det["shape"],
+            "source": "detected",
+            "locked": False,
+            "recorded_at": _now(),
+            "candidates": list(det.get("candidates") or [det["shape"]]),
+            "evidence": list(det.get("evidence") or []),
+        }
+        prof["fleet"] = record
+        shape = det["shape"]
+        shape_source = "detected"
+
+    # --- per-shape budget derivation --------------------------------------
+    cgroup_limit = det.get("container_budget_bytes")
+    host_total = det.get("host_ceiling_bytes")
+    ram_total = snapshot.get("ram_total_bytes")
+    container_budget: Optional[int] = None
+    host_ceiling: Optional[int] = None
+    if shape == "fleet-mac":
+        host_ceiling = ram_total if ram_total is not None else host_total
+    elif shape == "fleet-contabo":
+        container_budget = cgroup_limit
+        host_ceiling = host_total
+        if container_budget is None:
+            notes.append("fleet-contabo recorded but no cgroup container "
+                         "limit was readable: container budget unknown, "
+                         "gauged live, never filled in from the host total")
+    elif shape == "fleet-hostinger":
+        container_budget = cgroup_limit if cgroup_limit is not None else ram_total
+        # single-tenant: no shared host ceiling exists to record (Item 17
+        # names the both-numbers record for fleet-contabo only)
+        host_ceiling = None
+    else:
+        # unknown shape: record the raw readings, assert no derivation
+        container_budget = cgroup_limit
+        host_ceiling = host_total
+
+    budgets: Dict[str, Any] = {}
+    raw_budgets = snapshot.get("budgets") or {}
+    if isinstance(raw_budgets, dict):
+        for cls, row in raw_budgets.items():
+            if isinstance(row, dict) and isinstance(row.get("budget"), int):
+                budgets[cls] = row["budget"]
+
+    readings: List[Dict[str, Any]] = []
+    if capacity_readings is None:
+        if _capacity is not None:
+            try:
+                primary = _capacity.resolve_capacity(config_dir=config_dir)
+                row = _normalize_capacity_reading(primary)
+                if row is not None:
+                    readings.append(row)
+            except Exception:  # noqa: BLE001 -- a broken capacity read is a note
+                notes.append("capacity reading unavailable at gauge time")
+    else:
+        items = capacity_readings if isinstance(capacity_readings, list) \
+            else [capacity_readings]
+        for item in items:
+            row = _normalize_capacity_reading(item)
+            if row is not None:
+                readings.append(row)
+
+    gauge: Dict[str, Any] = {
+        "fleet_shape": shape,
+        "shape_source": shape_source,
+        "shape_candidates": ([] if shape else
+                             [c for c in (det.get("candidates") or [])
+                              if c in FLEET_SHAPES]),
+        "measured_at": measured_at or _now(),
+        "max_age_s": GAUGE_MAX_AGE_S,
+        "fingerprint": _gauge_fingerprint(snapshot, det),
+        "hardware": {
+            "status": snapshot.get("status"),
+            "ram_total_bytes": ram_total,
+            "ram_available_bytes_at_measure": snapshot.get("ram_available_bytes"),
+            "cores": snapshot.get("cores"),
+            "cgroup": snapshot.get("cgroup"),
+            "container_budget_bytes": container_budget,
+            "host_ceiling_bytes": host_ceiling,
+        },
+        "budgets": budgets,
+        "providers": readings,
+        "defaults_applied": fleet_shape_defaults(shape),
+        "notes": notes,
+    }
+    prof["system_gauge"] = gauge
+    if profile is None and flag_enabled():
+        save_profile(prof, config_dir)
+    return redact_record(gauge)
+
+
+def system_gauge(profile: Optional[Dict[str, Any]] = None,
+                 config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """The persisted gauge record, or {} when this box was never gauged."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    gauge = (prof or {}).get("system_gauge")
+    return gauge if isinstance(gauge, dict) else {}
+
+
+def _parse_iso_epoch(text: Any) -> Optional[float]:
+    if not isinstance(text, str) or not text.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def gauge_status(profile: Optional[Dict[str, Any]] = None,
+                 config_dir: Optional[Path] = None, *,
+                 live_fingerprint: Optional[Dict[str, Any]] = None,
+                 now_s: Optional[float] = None) -> Dict[str, Any]:
+    """Is the persisted gauge still trustworthy? One of:
+
+      missing          -- no gauge (or no measurement date) on the profile;
+      shape-changed    -- the recorded fleet shape no longer matches the
+                          shape the gauge was cut under;
+      hardware-changed -- a fingerprint field (platform, host RAM, cgroup
+                          limit, cores) now reads differently live: the
+                          gauge describes a different box;
+      stale-age        -- older than GAUGE_MAX_AGE_S;
+      fresh            -- same shape, same hardware, inside the window:
+                          a run may start from this measured truth.
+
+    Only fields BOTH sides actually measured are compared -- an unreadable
+    live value never proves a change (the verify-before-asserting rule).
+    `live_fingerprint` is injectable so the check is testable without a
+    second box; omitted, it is read live from hardware_budget."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    gauge = system_gauge(prof)
+    if not gauge or not gauge.get("measured_at"):
+        return {"state": "missing", "gauge_present": False, "age_s": None,
+                "max_age_s": GAUGE_MAX_AGE_S,
+                "detail": "no system gauge recorded on this profile"}
+    measured_epoch = _parse_iso_epoch(gauge.get("measured_at"))
+    now_epoch = now_s if now_s is not None else datetime.now(timezone.utc).timestamp()
+    age_s = (now_epoch - measured_epoch) if measured_epoch is not None else None
+
+    recorded_shape = fleet_shape(prof)
+    gauge_shape = gauge.get("fleet_shape")
+    if recorded_shape and gauge_shape and recorded_shape != gauge_shape:
+        return {"state": "shape-changed", "gauge_present": True,
+                "age_s": age_s, "max_age_s": GAUGE_MAX_AGE_S,
+                "detail": (f"gauge was cut under {gauge_shape!r} but the "
+                           f"profile now records {recorded_shape!r}: "
+                           "re-gauge")}
+
+    live = live_fingerprint
+    if live is None:
+        hb = _hardware_module()
+        if hb is not None:
+            try:
+                live = _gauge_fingerprint(hb.cached_snapshot(),
+                                          hb.detect_fleet_shape())
+            except Exception:  # noqa: BLE001 -- an unreadable box is not a change
+                live = None
+    if isinstance(live, dict):
+        stored_fp = gauge.get("fingerprint") or {}
+        changed = [field for field in ("platform", "host_ram_bytes",
+                                       "cgroup_limit_bytes", "cores")
+                   if stored_fp.get(field) is not None
+                   and live.get(field) is not None
+                   and stored_fp.get(field) != live.get(field)]
+        if changed:
+            return {"state": "hardware-changed", "gauge_present": True,
+                    "age_s": age_s, "max_age_s": GAUGE_MAX_AGE_S,
+                    "detail": ("fingerprint field(s) changed since the "
+                               f"gauge: {changed}: re-gauge")}
+
+    if age_s is None or age_s > GAUGE_MAX_AGE_S:
+        return {"state": "stale-age", "gauge_present": True,
+                "age_s": age_s, "max_age_s": GAUGE_MAX_AGE_S,
+                "detail": ("gauge is older than the persisted-measurement "
+                           "window (GAUGE_MAX_AGE_S): re-gauge, do not "
+                           "trust it as measured truth")}
+    return {"state": "fresh", "gauge_present": True, "age_s": age_s,
+            "max_age_s": GAUGE_MAX_AGE_S,
+            "detail": "gauge is fresh: same shape, same hardware, inside "
+                      "the window"}
+
+
+def needs_regauge(profile: Optional[Dict[str, Any]] = None,
+                  config_dir: Optional[Path] = None, **kwargs: Any) -> bool:
+    """True unless gauge_status says "fresh". A missing, stale, or
+    superseded gauge is re-gauged, not trusted."""
+    return gauge_status(profile, config_dir, **kwargs)["state"] != "fresh"
+
+
+# ---------------------------------------------------------------------------
+# The model-choice record (per provider family)
+# ---------------------------------------------------------------------------
+#: Where a recorded selection came from: the client selected the model,
+#: or their configured default applies. There is no third value -- in
+#: particular there is no "recommended" source, because a recommendation
+#: is guidance, never a selection (owner decision 4).
+MODEL_CHOICE_SOURCES: tuple = ("selected", "configured-default")
+
+#: The response vocabulary on a recommendation row (Item 18 records the
+#: recommendation as offered / accepted / declined in the profile).
+RECOMMENDATION_RESPONSES: tuple = ("offered", "accepted", "declined")
+
+
+def _family_token(provider_family: Any) -> str:
+    """Fold a provider-family spelling onto the one canonical token
+    (capacity.canonical_provider_token when the sibling module is
+    importable), so 'OpenRouter' and 'openrouter' are one family."""
+    if _capacity is not None:
+        token = _capacity.canonical_provider_token(provider_family)
+        if token:
+            return token
+    text = str(provider_family or "").strip().lower()
+    return text.replace("_", "-").replace(" ", "-")
+
+
+def _model_choice_rows(profile: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rows = (profile or {}).get("model_choices")
+    return rows if isinstance(rows, list) else []
+
+
+def _find_choice_row(profile: Dict[str, Any],
+                     family: str) -> Optional[Dict[str, Any]]:
+    for row in _model_choice_rows(profile):
+        if isinstance(row, dict) and row.get("provider_family") == family:
+            return row
+    return None
+
+
+def record_model_choice(provider_family: str, model: str, *,
+                        source: str = "selected",
+                        config_dir: Optional[Path] = None,
+                        profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Record THE selection for one provider family: the model the client
+    selected, or their configured default when source="configured-default".
+
+    This is the ONLY writer of a row's selection. It refuses (ValueError)
+    an empty model, an empty family, or a source outside
+    MODEL_CHOICE_SOURCES -- a recommendation can never be written here,
+    because "recommended" is not a source this function accepts. Any
+    recommendations already shown for the family are preserved verbatim:
+    recording a selection does not rewrite the guidance history."""
+    family = _family_token(provider_family)
+    model = str(model or "").strip()
+    if not family:
+        raise ValueError("refusing to record a model choice with no "
+                         "provider family")
+    if not model:
+        raise ValueError(
+            f"refusing to record an empty model as the {family} "
+            "selection: silence is not a selection")
+    if source not in MODEL_CHOICE_SOURCES:
+        raise ValueError(
+            f"refusing to record a model choice with source {source!r}: "
+            f"a selection is the client's own ({MODEL_CHOICE_SOURCES[0]}) "
+            f"or their configured default ({MODEL_CHOICE_SOURCES[1]}); a "
+            "recommendation is guidance and is recorded with "
+            "record_recommendation_shown(), never as a selection")
+    prof = profile if profile is not None else load_profile(config_dir)
+    row = _find_choice_row(prof, family)
+    if row is None:
+        row = {"provider_family": family, "selection": None,
+               "recommendations_shown": []}
+        prof.setdefault("model_choices", []).append(row)
+    row["selection"] = {"model": model, "source": source,
+                       "recorded_at": _now()}
+    row["updated_at"] = _now()
+    if profile is None and flag_enabled():
+        save_profile(prof, config_dir)
+    return redact_record(row)
+
+
+def record_recommendation_shown(provider_family: str, model: str,
+                                reason: str, *,
+                                config_dir: Optional[Path] = None,
+                                profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Record that the system SHOWED a recommendation, with its reason.
+
+    Appends to the family's recommendations_shown log with response
+    "offered". This function has NO path to the row's selection: showing
+    guidance never changes what the client selected, and a family with
+    no selection yet keeps selection None with the recommendation
+    recorded beside it."""
+    family = _family_token(provider_family)
+    model = str(model or "").strip()
+    if not family or not model:
+        raise ValueError("refusing to record a recommendation with no "
+                         "provider family or no model")
+    prof = profile if profile is not None else load_profile(config_dir)
+    row = _find_choice_row(prof, family)
+    if row is None:
+        row = {"provider_family": family, "selection": None,
+               "recommendations_shown": []}
+        prof.setdefault("model_choices", []).append(row)
+    shown = row.setdefault("recommendations_shown", [])
+    entry = {"model": model, "reason": str(reason or ""),
+             "shown_at": _now(), "response": "offered"}
+    shown.append(entry)
+    row["updated_at"] = _now()
+    if profile is None and flag_enabled():
+        save_profile(prof, config_dir)
+    return redact_record(entry)
+
+
+def record_recommendation_response(provider_family: str, model: str,
+                                   response: str, *,
+                                   config_dir: Optional[Path] = None,
+                                   profile: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """Record the client's response to a shown recommendation
+    ("accepted" or "declined" -- Item 18's offered/accepted/declined
+    record). Returns the updated recommendation row, or None when no
+    matching recommendation was ever shown.
+
+    Accepting a recommendation does NOT write the selection: the client's
+    acceptance reaches the selection only through record_model_choice()
+    when they actually select the model. Keeping the two writes separate
+    is what makes "a recommendation never becomes a hidden prescription"
+    a property of the code, not a promise."""
+    if response not in ("accepted", "declined"):
+        raise ValueError(
+            f"refusing to record recommendation response {response!r}: "
+            "the vocabulary is 'accepted' or 'declined' ('offered' is the "
+            "state a recommendation starts in)")
+    family = _family_token(provider_family)
+    model = str(model or "").strip()
+    prof = profile if profile is not None else load_profile(config_dir)
+    row = _find_choice_row(prof, family)
+    if row is None:
+        return None
+    target = None
+    for entry in row.get("recommendations_shown") or []:
+        if isinstance(entry, dict) and entry.get("model") == model:
+            target = entry  # the LATEST showing of this model wins
+    if target is None:
+        return None
+    target["response"] = response
+    target["responded_at"] = _now()
+    row["updated_at"] = _now()
+    if profile is None and flag_enabled():
+        save_profile(prof, config_dir)
+    return redact_record(target)
+
+
+def model_choice_row(provider_family: str,
+                     profile: Optional[Dict[str, Any]] = None,
+                     config_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """The full model-choice row for one provider family (selection plus
+    the recommendations-shown log), or None when the family has no
+    record at all."""
+    prof = profile if profile is not None else load_profile(config_dir)
+    row = _find_choice_row(prof, _family_token(provider_family))
+    return redact_record(row) if row is not None else None
+
+
+def effective_model_choice(provider_family: str,
+                           profile: Optional[Dict[str, Any]] = None,
+                           config_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """The model that APPLIES for one provider family: the recorded
+    selection ({model, source, recorded_at}) or None.
+
+    Reads the selection field ONLY. A family whose record carries
+    recommendations but no selection returns None -- the honest answer
+    that no selection exists -- never the recommended model dressed up
+    as one. This is the accessor Item 31's freshness check and Item 18's
+    honesty layer read."""
+    row = model_choice_row(provider_family, profile=profile,
+                           config_dir=config_dir)
+    if not row:
+        return None
+    selection = row.get("selection")
+    return selection if isinstance(selection, dict) else None
