@@ -1,5 +1,17 @@
 # Changelog — Skill 50 (email-engine)
 
+## Unreleased - 2026-10-14 - Presentations FIX-PLAN Item 33c: election-gated delivery option (doctrine only)
+
+### Added
+- **SKILL.md section "Presentations department integration (election-gated delivery
+  option)".** States, identically with the presentations department's
+  EMAIL-SEQUENCE-BUILDER-SOP: the intake election gate (`want_email_sequences`,
+  default NO, verbatim declined-reason waiver, AF-EMAIL-WAIVER-MISSING fail-closed),
+  the draft package the presentations engine prepares at delivery, the human
+  approval step at Skill 44's operator surface before this skill runs, the
+  draft-only P4 posture, and the unavailable fallback. No engine code changed;
+  SKILL.md is not covered by ENGINE-PIN.sha256 and no re-pin is required.
+
 ## 1.1.4 — 2026-07-21 — ONB-50-001: the impersonation guard was blind to the inbox preheader
 
 ### Fixed

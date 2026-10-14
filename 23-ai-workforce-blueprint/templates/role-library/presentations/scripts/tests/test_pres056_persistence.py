@@ -11,7 +11,7 @@ modules, never a grep):
   3. A locked valid plan preference never triggers an extra plan prompt:
      resource_plan resolves from the lock and --complete passes.
   4. Metrics: turn-count + time-to-valid-brief measured against the 23-turn
-     baseline (bank header is the single source: 23 merged turns, 48 rows,
+     baseline (bank header is the single source: 23 merged turns, 50 rows,
      20 required). Valid brief = every required field real /
      approved-derived / explicit pending -- never null, never invented;
      omitted vs declined stays distinct (a declined toggle without a
@@ -181,7 +181,7 @@ def test_store_and_metrics_modules_present():
     assert _BANK.is_file(), f"bank missing at {_BANK}"
 
 
-def test_metrics_bank_shape_still_23_48_20():
+def test_metrics_bank_shape_still_23_50_20():
     shape = metrics.verify_bank_shape(_BANK)
     assert shape["ok"], shape["mismatches"]
     assert shape["measured"]["baseline"] == BASELINE_TURNS

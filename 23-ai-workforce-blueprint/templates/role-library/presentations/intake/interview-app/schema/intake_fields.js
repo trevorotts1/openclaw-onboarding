@@ -396,6 +396,50 @@ export const INTAKE_CONTRACT = {
       }
     },
     {
+      id: "want_email_sequences",
+      canonical_path: "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
+      section: "pre_presentation_capture",
+      kind: "enum",
+      required: true,
+      block_gate: true,
+      allowed_values: ["yes", "no"],
+      legacy_aliases: ["deck_brief.WANT_EMAIL_SEQUENCES", "WANT_EMAIL_SEQUENCES"],
+      question: {
+        id: "want_email_sequences",
+        order: 11.2,
+        kind: "enum",
+        prompt: "Would you like <span class=\"emph\">email follow-up sequences</span> prepared for this launch?",
+        help: "Default no. A yes elects the Skill 50 (Email Engine) delivery option: the sequences are prepared as drafts at delivery and deployed draft-only through Skill 44 after a human approves them. Nothing is sent automatically.",
+        label: "Email sequences",
+        required: true,
+        storeOn: "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
+        allowed_values: ["yes", "no"],
+        value_labels: { "yes": "Yes, prepare the email sequences as drafts", "no": "No thank you" }
+      }
+    },
+    {
+      id: "email_sequences_declined_reason",
+      canonical_path: "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON",
+      section: "pre_presentation_capture",
+      kind: "text",
+      required: true,
+      block_gate: true,
+      conditional_on: { id: "want_email_sequences", equals: "no" },
+      legacy_aliases: ["deck_brief.EMAIL_SEQUENCES_DECLINED_REASON", "EMAIL_SEQUENCES_DECLINED_REASON"],
+      question: {
+        id: "email_sequences_declined_reason",
+        order: 11.3,
+        kind: "text",
+        prompt: "Understood, no email sequences. In your own words, why not? (I record this verbatim so nobody later has to guess.)",
+        help: "Asked only when you declined the email sequences. Stored word-for-word as your waiver, an empty answer cannot be accepted.",
+        label: "Why no email sequences",
+        placeholder: "e.g. we run our own email list",
+        required: true,
+        storeOn: "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON",
+        conditional_on: { id: "want_email_sequences", equals: "no" }
+      }
+    },
+    {
       id: "run_mode",
       canonical_path: "pre_presentation_capture.RUN_MODE",
       section: "pre_presentation_capture",
@@ -543,7 +587,8 @@ export const INTAKE_CONTRACT = {
     "deck_brief.FINAL_PRICE",
     "pre_presentation_capture.PRESENTATION_TYPE",
     "pre_presentation_capture.WANT_SALES_CHECKOUT",
-    "pre_presentation_capture.WANT_VSL_PAGE"
+    "pre_presentation_capture.WANT_VSL_PAGE",
+    "pre_presentation_capture.WANT_EMAIL_SEQUENCES"
   ],
 
   // --- version-aware legacy migration ---------------------------------------

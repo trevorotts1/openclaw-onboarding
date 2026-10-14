@@ -244,7 +244,8 @@ ID_TO_FIELD = {
     "primary_objection": "PRIMARY_OBJECTION",
     "proof_assets": "PROOF_ASSETS",
     "style_prefs": "STYLE_PREFS",
-    # upsell yes-no (the new sales/checkout + VSL questions)
+    # upsell yes-no (the sales/checkout + VSL questions) and the Skill 50
+    # email-sequence election + its verbatim declined-reason waiver
     "want_sales_checkout": "WANT_SALES_CHECKOUT",
     "want_vsl_page": "WANT_VSL_PAGE",
     # U026 waiver follow-ups (FIX-PLAN Item 12): the client's VERBATIM
@@ -260,6 +261,8 @@ ID_TO_FIELD = {
     # blank answer stays blank (the builder gates fail closed on it).
     "sales_checkout_declined_reason": "SALES_CHECKOUT_DECLINED_REASON",
     "vsl_page_declined_reason": "VSL_PAGE_DECLINED_REASON",
+    "want_email_sequences": "WANT_EMAIL_SEQUENCES",
+    "email_sequences_declined_reason": "EMAIL_SEQUENCES_DECLINED_REASON",
     # speech speed lives flat on the intake record (not deck_brief)
     "speech_speed_preference": "speech_speed_preference",
     # FIX 11 (hosted path): the client's run-mode declaration. Mapped
@@ -277,13 +280,16 @@ ID_TO_FIELD = {
 # working/copy/intake.json's deck_brief"). pre_presentation_capture.RUN_MODE is
 # a location presentation-intake-poll.sh's read_run_mode() already reads
 # (candidate 2), so this routing costs the poller no change.
-# The two DECLINED_REASON fields ride with their upsell toggles (FIX-PLAN
-# Item 12): pre_presentation_capture.* is their canonical home per
+# The DECLINED_REASON fields ride with their toggles (the two U026 upsell
+# waivers, FIX-PLAN Item 12, and the Skill 50 email election pair, Item 33c):
+# pre_presentation_capture.* is their canonical home per
 # upsell-questions.json's storeTarget and the PRES-006 contract, and it is
 # the first location both builder gates read.
 PRE_CAPTURE_FIELDS = {"WANT_SALES_CHECKOUT", "WANT_VSL_PAGE", "RUN_MODE",
                       "SALES_CHECKOUT_DECLINED_REASON",
-                      "VSL_PAGE_DECLINED_REASON"}
+                      "VSL_PAGE_DECLINED_REASON",
+                      "WANT_EMAIL_SEQUENCES",
+                      "EMAIL_SEQUENCES_DECLINED_REASON"}
 
 
 # ===========================================================================
@@ -324,6 +330,9 @@ CANONICAL_FIELD_PATHS = {
     "want_vsl_page": "pre_presentation_capture.WANT_VSL_PAGE",
     "vsl_page_declined_reason":
         "pre_presentation_capture.VSL_PAGE_DECLINED_REASON",
+    "want_email_sequences": "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
+    "email_sequences_declined_reason":
+        "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON",
     "run_mode": "pre_presentation_capture.RUN_MODE",
     "client_notes": "deck_brief.CLIENT_NOTES",
 }
@@ -344,6 +353,7 @@ REQUIRED_CANONICAL_FIELDS = (
     "pre_presentation_capture.PRESENTATION_TYPE",
     "pre_presentation_capture.WANT_SALES_CHECKOUT",
     "pre_presentation_capture.WANT_VSL_PAGE",
+    "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
 )
 
 #: Version-aware legacy migration: version-1 records stored the upsell flags,
@@ -362,6 +372,10 @@ LEGACY_ALIASES = {
     "vsl_page_declined_reason": (
         "deck_brief.VSL_PAGE_DECLINED_REASON",
         "VSL_PAGE_DECLINED_REASON"),
+    "want_email_sequences": ("deck_brief.WANT_EMAIL_SEQUENCES", "WANT_EMAIL_SEQUENCES"),
+    "email_sequences_declined_reason": (
+        "deck_brief.EMAIL_SEQUENCES_DECLINED_REASON",
+        "EMAIL_SEQUENCES_DECLINED_REASON"),
     "run_mode": ("deck_brief.RUN_MODE", "RUN_MODE", "run_mode"),
     "presentation_type": ("deck_brief.PRESENTATION_TYPE", "PRESENTATION_TYPE"),
 }

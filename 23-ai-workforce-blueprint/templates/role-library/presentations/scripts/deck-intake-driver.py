@@ -3536,7 +3536,7 @@ def _decline_present(answers):
     """True when any waiver toggle carries an explicit client "no"."""
     for key in ("want_teleprompter", "want_speech_script", "want_ghl_upload",
                 "want_audio_deliverable", "want_sales_checkout",
-                "want_vsl_page"):
+                "want_vsl_page", "want_email_sequences"):
         val = answers.get(key)
         if isinstance(val, bool):
             if val is False:
@@ -3564,7 +3564,8 @@ def _refine_condition_met(qdef, answers, selected):
         if qdef["id"] == "decline_context":
             toggles = ("want_teleprompter", "want_speech_script",
                        "want_ghl_upload", "want_audio_deliverable",
-                       "want_sales_checkout", "want_vsl_page")
+                       "want_sales_checkout", "want_vsl_page",
+                       "want_email_sequences")
             if _decline_present(answers):
                 return True
             if all(answers.get(t) is not None for t in toggles):
@@ -3583,7 +3584,8 @@ def _refine_condition_met(qdef, answers, selected):
         # only skippable turn, so it is skipped exactly then.
         toggles = ("want_teleprompter", "want_speech_script",
                    "want_ghl_upload", "want_audio_deliverable",
-                   "want_sales_checkout", "want_vsl_page")
+                   "want_sales_checkout", "want_vsl_page",
+                   "want_email_sequences")
         if _decline_present(answers):
             return True
         if all(answers.get(t) is not None for t in toggles):
@@ -3704,7 +3706,8 @@ def _residual_skippable(qdef, answers):
     if qdef["id"] == "decline_context":
         toggles = ("want_teleprompter", "want_speech_script",
                    "want_ghl_upload", "want_audio_deliverable",
-                   "want_sales_checkout", "want_vsl_page")
+                   "want_sales_checkout", "want_vsl_page",
+                   "want_email_sequences")
         if not _decline_present(answers) and all(
                 answers.get(t) is not None for t in toggles):
             return True

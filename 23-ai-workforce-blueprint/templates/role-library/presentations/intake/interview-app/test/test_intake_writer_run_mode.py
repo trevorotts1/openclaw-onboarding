@@ -89,6 +89,7 @@ BASE_ANSWERS = {
     "speech_speed_preference": "default",
     "want_sales_checkout": "yes",
     "want_vsl_page": "no",
+    "want_email_sequences": "no",
     "client_notes": "",
 }
 
@@ -121,7 +122,8 @@ def _submit(run_mode=None, *, frontend_shaped=False):
                   "pre_presentation_capture": dict(
                       {"PRESENTATION_TYPE": "from_scratch",
                        "WANT_SALES_CHECKOUT": answers["want_sales_checkout"],
-                       "WANT_VSL_PAGE": answers["want_vsl_page"]}, **pre),
+                       "WANT_VSL_PAGE": answers["want_vsl_page"],
+                       "WANT_EMAIL_SEQUENCES": answers["want_email_sequences"]}, **pre),
                   "deck_brief": {"OFFER_NAME": answers["offer_name"],
                                  "NAMED_METHODOLOGY": answers["named_methodology"],
                                  "TRANSFORMATION_PROMISE": answers["transformation_promise"],

@@ -43,12 +43,12 @@ _PASSTHROUGH = ("id", "order", "prompt", "help", "kind", "required",
                 "conditional_on", "ask_if", "block_gate", "storeOn", "key",
                 "refuse_values", "refuse_message")
 
-# The curated set the Presentation Interview app asks: 19 core questions plus
-# the two conditional U026 declined-reason follow-ups (21 total). The
-# follow-ups render only when their toggle reads "no" (conditional_on), so a
-# client who accepts both upsells never sees them. Every id must exist in
-# deck-intake-questions.json, upsell-questions.json, or APP_ONLY_QUESTIONS
-# below.
+# The curated core set the Presentation Interview app asks. Cap 20 binds the
+# set excluding the declined-reason waiver follow-ups; a follow-up (asked
+# only when its toggle is answered "no") rides on its toggle and does not
+# count against the cap -- the selftest pins that shape per follow-up.
+# Every id must exist in deck-intake-questions.json, upsell-questions.json, or
+# APP_ONLY_QUESTIONS below.
 DEFAULT_CURATED = [
     "presentation_type",          # type-picker (order 0) -- MUST be first, see selftest guard
     "offer_name",                 # company/offer
@@ -78,6 +78,8 @@ DEFAULT_CURATED = [
                                    # conditional_on want_vsl_page = "no"; same
                                    # verbatim discipline as the sales/checkout
                                    # reason above.
+    "want_email_sequences",       # Skill 50 email election yes-no (order 7.9)
+    "email_sequences_declined_reason",  # its conditional waiver follow-up (7.91)
     "run_mode",                   # FIX 11 run mode (projected from the bank's
                                    # resource_plan.run_mode subfield) -- the
                                    # hosted app's only way to reach Ultra
@@ -421,8 +423,19 @@ def selftest() -> int:
     if specs.get("questions"):
         payload = build_curated_payload("RUNTEST", specs, DEFAULT_CURATED, store_target)
         ids = [q["id"] for q in payload["questions"]]
-        assert len(ids) <= 21, ("curated set may pass the old cap of 20 only by "
-                                "the two conditional U026 waiver follow-ups")
+        # Cap 20 binds the set WITHOUT the declined-reason waiver follow-ups.
+        # A waiver follow-up rides on its toggle (asked only on a "no") and
+        # is pinned individually below instead of counted against the cap.
+        # (Other conditional questions, e.g. the pitch_included pair, are
+        # ordinary curated questions and stay inside the count, as before.)
+        waiver_followups = [q for q in payload["questions"]
+                            if q["id"].endswith("_declined_reason")]
+        assert len(ids) - len(waiver_followups) <= 20, \
+            "curated set must respect cap 20 (excluding waiver follow-ups)"
+        for q in waiver_followups:
+            assert q.get("conditional_on", {}).get("equals") == "no", q
+            assert str(q.get("storeOn", "")).startswith("pre_presentation_capture."), q
+            assert q.get("required") is True, q
         assert len(ids) >= 7, "curated set must keep 7-9 core"
         assert ids[0] == "presentation_type", "first standard question must be the type-picker (presentation_type)"
         assert "speech_speed_preference" in ids, "speech-speed question must be included"
@@ -442,6 +455,13 @@ def selftest() -> int:
             assert _q.get("conditional_on") == {"id": _toggle, "equals": "no"}, _q
             assert _q.get("storeOn") == f"pre_presentation_capture.{_field}", _q
             assert _q.get("required") is True, _q
+        assert "want_email_sequences" in ids, "Skill 50 email election yes-no must be included"
+        em = next(q for q in payload["questions"] if q["id"] == "want_email_sequences")
+        assert em.get("storeOn") == "pre_presentation_capture.WANT_EMAIL_SEQUENCES", f"email toggle storeOn not qualified: {em.get('storeOn')}"
+        assert em.get("default") == "no", "the email election defaults to NO (opt-in only)"
+        emr = next(q for q in payload["questions"] if q["id"] == "email_sequences_declined_reason")
+        assert emr.get("storeOn") == "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON", f"email reason storeOn not qualified: {emr.get('storeOn')}"
+        assert emr.get("conditional_on") == {"id": "want_email_sequences", "equals": "no"}, emr
         assert "run_mode" in ids, "FIX 11 run-mode question must be included"
         rm = next(q for q in payload["questions"] if q["id"] == "run_mode")
         assert rm["allowed_values"] == ["ultra", "standard", "economy"], rm
