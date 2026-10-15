@@ -171,11 +171,12 @@ recorded.
 
 ## Recommended model
 
-Like Weekly Tune-up (Step 9.32), this is analytical work requiring
-deep reasoning. Use highest-reasoning model available — DeepSeek V4
-Pro with thinking:max, Kimi 2.6+, or current top-reasoning model at
-execution time. Configure in `openclaw.json` under
-`proactive.model`.
+Model: the client's choice, or the client's configured default model
+(configured in `openclaw.json` under `proactive.model`). Like Weekly
+Tune-up (Step 9.32), this is analytical work requiring deep reasoning.
+Recommendation: the highest-reasoning model available to the client at
+execution time, with thinking set to max, because the suggestions are only
+as good as the reasoning behind them. Guidance only, never a prescription.
 
 ## Allow-list
 

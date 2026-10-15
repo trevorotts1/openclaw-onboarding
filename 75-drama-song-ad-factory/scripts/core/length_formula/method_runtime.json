@@ -1,0 +1,177 @@
+{
+  "source": "Drama-to-Demand Method by Trevor Otts, section 7.1 (editorial starting targets) and section 7.2 (complete illustrative time allocations). Read 2026-10-13 for the Agnes Drama Ad Factory build.",
+  "read_date": "2026-10-13",
+  "note": "These are proposed PLANNING TARGETS, not scientific timing laws, guaranteed conversion formulas or platform limits. The ERM target is an arrival timestamp, not a separate duration to add; the closing commercial reserve is already part of the total runtime. Adapt them to the actual script and rendered audio while preserving the causal sequence: instrumental opening, ERM Drop with first singing, pain, Hero Shift, breakthrough, hook, commercial. Section 7.1 also says: keep the opening within roughly 25 seconds even for a ten-minute episode, because more available minutes is not a reason for a longer opening.",
+  "block_order": [
+    "backstory_instrumental",
+    "problem_and_tension_escalation",
+    "erm_first_singing_and_pain",
+    "solution_introduction_and_hero_shift",
+    "solution_use_and_first_breakthrough",
+    "first_earned_solution_signature_hook",
+    "further_story_and_reprises",
+    "closing_commercial_and_cta"
+  ],
+  "anchor_blocks": {
+    "hero_shift_s": "solution_introduction_and_hero_shift",
+    "hook_from_s": "solution_use_and_first_breakthrough",
+    "commercial_from_s": "further_story_and_reprises"
+  },
+  "lengths": [
+    {
+      "length_s": 30,
+      "origin": "editorial",
+      "note": "30 seconds is the paid-ad length Trevor added 2026-10-13; the method's own table starts at 60 seconds. This row is the method's 60-second column scaled to 50 percent and rounded to whole seconds, and the block column still sums to 30.",
+      "backstory_s": [2, 4],
+      "erm_window_s": [6, 9],
+      "cta_reserve_s": [5, 8],
+      "blocks": {
+        "backstory_instrumental": 3,
+        "problem_and_tension_escalation": 4,
+        "erm_first_singing_and_pain": 6,
+        "solution_introduction_and_hero_shift": 2,
+        "solution_use_and_first_breakthrough": 4,
+        "first_earned_solution_signature_hook": 4,
+        "further_story_and_reprises": 0,
+        "closing_commercial_and_cta": 7
+      }
+    },
+    {
+      "length_s": 60,
+      "origin": "method",
+      "backstory_s": [4, 7],
+      "erm_window_s": [12, 18],
+      "cta_reserve_s": [10, 15],
+      "blocks": {
+        "backstory_instrumental": 6,
+        "problem_and_tension_escalation": 9,
+        "erm_first_singing_and_pain": 12,
+        "solution_introduction_and_hero_shift": 5,
+        "solution_use_and_first_breakthrough": 8,
+        "first_earned_solution_signature_hook": 8,
+        "further_story_and_reprises": 0,
+        "closing_commercial_and_cta": 12
+      }
+    },
+    {
+      "length_s": 90,
+      "origin": "method",
+      "backstory_s": [6, 10],
+      "erm_window_s": [18, 25],
+      "cta_reserve_s": [15, 20],
+      "blocks": {
+        "backstory_instrumental": 8,
+        "problem_and_tension_escalation": 12,
+        "erm_first_singing_and_pain": 18,
+        "solution_introduction_and_hero_shift": 7,
+        "solution_use_and_first_breakthrough": 15,
+        "first_earned_solution_signature_hook": 12,
+        "further_story_and_reprises": 0,
+        "closing_commercial_and_cta": 18
+      }
+    },
+    {
+      "length_s": 120,
+      "origin": "method",
+      "backstory_s": [8, 12],
+      "erm_window_s": [22, 32],
+      "cta_reserve_s": [20, 30],
+      "blocks": {
+        "backstory_instrumental": 10,
+        "problem_and_tension_escalation": 17,
+        "erm_first_singing_and_pain": 23,
+        "solution_introduction_and_hero_shift": 8,
+        "solution_use_and_first_breakthrough": 22,
+        "first_earned_solution_signature_hook": 15,
+        "further_story_and_reprises": 0,
+        "closing_commercial_and_cta": 25
+      }
+    },
+    {
+      "length_s": 180,
+      "origin": "method",
+      "backstory_s": [10, 15],
+      "erm_window_s": [25, 40],
+      "cta_reserve_s": [30, 45],
+      "blocks": {
+        "backstory_instrumental": 12,
+        "problem_and_tension_escalation": 23,
+        "erm_first_singing_and_pain": 30,
+        "solution_introduction_and_hero_shift": 10,
+        "solution_use_and_first_breakthrough": 20,
+        "first_earned_solution_signature_hook": 15,
+        "further_story_and_reprises": 30,
+        "closing_commercial_and_cta": 40
+      }
+    },
+    {
+      "length_s": 300,
+      "origin": "method",
+      "backstory_s": [12, 20],
+      "erm_window_s": [30, 50],
+      "cta_reserve_s": [45, 75],
+      "blocks": {
+        "backstory_instrumental": 15,
+        "problem_and_tension_escalation": 30,
+        "erm_first_singing_and_pain": 40,
+        "solution_introduction_and_hero_shift": 15,
+        "solution_use_and_first_breakthrough": 20,
+        "first_earned_solution_signature_hook": 15,
+        "further_story_and_reprises": 105,
+        "closing_commercial_and_cta": 60
+      }
+    },
+    {
+      "length_s": 420,
+      "origin": "editorial",
+      "note": "7 minutes, offered 2026-10-13 (Trevor) but not a row of the method's table. It is the linear interpolation at t = 0.4 between the method's 300 and 600 rows: the section 7.1 windows and the section 7.2 block column are both interpolated the same way, and the block column still sums to 420.",
+      "backstory_s": [13, 22],
+      "erm_window_s": [34, 56],
+      "cta_reserve_s": [57, 93],
+      "blocks": {
+        "backstory_instrumental": 17,
+        "problem_and_tension_escalation": 32,
+        "erm_first_singing_and_pain": 48,
+        "solution_introduction_and_hero_shift": 17,
+        "solution_use_and_first_breakthrough": 24,
+        "first_earned_solution_signature_hook": 17,
+        "further_story_and_reprises": 189,
+        "closing_commercial_and_cta": 76
+      }
+    },
+    {
+      "length_s": 600,
+      "origin": "method",
+      "backstory_s": [15, 25],
+      "erm_window_s": [40, 65],
+      "cta_reserve_s": [75, 120],
+      "blocks": {
+        "backstory_instrumental": 20,
+        "problem_and_tension_escalation": 35,
+        "erm_first_singing_and_pain": 60,
+        "solution_introduction_and_hero_shift": 20,
+        "solution_use_and_first_breakthrough": 30,
+        "first_earned_solution_signature_hook": 20,
+        "further_story_and_reprises": 315,
+        "closing_commercial_and_cta": 100
+      }
+    }
+  ],
+  "profiles": {
+    "story": {
+      "used_for": "campaign master episodes, testimonials and lessons",
+      "opening": "light instrumental backstory, narration allowed (method section 6)",
+      "backstory_s": "the length's own section 7.1 window",
+      "erm_window_s": "the length's own section 7.1 window",
+      "erm_apex_s": "the midpoint of that window"
+    },
+    "feed": {
+      "used_for": "paid ads, short-form posts, and every trailer and ad clip cut from a master",
+      "opening": "a scroll-stopping picture or spoken line in the first 0-3 s, then a short instrumental setup",
+      "attention_opener_s": [0, 3],
+      "backstory_s": "the attention opener, 0-3 s (SPEC B4)",
+      "first_sung_pct_of_delivered": 0.15,
+      "erm_window_s": "the ERM is compressed, so the window runs from 0 to that share of the delivered seconds (SPEC B4: about 4-5 s at 30 s, 8-9 s at 60 s, 12-13 s at 90 s, the measured BSW timing)"
+    }
+  }
+}

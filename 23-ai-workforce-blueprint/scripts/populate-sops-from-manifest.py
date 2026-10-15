@@ -163,11 +163,38 @@ def selector_path():
     return None
 
 
+def _client_configured_default_model():
+    """The client's configured default model (agents.defaults.model in
+    ~/.openclaw/openclaw.json), or None."""
+    try:
+        cfg = json.loads((Path.home() / ".openclaw" / "openclaw.json").read_text(encoding="utf-8"))
+        model = ((cfg.get("agents") or {}).get("defaults") or {}).get("model")
+        if isinstance(model, dict):
+            model = model.get("primary")
+        if isinstance(model, str) and model.strip():
+            return model.strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _no_model_resolved(reason: str):
+    """Terminal step when no selector and no client default produced a
+    model: owner input (this function's own None contract), announced
+    LOUDLY. Never a named substitute the client did not choose."""
+    print(f"[POPULATE-SOPS] {reason}: no model resolved and the client has "
+          f"no configured default model -- owner input required (ask the "
+          f"client which model to use, or configure agents.defaults.model)",
+          file=sys.stderr)
+    return None
+
+
 def resolve_model(skill, purpose_tier="heavy", input_chars=None):
     """Call select_model.py and return model_id, or None if owner-input."""
     sel = selector_path()
     if not sel:
-        return "ollama/kimi-k2.6:cloud"  # safe default
+        return _client_configured_default_model() or _no_model_resolved(
+            "select_model.py not found")
     cmd = ["python3", str(sel), "--skill", skill, "--purpose-tier", purpose_tier, "--format", "id"]
     if input_chars is not None:
         cmd.extend(["--input-chars", str(input_chars)])
@@ -180,7 +207,8 @@ def resolve_model(skill, purpose_tier="heavy", input_chars=None):
             return None  # Tier 5 — owner input required
     except Exception as e:
         print(f"[POPULATE-SOPS] Selector error: {e}", file=sys.stderr)
-    return "ollama/kimi-k2.6:cloud"
+    return _client_configured_default_model() or _no_model_resolved(
+        "selector produced no model")
 
 
 # ─── SUB-AGENT SPAWN ──────────────────────────────────────────────────────────

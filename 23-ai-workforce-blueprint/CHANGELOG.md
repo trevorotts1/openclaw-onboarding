@@ -2,6 +2,17 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [Unreleased] - 2026-10-13 - refactor(models): named-model prescriptions replaced with client choice, configured defaults, and recommendations
+
+Skill 23 no longer prescribes specific models by name in its doctrine, role library, or builders. Everywhere the old text pinned a named model, the pattern is now: the client selects their model, or their configured default model is used, and the system may recommend with the reason stated, as overridable guidance. A recommendation is never a prescription, a hidden default, or a fallback value in code or config.
+
+- **Doctrine and roles.** SKILL.md, QC-ROLES-MASTER.md, INSTALL.md, INSTRUCTIONS.md, the role-library templates (including the healer census boilerplate and the worked examples), the model selection framework, and the role prompts now resolve every model by client choice or configured default, with the old performance rationales kept as recommendations (heavy reasoning and high thinking for orchestration, legal and HR; a different model family for second opinions; search grounding for research).
+- **Builders (functional resolution).** build-workforce.py (specialist, dept-head and MSF terminal fallbacks, the QC independence override, and the research model), populate-sops-from-manifest.py, and generate-role-library.py (spawn specs and preflight) resolve in the same order: the client's explicit choice, then the client's configured default model, then a stop with a clear ask-the-client message. No silent named substitute remains.
+- **Presentations catalog (D2).** model_catalog.json keeps its registry and capability data, but the text.strong alias carries no pinned model: model_catalog.py resolves it to the client's choice (PRESENTATION_MODEL_TEXT_STRONG) or the client's configured default model, failing with an ask-the-client error when neither exists, on the rollback path as well. model_router.py gains the configured-default rung between the client's declared plan and the capability recommendation, and every routing decision now names its source (client-plan, configured-default, or recommendation); a parked phase carries the capability recommendation and an ask-the-client reason. deck-intake-driver.py records the client's own selected model for the DeepSeek variant answer by resolving the variant word against the client's wired inventory, never by translating it into a pinned id.
+- **Scoring helper.** The vendored llm_score.py chain resolves from the client's explicit scoring choices or their configured default model; an unconfigured box fails loudly with an ask-the-client message instead of silently scoring on a named default (the failure mode behind the 2026-08-17 incident its comments record).
+
+Version: `27.1.26` -> `27.1.27`.
+
 ## [Unreleased] - 2026-10-11 - docs(sop): drama-song SOP checks delivery against the twelve canonical arc beats and makes three labelled versions on a Yes
 
 The video SOP `templates/role-library/video/sops/SOP--drama-song-ad-pipeline.md` no longer states a fifteen-beat arc scaled by length or that one generation covers every length.

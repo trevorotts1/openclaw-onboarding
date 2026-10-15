@@ -4817,6 +4817,50 @@ def emit_af_coverage():
     record("AF-P-VERBATIM", "\n".join(
         build_deck.rich_prompt_quality_problems(RICH_PROMPT, _pverbatim_copy)))
 
+    # AF-P24 -- a structured prompt casting a Black woman founder (a Black
+    # subject, so the code applies) with all 8 base classes, a spelling-lock
+    # token and the density signals, but NONE of the five BlackCEO classes
+    # named, triggers rich_prompt_quality_problems to return AF-P24 alone.
+    # B32 declared and enforced AF-P24 (Item 26 GIP weave) and tests it in
+    # its own suite (tests/test_gip_weave_af_p24.py); this probe is the
+    # af-coverage half Guard A requires.
+    _p24_base = (
+        "[ARCHETYPE A1] People: a Black woman founder in a tailored charcoal "
+        "suit, confident expression, warm dimensional lighting, rim light. "
+        "NEGATIVE BLOCK: "
+        "Do not garble text, render every quoted string letter-for-letter. "  # class 1 + lock
+        "Do not mutate logo or monogram. "                                    # class 2
+        "Do not render bracketed placeholder tokens. "                        # class 3
+        "Do not narrate or telegraphing the image. "                          # class 4
+        "Do not produce anatomical finger artifacts or distorted facial. "    # class 5
+        "Do not let background compete with text zone or negative space. "    # class 6
+        "Do not alter skin tone or demographic representation mix. "          # class 7
+        "Do not show watermark emoji calibri artifact. "                      # class 8
+        # NONE of the five BlackCEO classes named (AF-P24 must fire)
+        "#1B2A4A primary hex. 72pt headline. Left third composition zone. "
+        "Reads exactly. "
+    )
+    _p24_pad = " ".join([
+        "Editorial photography direction calls for photoreal cinematic framing inside a modern boardroom at dusk.",
+        "Amber practical sconces cast warm tungsten highlights across a glass conference table with soft reflections.",
+        "Shallow depth of field keeps the subject crisp while the metropolitan skyline dissolves into gentle bokeh.",
+        "Volumetric haze and directional key light sculpt dimensional shadows without crushing highlight detail.",
+        "The tailored wardrobe reads premium and boardroom appropriate, with subtle fabric texture and clean tailoring lines.",
+        "Typographic hierarchy pairs an editorial serif display face with a humanist grotesque for supporting annotations.",
+        "Kerning, tracking, leading and baseline alignment follow a strict eight point modular scale throughout.",
+        "A restrained palette balances deep navy, warm gold accents, cream neutrals and slate supporting tones.",
+        "Composition reserves generous negative space around the headline block so glance legibility survives projection distance.",
+        "Leading lines from window mullions guide the viewer toward the focal subject positioned right of center.",
+        "Specular highlights on glass and brushed metal add luminous depth while matte surfaces anchor the scene.",
+        "The mood conveys earned authority, momentum and calm confidence suited to a keynote opening slide.",
+        "Every quoted string on the slide renders verbatim, spelled precisely as supplied, with no paraphrase or omission.",
+        "Supporting subhead copy sits beneath the hero headline at a smaller size with wider letterspacing.",
+        "Background architecture stays softly defocused so no environmental detail competes with the message hierarchy.",
+        "Color grading favors warm highlights, cool shadow contrast and faithful saturation across the full frame.",
+    ]) * 6
+    _p24_txt = _p24_base + _p24_pad
+    record("AF-P24", "\n".join(build_deck.rich_prompt_quality_problems(_p24_txt)))
+
     # AF-COPY-QC — a copy-QC report that passes gate/average/pass/independence checks
     # BUT carries the "score_prompt_length" foreign signature triggers _chk_copy_qc to
     # return AF-COPY-QC (corrupt/foreign QC generator detected).

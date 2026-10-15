@@ -8,9 +8,17 @@ labels). Before this module existed that policy was config-only: the pipeline
 "routed" in prose. This is the deterministic executor of that policy -- the
 single choke point through which every billable text turn flows. It:
 
-  * resolves a runtime TIER ("content" or "qc_judge") to the CLIENT's own
-    priority-ordered provider chain from config/models.json (never a hardcoded
-    model name; forward-dated client model ids are taken AS-CONFIGURED),
+  * resolves a runtime TIER ("content" or "qc_judge") by SELECTION, never by
+    a shipped prescription: (1) the client's explicit choice for the task
+    (route-context model_choice, or the PODCAST_MODEL_CHOICE /
+    PODCAST_CONTENT_MODEL / PODCAST_QC_JUDGE_MODEL env labels), then (2) the
+    client's configured default model from models.client_defaults in the
+    CLIENT's own models config (located by the config search below), then
+    (3) NOTHING: if neither resolves, the router stops with a clear
+    ask-the-client message (exit 5) and never substitutes a named model
+    silently. A client-owned config may still carry its own per-tier chain;
+    that chain IS that client's configured default set and is honored
+    as-configured (forward-dated client model ids are taken AS-CONFIGURED),
   * resolves each link's credential by ENV LABEL only (live process env first),
     reporting SET / NOT SET and NEVER a secret value,
   * advances the chain on retryable failures (insufficient_credits, auth,
@@ -36,6 +44,8 @@ Exit codes (house convention; 1 = unexpected error):
   2  deny-pattern refusal (a denied / Anthropic-shaped id reached the router)
   3  chain exhausted, job held (durable HOLD + ONE deduped founder alert)
   4  budget ceiling block (podcast-cost-ledger.py refused the call before it billed)
+  5  no model resolved (no client choice, no client configured default):
+     the router stops and asks the client; it never substitutes a named model
 """
 from __future__ import annotations
 
@@ -62,6 +72,7 @@ MODELS_JSON_PATH = CONFIG / "models.json"
 
 # House exit codes for this script.
 EX_OK, EX_ERR, EX_DENY, EX_HOLD, EX_BUDGET = 0, 1, 2, 3, 4
+EX_ASK = 5  # no model resolved: stop and ask the client (never substitute)
 
 # The two RUNTIME tiers this router serves. Prompts speak only these tier names;
 # they never name a model. Everything else under podcast_engine.models (the
@@ -188,6 +199,19 @@ class ConfigError(ModelRouterError):
     exit_code = EX_ERR
 
 
+class ClientChoiceRequired(ModelRouterError):
+    """No client choice and no client configured default resolved for a tier.
+
+    This is a STOP, not a failure of the engine: the router asks the client
+    which model to use (or to record as their configured default) instead of
+    silently substituting a named model (selection policy, models.json)."""
+    exit_code = EX_ASK
+
+    def __init__(self, tier: str, message: str):
+        self.tier = tier
+        super().__init__(message)
+
+
 # ---------------------------------------------------------------------------
 # Transport (default: stdlib urllib; injectable for tests)
 # ---------------------------------------------------------------------------
@@ -274,21 +298,194 @@ def deny_patterns_of(block: dict) -> List[str]:
     return [str(p) for p in pats] if isinstance(pats, list) else []
 
 
+def providers_of(block: dict) -> dict:
+    """The provider capability registry (models.providers): lane connection
+    data (base_url, credential labels) with NO model names. Used to complete
+    a client-named model into a callable link."""
+    models = block.get("models") if isinstance(block.get("models"), dict) else {}
+    provs = models.get("providers")
+    return provs if isinstance(provs, dict) else {}
+
+
+def selection_of(block: dict) -> dict:
+    """The selection policy block (models.selection), or {} when a
+    client-owned config predates it (the built-in order still applies)."""
+    models = block.get("models") if isinstance(block.get("models"), dict) else {}
+    sel = models.get("selection")
+    return sel if isinstance(sel, dict) else {}
+
+
+def _provider_for_prefix(block: dict, prefix: str) -> Optional[str]:
+    """Map a choice-string prefix (ollama, openrouter, gemini, google, ...)
+    to a registry provider key, or None when the registry does not know it."""
+    prefix = str(prefix or "").strip().lower()
+    if not prefix:
+        return None
+    for key, lane in providers_of(block).items():
+        if prefix == str(key).strip().lower():
+            return key
+        for alias in (lane or {}).get("choice_prefixes", []) or []:
+            if prefix == str(alias).strip().lower():
+                return key
+    return None
+
+
+def _complete_link(block: dict, entry, tier: str) -> dict:
+    """Normalize one configured entry (a client default or a client-chain
+    link) into a full link dict: fill base_url / api_key_env / aliases from
+    the provider registry when the entry omits them; the entry's own fields
+    always win. A bare string entry is read as a provider-qualified choice."""
+    if isinstance(entry, str):
+        return _link_from_choice(block, entry, tier)
+    if not isinstance(entry, dict):
+        raise ConfigError("tier %s carries a non-object model entry" % tier)
+    link = dict(entry)
+    provider = str(link.get("provider", "")).strip()
+    if not provider and "/" in str(link.get("model", "")):
+        provider = _provider_for_prefix(block, str(link["model"]).split("/", 1)[0]) or ""
+        if provider:
+            link["provider"] = provider
+    lane = providers_of(block).get(provider) or {}
+    for field_name in ("base_url", "api_key_env"):
+        if not str(link.get(field_name, "")).strip() and lane.get(field_name):
+            link[field_name] = lane[field_name]
+    if not link.get("api_key_env_aliases") and lane.get("api_key_env_aliases"):
+        link["api_key_env_aliases"] = list(lane["api_key_env_aliases"])
+    return link
+
+
+def _link_from_choice(block: dict, choice, tier: str) -> dict:
+    """Build the single-link chain for the client's explicit choice: a full
+    link object, or a provider-qualified model id string whose lane comes
+    from the provider registry (ollama/<model>:cloud,
+    openrouter/<vendor>/<model>, gemini/<model>). A bare '<model>:cloud'
+    string rides the ollama-cloud lane, matching the id shape client
+    configs already use. Anything else is a ConfigError with instructions,
+    never a guessed lane."""
+    if isinstance(choice, dict):
+        link = _complete_link(block, choice, tier)
+        link["priority"] = 1
+        return link
+    text = str(choice or "").strip()
+    if not text:
+        raise ConfigError("empty model choice for tier %s" % tier)
+    provider = None
+    model = text
+    if "/" in text:
+        head, rest = text.split("/", 1)
+        provider = _provider_for_prefix(block, head)
+        if provider:
+            model = rest
+    if provider is None and text.endswith(":cloud"):
+        provider = _provider_for_prefix(block, "ollama")
+    if provider is None:
+        raise ConfigError(
+            "model choice %r does not name a known provider lane; pass a "
+            "provider-qualified id (ollama/<model>:cloud, "
+            "openrouter/<vendor>/<model>, gemini/<model>) or a full link "
+            "object" % text)
+    link = _complete_link(block, {"provider": provider, "model": model,
+                                  "id": text}, tier)
+    link["priority"] = 1
+    return link
+
+
+def _configured_entries(block: dict, tier: str) -> List[dict]:
+    """The client's configured default set for a tier, completed from the
+    provider registry: models.client_defaults.<tier> (one link object or a
+    list in the client's own priority order). When a client-owned config
+    instead carries its own per-tier chain (models.<tier> list), that chain
+    IS the client's configured default set and is honored as-configured."""
+    models = block.get("models") if isinstance(block.get("models"), dict) else {}
+    defaults = models.get("client_defaults")
+    raw = defaults.get(tier) if isinstance(defaults, dict) else None
+    entries: List[dict] = []
+    if isinstance(raw, dict) or isinstance(raw, str):
+        entries = [raw]
+    elif isinstance(raw, list):
+        entries = list(raw)
+    if not entries:
+        legacy = models.get(tier)
+        if isinstance(legacy, list):
+            entries = list(legacy)
+    links = [_complete_link(block, e, tier) for e in entries if e]
+    for i, link in enumerate(links):
+        if not link.get("priority"):
+            link["priority"] = i + 1
+    return sorted(links, key=lambda link: int(link.get("priority", 1_000_000)))
+
+
+def resolve_selection(block: dict, tier: str,
+                      context: Optional[dict] = None) -> List[dict]:
+    """Resolve a tier to its ordered link chain by the selection policy:
+    (1) the client's explicit choice for this task (route-context
+    model_choice, then the per-tier env label, then PODCAST_MODEL_CHOICE),
+    (2) the client's configured default set, (3) NOTHING: raise
+    ClientChoiceRequired with the ask-the-client message. The router never
+    substitutes a named model silently."""
+    if tier not in ROUTABLE_TIERS:
+        raise UnknownTierError(
+            "unknown tier %r (routable: %s)" % (tier, ", ".join(ROUTABLE_TIERS)))
+    choice = (context or {}).get("model_choice")
+    if not choice:
+        env_by_tier = (selection_of(block).get("client_choice") or {}).get(
+            "env_label_by_tier") or {}
+        label = env_by_tier.get(tier)
+        if label:
+            choice = os.environ.get(str(label), "").strip() or None
+    if not choice:
+        choice = os.environ.get("PODCAST_MODEL_CHOICE", "").strip() or None
+    if choice:
+        return [_link_from_choice(block, choice, tier)]
+    links = _configured_entries(block, tier)
+    if links:
+        return links
+    message = str(selection_of(block).get("on_unresolved_message") or "").strip()
+    if not message:
+        message = ("No model is configured for the %s tier. Ask the client "
+                   "which model they want to use for this work, or which "
+                   "model to record as their configured default, then record "
+                   "the answer in the client's models config "
+                   "(client_defaults) and re-run. Never pick a model for the "
+                   "client silently." % tier)
+    raise ClientChoiceRequired(tier, message)
+
+
+def resolve_tier(block: dict, tier: str) -> List[dict]:
+    """Backward-compatible resolver: the tier's configured default set (step
+    2 of the selection policy, with no per-task choice in play). Raises
+    ClientChoiceRequired when nothing is configured."""
+    return resolve_selection(block, tier)
+
+
 def validate_config(block: dict) -> None:
-    """Fail closed if the content tier is empty, a routable entry is missing a
-    base_url / api_key_env / provider / model, or ANY tier entry matches a deny
-    pattern (an Anthropic-shaped or denied id must never sit in a routable tier)."""
+    """Fail closed if the deny list is disarmed, the selection policy (when
+    present) does not end in the ask-the-client stop, or ANY configured entry
+    (client default or client chain, either tier) is missing a provider /
+    model / base_url / api_key_env after registry completion or matches a
+    deny pattern. An UNCONFIGURED tier is valid: routing it stops and asks
+    the client (ClientChoiceRequired), which is the policy working."""
     models = block.get("models")
     if not isinstance(models, dict):
         raise ConfigError("podcast_engine.models missing")
     deny = deny_patterns_of(block)
     if not deny:
         raise ConfigError("podcast_engine.deny_patterns missing or empty")
-    content = models.get(CONTENT_TIER)
-    if not isinstance(content, list) or not content:
-        raise ConfigError("content tier is empty; the router has nothing to route")
+    sel = selection_of(block)
+    if sel:
+        order = sel.get("order")
+        if order is not None and list(order) != ["client_choice",
+                                                 "client_configured_default"]:
+            raise ConfigError(
+                "selection.order must be [client_choice, "
+                "client_configured_default]")
+        if sel.get("on_unresolved") is not None \
+                and sel.get("on_unresolved") != "ask_client":
+            raise ConfigError(
+                "selection.on_unresolved must be ask_client (never a named "
+                "fallback)")
     for tier in ROUTABLE_TIERS:
-        for i, link in enumerate(models.get(tier, []) or []):
+        for i, link in enumerate(_configured_entries(block, tier)):
             where = "%s[%d]" % (tier, i)
             for field_name in ("provider", "model", "base_url", "api_key_env"):
                 if not str(link.get(field_name, "")).strip():
@@ -298,16 +495,6 @@ def validate_config(block: dict) -> None:
                 if probe and is_denied(str(probe), deny):
                     raise DenyPatternRefusal(
                         "config carries a denied id at %s (deny_patterns armed)" % where)
-
-
-def resolve_tier(block: dict, tier: str) -> List[dict]:
-    if tier not in ROUTABLE_TIERS:
-        raise UnknownTierError(
-            "unknown tier %r (routable: %s)" % (tier, ", ".join(ROUTABLE_TIERS)))
-    links = (block.get("models", {}) or {}).get(tier)
-    if not isinstance(links, list) or not links:
-        raise ConfigError("tier %r has no configured models" % tier)
-    return sorted(links, key=lambda link: int(link.get("priority", 1_000_000)))
 
 
 # ---------------------------------------------------------------------------
@@ -620,7 +807,7 @@ class ModelRouter:
         if self.config is None:
             raise ConfigError("router has no config loaded")
 
-        chain = resolve_tier(self.config, tier)
+        chain = resolve_selection(self.config, tier, context)
         primary_priority = int(chain[0].get("priority", 1))
         est_prompt = self._estimate_prompt_tokens(messages)
 
@@ -713,16 +900,27 @@ def _cli_validate(args) -> int:
     validate_config(block)
     print("models.json OK: %s" % path)
     for tier in ROUTABLE_TIERS:
+        try:
+            chain_links = resolve_tier(block, tier)
+        except ClientChoiceRequired:
+            print("  %-9s : unresolved (no client choice or configured "
+                  "default yet; routing stops and asks the client)" % tier)
+            continue
         chain = " -> ".join(
-            "%s/%s" % (l.get("provider"), l.get("model"))
-            for l in resolve_tier(block, tier))
+            "%s/%s" % (l.get("provider"), l.get("model")) for l in chain_links)
         print("  %-9s : %s" % (tier, chain))
     return EX_OK
 
 
 def _cli_resolve(args) -> int:
     block, _ = load_models_config(args.path)
-    for link in resolve_tier(block, args.tier):
+    try:
+        links = resolve_tier(block, args.tier)
+    except ClientChoiceRequired as exc:
+        print("resolve %s: ASK THE CLIENT: %s" % (args.tier, exc),
+              file=sys.stderr)
+        return EX_ASK
+    for link in links:
         _, status = resolve_credential(link)
         print("  %2d. provider=%-12s model=%-28s thinking=%-7s credential=%s"
               % (int(link.get("priority", 0)), link.get("provider", ""),
@@ -860,8 +1058,31 @@ def self_test() -> int:
         os.environ.setdefault(name, "dummy-not-a-real-secret")
 
     block, path = load_models_config()
-    content = resolve_tier(block, CONTENT_TIER)
-    judge = resolve_tier(block, JUDGE_TIER)
+
+    # The shipped config prescribes NO model: chain mechanics run against a
+    # SYNTHETIC client config (the shipped policy plus a client's recorded
+    # defaults). The example ids below are fixture data, not prescriptions.
+    client_block = json.loads(json.dumps(block))
+    client_block["models"]["client_defaults"] = {
+        "content": [
+            {"provider": "ollama-cloud", "id": "ollama/example-writer-1:cloud",
+             "model": "example-writer-1:cloud", "thinking": "high"},
+            {"provider": "ollama-cloud", "id": "ollama/example-writer-2:cloud",
+             "model": "example-writer-2:cloud", "thinking": "high"},
+            {"provider": "openrouter", "id": "openrouter/example/writer-1",
+             "model": "example/writer-1"},
+            {"provider": "gemini", "id": "example-cheap-1",
+             "model": "example-cheap-1"},
+        ],
+        "qc_judge": [
+            {"provider": "gemini", "id": "example-judge-1",
+             "model": "example-judge-1"},
+            {"provider": "ollama-cloud", "id": "ollama/example-writer-2:cloud",
+             "model": "example-writer-2:cloud"},
+        ],
+    }
+    content = resolve_tier(client_block, CONTENT_TIER)
+    judge = resolve_tier(client_block, JUDGE_TIER)
     content_first = content[0]["model"]
 
     # t0: the shipped config validates.
@@ -871,6 +1092,24 @@ def self_test() -> int:
     except Exception as exc:
         check("shipped models.json validates (%s)" % exc, False)
 
+    # t0b: the shipped config alone resolves NOTHING: routing it stops and
+    # asks the client (exit 5) instead of substituting a named model.
+    try:
+        _quiet_router(block, _ScriptedTransport([])).route(
+            CONTENT_TIER, [{"role": "user", "content": "x"}], {"client": "c", "job_id": "j0"})
+        check("unconfigured tier stops and asks the client", False)
+    except ClientChoiceRequired as exc:
+        check("unconfigured tier stops and asks the client (exit 5)",
+              exc.exit_code == EX_ASK)
+
+    # t0c: the client's explicit choice beats their configured default.
+    tr = _ScriptedTransport([_ok_response("example/writer-1", "chosen body")])
+    res = _quiet_router(client_block, tr).route(
+        CONTENT_TIER, [{"role": "user", "content": "write"}],
+        {"client": "c", "job_id": "j0c", "model_choice": "openrouter/example/writer-1"})
+    check("client choice beats the configured default",
+          res.model_used == "example/writer-1" and res.substituted is False)
+
     deny = deny_patterns_of(block)
 
     # t1: deny list catches denied family tokens and an Anthropic shape; passes real ids.
@@ -878,11 +1117,11 @@ def self_test() -> int:
     check("deny catches a 'sonnet' family token", is_denied("some-sonnet-3", deny))
     check("deny catches an Anthropic-family shape", is_denied(_C + "-x1", deny))
     check("deny passes the real content primary id", not is_denied(content_first, deny))
-    check("deny passes a real GLM id", not is_denied("glm-5.2:cloud", deny))
+    check("deny passes a plain client-configured id", not is_denied("example-writer-1:cloud", deny))
 
     # t2: content order-1 success (no substitution).
     tr = _ScriptedTransport([_ok_response(content_first, "episode body")])
-    res = _quiet_router(block, tr).route(
+    res = _quiet_router(client_block, tr).route(
         CONTENT_TIER, [{"role": "user", "content": "write"}], {"client": "c", "job_id": "j1"})
     check("content priority-1 success", res.priority == content[0]["priority"]
           and res.model_used == content_first and res.text == "episode body"
@@ -891,7 +1130,7 @@ def self_test() -> int:
     # t3: priority-1 rate-limit(429) advances to priority-2 and MARKS a substitution.
     subs = []
     tr = _ScriptedTransport([_err_response(429, "rate limited"), _ok_response(content[1]["model"])])
-    res = _quiet_router(block, tr, substitution_fn=lambda *a: subs.append(a)).route(
+    res = _quiet_router(client_block, tr, substitution_fn=lambda *a: subs.append(a)).route(
         CONTENT_TIER, [{"role": "user", "content": "x"}], {"client": "c", "job_id": "j2"})
     check("rate-limit advances to the fallback", res.priority == content[1]["priority"]
           and any(d["class"] == "rate_limit" for d in res.degradations))
@@ -901,7 +1140,7 @@ def self_test() -> int:
     holds, alerts = [], []
     script = [_err_response(429)] + [ProviderError("p", ErrorClass.TIMEOUT)] * (len(content) - 1)
     tr = _ScriptedTransport(script)
-    router = _quiet_router(block, tr,
+    router = _quiet_router(client_block, tr,
                            hold_fn=lambda ctx, reason, tier: holds.append(reason),
                            alert_fn=lambda ctx, tier, reason: alerts.append(reason))
     try:
@@ -916,7 +1155,7 @@ def self_test() -> int:
     # t5: priority-1 credit-out(402) then priority-2 success -> recovers, NO hold/alert.
     holds, alerts = [], []
     tr = _ScriptedTransport([_err_response(402, "insufficient credits"), _ok_response(content[1]["model"])])
-    router = _quiet_router(block, tr,
+    router = _quiet_router(client_block, tr,
                            hold_fn=lambda *a: holds.append(a), alert_fn=lambda *a: alerts.append(a))
     res = router.route(CONTENT_TIER, [{"role": "user", "content": "x"}], {"client": "c", "job_id": "j4"})
     check("credit-out on primary recovers on fallback",
@@ -926,7 +1165,7 @@ def self_test() -> int:
     # t6: every link credit-out -> ChainExhaustedHold(credit_out), one hold + one alert.
     holds, alerts = [], []
     tr = _ScriptedTransport([_err_response(402, "insufficient credit")] * len(content))
-    router = _quiet_router(block, tr,
+    router = _quiet_router(client_block, tr,
                            hold_fn=lambda ctx, reason, tier: holds.append(reason),
                            alert_fn=lambda ctx, tier, reason: alerts.append(reason))
     try:
@@ -941,7 +1180,7 @@ def self_test() -> int:
     def blocking_pre(*a, **k):
         raise BudgetCeilingBlock("ceiling reached")
     tr = _ScriptedTransport([_ok_response(content_first)])
-    router = ModelRouter(config_block=block, transport=tr, pre_meter=blocking_pre,
+    router = ModelRouter(config_block=client_block, transport=tr, pre_meter=blocking_pre,
                          post_meter=_noop, hold_fn=_noop, alert_fn=_noop, substitution_fn=_noop)
     try:
         router.route(CONTENT_TIER, [{"role": "user", "content": "x"}], {"client": "c", "job_id": "j6"})
@@ -953,14 +1192,14 @@ def self_test() -> int:
     # t8: JUDGE resolves to a DIFFERENT first model than the content writer.
     check("judge first resolution differs from content drafting", judge[0]["model"] != content_first)
     tr = _ScriptedTransport([_ok_response(judge[0]["model"], "score: 9")])
-    jres = _quiet_router(block, tr).route(
+    jres = _quiet_router(client_block, tr).route(
         JUDGE_TIER, [{"role": "user", "content": "judge"}], {"client": "c", "job_id": "j7"})
     check("judge routes and records a non-denied honest model",
           jres.model_used == judge[0]["model"] and not is_denied(jres.model_used, deny))
 
     # t9: a config carrying a denied id fails closed at construction.
-    poisoned = json.loads(json.dumps(block))
-    poisoned["models"][CONTENT_TIER][0]["model"] = "vendor-opus-9"
+    poisoned = json.loads(json.dumps(client_block))
+    poisoned["models"]["client_defaults"][CONTENT_TIER][0]["model"] = "vendor-opus-9"
     try:
         ModelRouter(config_block=poisoned)
         check("denied-id config fails closed", False)
@@ -970,7 +1209,7 @@ def self_test() -> int:
     # t10: hold-immediately-on-credit-out short-circuits on the FIRST 402.
     holds = []
     tr = _ScriptedTransport([_err_response(402, "insufficient credit"), _ok_response(content[1]["model"])])
-    router = _quiet_router(block, tr, hold_fn=lambda ctx, reason, tier: holds.append(reason),
+    router = _quiet_router(client_block, tr, hold_fn=lambda ctx, reason, tier: holds.append(reason),
                            hold_immediately_on_credit_out=True)
     try:
         router.route(CONTENT_TIER, [{"role": "user", "content": "x"}],
@@ -987,7 +1226,7 @@ def self_test() -> int:
         # Both ollama-cloud lanes now have no key -> skipped; first funded is openrouter.
         first_funded = next(l for l in content if l["provider"] != "ollama-cloud")
         tr = _ScriptedTransport([_ok_response(first_funded["model"])])
-        res = _quiet_router(block, tr).route(
+        res = _quiet_router(client_block, tr).route(
             CONTENT_TIER, [{"role": "user", "content": "x"}], {"client": "c", "job_id": "j9"})
         check("unset-credential link is skipped, routes to a funded lane",
               res.provider == first_funded["provider"]

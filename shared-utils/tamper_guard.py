@@ -11,24 +11,41 @@ and verifies them byte-exactly:
   * on the fleet watchdog cadence (600 s):               watchdog
   * after every update roll (post-roll, lock released):  verify
 
-Divergence (design Section 3) or extraction behavior (design Section 4)
-locks that one skill on that one install: the incident is recorded FIRST,
-staff are notified off the box, the tree is moved bytes-preserved into
-off-tree quarantine, and a stub takes its place (design Section 6).
-Reinstatement is staff-only, requires the recorded user_spoke_to_staff
-attestation, and restores from canonical source, never from quarantine by
-default (design Section 7).
+Divergence (design Section 3) locks that one skill on that one
+install at once. Extraction behavior (design Section 4) runs through
+the three-strike ladder (DEV-1 as amended, below): each strike is
+recorded and notified at warning time, and the third standing strike
+locks the struck skill. Either way the response is the same once it
+fires: the incident is recorded FIRST, staff are notified off the
+box, the tree is moved bytes-preserved into off-tree quarantine, and
+a stub takes its place (design Section 6). Reinstatement is
+staff-only, requires the recorded user_spoke_to_staff attestation,
+and restores from canonical source, never from quarantine by default
+(design Section 7).
 
 DEVIATIONS FROM THE FIX-PLAN LETTER, AS DESIGNED (design Section 11).
-These are part of the design as presented to the owner; his ruling is
-still outstanding. They are built exactly as designed and flagged here,
-in the operator doc (TAMPER-GUARD.md), and in the build manifest. Do not
-narrow them silently:
+They were built exactly as designed and flagged here, in the operator
+doc (TAMPER-GUARD.md), and in the build manifest. The owner ruled on
+2026-10-15: DEV-1 to DEV-4 are accepted as built, and DEV-1's posture
+is then EXTENDED the same day by his warn-first amendment (design
+amendment build/b38-antitamper/AMENDMENT-2026-10-15.md, with his
+calls on its flagged points F1 to F8), which this build implements:
 
-  DEV-1  Judgment-layer posture: deterministic triggers lock
-         immediately. An uncorroborated judgment-layer positive WARNS
-         and logs first; it locks on a second positive or on any
-         deterministic corroboration in the same install history.
+  DEV-1  Judgment-layer posture, as amended: comprehension and use
+         never score as extraction (the Section 4.1 "does not count"
+         list is an explicit scoring pass). Every conversational and
+         pattern trigger warns first: a strike is recorded, the
+         client sees the strike notice, and the owner is notified and
+         asked for his call (allow the behavior, or remove the
+         strike). Strikes accumulate PER CLIENT across all guarded
+         skills; the third standing strike locks automatically
+         through the Section 6 response. Corroboration never skips
+         the warning. Ordinary D1/D3 events are strikes (the act
+         itself is still denied at once); bulk mechanical dumping
+         locks immediately, even on a first offense (thresholds at
+         the constants below). The integrity trigger is not part of
+         the ladder and keeps its immediate lockout. DEV-2, DEV-3,
+         and DEV-4 stand as accepted, unchanged.
   DEV-2  Harness-shape immediacy: in the 999 Claude Code shape, chat
          replies pass through no hook, so a CONVERSATIONAL lock is
          recorded at once, tool-level denial is immediate, and the
@@ -59,9 +76,10 @@ conversational layer reuses the DEL-17 two-strike pattern shipped in
 folder with a hard refusal to live inside one, silent staff notices,
 shared extraction-marker vocabulary, hermetic selftest discipline). The
 design governs where the two differ: Item 32 quarantines bytes-preserved
-instead of wiping, uses the design Section 6.3 stub text, locks
-deterministic triggers immediately rather than at a second strike, and
-warns first only for the judgment layer (DEV-1).
+instead of wiping, uses the design Section 6.3 stub text, and, under
+the owner's 2026-10-15 amendment, warns first for every conversational
+and pattern trigger through the three-strike ladder (DEV-1 as
+amended), rather than the two-strike module's flat count.
 
 HONESTY LIMITS (design Section 9; these stay visible on purpose):
   * A client who owns their box has root. Skills are plain files with
@@ -126,9 +144,15 @@ STUB_VERSION_NAME = "skill-version.txt"
 # reference line. Nothing else: no instructions, no internal detail.
 STUB_TEXT = "This skill is currently disabled. Please contact staff for assistance."
 
-# Design Section 6.6: the judgment first-warning is a neutral notice,
-# no rule detail, no accusation.
-JUDGMENT_WARNING_TEXT = "This conversation has been flagged for staff review."
+# The warning notice (design Section 6.6, as amended by the owner
+# ruling of 2026-10-15, call F8): the client is told plainly that a
+# strike was recorded and that Trevor was notified. No thresholds, no
+# counting rules, no rule detail: naming the ladder's edges would
+# teach them to the person probing them.
+JUDGMENT_WARNING_TEXT = (
+    "This conversation has been flagged for staff review. A strike "
+    "has been recorded on your account, and Trevor has been "
+    "notified.")
 
 # Design Section 2.5: the watchdog runs on the existing 600 s cadence.
 WATCHDOG_CADENCE_SECONDS = 600
@@ -148,6 +172,33 @@ EGRESS_VERBATIM_CHARS = 200
 EGRESS_SHINGLE_MIN = 3
 SHINGLE_WORDS = 8
 
+# The three-strike ladder (owner ruling 2026-10-15; amendment
+# Sections A2/B, calls F1/F5/F6): lockout is automatic at the third
+# STANDING strike, counted per client across every guarded skill on
+# the install. Strikes one and two are warnings only.
+STRIKES_TO_LOCKOUT = 3
+
+# Bulk mechanical dumping thresholds (amendment call F2, the split;
+# the ruling leaves the values to the crew, to be set in the build
+# and stated in the record; they are also stated in TAMPER-GUARD.md).
+# A bulk event is not a conversational act at all, so it locks
+# immediately through the Section 6 response, even on a first
+# offense, while the act itself is denied like any other.
+#   BULK_EGRESS_VERBATIM_CHARS: a single outbound payload carrying a
+#     verbatim span of internal text at or above 2000 characters
+#     (ten times the ordinary D3 threshold) is a mechanical dump of
+#     sealed text, not a slipped quote.
+BULK_EGRESS_VERBATIM_CHARS = 2000
+#   BULK_GATED_ACTS_PER_SESSION: more than 10 denied gated source
+#     acts (D1 trips: reads, copies, archives, or transmits of
+#     in-scope source toward outside destinations) inside one
+#     session is a scripted sweep, not a client fumbling with agent
+#     tooling. The skill's own execution reads are allowed at the
+#     gate and never counted. (The third bulk form, an archive
+#     action over an in-scope tree, needs no number: the action
+#     itself is the bulk form.)
+BULK_GATED_ACTS_PER_SESSION = 10
+
 # Trigger / event classes (design Sections 3.2 and 6.4).
 CLS_INTEGRITY = "AF-TAMPER-INTEGRITY"
 CLS_MANIFEST = "AF-TAMPER-MANIFEST"
@@ -163,6 +214,12 @@ EV_GUARDFAULT = "GUARDFAULT"
 # logged; the design's class list has no name for that record, so this
 # audit class is an implementation addition, flagged in the manifest.
 EV_KEY_ACCEPTANCE = "KEY_ACCEPTANCE"
+# The ladder's staff-resolution classes (owner ruling 2026-10-15;
+# amendment B5 and call F3): a pardon REMOVES a strike, an allow
+# VOIDS it. Both append records of these classes against the warning
+# incident; neither edits or deletes the warning record itself.
+EV_STRIKE_PARDON = "STRIKE_PARDON"
+EV_STRIKE_ALLOW = "STRIKE_ALLOW"
 
 # Park reason written for in-flight runs (design Section 6.3(d)).
 PARK_REASON = "TAMPER_LOCKED"
@@ -177,6 +234,7 @@ BUILTIN_EXCLUSIONS = [
 ]
 
 ENV_GUARD_HOME = "TAMPER_GUARD_HOME"
+ENV_CLIENT_NAME = "TAMPER_GUARD_CLIENT_NAME"
 ENV_KEYS_FILE = "TAMPER_GUARD_KEYS_FILE"
 ENV_KEY = "TAMPER_GUARD_KEY"
 ENV_KEY_ID = "TAMPER_GUARD_KEY_ID"
@@ -537,6 +595,27 @@ class Guard:
             "shape": self.environ.get("TAMPER_GUARD_SHAPE", "unspecified"),
         }
 
+    def client_name(self) -> str | None:
+        """The client's name as recorded at install time (owner
+        ruling 2026-10-15, call F4). The installer records it in the
+        guard registry under the top-level "client_name" key when the
+        install is made, and the TAMPER_GUARD_CLIENT_NAME environment
+        value, when set, takes precedence (it is the operator's
+        override on a box whose registry predates the field).
+        Notifications carry this name so Trevor reads which client
+        was warned in plain terms, not a hostname he must translate.
+        When neither source has a value there is no name to report:
+        records carry None here and the box identity stands, exactly
+        as before this field existed. A missing name never blocks a
+        record, a notification, or a strike."""
+        name = self.environ.get(ENV_CLIENT_NAME)
+        if name:
+            return name
+        stored = self.registry().get("client_name")
+        if isinstance(stored, str) and stored:
+            return stored
+        return None
+
     def base_record(self, slug: str, trigger_class: str,
                     evidence: dict, action_taken: str,
                     actor: str = "tamper-guard") -> dict:
@@ -544,12 +623,83 @@ class Guard:
             "incident_id": self.new_incident_id(),
             "ts": _iso(_now()),
             "box": self.box_identity(),
+            "client": self.client_name(),
             "skill": slug,
             "trigger_class": trigger_class,
             "evidence": evidence,
             "action_taken": action_taken,
             "actor": actor,
         }
+
+    # -- the three-strike ladder ledger (owner ruling 2026-10-15) ----
+    # The incident log stays the append-only evidence; nothing below
+    # edits or deletes a log record. The ledger is a derived index
+    # over the log, kept in the registry's top-level "strikes" list
+    # beside the per-skill tree entries (the per-skill
+    # judgment_warnings field stays as the judgment layer's evidence
+    # index, as the amendment's B5 keeps it). One entry per strike:
+    # the warning incident id, the skill the strike arose on, the
+    # trigger kind, the session, and the resolution state
+    # (standing | pardoned | voided). The standing count is PER
+    # CLIENT across every guarded skill on this install (call F6):
+    # probes against two different skills add up to the same
+    # lockout. Strikes never expire on their own (call F5); the only
+    # ways off the ladder are staff pardon and staff allow.
+
+    def record_strike(self, incident_id: str, slug: str, kind: str,
+                      session_id: str = "") -> dict:
+        reg = self.registry()
+        entry = {"incident_id": incident_id, "skill": slug,
+                 "kind": kind, "session_id": session_id,
+                 "recorded_at": _iso(_now()), "state": "standing"}
+        reg.setdefault("strikes", []).append(entry)
+        self.save_registry(reg)
+        return entry
+
+    def standing_strikes(self) -> list[dict]:
+        return [e for e in self.registry().get("strikes", [])
+                if e.get("state") == "standing"]
+
+    def standing_strike_count(self) -> int:
+        return len(self.standing_strikes())
+
+    def strike_sessions(self, kind: str) -> set[str]:
+        """Sessions already holding a strike of one trigger kind,
+        standing or resolved (call F5: one strike per session for a
+        continuous attempt; a pardon or allow does not reopen the
+        same session's one strike)."""
+        return {e.get("session_id") for e in self.registry().get(
+            "strikes", [])
+            if e.get("kind") == kind and e.get("session_id")}
+
+    def note_gated_act(self, session_id: str) -> int:
+        """Count one denied D1 act toward its session's bulk tally
+        (call F2) and return the session's new total. Only acts the
+        gate DENIED reach this counter: the skill's own execution
+        reads are allowed earlier in the gate and never counted, and
+        acts already answered by a lockout short-circuit before
+        counting."""
+        if not session_id:
+            return 0
+        reg = self.registry()
+        acts = reg.setdefault("gated_acts", {})
+        acts[session_id] = int(acts.get(session_id, 0)) + 1
+        self.save_registry(reg)
+        return acts[session_id]
+
+    def resolve_strike(self, incident_id: str,
+                       resolution: str) -> bool:
+        """Mark a strike pardoned or voided in the ledger. The
+        incident-log record is never edited (the log is append-only);
+        the resolution lives here and in its own appended record."""
+        reg = self.registry()
+        for entry in reg.get("strikes", []):
+            if entry.get("incident_id") == incident_id:
+                entry["state"] = resolution
+                entry["resolved_at"] = _iso(_now())
+                self.save_registry(reg)
+                return True
+        return False
 
     # -- staff notification (design Section 6.2) ------------------------
     def notify_staff(self, record: dict) -> dict:
@@ -916,6 +1066,66 @@ class Checker:
                 "incident_id": incident_id,
                 "user_text": stub_user_text(incident_id)}
 
+    def respond_strike(self, tree: Path, slug: str, evidence: dict,
+                       sub_rule: str, session_id: str = "",
+                       defer_stub: bool = False) -> dict:
+        """The ladder step for a conversational or pattern strike
+        (owner ruling 2026-10-15; amendment Sections A2/B2/B3 and
+        calls F1/F5/F6).
+
+        The strike is recorded FIRST and staff are notified at
+        warning time, through the same record-and-notify path every
+        guard event uses; the notification names the client (F4) and
+        asks for Trevor's call: allow the behavior, or remove the
+        strike (A3). The client sees the strike notice (F8). Strikes
+        one and two carry no further consequence (F1). One strike per
+        session per trigger kind for a continuous attempt (F5): a
+        repeat of a kind inside a session that already holds that
+        kind's strike is refused and recorded, but records no second
+        strike. When the strike just recorded is the third STANDING
+        strike on the client's record, counted across every guarded
+        skill on the install (F6), the struck skill locks out
+        automatically through respond_lockout above, unchanged
+        (deferred to the next session start in the harness shape,
+        DEV-2)."""
+        guard = self.guard
+        ev = dict(evidence)
+        ev["sub_rule"] = sub_rule
+        if session_id and session_id in guard.strike_sessions(sub_rule):
+            record = guard.record_and_notify(
+                slug, CLS_EXTRACT,
+                {**ev, "note": "repeat of a strike kind already "
+                               "recorded for this session; refused, "
+                               "no second strike (F5: one strike per "
+                               "session for a continuous attempt)"},
+                "warned")
+            return {"action": "warn", "strike_recorded": False,
+                    "standing_strikes": guard.standing_strike_count(),
+                    "incident_id": record["incident_id"],
+                    "user_text": JUDGMENT_WARNING_TEXT}
+        record = guard.record_and_notify(slug, CLS_EXTRACT, ev,
+                                         "warned")
+        guard.record_strike(record["incident_id"], slug, sub_rule,
+                            session_id)
+        standing = guard.standing_strike_count()
+        if standing >= STRIKES_TO_LOCKOUT:
+            outcome = self.respond_lockout(
+                tree, slug, CLS_EXTRACT,
+                {**ev, "strike_incident": record["incident_id"],
+                 "standing_strikes": standing,
+                 "note": "third standing strike on the client's "
+                         "record, counted per client across guarded "
+                         "skills; automatic lockout (F6)"},
+                sub_rule=sub_rule, defer_stub=defer_stub)
+            return {"action": "lock", "strike_recorded": True,
+                    "standing_strikes": standing,
+                    "strike_incident_id": record["incident_id"],
+                    **outcome}
+        return {"action": "warn", "strike_recorded": True,
+                "standing_strikes": standing,
+                "incident_id": record["incident_id"],
+                "user_text": JUDGMENT_WARNING_TEXT}
+
     def _apply_lock(self, tree: Path, slug: str, incident_id: str,
                     trigger_class: str) -> None:
         guard = self.guard
@@ -1240,9 +1450,13 @@ def session_start(guard: Guard, checker: Checker, tree: Path,
 
 # --------------------------------------------------------------------------
 # Trigger (b), deterministic layer (design Section 4.2). All three
-# rules lock immediately. The conversational entry points take staff
-# ONLY as a StaffContext minted by authenticate_staff(); message
-# content can never create one (design Section 5).
+# rules DENY the act at the moment it occurs. Under the owner ruling
+# of 2026-10-15 (DEV-1 as amended) their consequence is a strike on
+# the three-strike ladder, except bulk mechanical dumping, which
+# locks immediately through the Section 6 response (the F2 split;
+# thresholds at the constants above). The conversational entry points
+# take staff ONLY as a StaffContext minted by authenticate_staff();
+# message content can never create one (design Section 5).
 # --------------------------------------------------------------------------
 
 def load_patterns() -> dict:
@@ -1282,7 +1496,8 @@ def detect_d2(text: str, patterns: dict | None = None) -> dict | None:
 
 class ConversationalGuard:
     """D1/D2/D3 enforcement for one install. Holds the Checker used to
-    run the full Section 6 response when a deterministic rule fires."""
+    run the ladder strike path, and the full Section 6 response when
+    the ladder (third standing strike) or a bulk event fires it."""
 
     def __init__(self, guard: Guard, checker: Checker,
                  install_shape: str = "openclaw"):
@@ -1305,6 +1520,12 @@ class ConversationalGuard:
         and logged as AF-TAMPER-EXEMPT-CLAIM (log and notify only; it
         never exempts, never unlocks) and is attached as corroborating
         evidence when a deterministic rule fires in the same session.
+
+        Under the amended ladder (owner ruling 2026-10-15, A2) a D2
+        hit refuses the request and records a strike with the strike
+        notice shown and Trevor notified; it does NOT lock on its
+        own. Lockout comes only from the ladder (the third standing
+        strike), and corroboration never skips the warning.
         """
         guard = self.guard
         entry = guard.tree_entry(slug)
@@ -1341,21 +1562,26 @@ class ConversationalGuard:
             evidence["corroboration"] = {
                 "exempt_claim_incident": claim_record["incident_id"],
                 "matched": claim}
-        outcome = self.checker.respond_lockout(
-            tree, slug, CLS_EXTRACT, evidence, sub_rule="D2",
+        return self.checker.respond_strike(
+            tree, slug, evidence, "D2", session_id=session_id,
             defer_stub=self._defer())
-        return {"action": "lock", **outcome}
 
     def tool_gate(self, action: str, target: Path, tree: Path, slug: str,
                   caller_root: Path | None = None,
                   destination: Path | None = None,
-                  staff: StaffContext | None = None) -> dict:
+                  staff: StaffContext | None = None,
+                  session_id: str = "") -> dict:
         """D1 tool gate (design Section 4.2): from a non-staff context,
         a tool call that reads, copies, archives, or transmits in-scope
         skill source files outside the skill's own execution paths is
-        denied and trips. The skill's own scripts reading their own
-        files during a run is execution, not extraction: the
-        distinction is caller and destination."""
+        denied at the moment it occurs. Under the amended ladder
+        (owner ruling 2026-10-15, F2) an ordinary trip records a
+        strike and the skill locks only through the ladder; the bulk
+        forms lock immediately: an archive action over an in-scope
+        tree, or denied gated acts in one session crossing
+        BULK_GATED_ACTS_PER_SESSION. The skill's own scripts reading
+        their own files during a run is execution, not extraction:
+        the distinction is caller and destination."""
         if action not in ("read", "copy", "archive", "transmit"):
             return {"allowed": True, "reason": "action-not-gated"}
         entry = self.guard.tree_entry(slug)
@@ -1383,13 +1609,45 @@ class ConversationalGuard:
                     return {"allowed": True, "reason": "own-execution"}
             except (ValueError, OSError):
                 pass
-        outcome = self.checker.respond_lockout(
-            tree, slug, CLS_EXTRACT,
-            {"sub_rule": "D1", "action": action,
-             "target": str(target),
-             "caller_root": str(caller_root) if caller_root else None,
-             "destination": str(destination) if destination else None},
-            sub_rule="D1")
+        evidence = {"sub_rule": "D1", "action": action,
+                    "target": str(target),
+                    "caller_root": str(caller_root) if caller_root
+                    else None,
+                    "destination": str(destination) if destination
+                    else None,
+                    "session_id": session_id}
+        if action == "archive":
+            # Bulk form (F2): archiving an in-scope tree is the
+            # mechanical whole-tree dump itself, not a conversational
+            # act; it locks at once, even on a first offense. No
+            # strike is recorded: the lockout record is the record.
+            outcome = self.checker.respond_lockout(
+                tree, slug, CLS_EXTRACT,
+                {**evidence, "bulk": "archive-action",
+                 "note": "bulk mechanical dump: an archive action "
+                         "over an in-scope tree locks immediately, "
+                         "even on first offense (F2)"},
+                sub_rule="D1")
+            return {"allowed": False, "reason": "D1-BULK", **outcome}
+        outcome = self.checker.respond_strike(
+            tree, slug, evidence, "D1", session_id=session_id)
+        if outcome["action"] != "lock" and session_id:
+            # Bulk form (F2): a session whose denied gated acts cross
+            # the threshold is running a scripted sweep; it locks at
+            # once. The strike above still stands on the record.
+            acts = self.guard.note_gated_act(session_id)
+            if acts > BULK_GATED_ACTS_PER_SESSION:
+                outcome = self.checker.respond_lockout(
+                    tree, slug, CLS_EXTRACT,
+                    {**evidence, "bulk": "gated-act-count",
+                     "gated_acts_in_session": acts,
+                     "note": "bulk mechanical dump: denied gated "
+                             "source acts in one session crossed "
+                             "the bulk threshold; locks immediately, "
+                             "even on first offense (F2)"},
+                    sub_rule="D1")
+                return {"allowed": False, "reason": "D1-BULK",
+                        **outcome}
         return {"allowed": False, "reason": "D1", **outcome}
 
     def egress_check(self, text: str, slug: str, tree: Path,
@@ -1398,7 +1656,12 @@ class ConversationalGuard:
         """D3 egress span check (design Section 4.2): outbound content
         from a non-staff context is checked for verbatim spans of
         in-scope internal text. At or above threshold the payload is
-        blocked, replaced with the stub, and trips. Client run
+        blocked and replaced. Under the amended ladder (owner ruling
+        2026-10-15, F2) an ordinary block records a strike and the
+        replacement text is the strike notice; a bulk payload (a
+        verbatim span at or above BULK_EGRESS_VERBATIM_CHARS) locks
+        at once and the replacement is the stub text, as is a block
+        that is itself the third standing strike. Client run
         artifacts are never in the shingle set (the set is built only
         from shipped covered files, Section 2.2), so explaining the
         client's own results can never trip this rule."""
@@ -1440,8 +1703,23 @@ class ConversationalGuard:
                         "matched_shingles": matched,
                         "longest_verbatim_chars": longest_chars,
                         "excerpt": longest_span[:200]}
-            outcome = self.checker.respond_lockout(
-                tree, slug, CLS_EXTRACT, evidence, sub_rule="D3",
+            if longest_chars >= BULK_EGRESS_VERBATIM_CHARS:
+                # Bulk form (F2): one payload carrying a verbatim
+                # span this large is a mechanical dump of sealed
+                # text; it locks at once, even on a first offense.
+                # The payload is still blocked and stub-replaced.
+                outcome = self.checker.respond_lockout(
+                    tree, slug, CLS_EXTRACT,
+                    {**evidence, "bulk": "oversized-egress-payload",
+                     "note": "bulk mechanical dump: a single egress "
+                             "payload at or above the bulk verbatim "
+                             "threshold locks immediately, even on "
+                             "first offense (F2)"},
+                    sub_rule="D3", defer_stub=self._defer())
+                return {"blocked": True, "reason": "D3-BULK",
+                        "replacement": outcome["user_text"], **outcome}
+            outcome = self.checker.respond_strike(
+                tree, slug, evidence, "D3", session_id=session_id,
                 defer_stub=self._defer())
             return {"blocked": True, "reason": "D3",
                     "replacement": outcome["user_text"], **outcome}
@@ -1465,11 +1743,17 @@ def _inside(path: Path, tree: Path) -> bool:
 # rubric is design Section 4.1 with the Section 4.4 worked examples as
 # its calibration corpus (every example is exercised by the test suite).
 #
-# DEV-1 POSTURE (flagged, design Section 11): a judgment positive alone
-# WARNS and logs first. It locks on a second positive on the same
-# skill, or on any deterministic corroboration in the same install
-# history (a prior deterministic AF-TAMPER-EXTRACT incident on the
-# install, or an exempt-claim recorded for the same session).
+# DEV-1 POSTURE, AS AMENDED (owner ruling 2026-10-15; amendment
+# Sections A1/A2 and calls F1/F5/F6): DEV-1's warn-first step is
+# extended into the three-strike ladder, not replaced. Before
+# scoring, the A1 exclusion pass drops comprehension and use turns,
+# so they can never count toward the signals. A positive records ONE
+# strike per session (F5), however it is corroborated: corroboration
+# never skips the warning and a corroborated positive still counts
+# one strike. The third standing strike, counted per client across
+# all guarded skills (F6), locks through the Section 6 response.
+# has_deterministic_corroboration() survives as evidence recorded on
+# the strike record; it decides nothing by itself anymore.
 # --------------------------------------------------------------------------
 
 def _turns_from_transcript(data) -> list[dict]:
@@ -1496,6 +1780,26 @@ def _turns_from_transcript(data) -> list[dict]:
     return []
 
 
+def _is_comprehension_or_use(lowered: str, patterns: dict) -> bool:
+    """The A1 exclusion (owner ruling 2026-10-15): the design
+    Section 4.1 "does not count" list as an explicit scoring pass.
+    A turn counts as comprehension or use when it carries one of the
+    versioned comprehension markers (a how-to-use framing, a
+    business-level ask, the client's own work product or run, a
+    troubleshooting or redo ask) AND names no internal artifact and
+    no verbatim-text extraction phrase: the design Section 4.1 line
+    is that describing behavior and results is ordinary use while
+    disclosing the shipped text or construction is extraction, so a
+    turn asking for the text itself is never reclassified as
+    comprehension by a polite framing around it."""
+    if _contains_any(lowered, patterns["internal_artifacts"]):
+        return False
+    if _contains_any(lowered, patterns["extraction_phrases"]):
+        return False
+    return _contains_any(
+        lowered, patterns["comprehension_markers"]) is not None
+
+
 def score_transcript(turns: list[dict],
                      patterns: dict | None = None) -> dict:
     """The rubric (pure). Signals over USER turns only:
@@ -1504,7 +1808,10 @@ def score_transcript(turns: list[dict],
       framing:     jailbreak framings aimed at confidentiality
     Positive when sequential >= 3, paraphrase >= 2, framing >= 2, or
     mixed signals total >= 4 across at least two classes: incremental
-    reconstruction is a pattern across turns, not one phrase."""
+    reconstruction is a pattern across turns, not one phrase.
+    Comprehension and use turns are excluded by construction BEFORE
+    any signal phrase in them is counted (A1): the exclusion is a
+    property of this function, so every caller inherits it."""
     patterns = patterns or load_patterns()
     signals: dict[str, list[int]] = {"sequential": [], "paraphrase": [],
                                      "framing": []}
@@ -1513,6 +1820,8 @@ def score_transcript(turns: list[dict],
                 "user", "human", "client"):
             continue
         lowered = turn.get("text", "").lower()
+        if _is_comprehension_or_use(lowered, patterns):
+            continue
         for cls in signals:
             if _contains_any(lowered, patterns["judgment"][cls]):
                 signals[cls].append(idx)
@@ -1540,7 +1849,18 @@ def evaluate_transcript(data, guard: Guard, checker: Checker, slug: str,
                         staff: StaffContext | None = None,
                         install_shape: str = "openclaw") -> dict:
     """Run the judgment layer over a transcript export and apply the
-    DEV-1 posture. Returns {verdict: clean|warned|locked, ...}."""
+    ladder (DEV-1 as amended by the owner ruling of 2026-10-15).
+    Returns {verdict: clean|warned|locked, ...}.
+
+    A positive records a strike through Checker.respond_strike: warn,
+    notice, notify; the third standing strike on the client's record
+    locks. Corroboration is computed and recorded as evidence only:
+    it never skips the warning and never adds a second strike (F5).
+    The per-skill registry judgment_warnings list is appended for
+    every recorded judgment strike, warned or locking, exactly as
+    the DEV-1 build recorded it: it remains this layer's evidence
+    index (amendment B5), while the ladder's count lives in the
+    per-client strike ledger."""
     turns = _turns_from_transcript(data)
     scored = score_transcript(turns)
     if not scored["positive"]:
@@ -1559,19 +1879,18 @@ def evaluate_transcript(data, guard: Guard, checker: Checker, slug: str,
                 "signal_turns": scored["signals"],
                 "prior_warnings": prior_warnings,
                 "corroborated": corroborated}
-    if prior_warnings >= 1 or corroborated:
-        outcome = checker.respond_lockout(
-            tree, slug, CLS_EXTRACT, evidence, sub_rule="JUDGMENT",
-            defer_stub=(install_shape == "claude-nine"))
+    outcome = checker.respond_strike(
+        tree, slug, evidence, "JUDGMENT", session_id=session_id,
+        defer_stub=(install_shape == "claude-nine"))
+    if outcome.get("strike_recorded"):
+        warnings = list(entry.get("judgment_warnings") or [])
+        warnings.append(outcome.get("strike_incident_id")
+                        or outcome["incident_id"])
+        guard.update_tree_entry(slug, judgment_warnings=warnings)
+    if outcome["action"] == "lock":
         return {"verdict": "locked", **outcome, **scored}
-    # DEV-1: first uncorroborated positive warns and logs; work
-    # continues; staff are notified (design Sections 6.6 and 11).
-    record = guard.record_and_notify(slug, CLS_EXTRACT, evidence,
-                                     "warned")
-    warnings = list(entry.get("judgment_warnings") or [])
-    warnings.append(record["incident_id"])
-    guard.update_tree_entry(slug, judgment_warnings=warnings)
-    return {"verdict": "warned", "incident_id": record["incident_id"],
+    return {"verdict": "warned",
+            "incident_id": outcome["incident_id"],
             "user_text": JUDGMENT_WARNING_TEXT, **scored}
 
 
@@ -1726,6 +2045,81 @@ def rebaseline(guard: Guard, checker: Checker, slug: str, tree: Path,
 
 
 # --------------------------------------------------------------------------
+# The ladder's staff calls (owner ruling 2026-10-15; amendment B5 and
+# call F3). Every warning notification asks Trevor for one of two
+# calls on the strike: allow the behavior, or remove the strike. Both
+# are staff acts, entered ONLY through authenticate_staff(), the only
+# channel through which staff acts exist in this system; there is no
+# conversational path to either, and no reply path is built (F4: his
+# call reaches staff in whatever channel the notification reached
+# him, and staff enter it here). Both APPEND their record to the
+# incident log in the existing record shape, naming the warning
+# incident, the skill and install, the staff identity, and the call
+# as given. The original warning record is never edited or deleted,
+# because the log is append-only by design; what the record shows
+# afterward is the warning plus the resolution beside it.
+#   pardon ("remove the strike"): the strike is REMOVED. It does not
+#     count toward the ladder and does not serve as a prior warning.
+#   allow ("allow the behavior"): the strike is VOID, judged
+#     legitimate, as if never recorded. No whitelist, no time box
+#     (F3): the next identical ask is judged fresh.
+# Neither act reinstates a locked skill: a resolution that arrives
+# after a strike-three lockout reduces the standing count, and
+# reinstatement stays the separate Section 7 flow above, because
+# reinstatement also restores verified content, which neither call
+# addresses (amendment B5).
+# --------------------------------------------------------------------------
+
+def _strike_resolution(guard: Guard, staff: StaffContext | None,
+                       incident_id: str, trigger_class: str,
+                       resolution: str, call: str) -> dict:
+    if not isinstance(staff, StaffContext):
+        raise Refusal("STAFF_AUTH_REQUIRED",
+                      "a strike resolution requires an authenticated "
+                      "staff context (amendment B5: staff acts exist "
+                      "only through the authenticated channel)")
+    original = guard.find_record(incident_id)
+    if original is None:
+        raise Refusal("INCIDENT_NOT_FOUND",
+                      f"no incident record for {incident_id}")
+    if not guard.resolve_strike(incident_id, resolution):
+        raise Refusal("NOT_A_STRIKE",
+                      f"incident {incident_id} is not a recorded "
+                      "strike on the ladder")
+    record = guard.record_and_notify(
+        original.get("skill") or "", trigger_class,
+        {"warning_incident": incident_id,
+         "skill": original.get("skill"),
+         "call": call,
+         "note": "staff resolution of a ladder strike (owner ruling "
+                 "2026-10-15); the warning record stands in the "
+                 "append-only log and the strike no longer counts"},
+        resolution, actor=staff.actor)
+    return {"resolved": resolution, "warning_incident": incident_id,
+            "record_id": record["incident_id"],
+            "standing_strikes": guard.standing_strike_count()}
+
+
+def pardon_strike(guard: Guard, staff: StaffContext | None,
+                  incident_id: str) -> dict:
+    """Trevor's "remove the strike" call (amendment B5): the strike
+    is pardoned off the client's standing count."""
+    return _strike_resolution(guard, staff, incident_id,
+                              EV_STRIKE_PARDON, "pardoned",
+                              "remove the strike")
+
+
+def allow_strike(guard: Guard, staff: StaffContext | None,
+                 incident_id: str) -> dict:
+    """Trevor's "allow the behavior" call (amendment call F3): the
+    strike is void, as if never recorded; the next identical ask is
+    judged fresh, with nothing whitelisted and nothing time-boxed."""
+    return _strike_resolution(guard, staff, incident_id,
+                              EV_STRIKE_ALLOW, "voided",
+                              "allow the behavior")
+
+
+# --------------------------------------------------------------------------
 # Watchdog and heartbeat (design Sections 2.5 and 6.5)
 # --------------------------------------------------------------------------
 
@@ -1865,6 +2259,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--target", required=True)
     p.add_argument("--caller-root", default=None)
     p.add_argument("--destination", default=None)
+    p.add_argument("--session-id", default="")
     p.add_argument("--staff-method", default=None)
     p.add_argument("--staff-token-env", default=None)
 
@@ -1906,6 +2301,19 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("tree")
     p.add_argument("--slug", required=True)
     p.add_argument("--reason", required=True)
+    p.add_argument("--staff-method", default=None)
+    p.add_argument("--staff-token-env", default=None)
+
+    p = sub.add_parser("pardon-strike", help="staff call on a warning: "
+                                             "remove the strike (B5)")
+    p.add_argument("--incident", required=True)
+    p.add_argument("--staff-method", default=None)
+    p.add_argument("--staff-token-env", default=None)
+
+    p = sub.add_parser("allow-strike", help="staff call on a warning: "
+                                            "allow the behavior, voiding "
+                                            "the strike (F3)")
+    p.add_argument("--incident", required=True)
     p.add_argument("--staff-method", default=None)
     p.add_argument("--staff-token-env", default=None)
 
@@ -1986,7 +2394,7 @@ def main(argv: list[str] | None = None) -> int:
                     if args.caller_root else None,
                     destination=Path(args.destination)
                     if args.destination else None,
-                    staff=staff)
+                    staff=staff, session_id=args.session_id)
                 _print(result)
                 return 0 if result["allowed"] else 1
             if args.cmd == "egress":
@@ -2020,6 +2428,16 @@ def main(argv: list[str] | None = None) -> int:
             result = rebaseline(guard, checker, args.slug,
                                 Path(args.tree), _staff_from_args(args),
                                 args.reason)
+            _print(result)
+            return 0
+        if args.cmd == "pardon-strike":
+            result = pardon_strike(guard, _staff_from_args(args),
+                                   args.incident)
+            _print(result)
+            return 0
+        if args.cmd == "allow-strike":
+            result = allow_strike(guard, _staff_from_args(args),
+                                  args.incident)
             _print(result)
             return 0
     except Refusal as exc:
