@@ -40,9 +40,11 @@ Deterministic, stdlib only. Exit 0 = valid, 2 = violation, 3 = usage.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -263,7 +265,13 @@ def validate_launch(launch: Any) -> List[str]:
                      f"subset of main offer {m['offer_id']!r} — the bump "
                      "would sell the buyer what they already selected")
 
-    # Approval discipline.
+    # Approval discipline. The full binding (hash, identity, revocation) is
+    # the approval GATE's job (assert_plan_build_approved below); this shape
+    # rule only insists an approved/building record carries its approval
+    # reference and no unknown money. A recommended_unapproved price inside
+    # an approved record is covered by the plan approval itself, which binds
+    # the whole plan hash — the recommendation was approved AS PART of the
+    # plan, and its ledger state becomes approved_recommendation.
     if launch["status"] in ("approved", "building"):
         if not isinstance(launch["plan_approval_ref"], str) \
                 or not launch["plan_approval_ref"].strip():
@@ -271,15 +279,118 @@ def validate_launch(launch: Any) -> List[str]:
                  "empty — no build without a recorded plan approval")
         for oid, o in by_id.items():
             for p in o.get("prices") or []:
-                if p.get("approval_status") != "approved":
+                if p.get("approval_status") == "unknown":
                     fail(f"status is {launch['status']} but offer {oid!r} "
-                         f"price {p.get('price_choice_id')!r} is "
-                         f"{p.get('approval_status')!r}, not approved — a "
-                         "recommendation is not an approval")
+                         f"price {p.get('price_choice_id')!r} is still "
+                         "unknown — approval cannot cover an unknowable price")
                 if p.get("amount_minor") is None:
                     fail(f"status is {launch['status']} but offer {oid!r} "
                          "price amount is unknown")
     return fails
+
+
+# ---------------------------------------------------------------------------
+# Plan-approval gate (doc 03 §9). The hash binds the plan's CONTENT — offers,
+# prices, route, revision, mode — never its lifecycle fields: `status` flips
+# to approved BECAUSE the gate passed, and plan_approval_ref is written by
+# the approval itself. Excluding both keeps one approval verifiable before
+# and after the flip.
+# ---------------------------------------------------------------------------
+class ApprovalError(ValueError):
+    pass
+
+
+def plan_document_hash(launch: Dict[str, Any]) -> str:
+    bindable = {k: v for k, v in launch.items()
+                if k not in ("status", "plan_approval_ref")}
+    return hashlib.sha256(json.dumps(bindable, sort_keys=True,
+                                     separators=(",", ":")).encode()).hexdigest()
+
+
+APPROVAL_TYPES = ("launch_plan_build", "paid_asset_budget", "test_location_use",
+                  "live_payment_test", "customer_send_activation",
+                  "page_publication", "batch_merge", "release_publication",
+                  "fleet_rollout")
+VERIFICATION_CLASSES = ("authenticated_platform_record",
+                        "recorded_consent_not_cryptographically_sealed")
+
+
+def assert_plan_build_approved(launch: Dict[str, Any], approval: Any, *,
+                               client_identity_ref: str,
+                               worker_identity_ref: str,
+                               max_age_hours: Optional[float] = 72.0,
+                               now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Assert that THIS launch plan may be built, under doc 03 §9.
+
+    Raises ApprovalError on any failure; returns an assertion dict on
+    success. Checks, in order: record shape; type is launch_plan_build (a
+    budget or publication approval never authorizes a build); not revoked;
+    subject hash == the current plan's document hash (any commercial change
+    — a price, an offer, the route, the revision — invalidates it); the
+    approver IS the launch's client identity (an unrelated identity cannot
+    approve another launch); the approver is NOT the worker operating the
+    run (a worker can never self-approve); the record carries the stable
+    platform reference of the client's own response (a fabricated record
+    with no owner response does not exist as evidence); the record is not
+    expired and not from the future. Without an external signing key the
+    honest verification class is recorded consent, and the assertion says
+    so — it is never dressed up as cryptographic proof."""
+    if not isinstance(approval, dict):
+        raise ApprovalError("approval record is not an object")
+    for f in ("schema_version", "approval_id", "subject_type", "subject_hash",
+              "owner_identity_ref", "source_message_ref", "recorded_at",
+              "scope", "revoked", "verification_class"):
+        if f not in approval:
+            raise ApprovalError(f"approval record is missing field {f!r}")
+    if approval["schema_version"] != "1.0":
+        raise ApprovalError("approval schema_version is not 1.0")
+    if approval["subject_type"] != "launch_plan_build":
+        raise ApprovalError(
+            f"approval type {approval['subject_type']!r} does not authorize "
+            "building a launch plan (types are separate, doc 03 §9)")
+    if approval["revoked"] is not False:
+        raise ApprovalError("approval has been revoked")
+    if approval["verification_class"] not in VERIFICATION_CLASSES:
+        raise ApprovalError("approval verification_class is not recognized")
+    expected = plan_document_hash(launch)
+    if approval["subject_hash"] != expected:
+        raise ApprovalError(
+            "approval subject_hash does not match the current plan — the plan "
+            "changed after approval (or this approval belongs to another plan)")
+    owner = approval["owner_identity_ref"]
+    if not isinstance(owner, str) or not owner.strip():
+        raise ApprovalError("approval names no owner identity")
+    if owner != client_identity_ref:
+        raise ApprovalError(
+            "the approver is not this launch's client identity — an unrelated "
+            "identity cannot approve another launch")
+    if owner == worker_identity_ref:
+        raise ApprovalError(
+            "the worker operating the run cannot approve its own plan "
+            "(self-approval is refused)")
+    if not isinstance(approval["source_message_ref"], str) \
+            or not approval["source_message_ref"].strip():
+        raise ApprovalError(
+            "approval carries no platform reference to the client's own "
+            "response — recorded consent requires the owner's actual message")
+    try:
+        recorded = datetime.fromisoformat(
+            str(approval["recorded_at"]).replace("Z", "+00:00"))
+    except ValueError:
+        raise ApprovalError("approval recorded_at is not a valid timestamp")
+    if recorded.tzinfo is None:
+        recorded = recorded.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    if recorded > now:
+        raise ApprovalError("approval recorded_at is in the future")
+    if max_age_hours is not None and \
+            (now - recorded).total_seconds() > max_age_hours * 3600:
+        raise ApprovalError(
+            f"approval is expired (older than {max_age_hours} hours) — "
+            "re-confirm the plan before building")
+    return {"ok": True, "approval_id": approval["approval_id"],
+            "subject_hash": expected,
+            "verification_class": approval["verification_class"]}
 
 
 def _load_json(path: str) -> Any:
@@ -332,8 +443,12 @@ def _self_test() -> int:
     say(validate_launch(bad) != [], "amount present with status unknown is refused")
     bad = launch([offer("M", "main", amt=10.5)])
     say(validate_launch(bad) != [], "float amount_minor is refused (no float dollars)")
-    bad = launch([offer("M", "main", status="recommended_unapproved")])
-    say(validate_launch(bad) != [], "approved launch with unapproved price is refused")
+    bad = launch([offer("M", "main", amt=None, status="unknown")])
+    say(validate_launch(bad) != [], "approved launch with an unknown price is refused")
+    covered = launch([offer("M", "main", status="recommended_unapproved")])
+    say(validate_launch(covered) == [],
+        "a recommended price inside an approved record is covered by the plan "
+        "approval that binds the whole plan hash")
     bad = launch([offer("M", "main")],
                  extras={"upsell_1": True, "downsell_1": False, "upsell_2": False})
     say(validate_launch(bad) != [], "enabled U1 with no U1 offer is refused")
