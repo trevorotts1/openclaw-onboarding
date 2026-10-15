@@ -20,7 +20,7 @@ A deck is built by **ONE pipeline with TWO layers**, always in this order:
 - **LAYER A — THE AUTHORING PIPELINE.** The multi-phase, multi-role pipeline
   (`PIPELINE-MANIFEST.json`). Intake, priority-shift diagnosis, arc allocation,
   research, copywriting, copy-QC, typography, and — critically — **hand-authoring the
-  RICH per-slide image prompt** (sized to the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`: target 95 to 100 percent of the model maximum, hard floor 80 percent), read with `kie_live_adapter.py prompt-budget --check`; until the renderer gate (9,000 to 18,000 in `build_deck.py` and `prompt_gate.py`) is migrated to rule 12, write 16,000 to 18,000 characters so both pass) for every slide
+  RICH per-slide image prompt** (sized to the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`: target 95 to 100 percent of the model maximum, hard floor 80 percent), read with `kie_live_adapter.py prompt-budget --check`; the renderer gate enforces rule 12 through the shared enforcer shared-utils/kie_prompt_enforcer.py, so write to the enforcer's floor and target for the pin) for every slide
   (`working/prompts/slide-NN.txt`). You (or the role you are standing in for) AUTHOR
   these artifacts. Nothing renders until they exist.
 - **LAYER B — THE DETERMINISTIC RENDER + DELIVERY.** `build_deck.py` (dispatched by
@@ -154,7 +154,7 @@ code) — **never silently, never by your own choice.**
 
 ### PROMPT CHAR-COUNT (the script enforces it)
 
-Length authority is the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`): target 95 to 100 percent of the model's prompt maxLength, hard floor 80 percent, hard ceiling 100 percent. Read the number with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <the image.t2i id in model_catalog.json> --check --prompt-file working/prompts/slide-NN.txt` (run it from the Skill 74 folder; never copy the adapter into a run directory). For the current pin (maximum 20,000 characters) the floor is 16,000 and the target is 19,000 to 20,000. Until the renderer gate (`PROMPT_CHAR_FLOOR` 9,000 and `PROMPT_CHAR_CEILING` 18,000 in `build_deck.py` and `prompt_gate.py`) is migrated to rule 12, a prompt must satisfy both, so write 16,000 to 18,000 characters now.
+Length authority is the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`): target 95 to 100 percent of the model's prompt maxLength, hard floor 80 percent, hard ceiling 100 percent. Read the number with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <the image.t2i id in model_catalog.json> --check --prompt-file working/prompts/slide-NN.txt` (run it from the Skill 74 folder; never copy the adapter into a run directory). For the current pin (maximum 20,000 characters) the floor is 16,000 and the target is 19,000 to 20,000. The renderer gate enforces the same rule 12 band through the ONE shared enforcer, shared-utils/kie_prompt_enforcer.py (`build_deck.py` and `prompt_gate.py` import it and define no band constants of their own; the old 9,000 to 18,000 band is retired), so write 16,000 at minimum and target 19,000 to 20,000 for the current pin.
 
 **The image chain you are serving, end to end:** authored prompt (`working/prompts/slide-NN.txt`) ->
 prompt budget (above) -> model pin (the `image.t2i` / `image.i2i` aliases in

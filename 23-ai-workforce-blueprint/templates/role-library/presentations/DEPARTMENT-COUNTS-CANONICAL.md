@@ -63,7 +63,7 @@ KEYS = ['deck_pptx', 'deck_pdf', 'guide_pdf', 'speech_md', 'speech_pdf', 'speech
 ```
 
 The manifest's `build_bundle_files` array (`SOPS/presentation-slide-craft/PIPELINE-MANIFEST.json`,
-top-level key, manifest_version 51) is still **byte-identical** to those 10 keys, in the same order —
+top-level key; read mechanically from the manifest at HEAD, manifest_version 70) is still **byte-identical** to those 10 keys, in the same order --
 re-confirmed by reading the JSON directly in this run: `len(build_bundle_files) == 10`, same 10 keys.
 Wave C's 4 new phases did not touch this array. `scripts/ci/presentations-drift-gates.sh` GATE 3
 (deliverable whitelist parity) re-ran clean in this session: all 4 consumers
@@ -95,8 +95,8 @@ The ten real filenames (from `filename_template` in the spec, `{deck_slug}` = th
 CLIENT_PACKAGE_WARN_ONLY = frozenset()   # stage 3 — nothing is warn-only; all 7 are HARD-required
 ```
 
-The manifest's `client_package_files` array (top-level key in `PIPELINE-MANIFEST.json`, manifest_version
-51) confirms the same 7 keys, unchanged by Wave C:
+The manifest's `client_package_files` array (top-level key in `PIPELINE-MANIFEST.json`; read
+mechanically from the manifest at HEAD, manifest_version 70) confirms the same 7 keys:
 
 ```
 client_package_files = [deck_pptx, deck_pdf, guide_pdf, speech_pdf, audio_mp3,

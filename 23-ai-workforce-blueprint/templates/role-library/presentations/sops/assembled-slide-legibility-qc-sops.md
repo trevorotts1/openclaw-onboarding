@@ -80,6 +80,8 @@
 
 ### SOP 9.4 -- Final-Deck QC Pass-Artifact (The Blocking Gate)
 
+> **SUPERSESSION NOTE (FIX-PLAN Item 5, reconciled at manifest v70):** the `final_deck_qc.json` pass-artifact named below is RETIRED. No code reads or writes it; it gates nothing today. The blocking function this SOP describes now lives in the engine: the build_deck postflight completeness gate (verdict in `working/checkpoints/process_manifest.json`) plus the aggregate report `working/qc/final_qc_report.json` from P-QC-AGGREGATE (gate-facing average >= 8.5). This role's assert battery, spelling and em-dash sweep, and expression review remain required QC evidence feeding that gate; delivery must never wait for a `final_deck_qc.json` file, and its absence is never a block. The steps below are kept as the historical record of the gate this role operated.
+
 **SOP ID:** SOP-PRES-CUSTOM-16 (BlackCEO)
 **Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 6.2 and Section 12 (gates are blocking; the artifact is the gate token)
 **When to run:** After all assembled-slide asserts, the spelling and em-dash sweep, and the expression review pass.
