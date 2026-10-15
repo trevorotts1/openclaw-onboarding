@@ -264,13 +264,15 @@ method counts: {POST: 8, DOWNLOAD: 8, GET-RETRY-FOR-DOWNLOAD: 7, GET: 112}
 ```
 
 **Minimum gap between two consecutive polls of the same job: 15.315 s (seg-1)
-and 15.317 s (seg-2). Zero gaps under 15 s out of 110 measured gaps.** Sample
-from the raw log:
+and 15.317 s (seg-2). Zero gaps under 15 s out of 110 measured gaps.** Five
+consecutive raw lines for `seg-1`, with the epoch deltas that give the gaps:
 
 ```
-seg-1 10:26:55.104Z GET /agnesapi -> 200
-seg-1 10:27:10.450Z GET /agnesapi -> 200      15.346 s
-seg-1 10:27:25.7xxZ GET /agnesapi -> 200      15.3 s
+seg-1 2026-10-15T10:32:49.577Z epoch=1792060369.209 GET .../agnesapi -> 200
+seg-1 2026-10-15T10:33:04.910Z epoch=1792060384.582 GET .../agnesapi -> 200   gap 15.373 s
+seg-1 2026-10-15T10:33:20.267Z epoch=1792060399.920 GET .../agnesapi -> 200   gap 15.338 s
+seg-1 2026-10-15T10:33:35.642Z epoch=1792060415.276 GET .../agnesapi -> 200   gap 15.356 s
+seg-1 2026-10-15T10:33:51.003Z epoch=1792060430.644 GET .../agnesapi -> 200   gap 15.359 s
 ```
 
 ---
@@ -309,14 +311,19 @@ remaining video: 480   remaining image: 3994
 used today (reserved+succeeded): {'image': 6, 'video': 20}
 ```
 
-Every row, in order:
+Every row, in insertion order:
 
 ```
-image  1 reserved still-1        image  1 reserved still-d
-image  1 reserved still-closeup  video 10 failed   seg-2   <- pool refusal, released
-image  1 reserved still-a        video 10 failed   seg-1   <- pool refusal, released
-image  1 reserved still-b        video 10 reserved seg-2
-image  1 reserved still-c        video 10 reserved seg-1
+1  image  units=1  reserved  still-1
+2  image  units=1  reserved  still-closeup
+3  image  units=1  reserved  still-a
+4  image  units=1  reserved  still-b
+5  image  units=1  reserved  still-c
+6  video  units=10 failed    seg-2      <- pool refusal, never sent, released
+7  video  units=10 failed    seg-1      <- pool refusal, never sent, released
+8  video  units=10 reserved  seg-2      <- the clip that was made
+9  video  units=10 reserved  seg-1      <- the clip that was made
+10 image  units=1  reserved  still-d
 ```
 
 The numbers match what was actually used:
