@@ -1,11 +1,31 @@
-## [v27.1.27]  -  2026-10-14  -  Land SOP-GIP-01 v2.0 and SOP-GIP-02 v2.0 (BlackCEO image-style integration, stranded branch dd57f2e) with rule-12 band reconciliation (FIX-PLAN Item 24)
+## [v27.1.27]  -  2026-10-14  -  Merge train: #2005 Land SOP-GIP-01 v2.0 + SOP-GIP-02 v2.0 (BlackCEO integration) with…; #2016 model-cleanup: Skill 06, client-choice model doctrine + router…; #2067 fix: verify-routing default-agent sources, skill 47 Step 6 venv…; #2069 fix(presentations): port the signature payload path into the…; #2071 README correction: S8 signature deferral discharged by PR #2069
 
-##### What Changed
+Released by the merge train as one batch. Each merged pull request's own CHANGELOG entry follows, unchanged except one heading level deeper.
+
+### #2005 — [v27.1.27]  -  2026-10-14  -  Land SOP-GIP-01 v2.0 and SOP-GIP-02 v2.0 (BlackCEO image-style integration, stranded branch dd57f2e) with rule-12 band reconciliation (FIX-PLAN Item 24)
+
+###### What Changed
 - `SOP-GIP-01-PROMPT-ANATOMY.md` v1.1 to v2.0: merges the BlackCEO Signature Image Intelligence system (Skill 71) into the prompt anatomy (image philosophy, Lighting and Representation Intelligence in Elements 6 and 7, 13-class negative block, Color Grading, Camera/Lens/Aperture/Framing, Style System Libraries, Secret Super Sauce, Art Direction Router, Fashion and Wardrobe, Image Purpose, Pixel QC, Typography-as-Image, Set-Diversity Register, teaching examples EX-01 and EX-05, fill-in template, mandatory post-generation verification).
 - `SOP-GIP-02-IMAGE-QC.md` v1.0 to v2.0: AF-G7 expanded with the five BlackCEO skin/hair fidelity sub-checks.
 - Reconciliations at landing: rule 12 (`07-kie-setup/references/kie-common-rules.md`, enforced by `shared-utils/kie_prompt_enforcer.py`) is the single prompt-length source; the v2.0 draft's hard-number band table and its 9,000+ post-generation check are removed. Skill 71 library citations repointed from Mac Mini paths to in-repo `71-blackceo-signature-page/references/` paths, and the visual-artist listing completed to the guide's 50 systems (149 total). Universal scope amended: presentation slides are covered as doctrine adopted inside the Presentations pipeline, not as routing of audience decks through the GIP pipeline (FIX-PLAN Item 25; owner input OI-2 default). GK-20 conformed to prompt-bands.json v3 (no `text_bearing_medium` band; quote-card/text-led social posts declare `text_bearing_long`; Ideogram V3 only via the `medium` specialty band); header pin updated to prompt-bands.json v3.
 - Main-side changes preserved: the rule-12 band paragraph, the `prompt-budget --check` gate paragraph, and the AF-G8 `_local/receipts/{receipt-id}.json` operator-receipt wording.
 - Role-library `_index.json` content hashes restamped (SOP-GIP-01 content_version 1.0.7, SOP-GIP-02 content_version 1.0.3).
+
+### #2016 — model-cleanup: Skill 06, client-choice model doctrine + router resolution hooks
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #2067 — fix: verify-routing default-agent sources, skill 47 Step 6 venv python, skill 47/48 QC path resolution
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #2069 — fix(presentations): port the signature payload path into the interview-app builder (FIX-PLAN Item 13, S8)
+
+(This pull request carried no CHANGELOG entry of its own.)
+
+### #2071 — README correction: S8 signature deferral discharged by PR #2069
+
+(This pull request carried no CHANGELOG entry of its own.)
 
 ## [v27.1.26]  -  2026-10-13  -  D26c: every reader of the Telegram bot token resolves it like OpenClaw (accounts.default first, then top-level, then env) so boxes repaired by D26 keep working
 
