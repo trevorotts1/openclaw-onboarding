@@ -3,7 +3,7 @@
  "slug": "signature-thank-you",
  "name": "signature-thank-you",
  "client_facing": true,
- "description": "DRAFT: Builds the final Signature thank-you and fulfillment page: purchase-aware confirmation showing exactly what was bought (names, amounts, terms), protected access/next steps, and no new pitch. Resolves the order from verified native state, never from URL parameters.",
+ "description": "Builds the final Signature thank-you and fulfillment page: purchase-aware confirmation showing exactly what was bought (names, amounts, terms), protected access/next steps, and no new pitch. Resolves the order from verified native state, never from URL parameters.",
  "departments": [
   "web-development",
   "funnels"
