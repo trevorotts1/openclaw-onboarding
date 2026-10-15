@@ -4,8 +4,9 @@
 # -----------------------------------------------------------------------------
 # Stdlib unittest only. Fully offline: the HTTP transport and every side-channel
 # (meter / hold / alert / substitution) are injected, so nothing leaves the box
-# and no credential value is ever read or printed. Proves tier resolution from
-# the shipped config/models.json, the deny gate (config tokens + Anthropic-shape
+# and no credential value is ever read or printed. Proves tier resolution by the
+# selection policy (client choice, then the client's configured default in
+# config/models.json, else the ask-the-client stop), the deny gate (config tokens + Anthropic-shape
 # backstop, refused at call time never as a substitution), env-label credential
 # resolution, chain advance on retryable failures with substitution marking,
 # credit-out recovery vs. exhaustion HOLD + single deduped alert, and the budget
@@ -46,8 +47,34 @@ for _k in ("OLLAMA_API_KEY", "OLLAMA_CLOUD_API_KEY", "OPENROUTER_API_KEY",
     os.environ.setdefault(_k, "dummy-not-a-real-secret")
 
 BLOCK, _PATH = MR.load_models_config()
-CONTENT = MR.resolve_tier(BLOCK, MR.CONTENT_TIER)
-JUDGE = MR.resolve_tier(BLOCK, MR.JUDGE_TIER)
+
+# The shipped config prescribes NO model (selection policy: the client's
+# choice, or their configured default). Chain mechanics are therefore tested
+# against a SYNTHETIC client config: the shipped policy plus a client's
+# recorded defaults. The example ids are fixture data, not prescriptions.
+import json as _json
+
+CLIENT_BLOCK = _json.loads(_json.dumps(BLOCK))
+CLIENT_BLOCK["models"]["client_defaults"] = {
+    "content": [
+        {"provider": "ollama-cloud", "id": "ollama/example-writer-1:cloud",
+         "model": "example-writer-1:cloud", "thinking": "high"},
+        {"provider": "ollama-cloud", "id": "ollama/example-writer-2:cloud",
+         "model": "example-writer-2:cloud", "thinking": "high"},
+        {"provider": "openrouter", "id": "openrouter/example/writer-1",
+         "model": "example/writer-1"},
+        {"provider": "gemini", "id": "example-cheap-1",
+         "model": "example-cheap-1"},
+    ],
+    "qc_judge": [
+        {"provider": "gemini", "id": "example-judge-1",
+         "model": "example-judge-1"},
+        {"provider": "ollama-cloud", "id": "ollama/example-writer-2:cloud",
+         "model": "example-writer-2:cloud"},
+    ],
+}
+CONTENT = MR.resolve_tier(CLIENT_BLOCK, MR.CONTENT_TIER)
+JUDGE = MR.resolve_tier(CLIENT_BLOCK, MR.JUDGE_TIER)
 DENY = MR.deny_patterns_of(BLOCK)
 
 
@@ -57,7 +84,7 @@ def _router(transport, **kw):
     kw.setdefault("hold_fn", lambda *a, **k: None)
     kw.setdefault("alert_fn", lambda *a, **k: None)
     kw.setdefault("substitution_fn", lambda *a, **k: None)
-    return MR.ModelRouter(config_block=BLOCK, transport=transport, **kw)
+    return MR.ModelRouter(config_block=CLIENT_BLOCK, transport=transport, **kw)
 
 
 class ConfigAndDeny(unittest.TestCase):
@@ -78,16 +105,31 @@ class ConfigAndDeny(unittest.TestCase):
 
     def test_deny_passes_real_ids(self):
         self.assertFalse(MR.is_denied(CONTENT[0]["model"], DENY))
-        self.assertFalse(MR.is_denied("glm-5.2:cloud", DENY))
+        self.assertFalse(MR.is_denied("example-writer-1:cloud", DENY))
 
     def test_denied_config_fails_closed_at_construction(self):
         import json
-        poisoned = json.loads(json.dumps(BLOCK))
-        poisoned["models"][MR.CONTENT_TIER][0]["model"] = "vendor-opus-9"
+        poisoned = json.loads(json.dumps(CLIENT_BLOCK))
+        poisoned["models"]["client_defaults"][MR.CONTENT_TIER][0]["model"] = "vendor-opus-9"
         with self.assertRaises(MR.DenyPatternRefusal):
             MR.ModelRouter(config_block=poisoned)
 
-    def test_content_first_is_ollama_cloud_last_is_gemini(self):
+    def test_shipped_config_resolves_nothing_and_asks_client(self):
+        # The shipped config carries no client choice and no configured
+        # default, so resolution stops with the ask-the-client error (exit 5)
+        # rather than substituting a named model.
+        with self.assertRaises(MR.ClientChoiceRequired) as cm:
+            MR.resolve_tier(BLOCK, MR.CONTENT_TIER)
+        self.assertEqual(cm.exception.exit_code, 5)
+
+    def test_client_choice_beats_configured_default(self):
+        chain = MR.resolve_selection(
+            BLOCK, MR.CONTENT_TIER, {"model_choice": "openrouter/example/writer-1"})
+        self.assertEqual(len(chain), 1)
+        self.assertEqual(chain[0]["model"], "example/writer-1")
+        self.assertEqual(chain[0]["provider"], "openrouter")
+
+    def test_configured_default_chain_order(self):
         self.assertEqual(CONTENT[0]["provider"], "ollama-cloud")
         self.assertEqual(CONTENT[-1]["provider"], "gemini")
 
@@ -166,7 +208,7 @@ class Routing(unittest.TestCase):
         def blocking_pre(*a, **k):
             raise MR.BudgetCeilingBlock("ceiling")
         tr = MR._ScriptedTransport([MR._ok_response(CONTENT[0]["model"])])
-        router = MR.ModelRouter(config_block=BLOCK, transport=tr, pre_meter=blocking_pre,
+        router = MR.ModelRouter(config_block=CLIENT_BLOCK, transport=tr, pre_meter=blocking_pre,
                                 post_meter=lambda *a: None, hold_fn=lambda *a: None,
                                 alert_fn=lambda *a: None, substitution_fn=lambda *a: None)
         with self.assertRaises(MR.BudgetCeilingBlock):
@@ -208,13 +250,13 @@ class Substitution(unittest.TestCase):
         state = tempfile.mkdtemp(prefix="podcast-sub-")
         MR.default_substitution_log(
             {"state_dir": state, "client": "c", "job_id": "j"},
-            MR.CONTENT_TIER, 1, 3, "moonshotai/kimi-k2.6")
+            MR.CONTENT_TIER, 1, 3, "example/writer-1")
         spool = os.path.join(state, "substitutions", "substitutions.jsonl")
         self.assertTrue(os.path.exists(spool))
         with open(spool, encoding="utf-8") as fh:
             rec = json.loads(fh.readline())
         self.assertEqual(rec["used_priority"], 3)
-        self.assertEqual(rec["model_used"], "moonshotai/kimi-k2.6")
+        self.assertEqual(rec["model_used"], "example/writer-1")
 
 
 class RealSideChannelScripts(unittest.TestCase):

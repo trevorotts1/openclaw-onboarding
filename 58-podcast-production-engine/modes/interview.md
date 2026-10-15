@@ -52,7 +52,7 @@ contact.my_preferred_pronoun governs how the guest is referred to everywhere. Be
 
 ### 8. Preset and terminal boundary
 
-Default output-type preset: interview (config/presets.json). Book teaser: REQUIRED. The book teaser PDF is produced only for Interview Style participants, at Step 13, from the guest's answers, their improved answers, and the verified research, in the guest's own voice, ending on a cliffhanger. It is written on the client's runtime models (Kimi 2.6 or GLM 5.2 on Ollama Cloud, thinking high, then the same routing fallbacks) and rendered as a book-typeset PDF. Its link is written to contact.book_teaser when that field exists; if the field is absent it is surfaced as a founder reminder and never silently created, and its absence never fails the episode.
+Default output-type preset: interview (config/presets.json). Book teaser: REQUIRED. The book teaser PDF is produced only for Interview Style participants, at Step 13, from the guest's answers, their improved answers, and the verified research, in the guest's own voice, ending on a cliffhanger. It is written on the client's chosen model, or their configured default model (model selection policy in config/models.json), and rendered as a book-typeset PDF. Its link is written to contact.book_teaser when that field exists; if the field is absent it is surfaced as a founder reminder and never silently created, and its absence never fails the episode.
 
 Terminal action at Step 17 (Trigger and Enroll), only after the episode is genuinely published to Podbean and the link-back field writes are complete: enroll the guest into BOTH customer-notification workflows, 06-Podcast_Episode_Is_Ready and 04-Podcast is Completed, using Skill 44. The exact workflow names and their trigger mechanism (tag-triggered, field-triggered, or direct add) are discovered per client at setup, never guessed. Note that 04-Podcast is Completed is field-triggered by contact.podcast_survey_episode_url changing, so writing that field may itself begin enrollment; verify whether it already triggered before enrolling explicitly, and guard against double enrollment. Enrollment is confirmed with caf verification reads. Enrolling before the episode exists is forbidden, because it would notify the guest about something that is not there.
 
@@ -60,7 +60,7 @@ Silence boundary: the engine's responsibility ends at enrollment. Convert and Fl
 
 ### 9. What this mode does NOT change
 
-The Style Engine mechanics, the canonical 18-step pipeline order, both QC gates and their thresholds, the Fish Audio tag syntax, the sizing table (7 to 15 minutes at 140 words per minute, 10 minutes the default), and the runtime model routing all stay exactly as defined elsewhere in the skill. Content work routes to the client's own runtime models per the routing policy (Ollama Cloud Kimi 2.6, then GLM 5.2, then the OpenRouter equivalents, then Gemini 3.1 Flash Lite). This mode is perspective, show frame, and terminal boundary only.
+The Style Engine mechanics, the canonical 18-step pipeline order, both QC gates and their thresholds, the Fish Audio tag syntax, the sizing table (7 to 15 minutes at 140 words per minute, 10 minutes the default), and the runtime model routing all stay exactly as defined elsewhere in the skill. Content work runs on the client's chosen model, or their configured default model, per the selection policy in config/models.json. This mode is perspective, show frame, and terminal boundary only.
 
 ### 10. Gate hooks (Episode Gate and Part A checklist)
 

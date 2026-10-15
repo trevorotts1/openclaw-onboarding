@@ -20,16 +20,19 @@
 #          confirmed with file + line + pattern class only, never the matched
 #          text (a secret is confirmed forbidden, never echoed).
 #
-#   JOB 2  ROUTING ASSERTION. Assert the shipped routing config uses the
-#          sanctioned Ollama Cloud then OpenRouter then Gemini tier: content
-#          tier non-empty, first entry Ollama Cloud, last entry Gemini,
-#          provider order monotonic (all ollama-cloud before all openrouter
-#          before all gemini), every tier present, and NO content or qc_judge
-#          entry matching a deny pattern. This is the static proof that the
-#          runtime router cannot substitute to a denied model (it refuses
-#          deny-pattern substitutions because no denied id is ever in a tier and
-#          the deny_patterns list is armed). If per-entry thinking is expressed,
-#          assert high thinking rides only Kimi 2.6 / GLM 5.2, never Flash Lite.
+#   JOB 2  ROUTING ASSERTION. Assert the routing config follows the
+#          client-choice selection policy: a selection block whose order is
+#          client choice first, then the client's configured default, ending
+#          in the ask-the-client stop (on_unresolved: ask_client, never a
+#          named fallback); deny_patterns armed and complete; NO configured
+#          entry (client default or client chain, content or qc_judge)
+#          matching a deny pattern; and the qc_judge default distinct from
+#          the content default (judge independence). The shipped config
+#          prescribes no model at all: its defaults ship unset, and routing
+#          an unconfigured tier stops and asks the client. This is the static
+#          proof that the runtime router cannot substitute to a denied model
+#          (it refuses deny-pattern substitutions because no denied id is
+#          ever configured and the deny_patterns list is armed).
 #
 #   DASHBOARD SCREEN (furnace Guardrail 2). For any directory passed with
 #          --dashboard-dir (or an auto-detected <skill-root>/dashboard), the
@@ -343,41 +346,10 @@ def _model_id(entry):
     return ""
 
 
-def _provider_tier(model_id):
-    """Return (tier_rank, provider_name). Lower rank = earlier in the chain."""
-    m = model_id.lower()
-    if m.startswith("ollama-cloud/") or "ollama-cloud" in m or m.endswith(":cloud") or ":cloud/" in m:
-        return (0, "ollama-cloud")
-    if m.startswith("openrouter/") or "openrouter" in m:
-        return (1, "openrouter")
-    if m.startswith("gemini") or "gemini" in m or m.startswith("google/"):
-        return (2, "gemini")
-    return (99, "other")
-
-
-def _entry_provider_tier(entry):
-    """Provider tier for a routing entry. The explicit `provider` field is
-    AUTHORITATIVE (the runtime slug in `model` is the raw provider-side id, e.g.
-    'moonshotai/kimi-k2.6', and legitimately carries no provider prefix). When no
-    provider field is present, fall back to sniffing the fully-qualified id."""
-    if isinstance(entry, dict):
-        prov = entry.get("provider")
-        if isinstance(prov, str) and prov.strip():
-            p = prov.strip().lower()
-            if p in ("ollama-cloud", "ollama_cloud", "ollamacloud"):
-                return (0, "ollama-cloud")
-            if p == "openrouter":
-                return (1, "openrouter")
-            if p in ("gemini", "google", "google-gemini"):
-                return (2, "gemini")
-            # explicit but unrecognized provider: fall through to id sniff
-    return _provider_tier(_model_id(entry))
-
-
 def _identity_blob(entry):
     """All identity strings on an entry (model + id + name), lowercased, so the
     deny-token substring test can never be evaded by hiding a denied id in a
-    field the provider tiering does not read."""
+    field the routing assertions do not otherwise read."""
     if isinstance(entry, str):
         return entry.lower()
     if isinstance(entry, dict):
@@ -385,62 +357,46 @@ def _identity_blob(entry):
     return ""
 
 
-def _entry_thinking(entry):
-    if isinstance(entry, dict):
-        for k in ("thinking", "reasoning", "reasoning_effort"):
-            v = entry.get(k)
-            if isinstance(v, str):
-                return v.strip().lower()
-    return None
+def _configured_entries(models, tier):
+    """Entries a config actually CONFIGURES for a tier: the client's
+    configured defaults (models.client_defaults.<tier>: one object or a
+    list) plus any legacy per-tier chain (models.<tier> list). The shipped
+    config configures NOTHING (its defaults are null); a client-owned
+    config may configure either shape."""
+    out = []
+    defaults = models.get("client_defaults")
+    if isinstance(defaults, dict):
+        raw = defaults.get(tier)
+        if isinstance(raw, (dict, str)):
+            out.append(raw)
+        elif isinstance(raw, list):
+            out.extend(raw)
+    legacy = models.get(tier)
+    if isinstance(legacy, list):
+        out.extend(legacy)
+    return out
 
 
 def assert_routing(models):
-    """Return list of AF_ROUTING findings. Empty list means the routing tier is clean."""
+    """Return list of AF_ROUTING findings. Empty list means the resolution
+    policy is clean: the selection block resolves client choice first, then
+    the client's configured default, and ends in the ask-the-client stop
+    (never a named fallback); deny_patterns are armed and complete; every
+    configured entry (either tier) carries a model id and is deny-clean;
+    and the qc_judge default is distinct from the content writer default
+    (SK2-15: a judge==writer routing lets the writing model rubber-stamp
+    its own output)."""
     findings = []
 
-    content = models.get("content")
-    if not isinstance(content, list) or not content:
-        findings.append((AF_ROUTING, "content-tier-missing-or-empty"))
-        return findings  # nothing further is checkable
+    sel = models.get("selection")
+    if not isinstance(sel, dict):
+        findings.append((AF_ROUTING, "selection-policy-missing"))
+    else:
+        if sel.get("order") != ["client_choice", "client_configured_default"]:
+            findings.append((AF_ROUTING, "selection-order-not-choice-then-default"))
+        if sel.get("on_unresolved") != "ask_client":
+            findings.append((AF_ROUTING, "selection-on-unresolved-not-ask-client"))
 
-    ids = [_model_id(e) for e in content]
-    if any(not i for i in ids):
-        findings.append((AF_ROUTING, "content-entry-has-no-model-id"))
-
-    tiers = [_entry_provider_tier(e) for e in content]
-    ranks = [t[0] for t in tiers]
-    provs = [t[1] for t in tiers]
-
-    # Unknown provider anywhere in the sanctioned chain is a failure.
-    for i, (mid, (rank, prov)) in enumerate(zip(ids, tiers)):
-        if prov == "other" and mid:
-            findings.append((AF_ROUTING, "content-entry-%d-unknown-provider" % i))
-
-    # Deny-token substring test on every identity field of every content entry.
-    for i, e in enumerate(content):
-        blob = _identity_blob(e)
-        for tok in _DENY_TOKENS_MATCH:
-            if tok in blob:
-                findings.append((AF_ROUTING, "content-entry-%d-matches-deny-token:%s" % (i, tok)))
-
-    # First is Ollama Cloud, last is Gemini.
-    if provs and provs[0] != "ollama-cloud":
-        findings.append((AF_ROUTING, "content-first-entry-not-ollama-cloud"))
-    if provs and provs[-1] != "gemini":
-        findings.append((AF_ROUTING, "content-last-entry-not-gemini"))
-
-    # Provider order monotonic non-decreasing across the sanctioned ranks.
-    known = [r for r in ranks if r != 99]
-    if known != sorted(known):
-        findings.append((AF_ROUTING, "content-tier-order-not-ollama-then-openrouter-then-gemini"))
-
-    # Every sanctioned tier must be present (full fallback chain).
-    present = set(p for p in provs if p != "other")
-    for need in ("ollama-cloud", "openrouter", "gemini"):
-        if need not in present:
-            findings.append((AF_ROUTING, "content-tier-missing-provider:%s" % need))
-
-    # deny_patterns armed and complete.
     deny = models.get("deny_patterns")
     if not isinstance(deny, list) or not deny:
         findings.append((AF_ROUTING, "deny_patterns-missing-or-empty"))
@@ -450,54 +406,26 @@ def assert_routing(models):
             if tok.lower() not in deny_low:
                 findings.append((AF_ROUTING, "deny_patterns-missing-token:%s" % tok))
 
-    # qc_judge cheap-tier only, no denied ids, no primary creative (kimi).
-    # SK2-15: the QC judge must be INDEPENDENT of the writer. The writer is the
-    # primary content-tier model (content[0], the strongest tier that authors the
-    # episode). Assert no qc_judge entry's model id equals the writer's — a
-    # judge==writer routing lets the writing model rubber-stamp its own output, so
-    # config-shape "independence" (cheap-tier + not-kimi) is not enough on its own.
-    writer_id = (ids[0] if ids else "").strip().lower()
-    judge = models.get("qc_judge")
-    if judge is not None:
-        if not isinstance(judge, list) or not judge:
-            findings.append((AF_ROUTING, "qc_judge-present-but-empty"))
-        else:
-            for i, e in enumerate(judge):
-                jid = _model_id(e)
-                jlow = _identity_blob(e)
-                _, jprov = _entry_provider_tier(e)
-                if jprov not in ("gemini", "ollama-cloud"):
-                    findings.append((AF_ROUTING, "qc_judge-entry-%d-not-cheap-tier" % i))
-                if "kimi" in jlow:
-                    findings.append((AF_ROUTING, "qc_judge-entry-%d-uses-primary-creative-model" % i))
-                if writer_id and jid.strip().lower() == writer_id:
+    content_entries = _configured_entries(models, "content")
+    judge_entries = _configured_entries(models, "qc_judge")
+    for tier, entries in (("content", content_entries), ("qc_judge", judge_entries)):
+        for i, e in enumerate(entries):
+            if not _model_id(e):
+                findings.append((AF_ROUTING, "%s-entry-%d-has-no-model-id" % (tier, i)))
+            blob = _identity_blob(e)
+            for tok in _DENY_TOKENS_MATCH:
+                if tok in blob:
                     findings.append((AF_ROUTING,
-                                     "qc_judge-entry-%d-equals-writer-model:%s" % (i, jid)))
-                for tok in _DENY_TOKENS_MATCH:
-                    if tok in jlow:
-                        findings.append((AF_ROUTING, "qc_judge-entry-%d-matches-deny-token:%s" % (i, tok)))
+                                     "%s-entry-%d-matches-deny-token:%s" % (tier, i, tok)))
 
-    # Thinking assertion (assert-when-present): high only on ollama-cloud kimi/glm.
-    thinking_seen = False
-    for i, e in enumerate(content):
-        th = _entry_thinking(e)
-        if th is None:
-            continue
-        thinking_seen = True
-        if th == "high":
-            _, prov = _entry_provider_tier(e)
-            mid = _identity_blob(e)
-            if prov != "ollama-cloud" or not ("kimi" in mid or "glm" in mid):
-                findings.append((AF_ROUTING, "high-thinking-on-non-kimi-glm-entry-%d" % i))
-    tmap = models.get("thinking") if isinstance(models.get("thinking"), dict) else None
-    if tmap:
-        thinking_seen = True
-        for mid, th in tmap.items():
-            if str(th).strip().lower() == "high":
-                _, prov = _provider_tier(str(mid))
-                low = str(mid).lower()
-                if prov != "ollama-cloud" or not ("kimi" in low or "glm" in low):
-                    findings.append((AF_ROUTING, "high-thinking-mapped-to-non-kimi-glm:%s" % mid))
+    writer_id = (_model_id(content_entries[0]).strip().lower()
+                 if content_entries else "")
+    if writer_id:
+        for i, e in enumerate(judge_entries):
+            if _model_id(e).strip().lower() == writer_id:
+                findings.append((AF_ROUTING,
+                                 "qc_judge-entry-%d-equals-writer-model:%s"
+                                 % (i, _model_id(e))))
 
     return findings
 
@@ -602,85 +530,55 @@ def self_test():
     check("dash-shell-pipeline", bool(scan_dashboard("execSync('python3 podcast-cost-ledger.py record')")))
 
     print("== self-test: JOB 2 routing assertion ==")
-    good = {
-        "content": ["ollama-cloud/kimi-2.6", "ollama-cloud/glm-5.2",
-                    "openrouter/moonshotai/kimi-k2", "openrouter/z-ai/glm-4.6",
-                    "gemini-3.1-flash-lite"],
-        "qc_judge": ["gemini-3.1-flash-lite", "ollama-cloud/glm-5.2"],
-        "deny_patterns": ["claude", "anthropic", "us.anthropic", "opus", "sonnet", "haiku"],
-    }
-    check("routing-good-clean", assert_routing(good) == [])
-    check("provider-explicit-openrouter",
-          _entry_provider_tier({"provider": "openrouter", "model": "moonshotai/kimi-k2.6"})[1] == "openrouter")
-    check("provider-explicit-ollama",
-          _entry_provider_tier({"provider": "ollama-cloud", "model": "kimi-k2.6:cloud"})[1] == "ollama-cloud")
-    real = {
-        "content": [
-            {"provider": "ollama-cloud", "id": "ollama/kimi-k2.6:cloud", "model": "kimi-k2.6:cloud", "thinking": "high"},
-            {"provider": "ollama-cloud", "id": "ollama/glm-5.2:cloud", "model": "glm-5.2:cloud", "thinking": "high"},
-            {"provider": "openrouter", "id": "openrouter/moonshotai/kimi-k2.6", "model": "moonshotai/kimi-k2.6", "thinking": "default"},
-            {"provider": "openrouter", "id": "openrouter/z-ai/glm-5.2", "model": "z-ai/glm-5.2", "thinking": "default"},
-            {"provider": "gemini", "id": "gemini-3.1-flash-lite", "model": "gemini-3.1-flash-lite", "thinking": "default"},
-        ],
-        "qc_judge": [
-            {"provider": "gemini", "id": "gemini-3.1-flash-lite", "model": "gemini-3.1-flash-lite"},
-            {"provider": "ollama-cloud", "id": "ollama/glm-5.2:cloud", "model": "glm-5.2:cloud"},
-        ],
-        "deny_patterns": ["claude", "anthropic", "us.anthropic", "opus", "sonnet", "haiku"],
-    }
-    check("routing-real-schema-clean", assert_routing(real) == [])
-    real_hi = dict(real)
-    real_hi["content"] = [dict(real["content"][0])] + [dict(e) for e in real["content"][1:]]
-    real_hi["content"][2] = dict(real["content"][2]); real_hi["content"][2]["thinking"] = "high"
-    check("routing-real-openrouter-high-fails",
-          any("high-thinking-on-non-kimi-glm" in cl for _, cl in assert_routing(real_hi)))
+    sel_ok = {"order": ["client_choice", "client_configured_default"],
+              "on_unresolved": "ask_client"}
+    deny_ok = ["claude", "anthropic", "us.anthropic", "opus", "sonnet", "haiku"]
+    shipped = {"selection": sel_ok, "deny_patterns": deny_ok,
+               "client_defaults": {"content": None, "qc_judge": None}}
+    check("routing-shipped-shape-clean", assert_routing(shipped) == [])
+    client = {"selection": sel_ok, "deny_patterns": deny_ok,
+              "client_defaults": {
+                  "content": [{"provider": "ollama-cloud", "model": "example-writer-1:cloud"},
+                              {"provider": "openrouter", "model": "example/writer-1"}],
+                  "qc_judge": [{"provider": "gemini", "model": "example-judge-1"}]}}
+    check("routing-client-defaults-clean", assert_routing(client) == [])
+    legacy = {"selection": sel_ok, "deny_patterns": deny_ok,
+              "content": [{"provider": "ollama-cloud", "model": "example-writer-1:cloud"}],
+              "qc_judge": [{"provider": "gemini", "model": "example-judge-1"}]}
+    check("routing-legacy-chain-clean", assert_routing(legacy) == [])
 
     def has(findings, needle):
         return any(needle in cl for _, cl in findings)
 
-    check("routing-empty-content", has(assert_routing({"content": [], "deny_patterns": ["claude"]}),
-                                       "content-tier-missing-or-empty"))
-    denied = dict(good); denied["content"] = good["content"] + ["anthropic/claude-3.5-sonnet"]
+    check("routing-selection-missing",
+          has(assert_routing({"deny_patterns": deny_ok}), "selection-policy-missing"))
+    bad_order = dict(shipped)
+    bad_order["selection"] = {"order": ["client_configured_default", "client_choice"],
+                              "on_unresolved": "ask_client"}
+    check("routing-selection-bad-order",
+          has(assert_routing(bad_order), "selection-order-not-choice-then-default"))
+    named_fb = dict(shipped)
+    named_fb["selection"] = {"order": ["client_choice", "client_configured_default"],
+                             "on_unresolved": "use_example_model"}
+    check("routing-selection-named-fallback",
+          has(assert_routing(named_fb), "selection-on-unresolved-not-ask-client"))
+    denied = {"selection": sel_ok, "deny_patterns": deny_ok,
+              "client_defaults": {"content": [{"provider": "anthropic",
+                                                "model": "claude-3.5-sonnet"}],
+                                  "qc_judge": None}}
     check("routing-denied-id", has(assert_routing(denied), "matches-deny-token"))
-    order = dict(good); order["content"] = ["openrouter/x", "ollama-cloud/kimi-2.6", "gemini-3.1-flash-lite"]
-    check("routing-bad-order", has(assert_routing(order), "not-ollama-then-openrouter-then-gemini"))
-    firstlast = dict(good); firstlast["content"] = ["gemini-3.1-flash-lite", "ollama-cloud/kimi-2.6"]
-    check("routing-first-not-ollama", has(assert_routing(firstlast), "first-entry-not-ollama-cloud"))
-    missing_tier = dict(good); missing_tier["content"] = ["ollama-cloud/kimi-2.6", "gemini-3.1-flash-lite"]
-    check("routing-missing-openrouter", has(assert_routing(missing_tier), "missing-provider:openrouter"))
-    nodeny = dict(good); nodeny["deny_patterns"] = ["claude", "opus"]
+    nodeny = dict(shipped); nodeny["deny_patterns"] = ["claude", "opus"]
     check("routing-deny-incomplete", has(assert_routing(nodeny), "deny_patterns-missing-token"))
-    judgebad = dict(good); judgebad["qc_judge"] = ["ollama-cloud/kimi-2.6"]
-    check("routing-judge-kimi", has(assert_routing(judgebad), "primary-creative-model"))
-    # SK2-15: judge == writer (primary content model) is a fail; a distinct cheap
-    # judge is clean. Use a non-kimi writer so ONLY the writer-equality check fires.
-    judge_eq_writer = dict(good)
-    judge_eq_writer["content"] = ["ollama-cloud/glm-5.2", "openrouter/moonshotai/kimi-k2",
-                                  "gemini-3.1-flash-lite"]
-    judge_eq_writer["qc_judge"] = ["ollama-cloud/glm-5.2"]  # == content[0] writer
-    check("routing-judge-equals-writer",
-          has(assert_routing(judge_eq_writer), "equals-writer-model"))
-    judge_indep = dict(judge_eq_writer)
-    judge_indep["qc_judge"] = ["gemini-3.1-flash-lite"]  # distinct from writer -> clean
+    judge_eq = {"selection": sel_ok, "deny_patterns": deny_ok,
+                "client_defaults": {
+                    "content": [{"provider": "ollama-cloud", "model": "example-writer-1:cloud"}],
+                    "qc_judge": [{"provider": "ollama-cloud", "model": "example-writer-1:cloud"}]}}
+    check("routing-judge-equals-writer", has(assert_routing(judge_eq), "equals-writer-model"))
+    judge_indep = {"selection": sel_ok, "deny_patterns": deny_ok,
+                   "client_defaults": {
+                       "content": [{"provider": "ollama-cloud", "model": "example-writer-1:cloud"}],
+                       "qc_judge": [{"provider": "gemini", "model": "example-judge-1"}]}}
     check("routing-judge-independent-of-writer-ok", assert_routing(judge_indep) == [])
-    thinkbad = dict(good)
-    thinkbad["content"] = [
-        {"model": "ollama-cloud/kimi-2.6", "thinking": "high"},
-        {"model": "ollama-cloud/glm-5.2", "thinking": "high"},
-        {"model": "openrouter/moonshotai/kimi-k2"},
-        {"model": "openrouter/z-ai/glm-4.6"},
-        {"model": "gemini-3.1-flash-lite", "thinking": "high"},
-    ]
-    check("routing-high-on-flash", has(assert_routing(thinkbad), "high-thinking-on-non-kimi-glm"))
-    thinkgood = dict(good)
-    thinkgood["content"] = [
-        {"model": "ollama-cloud/kimi-2.6", "thinking": "high"},
-        {"model": "ollama-cloud/glm-5.2", "thinking": "high"},
-        {"model": "openrouter/moonshotai/kimi-k2"},
-        {"model": "openrouter/z-ai/glm-4.6"},
-        {"model": "gemini-3.1-flash-lite"},
-    ]
-    check("routing-high-on-kimi-ok", assert_routing(thinkgood) == [])
 
     print("== self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1
