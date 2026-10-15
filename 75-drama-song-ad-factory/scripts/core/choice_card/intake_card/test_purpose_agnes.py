@@ -20,7 +20,7 @@ import os
 import sys
 import types
 
-try:
+try:                                # the empty-home CI smoke run has no pytest
     import pytest
 except ModuleNotFoundError:
     # CI runs every test_*.py under scripts/core with bare python3 and a fresh
