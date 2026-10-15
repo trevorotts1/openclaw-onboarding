@@ -14,12 +14,13 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 > For every deck whose client has GHL (`intake.json` does NOT set `has_ghl: false`),
 > all three GHL actions below are MANDATORY and GATED — a deck is NOT done until each
 > is recorded in `working/checkpoints/media_library.json`:
-> 1. **GHL media destination resolved** (SOP 9.3, run-once) — `ghl_folder_id` set by
->    CREATING a per-deck folder via the verified `ghl_media.create_media_folder`
->    (POST `/medias/folder`, Version 2021-07-28, LOCATION PIT) — the system makes the
->    folder by software. Only if that call genuinely declines does it fall back to a
->    human-supplied folder id, then to `"root"` (the shareable media root; a PASSING
->    value). A null/empty `ghl_folder_id` is the unset Step-0 seed and does NOT satisfy
+> 1. **GHL media destination resolved** (SOP 9.3, run-once) -- `ghl_folder_id` resolved
+>    WITHOUT creating a folder: the folder-create POST is FAIL-CLOSED DISABLED as of
+>    FIX 36(2) and is never issued by `ghl_media.create_media_folder`. The folder must be
+>    pre-created by a human in the GHL UI, its id passed as `approved_folder_id` (or as
+>    `ghl_media_folder_id` in intake). With no pre-created folder, the documented decline
+>    applies and uploads proceed to `"root"` (the shareable media root; a PASSING value)
+>    with a name prefix. A null/empty `ghl_folder_id` is the unset Step-0 seed and does NOT satisfy
 >    the gate. NEVER drive the GHL UI in a browser.
 > 2. **Per-slide PNG upload** (SOP 9.3) — every passed slide carries a real
 >    `ghl_media_id` and `ghl_upload_status: "complete"`.
@@ -125,7 +126,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
          copy_qc_report.json
          prompt_qc_report.json
          image_qc_report.json
-         final_deck_qc.json
+         final_qc_report.json
          finalrender/             (QC-passed final render copies, before upload to GHL)
        copy/                      (slide copy, intake, PRD, approval records)
        brand/                     (STYLE BLOCK, brand registry, representation audit)
@@ -154,12 +155,12 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "created_at": "ISO timestamp"
    }
    ```
-   (ghl_folder_id is null until GHL folder is created in SOP 9.3)
-6. Notify the Director: "Step 0 complete. Local workdir: [path]. GHL folder will be created next."
+   (ghl_folder_id is null until the media destination is resolved in SOP 9.3)
+6. Notify the Director: "Step 0 complete. Local workdir: [path]. GHL media destination will be resolved in SOP 9.3."
 
 **Outputs:**
 - Local directory tree (verified to exist)
-- working/checkpoints/media_library.json (with null ghl_folder_id pending GHL creation)
+- working/checkpoints/media_library.json (with null ghl_folder_id pending destination resolution in SOP 9.3)
 
 **Hand to:** Director (who can now begin the discovery interview and all other run phases)
 
@@ -226,7 +227,7 @@ Skipping this step is only permitted under the `has_ghl: false` carve-out (write
 - working/media-library/slide-NN.png (the image to upload)
 - GHL **LOCATION** PIT from the client's env stores (`GOHIGHLEVEL_API_KEY` / legacy `GHL_API_KEY`) + location id (`GOHIGHLEVEL_LOCATION_ID` / legacy `GHL_LOCATION_ID`)
 
-**Steps (Resolve the GHL media destination -- run once per deck run; CREATE the folder BY SOFTWARE):**
+**Steps (Resolve the GHL media destination -- run once per deck run; the folder is NEVER created by software):**
 1. If media_library.json still has `ghl_folder_id: null`, resolve the destination (or just run `scripts/ghl_media_push.py`, which does this + the uploads):
    a. **CREATE the per-deck folder (FAIL-CLOSED, FIX 36(2)):** `ghl_media.create_media_folder("DECK <deck-slug>", location_id, pit)` — NO network call. With an `approved_folder_id` (a folder a human pre-created in the GHL UI) it returns that id with `approved: true`; set `ghl_folder_id` to it and pass it as `parentId` on every upload. Without one it returns the documented decline (`{"folderId": None, "http": 404, "fallback": "name-prefix"}`) — proceed to step c (media root + name prefix). The folder-create POST is never issued by this pipeline.
    b. **If create DECLINES** AND a human supplied `ghl_media_folder_id` in intake.json: use that id as `parentId`.
@@ -328,14 +329,14 @@ Skipping this step is only permitted under the `has_ghl: false` carve-out (write
 
 ### SOP 9.6 -- Final Deck Delivery (MIGRATED to ROLE-13 Delivery Concierge)
 
-**Status:** MIGRATED. Final deck delivery is owned by the Delivery Concierge (ROLE-13, `presentations/delivery-concierge.md`, whose SOPs absorb this procedure). ROLE-13 exists in the department roster (00-START-HERE.md, Role Roster) and `PIPELINE-MANIFEST.json` assigns `P9-DELIVER` to `delivery-concierge`. This role does NOT deliver the final deck. The full upload/verify/notify procedure (package assembly, destination resolution, the final PPTX GHL upload recording `pptx_ghl_media_id`, destination ground-truth verification, the `openclaw message send` notification) lives in the Delivery Concierge's SOPs 9.0-9.4, including the `AF-DH1` hygiene whitelist and the `working/qc/final_deck_qc.json` delivery interlock.
+**Status:** MIGRATED. Final deck delivery is owned by the Delivery Concierge (ROLE-13, `presentations/delivery-concierge.md`, whose SOPs absorb this procedure). ROLE-13 exists in the department roster (00-START-HERE.md, Role Roster) and `PIPELINE-MANIFEST.json` assigns `P9-DELIVER` to `delivery-concierge`. This role does NOT deliver the final deck. The full upload/verify/notify procedure (package assembly, destination resolution, the final PPTX GHL upload recording `pptx_ghl_media_id`, destination ground-truth verification, the `openclaw message send` notification) lives in the Delivery Concierge's SOPs 9.0-9.4, including the `AF-DH1` hygiene whitelist and the engine closeout delivery interlock (the build_deck postflight completeness gate plus `working/qc/final_qc_report.json`).
 
 **What this role still owns:** the media-library and GHL upload records delivery consumes (SOPs 9.1-9.5 above), plus the GHL upload closeout gate (SOP 9.8 below): `python3 scripts/ghl_media_push.py --gate --run-dir <run_dir>` / `AF-DELIVERY-COMPLETE`.
 
-**When it triggers:** After final Phase 6 QC passes (`working/qc/final_deck_qc.json` present with `pass: true` and `qc_score >= 8.5`).
+**When it triggers:** After the engine closeout gates pass (the build_deck postflight completeness gate green for this run, and `working/qc/final_qc_report.json` present from P-QC-AGGREGATE with its gate-facing average >= 8.5).
 
 **Steps (this role's part of the hand-off):**
-1. Confirm the delivery pass-artifact `working/qc/final_deck_qc.json` exists on disk with `pass: true` and `qc_score >= 8.5`. If absent or failing, halt and notify the QC Specialist.
+1. Confirm the closeout gates: the build_deck postflight completeness gate passed for this run (its verdict is recorded in `working/checkpoints/process_manifest.json`) and `working/qc/final_qc_report.json` exists on disk with its gate-facing average >= 8.5. If either is absent or failing, halt and notify the QC Specialist. (The retired `working/qc/final_deck_qc.json` pass-artifact no longer exists in code and unlocks nothing.)
 2. Confirm media_library.json is complete: `ghl_folder_id` (a real folder id or `"root"`), `ghl_folder_name`, `version_number`, and per-slide `ghl_media_id` records from SOP 9.3.
 3. Hand off to the Delivery Concierge (ROLE-13): the QC-passed deck plus media_library.json. The Delivery Concierge assembles the clean package (its SOP 9.0), resolves destinations (its SOP 9.1), uploads to every destination including the final PPTX GHL upload recording `pptx_ghl_media_id` (its SOP 9.2), verifies every destination (its SOP 9.4), and sends the delivery notification via `openclaw message send` (its SOP 9.3).
 4. Support re-uploads on request: if the Delivery Concierge reports a missing or unverified file in GHL, retry the affected upload via SOP 9.3 and report back.
@@ -412,7 +413,7 @@ missing records.
 **When to run:** `P-U-SALES-BUILD` (order 8.75), `P-U-CHECKOUT-BUILD` (order 8.76),
 `P-U-FORM-CHECKOUT` (order 8.77), and `P-U-VSL-BUILD` (order 8.93) all declare
 `owning_role: media-librarian-ghl-updater` and `sop_refs: ["media-librarian-ghl-updater-sops.md"]`
-in `PIPELINE-MANIFEST.json` (manifest_version 51) -- this entry is that reference resolving to real
+in `PIPELINE-MANIFEST.json` (manifest_version 70) -- this entry is that reference resolving to real
 content, not a dead pointer.
 
 **Full procedure lives in two standalone builder SOPs, same directory:**
@@ -433,10 +434,11 @@ bury a distinct capability inside the media-library/upload procedure it isn't pa
 GHL-push-terminating deliverable owner (`P9.6-WEBINAR-VIDEO`, SOP 9.6 above) -- the same precedent the
 two builder SOPs cite for that choice.
 
-**Status as of this entry (2026-08-19):** the four phases above ARE in `PIPELINE-MANIFEST.json`
-(manifest_version 51) and `scripts/sales_checkout_builder.py` exists on disk. `scripts/vsl_builder.py`
-does not yet exist; no `phase_verifiers.py` entries or `AF-U-*` autofail-registry rows exist yet for
-any of the four. See each builder SOP's own STATUS section for the full, itemized LIVE/PENDING
+**Status as of this entry (updated at HEAD, manifest_version 70):** the four phases above ARE in
+`PIPELINE-MANIFEST.json` and the executor scripts exist on disk (`scripts/sales_checkout_builder.py`,
+`scripts/checkout_form_builder.py`, and `scripts/vsl_builder.py`, 1,910 lines);
+`phase_verifiers.py` entries and `AF-U-*` autofail-registry rows exist for all four (registry
+parity 62/62). See each builder SOP's own STATUS section for the full, itemized LIVE/PENDING
 breakdown -- do not treat this pointer entry as confirming more than that.
 
 ---

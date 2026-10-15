@@ -706,6 +706,54 @@ NEGATIVE_BLOCK_CLASS_TOKENS = {
         "em dash", "pure-black", "pure black"],
 }
 
+# AF-P24: the FIVE BlackCEO negative classes (SOP-GIP-01 v2.0 Element 10, the
+# Graphics Image Protocol's mandatory representation classes), adopted into the
+# Presentations pipeline by the FIX-PLAN Item 26 doctrine weave (GIP v2.0 landed
+# as draft PR #2005). CONDITIONAL by design, exactly as SOP-GIP-01 v2.0 scopes
+# them: they bind only when the prompt carries a Black / African-descended
+# subject (BLACK_SUBJECT_TOKENS below). A prompt with no Black subject is judged
+# on the 8 base classes alone, so the base gate's verdicts on existing decks do
+# not move. Token sets are tolerant like AF-P13's (any one hit names the class);
+# the QC roles verify the semantics; this is the mechanical floor. IDENTICAL to
+# prompt_gate.py::BLACKCEO_NEGATIVE_BLOCK_CLASS_TOKENS (the two gates share teeth).
+BLACKCEO_NEGATIVE_BLOCK_CLASS_TOKENS = {
+    "BlackCEO skin chromatic depth": [
+        "melanated skin as gray", "melanated skin as grey",
+        "ashy, muddy", "gray, ashy, muddy", "grey, ashy, muddy",
+        "dull, or desaturated", "dull or desaturated"],
+    "BlackCEO hair strand integrity": [
+        "crush black hair", "featureless black", "individual strands"],
+    "BlackCEO skin microtexture": [
+        "smooth skin to plastic", "plastic/wax", "plastic, wax",
+        "fine microtexture"],
+    "BlackCEO hairstyle fidelity": [
+        "specified hairstyle with a generic", "replace a specified hairstyle",
+        "fuse braids"],
+    "BlackCEO skin-tone direction lock": [
+        "lighten deep skin in aspirational", "darken it for dramatic",
+        "darken deep skin for", "lighten deep skin for"],
+}
+
+# The mechanical half of SOP-GIP-01 v2.0 Element 10's applicability test ("when
+# the prompt includes Black / African-descended subjects"): the prompt names a
+# Black subject directly, or casts one using the GIP-01 v2.0 25-entry skin-tone
+# library (a library label in the people spec means a melanated subject was
+# cast from the library vocabulary SOP-CAST-01 now draws from). IDENTICAL to
+# prompt_gate.py::BLACK_SUBJECT_TOKENS.
+BLACK_SUBJECT_TOKENS = [
+    "black woman", "black women", "black man", "black men", "black subject",
+    "black person", "black people", "african american", "african-american",
+    "african descended", "african-descended", "melanated",
+    # SOP-GIP-01 v2.0 skin-tone library labels (the casting vocabulary)
+    "butter cream", "light caramel", "honey wheat", "cafe au lait",
+    "golden pecan", "cinnamon sugar", "butterscotch", "caramel bronze",
+    "toffee brown", "copper penny", "milk chocolate", "chestnut brown",
+    "cocoa powder", "burnt sienna", "coffee bean", "dark amber",
+    "mahogany wood", "espresso brown", "dark chocolate", "ebony wood",
+    "midnight brown", "charcoal velvet", "obsidian black", "onyx stone",
+    "jet black",
+]
+
 # AF-P14 — per-string SPELLING-LOCK. A real rich prompt pins the EXACT spelling of every
 # on-slide word with a per-line spelling-lock directive (SOP 9.9 "HEADLINE VERBATIM +
 # SPELLING-LOCK"). The mechanical half: at least one spelling-lock marker token must be
@@ -1367,6 +1415,28 @@ def _negative_block_class_problems(prompt_lc: str) -> list:
     return missing
 
 
+def _black_subject_present(prompt_lc: str) -> bool:
+    """AF-P24 applicability: True iff the prompt carries a Black / African-descended
+    subject (direct naming, or a SOP-GIP-01 v2.0 skin-tone library label).
+    Identical to prompt_gate.py::_black_subject_present."""
+    return any(t in prompt_lc for t in BLACK_SUBJECT_TOKENS)
+
+
+def _blackceo_negative_class_problems(prompt_lc: str) -> list:
+    """AF-P24 mechanical half: return the names of any of the FIVE BlackCEO
+    negative classes (SOP-GIP-01 v2.0 Element 10) missing from a prompt that
+    carries a Black subject. Empty list = not applicable (no Black subject) or
+    all five named. Identical to prompt_gate.py::_blackceo_negative_class_problems
+    (registered in PIPELINE-MANIFEST.json with this py_symbol)."""
+    if not _black_subject_present(prompt_lc):
+        return []
+    missing = []
+    for cls, tokens in BLACKCEO_NEGATIVE_BLOCK_CLASS_TOKENS.items():
+        if not any(t in prompt_lc for t in tokens):
+            missing.append(cls)
+    return missing
+
+
 def _spelling_lock_present(prompt_lc: str) -> bool:
     """AF-P14 mechanical half: True iff the prompt carries a per-string spelling-lock
     directive marker."""
@@ -1422,7 +1492,8 @@ def _verbatim_copy_problems(prompt_text: str, copy_val) -> list:
 def rich_prompt_quality_problems(prompt_text: str, copy_val=None) -> list:
     """The QUALITY-LAYER teeth on a single rich prompt (on top of the char floor +
     REQUIRED_STRUCTURAL_BLOCKS already enforced by the caller): AF-P13 (eight-class
-    negative block), AF-P14 (spelling-lock), AF-P-DENSITY (hex/size/composition/distinct
+    negative block), AF-P24 (five BlackCEO classes on Black-subject prompts, Item 26
+    GIP weave), AF-P14 (spelling-lock), AF-P-DENSITY (hex/size/composition/distinct
     words), and VERBATIM-WORDS-BAKED (the slide's exact copy is in the prompt). Returns a
     list of fatal problem strings (empty = the prompt clears every quality gate). Shared
     by load_rich_prompt (render-time, raises) and _chk_rich_prompts / the Prompt-QC teeth
@@ -1436,6 +1507,15 @@ def rich_prompt_quality_problems(prompt_text: str, copy_val=None) -> list:
             + ", ".join(missing_classes)
             + " — the 8-class paired negative block (SOP 9.8) is mandatory; a "
             "one-line 'no text' AVOID stub does not satisfy it")
+    missing_bc = _blackceo_negative_class_problems(prompt_lc)
+    if missing_bc:
+        problems.append(
+            "AF-P24: prompt casts a Black / African-descended subject but its "
+            "negative block does not name BlackCEO defect class(es): "
+            + ", ".join(missing_bc)
+            + ": the five SOP-GIP-01 v2.0 BlackCEO classes are mandatory when "
+            "a prompt includes Black subjects (the 13-class block: 8 base + 5 "
+            "BlackCEO; slide-image-creator SOP 9.8 / SOP 9.12)")
     if not _spelling_lock_present(prompt_lc):
         problems.append(
             "AF-P14: no per-string spelling-lock directive (e.g. 'render this exact "
@@ -8635,6 +8715,7 @@ def _engine_name_for_code(code: str) -> str:
         "AF-METHOD-FABRICATED": "Pricing",
         "AF-NO-TIME-TO-RESULT": "Pricing",
         "AF-P13": "Negative-Block",
+        "AF-P24": "Negative-Block",
         "AF-P14": "Typography/Spelling-Lock",
         "AF-P-VERBATIM": "Typography/Verbatim",
         "AF-P-DENSITY": "Density",
@@ -9063,7 +9144,8 @@ def check_prompt_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = N
       LENGTH gate  — C1 >= the rule 12 floor (AF-P1, fatal); C2 <= the model maxLength (AF-P2).
       QUALITY gate — C4 structural blocks; C5 perceptual INTELLIGENCE engines (Facial/
         Lighting/World/Hair + per-slide harmony + image-side Hook via iec.check_prompts);
-        C6 8-class negative block (AF-P13); C7 per-string spelling-lock (AF-P14); C8 verbatim
+        C6 8-class negative block (AF-P13); C6b BlackCEO classes on Black-subject prompts
+        (AF-P24); C7 per-string spelling-lock (AF-P14); C8 verbatim
         copy baked (AF-P-VERBATIM); C9 density + demographic-landmine (AF-P-DENSITY/AF-R3);
         C10 EXCELLENCE (AF-EXCELLENCE). Length alone never passes; engines alone never pass.
 
@@ -9167,6 +9249,14 @@ def check_prompt_qc_deterministic(run_dir: Path, slides_path: Optional[Path] = N
             deficiencies.append(_pdef(
                 "AF-P13", "reauthor", "class not named", cls, "Negative-Block",
                 f"Name the '{cls}' defect class in the 8-class paired negative block (SOP 9.8)."))
+
+        # --- C6b BlackCEO negative classes (AF-P24, Item 26 GIP weave) ---
+        for cls in _blackceo_negative_class_problems(lc):
+            deficiencies.append(_pdef(
+                "AF-P24", "reauthor", "BlackCEO class not named", cls, "Negative-Block",
+                f"Name the '{cls}' BlackCEO defect class in the negative block: this prompt "
+                f"casts a Black / African-descended subject, so the five SOP-GIP-01 v2.0 "
+                f"BlackCEO classes are mandatory alongside the 8 base classes (SOP 9.8 / SOP 9.12)."))
 
         # --- C7 per-string spelling-lock (AF-P14) ---
         if not _spelling_lock_present(lc):
