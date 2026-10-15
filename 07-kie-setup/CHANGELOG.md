@@ -4,6 +4,16 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.2.2] - 2026-10-14 - Presentations callback doctrine settled: decks poll, Skill 46 scoped to the Skill 74 route
+
+- `SKILL.md`: the Critical Things to Know bullet no longer orders decks onto Skill 46 callbacks. Presentations deck runs poll `recordInfo` through the department's canonical engine and never dispatch through Skill 74. Item 4 (callback vs polling policy), the Skill 74 paragraph, and the Skill 46 Companion section carry the same scoping.
+- `references/kie-common-rules.md` rule 4: the callback sentence now names the route it governs (production batches dispatched through the Skill 74 production route); the department-ladder sentence names the Presentations decision of 2026-10-14 (poll, never `callBackUrl`, never the Skill 46 relay).
+- Decision record: `DECISION-2026-10-14-KIE-COMPLETION-POLLING.md` in the Presentations department home (FIX-PLAN Item 33d); department doctrine conformed in SOP-IMG-01 section 1B. Skill 46's own files are unchanged: the conflict's presentations-facing order lived in this skill's texts, not in Skill 46's doctrine.
+- `kie-setup.skill` rebuilt from the fixed files.
+- Version roll to v7.2.2 (`SKILL.md`, `skill-version.txt`).
+
+---
+
 ## [v7.2.1] - 2026-10-10 - settings.json rule 14 sharpened (env.KIE_API_KEY exception), 24-hour retention text, policy fixtures a-g
 
 - `references/kie-common-rules.md` rule 14 rewritten: no `ANTHROPIC_*` key (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`) and no KIE base URL (`ANTHROPIC_BASE_URL=https://api.kie.ai/anthropic`) may be written into `settings.json`; the one settings.json write the rule allows is `env.KIE_API_KEY`, the variable name KIE's own docs prescribe (docs.kie.ai/ai-agent/overview, 2026-10-09).
