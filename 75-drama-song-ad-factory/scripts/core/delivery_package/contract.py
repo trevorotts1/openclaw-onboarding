@@ -27,6 +27,21 @@ receipt, the README and the song-choices folder -- and the
 or a producer dropped in there (a cost report, a QC strip, a half render)
 fails the gate instead of shipping.
 
+The Drama-to-Demand method adds TWO more deliverable names, both inert
+until the caller says the run carries them (SPEC B3b, METHOD-INTEGRATION
+F11/F19 -- a run that is not wired for the method behaves byte for byte as
+before):
+  * a method run names item 6's two files as TRAILERS -- same slot 06, same
+    kind, only the label differs (``06 - Trailer 60s.mp4`` /
+    ``06 - Trailer 90s.mp4``); the clip names still open there;
+  * a CAMPAIGN method run also ships the optional item 13, the ad clips
+    (``13 - Ad 60s.mp4`` / ``13 - Ad 90s.mp4``). Every run carries the 12
+    base items; 13 is the optional one.
+An ad clip or a trailer name outside those runs is a stray like any other
+working file, and the working files themselves (Agnes prompts, chained
+last frames, mouth strips, venvs) have their own homes in the run, never
+here.
+
 An item opens only when it opens:
   pdf   -- a real PDF header (%PDF-), never a renamed text file;
   srt   -- a cue block: an index line then a timing line "HH:MM:SS,mmm --> ..."
@@ -129,6 +144,31 @@ PACKAGE_ITEMS = (
 ITEMS_BY_KEY = {item.key: item for item in PACKAGE_ITEMS}
 assert len(ITEMS_BY_KEY) == 12 == len(PACKAGE_ITEMS)
 
+#: SPEC B3b / METHOD-INTEGRATION F19: the optional 13th deliverable -- the ad
+#: clips (a compressed arc selling the OFFER, cut from a campaign master).
+#: Campaign method runs only: a lesson or testimonial run has no ad clips to
+#: sell. DEL-06 is its producing unit (``delivery_clips`` writes these names);
+#: DEL-13 is this contract itself, DEL-12 the welcome sheet.
+AD_CLIPS_ITEM = Item("ad_clips", 13, "DEL-06", "60 and 90 SECOND AD CLIPS",
+                     ("13 - Ad 60s.mp4", "13 - Ad 90s.mp4"),
+                     ("media", "media"),
+                     ("delivery_clips.delivery_clips",))
+
+#: The deliverables that are not part of every run: the 12 base items are
+#: mandatory, item 13 rides along only when the run is a campaign.
+OPTIONAL_ITEMS = (AD_CLIPS_ITEM,)
+
+#: 12 base items every run ships + optional item 13 = the 13 names the gate
+#: knows. PACKAGE_ITEMS itself never grows: the client map, the welcome sheet
+#: and Q12 count the 12, and a run that is not a campaign never owes 13.
+assert len(PACKAGE_ITEMS + OPTIONAL_ITEMS) == 13 == \
+    len({item.key for item in PACKAGE_ITEMS + OPTIONAL_ITEMS})
+
+#: SPEC B3b / METHOD-INTEGRATION F11: a METHOD run names item 6's two files as
+#: trailers -- same slot 06, same media kind, only the label differs. Keyed by
+#: the item's number, index-aligned with that item's own ``files``.
+METHOD_ITEM_FILES = {6: ("06 - Trailer 60s.mp4", "06 - Trailer 90s.mp4")}
+
 #: the clean-folder gate's failure code (SPEC B3b): the client folder holds
 #: deliverables only, so a top-level name outside the allow-list fails.
 DELIVERY_FOLDER_NOT_CLEAN = "DELIVERY_FOLDER_NOT_CLEAN"
@@ -141,16 +181,40 @@ EXTRA_ALLOWED = ("delivery-receipt.json", "README.md", "SONG-CHOICES")
 _SONG_PAIR = re.compile(r"^.+ - .+ - Song\.(mp3|wav)$")
 
 
-def allowed_top_level():
-    """The names a clean delivery folder may hold at its top level."""
-    names = {name for item in PACKAGE_ITEMS for name in item.files}
+def allowed_top_level(method_run=False, campaign_run=False):
+    """The names a clean delivery folder may hold at its top level.
+
+    The 12 items' files plus the known extras, always. A method run adds the
+    trailer names for item 6; a campaign method run adds the ad clips. Both
+    default False, so an ordinary run gets exactly the old allow-list.
+    """
+    items = PACKAGE_ITEMS + ((AD_CLIPS_ITEM,) if campaign_run else ())
+    names = {name for item in items for name in item.files}
+    if method_run:
+        for alt in METHOD_ITEM_FILES.values():
+            names.update(alt)
     names.update(EXTRA_ALLOWED)
     return frozenset(names)
 
 
-def is_allowed_top_level(name):
+def is_allowed_top_level(name, method_run=False, campaign_run=False):
     """True when this top-level folder name is a deliverable or a known extra."""
-    return name in allowed_top_level() or bool(_SONG_PAIR.match(name))
+    return name in allowed_top_level(method_run, campaign_run) or \
+        bool(_SONG_PAIR.match(name))
+
+
+def _slot_names(item, index, method_run):
+    """The file names slot `index` of an item may carry, checked in that order.
+
+    A method run asks for item 6's trailer name first and still accepts the
+    clip name; every other slot (and every non-method run) has one name, the
+    canonical one.
+    """
+    base = item.files[index]
+    alt = METHOD_ITEM_FILES.get(item.number) if method_run else None
+    if alt is not None and index < len(alt):
+        return (alt[index], base)
+    return (base,)
 
 
 def _problem(path, kind):
@@ -192,45 +256,60 @@ def _problem(path, kind):
     return None
 
 
-def verify_folder(folder):
-    """Check a delivery folder against all 12 package items. Never raises.
+def verify_folder(folder, method_run=False, campaign_run=False):
+    """Check a delivery folder against the package items. Never raises.
 
     Returns {"ok", "folder", "expected", "present", "missing", "problems",
     "not_clean"} where missing holds the package keys, problems names item +
     file + the sentence that failed, and not_clean holds every top-level name
     outside the allow-list (each one also a problem, code
-    DELIVERY_FOLDER_NOT_CLEAN). A folder that does not exist misses all 12.
+    DELIVERY_FOLDER_NOT_CLEAN). A folder that does not exist misses all the
+    items owed.
+
+    method_run (the run carries control/method.json) opens item 6's trailer
+    names and allows them at the top level; campaign_run (a campaign purpose
+    method run) also owes item 13, the ad clips, and allows those names.
+    expected is the 12 base items, +13 only for a campaign run. Both default
+    False: a caller that says nothing about the method gets the original
+    gate -- a trailer or an ad clip in an ordinary run is a stray.
     """
     root = Path(folder)
+    items = PACKAGE_ITEMS + ((AD_CLIPS_ITEM,) if campaign_run else ())
     report = {"contract_version": CONTRACT_VERSION, "folder": str(root),
-              "expected": len(PACKAGE_ITEMS), "present": [], "missing": [],
+              "expected": len(items), "present": [], "missing": [],
               "problems": [], "not_clean": [], "ok": False}
     if not root.is_dir():
-        report["missing"] = [item.key for item in PACKAGE_ITEMS]
+        report["missing"] = [item.key for item in items]
         report["problems"] = [{"item": "", "unit": "", "file": str(root),
                                "problem": "delivery folder missing"}]
         return report
-    for item in PACKAGE_ITEMS:
+    for item in items:
         bad = []
-        for name, kind in zip(item.files, item.kinds):
-            why = _problem(root / name, kind)
+        for index, kind in enumerate(item.kinds):
+            names = _slot_names(item, index, method_run)
+            why = None
+            for name in names:
+                why = _problem(root / name, kind)
+                if why is None:
+                    break
             if why is not None:
                 bad.append(why)
                 report["problems"].append({"item": item.key, "unit": item.unit,
-                                           "file": name, "problem": why})
+                                           "file": names[0], "problem": why})
         if bad:
             report["missing"].append(item.key)
         else:
             report["present"].append(item.key)
     for entry in sorted(root.iterdir()):
-        if is_allowed_top_level(entry.name):
+        if is_allowed_top_level(entry.name, method_run, campaign_run):
             continue
         report["not_clean"].append(entry.name)
         report["problems"].append(
             {"item": "", "unit": "", "file": entry.name,
-             "problem": "%s: extra %s not in the delivery contract"
+             "problem": "%s: extra %s %s is not in the delivery contract"
                         % (DELIVERY_FOLDER_NOT_CLEAN,
-                           "directory" if entry.is_dir() else "file")})
+                           "directory" if entry.is_dir() else "file",
+                           entry.name)})
     report["ok"] = not report["missing"] and not report["not_clean"]
     return report
 
