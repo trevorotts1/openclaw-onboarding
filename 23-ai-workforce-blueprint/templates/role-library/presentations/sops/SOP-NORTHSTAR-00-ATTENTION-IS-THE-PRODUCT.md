@@ -3,10 +3,10 @@
 **Cluster:** North Star / True Goal -- the doctrine ROOT. Parent of SOP-ENGINE-00 (Intelligence Engines), SOP-PRIORITY-01 (Seven-P + diagnostic), SOP-PRIORITY-02 (eight-move build sequence), SOP-VISION-01, SOP-PROCLAMATION-01. Every other SOP in this department is a tributary of this one.
 **Owning role at write time:** Director of Presentations (STATES the true goal and gates against it) -> Attention Content Strategist + Attention Designer (the two most important roles; EXECUTE it). Every other role protects the attention these two earn.
 **Enforced at the gate by:** QC Specialist - Presentations, via the composite **AF-PRIORITY-SHIFT** (14-item ship gate) at the new **P-SHIFT-QC** phase (order 7.5); plus the two acceptance-test gates **AF-PEAK-END** (arc, order 3) and **AF-NO-SALIENCE-APEX** (image-QC, order 4.95). See SOP-PRIORITY-02 (peak/re-rank/trigger) and the Attention Designer re-charter (most-vivid-by-the-end).
-**Detection script:** `scripts/run_signature_deck.py check_priority_shift_ledger` -> writes `working/qc/priority_shift_report.json` (one row per item + evidence). **REGISTRATION STATUS: DOCTRINE-ONLY** (gates declared here are authored in this SOP and the 14-item pre-output verification gate is specified in SOP-INTEGRATION-00. No mechanical `_chk_` callable or PIPELINE-MANIFEST.autofails entry yet exists. Until registered, this SOP is the stated doctrine every role reads; the gates below are authored here and enforced downstream by role discipline, not by a sync_check-verifiable checker.)
-**Registered:** DOCTRINE-ONLY (gates specified but not mechanically wired). See SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md for the full registration ledger.
+**Detection script:** `scripts/run_signature_deck.py check_priority_shift_ledger` -> writes `working/qc/priority_shift_report.json` (one row per item + evidence). **REGISTRATION STATUS: WIRED** (the gates declared here are registered in PIPELINE-MANIFEST.autofails with enforced_by: build_deck and in_ruleset: true: AF-PRIORITY-SHIFT via `_chk_priority_shift_ledger`, AF-PEAK-END via `_chk_peak_end`, AF-NO-SALIENCE-APEX via `_chk_salience_apex`; all three are listed in SOP-SLIDE-00 Section 5 and sync_check A3 polices the wiring. This SOP remains the stated doctrine every role reads.)
+**Registered:** WIRED (gates specified here and mechanically enforced; see the registration status above). See SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md for the full registration ledger.
 **Enforcement phase:** Doctrine spans the whole pipeline -- declared at INTAKE (0.1, `true_goal` + `PRIORITY_SHIFT_TARGET`), engineered at P0B-PRIORITY (0.2) and P3-ARC (3), and verified whole at P-SHIFT-QC (7.5).
-**Status:** **DOCTRINE -- THE CROWN.** This is the single source of truth for *why* the department exists. The composite AF-PRIORITY-SHIFT gate (14-item ship gate) and AF-PEAK-END/AF-NO-SALIENCE-APEX are declared here; their registration status is tracked in SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md.
+**Status:** **DOCTRINE -- THE CROWN.** This is the single source of truth for *why* the department exists. The composite AF-PRIORITY-SHIFT gate (14-item ship gate) and AF-PEAK-END/AF-NO-SALIENCE-APEX are declared here and are registered and wired (see header); their registration is tracked in SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md.
 
 ---
 
@@ -155,11 +155,11 @@ If any item fails, revise until it passes, then return the presentation with the
 
 The 14-item checklist that closes the loadable block is the department's ship gate. It is enforced as the composite **AF-PRIORITY-SHIFT** at **P-SHIFT-QC (order 7.5)** -- the only phase where copy, design, and rendered images all co-exist, so "the thing is the most vivid element by the end" can be judged whole. The 14 items map to existing gates where they already exist (cost-of-inaction -> `AF-NO-COST-OF-INACTION`; felt cost -> `AF-NO-FELT-STAKES`; villain -> `AF-NO-VILLAIN`; value-before-price -> Pricing cadence) and to the new gates named in SOP-PRIORITY-02 (`AF-NO-PRIORITY-STACK`, `AF-NO-RERANK`, `AF-NO-TRIGGER`, `AF-PEAK-END`) and the Attention Designer's `AF-NO-SALIENCE-APEX`. **Item 0, implicit above all fourteen: did the deck hold attention for the whole duration? If a reviewer's attention drifted, the deck has already failed the #1 job.**
 
-## 7. FOR AGENT W3 -- ENFORCEMENT CODES THIS SOP IS THE DOCTRINE PARENT OF
+## 7. ENFORCEMENT CODES THIS SOP IS THE DOCTRINE PARENT OF (registration record)
 
-This SOP introduces no checker of its own; it is the parent that the gates report up to. Register in lockstep (per §7.4 frozen spec of the integration plan):
+This SOP introduces no checker of its own; it is the parent that the gates report up to. Registered in lockstep (per §7.4 frozen spec of the integration plan):
 
-- **AF-PRIORITY-SHIFT** (composite, runner, P-SHIFT-QC 7.5) -- the 14-item ledger gate. Doctrine + item list authored here; checker `run_signature_deck.check_priority_shift_ledger`.
+- **AF-PRIORITY-SHIFT** (composite, runner, P-SHIFT-QC 7.5) -- the 14-item ledger gate. Doctrine + item list authored here; checker `run_signature_deck.check_priority_shift_ledger`, enforced in build_deck as `_chk_priority_shift_ledger`.
 - **AF-PEAK-END** (build_deck, order 3) -- acceptance test (a). Owned/specified in SOP-PRIORITY-02.
 - **AF-NO-SALIENCE-APEX** (build_deck, image-QC 4.95) -- acceptance test (b). Owned by the Attention Designer (slide-image-creator re-charter).
 - Optional manifest pointer only: top-level `"north_star": "<one line> -> SOP-NORTHSTAR-00"`. Do NOT move doctrine prose into PIPELINE-MANIFEST.json (it is the machine SSOT, scanned by sync_check.py).

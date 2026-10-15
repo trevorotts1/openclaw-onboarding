@@ -32,12 +32,12 @@ in the episode must be traceable back to a verified source assembled here.
 Two different resources do two different jobs in this stage. Do not confuse them.
 
 - **Content reasoning** (answer improvement, power statement extraction, gap filling, takeaway
-  generation, case study compression for the ear) runs on the runtime content model chain in this
-  fixed priority order: Kimi 2.6 on Ollama Cloud (thinking high), then GLM 5.2 on Ollama Cloud
-  (thinking high), then the OpenRouter equivalents in the same order (Kimi 2.6, then GLM 5.2), then
-  Gemini 3.1 Flash Lite as the final fallback. If none resolve, select a comparable writing model
-  and record the substitution in the delivery report; the pipeline never stalls solely because a
-  preferred model is unavailable. Zero Anthropic model ids, providers, packages, keys, or hosts ship
+  generation, case study compression for the ear) runs on the model the client selects for the
+  task, or the client's configured default model (the selection policy in config/models.json).
+  Recommendation, offered as guidance the client can override: a high-reasoning model, because
+  this stage rewrites answers in the client's own voice. If no client choice and no configured
+  default resolve, STOP and ask the client which model to use; never select a substitute model
+  silently. Zero Anthropic model ids, providers, packages, keys, or hosts ship
   in this path (`guard-no-anthropic-runtime.py` enforces this at the merge gate and refuses runtime
   deny pattern substitutions).
 - **Web research** (verifying case studies, confirming findings) runs on whatever web research tool

@@ -60,7 +60,7 @@ Scheduling: if contact.date_for_release is present and in the future, use it as 
 
 ### 8. What this mode does NOT change
 
-The Style Engine mechanics, the canonical 18-step pipeline order, both QC gates and their thresholds, the Fish Audio tag syntax, the sizing table (7 to 15 minutes at 140 words per minute, 10 minutes the default), and the runtime model routing all stay exactly as defined elsewhere in the skill. Content work routes to the client's own runtime models per the routing policy (Ollama Cloud Kimi 2.6, then GLM 5.2, then the OpenRouter equivalents, then Gemini 3.1 Flash Lite). This mode is perspective and terminal boundary only.
+The Style Engine mechanics, the canonical 18-step pipeline order, both QC gates and their thresholds, the Fish Audio tag syntax, the sizing table (7 to 15 minutes at 140 words per minute, 10 minutes the default), and the runtime model routing all stay exactly as defined elsewhere in the skill. Content work runs on the client's chosen model, or their configured default model, per the selection policy in config/models.json. This mode is perspective and terminal boundary only.
 
 ### 9. Gate hooks (Episode Gate and Part A checklist)
 
