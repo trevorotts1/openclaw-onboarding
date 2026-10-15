@@ -27,7 +27,8 @@ THE FIX (manifest v71).
      run changes behavior), but it is LOUD: Manifest.load prints a WARN
      line naming the phase, sync_check reports it as a W2 advisory, and
      cmd_new stamps the warnings into the run record (state.json
-     fanout_width_warnings).
+     fanout_width_warnings). (Item 16 later promoted the sync_check W2
+     advisory to a drift failure; see the update note below.)
 
 WHAT THESE TESTS PROVE, AND HOW THEY FAIL ON PRISTINE ea22ed88:
   1. the shipped manifest declares workers on every fanout phase, at the
@@ -39,8 +40,9 @@ WHAT THESE TESTS PROVE, AND HOW THEY FAIL ON PRISTINE ea22ed88:
      pristine has neither attribute nor warning.
   3. a fanout phase declaring workers: 1 on purpose does NOT warn (a stated
      serial decision is not an omission).
-  4. sync_check's warn_checks flags the same condition as W2 by name --
-     pristine warn_checks has no W2 class.
+  4. sync_check flags the same condition as W2 by name (as built by
+     Item 11: warn_checks, advisory; as promoted by Item 16: run_checks,
+     drift) -- pristine warn_checks has no W2 class.
   5. a declared width resolves at dispatch: resolve_effective_workers
      returns the declared width when units and capacity allow, the unit
      count when fewer units exist, and the capacity when capacity binds
@@ -52,6 +54,15 @@ WHAT THESE TESTS PROVE, AND HOW THEY FAIL ON PRISTINE ea22ed88:
 NO NETWORK, NO MODEL SPEND. The cmd_new test runs the real creation path
 against a scratch copy of the shipped manifest (version and phase count
 intact, so the manifest-currency gate passes) in a tmp run dir.
+
+ITEM 16 UPDATE (the promotion this suite's section 4 now asserts): W2 moved
+from sync_check.warn_checks (advisory warnings list, never an exit code) to
+sync_check.run_checks (drift list, class render_path): an undeclared fanout
+width now fails the drift gate, and phases.py refuses it at plan time
+(Engine._refuse_undeclared_fanout_widths, pinned in test_f6_fanout_width.py
+section 7). Points 2 and 6 above are unchanged: Manifest.load still does
+not refuse, and the run record still carries the warnings; the refusal
+lives at the gate and at plan time.
 """
 from __future__ import annotations
 
@@ -200,20 +211,38 @@ def test_declared_serial_workers_one_does_not_warn(tmp_path, capsys):
 
 # ---------------------------------------------------------------------------
 # 4. sync_check W2: the repo's own manifest checks flag it by name.
+#    ITEM 16 UPDATE: W2 was promoted from warn_checks (advisory) to
+#    run_checks (drift) by FIX-PLAN Item 16, so this section reads the
+#    drift list now, and also pins that the advisory list no longer
+#    carries W2.
 # ---------------------------------------------------------------------------
+def _sync_check_w2_drift(raw):
+    """W2 entries in sync_check's DRIFT list for a raw manifest dict.
+
+    run_checks needs the build-deck parse and the role/SOP scan that
+    main() assembles; the empty ruleset-code set only quiets the ruleset
+    cross-checks, which this suite does not judge."""
+    import sync_check
+    bd = sync_check.parse_build_deck()
+    role_stems, sop_files = sync_check.scan_roles_and_sops()
+    drift = sync_check.run_checks(raw, bd, set(), role_stems, sop_files)
+    return [d for d in drift if d["check"] == "W2"]
+
+
 def test_sync_check_w2_flags_undeclared_fanout_by_name():
     import sync_check
     raw = json.loads(_canonical().read_text(encoding="utf-8"))
-    clean = [w for w in sync_check.warn_checks(raw, set())
-             if w["check"] == "W2"]
+    clean = _sync_check_w2_drift(raw)
     assert clean == [], (
-        f"the shipped manifest must carry no W2 warnings: {clean}")
+        f"the shipped manifest must carry no W2 drift: {clean}")
+    assert [w for w in sync_check.warn_checks(raw, set())
+            if w["check"] == "W2"] == [], (
+        "W2 left the advisory warnings list in FIX-PLAN Item 16")
     broken = copy.deepcopy(raw)
     for ph in broken["phases"]:
         if ph["id"] == "P4-COPY":
             del ph["workers"]
-    flagged = [w["item"] for w in sync_check.warn_checks(broken, set())
-               if w["check"] == "W2"]
+    flagged = [d["item"] for d in _sync_check_w2_drift(broken)]
     assert flagged == ["P4-COPY"], flagged
 
 
