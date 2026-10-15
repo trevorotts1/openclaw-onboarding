@@ -145,7 +145,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - `cpu_cores`: from nproc
    - `cpu_load_15min`: the 15-minute load average from uptime (stable load indicator)
    - `free_disk_gb`: available disk on the home partition
-3. Test Ollama Cloud reachability: send one live test turn to the client's OLLAMA_API_KEY against the `kimi-k2.6:cloud` model. Record: `ollama_cloud_reachable: true/false`. If the model is NOT reachable with the cloud URL (requires `models.providers.ollama.baseUrl = https://ollama.com`): flag to the Director and propose using OpenRouter fallback for text models.
+3. Test Ollama Cloud reachability: send one live test turn to the client's OLLAMA_API_KEY against the client's primary text model (the model resolved from the client's choice, or their configured default). Record: `ollama_cloud_reachable: true/false`. If the model is NOT reachable with the cloud URL (requires `models.providers.ollama.baseUrl = https://ollama.com`): flag to the Director and propose using OpenRouter fallback for text models.
 4. Check Kie.ai credit balance: call `GET https://api.kie.ai/api/v1/chat/credit` with the client's KIE_API_KEY and read the response body (`code` must be 200; the balance is `data`). Record: `kie_credits_remaining`.
 5. Calculate image generation budget: SLIDE_COUNT x 2 x `per_image_usd`, where `per_image_usd` comes from the live `pricingDesc` (Skill 74; the Presentations model catalog `unit_costs` is the dated fallback if the live catalog is unreachable). Record both `per_image_usd` and `budget_ceiling`.
 6. Compare `kie_credits_remaining` to `budget_ceiling` x 1.30 (the credit preflight in `07-kie-setup/references/kie-common-rules.md`). If credits < budget_ceiling x 1.30: flag to the Director BEFORE the run begins: "Insufficient Kie.ai credits for this run (need $X, have $Y). Operator must top up before Phase 4."
@@ -235,12 +235,12 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 2. For each key found: record its location in capacity_plan.json under `env_store_locations`: `{ "key": "KIE_API_KEY", "found_in": "~/.openclaw/workspace/.env" }`.
 3. For each key NOT found in any store: record `{ "key": "KIE_API_KEY", "found_in": "NOT FOUND" }`. Notify the Director: "Key [KIE_API_KEY] not found in any env store. Phase 4 will fail without it."
 4. Verify model routing. For text models (Phase 1, Phase 3 QC agents, Phase 5 QC agents):
-   a. Attempt one live test turn to `ollama/kimi-k2.6:cloud` with the client's OLLAMA_API_KEY.
-   b. If successful: `primary_text_model: "ollama/kimi-k2.6:cloud"`.
+   a. Attempt one live test turn to the client's primary text model (resolved from the client's choice, or their configured default) with the client's OLLAMA_API_KEY.
+   b. If successful: `primary_text_model: "<the model id that answered>"`.
    c. If unsuccessful: attempt one live test turn to the same model via OpenRouter with the client's OPENROUTER_API_KEY.
-   d. If OpenRouter successful: `primary_text_model: "openrouter/moonshot/kimi-k2"` (or equivalent slug).
+   d. If OpenRouter successful: `primary_text_model: "<the OpenRouter slug of the same model>"`.
    e. If both fail: `primary_text_model: "UNAVAILABLE"`. NOGO decision. Notify Director.
-5. Verify QC model (minimax-m3:cloud via Ollama Cloud or OpenRouter). Same process as step 4.
+5. Verify QC model (the catalog-resolved QC scoring model via Ollama Cloud or OpenRouter). Same process as step 4.
 6. Write model routing table to capacity_plan.json:
    ```json
    {

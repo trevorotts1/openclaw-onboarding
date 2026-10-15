@@ -34,6 +34,14 @@ class _Box(unittest.TestCase):
         self._t = tempfile.TemporaryDirectory()
         self.home = Path(self._t.name)
         (self.home / ".openclaw" / "workspace").mkdir(parents=True)
+        # The fixture box is a CONFIGURED client box: populate-sops-from-manifest.py
+        # resolves its authoring model from the client's configured default
+        # (agents.defaults.model in ~/.openclaw/openclaw.json) when no selector
+        # resolution exists, and stops for owner input when neither exists.
+        # These tests assert QUEUEING behavior, so the box carries a configured
+        # default, the same synthetic id the repo's other Skill 23 fixtures use.
+        (self.home / ".openclaw" / "openclaw.json").write_text(json.dumps(
+            {"agents": {"defaults": {"model": {"primary": "ollama/box-default:cloud"}}}}))
         self.depts = self.home / "company" / "departments"
         self.env = dict(os.environ, HOME=str(self.home), OPENCLAW_PLATFORM="mac", PATH="/usr/bin:/bin")
 

@@ -27,16 +27,26 @@ requested_alias, selected_provider, selected_model, reason} per the fix spec
 CATALOG ALIASES (FIX 13 boundary)
 ---------------------------------
 The labels below are catalog aliases, NEVER duplicated literal model ids at
-call sites (fix spec). Resolution order:
+call sites (fix spec). presentation_job.model_catalog (FIX 13's live
+catalog) is authoritative when it exposes resolve_alias(); the built-in
+DEFAULT_ALIAS_REGISTRY here is the fallback for the labels the catalog does
+not name, never a second source of truth for the ones it does.
 
-    1. presentation_job.model_catalog (FIX 13's live catalog) when it
-       exposes resolve_alias() -- FIX 13 is authoritative and this module
-       defers to it;
-    2. the built-in DEFAULT_ALIAS_REGISTRY here, which pins only the ids
-       this box has LIVE-CONFIRMED (deepseek-v4.1-flash / deepseek-flash on
-       the native DeepSeek endpoint) plus the GLM/Ollama/Kie labels from the
-       fix-spec table, to be superseded by FIX 13's live catalog the moment
-       that module lands.
+ROUTE RESOLUTION ORDER (the model doctrine: the client selects, or their
+configured default applies; a recommendation is guidance, never a silent
+prescription):
+
+    1. the client's declared model plan (profile["model_plan"]) -- the
+       client's explicit choice for the capability class;
+    2. the client's configured default model (a default recorded on the
+       resource profile, or agents.defaults.model in openclaw.json);
+    3. the department capability RECOMMENDATION (CAPABILITY_CANDIDATES,
+       resolved through the catalog): surfaced on every decision as a
+       recommendation with its capability reason, and selectable only
+       among providers the client's own profile owns, consents to and
+       wires. When nothing the client owns can serve, the phase parks
+       with the recommendation and an ask-the-client reason rather than
+       silently selecting a named model.
 
 PROFILE CONTRACT (FIX 8/9)
 --------------------------
@@ -107,13 +117,16 @@ def flag_enabled() -> bool:
 # ---------------------------------------------------------------------------
 # One registry, consulted by resolve_alias(); no call site ever hardcodes a
 # literal model id. `live_confirmed` marks ids proven against a real endpoint
-# on this box (the DeepSeek native pair); the rest carry the fix-spec table's
-# labels until FIX 13's live catalog lands and resolves them authoritatively.
+# on this box; the rest carry the fix-spec table's labels until FIX 13's live
+# catalog lands and resolves them authoritatively.
+#
+# The text.strong id is NOT here anymore: that catalog alias is
+# client-resolved (the client's choice or their configured default), so this
+# registry must never resurrect it as a fallback pin when the catalog
+# declines to name a model. Its capability metadata survives in
+# MODEL_CAPABILITY_META below, which judges client-declared models against
+# class floors and can never be selected as a route.
 DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
-    "deepseek-v4.1-flash": {"provider": "deepseek-direct",
-                        "model": "deepseek-v4.1-flash",
-                        "modality": "text", "context_class": "long",
-                        "live_confirmed": True},
     "deepseek-flash": {"provider": "deepseek-direct",
                       "model": "deepseek-flash",
                       "modality": "text", "context_class": "standard",
@@ -138,6 +151,16 @@ DEFAULT_ALIAS_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "model": "gpt-image-2",
                     "modality": "image", "context_class": "standard",
                     "note": "Kie image render (fix-spec render column)"},
+}
+
+
+#: Capability metadata for ids no catalog alias pins anymore (text.strong
+#: is client-resolved): modality/context_class ONLY, consulted by
+#: _registry_capability_meta when judging a client-declared or
+#: configured-default model against a class floor. Capability data, never
+#: a route: no provider, no served id, nothing selectable.
+MODEL_CAPABILITY_META: Dict[str, Dict[str, str]] = {
+    "deepseek-v4.1-flash": {"modality": "text", "context_class": "long"},
 }
 
 
@@ -350,6 +373,12 @@ DEFAULT_CAPABILITY = "authoring"
 # Ordered (alias, allow) candidates per capability class, straight from the
 # fix-spec table's Default + Ordered-fallback columns. The fallback rule is
 # the modality doctrine: reasoning/long classes never drop to Flash.
+#
+# This table is rung 3 of the resolution order, the department
+# RECOMMENDATION: consulted only after the client's declared plan and the
+# client's configured default, surfaced on every decision as a
+# recommendation with its source named, and selectable only among
+# providers the client's own profile owns, consents to and wires.
 CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
     # OPERATOR RULING 2026-09-04: Flash leads on authoring work. Flash's
     # DeepSeek Direct ceiling is 2500 concurrent vs Pro's 500, so a wide
@@ -433,8 +462,11 @@ CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
 #    forced to do anything. So as a client should be able to choose whatever
 #    they want to be their primary workhorse or authoring model."
 #
-# CAPABILITY_CANDIDATES above is therefore the DEFAULT for a client who
-# declares NOTHING -- it stopped being the only answer. A client's declaration
+# CAPABILITY_CANDIDATES above is therefore the RECOMMENDATION layer: what
+# the department suggests for a client who declares nothing and has no
+# configured default -- it stopped being the only answer, and it is never
+# applied silently (every decision names its source: client-plan,
+# configured-default, or recommendation). A client's declaration
 # lives in the resource profile (resource_profile.record_model_plan ->
 # profile["model_plan"]), which is the ONE store every consumer already reads:
 # resolve_route() loads it on every call, and the P4-PROMPT fan-out children
@@ -604,6 +636,9 @@ def _registry_capability_meta(model_id: str) -> Dict[str, Any]:
     who types the alias ("glm-5.3"). Returns {} when nothing declares it --
     and {} means UNKNOWN, which never clears a long floor."""
     key = str(model_id or "").strip()
+    meta = MODEL_CAPABILITY_META.get(key)
+    if isinstance(meta, dict):
+        return dict(meta)
     row = DEFAULT_ALIAS_REGISTRY.get(key)
     if not isinstance(row, dict):
         nm = _norm_model_id(key)
@@ -705,6 +740,110 @@ def client_plan_for(capability: str,
     }
 
 
+def _parse_default_value(raw: Any) -> Optional[Dict[str, str]]:
+    """One configured-default value -> {provider, model}, or None.
+
+    Accepts a {provider, model} dict, a "model@provider" string (the model
+    plan's own spelling), or a "provider/model" string (the openclaw.json
+    spelling). A bare id rides the fleet's primary transport (ollama-cloud),
+    the same convention llm_score's resolver uses. A half-declared value is
+    NOT a declaration: None, never a guess."""
+    if isinstance(raw, dict):
+        provider = _norm_provider(raw.get("provider"))
+        model = str(raw.get("model") or "").strip()
+        if provider and model:
+            return {"provider": provider, "model": model}
+        return None
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    if "@" in text:
+        model, _, provider = text.partition("@")
+        provider = _norm_provider(provider)
+        model = model.strip()
+        if provider and model:
+            return {"provider": provider, "model": model}
+        return None
+    if "/" in text:
+        provider, _, model = text.partition("/")
+        provider = _norm_provider(provider)
+        model = model.strip()
+        if provider and model:
+            return {"provider": provider, "model": model}
+        return None
+    return {"provider": "ollama-cloud", "model": text}
+
+
+def configured_default_for(capability: str,
+                           profile: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Rung 2 of the resolution order: the client's configured default
+    model as a candidate for one capability class, or None.
+
+    Sources, in order: a default recorded on the resource profile
+    (profile["configured_default"], then profile["default_model"]), then
+    agents.defaults.model in openclaw.json (via model_catalog, the same
+    authority the catalog's client-resolved aliases read). The result is
+    shaped like client_plan_for's pick and judged by the SAME class floor;
+    a configured default is the client's standing choice, so it is never
+    waived and never re-ordered behind the capability recommendation."""
+    declared: Optional[Dict[str, str]] = None
+    if isinstance(profile, dict):
+        for key in ("configured_default", "default_model"):
+            declared = _parse_default_value(profile.get(key))
+            if declared is not None:
+                break
+    if declared is None:
+        raw_default = ""
+        try:  # the catalog module owns the openclaw.json read
+            from presentation_job import model_catalog as _catalog  # type: ignore
+            fn = getattr(_catalog, "client_configured_default_model", None)
+            if callable(fn):
+                raw_default = fn()
+        except Exception:  # noqa: BLE001 -- absence never breaks routing
+            raw_default = ""
+        declared = _parse_default_value(raw_default)
+    if declared is None:
+        return None
+    alias_def, alias_source = declared_alias_def(declared)
+    floor = floor_verdict(alias_def, capability)
+    return {
+        "capability": capability,
+        "slot": "configured-default",
+        "via": "configured-default",
+        "declared": dict(declared),
+        "alias": f"{CLIENT_ALIAS_PREFIX}configured-default",
+        "alias_def": alias_def,
+        "alias_source": alias_source,
+        "floor": floor,
+        "waived": False,
+    }
+
+
+def _recommendation_for(capability: str) -> Dict[str, Any]:
+    """The department capability recommendation for one class, as data.
+
+    The first CAPABILITY_CANDIDATES row resolved through the catalog, with
+    the class floor as its stated reason (a heavy-reasoning, long-context
+    model for the reasoning classes; a fast, cheap model for the mechanical
+    text classes). Guidance only: a recommendation is surfaced on the
+    decision, never disguised as a client choice."""
+    floor = class_floor(capability)
+    basis = (f"capability data: {capability} requires modality "
+             f"{floor['modality']} and context_class {floor['context_class']}")
+    for row in (CAPABILITY_CANDIDATES.get(capability) or []):
+        alias = str(row.get("alias") or "")
+        if not alias:
+            continue
+        resolved = resolve_alias(alias)
+        if resolved and resolved.get("provider") and resolved.get("model"):
+            return {"alias": alias, "provider": resolved["provider"],
+                    "model": _served_model(resolved, resolved["provider"]),
+                    "basis": basis}
+    first = (CAPABILITY_CANDIDATES.get(capability) or [{}])[0]
+    return {"alias": str(first.get("alias") or ""), "provider": None,
+            "model": None, "basis": basis}
+
+
 def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """The per-class table the launcher banner and the client report print.
 
@@ -721,11 +860,32 @@ def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             (CAPABILITY_CANDIDATES.get(capability) or [{}])[0].get("alias") or "")
         pick = client_plan_for(capability, profile)
         if pick is None:
+            dpick = configured_default_for(capability, profile)
+            if dpick is not None and dpick["floor"]["ok"]:
+                rows.append({
+                    "capability": capability, "slot": "configured-default",
+                    "via": "configured-default",
+                    "source": "configured-default",
+                    "provider": dpick["declared"]["provider"],
+                    "model": dpick["declared"]["model"],
+                    "default_alias": default_alias, "floor": "ok",
+                    "detail": "the client's configured default model serves "
+                              "this class (no slot declared for it)",
+                })
+                continue
+            detail = ("no client declaration or configured default covers "
+                      "this class; the capability recommendation applies "
+                      "until the client declares a model or configures a "
+                      "default")
+            if dpick is not None:
+                detail = ("the client's configured default does not meet "
+                          "this class floor (" + dpick["floor"]["reason"]
+                          + "); the capability recommendation applies")
             rows.append({
                 "capability": capability, "slot": None, "via": None,
-                "source": "department-default", "provider": None, "model": None,
+                "source": "recommendation", "provider": None, "model": None,
                 "default_alias": default_alias, "floor": None,
-                "detail": "no client declaration covers this class",
+                "detail": detail,
             })
             continue
         applied = pick["floor"]["ok"] or pick["waived"]
@@ -733,7 +893,7 @@ def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             "capability": capability,
             "slot": pick["slot"],
             "via": pick["via"],
-            "source": "client-plan" if applied else "department-default",
+            "source": "client-plan" if applied else "recommendation",
             "provider": pick["declared"]["provider"],
             "model": pick["declared"]["model"],
             "default_alias": default_alias,
@@ -1974,8 +2134,15 @@ def resolve_route(phase_id: str, *,
     plan_pick = client_plan_for(capability, profile)
     client_governs = bool(plan_pick is not None
                           and (plan_pick["floor"]["ok"] or plan_pick["waived"]))
+    # Rung 2: the client's configured default model. Behind only the
+    # client's declared plan, ahead of the capability recommendation, and
+    # judged by the same floor + eligibility gates as everything else.
+    default_pick = None if client_governs else configured_default_for(
+        capability, profile)
+    default_governs = bool(default_pick is not None
+                           and default_pick["floor"]["ok"])
     cands: List[Dict[str, Any]] = _mode_candidates(
-        capability, mode, client_governed=client_governs)
+        capability, mode, client_governed=client_governs or default_governs)
     client_prepended = False
     if plan_pick is not None:
         if client_governs:
@@ -2014,6 +2181,34 @@ def resolve_route(phase_id: str, *,
                 "via": plan_pick["via"],
                 "declared": dict(plan_pick["declared"]),
                 "floor": plan_pick["floor"],
+                "fallback_alias": requested_alias or None,
+            }
+
+    default_prepended = False
+    if default_pick is not None:
+        if default_governs:
+            cands.insert(0, {**default_pick["alias_def"],
+                             "alias": default_pick["alias"]})
+            decision["requested_alias"] = default_pick["alias"]
+            default_prepended = True
+            decision["configured_default"] = {
+                "provider": default_pick["declared"]["provider"],
+                "model": default_pick["declared"]["model"],
+                "alias_source": default_pick["alias_source"],
+                "floor": "ok",
+                "detail": default_pick["floor"]["reason"],
+            }
+            if mode == "economy" and capability in ECONOMY_FLASH_REPOINT:
+                decision["configured_default"]["economy_repoint"] = (
+                    "suppressed -- the client's configured default serves "
+                    "this class, so Economy did not re-point it")
+        else:
+            # Configured but below this class's floor: the recommendation
+            # layer serves the class, and the shortfall is stamped, never
+            # a dispatch-time surprise (same doctrine as client_plan_floor).
+            decision["configured_default_floor"] = {
+                "declared": dict(default_pick["declared"]),
+                "floor": default_pick["floor"],
                 "fallback_alias": requested_alias or None,
             }
 
@@ -2084,6 +2279,12 @@ def resolve_route(phase_id: str, *,
         if not decision["client_plan"]["applied"]:
             decision["client_plan"]["rejected_reason"] = str(
                 (candidates[0] if candidates else {}).get("reason") or "")
+    if default_prepended:
+        decision["configured_default"]["applied"] = bool(
+            candidates and candidates[0].get("eligible"))
+        if not decision["configured_default"]["applied"]:
+            decision["configured_default"]["rejected_reason"] = str(
+                (candidates[0] if candidates else {}).get("reason") or "")
     if route is not None:
         first_eligible_idx = next(
             (i for i, c in enumerate(candidates) if c.get("eligible")), 0)
@@ -2093,10 +2294,36 @@ def resolve_route(phase_id: str, *,
                       f"{cp['provider']}/{cp['model']}"
                       + (" (floor waived by the client)"
                          if cp["floor"] == "waived" else ""))
+        elif default_prepended and first_eligible_idx == 0:
+            cd = decision["configured_default"]
+            reason = (f"client configured default model: "
+                      f"{cd['provider']}/{cd['model']} "
+                      f"(no client declaration governs this class)")
         else:
             reason = "primary" if first_eligible_idx == 0 else \
                 f"fallback: primary unavailable -- {candidates[0].get('reason', '')}"
         decision.update({"route": route, "reason": reason})
+        # THE SOURCE OF THE MODEL, NAMED ON EVERY DECISION. A route is a
+        # client choice, the client's configured default, or a department
+        # recommendation -- never an unnamed silent selection.
+        if client_prepended and first_eligible_idx == 0:
+            decision["model_source"] = "client-plan"
+        elif default_prepended and first_eligible_idx == 0:
+            decision["model_source"] = "configured-default"
+        else:
+            decision["model_source"] = "recommendation"
+            decision["recommendation"] = {
+                "provider": route["provider"], "model": route["model"],
+                "capability": capability,
+                "detail": "department capability recommendation: no client "
+                          "declaration and no configured default model "
+                          "covers this class, so the capability table's "
+                          "first eligible candidate serves, from the "
+                          "client's own owned, consented and wired "
+                          "providers. Recommendation only: the client can "
+                          "override it by declaring a model plan or "
+                          "configuring a default model.",
+            }
         if modes_enabled():
             # F3 -- THE CEILING IS RE-STAMPED FOR THE ROUTE THAT WON.
             # The provisional stamp above was the whole-client floor: min()
@@ -2121,10 +2348,19 @@ def resolve_route(phase_id: str, *,
     else:
         rejected = "; ".join(f"{c.get('alias')}: {c.get('reason')}"
                              for c in candidates)
+        rec = _recommendation_for(capability)
+        rec_text = (f"{rec['provider']}/{rec['model']}" if rec.get("model")
+                    else f"alias {rec['alias']!r}")
         decision.update({
             "route": None,
+            "recommendation": rec,
+            "model_source": None,
             "reason": f"no eligible route for capability '{capability}' "
-                      f"({rejected}) -- park/fail-closed",
+                      f"({rejected}) -- park/fail-closed. Recommendation "
+                      f"from capability data: {rec_text} ({rec['basis']}). "
+                      f"Ask the client which model they want to use for "
+                      f"this class, or have them configure a default model; "
+                      f"no model was selected for them.",
         })
     decision["candidates"] = candidates
     return decision

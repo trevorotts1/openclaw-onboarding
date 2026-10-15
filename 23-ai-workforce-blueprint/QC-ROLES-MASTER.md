@@ -140,18 +140,17 @@ The best AI model for a QC agent depends on what type of work the department pro
 python3 "$MASTER_FILES_DIR/../shared-utils/select_model.py" --skill ai-workforce-blueprint --purpose-tier <heavy|mid|fast> --format id
 ```
 
-**Heavy chain:** Ollama Kimi 2.6+ → OpenRouter Kimi → Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → OAuth GPT (latest).
-**Mid chain:** Ollama Minimax → OpenRouter Mimo Pro (thinking=high).
-**Fast chain:** Ollama DeepSeek-flash → OpenRouter DeepSeek-flash → OpenRouter Gemini Flash Lite.
+**Model for every tier:** the client's choice, or the client's configured default model, resolved with `select_model.py --purpose-tier <heavy|mid|fast>`. Do not prescribe a specific model by name.
+Recommendation: heavy tier = a heavy-reasoning model with high thinking, for QC of structural and code work; mid tier = a balanced model with high thinking, for routine QC; fast tier = a fast, low-cost model, for mechanical checks where reasoning depth does not gate quality.
 
 **Note on Vision Models:**
 If you need to visually review images or video frames, your QC agent must receive the actual image file as an attachment, not just a description of the image. A language model reading text about an image cannot spot visual problems. Use a vision-capable model and pass the actual image.
 
 **Note on Coding Models:**
-Code review requires a model that can read and understand code, not just plain language. Both DeepSeek V4.1 Flash (Ollama Cloud preferred, OpenRouter backup, thinking=HIGH) and GPT-5.4 (via `openai-codex/` prefix) are strong at code review. Never use a lightweight model for code QC on production deployments.
+Code review requires a model that can read and understand code, not just plain language. Use the client's chosen model, or their configured default model, at the heavy tier with thinking=HIGH. Recommendation: a model with proven code-review strength, because code QC on production deployments is where a lightweight model misses the defects that matter. Never use a lightweight model for code QC on production deployments.
 
 **Note on Legal / HR / Compliance:**
-These departments benefit from the most thorough model available (DeepSeek V4.1 Flash or GPT-5.4; Ollama Cloud preferred, OpenRouter backup, thinking=HIGH) because the cost of a missed error in a contract, policy, or compliance document is high. Do not cut costs here.
+These departments benefit from the most thorough model available: the client's chosen heavy-tier model, or their configured default model, with thinking=HIGH, because the cost of a missed error in a contract, policy, or compliance document is high. Do not cut costs here.
 
 ---
 
