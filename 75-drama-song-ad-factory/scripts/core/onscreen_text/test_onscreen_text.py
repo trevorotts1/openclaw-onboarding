@@ -301,11 +301,18 @@ def test_decide_with_no_first_try_is_the_fallback():
 # ------------------------------------------- the frame gate's extractor -----
 
 def test_tesseract_extractor_is_registered_with_frame_text_at_import():
+    # scripts/conftest.py purges every skill-tree module from sys.modules
+    # between collection and run, so this suite's module-level OST is a stale
+    # instance by the time the test body runs. Re-binding through the package
+    # gives the SAME module the fresh frame_text import sees, which is what
+    # "registered at import" has always meant -- the old `is` compared the
+    # purged instance against the live one and could never hold under pytest.
+    import onscreen_text as OSTNOW
     import final_assembler.frame_text as FT
-    assert OST.REGISTERED is True, "import must register the OCR extractor"
-    assert FT.EXTRACTORS[OST.ENGINE] is OST.tesseract_extractor
+    assert OSTNOW.REGISTERED is True, "import must register the OCR extractor"
+    assert FT.EXTRACTORS[OSTNOW.ENGINE] is OSTNOW.tesseract_extractor
     # and the frame gate can hand it a frame list and get one entry per frame
-    assert FT.EXTRACTORS[OST.ENGINE].__name__ == "tesseract_extractor"
+    assert FT.EXTRACTORS[OSTNOW.ENGINE].__name__ == "tesseract_extractor"
 
 
 # ------------------------------------------- the ONE real tesseract read ----
