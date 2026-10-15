@@ -25,8 +25,8 @@
 # Fleet rules honored by this file:
 #   - No build-house model provider id of any kind anywhere: this is a pure state
 #     writer; it calls no model at all, so the no-runtime-model-provider guard has
-#     nothing to flag. Runtime content routing (Ollama Cloud Kimi, GLM, OpenRouter,
-#     Gemini) lives in the pipeline modules, never here.
+#     nothing to flag. Runtime content routing (the client's chosen model, or
+#     their configured default model) lives in the pipeline modules, never here.
 #   - No em dash characters. No triple backtick fences in any produced output.
 #   - Never prints a stored secret value. The single intentional secret emission is
 #     `token mint`, which returns a freshly generated raw token exactly once (per

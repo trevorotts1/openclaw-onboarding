@@ -32,6 +32,13 @@ WHAT THIS FILE PINS, mechanically, in order:
      intake, with the wired inventory named, not at dispatch time.
   7. The LAUNCHER refuses (AF-MODEL-PLAN-UNSATISFIED, nothing spawned) when a
      class the client's plan covers has no eligible route.
+  8. THE RESOLUTION ORDER (client-choice doctrine): a declared plan beats
+     the client's configured default model, which beats the department
+     capability RECOMMENDATION; every decision names its source
+     (client-plan / configured-default / recommendation), the catalog's
+     text.strong alias resolves ONLY from client configuration, and a
+     parked phase carries the recommendation plus an ask-the-client reason
+     (section 9 below).
 
 Unit-level: no network, no spend, no engine. Every profile is written into a
 tmp config dir the capacity/profile env points at.
@@ -96,6 +103,11 @@ def _profile_env(monkeypatch, tmp_path, profile=None):
     # credential. These tests are about SELECTION, not credentials, so the gate
     # is satisfied for every provider and nothing here ever reads a real key.
     monkeypatch.setattr(model_router, "provider_key_resolves", lambda p: True)
+    # The configured-default rung reads agents.defaults.model from
+    # openclaw.json; pin the root at an empty tmp dir so the MACHINE's own
+    # config can never leak a default into these tests.
+    monkeypatch.setenv("OPENCLAW_ROOT", str(tmp_path / "no-openclaw-root"))
+    monkeypatch.delenv("PRESENTATION_MODEL_TEXT_STRONG", raising=False)
     if profile is not None:
         (cfg / resource_profile.PROFILE_FILENAME).write_text(
             json.dumps(profile, indent=2), encoding="utf-8")
@@ -143,12 +155,17 @@ def test_declared_workhorse_beats_the_department_default(monkeypatch, tmp_path):
 
 
 def test_the_default_is_still_the_default_without_a_declaration(monkeypatch, tmp_path):
-    """The same profile, no model_plan: the pre-change answer, unchanged."""
+    """The same profile, no model_plan: the pre-change ROUTE, unchanged --
+    but the decision now NAMES it as what it is, a department capability
+    recommendation, never a silent default."""
     _profile_env(monkeypatch, tmp_path, copy.deepcopy(TWO_PROVIDER_PROFILE))
     decision = model_router.resolve_route("P4-COPY")
     assert decision["route"] == _default_route_for("authoring"), decision
     assert "client_plan" not in decision
     assert "client_plan_floor" not in decision
+    assert decision["model_source"] == "recommendation", decision
+    assert decision["recommendation"]["model"] == decision["route"]["model"]
+    assert "configured_default" not in decision
 
 
 def test_a_declared_workhorse_governs_every_workhorse_class(monkeypatch, tmp_path):
@@ -187,7 +204,12 @@ def test_a_standard_workhorse_falls_back_visibly_on_a_long_context_class(
     }))
     decision = model_router.resolve_route("P3-ARC")
     assert decision["capability"] == "reasoning_long"
-    assert decision["route"]["model"] == "deepseek-v4.1-flash", decision
+    # text.strong no longer resolves without client configuration, so the
+    # recommendation layer's next eligible candidate serves -- VISIBLY, as
+    # a recommendation, with the floor failure still on the record.
+    assert decision["route"] == {"provider": "openrouter",
+                                 "model": "z-ai/glm-5.3"}, decision
+    assert decision["model_source"] == "recommendation", decision
     assert "client_plan" not in decision
     floor = decision["client_plan_floor"]
     assert floor["via"] == "workhorse-spill"
@@ -222,7 +244,8 @@ def test_a_waiver_does_not_leak_to_an_unwaived_class(monkeypatch, tmp_path):
     assert model_router.resolve_route("P3-ARC")["route"]["model"] == "deepseek-flash"
     other = model_router.resolve_route("P-CONVERTER")
     assert other["capability"] == "long_synthesis"
-    assert other["route"]["model"] == "deepseek-v4.1-flash", other
+    assert other["route"]["model"] == "z-ai/glm-5.3", other
+    assert other["model_source"] == "recommendation", other
     assert other["client_plan_floor"]["floor"]["ok"] is False
 
 
@@ -764,7 +787,7 @@ def test_launch_stamps_the_sidecar_and_the_banner_when_the_plan_is_servable(
     assert rows["authoring"]["source"] == "client-plan"
     assert rows["authoring"]["model"] == "z-ai/glm-5.3-flash"
     assert rows["reasoning_long"]["floor"] == "failed", rows["reasoning_long"]
-    assert rows["judge"]["source"] == "department-default"
+    assert rows["judge"]["source"] == "recommendation"
     out = capsys.readouterr().out
     assert "client model plan stamped" in out
     assert "authoring=openrouter/z-ai/glm-5.3-flash" in out
@@ -805,3 +828,123 @@ def test_transport_names_every_accepted_key_when_none_is_set(monkeypatch):
                                            model="glm-5.3-flash")
     assert "OLLAMA_CLOUD_API_KEY" in str(exc.value)
     assert "OLLAMA_API_KEY" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# 9. THE RESOLUTION ORDER: plan > configured default > recommendation
+# ---------------------------------------------------------------------------
+def test_configured_default_beats_the_recommendation(monkeypatch, tmp_path):
+    """Rung 2: no plan declared, but the client HAS a configured default
+    model on their profile. It serves ahead of the capability
+    recommendation, and the decision says so."""
+    prof = copy.deepcopy(TWO_PROVIDER_PROFILE)
+    prof["configured_default"] = {"provider": "openrouter",
+                                   "model": "z-ai/glm-5.3"}
+    _profile_env(monkeypatch, tmp_path, prof)
+    decision = model_router.resolve_route("P4-COPY")
+    assert decision["route"] == {"provider": "openrouter",
+                                 "model": "z-ai/glm-5.3"}, decision
+    assert decision["model_source"] == "configured-default", decision
+    assert decision["configured_default"]["applied"] is True
+    assert decision["configured_default"]["floor"] == "ok"
+    assert "client_plan" not in decision
+
+
+def test_a_declared_plan_beats_the_configured_default(monkeypatch, tmp_path):
+    """Rung 1 still outranks rung 2: an explicit declaration for the class
+    wins over the standing default."""
+    prof = _with_plan({
+        "workhorse": {"provider": "deepseek-direct", "model": "deepseek-flash"},
+        "floor_waivers": [],
+    })
+    prof["configured_default"] = {"provider": "openrouter",
+                                  "model": "z-ai/glm-5.3"}
+    _profile_env(monkeypatch, tmp_path, prof)
+    decision = model_router.resolve_route("P4-COPY")
+    assert decision["route"] == {"provider": "deepseek-direct",
+                                 "model": "deepseek-flash"}, decision
+    assert decision["model_source"] == "client-plan", decision
+    assert "configured_default" not in decision
+
+
+def test_a_configured_default_below_the_floor_falls_back_visibly(
+        monkeypatch, tmp_path):
+    """A configured default that cannot meet the class floor does NOT serve
+    it and is never waived into place: the recommendation layer serves,
+    with the shortfall stamped (configured_default_floor)."""
+    prof = copy.deepcopy(TWO_PROVIDER_PROFILE)
+    prof["configured_default"] = {"provider": "deepseek-direct",
+                                  "model": "deepseek-flash"}
+    _profile_env(monkeypatch, tmp_path, prof)
+    decision = model_router.resolve_route("P3-ARC")
+    assert decision["route"] == {"provider": "openrouter",
+                                 "model": "z-ai/glm-5.3"}, decision
+    assert decision["model_source"] == "recommendation", decision
+    assert decision["configured_default_floor"]["floor"]["ok"] is False
+    assert "configured_default" not in decision
+
+
+def test_text_strong_resolves_only_from_client_configuration(
+        monkeypatch, tmp_path):
+    """The catalog's text.strong alias carries NO pinned model: unconfigured
+    it fails with an ask-the-client error; the client's explicit choice
+    resolves it. (The router's deepseek-v4.1-flash candidate rides this
+    alias, so this is the pin that used to force the model.)"""
+    from presentation_job import model_catalog
+    _profile_env(monkeypatch, tmp_path, copy.deepcopy(TWO_PROVIDER_PROFILE))
+    with pytest.raises(model_catalog.CatalogError) as exc:
+        model_catalog.resolve("text.strong")
+    assert "ask the client" in str(exc.value)
+    monkeypatch.setenv("PRESENTATION_MODEL_TEXT_STRONG",
+                       "deepseek/deepseek-v4.1-flash")
+    resolved = model_catalog.resolve("text.strong")
+    assert resolved["model"] == "deepseek-v4.1-flash"
+    assert resolved["provider"] == "deepseek"
+    assert resolved["source"].startswith("client choice")
+
+
+def test_a_parked_phase_carries_the_recommendation_and_the_ask(
+        monkeypatch, tmp_path):
+    """Nothing the client owns can serve the class: the phase parks, and
+    the record carries the capability recommendation plus an explicit
+    ask-the-client instruction -- no model was selected for them."""
+    prof = {".schema_version": 1, "providers": {
+        "openrouter": _wired("openrouter", ["some/other-model"])}}
+    _profile_env(monkeypatch, tmp_path, prof)
+    decision = model_router.resolve_route("P3-ARC")
+    assert decision["route"] is None, decision
+    assert decision["model_source"] is None
+    assert decision["recommendation"]["alias"] == "glm-5.3", decision
+    assert "Ask the client" in decision["reason"], decision["reason"]
+
+
+def test_the_intake_variant_records_the_clients_own_wired_model(
+        monkeypatch, tmp_path):
+    """deck-intake-driver's DeepSeek variant word resolves against the
+    client's wired inventory: the recorded model is the client's own
+    selected id from THEIR list, never a pinned translation of the word."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("deck_intake_driver",
+                                                 DRIVER)
+    driver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(driver)
+    _profile_env(monkeypatch, tmp_path, copy.deepcopy(TWO_PROVIDER_PROFILE))
+    match, wired = driver._variant_match_from_client_inventory("pro")
+    assert match == "deepseek-v4.1-flash", (match, wired)
+    match, _ = driver._variant_match_from_client_inventory("flash")
+    assert match == "deepseek-flash", match
+    # A different client's inventory names a different pro model; the word
+    # records THAT client's model.
+    prof = {".schema_version": 1, "providers": {
+        "deepseek-direct": _wired("deepseek-direct",
+                                  ["deepseek-flash", "acme-pro-9"])}}
+    _profile_env(monkeypatch, tmp_path, prof)
+    match, _ = driver._variant_match_from_client_inventory("pro")
+    assert match == "acme-pro-9", match
+    # No pro tier wired and not a one-model box: no unique match, refused.
+    prof = {".schema_version": 1, "providers": {
+        "deepseek-direct": _wired("deepseek-direct",
+                                  ["deepseek-flash", "other-model"])}}
+    _profile_env(monkeypatch, tmp_path, prof)
+    match, wired = driver._variant_match_from_client_inventory("pro")
+    assert match is None and wired, (match, wired)
