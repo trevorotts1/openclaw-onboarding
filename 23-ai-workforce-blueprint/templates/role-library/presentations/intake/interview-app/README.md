@@ -39,14 +39,13 @@ Edit the canonical JSONs, not the app, to change what a client is asked:
 fields from these canonical files. The app's `questions.json` is a snapshot
 of that projection.
 
-> **Signature set (B10 S8, deferred):** the `--set signature` payload
-> (Skill 51's `sp-8-questions.json`) is still built ONLY by the deprecated
-> miniapp's `payload/build_questions_payload.py`; this builder has no
-> signature path. Porting it here is deferred: DRAFT PR #2022 is rewriting
-> this same builder on its own branch from the same base, and two
-> divergent edits to one file would collide. Until the port lands, the
-> miniapp builder remains the signature path, and the gated D5 deletion
-> of the miniapp tree stays blocked on this item as well.
+> **Signature set (B10 S8, deferral discharged):** the `--set signature`
+> payload (Skill 51's `sp-8-questions.json`) is ported into this builder
+> by PR #2069 (branch `martin/pres-fix-signature-port`), which
+> discharges the deferral this note previously recorded. Until PR #2069
+> merges, the deprecated miniapp's `payload/build_questions_payload.py`
+> remains the signature path on main. The gated D5 deletion of the
+> miniapp tree remains gated on Trevor's explicit go under D5.
 
 ## Files
 
