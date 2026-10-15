@@ -121,6 +121,10 @@ echo ""
 echo "--- B1/B3 (Skill 38): run 04-register-crons.sh 6x -> exactly 1 per name ---"
 H38="$SANDBOX/home-38"; bin38="$SANDBOX/bin-38"; J38="$SANDBOX/jobs-38.json"; C38="$SANDBOX/calls-38.log"
 mkdir -p "$H38/.openclaw"; _mkbin "$bin38"; printf '[]' > "$J38"; : > "$C38"
+# Model a configured client box: with no BATCH_MODEL env or secrets-env value,
+# 04-register-crons.sh resolves its batch model from agents.defaults.model in
+# the fixture openclaw.json (and stops to ask when none is configured).
+printf '%s' '{"agents":{"defaults":{"model":"ollama-cloud/x"}}}' > "$H38/.openclaw/openclaw.json"
 for i in 1 2 3 4 5 6; do
   HOME="$H38" PATH="$bin38:$PATH" FAKE_OC_JOBS_FILE="$J38" FAKE_OC_CALLS_FILE="$C38" \
     bash "$SKILL_COPY/38-conversational-ai-system/scripts/04-register-crons.sh" > "$SANDBOX/38-run$i.log" 2>&1

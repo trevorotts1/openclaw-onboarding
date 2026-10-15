@@ -230,7 +230,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 - Capacity probe: free -h, nproc, uptime, df -h
 - Checkpoint files: working/checkpoints/*.json
 - Master SOP: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
-- Model routing: kimi-k2.6:cloud primary, DeepSeek V4.1 Flash fallback, minimax-m3:cloud for QC
+- Model routing: resolved from `presentation_job/model_catalog.json`: the client's choice, or their configured default model, for authoring, fallback, and QC. Do not prescribe a specific model by name.
 
 ---
 
@@ -248,7 +248,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### Phase-Code Map (short codes -> manifest ids)
 
-This department's older documents use NUMERIC short codes ("Phase 1", "Phase 3", "Phase 6") for pipeline stages. Every such short code used anywhere in a role file resolves to exactly one `phases[].id` in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 70, 62 phases). When dispatching, gating, or reading a manifest row, the MANIFEST ID is the canonical key; the numeric short code is prose shorthand only. This table is the single mapping — if a stage is not in it (owner approval gates, the capacity probe), it is NOT a manifest phase and has no manifest row.
+This department's older documents use NUMERIC short codes ("Phase 1", "Phase 3", "Phase 6") for pipeline stages. Every such short code used anywhere in a role file resolves to exactly one `phases[].id` in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` (manifest_version 73, 62 phases). When dispatching, gating, or reading a manifest row, the MANIFEST ID is the canonical key; the numeric short code is prose shorthand only. This table is the single mapping — if a stage is not in it (owner approval gates, the capacity probe), it is NOT a manifest phase and has no manifest row.
 
 | Legacy short code | Manifest `phases[].id` (order) | Manifest row |
 |---|---|---|
@@ -316,15 +316,15 @@ The authoritative machine-readable list is `phases[]` in `PIPELINE-MANIFEST.json
    ```json
    {
      "image_platform": "kie.ai",
-     "image_model_t2i": "gpt-image-2-5-sunburst-text-to-image",
-     "image_model_i2i": "gpt-image-2-5-sunburst-image-to-image",
+     "image_model_t2i": "<model id resolved from the image.t2i alias in presentation_job/model_catalog.json>",
+     "image_model_i2i": "<model id resolved from the image.i2i alias in presentation_job/model_catalog.json>",
      "resolution": "2K",
      "aspect_ratio": "16:9",
      "authorized_by": "<operator>",
      "date": "<run date>"
    }
    ```
-   Save this to `working/checkpoints/model_manifest.json`. The ids are copied from the `image.t2i` and `image.i2i` aliases in `presentation_job/model_catalog.json` (a department pin that outranks Skill 74; never typed from memory). A newer GPT Image generation reported by `kie_live_adapter.py latest-family --family gpt-image` is NOT adopted silently (rule 13 of `07-kie-setup/references/kie-common-rules.md`): tell the operator, and only an operator-approved catalog bump changes the ids. The operator's confirmation of the echo IS their authorization of this manifest. Any model change the operator wants must be declared here at echo time; agents never improvise a model change mid-run.
+   Save this to `working/checkpoints/model_manifest.json`. The ids are copied from the `image.t2i` and `image.i2i` aliases in `presentation_job/model_catalog.json` (which resolve to the client's chosen image model, or their configured default; never typed from memory). A newer image-model generation reported by `kie_live_adapter.py latest-family --family gpt-image` is NOT adopted silently (rule 13 of `07-kie-setup/references/kie-common-rules.md`): tell the operator, and only an operator-approved catalog bump changes the ids. The operator's confirmation of the echo IS their authorization of this manifest. Any model change the operator wants must be declared here at echo time; agents never improvise a model change mid-run.
 3. Write the PRD (1 page max). Required fields: deck_slug, client_slug, source_slide_count (integer; Mode B = count of existing source slides, Mode A = 0; see the ANTI-COMPRESSION SPEC below), target_audience, offer_name, final_price, anchor_price (must be >= 3x final_price), transformation_promise, primary_objection, hook (one sentence, the canonical verbatim line, placed on 3 to 4 DEDICATED slides only, never a footer; the banded hook ceiling replaces the retired >= 7x floor), slide_count_target, style_references, qc_threshold (always 8.5), model_manifest (reference to the confirmed manifest file), and assumptions_list (any items flagged assumed: true from intake). When a content-to-presentation source brief was propagated (SOP 9.1 step 4a), the PRD also carries `presentation_mode` (one-person / general), the `deliverable_bundle` (deck + Presenter guide + one-page infographic checklist), and the personalized-cover and personalized-closing requirements when the mode is one-person, so the build honors the mode and ships the full bundle.
 4. Run the Improvement Pass: read the PRD back against intake.json. Identify any gap. Fix it. Repeat once.
 4a. **Build the CHECKLIST OF PROMISES (required component 10: "a checklist for an AI is a list of promises").** Before any agent says "done," it walks its OWN checklist; that checklist is a list of promises. Write `checklist_of_promises` into mission_prd.json: an explicit list of every promise this run must keep, with the operator's TEN required presentation components (director-of-presentations SOP checklist_of_promises + qc-specialist-presentations SOP 9.5 (PRESENTATION-MASTER-DOCTRINE.md §4)) as named line items -- (1) the Promise leads, (2) the Hook sung on its 3 to 4 dedicated slides and nowhere else, (3) a "who says so" external-proof beat woven between the drops, (4) a Wall of Wins slide near the close, (5) one big idea per slide, (6) a Guarantee beat, (7) a real Scarcity beat in the close, (8) a short-term-fix-vs-long-term-identity Story Arc beat, (9) the gradual spread price ladder, (10) this checklist itself walked before delivery -- plus the run-specific promises from the PRD. Confirm this checklist is checked at every gate; the final-deck QC PASS artifact (qc-specialist SOP 9.5 structural-completeness block) is the proof the checklist was walked. No "done" is accepted while any promise on this list is unverified.

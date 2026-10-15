@@ -1,5 +1,5 @@
 {
-  "manifest_version": 70,
+  "manifest_version": 73,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -714,7 +714,8 @@
         "working/copy/arc_allocation.json",
         "working/research/research_map.json",
         "working/research/brief-*.md"
-      ]
+      ],
+      "workers": 5
     },
     {
       "id": "P-SP-STRUCTURE",
@@ -789,7 +790,7 @@
     {
       "id": "P-U-DESIGN-SALES",
       "order": 4.2,
-      "name": "Upsell Sales Page Design (5,000–19,000 prompt band)",
+      "name": "Upsell Sales Page Design (each design prompt inside the KIE rule 12 length band, 95 to 100 percent of the model max)",
       "owning_role": "slide-image-creator",
       "fanout": {
         "by": "slide",
@@ -813,7 +814,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/upsell/copy/sales.fragment.md"
-      ]
+      ],
+      "workers": 3
     },
     {
       "id": "P-U-DESIGN-RENDER-SALES",
@@ -919,7 +921,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/upsell/copy/checkout.fragment.md"
-      ]
+      ],
+      "workers": 3
     },
     {
       "id": "P-U-DESIGN-RENDER-CHECKOUT",
@@ -971,7 +974,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/upsell/copy/vsl.fragment.md"
-      ]
+      ],
+      "workers": 3
     },
     {
       "id": "P-U-DESIGN-RENDER-VSL",
@@ -1127,7 +1131,8 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "working/prompts/slide-*.txt"
-      ]
+      ],
+      "workers": 12
     },
     {
       "id": "P-STYLE-PREVIEW",
@@ -1192,7 +1197,8 @@
         "working/copy/slides.json",
         "working/copy/arc_allocation.json",
         "working/copy/intake.json"
-      ]
+      ],
+      "workers": 3
     },
     {
       "id": "P-STYLE-PICK",
@@ -1307,7 +1313,8 @@
       "heartbeat_minutes": 30,
       "consumes": [
         "renders/slide-*.png"
-      ]
+      ],
+      "workers": 12
     },
     {
       "id": "P-U-HTML-SALES",
@@ -1685,7 +1692,8 @@
         "working/copy/intake.json",
         "working/copy/slides_copy.md",
         "working/copy/arc_allocation.json"
-      ]
+      ],
+      "workers": 1
     },
     {
       "id": "P8.4-FISH-TAG",
@@ -3256,6 +3264,15 @@
       "trigger": "a slide prompt carries no spelling-lock directive token (e.g. 'spell every word correctly', 'zero spelling errors', 'no misspelled words', 'all text legible and spelled correctly'). The spelling-lock is mandatory in every prompt.",
       "enforced_by": "build_deck",
       "py_symbol": "_spelling_lock_present"
+    },
+    {
+      "code": "AF-P24",
+      "stage": "Prompt",
+      "level": "slide",
+      "in_ruleset": true,
+      "trigger": "a slide prompt casts a Black / African-descended subject (named directly, or via a SOP-GIP-01 v2.0 skin-tone library label) but its negative block does not name one or more of the five BlackCEO classes adopted under the Item 26 GIP doctrine weave (skin chromatic depth, hair strand integrity, skin microtexture, hairstyle fidelity, skin-tone direction lock). Prompts with no Black subject are not bound by this code; the 8 base classes under AF-P13 still bind every prompt.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_blackceo_negative_class_problems"
     },
     {
       "code": "AF-P-DENSITY",

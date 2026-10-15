@@ -99,6 +99,13 @@ _INFRA_STEMS = frozenset({
     # this stem was recognized as infra — see the INFRA-STEM ROLE assertion
     # in check() below, which caught the stale entry).
     "DEPARTMENT-COUNTS-CANONICAL",
+    # DECISION-2026-10-14-KIE-COMPLETION-POLLING: the dated Presentations
+    # decision record for FIX-PLAN Item 33d (deck runs learn KIE completion
+    # by polling, never by Skill 46 callbacks) — a department decision
+    # record, not a role. sync_check.py's own _NON_ROLE_DOCS already
+    # excludes it for the same reason; this entry closes the mirror gap so
+    # this script's discovery/--check never registers it as a role.
+    "DECISION-2026-10-14-KIE-COMPLETION-POLLING",
 })
 # Dept-folder names under role-library/ that are NOT departments (staging / meta).
 # Mirrors create_role_workspaces._ROSTER_SKIP_FOLDERS + the leading-underscore rule.

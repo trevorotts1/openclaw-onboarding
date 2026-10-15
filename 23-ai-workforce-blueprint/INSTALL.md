@@ -280,11 +280,11 @@ python3 "$MASTER_FILES_DIR/../shared-utils/select_model.py" \
   --format id
 ```
 
-The selector resolves the best available model from the heavy chain — Ollama Kimi → OpenRouter Kimi → Ollama DeepSeek-pro → OpenRouter DeepSeek-pro → OAuth GPT. **Anthropic models are FORBIDDEN** at every tier.
+The selector resolves the model the client chose, or the client's configured default model, at the heavy purpose tier. Do not prescribe a specific model by name. Recommendation: a heavy-reasoning model, because the decisions made during setup shape the entire company. **Anthropic models are FORBIDDEN** at every tier.
 
 **If the selector returns Tier 5 (owner-input-required, exit 2):** show the prompt to the owner. Do NOT proceed on a low-reasoning model — the decisions made here shape the entire company.
 
-**If the current session is already running on a fast/cheap model** (DeepSeek-flash, Gemini-flash-lite, Minimax, etc.): say *"For setting up your company, I recommend switching to a heavier-reasoning model so we get the best results. The selector says we should use [model_id from above]. Want me to switch?"*
+**If the current session is already running on a fast/cheap model** (a lightweight model rather than a heavy-reasoning one): say *"For setting up your company, I recommend switching to a heavier-reasoning model so we get the best results. The selector says we should use [model_id from above]. Want me to switch?"*
 
 ### 🔴 5-PRE. COMPLETION SAFETY CHECK (MANDATORY — RUN BEFORE ANYTHING ELSE IN PHASE 5)
 
@@ -399,7 +399,7 @@ NEVER exceed 7 questions per department. Fewer is better when you can infer answ
 **After each answered question:** flush answers and update handoff file.
 
 **KPI capture after each department:** "What does success look like for this department?"
-If client hesitates, use Perplexity sonar-pro-search to research and suggest 3 options.
+If client hesitates, use the client's chosen research model (or their configured default model) to research and suggest 3 options. Recommendation: a search-grounded research model, because this step needs live web results.
 
 **Detect hesitation:** If client gives short answers or says "I don't know" twice, shift to offering suggestions. The goal is completion, not interrogation.
 
@@ -537,7 +537,7 @@ If the persona's guidance conflicts with this department's SOP, the owner's expl
 If you hit an edge case the SOP doesn't cover:
 - DO NOT GUESS.
 - Either you are ABSOLUTELY SURE of the next step (proceed) OR you are NOT SURE (research or escalate).
-- Research via Perplexity (`openrouter/perplexity/sonar-pro-search`) for industry best practices, OR escalate to your department head.
+- Research via the client's chosen research model (or their configured default model) for industry best practices, OR escalate to your department head. Recommendation: a search-grounded research model, because this step needs live web results.
 - Document the edge case + research outcome in today's daily journal.
 ```
 

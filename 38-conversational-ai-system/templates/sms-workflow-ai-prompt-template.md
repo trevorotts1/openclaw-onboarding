@@ -57,7 +57,7 @@ ACTIONS (in this exact order):
       "match": "<ROUTE_ID>",
       "action": "agent",
       "agent_id": "<ROUTING_AGENT_ID>",
-      "model": "ollama/deepseek-v4.1-flash:cloud",
+      "model": "<CLIENT_MODEL>",
       "wakeMode": "now",
       "name": "GHL Sales Inbound",
       "session_key": "hook:ghl:sms:{{contact.id}}",

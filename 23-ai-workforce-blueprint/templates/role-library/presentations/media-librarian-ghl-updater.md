@@ -53,10 +53,10 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ### Step 0 Task (Start of Run)
 
-This role is dispatched FIRST, before the discovery interview. The local and GHL folders must exist before any other work begins.
+This role is dispatched FIRST, before the discovery interview. The local folder tree must exist and the GHL media destination must be resolved before any other work begins.
 
 1. Build the local directory tree per SOP 9.1.
-2. Create the GHL folder per SOP 9.3.
+2. Resolve the GHL media destination per SOP 9.3 (the folder is pre-created by a human in the GHL UI; this pipeline never creates one).
 3. Write media_library.json to record all paths.
 4. Notify the Director that Step 0 is complete.
 
@@ -74,7 +74,7 @@ This role is dispatched FIRST, before the discovery interview. The local and GHL
 
 ### Post-Phase 6 QC Task (After Final Deck QC Passes)
 
-1. Confirm the delivery pass-artifact `working/qc/final_deck_qc.json` exists on disk with `pass: true` and `qc_score >= 8.5` (read-only ground truth for your hand-off).
+1. Confirm the engine closeout gates passed for this run: the build_deck postflight completeness gate is green (verdict in `working/checkpoints/process_manifest.json`) and `working/qc/final_qc_report.json` exists on disk with its gate-facing average >= 8.5 (read-only ground truth for your hand-off). The retired `working/qc/final_deck_qc.json` pass-artifact no longer exists in code and unlocks nothing.
 2. Hand the QC-passed deck to the Delivery Concierge (ROLE-13) per its SOP 9.0 (Package Assembly and Hygiene Sweep) through SOP 9.4 (Ground-Truth Verification). The Delivery Concierge -- not this role -- delivers the PPTX to every destination, verifies each destination, and sends the delivery notification via openclaw message send. Final deck delivery migrated to ROLE-13 (delivery-concierge.md); this role owns media-library, GHL upload (SOPs 9.2/9.3), and the GHL closeout gate (SOP 9.8 in the SOPs mirror).
 3. Update media_library.json only with the upload records the Delivery Concierge needs (ghl_folder_id, ghl_folder_name, version_number); `delivery_complete: true` in media_library.json is written by the Delivery Concierge after its verified destinations.
 
@@ -161,7 +161,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
          copy_qc_report.json
          prompt_qc_report.json
          image_qc_report.json
-         final_deck_qc.json
+         final_qc_report.json
          finalrender/             (QC-passed final render copies, before upload to GHL)
        copy/                      (slide copy, intake, PRD, approval records)
        brand/                     (STYLE BLOCK, brand registry, representation audit)
@@ -190,8 +190,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
      "created_at": "ISO timestamp"
    }
    ```
-   (ghl_folder_id is null until GHL folder is created in SOP 9.3)
-6. Notify the Director: "Step 0 complete. Local workdir: [path]. GHL folder will be created next."
+   (ghl_folder_id is null until the media destination is resolved in SOP 9.3)
+6. Notify the Director: "Step 0 complete. Local workdir: [path]. GHL media destination will be resolved in SOP 9.3."
 
 **Outputs:**
 - Local directory tree (verified to exist)
@@ -232,19 +232,18 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 ### SOP 9.3 -- GHL-Drive Upload
 
-**When to run:** Immediately after each image is intaked (SOP 9.2), and after SOP 9.1 creates the GHL folder.
+**When to run:** Immediately after each image is intaked (SOP 9.2), and after SOP 9.1 records the run's paths (the media destination itself is resolved in the first step below).
 
 **Inputs:**
-- media_library.json (ghl_folder_id -- if still null, create the folder first)
+- media_library.json (ghl_folder_id -- if still null, resolve the destination first; the folder is never created by this pipeline)
 - working/media-library/slide-NN.png (the image to upload)
 - GHL credentials from client's env stores
 
-**Steps (Create GHL Folder -- run once per deck run):**
-1. If media_library.json has `ghl_folder_id: null`: create the GHL media library folder.
-   a. Folder name: `<Client> <Deck> v<N>` (use the values from media_library.json).
-   b. Call the GHL media library API: POST to create folder. Record the returned folder_id.
-   c. Known issue (per master SOP): GHL folder creation via API has been broken before. If the API call fails: log the failure, upload to Media Library root, and note in media_library.json: `ghl_folder_creation_failed: true, fallback: "media_library_root"`.
-   d. Update media_library.json: `ghl_folder_id: "[returned_id or 'root_fallback']"`.
+**Steps (Resolve the GHL media destination -- run once per deck run):**
+1. If media_library.json has `ghl_folder_id: null`: resolve the destination. The folder-create POST is FAIL-CLOSED DISABLED as of FIX 36(2): `ghl_media.create_media_folder` never issues it, because the GHL media API cannot create folders.
+   a. If a human pre-created the deck's folder in the GHL UI, its id arrives as `approved_folder_id` (or as `ghl_media_folder_id` in intake.json): record that id as `ghl_folder_id` and pass it as `parentId` on every upload. Folder name convention for the human-created folder: `<Client> <Deck> v<N>` (use the values from media_library.json).
+   b. With no pre-created folder, the tool returns the documented decline (`{"folderId": None, "http": 404, "fallback": "name-prefix"}`): upload to the Media Library root with the deck-slug name prefix.
+   c. Update media_library.json: `ghl_folder_id: "[pre-created folder id or 'root']"`.
 
 **Steps (Upload Each Image):**
 1. For the image at working/media-library/slide-NN.png:
@@ -345,10 +344,10 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **What this role still owns:** the media-library and GHL upload records that delivery consumes (SOPs 9.1-9.5 above, plus the GHL upload closeout gate `scripts/ghl_media_push.py --gate` / `AF-DELIVERY-COMPLETE` documented as SOP 9.8 in `sops/media-librarian-ghl-updater-sops.md`).
 
-**When it triggers:** After final Phase 6 QC passes (`working/qc/final_deck_qc.json` present with `pass: true` and `qc_score >= 8.5`).
+**When it triggers:** After the engine closeout gates pass (the build_deck postflight completeness gate green for this run, and `working/qc/final_qc_report.json` present from P-QC-AGGREGATE with its gate-facing average >= 8.5).
 
 **Steps (this role's part of the hand-off):**
-1. Confirm the delivery pass-artifact `working/qc/final_deck_qc.json` exists on disk with `pass: true` and `qc_score >= 8.5`. If absent or failing, halt and notify the QC Specialist -- the Delivery Concierge's own hard interlock will also refuse delivery without it.
+1. Confirm the closeout gates: the build_deck postflight completeness gate passed for this run (its verdict is recorded in `working/checkpoints/process_manifest.json`) and `working/qc/final_qc_report.json` exists on disk with its gate-facing average >= 8.5. If either is absent or failing, halt and notify the QC Specialist -- the Delivery Concierge's own hard interlock will also refuse delivery. (The retired `working/qc/final_deck_qc.json` pass-artifact no longer exists in code and unlocks nothing.)
 2. Confirm media_library.json is complete: `ghl_folder_id` (a real folder id or `"root"`), `ghl_folder_name`, `version_number`, and per-slide `ghl_media_id` records from SOP 9.3. These are the inputs the Delivery Concierge's upload and ground-truth verification steps read.
 3. Hand off to the Delivery Concierge (ROLE-13): the QC-passed deck plus media_library.json. The Delivery Concierge assembles the clean package (its SOP 9.0), resolves destinations (its SOP 9.1), uploads to every destination including the final PPTX GHL upload recording `pptx_ghl_media_id` (its SOP 9.2), verifies every destination (its SOP 9.4), and sends the delivery notification via `openclaw message send` (its SOP 9.3).
 4. Support re-uploads on request: if the Delivery Concierge reports a missing or unverified file in GHL, retry the affected upload via SOP 9.3 and report back.

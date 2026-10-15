@@ -46,13 +46,30 @@ class _Box(unittest.TestCase):
         self.depts = self.ws / "company" / "departments"
         self.depts.mkdir(parents=True)
         (base / ".openclaw").mkdir()  # sandbox OpenClaw root: nothing touches the real HOME
+        # The fixture box is a CONFIGURED client box: it carries a configured
+        # default model in its openclaw.json, the same synthetic id the repo's
+        # other Skill 23 fixtures use. build-workforce.py reads the client's
+        # configured default from the target config file (BW.OPENCLAW_CONFIG),
+        # a module global computed at import from the AMBIENT home, so the
+        # sandbox HOME alone does not move it; point it at the fixture file.
+        # Without a configured default, model resolution now stops with an
+        # ask-the-client error (never a silent named substitute). The box also
+        # configures one vision-capable model in its models list, so the
+        # no-self-grading rule for quality-control (never the presentations
+        # producer's model) has an independent client model to resolve to.
+        import json as _json
+        (base / ".openclaw" / "openclaw.json").write_text(_json.dumps(
+            {"models": {"list": [{"id": "ollama/qwen3-vl:cloud"}]},
+             "agents": {"defaults": {"model": {"primary": "ollama/box-default:cloud"}}}}))
         self._home = os.environ.get("HOME")
         os.environ["HOME"] = str(base)
         for f in CORE:
             (self.ws / f).write_text(f"canonical {f}\n" * 50)
         self._saved = {k: getattr(BW, k) for k in ("WORKSPACE_ROOT", "DEPARTMENTS_DIR", "COMPANY_SLUG",
+                                                   "OPENCLAW_CONFIG",
                                                    "_resolve_main_agent_workspace", "_agent_dir_for",
                                                    "flush_dept_defaults_artifact")}
+        BW.OPENCLAW_CONFIG = str(base / ".openclaw" / "openclaw.json")
         BW.WORKSPACE_ROOT = str(self.ws)
         BW.DEPARTMENTS_DIR = str(self.depts)
         BW.COMPANY_SLUG = "fixture-co"

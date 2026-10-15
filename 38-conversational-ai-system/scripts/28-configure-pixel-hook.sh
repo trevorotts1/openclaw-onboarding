@@ -36,9 +36,19 @@ command -v jq >/dev/null 2>&1 || { echo "jq required" >&2; exit 3; }
 
 HOOK_ID="pixel-visitor-signal"
 PIXEL_AGENT_ID="${ZHC_PIXEL_AGENT_ID:-pixel-concierge}"
-# A cheap real-time model — most signals are dropped before any reasoning. Operator
-# may override; default mirrors the e2e test default used elsewhere in the skill.
-PIXEL_MODEL="${ZHC_PIXEL_MODEL:-ollama/deepseek-v4.1-flash:cloud}"
+# Model resolution (selection doctrine): the client's choice first (ZHC_PIXEL_MODEL),
+# else the pixel agent's configured model in openclaw.json, else the client's
+# configured default model (agents.defaults.model). If none resolve, STOP and ask
+# the client; a named model is never substituted silently. Recommendation: a cheap,
+# fast model, because most signals are dropped before any reasoning happens.
+PIXEL_MODEL="${ZHC_PIXEL_MODEL:-}"
+if [ -z "$PIXEL_MODEL" ]; then
+  PIXEL_MODEL="$(jq -r --arg a "$PIXEL_AGENT_ID" '(.agents.entries[$a].model? // ((.agents.list // []) | map(select(.id==$a)) | .[0].model)) // empty | if type=="object" then (.primary // empty) else . end' "$CONFIG_FILE")"
+fi
+if [ -z "$PIXEL_MODEL" ]; then
+  PIXEL_MODEL="$(jq -r '(.agents.defaults.model? // empty) | if type=="object" then (.primary // empty) else . end' "$CONFIG_FILE")"
+fi
+[ -n "$PIXEL_MODEL" ] || { echo "ERROR: no pixel-hook model resolved (ZHC_PIXEL_MODEL unset, agent $PIXEL_AGENT_ID has no configured model, no agents.defaults.model). Ask the client which model to use for the pixel hook, or which model to configure as their default, then re-run." >&2; exit 2; }
 
 append_secret() {
   local k="$1" v="$2"

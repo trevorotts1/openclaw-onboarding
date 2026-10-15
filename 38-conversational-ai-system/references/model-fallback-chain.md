@@ -35,9 +35,14 @@ out the whole chain.
 Example chain (illustrative, not a mandate; the operator picks from the client's OWN provider
 capabilities per the never-substitute-model rule):
 
-- primary: Ollama Cloud DeepSeek V4.1 Flash (thinking:max)
-- fallback 1: OpenRouter Kimi 2.6+
+- primary: the client's chosen model, or their configured default model
+- fallback 1: a second model the client chose, on a different provider where possible
 - fallback 2: a third provider the client already pays for
+
+Recommendation: a high-reasoning model as the primary, because conversational
+replies carry the client's customer relationships, with fallbacks spread across
+providers so one outage cannot take the agent offline. Guidance only, never a
+prescription.
 
 ### 2. Config shape
 

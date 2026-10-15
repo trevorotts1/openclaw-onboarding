@@ -24,9 +24,9 @@
 **Steps:**
 1. Read every `agents[id].model` entry in `openclaw.json`. Build a list: agent_id -> current_model -> task_type (mechanical/search/build/converse/summarize).
 2. For each agent, classify the task type based on the agent's playbook or role file description:
-   - **Mechanical / administrative / poll / notify:** fast-tier / cheapest (e.g. `deepseek-flash:cloud`, or a MiniMax tool model). Any pro-tier reasoning model here is overkill.
-   - **Build / code generation / structured output:** mid-tier appropriate (e.g. `minimax-m3:cloud`).
-   - **Strategic think / complex analysis:** pro-tier appropriate (e.g. `deepseek-v4.1-flash:cloud` / GLM 5.2) only when explicitly designed.
+   - **Mechanical / administrative / poll / notify:** fast-tier / cheapest (the client's chosen fast-tier model). Any pro-tier reasoning model here is overkill.
+   - **Build / code generation / structured output:** mid-tier appropriate (the client's chosen mid-tier model).
+   - **Strategic think / complex analysis:** pro-tier appropriate (the client's chosen pro-tier model) only when explicitly designed.
 3. Flag any agent where the assigned model class EXCEEDS the task type by >= 1 tier (e.g., a pro-tier reasoning model doing mechanical polling = definite overkill; a mid-tier model doing a heartbeat cron ping = overkill).
 4. Flag any agent using a paid-API model when a free-tier equivalent is available on this box for the same task class (e.g., using a paid OpenRouter mid-tier model when an Ollama Cloud model can do the same mechanical task).
 5. Check for by-design free-tier primaries (per memory `feedback-no-fable-token-furnace.md` and `ollama-cloud-is-valid-provider-id.md`): NEVER flag these as overkill even if they appear "high-tier" -- the design intent is free. Preserve free-tier primaries.

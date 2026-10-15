@@ -410,7 +410,7 @@ Any access policy that grants admin-level access requires Director approval. Any
 > |----------|-----------|-------|---------------|
 > | `crm-api` | `read:contacts`, `write:activities` | Contacts with tag `lead` or `active-opportunity` | Agent creates and updates CRM activities for outreach sequences |
 > | `email-send-api` | `send` | From: `sales@{{COMPANY_SLUG}}.com`, Templates: `outreach-*` | Agent sends outreach emails using approved templates |
-> | `llm-provider-primary` | `invoke` | Models: `kimi-k2.6:cloud`, `deepseek-v4.1-flash:cloud` | Agent uses LLM for message personalization |
+> | `llm-provider-primary` | `invoke` | Models: the client's chosen models | Agent uses LLM for message personalization |
 > | `analytics-db` | `read` | Tables: `email_engagement`, `contact_activity` | Agent reads engagement data to personalize timing and content |
 >
 > **Explicitly Denied:**
@@ -490,7 +490,7 @@ Any access policy that grants admin-level access requires Director approval. Any
 - MITRE ATLAS (Adversarial Threat Landscape for Artificial-Intelligence Systems) — Knowledge base of adversary tactics, techniques, and case studies for AI systems.
 
 **Tier 3 — Real-time / competitive intelligence:**
-- Perplexity Sonar Pro Search — For current AI security incidents, new vulnerability disclosures, and emerging defense techniques.
+- Web research (the client's chosen research model): for current AI security incidents, new vulnerability disclosures, and emerging defense techniques.
 - Deep Research Department (your company-internal research team) — For custom analysis of OpenClaw-specific security threats and defenses.
 - r/netsec, r/MachineLearning security discussions — Real-world security discussions and incident sharing among practitioners.
 

@@ -41,20 +41,26 @@ DRIFT CLASS (FIX-23(a)) — every drift item in the `--json` output carries a `c
     "A5/A6"       — library-only. Undeclared roles / owning_role -> missing .md.
                     Does NOT change render correctness. GATE 3 PROCEEDS (evented),
                     so library maintenance debt can never brick the sanctioned door.
-    "render_path" — every other class (A1-A4/A7/A8, B*, C*, D*, E*, M*, V*). The actual
+    "render_path" — every other class (A1-A4/A7/A8, B*, C*, D*, E*, M*, V*, W2). The actual
                     renderer has drifted from the manifest/ruleset. GATE 3 FAILS
                     CLOSED (AF-CANONICAL-RENDER-BYPASS / exit 7), exactly as before.
                     M* (FIX 32) additionally covers manifest-COPY drift: the
                     resolved manifest and its peer copy (materialized department)
                     differ in canonical-JSON content — the engine would run a
                     different manifest than the repo declares.
+    W2 (FIX-PLAN Item 16) is the fanout-width drift class: a phase that declares
+                    a `fanout` field but no `workers`. It began as a warn-mode class
+                    (FIX-PLAN Item 11) and was promoted to drift by Item 16; the W
+                    letter is kept so the check's name survives the promotion.
 
 EXIT CODES:
     0 — in sync.
     4 — drift (distinct from build_deck's 1/2/3 so a caller can tell lockstep
         drift from a render/config/preflight failure).
     2 — sync_check could not run (an input is missing/unparseable).
-       Warn-mode (W*) findings never change the exit code; see --json "warn_count".
+       Warn-mode findings (W1, and A9 reported through the warnings list) never
+       change the exit code; see --json "warn_count". W2 is not warn-mode anymore:
+       FIX-PLAN Item 16 promoted it to a drift class (above).
 
 USAGE:
     python3 sync_check.py            # human report, exit 0 / 4
@@ -408,7 +414,15 @@ _NON_ROLE_DOCS = {"BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS",
                   # ships flat at the department root like the other _NON_ROLE_DOCS
                   # entries above, so without this exclusion A5 false-flags it as an
                   # undeclared role (Unit A10, RUN 2).
-                  "DEPARTMENT-COUNTS-CANONICAL"}
+                  "DEPARTMENT-COUNTS-CANONICAL",
+                  # DECISION-2026-10-14-KIE-COMPLETION-POLLING.md is a dated
+                  # department decision record (FIX-PLAN Item 33d: KIE completion
+                  # for Presentations decks is learned by polling, never by
+                  # Skill 46 callbacks): a department record, not a role. It
+                  # ships flat at the department root like the counts page
+                  # above, so without this exclusion A5 false-flags it as an
+                  # undeclared role.
+                  "DECISION-2026-10-14-KIE-COMPLETION-POLLING"}
 
 
 def scan_roles_and_sops():
@@ -463,6 +477,12 @@ EXTENSION_STEP = {
     "E1": "step (i) — add a client_report block to the phase in PIPELINE-MANIFEST.json (manifest v21+ requirement)",
     "E2": "step (i) — add heartbeat_minutes to the long_running phase in PIPELINE-MANIFEST.json",
     "E3": "step (i) — add a sane heartbeat_minutes value (a positive integer, no greater than MAX_HEARTBEAT_INTERVAL_MINUTES) to this phase in PIPELINE-MANIFEST.json (every phase requires one, not only long_running:true phases)",
+    "W2": "step (i): declare workers on the fanout phase in PIPELINE-MANIFEST.json "
+          "(FIX-PLAN Item 11: the declared width is the phase's own fanout batch_width, "
+          "a per-phase ceiling that measured capacity still binds below; P9-SPEECH "
+          "declares an explicit 1, deliberately serial). FIX-PLAN Item 16 promoted "
+          "this class from advisory to drift: the gate fails until the phase "
+          "declares its width.",
 }
 
 # WARN-MODE classes. These are ADVISORY: they are collected in a SEPARATE list from
@@ -471,6 +491,10 @@ EXTENSION_STEP = {
 # (A1-A8, B1-B2, C1, D1-D2, E1-E3 in EXTENSION_STEP, plus V1/V2/V3 emitted by
 # value_checks()). Reusing A7 — as an earlier draft proposed — would have attached
 # an exit-0 meaning to the live sop_refs integrity class at :587-596.
+# W2 began in this dict as a warn class (FIX-PLAN Item 11) and was promoted to a
+# drift class by FIX-PLAN Item 16; its fix step lives in EXTENSION_STEP now.
+# The W letter is kept so the check's name, and every reference to it in the
+# SOPs and the tests, survives the promotion.
 WARN_STEP = {
     "W1": "step (i) — declare executor and verifier on the phase in PIPELINE-MANIFEST.json "
           "(the step contract). ADVISORY until every phase carries both; then this class "
@@ -743,7 +767,12 @@ def warn_checks(manifest, ruleset_codes):
     Returns a list of {check, item, detail} dicts for the SEPARATE warnings list. It must
     never be added to `drift`: main() exits 4 on any drift entry, and two callers treat
     non-zero as a hard stop (the CI lockstep job, and presentation-canonical-entry.sh's
-    GATE 3, which maps it to AF-CANONICAL-RENDER-BYPASS / exit 7)."""
+    GATE 3, which maps it to AF-CANONICAL-RENDER-BYPASS / exit 7).
+
+    W2 is NOT produced here anymore: FIX-PLAN Item 16 promoted the
+    undeclared-fanout-width condition from this advisory list to a drift class
+    in run_checks (the check keeps its W2 name). What remains warn-mode is
+    the step contract (W1) and the A9 reverse-lockstep report."""
     warns = []
     # A9: every manifest in_ruleset:true code must have a Section-5 row.
     # WARNING only (D6) — reports, never fails.
@@ -764,6 +793,9 @@ def warn_checks(manifest, ruleset_codes):
                 "detail": (f"phase {ph['id']} declares no {' and no '.join(missing)}. "
                            f"{WARN_STEP['W1']}"),
             })
+    # W2 (undeclared fanout width) was promoted out of this advisory list by
+    # FIX-PLAN Item 16: it is a drift class in run_checks now. See the W2
+    # section there.
     return warns
 
 
@@ -806,6 +838,26 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
     autofail_chk_symbols = {a.get("py_symbol") for a in autofails
                             if a.get("py_symbol", "").__class__ is str and a.get("py_symbol", "").startswith("_chk_")}
     referenced_checkers = phase_checkers | autofail_chk_symbols
+
+    # -------- (W2) FANOUT WIDTH: declared, or the gate fails (FIX-PLAN Item 16) --------
+    # A phase that declares a `fanout` field but no `workers` key runs its
+    # fan-out at the Phase.workers fallback of 1: a serial pocket inside a
+    # parallel pipeline. Item 11 (B23) made the condition loud at advisory
+    # level (Manifest.fanout_width_warnings at load, this check as warn-mode
+    # W2, the run record); Item 16 promotes it to drift, so an undeclared
+    # fanout width changes this script's exit code and its in_sync verdict.
+    # The raw dict test mirrors manifest.py's own parse (fanout carried only
+    # when it is a dict; workers declared only when present and not null):
+    # the same condition Manifest.fanout_width_warnings computes on the
+    # parsed side. The fix is a declaration, never a code change: the phase's
+    # own fanout batch_width, or an explicit 1 for a deliberately serial
+    # phase (the P9-SPEECH shape).
+    for ph in phases:
+        if isinstance(ph.get("fanout"), dict) and ph.get("workers") is None:
+            add("W2", ph["id"],
+                f"phase {ph['id']} declares a fanout field but no workers; "
+                f"fan-out width falls back to 1 (serial). "
+                f"{EXTENSION_STEP['W2']}")
 
     # -------- (A) STACK-AHEAD-OF-CODE --------
 
@@ -1089,6 +1141,7 @@ def report_human(drift, warnings, manifest, explain):
     e = [d for d in drift if d["check"].startswith("E")]
     m = [d for d in drift if d["check"].startswith("M")]
     v = [d for d in drift if d["check"].startswith("V")]
+    w = [d for d in drift if d["check"].startswith("W")]
     print("=== sync_check: DRIFT DETECTED — LOCKSTEP BROKEN (AF-SYNC) ===", file=sys.stderr)
     if a:
         print("\n(A) STACK-AHEAD-OF-CODE — the SOP/role/gate stack moved; build_deck.py "
@@ -1127,6 +1180,12 @@ def report_human(drift, warnings, manifest, explain):
         print("\n(V) VALUE DRIFT — the names match but the NUMBERS do not (the cited "
               "floor/ceiling integer != the code constant):", file=sys.stderr)
         for d in v:
+            print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
+    if w:
+        print("\n(W) FANOUT-WIDTH DRIFT: a phase declares a fanout field but no "
+              "workers, so its fan-out width would fall back to 1 (serial) "
+              "(FIX-PLAN Item 16):", file=sys.stderr)
+        for d in w:
             print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
     print(f"\n{len(drift)} drift item(s). See SOP-SLIDE-06-EXTENSION-AND-SYNC: any "
           "change to a Presentations SOP/role/gate MUST update PIPELINE-MANIFEST.json "

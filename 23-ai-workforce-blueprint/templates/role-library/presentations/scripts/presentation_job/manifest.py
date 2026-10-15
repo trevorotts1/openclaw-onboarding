@@ -248,7 +248,20 @@ class Phase:
     # time in Manifest._parse_phases -- a non-positive-int value refuses the
     # whole manifest with EXIT_MANIFEST_MISMATCH rather than silently
     # coercing to 1 (capacity.py's own defect class, capacity.py:601-612).
+    # FIX-PLAN Item 11 (B23, manifest v71): the silent half of that default is
+    # removed for fanout phases. A phase that declares a `fanout` field but no
+    # `workers` key still falls back to 1 (no run changes behavior), but the
+    # fallback is now LOUD: Manifest.fanout_width_warnings names the phase,
+    # Manifest.load prints it at validation time, sync_check flags it as W2,
+    # and __main__ stamps it into the run record. Every fanout phase in the
+    # shipped manifest declares workers explicitly (its own fanout
+    # batch_width; P9-SPEECH declares an explicit 1, deliberately serial).
     workers: int = 1
+    # True iff the manifest entry carried a usable `workers` key (present and
+    # not null, exactly _parse_workers_field's absent test). Lets validation
+    # distinguish "declared serial" (workers: 1, stated) from "undeclared"
+    # (key absent, fallback 1, warned).
+    workers_declared: bool = False
     defers_unless: Optional[str] = None   # DESIGN-OPUS.md §4 — optional-phase gate
     # MASTER Part 8 Fix 8: the manifest now declares `consumes` on all 55 phases
     # (the artifact list each phase reads; raw/… and working/copy/slides.json are
@@ -357,6 +370,20 @@ class Manifest:
             die(EXIT_MANIFEST_MISMATCH, f"cannot parse manifest {path}: {exc}")
         self.version = self.raw.get("manifest_version")
         self.phases = self._parse_phases()
+        # FIX-PLAN Item 11 (B23): one warning string per fanout phase that
+        # declares no workers. The effective width still falls back to 1
+        # (Phase.workers), so an undeclared manifest behaves exactly as
+        # before; what changes is that the fallback is named, here, at parse
+        # time, for every consumer: Manifest.load prints these at validation
+        # time, sync_check flags the same condition as W2, and __main__
+        # stamps the list into the run record (state.json).
+        self.fanout_width_warnings: List[str] = [
+            f"phase {ph.id}: declares a fanout field but no workers; "
+            f"fan-out width falls back to 1 (serial) until the manifest "
+            f"declares workers for this phase"
+            for ph in self.phases
+            if ph.fanout is not None and not ph.workers_declared
+        ]
         self.deliverables = self.raw.get("deliverables_required", [])
         self.client_package = self.raw.get("client_package_files", [])
 
@@ -384,6 +411,15 @@ class Manifest:
                 f"{path}: manifest is structurally invalid: {type(exc).__name__}: {exc} "
                 f"(MASTER Part 8 Fix 4)"
             ) from exc
+        # FIX-PLAN Item 11 (B23): undeclared fanout widths are LOUD at load.
+        # Deliberately NOT a _validate() problem: the manifest stays usable
+        # (the fallback is 1, the pre-Item-11 behavior), so validation must
+        # not refuse it; but the warning is printed on every load of a
+        # parseable manifest, one line per phase, naming the phase, in
+        # verify_source's WARN style. Printed BEFORE _validate() so an
+        # unrelated validation refusal can never mask the fanout signal.
+        for warning in m.fanout_width_warnings:
+            print(f"WARN: {warning}", file=sys.stderr)
         m._validate()
         return m
 
@@ -564,6 +600,7 @@ class Manifest:
                 converter_path=bool(p.get("converter_path")),
                 infographic_path=bool(p.get("infographic_path")),
                 workers=workers,
+                workers_declared=_workers_is_declared(p),
                 defers_unless=p.get("defers_unless"),
                 # MASTER Part 8 Fix 8: carry the manifest's declared consumed
                 # inputs on the Phase object so the artifact-DAG builder
@@ -735,6 +772,16 @@ def _glob_covers(producers: Dict[str, List[str]], artifact: str,
             if fnmatch.fnmatch(key, pat):
                 return True
     return False
+
+
+def _workers_is_declared(p: Dict[str, Any]) -> bool:
+    """FIX-PLAN Item 11 (B23): True iff the manifest entry declares `workers`.
+
+    Uses exactly _parse_workers_field's absent test (key missing or null), so
+    "declared" means precisely "the parser read a value". A phase may declare
+    workers: 1 on purpose (P9-SPEECH, deliberately serial): that is a stated
+    decision, not an omission, and must not warn."""
+    return "workers" in p and p["workers"] is not None
 
 
 def _parse_workers_field(p: Dict[str, Any]) -> int:
@@ -939,7 +986,17 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # with explicit executor.capability (ghl_workflow_install / ghl_page_install)
 # + gate_codes AF-U-FORM-GATE / AF-U-GHL-SALES / AF-U-GHL-VSL.
 # 69 -> 70 (KIE rule 12): the 9,000-18,000 prompt band is retired from the manifest in favor of the shared enforcer.
-MIN_MANIFEST_VERSION = 70  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 70 -> 71 (FIX-PLAN Item 11, B23): every fanout phase declares workers (its own
+# fanout batch_width; P9-SPEECH declares an explicit 1, deliberately serial, its
+# executor is the speech harness script), and an undeclared fanout width now
+# warns at load (Manifest.fanout_width_warnings, sync_check W2, run record)
+# instead of silently defaulting to 1.
+# 71 -> 73 (PR #2040 refresh, B32 FIX-PLAN Item 26): the GIP weave carried its
+# own v71 claim from a v70 base; main's v71 (Item 11, B23) landed first, and
+# v72 is carried by PR #2038's refresh composed in parallel, so the composed
+# tree (B23 fanout declarations plus the Item 26 AF-P24 weave) takes the next
+# free version, 73.
+MIN_MANIFEST_VERSION = 73  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)

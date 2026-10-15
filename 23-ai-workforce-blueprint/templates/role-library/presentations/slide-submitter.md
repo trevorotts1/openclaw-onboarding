@@ -210,7 +210,7 @@ This table is the API reference for Phase 4 in this role. It follows AGENTS.md N
 | Check task | `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` |
 | Balance | `GET https://api.kie.ai/api/v1/chat/credit` |
 | Auth | `Authorization: Bearer <CLIENT_KIE_API_KEY>` + `Content-Type: application/json` (a header named `apikey` returns 401); always read the body `code`, HTTP 200 can still carry 401, 402, 404, 422, 429, 433 or 455 |
-| Prompt length | The model's prompt maximum (20,000 characters for the current pin); authoring size follows rule 12 (read with `prompt-budget`), and the renderer gate today is 9,000 to 18,000 |
+| Prompt length | The model's prompt maximum (20,000 characters for the current pin); authoring size follows rule 12 (read with `prompt-budget`), and the renderer gate enforces rule 12 through the shared enforcer shared-utils/kie_prompt_enforcer.py (floor 16,000 for the current pin) |
 | Reference images | `input.input_urls`, public https URLs. `build_deck.py` sends none on the canonical command (a local logo is placed at assembly); it sends exactly one, the logo URL, only when run directly with `--logo <https URL>` (SOP-IMG-05 mechanism 1, not reachable through the canonical command today) |
 | Aspect ratio and resolution | The renderer pins `16:9` and `2K` |
 | Rate limits | createTask 20 per 10 seconds per account; recordInfo 10 per second per taskId (rule 3) |

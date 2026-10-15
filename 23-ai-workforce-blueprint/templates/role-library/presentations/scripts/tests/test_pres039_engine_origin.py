@@ -34,6 +34,19 @@ against this checkout's REAL PIPELINE-MANIFEST.json:
   T7  The launcher path invokes the preflight: dispatch() with a stale
       duplicate on sys.path returns DISPATCH_ENGINE_REFUSED (-12) before
       any other gate runs, and prints the origin line.
+  T8  Step 6 digest exclusion: a PARITY-MANIFEST.json inside a copied
+      tree changes neither its package_digest nor its census count (the
+      recorded digest is computed over the manifest-excluded census, so
+      runtime-reported digests agree across the sync).
+  T9  Step 6 retirement: KNOWN_MISSING_VS_CANONICAL no longer exists on
+      the module, and parity_problems() is inert (empty) on this tree,
+      which carries no manifest.
+  T10 Step 6 parity assertion: a copied tree carrying a faithful
+      PARITY-MANIFEST.json (built from the copy's own bytes) shows no
+      parity problems; tampering a manifest-covered file outside the
+      digest census is named by parity_problems, an unlisted added file
+      is named too, and preflight() refuses the tampered copy with
+      exit 7 / AF-ENGINE-PARITY-DIVERGED.
 
 No network, no provider call, no spend. Fixtures are copies of this
 checkout's own package files, never hand-written stand-ins for them.
@@ -270,3 +283,87 @@ def test_t7_launcher_dispatch_invokes_preflight(tmp_path, monkeypatch, capsys):
     captured = capsys.readouterr()
     assert "engine origin: distributor=ONB" in captured.out
     assert "AF-ENGINE-STALE-DUPLICATE" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# T8 -- Step 6: the digest census excludes PARITY-MANIFEST.json
+# ---------------------------------------------------------------------------
+def test_t8_digest_excludes_parity_manifest(tmp_path):
+    eo = _eo()
+    copy = _copy_top_level(tmp_path / "presentation_job")
+    before = eo.package_digest(copy)
+    (copy / "PARITY-MANIFEST.json").write_text(
+        '{"canonical_commit": "deadbeef", "files": []}', encoding="utf-8")
+    after = eo.package_digest(copy)
+    assert after["digest"] == before["digest"]
+    assert after["file_count"] == before["file_count"]
+    assert all(f["name"] != "PARITY-MANIFEST.json" for f in after["files"])
+
+
+# ---------------------------------------------------------------------------
+# T9 -- Step 6: the survey list is retired; parity is inert on canonical
+# ---------------------------------------------------------------------------
+def test_t9_survey_list_retired_parity_inert_on_canonical():
+    eo = _eo()
+    assert not hasattr(eo, "KNOWN_MISSING_VS_CANONICAL")
+    assert eo.PARITY_MANIFEST_NAME == "PARITY-MANIFEST.json"
+    assert not (PACKAGE / "PARITY-MANIFEST.json").is_file()
+    assert eo.parity_problems() == []
+    assert eo.parity_problems(PACKAGE) == []
+
+
+# ---------------------------------------------------------------------------
+# T10 -- Step 6: parity assertion against a faithful manifest, then tamper
+# ---------------------------------------------------------------------------
+def _write_faithful_manifest(eo, pkg: Path) -> None:
+    import hashlib
+    entries = []
+    for p in sorted(pkg.rglob("*")):
+        if not p.is_file() or "__pycache__" in p.parts or p.suffix == ".pyc":
+            continue
+        entries.append({
+            "path": p.relative_to(pkg).as_posix(),
+            "bytes": p.stat().st_size,
+            "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
+        })
+    manifest = {
+        "canonical_repo": "trevorotts1/openclaw-onboarding",
+        "canonical_commit": "0" * 40,
+        "package_digest": eo.package_digest(pkg)["digest"],
+        "files": entries,
+    }
+    (pkg / "PARITY-MANIFEST.json").write_text(
+        json.dumps(manifest, indent=1), encoding="utf-8")
+
+
+def test_t10_parity_assertion_faithful_then_tampered(tmp_path):
+    eo = _eo()
+    copy = tmp_path / "vendored" / "presentation_job"
+    shutil.copytree(PACKAGE, copy,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    _write_faithful_manifest(eo, copy)
+    assert eo.parity_problems(copy) == []
+
+    code, report = eo.preflight(copy)
+    assert code == 0
+    assert report["parity_problems"] == []
+
+    # Tamper a manifest-covered file OUTSIDE the digest census (nested
+    # Markdown): the digest and the contract are untouched by it, so the
+    # refusal must come from the parity branch itself.
+    victim = next(p for p in sorted(copy.rglob("*.md")) if p.is_file())
+    rel = victim.relative_to(copy).as_posix()
+    with victim.open("ab") as fh:
+        fh.write(b" ")
+    problems = eo.parity_problems(copy)
+    assert any(rel in p and "sha256" in p for p in problems)
+    code, report = eo.preflight(copy)
+    assert code == 7
+    assert report["ok"] is False
+    assert report["autofail"] == "AF-ENGINE-PARITY-DIVERGED"
+    assert any(rel in p for p in report["parity_problems"])
+
+    # An unlisted added file is named as well.
+    (copy / "hand_edit.py").write_text("# hand edit\n", encoding="utf-8")
+    problems = eo.parity_problems(copy)
+    assert any("unlisted file present: hand_edit.py" in p for p in problems)

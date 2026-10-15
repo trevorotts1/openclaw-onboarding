@@ -183,6 +183,13 @@ def _gate_token_set():
     toks = set()
     for group in PG.NEGATIVE_BLOCK_CLASS_TOKENS.values():
         toks.update(t.lower() for t in group)
+    # Item 26 (AF-P24): the BlackCEO weave added two token tables to the gate.
+    # The filler must stay neutral against them too, or innocent filler pairs
+    # (the vocabulary's own "butter cream") read as a cast Black subject and
+    # the control fixture stops being a control.
+    for group in PG.BLACKCEO_NEGATIVE_BLOCK_CLASS_TOKENS.values():
+        toks.update(t.lower() for t in group)
+    toks.update(t.lower() for t in PG.BLACK_SUBJECT_TOKENS)
     toks.update(t.lower() for t in PG.SPELLING_LOCK_TOKENS)
     toks.update(t.lower() for t in PG.PROMPT_COMPOSITION_TOKENS)
     return toks

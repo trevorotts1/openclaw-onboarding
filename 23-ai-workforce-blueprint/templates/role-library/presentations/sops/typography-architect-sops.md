@@ -81,23 +81,23 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Purpose:** Fix the reference failure case Dimension F failure where the one good idea (gold $[ANCHOR] on the anchor) was never carried to the other price beats, so $[DROP1], an off-ladder rung, and the final price landed flat. The price-typography system is defined ONCE and applied to EVERY ladder slide.
 
-**The hard rule:** Every slide tagged LADDER (ANCHOR, DROP1, DROP2, DROP3, FINAL) MUST render under the same three-part price-typography system: (1) the LIVE price in a metallic-gold gradient hero numeral with a soft glow; (2) every DEAD (superseded) price struck through with a DRAWN gold diagonal double-strike, shown cumulatively; (3) the price numeral is the hero of the slide (largest type element), per master SOP rule "numbers are heroes." The system is identical across all ladder slides; only which price is live changes.
+**The hard rule:** Every slide tagged LADDER (ANCHOR, DROP1, DROP2, DROP3, FINAL) MUST render under the same three-part price-typography system: (1) the LIVE price as a flat solid brand-gold hero numeral (a single solid hex; no gradient fill, no glow -- AF-GRAD bans both on type); (2) every DEAD (superseded) price struck through with a DRAWN gold diagonal double-strike, shown cumulatively; (3) the price numeral is the hero of the slide (largest type element), per master SOP rule "numbers are heroes." The system is identical across all ladder slides; only which price is live changes.
 
 **Inputs:** arc_allocation.json (ladder positions and slide numbers), the price ladder (from ROLE-07's price_ladder.json), SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling) + typography-architect SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) (strikethrough handling).
 
 **Steps:**
 1. List every LADDER slide and the price that is LIVE on it and the prices that are DEAD (struck) on it, cumulatively. Confirm against price_ladder.json.
-2. Define the gold gradient (for example #B8860B to #E6C66E), the glow treatment for the live price, and the drawn-gold double-strike for dead prices. Pull the exact gold hex from the STYLE BLOCK Primary.
+2. Define the flat solid gold (the STYLE BLOCK Primary hex, used as a single solid color), the flat treatment for the live price, and the drawn-gold double-strike for dead prices. Pull the exact gold hex from the STYLE BLOCK Primary.
 3. Specify that the strike is a DRAWN diagonal line composited as part of the price tag, never a font strikethrough that the image model may garble (the strike is part of the baked image; cross-reference SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (strikethrough/price-typography handling) + typography-architect SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) strikethrough handling — there is NO native-text fallback, which Decision 5C eliminated).
 4. Write the price-typography rule per ladder slide into design_system.json `price_typography`, each entry naming the live price, the struck prices, and the treatment.
 
 **Enforcement check (what auto-fails):**
 - Any LADDER slide without a price-typography rule = FAIL.
-- The gold/glow/strike system applied to only some ladder slides (for example anchor only) = FAIL.
+- The flat-gold/strike system applied to only some ladder slides (for example anchor only) = FAIL.
 - A dead price not shown struck cumulatively = FAIL.
 - The price numeral not the largest type element on a price slide = FAIL.
 
-**PASS example (gold-standard reference deck):** s35 $[ANCHOR] struck in gold, $[DROP1] glows; s51 $[ANCHOR] and $[DROP1] struck, $[DROP2] glows; s65 three struck, $[DROP3] glows; s73 four struck, $[FINAL_PRICE]/$[VIP_PRICE] glows. Same system every rung. (Illustrative -- substitute your DISCOVERY VARIABLES.)
+**PASS example (gold-standard reference deck):** s35 $[ANCHOR] struck in gold, $[DROP1] in flat solid gold; s51 $[ANCHOR] and $[DROP1] struck, $[DROP2] in flat solid gold; s65 three struck, $[DROP3] in flat solid gold; s73 four struck, $[FINAL_PRICE]/$[VIP_PRICE] in flat solid gold. Same system every rung. (Illustrative -- substitute your DISCOVERY VARIABLES.)
 
 **FAIL example (the reference failure case):** gold $[ANCHOR] on the anchor only; $[DROP1], an off-ladder rung, and the final price rendered flat; the creativity that existed was applied inconsistently.
 

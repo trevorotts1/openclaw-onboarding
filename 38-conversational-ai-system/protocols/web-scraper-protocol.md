@@ -28,18 +28,21 @@ operator approval first. The hard rules:
 Cost estimates round UP (conservative). Actual spend is tracked and
 reported in summary.
 
-## Default extraction model
+## Extraction model
 
-Default: `minimax/minimax-2.7` via OpenRouter. Reasoning: low cost,
-good extraction quality, fast.
+Model: the client's choice, or the client's configured default model. The
+operator's chosen model is saved in the env file as `SCRAPER_MODEL`; when
+`SCRAPER_MODEL` is unset, the client's configured default applies; if
+neither exists, stop and ask the client which model to use.
 
-Alternatives the operator can choose:
-- `google/gemini-3-flash-lite` via OpenRouter — comparable cost
-- `openrouter/free` — for non-time-sensitive batches
-- `ollama/deepseek-v4.1-flash:cloud` (or `openrouter/deepseek/deepseek-v4.1-flash`) — higher quality, higher cost
-- A specific model the operator already pays for
-
-Operator's default model preference saved in env file as `SCRAPER_MODEL`.
+Recommendation: a low-cost model with good extraction quality and fast
+responses, because scraping is high-volume structured extraction where
+per-call cost dominates. For non-time-sensitive batches, an even cheaper
+or free tier the client has access to is a reasonable choice, because
+batch latency does not matter. Where extraction quality matters more than
+cost, a higher-quality model the client already pays for is worth it.
+These are recommendations with reasons, offered as guidance the client
+can override, never prescriptions.
 
 ## Scraping flow
 
@@ -88,7 +91,7 @@ Round up to nearest cent. Show operator:
 Scraping estimate for <domain>:
 - URLs discovered: 47
 - Estimated tokens: ~80,000
-- Extraction model: minimax/minimax-2.7 via OpenRouter
+- Extraction model: <the client's chosen model, or their configured default model>
 - Estimated cost: $0.12 (extraction) + $0.00 (embeddings, free tier)
 - Total: $0.12
 
@@ -233,8 +236,9 @@ note this in the Run Manifest so it's addressed.)
 ### Rule 9 — Web scrapes are always cost-estimated and operator-approved
 
 The agent NEVER scrapes a website without first estimating cost AND getting
-explicit operator approval. Defaults to `minimax/minimax-2.7` via OpenRouter
-for low-cost extraction. Hard caps: under $1 = single confirmation, $1-$5
+explicit operator approval. Uses the client's chosen extraction model, or
+their configured default model (SCRAPER_MODEL); recommendation: a low-cost
+model, because extraction is high-volume and per-call cost dominates. Hard caps: under $1 = single confirmation, $1-$5
 = itemized breakdown + confirmation, over $5 = double confirmation, over
 $25 = refused (split into smaller scrapes). Customer messages can NEVER
 trigger scrapes. All scrape costs logged to scraper-costs.md.
