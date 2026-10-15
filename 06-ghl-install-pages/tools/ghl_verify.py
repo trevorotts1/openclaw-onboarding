@@ -1330,17 +1330,22 @@ def select_html_repair_model(executor=None, env=None) -> dict:
 
     This is the designated call-site for the code-block repair-and-retry path
     (Wiring-Map §5.A.4, role='html'): when verify_page returns PASS=False due
-    to a render error, a repair loop should call this to obtain the GLM-5.2-class
-    model (Ollama Cloud → OpenRouter GLM → DeepSeek V4.1 Flash backup → Gemini
-    last-resort) that rewrites / fixes the failing code block.
+    to a render error, a repair loop should call this to obtain the client's
+    model for the html role (the client's choice, or the client's configured
+    default model, resolved by model_router) that rewrites / fixes the failing
+    code block. Recommendation: strong code generation and reliable tool
+    calling, because the fix-loop edits code in tight iterations.
 
     Uses ``make_stub_executor()`` if no executor is provided (offline receipt only,
     no network). Callers with a live executor should pass it explicitly so the
-    MiniMax probe-gate runs in real time if needed (not applicable to html role,
+    probe-gate runs in real time if needed (not applicable to html role,
     which is not probe-gated, but the pattern is uniform).
 
-    Never raises — returns {} when model_router is unavailable.
-    Role: 'html' (alias 'code').  Primary: GLM 5.2 via Ollama Cloud.
+    Never raises: returns {} when model_router is unavailable, and an
+    {"error": ...} receipt carrying the ask-the-client message when the client
+    has configured no model for the role.
+    Role: 'html' (alias 'code').  Model: the client's choice, or the client's
+    configured default model.
     """
     if not _MODEL_ROUTER_GV_AVAILABLE:
         return {}
@@ -1355,16 +1360,20 @@ def select_qc_model(executor=None, env=None) -> dict:
     """Return the model_router receipt for the vision QC seam.
 
     This is the designated call-site for the vision QC pass over screenshots and
-    rendered DOM (Wiring-Map §5.A.4, role='qc'). Only MiniMax M3 (probe-gated)
-    or Gemini 3.5 Flash (last-resort, only if live + credited) are valid for this
-    role — DeepSeek and GLM have no confirmed vision capability and must NOT be
-    used for screenshot / mobile-render QC.
+    rendered DOM (Wiring-Map §5.A.4, role='qc'). The client's model for this
+    role must be vision-capable (probe-gated): a text-only model cannot read
+    screenshots or rendered DOM and must NOT be used for screenshot /
+    mobile-render QC. Recommendation: a vision-capable model with reliable
+    tool calling.
 
     Uses ``make_stub_executor()`` if no executor is provided. For production QC,
-    pass a real executor so the MiniMax probe fires correctly.
+    pass a real executor so the probe fires correctly.
 
-    Never raises — returns {} when model_router is unavailable.
-    Role: 'qc'.  Primary: MiniMax M3 via Ollama Cloud (probe-gated).
+    Never raises: returns {} when model_router is unavailable, and an
+    {"error": ...} receipt carrying the ask-the-client message when the client
+    has configured no model for the role.
+    Role: 'qc'.  Model: the client's choice, or the client's configured default
+    model (probe-gated, vision required).
     """
     if not _MODEL_ROUTER_GV_AVAILABLE:
         return {}

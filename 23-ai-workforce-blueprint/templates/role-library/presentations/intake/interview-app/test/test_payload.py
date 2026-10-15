@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Offline gate for build_questions_payload.py — proves the curated set is
 derived from the canonical JSONs and respects the 7-9 core contract (19 core
-questions plus the two conditional U026 waiver follow-ups, 21 total).
+questions plus the two conditional U026 waiver follow-ups, 21 total), and
+that the signature set (FIX-PLAN Item 13, step S8) is built whole from
+Skill 51's sp-8-questions.json.
 Run: python3 test/test_payload.py
 """
 from __future__ import annotations
@@ -123,6 +125,92 @@ class TestPayload(unittest.TestCase):
         for q in payload["questions"]:
             self.assertTrue(q.get("prompt"))
             self.assertIn("kind", q)
+
+
+# A fixture in the shape of Skill 51's sp-8-questions.json: q1..q8 in spec
+# order, each carrying its sp_intake storeOn key, one carrying a spec
+# internal (note) the projection must drop, plus the frame-selection
+# question the builder appends last.
+SIGNATURE_SPEC = {
+    "questions": [
+        {"id": f"q{i}", "order": i, "prompt": f"Q{i}?", "kind": "text",
+         "required": True, "storeOn": f"q{i}_key"}
+        for i in range(1, 9)
+    ],
+    "frame_selection_question": {
+        "id": "frame_selection", "order": 9, "prompt": "Which frame?",
+        "kind": "enum", "required": True, "storeOn": "signature_frame",
+        "allowed_values": ["rulebook", "vault", "quest", "original"],
+        "value_labels": {"rulebook": "The Rulebook", "vault": "The Vault",
+                         "quest": "The Quest", "original": "The Original"},
+    },
+}
+SIGNATURE_SPEC["questions"][6]["note"] = "spec internal, must be dropped"
+
+
+class TestSignaturePayload(unittest.TestCase):
+    """FIX-PLAN Item 13, step S8: the signature payload path ported from
+    the miniapp builder (previously the only signature payload builder)
+    into this builder, with the miniapp builder's behavior as the
+    reference. The miniapp's own test_payload.py pins the same set
+    behavior against its builder."""
+
+    def test_signature_appends_frame_and_keeps_spec_order(self):
+        shuffled = {"questions": list(reversed(SIGNATURE_SPEC["questions"])),
+                    "frame_selection_question": SIGNATURE_SPEC["frame_selection_question"]}
+        payload = bqp.build_signature_payload("RUN2", shuffled)
+        self.assertEqual(payload["run_id"], "RUN2")
+        self.assertEqual(payload["question_set"], "signature")
+        self.assertEqual(payload["source"], "sp-8-questions.json")
+        ids = [q["id"] for q in payload["questions"]]
+        self.assertEqual(len(ids), 9)
+        self.assertEqual(ids[:8], [f"q{i}" for i in range(1, 9)])
+        self.assertEqual(ids[-1], "frame_selection")
+
+    def test_signature_projection_is_this_builders(self):
+        """Port, not copy: the miniapp builder's projection drops storeOn;
+        this builder's projection carries it, because this app routes
+        answers by storeOn. The sp-8 keys are sp_intake record keys and
+        ride verbatim (the storeTarget table never rewrites them), while
+        spec internals outside the passthrough set are dropped."""
+        payload = bqp.build_signature_payload("RUN6", SIGNATURE_SPEC)
+        q1 = payload["questions"][0]
+        self.assertEqual(q1["storeOn"], "q1_key")
+        frame = payload["questions"][-1]
+        self.assertEqual(frame["storeOn"], "signature_frame")
+        self.assertEqual(frame["allowed_values"],
+                         ["rulebook", "vault", "quest", "original"])
+        self.assertIn("value_labels", frame)
+        q7 = next(q for q in payload["questions"] if q["id"] == "q7")
+        self.assertNotIn("note", q7)
+        for q in payload["questions"]:
+            self.assertTrue(q.get("prompt"))
+            self.assertIn("kind", q)
+            self.assertIn("required", q)
+
+    def test_signature_requires_spec(self):
+        with self.assertRaises(ValueError):
+            bqp.build_signature_payload("RUN3", None)
+
+    def test_signature_empty_spec_rejected(self):
+        with self.assertRaises(ValueError):
+            bqp.build_signature_payload("RUN4", {"questions": []})
+
+    def test_against_real_sp8_json_if_present(self):
+        root = bqp._project_root(HERE)
+        sig = bqp.default_signature_path(root)
+        if not sig.is_file():
+            self.skipTest(f"canonical sp-8-questions.json not found at {sig}")
+        spec = json.loads(sig.read_text(encoding="utf-8"))
+        payload = bqp.build_signature_payload("RUNREAL", spec)
+        ids = [q["id"] for q in payload["questions"]]
+        self.assertEqual(ids, [f"q{i}" for i in range(1, 9)] + ["frame_selection"])
+        self.assertEqual(payload["questions"][0]["storeOn"], "q1_title")
+        self.assertEqual(payload["questions"][-1]["storeOn"], "signature_frame")
+        self.assertEqual(payload["questions"][-1]["allowed_values"],
+                         ["rulebook", "vault", "quest", "original"])
+        for q in payload["questions"]:
+            self.assertTrue(q.get("prompt"))
 
 
 if __name__ == "__main__":

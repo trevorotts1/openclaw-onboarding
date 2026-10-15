@@ -3,9 +3,10 @@
 **ID:** SOP-GIP-02
 **Classification:** ZHC SOP — Graphics Image Protocol (GIP)
 **Owner Role:** QC Specialist (Graphics) — independent reviewer
-**Version:** 1.0 | **Date:** 2026-07-10
+**Version:** 2.0 | **Date:** 2026-10-10
 **Status:** CANONICAL
 **Library-version pin:** MODEL-SPECS v1.4, TEST-PROTOCOL v1.0 (§-refs verified 2026-07-10)
+**BlackCEO Integration:** v2.0 strengthens AF-G7 with the BlackCEO Signature Image Intelligence system. Where this SOP and the BlackCEO system conflict, the BlackCEO way wins.
 
 ---
 
@@ -38,7 +39,13 @@ survives ONLY for internal drafts.
    - **AF-G4** anatomical artifact (fingers, limbs, face geometry)
    - **AF-G5** placeholder/bracket token rendered as visible text
    - **AF-G6** brand-palette drift beyond the style card's stated tolerances
-   - **AF-G7** demographic default / mono-cast / skin-tone fidelity failure
+   - **AF-G7** demographic default / mono-cast / skin-tone fidelity failure, including:
+     - Melanated skin rendered gray, ashy, muddy, dull, or desaturated (must show warm brown, golden,
+       and subtle red undertones with full chromatic depth)
+     - Black hair crushed to featureless black (must show individual strands and shape)
+     - Plastic/wax/CGI skin smoothing (must preserve fine microtexture)
+     - Specified hairstyle replaced with a generic one
+     - Deep skin lightened in aspirational scenes or darkened for pain (identity does not change with lighting)
    - **AF-G8** provenance gap: no Kie.ai taskId + Operator receipt at `_local/receipts/{receipt-id}.json` (created by the Generation Operator at submit, advanced to `complete` by the Render Dispatcher's postflight) tying pixels to the
      sanctioned pipeline (the graphics analogue of AF-CANONICAL-RENDER-BYPASS)
 

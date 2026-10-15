@@ -1580,9 +1580,12 @@ STEP 2: Go back to the code editor
 - Copy the current code
 
 STEP 3: Fix the code
-- Send the code + error description to your best available client thinking
-  model (Ollama Cloud first: `ollama/deepseek-v4.1-flash:cloud`; or
-  `openrouter/deepseek/deepseek-v4.1-flash` if you have OpenRouter) — never Anthropic
+- Send the code + error description to the client's model for this task: the
+  client's choice, or the client's configured default model (ask the client
+  which model they want to use if neither is configured; do not prescribe a
+  specific model by name). Recommendation: a model with strong reasoning and
+  strong code generation, because the fix reasons over the full broken page
+  before editing it. Never Anthropic.
 - Ask: "This HTML code was pasted into a Go High Level code block element
   but isn't rendering correctly. [Describe the specific issue].
   Fix the code to work within GHL's code block constraints."
