@@ -60,10 +60,17 @@ CONSENT="$TMP/consent.json"
 mkdir -p "$SANDBOX_HOME/.openclaw/workspace" "$MASTER/zero-human-company" "$SANDBOX_HOME/.openclaw" \
          "$SANDBOX_HOME/Downloads/openclaw-master-files" "$COMPANY"
 printf '{"decision":"prebuild","source":"operator-prebuild","decidedAt":"2026-08-04T12:00:00Z","decidedBy":"test-operator","sessionId":"sess-test"}\n' > "$CONSENT"
+# The fixture box carries a client-configured default model (agents.defaults.model),
+# the same synthetic id the repo's other Skill 23 fixtures use: model resolution in
+# build-workforce.py stops with an ask-the-client error when neither a selector
+# resolution nor a configured default exists, and a real client box always has one.
+# The box also configures one vision-capable model in its models list, so the
+# no-self-grading rule for quality-control (never the presentations producer's
+# model) has an independent client model to resolve to during registration.
 if [ "${ONB_TEST_REGISTRY:-list}" = "entries" ]; then
-  printf '{"agents":{"entries":{}}}\n' > "$SANDBOX_HOME/.openclaw/openclaw.json"
+  printf '{"models":{"list":[{"id":"ollama/qwen3-vl:cloud"}]},"agents":{"entries":{},"defaults":{"model":{"primary":"ollama/box-default:cloud"}}}}\n' > "$SANDBOX_HOME/.openclaw/openclaw.json"
 else
-  printf '{"agents":{"list":[]}}\n' > "$SANDBOX_HOME/.openclaw/openclaw.json"
+  printf '{"models":{"list":[{"id":"ollama/qwen3-vl:cloud"}]},"agents":{"list":[],"defaults":{"model":{"primary":"ollama/box-default:cloud"}}}}\n' > "$SANDBOX_HOME/.openclaw/openclaw.json"
 fi
 echo '{}' > "$STATE"
 

@@ -33,7 +33,17 @@ CONTRACT:
     so "prefer latest GPT-Image-2 version" is catalog data, not code.
   * Rollback: PRESENTATION_MODEL_CATALOG=0 restores the exact pre-FIX-13 literals
     from the pinned ROLLBACK table below (single documented location; the ONLY
-    remaining literal place, and it is dead unless the flag is set to 0).
+    remaining literal place, and it is dead unless the flag is set to 0) --
+    EXCEPT text.strong, which carries no literal anywhere anymore (see below).
+  * Client-resolved aliases: an alias whose catalog entry carries
+    "resolution": "client-choice-or-configured-default" (text.strong) has NO
+    pinned model. It resolves to (1) the client's explicit choice,
+    PRESENTATION_MODEL_<ALIAS> (e.g. PRESENTATION_MODEL_TEXT_STRONG), or
+    (2) the client's configured default model (agents.defaults.model in
+    openclaw.json). Neither: CatalogError with an ask-the-client message.
+    A named default here is a prescription, and prescriptions go stale;
+    the catalog keeps the alias, the capability data and the recommendation,
+    never the client's model.
 
 No network here: the live provider `models` inventory belongs to FIX 9
 (capacity.py probes / resource_profile.py); this module turns ALIAS -> ID from
@@ -64,7 +74,10 @@ ROLLBACK_MODELS: Dict[str, str] = {
     # retired in the live catalog (the =1 path can never resolve to it); the
     # =0 rollback restores the old string verbatim for parity, nothing else.
     "image.fallback": "nano-banana-2",
-    "text.strong": "deepseek-v4.1-flash",
+    # NO "text.strong" row: that alias is client-resolved on BOTH paths now.
+    # The rollback restores pre-FIX-13 literals, and a literal for
+    # text.strong is exactly the prescription this catalog no longer carries;
+    # resolve() routes the alias to client resolution instead (below).
     "text.fast": "deepseek-flash",
     "text.judge": "deepseek-flash",
     "vision.ocr": "glm-ocr",
@@ -140,12 +153,96 @@ def _version_token(model_id: str) -> float:
         return 0.0
 
 
+def _openclaw_config_paths() -> List[Path]:
+    """openclaw.json candidates for THIS box, pinned root first."""
+    paths: List[Path] = []
+    for name in ("OPENCLAW_ROOT", "OC_ROOT", "OC_CONFIG"):
+        pinned = (os.environ.get(name) or "").strip()
+        if pinned:
+            paths.append(Path(pinned).expanduser() / "openclaw.json")
+    paths.append(Path("/data/.openclaw") / "openclaw.json")
+    paths.append(Path.home() / ".openclaw" / "openclaw.json")
+    return paths
+
+
+def client_configured_default_model() -> str:
+    """The client's configured default model id, or "".
+
+    agents.defaults.model in openclaw.json, string form or
+    {"primary": ...} object form. This is the client's own configuration,
+    the second rung of the resolution order (after an explicit per-alias
+    client choice). Shared with model_router's configured-default rung.
+    """
+    for path in _openclaw_config_paths():
+        try:
+            if not path.is_file():
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        model = ((data.get("agents") or {}).get("defaults") or {}).get("model")
+        if isinstance(model, dict):
+            model = model.get("primary")
+        if isinstance(model, str) and model.strip():
+            return model.strip()
+    return ""
+
+
+def _client_choice_env(alias: str) -> str:
+    return "PRESENTATION_MODEL_" + alias.upper().replace(".", "_").replace("-", "_")
+
+
+def resolve_client_model(alias: str):
+    """(model_id, source) for a client-resolved alias, or (None, "").
+
+    (1) the client's explicit choice: PRESENTATION_MODEL_<ALIAS>;
+    (2) the client's configured default model (agents.defaults.model).
+    Neither: (None, "") and the caller fails with an ask-the-client error.
+    """
+    env_name = _client_choice_env(alias)
+    choice = (os.environ.get(env_name) or "").strip()
+    if choice:
+        return choice, f"client choice ({env_name})"
+    default = client_configured_default_model()
+    if default:
+        return default, "client configured default (agents.defaults.model)"
+    return None, ""
+
+
+def _client_resolved_entry(alias: str) -> Dict[str, Any]:
+    """resolve() result for a client-resolved alias. Fail-closed with an
+    ask-the-client CatalogError when the client has neither chosen a model
+    for this alias nor configured a default model."""
+    model_id, how = resolve_client_model(alias)
+    if not model_id:
+        raise CatalogError(
+            f"model alias {alias!r} has no pinned model: ask the client "
+            f"which model they want to use for this alias, or have them "
+            f"configure a default model (agents.defaults.model in "
+            f"openclaw.json, or {_client_choice_env(alias)}); refusing to "
+            f"guess a model id")
+    provider, _, bare = model_id.partition("/")
+    if bare:
+        return {"provider": provider.strip(), "model": bare.strip(),
+                "alias": alias, "source": how,
+                "resolution": "client-choice-or-configured-default"}
+    return {"provider": "client", "model": model_id,
+            "alias": alias, "source": how,
+            "resolution": "client-choice-or-configured-default"}
+
+
 def resolve(alias: str, *, catalog: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Full catalog entry for an alias (provider, model, unit_costs, ...).
     Fail-closed on unknown alias / retired resolution."""
     if not flag_enabled():
         if alias not in ALIASES:
             raise CatalogError(f"unknown model alias {alias!r}")
+        if alias not in ROLLBACK_MODELS:
+            # Client-resolved alias (text.strong): no rollback literal
+            # exists for it on either path, by design.
+            return _client_resolved_entry(alias)
         rb_key = alias
         model = ROLLBACK_MODELS.get(rb_key)
         if model is None:
@@ -158,6 +255,22 @@ def resolve(alias: str, *, catalog: Optional[Dict[str, Any]] = None) -> Dict[str
         raise CatalogError(
             f"model alias {alias!r} not present in catalog "
             f"({catalog_path()}); refusing to guess a model id")
+    if entry.get("resolution") == "client-choice-or-configured-default":
+        resolved = _client_resolved_entry(alias)
+        retired = set(doc.get("retired", {}) or {})
+        if resolved["model"] in retired:
+            raise CatalogError(
+                f"alias {alias!r} resolves (via {resolved['source']}) to "
+                f"retired model id {resolved['model']!r}; ask the client "
+                f"for a live model")
+        out = dict(entry)
+        out.update(resolved)
+        out["unit_costs"] = {
+            "status": "cost_unknown",
+            "basis": "client-resolved alias: priced from the client's "
+                     "resolved model at runtime, never from a catalog pin",
+        }
+        return out
     retired = set(doc.get("retired", {}) or {})
     candidates = [c for c in (entry.get("candidates") or []) if c not in retired]
     model = entry.get("model")

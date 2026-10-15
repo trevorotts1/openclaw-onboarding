@@ -34,6 +34,7 @@ and in the phase sidecar instead of a quiet default.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -46,6 +47,15 @@ from presentation_job import dispatcher  # noqa: E402
 from presentation_job import model_router  # noqa: E402
 from presentation_job import resource_profile  # noqa: E402
 
+
+# Client-choice doctrine: the catalog's text.strong alias (the router's
+# deepseek-v4.1-flash candidate) resolves ONLY from client configuration
+# now -- there is no catalog pin to read a spelling from. This file's box
+# is a client who configured that model, provider-qualified the way
+# openclaw.json spells it; what reaches route["provider"] is still the
+# catalog's own provider string for the resolved entry.
+os.environ.setdefault("PRESENTATION_MODEL_TEXT_STRONG",
+                      "deepseek/deepseek-v4.1-flash")
 
 #: What the CATALOG spells (what reaches route["provider"]).
 _ROUTED_SPELLING = model_router.resolve_alias("deepseek-v4.1-flash")["provider"]

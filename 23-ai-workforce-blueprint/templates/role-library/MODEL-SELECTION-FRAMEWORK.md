@@ -28,7 +28,7 @@ The Capability-Class layer sits **above** the existing tier system. It maps each
 | **MECHANICAL** | Fast cheap deterministic transforms — submit, dispatch, format, upload, librarian, monitor, schedule, transcribe. | `fast` | `text` |
 | **CONVERSATIONAL** | Friendly back-and-forth with a human — brainstorming, intake, onboarding, concierge, support, sales calls. | `mid` | `text` |
 | **VISION** | **ADDITIVE** layer — not a standalone primary. Flags any role that must READ images; layered on top of the primary class as a hard modality requirement of `vision`. | *(inherits primary)* | `vision` |
-| **GENERATION** | Image/audio/video MEDIA creation. Fixed external pipeline — KIE.ai `gpt-image-2.5` for images, Fish Audio for audio, dedicated video pipeline. **The LLM resolver MUST NOT assign an LLM here.** | `N/A` | `image_generation` / `audio_generation` / `video_generation` |
+| **GENERATION** | Image/audio/video MEDIA creation. Fixed external pipeline: KIE.ai (the client's chosen image model) for images, Fish Audio for audio, dedicated video pipeline. **The LLM resolver MUST NOT assign an LLM here.** | `N/A` | `image_generation` / `audio_generation` / `video_generation` |
 
 > **VISION is additive.** A role tagged `HEAVY-REASONING+VISION` gets the heavy tier chain but the model MUST pass the `model_has_modality(model_id, "vision")` gate. A role tagged `MECHANICAL+VISION` gets the fast chain + vision gate.
 
@@ -40,13 +40,13 @@ The class maps to a `select_model.py` purpose-tier argument. The existing chain 
 
 | Class | `--purpose-tier` | Chain positions (abbreviated) |
 |---|---|---|
-| HEAVY-REASONING | `heavy` | Ollama DeepSeek-pro → Ollama Kimi → OpenRouter DeepSeek-pro → OpenRouter Kimi → OAuth GPT |
-| WRITING | `mid` | Ollama Minimax → OpenRouter Mimo-pro → OpenRouter GLM |
+| HEAVY-REASONING | `heavy` | The client's choice, or their configured default model, at the heavy tier |
+| WRITING | `mid` | The client's choice, or their configured default model, at the mid tier |
 | JUDGMENT | `mid` | same as WRITING |
-| MECHANICAL | `fast` | Ollama DeepSeek-flash → OpenRouter DeepSeek-flash → Gemini Flash Lite |
+| MECHANICAL | `fast` | The client's choice, or their configured default model, at the fast tier |
 | CONVERSATIONAL | `mid` | same as WRITING |
-| VISION (additive) | *(from primary)* | same chain as primary class, pre-filtered to vision-capable models |
-| GENERATION | *(fixed pipeline)* | KIE.ai `gpt-image-2-5-sunburst-image-to-image` / Fish Audio / video pipeline |
+| VISION (additive) | *(from primary)* | same resolution as primary class, pre-filtered to vision-capable models |
+| GENERATION | *(fixed pipeline)* | KIE.ai (the client's chosen image model) / Fish Audio / video pipeline |
 
 ---
 
@@ -262,11 +262,11 @@ Any role not matched by A, B, or C resolves via its department's canonical tier 
 
 The following role slugs map to GENERATION class. The resolver returns a fixed pipeline target, not an LLM:
 
-- `ai-image-generator-specialist` → KIE.ai `gpt-image-2-5-sunburst-image-to-image`
+- `ai-image-generator-specialist` → KIE.ai (the client's chosen image model)
 - `ai-video-generator-specialist` → video pipeline
 - `music-and-audio-producer` → Fish Audio
-- `generation-operator` / `ROLE--generation-operator` → KIE.ai `gpt-image-2-5-sunburst-image-to-image`
-- `slide-image-creator` → KIE.ai `gpt-image-2-5-sunburst-image-to-image`
+- `generation-operator` / `ROLE--generation-operator` → KIE.ai (the client's chosen image model)
+- `slide-image-creator` → KIE.ai (the client's chosen image model)
 - `sound-design-sfx-specialist` → Fish Audio
 - `audiobook-production-specialist` → Fish Audio
 - `ai-voice-specialist-11-labs-play.ht` → Fish Audio / ElevenLabs (external)
