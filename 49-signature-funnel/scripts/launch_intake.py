@@ -298,6 +298,11 @@ def _recommend_journey(s) -> str:
 
 
 def _h_journey(s, q, raw, value, ref):
+    if "packages" in value:
+        # The packages themselves (names, contents, prices) — a
+        # multiple_options plan is built from these, never invented.
+        _set(s, "offers.main.packages", value["packages"], "provided",
+             q["id"], ref)
     if _answered(s, "journey_mode"):
         return
     choice = _match_choice(raw, q["choices"])
@@ -551,10 +556,57 @@ def _offer_from_answers(session: Dict[str, Any], slot: str, field: str,
             "test_only": bool(session.get("test_only"))}
 
 
+def _package_offers(session: Dict[str, Any],
+                    missing: List[str]) -> List[Dict[str, Any]]:
+    """The main offers of a multiple_options plan, built ONLY from packages
+    the client actually supplied (review D2: assembly previously emitted
+    exactly one main offer, so a multiple_options approval could be spent
+    on a plan dispatch would always refuse). Fewer than two named, priced
+    packages is a missing fact, not an improvisation prompt."""
+    e = _get(session, "offers.main.packages")
+    pkgs = e["value"] if e else None
+    if not isinstance(pkgs, list) or len(pkgs) < 2:
+        missing.append("the packages for the selection page — a few-packages "
+                       "launch needs at least two packages, each with a name "
+                       "and a price")
+        return []
+    out: List[Dict[str, Any]] = []
+    for i, pkg in enumerate(pkgs):
+        oid = f"MAIN-{chr(65 + i)}"
+        if not isinstance(pkg, dict) or not (pkg.get("display_name")
+                                             or pkg.get("name")):
+            missing.append(f"package {i + 1} has no name")
+            continue
+        name = pkg.get("display_name") or pkg.get("name")
+        price = pkg.get("price") if isinstance(pkg.get("price"), dict) else {}
+        amount = price.get("amount_minor", pkg.get("amount_minor"))
+        if amount is None:
+            missing.append(f"price for package {name} (unknown is not a price)")
+        status = pkg.get("price_status") or (
+            "recommended_unapproved" if e["state"] == "recommended_unapproved"
+            else "unknown" if amount is None else "provided")
+        out.append({
+            "offer_id": oid, "slot": "main", "display_name": name,
+            "deliverables": list(pkg.get("deliverables", [])), "exclusions": [],
+            "entitlement_ids": [oid.lower()], "requires": [], "excludes": [],
+            "native_product_id": None,
+            "prices": [{"price_choice_id": f"{oid}-USD",
+                        "currency": price.get("currency", "USD"),
+                        "amount_minor": amount, "billing_type": "one_time",
+                        "native_price_id": None, "schedule": [],
+                        "terms_source": None, "approval_status": status}],
+            "source_kind": "test_fixture" if session.get("test_only") else "owner",
+            "source_ref": f"intake:{session['session_id']}",
+            "test_only": bool(session.get("test_only"))})
+    return out
+
+
 def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     """Assemble the launch record + compiled route graph from the ledger.
     Stops at awaiting_missing_fact when an enabled chargeable slot lacks a
-    product, a known price, or fulfillment — never fills them in."""
+    product, a known price, or fulfillment — never fills them in. The
+    assembled record must ALSO pass the domain validator before it can be
+    presented: an invalid plan never consumes a client approval (D2)."""
     missing: List[str] = []
     journey = (_get(session, "journey_mode") or {}).get("value")
     if not journey:
@@ -564,14 +616,18 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
                   {"upsell_1": False, "downsell_1": False, "upsell_2": False})
 
     offers: List[Dict[str, Any]] = []
-    main = _offer_from_answers(session, "main", "offers.main.description", "MAIN")
-    if main is None:
-        missing.append("main offer (what is being sold)")
+    if journey == "multiple_options":
+        offers.extend(_package_offers(session, missing))
     else:
-        p = main["prices"][0]
-        if p["amount_minor"] is None:
-            missing.append("main offer price (unknown is not a price)")
-        offers.append(main)
+        main = _offer_from_answers(session, "main", "offers.main.description",
+                                   "MAIN")
+        if main is None:
+            missing.append("main offer (what is being sold)")
+        else:
+            p = main["prices"][0]
+            if p["amount_minor"] is None:
+                missing.append("main offer price (unknown is not a price)")
+            offers.append(main)
     slot_ids = {"bump": "BUMP", "upsell_1": "U1", "downsell_1": "D1",
                 "upsell_2": "U2"}
     for slot, oid in slot_ids.items():
@@ -624,15 +680,34 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
     launch["route_graph_ref"] = f"route-graph:{launch['launch_id']}:rev{launch['revision']}"
     launch["route_graph_hash"] = clr.graph_hash(graph)
     launch["status"] = "awaiting_plan_approval"
+    # Domain validation is the last gate before presentation (D2 backstop):
+    # any violation is a fact the plan still lacks, never an approval spent
+    # on an unbuildable plan.
+    violations = vlp.validate_launch(launch)
+    if violations:
+        missing.extend(f"plan validation: {v}" for v in violations)
+        session["state"] = "awaiting_missing_fact"
+        session["missing_facts"] = missing
+        session["plan"] = None
+        _persist(session)
+        return {"state": "awaiting_missing_fact", "missing": missing}
     session["plan"] = launch
     session["route_graph"] = graph
     session["plan_hash"] = plan_hash(launch)
-    session["state"] = "awaiting_plan_approval"
+    # Doc 03 §3 state machine (D4): a plan built on recommendations passes
+    # through recommendation_ready; a plan of only supplied facts goes
+    # straight to awaiting_plan_approval.
+    used_recommendations = any(
+        entry["state"] == "recommended_unapproved"
+        for entry in session["answers"].values())
+    session["state"] = ("recommendation_ready" if used_recommendations
+                        else "awaiting_plan_approval")
     session.pop("missing_facts", None)
     session["history"].append({"at": _now(), "event": "plan_assembled",
-                               "plan_hash": session["plan_hash"]})
+                               "plan_hash": session["plan_hash"],
+                               "state": session["state"]})
     _persist(session)
-    return {"state": "awaiting_plan_approval", "plan": launch,
+    return {"state": session["state"], "plan": launch,
             "plan_hash": session["plan_hash"]}
 
 
@@ -662,7 +737,9 @@ def render_summary(session: Dict[str, Any]) -> str:
     lines.append("2. Interested visitors leave their first name, last name, email and phone.")
     main = by_slot.get("main")
     if plan["journey_mode"] == "multiple_options":
-        lines.append("3. They compare your packages, then check out.")
+        mains = [o for o in plan["offers"] if o["slot"] == "main"]
+        named = ", ".join(f"{o['display_name']} ({price_of(o)})" for o in mains)
+        lines.append(f"3. They compare your packages — {named} — then check out.")
     else:
         lines.append(f"3. They go straight to checkout for "
                      f"{main['display_name']} ({price_of(main)}).")
@@ -693,13 +770,23 @@ def render_summary(session: Dict[str, Any]) -> str:
 
 
 def present_plan(session: Dict[str, Any]) -> str:
-    if session["state"] == "collecting":
+    """Present the plan summary. From collecting, awaiting_missing_fact, or
+    revision_requested it (re)assembles first — supplying the missing fact
+    and asking for the plan again is the normal recovery path, never a dead
+    end (review D3)."""
+    if session["state"] in ("collecting", "awaiting_missing_fact",
+                            "revision_requested"):
         result = assemble_plan(session)
-        if result["state"] != "awaiting_plan_approval":
+        if result["state"] not in ("awaiting_plan_approval",
+                                   "recommendation_ready"):
             raise IntakeError("plan is not ready: missing " +
                               "; ".join(result.get("missing", [])))
     if session["state"] == "recommendation_ready":
         session["state"] = "awaiting_plan_approval"
+        session["history"].append({"at": _now(), "event": "plan_presented"})
+        _persist(session)
+    if session["state"] != "awaiting_plan_approval":
+        raise IntakeError(f"no plan to present from state {session['state']!r}")
     return render_summary(session)
 
 
@@ -711,8 +798,18 @@ def approve(session: Dict[str, Any], approval: Dict[str, Any],
     """Bind the client's approval to the exact plan. Runs the gate; on
     success the launch record flips to approved, recommended fields the plan
     used become approved_recommendation, and the session may build."""
+    if session["state"] == "recommendation_ready" and session.get("plan"):
+        # The approval act itself is the presentation acknowledgment: the
+        # client is approving THIS hashed plan, recommendations included.
+        session["state"] = "awaiting_plan_approval"
+        session["history"].append({"at": _now(),
+                                   "event": "plan_presented_via_approve"})
     if session["state"] != "awaiting_plan_approval" or not session.get("plan"):
         raise IntakeError("no plan is awaiting approval in this session")
+    violations = vlp.validate_launch(session["plan"])
+    if violations:
+        raise IntakeError("plan no longer validates; refusing to spend an "
+                          "approval on it: " + "; ".join(violations))
     assertion = vlp.assert_plan_build_approved(
         session["plan"], approval,
         client_identity_ref=session["client_identity_ref"],
@@ -731,8 +828,21 @@ def approve(session: Dict[str, Any], approval: Dict[str, Any],
     return assertion
 
 
+def begin_build(session: Dict[str, Any]) -> Dict[str, Any]:
+    """The doc 03 §3 transition approved -> building. Only an approved
+    session may enter building; the launch record's status follows."""
+    if session["state"] != "approved" or not session.get("plan"):
+        raise IntakeError("only an approved plan may enter building")
+    session["plan"]["status"] = "building"
+    session["state"] = "building"
+    session["history"].append({"at": _now(), "event": "building"})
+    _persist(session)
+    return session
+
+
 def request_revision(session: Dict[str, Any], note: str = "") -> Dict[str, Any]:
-    if session["state"] not in ("awaiting_plan_approval", "approved"):
+    if session["state"] not in ("awaiting_plan_approval", "recommendation_ready",
+                                "approved"):
         raise IntakeError("no plan to revise")
     session["plan_revision"] += 1
     session["plan"] = None
@@ -848,6 +958,9 @@ def _self_test() -> int:
     a = approve(s, approval_for(s), worker_identity_ref="worker-9")
     say(s["state"] == "approved" and a["verification_class"].startswith("recorded"),
         "expert: approval binds and is honestly classed as recorded consent")
+    begin_build(s)
+    say(s["state"] == "building" and s["plan"]["status"] == "building",
+        "approved session enters building (doc 03 §3, D4)")
 
     # --- approval negatives
     s2 = mk()
@@ -871,7 +984,13 @@ def _self_test() -> int:
     answer(s2, "d4_image_provider", "Recommend one")
     s2["available_providers"] = []
     r2 = assemble_plan(s2)
-    say(r2["state"] == "awaiting_plan_approval", "overwhelmed: plan assembles")
+    say(r2["state"] == "recommendation_ready",
+        "overwhelmed: a plan built on recommendations passes through "
+        "recommendation_ready (doc 03 §3, D4)")
+    present_plan(s2)
+    say(s2["state"] == "awaiting_plan_approval",
+        "presenting the plan moves recommendation_ready -> "
+        "awaiting_plan_approval (D4)")
     try:
         approve(s2, approval_for(s2, owner_identity_ref="someone-else"),
                 worker_identity_ref="worker-9")
@@ -907,6 +1026,45 @@ def _self_test() -> int:
     say(r3["state"] == "awaiting_missing_fact" and
         any("price" in m for m in r3["missing"]),
         "unknown main price blocks plan at awaiting_missing_fact")
+    # Review probe C (D3): supplying the missing fact then asking for the
+    # plan recovers through present_plan — awaiting_missing_fact is not a
+    # dead end.
+    answer(s3, "b2_price", "I have a price",
+           value={"amount_minor": 19900, "currency": "USD"})
+    try:
+        text3 = present_plan(s3)
+        say(s3["state"] == "awaiting_plan_approval" and "199" in text3,
+            "present_plan recovers after the missing price is supplied (D3)")
+    except IntakeError as exc:
+        say(False, f"present_plan recovers after the missing price is "
+                   f"supplied (D3) — raised {exc}")
+
+    # --- review probe B (D2): multiple_options needs real packages
+    s7 = mk()
+    answer(s7, "a1_offer", "A conference with levels")
+    answer(s7, "b1_journey", "A few packages")
+    answer(s7, "c1_bump", "No add-on")
+    answer(s7, "c2_u1", "No upgrade")
+    r7 = assemble_plan(s7)
+    say(r7["state"] == "awaiting_missing_fact" and
+        any("packages" in m for m in r7["missing"]),
+        "multiple_options without packages stops at awaiting_missing_fact "
+        "instead of spending an approval on an unbuildable plan (D2)")
+    answer(s7, "b1_journey", "A few packages", value={"packages": [
+        {"display_name": "Discovery Pass", "deliverables": ["day 1"],
+         "price": {"amount_minor": 4900, "currency": "USD"}},
+        {"display_name": "Elevation Elite", "deliverables": ["all days"],
+         "price": {"amount_minor": 49700, "currency": "USD"}}]})
+    r7 = assemble_plan(s7)
+    mains7 = [o for o in (r7.get("plan") or {}).get("offers", [])
+              if o["slot"] == "main"]
+    say(r7["state"] == "awaiting_plan_approval" and len(mains7) == 2 and
+        vlp.validate_launch(r7["plan"]) == [],
+        "multiple_options with two named, priced packages assembles a valid "
+        "plan (D2)")
+    say("Discovery Pass" in render_summary(s7) and
+        "Elevation Elite" in render_summary(s7),
+        "selection-page summary names every package with its price (D2)")
 
     # --- free registration: free is a known price of 0
     s4 = mk(known={"journey_mode": "free_entry"})

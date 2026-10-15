@@ -76,18 +76,34 @@ def validate_result(res: Any, request: Optional[Dict[str, Any]]) -> List[str]:
     if request is not None:
         for f in ("request_id", "input_hash", "page_id", "launch_id",
                   "revision", "tenant_id", "location_id"):
-            if res[f] != request[f]:
+            if f in request and res[f] != request[f]:
                 fails.append(f"result does not echo its request on {f}: "
                              f"{res[f]!r} != {request[f]!r}")
-        if res["test_only"] != request["test_only"]:
+        if "test_only" in request and res["test_only"] != request["test_only"]:
             fails.append("result test_only disagrees with its request")
     return fails
+
+
+def _manifest_requests(manifest: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Echo anchors carried by the dispatch manifest itself (request_id,
+    input_hash, page_id per request, plus the manifest's launch/revision).
+    Echo validation ALWAYS runs against at least these — the guarantee in
+    this module's docstring never depends on the caller volunteering the
+    full requests map (review D6b)."""
+    return {r["request_id"]: {"request_id": r["request_id"],
+                              "input_hash": r["input_hash"],
+                              "page_id": r["page_id"],
+                              "launch_id": manifest["launch_id"],
+                              "revision": manifest["revision"]}
+            for r in manifest["requests"]}
 
 
 def collect(manifest: Dict[str, Any], results: List[Dict[str, Any]],
             requests: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
     """manifest: the dispatch manifest. results: page-result dicts.
-    requests: optional request_id -> request map for echo validation."""
+    requests: optional request_id -> request map for FULL echo validation
+    (adds tenant/location/test_only); when omitted, echo validation still
+    runs against the manifest's own request anchors."""
     expected = {r["page_role"]: r for r in manifest["requests"]}
     by_role: Dict[str, Dict[str, Any]] = {}
     problems: List[str] = []
@@ -104,7 +120,7 @@ def collect(manifest: Dict[str, Any], results: List[Dict[str, Any]],
             problems.append(f"result for unknown request {rid} — not part of "
                             "this dispatch")
             continue
-        req = (requests or {}).get(rid)
+        req = (requests or _manifest_requests(manifest)).get(rid)
         fails = validate_result(res, req)
         if fails:
             problems.extend(f"{role}: {f}" for f in fails)
@@ -224,6 +240,17 @@ def _self_test() -> int:
     cp = collect(manifest, [stray])
     say(cp["aggregate_status"] == "blocked" and cp["problems"],
         "a result that echoes no request in this dispatch is a problem")
+    # Review probe E (D6b): with NO requests map supplied, a result whose
+    # input_hash does not echo the manifest's anchor must not count — the
+    # echo guarantee comes from the manifest itself.
+    forged = res("landing", "live_verified", proof="L5")
+    forged["input_hash"] = "GARBAGE-NOT-THE-REAL-HASH"
+    cp = collect(manifest, [forged, res("checkout", "live_verified", proof="L5"),
+                            res("thank_you", "live_verified", proof="L5")])
+    say(cp["aggregate_status"] != "live_verified" and
+        any("input_hash" in p for p in cp["problems"]) and
+        "landing" in cp["missing_roles"],
+        "a non-echoing result is refused even without a requests map (D6b)")
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
 

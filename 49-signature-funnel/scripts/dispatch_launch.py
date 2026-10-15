@@ -14,8 +14,11 @@ FAIL-CLOSED, in this order:
   4. Write target discipline: local_only needs nothing more;
      approved_test_location needs a test_location_use approval;
      approved_live_publication needs test_location_use + page_publication
-     approvals, each bound to the same plan hash. Approvals are separate
-     types and are never inferred from the plan approval.
+     approvals. Every scoped approval passes the SAME gate discipline as
+     the plan approval (assert_scoped_approval): separate type, scope
+     containing the type, plan-hash binding, client identity, no worker
+     self-approval, provenance reference, revocation, expiry. Approvals
+     are never inferred from the plan approval.
 
 One idempotent page request per launch revision + page role. The dispatch
 key is tenant + launch + revision + role + request hash: rebuilding the
@@ -147,22 +150,43 @@ def validate_request(req: Dict[str, Any]) -> List[str]:
 
 def _check_scoped_approvals(launch: Dict[str, Any],
                               approvals: List[Dict[str, Any]],
-                              target: str) -> None:
+                              target: str, *,
+                              client_identity_ref: str,
+                              worker_identity_ref: str) -> None:
+    """Scoped side-effect approvals get the FULL gate discipline (doc 02 §9,
+    doc 03 §9): separate type, scope containing the type, plan-hash binding,
+    client identity, no worker self-approval, provenance reference,
+    revocation, expiry — via validate_launch_plan.assert_scoped_approval,
+    the same helper core the plan gate uses. A record the worker minted
+    alone authorizes nothing."""
     needed = {"local_only": [],
               "approved_test_location": ["test_location_use"],
               "approved_live_publication": ["test_location_use",
                                             "page_publication"]}[target]
-    plan_hash = vlp.plan_document_hash(launch)
     for need in needed:
-        match = [a for a in approvals
-                 if a.get("subject_type") == need
-                 and a.get("subject_hash") == plan_hash
-                 and a.get("revoked") is False]
-        if not match:
+        candidates = [a for a in approvals
+                      if isinstance(a, dict)
+                      and a.get("subject_type") == need]
+        if not candidates:
             raise DispatchError(
                 f"write target {target} requires a {need} approval bound to "
                 "this plan hash; none supplied (approvals are separate types "
                 "and never inferred from the plan approval)")
+        first_error: Optional[str] = None
+        for cand in candidates:
+            try:
+                vlp.assert_scoped_approval(
+                    launch, cand, need,
+                    client_identity_ref=client_identity_ref,
+                    worker_identity_ref=worker_identity_ref)
+                break
+            except vlp.ApprovalError as exc:
+                if first_error is None:
+                    first_error = str(exc)
+        else:
+            raise DispatchError(
+                f"write target {target}: no {need} approval passed the gate "
+                f"discipline — {first_error}")
 
 
 def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
@@ -189,7 +213,9 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
         raise DispatchError("re-compiled route graph hash does not match the "
                             "record's route_graph_hash — the approved plan and "
                             "its route disagree; re-plan, never dispatch")
-    _check_scoped_approvals(launch, scoped_approvals or [], allowed_write_target)
+    _check_scoped_approvals(launch, scoped_approvals or [], allowed_write_target,
+                            client_identity_ref=client_identity_ref,
+                            worker_identity_ref=worker_identity_ref)
     requests = build_requests(launch, graph, copy_profile=copy_profile,
                               allowed_write_target=allowed_write_target)
     for r in requests:
@@ -373,13 +399,38 @@ def _self_test() -> int:
         say(False, "test-location dispatch without its approval must fail")
     except DispatchError:
         say(True, "test-location write target requires its own scoped approval")
-    scoped = [dict(approval, approval_id="APPR-T", subject_type="test_location_use")]
+    scoped = [dict(approval, approval_id="APPR-T",
+                   subject_type="test_location_use",
+                   scope=["test_location_use"])]
     m3 = dispatch(launch, approval, client_identity_ref="client-1",
                   worker_identity_ref="worker-9",
                   allowed_write_target="approved_test_location",
                   scoped_approvals=scoped, executor=_simulated_executor("test"))
     say(len(m3["results"]) == 7 and m3["execution"] == "executed",
         "with the scoped approval + executor, dispatch executes and returns results")
+    # Review probe D (D6): fabricated scoped approvals — worker as owner,
+    # no provenance reference, recorded in 2020, class "none" — must NOT
+    # authorize a live publication target.
+    fabricated = [
+        dict(approval, approval_id="F-T", subject_type="test_location_use",
+             scope=["test_location_use"], owner_identity_ref="worker-9",
+             source_message_ref="", recorded_at="2020-01-01T00:00:00Z",
+             verification_class="none"),
+        dict(approval, approval_id="F-P", subject_type="page_publication",
+             scope=["page_publication"], owner_identity_ref="worker-9",
+             source_message_ref="", recorded_at="2020-01-01T00:00:00Z",
+             verification_class="none")]
+    try:
+        dispatch(launch, approval, client_identity_ref="client-1",
+                 worker_identity_ref="worker-9",
+                 allowed_write_target="approved_live_publication",
+                 scoped_approvals=fabricated)
+        say(False, "fabricated scoped approvals must not authorize live "
+                   "publication (D6)")
+    except DispatchError:
+        say(True, "fabricated scoped approvals are refused for live "
+                  "publication (D6: identity, provenance, expiry, class all "
+                  "checked)")
 
     # Consumer-adapter seam (S49-08): a real subprocess consumer whose
     # result echoes the request is accepted; one that echoes wrongly is not.

@@ -267,6 +267,7 @@ def validate_graph(graph: Any, launch: Optional[Dict[str, Any]] = None) -> List[
         return fails + ["graph carries no non-empty 'edges' array"]
     adjacency: Dict[str, List[str]] = {i: [] for i in ids}
     seen_pairs: Set[Tuple[str, str]] = set()
+    edge_map: Dict[Tuple[str, str], str] = {}
     for e in edges:
         if not isinstance(e, dict):
             fail(f"an edge entry is not an object: {e!r}")
@@ -284,10 +285,23 @@ def validate_graph(graph: Any, launch: Optional[Dict[str, Any]] = None) -> List[
         if (frm, event) in seen_pairs:
             fail(f"duplicate edge for ({role_of[frm]}, {event}) — routing must be deterministic")
         seen_pairs.add((frm, event))
-        if event == "payment_succeeded" and not guard.startswith("verified_"):
-            fail(f"paid edge {role_of[frm]}->"
-                 f"{role_of[to]} guard {guard!r} is not a verified_* guard — "
-                 "a click or redirect never proves payment")
+        if event == "payment_succeeded":
+            expected_guard = {"checkout": GUARD_MAIN_PAYMENT,
+                              "upsell_1": GUARD_U1_PAYMENT,
+                              "downsell_1": GUARD_D1_PAYMENT,
+                              "upsell_2": GUARD_U2_PAYMENT}.get(role_of[frm])
+            if expected_guard is not None and guard != expected_guard:
+                fail(f"paid edge {role_of[frm]}->{role_of[to]} guard "
+                     f"{guard!r} is not the owner's verified guard "
+                     f"{expected_guard!r} — a click, a redirect, or a "
+                     "near-miss guard name never proves payment")
+        if role_of[frm] == "landing" and event == "interest_submitted" \
+                and guard != GUARD_CONTACT_SUBMIT:
+            fail(f"landing edge guard {guard!r} is not {GUARD_CONTACT_SUBMIT!r}")
+        if role_of[frm] == "product_selection" \
+                and event == "selection_validated" and guard != GUARD_SELECTION:
+            fail(f"selection edge guard {guard!r} is not {GUARD_SELECTION!r}")
+        edge_map[(role_of[frm], event)] = role_of[to]
         if event == "explicit_decline" and guard != GUARD_NO_CHARGE_DECLINE:
             fail(f"decline edge {role_of[frm]}->{role_of[to]} guard must be "
                  f"{GUARD_NO_CHARGE_DECLINE!r}")
@@ -297,6 +311,37 @@ def validate_graph(graph: Any, launch: Optional[Dict[str, Any]] = None) -> List[
         if role_of[frm] == "thank_you":
             fail("thank_you has an outgoing edge — it is the unique terminal")
         adjacency[frm].append(to)
+
+    # Owner-graph target law (review D5): the graph's SHAPE is fixed by the
+    # owner's route — a paid U1 or D1 routes to the ONE canonical U2 when U2
+    # exists, and to thank_you only when it does not; declines follow the
+    # same fixed map. Reachability alone cannot see a retargeted edge.
+    def expect_target(frm_role: str, event: str, want: str) -> None:
+        got = edge_map.get((frm_role, event))
+        if got is not None and got != want:
+            fail(f"{frm_role} --{event}--> routes to {got!r}; the owner's "
+                 f"graph requires {want!r}")
+
+    role_set = set(roles)
+    expect_target("landing", "interest_submitted",
+                  "product_selection" if "product_selection" in role_set
+                  else "checkout")
+    if "product_selection" in role_set:
+        expect_target("product_selection", "selection_validated", "checkout")
+    expect_target("checkout", "payment_succeeded",
+                  "upsell_1" if "upsell_1" in role_set else "thank_you")
+    if "upsell_1" in role_set:
+        expect_target("upsell_1", "payment_succeeded",
+                      "upsell_2" if "upsell_2" in role_set else "thank_you")
+        expect_target("upsell_1", "explicit_decline",
+                      "downsell_1" if "downsell_1" in role_set else "thank_you")
+    if "downsell_1" in role_set:
+        expect_target("downsell_1", "payment_succeeded",
+                      "upsell_2" if "upsell_2" in role_set else "thank_you")
+        expect_target("downsell_1", "explicit_decline", "thank_you")
+    if "upsell_2" in role_set:
+        expect_target("upsell_2", "payment_succeeded", "thank_you")
+        expect_target("upsell_2", "explicit_decline", "thank_you")
 
     # Acyclicity + dead ends + reachability (ported law from the reference
     # contracts, extended with reverse reachability to the terminal).
@@ -612,6 +657,22 @@ def _self_test() -> int:
                          "guard": GUARD_NO_CHARGE_DECLINE})
     say(any("checkout" in v for v in validate_graph(bad)),
         "validator catches a checkout decline edge")
+    # Review probe G2 (D5): retargeted paid edges and near-miss guards.
+    bad = _c.deepcopy(g)
+    for e in bad["edges"]:
+        if e["from"].endswith("UPSELL_1") and e["event"] == "payment_succeeded":
+            e["to"] = g["nodes"][-1]["page_id"]
+        if e["from"].endswith("DOWNSELL_1") and e["event"] == "payment_succeeded":
+            e["to"] = g["nodes"][-1]["page_id"]
+    say(any("owner's graph requires" in v for v in validate_graph(bad)),
+        "validator catches U1/D1 paid edges retargeted away from the "
+        "canonical U2 (D5)")
+    bad = _c.deepcopy(g)
+    for e in bad["edges"]:
+        if e["from"].endswith("UPSELL_1") and e["event"] == "payment_succeeded":
+            e["guard"] = "verified_banana"
+    say(any("verified_u1_payment" in v for v in validate_graph(bad)),
+        "validator catches a near-miss paid guard name (D5)")
 
     # Generated machine test cases all pass against the resolver, per profile.
     for label, launch in (("full", full), ("simple", simple), ("free", free),
