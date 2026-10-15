@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Choose your package - LOCAL ONLY preview</title>
+<style>/* Skill 78 selection UI component. Owner: S78 (comparison matrix component,
+   doc 16). Namespaced sl78- classes and --sl78-* token variables only: no
+   broad resets, nothing that can collide with native GHL form styling.
+   Brand values arrive through the token variables, set by the brand loader
+   (S71). The defaults below are structural system colors (CanvasText,
+   Canvas, Highlight, GrayText) so the component renders legibly with no
+   brand loaded; they are not a client palette and every one of them is
+   overridden by the brand loader at installation. The error color is a
+   functional constant (error signaling), not a brand value. */
+.sl78-selection {
+  --sl78-ink: CanvasText;
+  --sl78-accent: Highlight;
+  --sl78-surface: Canvas;
+  --sl78-border: GrayText;
+  --sl78-focus: Highlight;
+  --sl78-error: #b00020; /* functional error red, not a brand color */
+  --sl78-radius: 12px;
+  color: var(--sl78-ink);
+  background: var(--sl78-surface);
+  font-family: inherit;
+}
+.sl78-selection * { box-sizing: border-box; }
+.sl78-offers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.sl78-offer {
+  border: 2px solid var(--sl78-border);
+  border-radius: var(--sl78-radius);
+  padding: 1rem;
+  display: block;
+  cursor: pointer;
+}
+.sl78-offer:focus-within {
+  outline: 3px solid var(--sl78-focus);
+  outline-offset: 2px;
+}
+.sl78-offer[data-selected="true"] {
+  border-color: var(--sl78-accent);
+  box-shadow: 0 0 0 1px var(--sl78-accent);
+}
+.sl78-offer input[type="radio"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--sl78-accent);
+}
+.sl78-offer input[type="radio"]:focus-visible {
+  outline: 3px solid var(--sl78-focus);
+  outline-offset: 2px;
+}
+.sl78-price { font-weight: 700; }
+.sl78-schedule { border: 0; margin: 0.5rem 0 0; padding: 0; }
+.sl78-schedule legend { font-weight: 600; padding: 0; }
+.sl78-schedule-option { display: block; padding: 0.25rem 0; }
+.sl78-fit { font-style: italic; }
+.sl78-exclusions { color: var(--sl78-ink); }
+.sl78-recommended-badge {
+  display: inline-block;
+  border: 1px solid var(--sl78-accent);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.85rem;
+}
+.sl78-error {
+  color: var(--sl78-error);
+  border: 2px solid var(--sl78-error);
+  border-radius: var(--sl78-radius);
+  padding: 0.75rem 1rem;
+}
+.sl78-reconfirm {
+  border: 2px solid var(--sl78-focus);
+  border-radius: var(--sl78-radius);
+  padding: 0.75rem 1rem;
+}
+.sl78-matrix { border-collapse: collapse; width: 100%; }
+.sl78-matrix th, .sl78-matrix td {
+  border: 1px solid var(--sl78-border);
+  padding: 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+/* Mobile: stacked offers. The comparison moves into a disclosure, but
+   material exclusions are rendered OUTSIDE it and are never hidden. */
+@media (max-width: 640px) {
+  .sl78-offers { grid-template-columns: 1fr; }
+  .sl78-matrix-wrap { display: block; }
+}
+</style>
+</head>
+<body>
+<!-- LOCAL ONLY PREVIEW: appearance evidence only, not an installed page, not handoff proof. State: selected. -->
+<main class="sl78-selection">
+<h1>Choose the package that fits you</h1>
+<p>You showed interest, so here are the exact options, what each one includes, and what each one costs.</p>
+
+<form class="sl78-form" method="post" action="#" novalidate>
+<fieldset class="sl78-offers">
+<legend>Packages</legend>
+<label class="sl78-offer"><input type="radio" name="sl78-selection" value="MAIN-ESS"> <strong>TEST ONLY Essential</strong> <p class="sl78-fit">Best for: TEST ONLY self-paced learners</p><p class="sl78-outcome">TEST ONLY finish the core course at your own pace</p><ul><li>TEST ONLY core course</li><li>TEST ONLY community access</li><li>TEST ONLY group coaching calls (One call per month) (limited)</li></ul><p class="sl78-exclusions">Not included:</p><ul><li>Private review sessions are not included</li></ul><p class="sl78-price">$97.00, one time</p><span class="sl78-cta">Choose TEST ONLY Essential</span></label><label class="sl78-offer" data-selected="true"><input type="radio" name="sl78-selection" value="MAIN-PRO" checked> <strong>TEST ONLY Professional</strong> <span class="sl78-recommended-badge">Recommended</span> <span class="sl78-rec-reason">Recommended for founders who need individual feedback</span><p class="sl78-fit">Best for: TEST ONLY founders who want individual feedback</p><p class="sl78-outcome">TEST ONLY get your work reviewed twice by a coach</p><ul><li>TEST ONLY core course</li><li>TEST ONLY community access</li><li>Two private review sessions</li><li>TEST ONLY group coaching calls</li></ul><p class="sl78-price">$197.00, one time</p><span class="sl78-cta">Choose TEST ONLY Professional</span></label><label class="sl78-offer"><input type="radio" name="sl78-selection" value="MAIN-ELITE"> <strong>TEST ONLY Elite</strong> <p class="sl78-fit">Best for: TEST ONLY founders who want a private strategy day</p><p class="sl78-outcome">TEST ONLY leave with a reviewed plan and a strategy day booked</p><ul><li>TEST ONLY core course</li><li>TEST ONLY community access</li><li>Two private review sessions</li><li>One private strategy day</li><li>TEST ONLY group coaching calls</li></ul><p class="sl78-price">$497.00 total, paid as: $248.50 today, $248.50 in 30 days</p><span class="sl78-cta">Choose TEST ONLY Elite</span></label>
+</fieldset>
+<details class="sl78-matrix-wrap">
+<summary>Compare packages side by side</summary>
+<table class="sl78-matrix">
+<tr><th scope="col">Included</th><th scope="col">TEST ONLY Essential</th><th scope="col">TEST ONLY Professional</th><th scope="col">TEST ONLY Elite</th></tr>
+<tr><th scope="row">TEST ONLY core course</th><td>Included</td><td>Included</td><td>Included</td></tr><tr><th scope="row">TEST ONLY community access</th><td>Included</td><td>Included</td><td>Included</td></tr><tr><th scope="row">TEST ONLY group coaching calls</th><td>Limited (One call per month)</td><td>Included</td><td>Included</td></tr><tr><th scope="row">Two private review sessions</th><td>Not included</td><td>Included</td><td>Included</td></tr><tr><th scope="row">One private strategy day</th><td>Not included</td><td>Not included</td><td>Included</td></tr>
+</table>
+</details>
+<section class="sl78-all-exclusions"><h2>Important exclusions</h2><ul><li>TEST ONLY Essential: Private review sessions are not included</li></ul></section>
+<section class="sl78-trust"><h2>Good to know</h2><ul><li>TEST ONLY: Prices on this page come from the approved catalog for this launch.</li><li>TEST ONLY: This page collects no payment details.</li></ul></section>
+<section class="sl78-faq"><h2>Questions</h2><details><summary>TEST ONLY: Can I change packages later?</summary><p>TEST ONLY: Yes, before checkout you can go back and choose a different package; nothing is charged on this page.</p></details><details><summary>TEST ONLY: When am I charged?</summary><p>TEST ONLY: On the next step, the order form, after you review the exact total.</p></details></section>
+<button type="submit" class="sl78-continue">Continue</button>
+</form>
+</main>
+<script>
+// Progressive enhancement only; the form works without it.
+// 1) Keep data-selected in sync with whichever radio is selected.
+// 2) Open the comparison disclosure on wide viewports, closed on narrow.
+(function () {
+  var form = document.querySelector("form.sl78-form");
+  function sl78SyncSelected() {
+    document.querySelectorAll(".sl78-offer").forEach(function (card) {
+      var radio = card.querySelector('input[name="sl78-selection"]');
+      card.dataset.selected = radio && radio.checked ? "true" : "false";
+    });
+  }
+  if (form) {
+    form.addEventListener("change", sl78SyncSelected);
+    sl78SyncSelected();
+  }
+  var details = document.querySelector(".sl78-matrix-wrap");
+  function sl78SyncDetails() {
+    if (details) { details.open = window.innerWidth >= 641; }
+  }
+  sl78SyncDetails();
+  window.addEventListener("resize", sl78SyncDetails);
+})();
+</script>
+</body>
+</html>

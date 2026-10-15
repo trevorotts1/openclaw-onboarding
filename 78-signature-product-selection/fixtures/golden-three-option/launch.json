@@ -1,0 +1,178 @@
+{
+ "assets": [
+  {
+   "name": "selection.css",
+   "owner": "S78"
+  },
+  {
+   "name": "selection-ui component",
+   "owner": "S78"
+  }
+ ],
+ "brand_hash": "TEST-ONLY-NOT-A-REAL-ASSET-HASH",
+ "brand_ref": "TEST-ONLY-BRAND-SECOND",
+ "bump_enabled": true,
+ "extras": {
+  "downsell_1": true,
+  "upsell_1": true,
+  "upsell_2": true
+ },
+ "image_provider": "agnes",
+ "journey_mode": "multiple_options",
+ "launch_id": "TEST-LAUNCH-S78-GOLDEN",
+ "location_id": "TEST-LOCATION",
+ "offers": [
+  {
+   "deliverables": [
+    "TEST ONLY core course",
+    "TEST ONLY community access"
+   ],
+   "display_name": "TEST ONLY Essential",
+   "entitlement_ids": [
+    "core",
+    "community"
+   ],
+   "excludes": [],
+   "exclusions": [
+    "Private review sessions are not included"
+   ],
+   "intended_buyer": "TEST ONLY self-paced learners",
+   "limited_deliverables": [
+    {
+     "item": "TEST ONLY group coaching calls",
+     "note": "One call per month"
+    }
+   ],
+   "native_product_id": "TEST-PROD-ESS",
+   "offer_id": "MAIN-ESS",
+   "prices": [
+    {
+     "amount_minor": 9700,
+     "approval_status": "approved",
+     "billing_type": "one_time",
+     "currency": "USD",
+     "native_price_id": "TEST-PRICE-ESS",
+     "price_choice_id": "MAIN-ESS-USD",
+     "schedule": [],
+     "terms_source": null
+    }
+   ],
+   "primary_outcome": "TEST ONLY finish the core course at your own pace",
+   "requires": [],
+   "slot": "main",
+   "source_kind": "test_fixture",
+   "source_ref": "fixtures/golden-three-option/launch.json",
+   "test_only": true
+  },
+  {
+   "deliverables": [
+    "TEST ONLY core course",
+    "TEST ONLY community access",
+    "Two private review sessions",
+    "TEST ONLY group coaching calls"
+   ],
+   "display_name": "TEST ONLY Professional",
+   "entitlement_ids": [
+    "core",
+    "community",
+    "reviews"
+   ],
+   "excludes": [],
+   "exclusions": [],
+   "intended_buyer": "TEST ONLY founders who want individual feedback",
+   "native_product_id": "TEST-PROD-PRO",
+   "offer_id": "MAIN-PRO",
+   "prices": [
+    {
+     "amount_minor": 19700,
+     "approval_status": "approved",
+     "billing_type": "one_time",
+     "currency": "USD",
+     "native_price_id": "TEST-PRICE-PRO",
+     "price_choice_id": "MAIN-PRO-USD",
+     "schedule": [],
+     "terms_source": null
+    }
+   ],
+   "primary_outcome": "TEST ONLY get your work reviewed twice by a coach",
+   "requires": [],
+   "slot": "main",
+   "source_kind": "test_fixture",
+   "source_ref": "fixtures/golden-three-option/launch.json",
+   "test_only": true
+  },
+  {
+   "deliverables": [
+    "TEST ONLY core course",
+    "TEST ONLY community access",
+    "Two private review sessions",
+    "One private strategy day",
+    "TEST ONLY group coaching calls"
+   ],
+   "display_name": "TEST ONLY Elite",
+   "entitlement_ids": [
+    "core",
+    "community",
+    "reviews",
+    "strategy-day"
+   ],
+   "excludes": [],
+   "exclusions": [],
+   "intended_buyer": "TEST ONLY founders who want a private strategy day",
+   "native_product_id": "TEST-PROD-ELITE",
+   "offer_id": "MAIN-ELITE",
+   "prices": [
+    {
+     "amount_minor": 49700,
+     "approval_status": "approved",
+     "billing_type": "installment",
+     "currency": "USD",
+     "native_price_id": "TEST-PRICE-ELITE",
+     "price_choice_id": "MAIN-ELITE-USD-INST",
+     "schedule": [
+      {
+       "amount_minor": 24850,
+       "due": "today"
+      },
+      {
+       "amount_minor": 24850,
+       "due": "in 30 days"
+      }
+     ],
+     "terms_source": null
+    }
+   ],
+   "primary_outcome": "TEST ONLY leave with a reviewed plan and a strategy day booked",
+   "requires": [],
+   "slot": "main",
+   "source_kind": "test_fixture",
+   "source_ref": "fixtures/golden-three-option/launch.json",
+   "test_only": true
+  }
+ ],
+ "plan_approval_ref": "TEST-APPROVAL",
+ "revision": 1,
+ "route_graph_hash": "TEST-ONLY",
+ "route_graph_ref": "fixtures/golden-three-option/launch.json",
+ "schema_version": "1.0",
+ "selection_faq": [
+  {
+   "answer": "TEST ONLY: Yes, before checkout you can go back and choose a different package; nothing is charged on this page.",
+   "question": "TEST ONLY: Can I change packages later?"
+  },
+  {
+   "answer": "TEST ONLY: On the next step, the order form, after you review the exact total.",
+   "question": "TEST ONLY: When am I charged?"
+  }
+ ],
+ "source_refs": [
+  "packet/reference/launch-example.json"
+ ],
+ "status": "approved",
+ "tenant_id": "TEST-TENANT-SECOND-BRAND",
+ "test_only": true,
+ "trust_items": [
+  "TEST ONLY: Prices on this page come from the approved catalog for this launch.",
+  "TEST ONLY: This page collects no payment details."
+ ]
+}
