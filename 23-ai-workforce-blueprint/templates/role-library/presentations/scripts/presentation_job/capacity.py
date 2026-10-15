@@ -907,6 +907,23 @@ def _extract_model_ids(payload: bytes) -> Tuple[list, Optional[str]]:
     return ids, None
 
 
+def _price_per_million(raw: Any) -> Optional[float]:
+    """One pricing direction as dollars per million tokens.
+
+    Absent stays absent: a raw value of None (the catalog item carried
+    no such price) returns None, never 0 -- the catalog said nothing
+    about this direction, and no surface may invent a number for it. An
+    empty string is no price at all, so it reads as absent too. A
+    present value converts exactly as before (dollars per token x
+    1,000,000), so a real "0" in the catalog stays a real 0.0: None
+    means the catalog was silent, 0.0 means the catalog said zero, and
+    the two are never confused. Any other unparseable value raises, and
+    the caller keeps its skip-the-item behavior."""
+    if raw is None or raw == "":
+        return None
+    return float(raw) * 1_000_000
+
+
 def _extract_model_pricing(payload: bytes) -> dict:
     """Pull {model_id: pricing} out of a GET /models body.
 
@@ -914,6 +931,16 @@ def _extract_model_pricing(payload: bytes) -> dict:
     OpenRouter's pricing.prompt / pricing.completion are dollars PER TOKEN
     as strings; multiplied by 1,000,000 for per-million. The endpoint is
     public; no key is needed. Returns {} on any parse failure.
+
+    ABSENT IS ABSENT: a model whose catalog item carries no pricing
+    blob (or a blob missing one direction, or a non-dict blob) gets
+    None for the absent direction(s), never 0. The pre-fix code
+    zero-filled absent pricing, which made an unpriced model
+    indistinguishable from a free one by key presence and let a
+    downstream surface render the invented figure as a real "$0"
+    price. A pricing value that IS present but unparseable keeps the
+    pre-existing behavior: the item is skipped entirely (no entry),
+    which every consumer already reads as unpriced.
     """
     try:
         parsed = json.loads(payload.decode("utf-8", "replace"))
@@ -932,10 +959,12 @@ def _extract_model_pricing(payload: bytes) -> dict:
         mid = item.get("id")
         if not isinstance(mid, str):
             continue
-        pricing = item.get("pricing") or {}
+        pricing = item.get("pricing")
+        if not isinstance(pricing, dict):
+            pricing = {}
         try:
-            prompt_per_m = float(pricing.get("prompt") or 0) * 1_000_000
-            completion_per_m = float(pricing.get("completion") or 0) * 1_000_000
+            prompt_per_m = _price_per_million(pricing.get("prompt"))
+            completion_per_m = _price_per_million(pricing.get("completion"))
         except (ValueError, TypeError):
             continue
         out[mid] = {

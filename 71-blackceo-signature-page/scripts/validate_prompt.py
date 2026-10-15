@@ -1051,6 +1051,22 @@ def inspect(text, model=IMAGE_MODEL_DEFAULT, sauce_only=False, ctx=None,
         "model_max_chars": cap.get("max_chars"),
         "percent_of_max": percent,
     }
+    # --- enforcer cross-check (rule 12 registry: record-only telemetry;
+    # the shared enforcer renders NO verdict inside Skill 71, Part C)
+    if KPE is None:
+        telemetry["enforcer_crosscheck"] = {"status": "unavailable",
+                                            "chars": None, "max": None}
+    else:
+        try:
+            crosscheck = KPE.check(model, stripped)
+            telemetry["enforcer_crosscheck"] = {
+                "status": crosscheck.get("status"),
+                "chars": crosscheck.get("chars"),
+                "max": crosscheck.get("max"),
+            }
+        except Exception:
+            telemetry["enforcer_crosscheck"] = {"status": "error",
+                                                "chars": None, "max": None}
     if cap.get("unit") == "tokens":
         notes.append("Token-limited model: the ceiling is denominated in tokens and is "
                      "not converted to a character cap; character telemetry is recorded "
