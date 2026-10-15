@@ -57,6 +57,7 @@ def _complete_answers() -> dict:
         "speech_speed_preference": "default",
         "want_sales_checkout": "yes",
         "want_vsl_page": "no",
+        "want_email_sequences": "no",
         "client_notes": "",
     }
 
