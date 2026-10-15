@@ -1,5 +1,11 @@
 # Changelog - 58 Podcast Production Engine (58-podcast-production-engine)
 
+## v1.0.17 - 2026-10-14 - fix(podcast): intake-bridge ledger checksum ordering
+
+- repo-91 (`scripts/webhook/ledger.py`): `_persist_record` re-stamps `_checksum` as the last write to a ledger record, using `podcast_state.py`'s documented formula (SHA-256 over the canonical JSON of every other field). The webhook layer writes the bridge note, the flow binding, a duplicate redelivery and an operator retry onto the same record that `podcast_state.py` already stamped, so the stored stamp went stale and the next transition was refused with "ledger checksum MISMATCH" and rolled back. The formula is unchanged, a record that carries no checksum yet is written unchanged, and no existing record is rewritten.
+- repo-91 (`scripts/tests/test_intake_bridge_checksum.py`): regression test that bridges a `_test` payload through `intake_handler._bridge_and_record`, then closes it with `podcast_state.py fail`, and asserts the close is accepted and the record verifies. A designated test intake keeps its terminal ledger "test" state (the merged test-state rule), so the test asserts the close is accepted at the SQLite layer and the record still verifies, not that the ledger record's own state moves to `failed`. Discrimination control: 3 of 3 fail on the merged tree with the exact live error when the ordering fix is reverted, and 3 of 3 fail on pinned base `37344f5`.
+- repo-14: `skill-version.txt` and the SKILL.md frontmatter move to v1.0.17 together, with this entry. One writer owns the Skill 58 version files; the root version file is left to the merge train.
+
 ## v1.0.16 - 2026-10-14 - fix(podcast): fourteen QC-passed engine fixes in one batch
 
 Nine QC-passed fix branches merged in one batch, plus the single-writer Skill 58 version bump.
