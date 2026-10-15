@@ -12,6 +12,8 @@ correlated with the voice loudness envelope; then:
     envelope matches this audio (a repeated hook, corr >= 0.85 at a similar
     length) are dropped from the controls;
   * raw grade: NOT_SYNCED when corr < 0.40, or pct > 0.20, or margin < 0;
+    a CARTOON look grades the corr test against CARTOON_CORR_FLOOR (0.35)
+    instead, everything else (chance, margin, SYNCED margin) unchanged;
     WEAK when margin is 0 to 0.05; SYNCED when margin >= 0.05;
   * UNMEASURABLE (never a pass): face found in under 95 percent of frames, mouth
     not at human proportions, silent audio, mouth barely moves (range < 0.015),
@@ -33,6 +35,13 @@ import math
 # ---- constants (the same block in both repos; do not drift) -----------------
 MAX_LAG_FRAMES = 10          # lag search window (+-10 frames)
 CORR_FLOOR = 0.40            # NOT_SYNCED below this
+# Cartoon-calibrated corr floor: APPROVED by Trevor 2026-10-13 (trial C numbers,
+# one clip: real audio 0.391 with margin +0.157 and the chance test passed,
+# mismatched audio 0.12-0.18 failed every test; "pretty good / passable").
+# Only the corr test moves; margin, SYNCED margin and chance are unchanged, so
+# wrong audio still fails on a cartoon look.
+CARTOON_CORR_FLOOR = 0.35    # NOT_SYNCED below this on a cartoon look
+CARTOON_LOOKS = ("2d-hand-painted", "canvas-to-life", "canvas-to-3d")
 MARGIN_FLOOR = 0.0           # NOT_SYNCED below this lead over the best other line
 SYNCED_MARGIN = 0.05         # SYNCED at margin >= this; WEAK from the floor to here
 CHANCE_PCT_MAX = 0.20        # NOT_SYNCED when more than this share of rolls score as high
@@ -163,9 +172,13 @@ def measure_sync(mouth, voice, others, fps, face_found=1.0, mouth_pos=0.7):
     return m
 
 
-def fail_tests(m):
+def fail_tests(m, look=None):
+    """The three tests of a measurement, graded for `look`: a cartoon look uses
+    CARTOON_CORR_FLOOR for the corr test, every other look CORR_FLOOR. The
+    chance and margin tests never change."""
     t = []
-    if m["corr"] < CORR_FLOOR:
+    floor = CARTOON_CORR_FLOOR if look in CARTOON_LOOKS else CORR_FLOOR
+    if m["corr"] < floor:
         t.append(R_CORR)
     if m["pct"] > CHANCE_PCT_MAX:
         t.append(R_CHANCE)
@@ -174,18 +187,20 @@ def fail_tests(m):
     return t
 
 
-def grade(m):
+def grade(m, look=None):
     """Raw grade of a measurement: SYNCED / WEAK / NOT_SYNCED / UNMEASURABLE."""
     if m.get("unmeasurable"):
         return UNMEASURABLE
-    if fail_tests(m):
+    if fail_tests(m, look):
         return NOT_SYNCED
     return SYNCED if m["margin"] >= SYNCED_MARGIN else WEAK
 
 
-def verdict(m, sung=False):
-    """Skill verdict for a measurement. See the module docstring for the map."""
-    g = grade(m)
+def verdict(m, sung=False, look=None):
+    """Skill verdict for a measurement. See the module docstring for the map.
+    `look` only moves the corr floor (cartoon looks); it never turns a wrong
+    audio or a trial B take into a pass."""
+    g = grade(m, look)
     if g == UNMEASURABLE:
         return UNMEASURABLE
     if g == SYNCED:
