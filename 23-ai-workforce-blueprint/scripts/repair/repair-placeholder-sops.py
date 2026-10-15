@@ -59,7 +59,7 @@ STUB_SIG = re.compile(r"FILL FROM LIBRARY|how-to\.md \(stub\)")
 # Folders that hold no role: a stub how-to.md directly inside one is an aggregate stub.
 CONTAINERS = {"_archive", "_index", "_compliance_audit", "_pending_rewrite", "_stage1_drafts",
               "sops", "scripts", "roles", "_drafts", "artifacts", "templates", "assets", "intake",
-              "runs", "fish-audio", "intake-miniapp", "release-matrix", "contract"}
+              "runs", "fish-audio", "release-matrix", "contract"}
 NOT_ROLES = {"memory", "devils-advocate"}  # never roles; their how-to.md is library content
 CEO_DEPTS = {"ai-ceo", "master-orchestrator"}
 # Stub sections / lines that are boilerplate by construction (see the four legacy writers).
