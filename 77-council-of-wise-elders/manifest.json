@@ -2,9 +2,9 @@
   "skill": "council-of-wise-elders",
   "skill_version": "v1.0.0",
   "generated_by": "scripts/build-bundles.mjs",
-  "source_commit": "afc65f3fa3e57405acf3fa91cd1ddb74e5e94990",
-  "file_count": 301,
-  "aggregate_sha256": "d05db21d35e371036c1c4e6be3fd20bda70bc5342565609424b9faa044627325",
+  "source_commit": "581ef3ff24d50f1121110e52a09aba9f6b4a863e",
+  "file_count": 302,
+  "aggregate_sha256": "185cbcb485ac0c99a99d872693493a9145bd598f0f85b5501646ebf4b1b29287",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -1089,8 +1089,8 @@
     },
     {
       "path": "runtime/src/providers/url-policy.ts",
-      "sha256": "4c2acf69ae3dd87aff2cdd0702219c164ab0ed7a9acb53764599f59559ac36be",
-      "bytes": 6044
+      "sha256": "932d99cc7c04bed7c1c36c2bca6d316c2cb06ec1029f079d0bc92cf900fbfeb5",
+      "bytes": 8327
     },
     {
       "path": "runtime/src/queue/capacity.ts",
@@ -1298,6 +1298,11 @@
       "bytes": 8509
     },
     {
+      "path": "runtime/tests/fault-security-cwe043.test.ts",
+      "sha256": "9e41f9530a146c438bf0395ffa8ee692defb1f5cc41f4e15a58c3af837146145",
+      "bytes": 15584
+    },
+    {
       "path": "runtime/tests/helpers.ts",
       "sha256": "c868a369bb4fbac47021c9bf25f4ba823e94fe958ba5dfb1361478ad0de605c3",
       "bytes": 2831
@@ -1404,8 +1409,8 @@
     },
     {
       "path": "runtime/tests/transports-units.test.ts",
-      "sha256": "4624ed65cd4c8868b7e848fc43d6602b983737ad0aae3b7eaa8a2b840ba6aa88",
-      "bytes": 13105
+      "sha256": "c89451147a69dc95237bcb251ab14434d6bb778bcb099d8b90131815c67d0c1e",
+      "bytes": 15064
     },
     {
       "path": "runtime/tests/transports.test.ts",
