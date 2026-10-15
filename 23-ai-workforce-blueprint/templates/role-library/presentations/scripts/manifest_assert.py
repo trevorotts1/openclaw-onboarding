@@ -56,7 +56,7 @@ from typing import Dict, List, Optional, Tuple
 # full rationale there). tests/test_manifest_assert.py asserts these two constants are
 # equal, so they can never drift apart silently.
 # 69 -> 70 (KIE rule 12): the 9,000-18,000 prompt band is retired from the manifest in favor of the shared enforcer.
-# 70 -> 71 (FIX-PLAN Item 11, B23): mirrors the presentation_job/manifest.py bump in the SAME commit: fanout phases declare workers; undeclared fanout widths warn at load.
+# 70 -> 71 (two changes land on the same floor in the same release): (FIX-PLAN Item 11, B23) fanout phases declare workers and undeclared fanout widths warn at load; (Skill 72 MG-036) phase P8.15-MOTION added. Both mirror the presentation_job/manifest.py bump.
 MIN_MANIFEST_VERSION = 71  # PRES-011: mirrors presentation_job/manifest.py, bumped together (U019 step 8)
 MIN_MANIFEST_PHASES = 59
 MIN_AF_SP_CODES = 16

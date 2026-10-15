@@ -1,0 +1,118 @@
+{
+  "timeline": {
+    "schema_version": "2.0",
+    "job_id": "mg022-musicsfx",
+    "fps": 30,
+    "total_frames": 165,
+    "scenes": [
+      {
+        "id": "a",
+        "start_frame": 0,
+        "end_frame_exclusive": 90,
+        "source_start_frame": 0,
+        "transition_in_frames": 0,
+        "transition_out_frames": 15
+      },
+      {
+        "id": "b",
+        "start_frame": 75,
+        "end_frame_exclusive": 165,
+        "source_start_frame": 0,
+        "transition_in_frames": 15,
+        "transition_out_frames": 0
+      }
+    ],
+    "events": [],
+    "parent_slot": null,
+    "audio_owner": "self"
+  },
+  "sidecar": {
+    "schema_version": "1.0",
+    "item": "MG-021",
+    "job_id": "mg022-musicsfx",
+    "fps": 30,
+    "sample_rate": 48000,
+    "rounding_rule": "round_half_up",
+    "mode": "program",
+    "total_frames": 165,
+    "total_samples": 264000,
+    "scenes": [
+      {
+        "id": "a",
+        "placedRange": {
+          "startFrame": 0,
+          "endFrameExclusive": 90
+        },
+        "durationFrames": 90,
+        "sourceRange": {
+          "startFrame": 0,
+          "endFrameExclusive": 90
+        },
+        "sourceRangeSamples": {
+          "startSample": 0,
+          "endSampleExclusive": 144000
+        },
+        "transitionInFrames": 0,
+        "transitionOutFrames": 15
+      },
+      {
+        "id": "b",
+        "placedRange": {
+          "startFrame": 75,
+          "endFrameExclusive": 165
+        },
+        "durationFrames": 90,
+        "sourceRange": {
+          "startFrame": 0,
+          "endFrameExclusive": 90
+        },
+        "sourceRangeSamples": {
+          "startSample": 0,
+          "endSampleExclusive": 144000
+        },
+        "transitionInFrames": 15,
+        "transitionOutFrames": 0
+      }
+    ],
+    "handles": [
+      {
+        "id": "t1",
+        "fromSceneId": "a",
+        "toSceneId": "b",
+        "ownerSceneId": "a",
+        "frames": 15,
+        "placedRange": {
+          "startFrame": 75,
+          "endFrameExclusive": 90
+        },
+        "midpointFrameTimesTwo": 165,
+        "midpointSample": 132000
+      }
+    ],
+    "cues": [],
+    "narration": [
+      {
+        "id": "n1",
+        "startFrame": 15,
+        "endFrameExclusive": 75,
+        "startSample": 24000,
+        "endSampleExclusive": 120000
+      }
+    ],
+    "captions": [],
+    "sfx": [
+      {
+        "id": "x1",
+        "frame": 30,
+        "sample": 48000
+      },
+      {
+        "id": "x2",
+        "frame": 120,
+        "sample": 192000
+      }
+    ],
+    "property_overlaps_declared": [],
+    "slot": null
+  }
+}

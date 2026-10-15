@@ -1,0 +1,12 @@
+{
+  "records": [
+    "single",
+    "multi",
+    "noaudio",
+    "narration",
+    "musicsfx",
+    "mixed",
+    "legacy"
+  ],
+  "all_frame_counts_exact": true
+}

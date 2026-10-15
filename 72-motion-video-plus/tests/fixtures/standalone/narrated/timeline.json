@@ -1,0 +1,98 @@
+{
+  "schema_version": "2.0",
+  "job_id": "fixture-standalone-narrated",
+  "fps": 30,
+  "total_frames": 405,
+  "scenes": [
+    {
+      "id": "open-reveal",
+      "start_frame": 0,
+      "end_frame_exclusive": 90,
+      "source_start_frame": 0,
+      "transition_in_frames": 0,
+      "transition_out_frames": 15
+    },
+    {
+      "id": "detail-zoom",
+      "start_frame": 75,
+      "end_frame_exclusive": 165,
+      "source_start_frame": 0,
+      "transition_in_frames": 15,
+      "transition_out_frames": 15
+    },
+    {
+      "id": "proof-chart",
+      "start_frame": 150,
+      "end_frame_exclusive": 300,
+      "source_start_frame": 0,
+      "transition_in_frames": 15,
+      "transition_out_frames": 15
+    },
+    {
+      "id": "final-state",
+      "start_frame": 285,
+      "end_frame_exclusive": 405,
+      "source_start_frame": 0,
+      "transition_in_frames": 15,
+      "transition_out_frames": 0
+    }
+  ],
+  "events": [
+    {
+      "id": "cue-open-reveal-reveal",
+      "scene_id": "open-reveal",
+      "frame": 15,
+      "type": "reveal_start"
+    },
+    {
+      "id": "cue-open-reveal-hold",
+      "scene_id": "open-reveal",
+      "frame": 60,
+      "type": "hold_start"
+    },
+    {
+      "id": "cue-detail-zoom-detail",
+      "scene_id": "detail-zoom",
+      "frame": 99,
+      "type": "cue"
+    },
+    {
+      "id": "cue-detail-zoom-hold",
+      "scene_id": "detail-zoom",
+      "frame": 123,
+      "type": "hold_start"
+    },
+    {
+      "id": "cue-proof-chart-reveal",
+      "scene_id": "proof-chart",
+      "frame": 165,
+      "type": "reveal_start"
+    },
+    {
+      "id": "cue-proof-chart-hold",
+      "scene_id": "proof-chart",
+      "frame": 225,
+      "type": "hold_start"
+    },
+    {
+      "id": "cue-proof-chart-proof",
+      "scene_id": "proof-chart",
+      "frame": 225,
+      "type": "proof"
+    },
+    {
+      "id": "cue-final-state-reveal",
+      "scene_id": "final-state",
+      "frame": 295,
+      "type": "reveal_start"
+    },
+    {
+      "id": "cue-final-state-hold",
+      "scene_id": "final-state",
+      "frame": 325,
+      "type": "hold_start"
+    }
+  ],
+  "parent_slot": null,
+  "audio_owner": "self"
+}

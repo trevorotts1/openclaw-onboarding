@@ -1,0 +1,27 @@
+{
+  "planner_version": "1.0",
+  "storyboard_id": "story-missing-asset",
+  "beats": [
+    {
+      "beat_id": "beat-reveal",
+      "idea": "Reveal the real product photograph",
+      "viewer_takeaway": "takeaway",
+      "evidence_kind": "literal_evidence",
+      "component_id": "C02",
+      "engine": "hyperframes",
+      "selection_reason": "reason",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "device-reveal"
+      ]
+    }
+  ]
+}

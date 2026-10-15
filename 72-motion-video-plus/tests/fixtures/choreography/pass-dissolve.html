@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Controlled dissolve scene</title>
+<style>
+  html, body { margin: 0; background: #ffffff; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+           font-family: sans-serif; }
+  .shot { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+  #shotA { background: #ffd166; }
+  #shotB { background: #118ab2; }
+  .caption { position: absolute; left: 140px; bottom: 120px; font-size: 64px; color: #14213d; }
+  #shotB .caption { color: #ffffff; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="shot" id="shotA"><div class="caption">The shop, ten years ago</div></div>
+  <div class="shot" id="shotB"><div class="caption">The shop, today</div></div>
+</div>
+<script>
+window.__sceneDuration = 7;
+window.__choreography = {"intent": "emotional_dissolve", "behaviors": ["dissolve", "eased"]};
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function easeInOutCubic(p) { return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; }
+window.__setTime = function (t) {
+  var e = easeInOutCubic(clamp01((t - 2.5) / 2));
+  document.getElementById("shotA").style.opacity = String(1 - e);
+  document.getElementById("shotB").style.opacity = String(e);
+};
+window.__setTime(0);
+</script>
+</body>
+</html>

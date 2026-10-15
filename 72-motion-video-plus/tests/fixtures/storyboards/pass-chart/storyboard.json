@@ -1,0 +1,105 @@
+{
+  "schema_version": "2.0",
+  "id": "story-chart-proof",
+  "beats": [
+    {
+      "id": "beat-bars",
+      "scene_id": "bar-01",
+      "job": "Compare three quantities",
+      "viewer_question": "How do the three groups compare?",
+      "intended_understanding": "The third group is largest and the lengths stay proportional.",
+      "visual_verb": "compare",
+      "subject_ids": [
+        "bar-a",
+        "bar-b",
+        "bar-c"
+      ],
+      "representation": "chart",
+      "explanatory": true,
+      "initial_state": "Labeled marks begin at zero on a shared scale.",
+      "transformation": "The three bar widths increase together on one linear clock.",
+      "proof_state": "Widths equal 12:18:30 on the same zero-based domain.",
+      "final_state": "Marks, values and labels hold still for reading.",
+      "asset_ids": [],
+      "data_ids": [
+        "bars-illustrative"
+      ],
+      "essential_text": [
+        "Compare the three groups",
+        "Group A",
+        "Group B",
+        "Group C",
+        "12",
+        "18",
+        "30"
+      ],
+      "proof_frames": [
+        15,
+        45,
+        75,
+        179
+      ],
+      "typography_only_exception": null
+    },
+    {
+      "id": "beat-bars-portrait",
+      "scene_id": "bar-02",
+      "job": "Same comparison, portrait",
+      "viewer_question": "Does the comparison survive the portrait layout?",
+      "intended_understanding": "Same values, same ratios, recomposed for portrait.",
+      "visual_verb": "compare",
+      "subject_ids": [
+        "bar-a",
+        "bar-b",
+        "bar-c"
+      ],
+      "representation": "chart",
+      "explanatory": true,
+      "initial_state": "Portrait marks begin at zero.",
+      "transformation": "Widths grow on the same linear clock.",
+      "proof_state": "Portrait widths preserve the 12:18:30 ratio.",
+      "final_state": "Portrait chart holds for reading.",
+      "asset_ids": [],
+      "data_ids": [
+        "bars-illustrative"
+      ],
+      "essential_text": [
+        "Compare the three groups",
+        "12",
+        "18",
+        "30"
+      ],
+      "proof_frames": [
+        45,
+        75
+      ],
+      "typography_only_exception": null
+    },
+    {
+      "id": "beat-headline",
+      "scene_id": "title-01",
+      "job": "Name the comparison once",
+      "viewer_question": "What is this chart about?",
+      "intended_understanding": "The headline frames the chart that follows it.",
+      "visual_verb": "isolate",
+      "subject_ids": [
+        "headline"
+      ],
+      "representation": "typography",
+      "explanatory": true,
+      "initial_state": "Blank field.",
+      "transformation": "The single headline line sets.",
+      "proof_state": "The headline is legible at full size.",
+      "final_state": "The headline holds, then yields to the chart.",
+      "asset_ids": [],
+      "data_ids": [],
+      "essential_text": [
+        "Compare the three groups"
+      ],
+      "proof_frames": [
+        20
+      ],
+      "typography_only_exception": "One framing headline beat; the explanation itself is carried by the two chart beats."
+    }
+  ]
+}

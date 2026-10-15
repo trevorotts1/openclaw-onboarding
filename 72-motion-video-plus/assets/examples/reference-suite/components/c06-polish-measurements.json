@@ -1,0 +1,64 @@
+{
+  "item": "MG-044 workstream 3 (C06 cosmetic polish, carried from MG-016)",
+  "tool": "assets/examples/reference-suite/tools/measure-c06-polish.py",
+  "command": "python3 assets/examples/reference-suite/tools/measure-c06-polish.py <before-f150.png> tests/evidence/mg016/hf-c06-line-f150.png; before still is the committed HEAD version of tests/evidence/mg016/hf-c06-line-f150.png, after still is the re-rendered working-tree version adopted by this change",
+  "frame": 150,
+  "before": {
+    "file": "../.scratch/mg044/c06-before-f150.png",
+    "units_caption_bbox": {
+      "x_min": 378,
+      "x_max": 538,
+      "y_min": 303,
+      "y_max": 374,
+      "pixels": 1121
+    },
+    "headline_ink_bottom_above_caption": 302,
+    "caption_clearance_below_headline_px": 0,
+    "headline_ink_at_or_below_caption_top_in_caption_columns": {
+      "x_min": 402,
+      "x_max": 525,
+      "y_min": 322,
+      "y_max": 344,
+      "pixels": 627
+    },
+    "fixture_label_accent_band_bottom_region": {
+      "x_min": 120,
+      "x_max": 1148,
+      "y_min": 924,
+      "y_max": 983,
+      "pixels": 12294
+    },
+    "month_label_band": {
+      "y_min": 916,
+      "y_max": 971
+    },
+    "fixture_label_overlaps_month_label_band": true,
+    "fixture_label_clearance_below_month_band_px": null
+  },
+  "after": {
+    "file": "tests/evidence/mg016/hf-c06-line-f150.png",
+    "units_caption_bbox": {
+      "x_min": 165,
+      "x_max": 324,
+      "y_min": 345,
+      "y_max": 388,
+      "pixels": 1186
+    },
+    "headline_ink_bottom_above_caption": 327,
+    "caption_clearance_below_headline_px": 17,
+    "headline_ink_at_or_below_caption_top_in_caption_columns": null,
+    "fixture_label_accent_band_bottom_region": {
+      "x_min": 771,
+      "x_max": 1799,
+      "y_min": 980,
+      "y_max": 1039,
+      "pixels": 12168
+    },
+    "month_label_band": {
+      "y_min": 916,
+      "y_max": 971
+    },
+    "fixture_label_overlaps_month_label_band": false,
+    "fixture_label_clearance_below_month_band_px": 8
+  }
+}

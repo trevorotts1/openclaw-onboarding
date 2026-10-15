@@ -1,0 +1,62 @@
+assembled: /home/hatch/workspace/skill72-v2/mg023-repro-work/after.mp4 (-14 LUFS)
+{
+  "status": "ok",
+  "output": "/home/hatch/workspace/skill72-v2/mg023-repro-work/after.mp4",
+  "expected_frames": 75,
+  "decoded_frames": 75,
+  "duration_seconds": 2.517,
+  "expected_duration_seconds": 2.5,
+  "stream_map": [
+    {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 640,
+      "height": 360,
+      "sample_rate": null
+    },
+    {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "width": null,
+      "height": null,
+      "sample_rate": "96000"
+    }
+  ],
+  "audio_present": true,
+  "last_frame_sha256": "60dc037427112e9cf3612d3df95ff699288261e68321e80954a846fac93c1a40",
+  "last_frame_bytes": 691200,
+  "inputs": [
+    {
+      "index": 0,
+      "kind": "scene",
+      "id": "intro",
+      "path": "/home/hatch/workspace/skill72-v2/mg023-repro-work/job/work/scenes/intro/intro.mp4",
+      "pre_args": []
+    },
+    {
+      "index": 1,
+      "kind": "scene",
+      "id": "outro",
+      "path": "/home/hatch/workspace/skill72-v2/mg023-repro-work/job/work/scenes/outro/outro.mp4",
+      "pre_args": []
+    },
+    {
+      "index": 2,
+      "kind": "narration",
+      "id": "voiceover",
+      "path": "/home/hatch/workspace/skill72-v2/mg023-repro-work/job/work/audio/voiceover.wav",
+      "pre_args": []
+    },
+    {
+      "index": 3,
+      "kind": "music",
+      "id": "music",
+      "path": "/home/hatch/workspace/skill72-v2/mg023-repro-work/job/work/audio/score.wav",
+      "pre_args": []
+    }
+  ],
+  "mode": "legacy",
+  "job_id": "legacy"
+}

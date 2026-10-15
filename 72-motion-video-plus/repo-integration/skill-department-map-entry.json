@@ -3,7 +3,7 @@
  "departments": [
   "video"
  ],
- "description": "Deterministic motion-graphics video production: model-written HTML/JS scene animation honoring the window.__setTime(t) contract, headless-Chromium frame rendering at 30fps with chunked auto-resume, per-scene frame cleanup, Fish Audio chunked voiceover with audio-first timing, FFmpeg assembly with crossfaded joins and a sidechain-ducked music bed, automated QC with contact sheet. Scene-based manifests scale from 30 seconds to 2 hours.",
+ "description": "Governed motion-graphics production in four modes (PowerPoint graphic, desktop VSL insert, mobile VSL insert recomposed for vertical and never cropped, and standalone video): mode-first intake, a schema-validated job package, typed component scenes rendered through the Hyperframes and Remotion production adapters behind the timeline compiler, gated preview and approvals, measured audio under the mode's ownership, technical QC, and delivery recorded in a measured receipt. Authoring is model-agnostic: the client's selected model or configured default writes the scene code, and rendering approved source needs no model credential. The V1 __setTime renderer remains only as an explicit compatibility path for migrated jobs.",
  "execution_sops": [
   "video-pipeline-craft"
  ],

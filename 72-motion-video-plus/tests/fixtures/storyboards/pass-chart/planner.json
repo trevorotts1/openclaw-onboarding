@@ -1,0 +1,71 @@
+{
+  "planner_version": "1.0",
+  "storyboard_id": "story-chart-proof",
+  "beats": [
+    {
+      "beat_id": "beat-bars",
+      "idea": "Grow three bars from one dataset",
+      "viewer_takeaway": "Group C is largest, proportionally",
+      "evidence_kind": "literal_evidence",
+      "component_id": "C05",
+      "engine": "remotion",
+      "selection_reason": "Parameterized chart; Remotion is the default for data-driven charts",
+      "reading_order": [
+        "headline",
+        "bars",
+        "values"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "half-reveal",
+        "final-ratios"
+      ]
+    },
+    {
+      "beat_id": "beat-bars-portrait",
+      "idea": "Recompose the same chart for portrait",
+      "viewer_takeaway": "The comparison is identical in portrait",
+      "evidence_kind": "literal_evidence",
+      "component_id": "C05",
+      "engine": "remotion",
+      "selection_reason": "Same parameterized component, portrait layout variant",
+      "reading_order": [
+        "headline",
+        "bars",
+        "values"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "portrait-final"
+      ]
+    },
+    {
+      "beat_id": "beat-headline",
+      "idea": "A single framing headline",
+      "viewer_takeaway": "The chart compares three groups",
+      "evidence_kind": "illustrative_metaphor",
+      "component_id": "C05",
+      "engine": "remotion",
+      "selection_reason": "Headline lives inside the chart scene's engine for one render pass",
+      "reading_order": [
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "headline-legible"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "id": "title-01",
+  "semantic_motion_assertions": [
+    {
+      "id": "headline-legible",
+      "kind": "text_readability",
+      "subject_ids": [
+        "headline"
+      ],
+      "frame": 20,
+      "expected_values": [],
+      "tolerance": 0,
+      "unit": "normalized",
+      "evidence": [
+        "decoded_frame"
+      ]
+    }
+  ]
+}

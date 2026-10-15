@@ -1,0 +1,193 @@
+{
+ "artifact": {
+  "bundle_dir": "components/c01",
+  "coverage_record": "coverage.json",
+  "mode": "standalone_video",
+  "video": {
+   "path": "sequence/clips/beat1-c01.mp4",
+   "sha256": "c4766e50b33ce6f92a94373b789deade1612303e172b8d3e777f8733940a5f4f"
+  }
+ },
+ "author": {
+  "id": "hyperframes-production-adapter",
+  "kind": "system",
+  "vision_capable": false
+ },
+ "dimensions": [
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "visual_storytelling",
+   "evidence": [
+    {
+     "detail": "Frame 0: the field is empty but composed (headline, caption, and fixture label in place) with the subject fully covered; the promise is that something will be uncovered, and the frame reads as an intentional opening, not a blank.",
+     "ref": "../../components/frames/c01-f0.png",
+     "type": "frame"
+    },
+    {
+     "detail": "Frame 60: the mask is mid-travel and the work crate is half uncovered; frame 149 holds the fully revealed subject. One idea, enacted by the subject itself.",
+     "ref": "../../components/frames/c01-f60.png",
+     "type": "frame"
+    }
+   ],
+   "reference_comparison": "This artifact is the VREF-01 reference behavior (subject integrity, deliberate crop, readable opening and proof frames) rendered by the shipped adapter. As a fixture its subject is an illustrative object, so the storytelling ceiling is the fixture's, and the reference stays CALIBRATION_PENDING for the owner's eye.",
+   "score": 7,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "asset_relevance",
+   "evidence": [
+    {
+     "detail": "The subject is the entire content of the piece: nothing else competes with it, and the asset is the package's own labeled fixture, never a stock stand-in presented as real.",
+     "ref": "../../components/frames/c01-f149.png",
+     "type": "frame"
+    },
+    {
+     "detail": "Coverage is complete (150 of 150 frames), so the relevance judgment covers the whole clip.",
+     "ref": "coverage.json",
+     "type": "coverage_record"
+    }
+   ],
+   "reference_comparison": "Relevance is total: the reference exists to define an image-led beat, and this render is nothing but the image and its supporting type.",
+   "score": 8,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "typography_readability",
+   "evidence": [
+    {
+     "detail": "Headline at 84 px and caption at 40 px in the scene spec, both above their MG-013 floors at the 1920x1080 destination, and the fixture label is printed on the piece at a readable size.",
+     "ref": "../../../../../tests/fixtures/image-components/c01-reveal.scene.json",
+     "type": "document"
+    },
+    {
+     "detail": "Frame 149: headline and caption sit clear of the subject box with no overlap at the hold state.",
+     "ref": "../../components/frames/c01-f149.png",
+     "type": "frame"
+    }
+   ],
+   "reference_comparison": "Type supports the image and never competes with it, as the reference requires.",
+   "score": 7,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "composition",
+   "evidence": [
+    {
+     "detail": "The subject box (1200x690 at 360,190) is centered in the field with the headline above and caption below; at the hold the revealed crate, headline, and caption form one stable composition.",
+     "ref": "../../components/frames/c01-f149.png",
+     "type": "frame"
+    },
+    {
+     "detail": "Frame 60: the mask edge bisects the subject cleanly; no other element moves or shifts during the reveal, so the composition's only change is the subject's own state.",
+     "ref": "../../components/frames/c01-f60.png",
+     "type": "frame"
+    }
+   ],
+   "reference_comparison": "Matches the reference composition terms: deliberate crop from the spec, subject integrity at every state.",
+   "score": 7,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "motion_clarity",
+   "evidence": [
+    {
+     "detail": "MG-044 measurements: the adapter's decoded-frame observations record revealed fractions 0.000 at frame 0, 0.625 at frame 60, and 1.000 at frame 149, each inside its declared band (assertions 3 of 3 passed).",
+     "ref": "../../../../../tests/evidence/mg044/measurements.json",
+     "type": "document"
+    },
+    {
+     "detail": "The motion is the subject's own state change through the mask (M10 subject-owned motion): the image inside the mask never moves, scales, or slides.",
+     "ref": "../../components/frames/c01-f60.png",
+     "type": "frame"
+    }
+   ],
+   "reference_comparison": "This is the dimension VREF-01 exists to define, and the render meets it under decoded-frame measurement rather than the renderer's own account.",
+   "score": 9,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "data_proof_integrity",
+   "evidence": [
+    {
+     "detail": "The piece makes no data claim; its honesty obligation is labeling, and the fixture label ('ENGINEERING FIXTURE - ILLUSTRATIVE OBJECT') is printed on the piece itself in every state.",
+     "ref": "../../components/frames/c01-f0.png",
+     "type": "frame"
+    },
+    {
+     "detail": "The job-level asset hash was verified by the adapter at staging (the MG-044 suite record), so the rendered subject is the approved fixture asset, byte for byte.",
+     "ref": "../../../../../tests/evidence/mg044/measurements.json",
+     "type": "document"
+    }
+   ],
+   "reference_comparison": "No proof is overstated: an illustrative subject is labeled illustrative, which is the integrity this reference demands.",
+   "score": 8,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "destination_fit",
+   "evidence": [
+    {
+     "detail": "The clip is 1920x1080, 150 frames at 30 fps, rendered through the governed adapter final path; the same scene family ships in the standalone program and the PowerPoint and VSL modes reuse the component contract.",
+     "ref": "coverage.json",
+     "type": "coverage_record"
+    }
+   ],
+   "reference_comparison": "Fit is proven for the landscape destination. The portrait recomposition of this component is exercised by the catalog's portrait layout variant terms, not by this clip.",
+   "score": 7,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "finishing",
+   "evidence": [
+    {
+     "detail": "Frame 149: edges clean, hold stable, no placeholder or debug mark; the fixture label is a designed element of the piece, not an afterthought.",
+     "ref": "../../components/frames/c01-f149.png",
+     "type": "frame"
+    },
+    {
+     "detail": "The component is silent by design, so no sound judgment is signed.",
+     "ref": "../../../../../tests/fixtures/image-components/c01-reveal.scene.json",
+     "type": "document"
+    }
+   ],
+   "reference_comparison": "Clean in the fixture register the reference defines; deliberately plain, as an engineering fixture should be.",
+   "score": 7,
+   "status": "scored"
+  }
+ ],
+ "escalation_basis": null,
+ "item": "MG-033",
+ "job_id": "mg044-c01-job",
+ "kind": "creative_review_record",
+ "notes": "Reference-suite review of the VREF-01 image-led statement render (the MG-044 C01 bundle's fixture scene, rendered through the shipped Hyperframes adapter; clip in sequence/clips/beat1-c01.mp4). Scores are provisional and uncalibrated: VREF-01 is CALIBRATION_PENDING until the owner personally approves the exemplar, and no score here is owner approval.",
+ "provisional": true,
+ "reference": {
+  "approval_record": null,
+  "calibration_state": "CALIBRATION_PENDING",
+  "reference_id": "VREF-01"
+ },
+ "remediation": [],
+ "reviewer": {
+  "id": "mg044-reference-suite-reviewer",
+  "kind": "agent",
+  "vision_capable": true
+ },
+ "round": 1,
+ "schema_version": "1.0",
+ "verdict": "another_round"
+}

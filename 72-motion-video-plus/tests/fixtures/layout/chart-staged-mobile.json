@@ -1,0 +1,371 @@
+{
+  "content": {
+    "schema_version": "1.0",
+    "id": "job-chart-quarter",
+    "message": "Activation, retention, and expansion all climbed.",
+    "headline": "Three numbers that run the quarter",
+    "support": "One number at a time.",
+    "chart": {
+      "datasetId": "quarter-illustrative",
+      "datasetKind": "illustrative",
+      "units": "percent",
+      "domain": [
+        0,
+        100
+      ],
+      "scaleType": "linear",
+      "displayRounding": {
+        "decimals": 0
+      },
+      "rows": [
+        {
+          "id": "activation",
+          "label": "Activation",
+          "value": 42
+        },
+        {
+          "id": "retention",
+          "label": "Retention",
+          "value": 67
+        },
+        {
+          "id": "expansion",
+          "label": "Expansion",
+          "value": 85
+        }
+      ]
+    }
+  },
+  "variants": [
+    {
+      "schema_version": "1.0",
+      "id": "quarter-desktop",
+      "contentId": "job-chart-quarter",
+      "destination": "vsl_desktop",
+      "canvas": {
+        "width": 1920,
+        "height": 1080
+      },
+      "exportAspect": {
+        "w": 16,
+        "h": 9
+      },
+      "font": {
+        "family": "Liberation Sans",
+        "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "weight": 700
+      },
+      "safeAreaProfile": "clean-full-frame-1920x1080",
+      "arrangement": {
+        "kind": "columns",
+        "plot": {
+          "x": 180,
+          "y": 240,
+          "width": 1560,
+          "height": 700
+        },
+        "barThickness": 300,
+        "slots": [
+          {
+            "rowId": "activation"
+          },
+          {
+            "rowId": "retention"
+          },
+          {
+            "rowId": "expansion"
+          }
+        ]
+      },
+      "elements": [
+        {
+          "id": "headline",
+          "role": "headline",
+          "ref": {
+            "field": "headline"
+          },
+          "sizePx": 112,
+          "box": {
+            "x": 120,
+            "y": 60,
+            "width": 1680,
+            "height": 150
+          }
+        },
+        {
+          "id": "label-activation",
+          "role": "chart_category_label",
+          "ref": {
+            "rowLabel": "activation"
+          },
+          "sizePx": 60,
+          "box": {
+            "x": 240,
+            "y": 960,
+            "width": 300,
+            "height": 80
+          }
+        },
+        {
+          "id": "label-retention",
+          "role": "chart_category_label",
+          "ref": {
+            "rowLabel": "retention"
+          },
+          "sizePx": 60,
+          "box": {
+            "x": 690,
+            "y": 960,
+            "width": 300,
+            "height": 80
+          }
+        },
+        {
+          "id": "label-expansion",
+          "role": "chart_category_label",
+          "ref": {
+            "rowLabel": "expansion"
+          },
+          "sizePx": 60,
+          "box": {
+            "x": 1140,
+            "y": 960,
+            "width": 300,
+            "height": 80
+          }
+        },
+        {
+          "id": "value-activation",
+          "role": "chart_value",
+          "ref": {
+            "rowValue": "activation"
+          },
+          "sizePx": 72,
+          "box": {
+            "x": 240,
+            "y": 546,
+            "width": 300,
+            "height": 90
+          }
+        },
+        {
+          "id": "value-retention",
+          "role": "chart_value",
+          "ref": {
+            "rowValue": "retention"
+          },
+          "sizePx": 72,
+          "box": {
+            "x": 690,
+            "y": 371,
+            "width": 300,
+            "height": 90
+          }
+        },
+        {
+          "id": "value-expansion",
+          "role": "chart_value",
+          "ref": {
+            "rowValue": "expansion"
+          },
+          "sizePx": 72,
+          "box": {
+            "x": 1140,
+            "y": 245,
+            "width": 300,
+            "height": 90
+          }
+        }
+      ],
+      "placement": {
+        "kind": "full_frame"
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "id": "quarter-mobile-staged",
+      "contentId": "job-chart-quarter",
+      "destination": "vsl_mobile",
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "exportAspect": {
+        "w": 9,
+        "h": 16
+      },
+      "font": {
+        "family": "Liberation Sans",
+        "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "weight": 700
+      },
+      "safeAreaProfile": "clean-full-frame-1080x1920",
+      "arrangement": {
+        "kind": "staged_rows",
+        "plot": {
+          "x": 90,
+          "y": 700,
+          "width": 900,
+          "height": 260
+        },
+        "barThickness": 140,
+        "slots": [
+          {
+            "rowId": "activation",
+            "beatIndex": 0
+          },
+          {
+            "rowId": "retention",
+            "beatIndex": 1
+          },
+          {
+            "rowId": "expansion",
+            "beatIndex": 2
+          }
+        ],
+        "beats": [
+          {
+            "index": 0,
+            "rowIds": [
+              "activation"
+            ]
+          },
+          {
+            "index": 1,
+            "rowIds": [
+              "retention"
+            ]
+          },
+          {
+            "index": 2,
+            "rowIds": [
+              "expansion"
+            ]
+          }
+        ]
+      },
+      "elements": [
+        {
+          "id": "headline",
+          "role": "headline",
+          "ref": {
+            "field": "headline"
+          },
+          "sizePx": 104,
+          "box": {
+            "x": 70,
+            "y": 120,
+            "width": 940,
+            "height": 400
+          }
+        },
+        {
+          "id": "support",
+          "role": "essential_support",
+          "ref": {
+            "field": "support"
+          },
+          "sizePx": 60,
+          "box": {
+            "x": 70,
+            "y": 540,
+            "width": 940,
+            "height": 90
+          },
+          "font": {
+            "family": "Liberation Sans",
+            "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "weight": 400
+          }
+        },
+        {
+          "id": "label-activation",
+          "role": "chart_category_label",
+          "ref": {
+            "rowLabel": "activation"
+          },
+          "sizePx": 64,
+          "box": {
+            "x": 90,
+            "y": 580,
+            "width": 700,
+            "height": 80
+          }
+        },
+        {
+          "id": "label-retention",
+          "role": "chart_category_label",
+          "ref": {
+            "rowLabel": "retention"
+          },
+          "sizePx": 64,
+          "box": {
+            "x": 90,
+            "y": 580,
+            "width": 700,
+            "height": 80
+          }
+        },
+        {
+          "id": "label-expansion",
+          "role": "chart_category_label",
+          "ref": {
+            "rowLabel": "expansion"
+          },
+          "sizePx": 64,
+          "box": {
+            "x": 90,
+            "y": 580,
+            "width": 700,
+            "height": 80
+          }
+        },
+        {
+          "id": "value-activation",
+          "role": "chart_value",
+          "ref": {
+            "rowValue": "activation"
+          },
+          "sizePx": 84,
+          "box": {
+            "x": 90,
+            "y": 1000,
+            "width": 400,
+            "height": 110
+          }
+        },
+        {
+          "id": "value-retention",
+          "role": "chart_value",
+          "ref": {
+            "rowValue": "retention"
+          },
+          "sizePx": 84,
+          "box": {
+            "x": 90,
+            "y": 1000,
+            "width": 400,
+            "height": 110
+          }
+        },
+        {
+          "id": "value-expansion",
+          "role": "chart_value",
+          "ref": {
+            "rowValue": "expansion"
+          },
+          "sizePx": 84,
+          "box": {
+            "x": 90,
+            "y": 1000,
+            "width": 400,
+            "height": 110
+          }
+        }
+      ],
+      "placement": {
+        "kind": "full_frame"
+      }
+    }
+  ]
+}

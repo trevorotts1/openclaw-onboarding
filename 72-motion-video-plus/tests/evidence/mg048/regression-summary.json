@@ -1,0 +1,89 @@
+{
+  "candidate_base": "build branch head 85cbf8322 merged with origin main 1e1c12dcc0ad336d24c13986973e885e58d95954 (merge f47a54ecc), release bundle 0a2de9145 (repo v27.1.28, Skill 72 version 2.0.0).",
+  "evidence_hygiene": "Suites regenerated the known derived records (mg026 environment/measurements, mg027 record, mg028 measurements, mg029 measurements, mg032 measurements, mg040 alpha-measurements/export-capabilities, mg046 record); all restored to committed state, no silent adoption.",
+  "honest_limits": [
+    "PowerPoint playback UNVERIFIED on every platform (no real PowerPoint available); recorded in the matrix T22 row.",
+    "The apt provisioning step UNVERIFIED (skipped by flag on every run of this build).",
+    "Owner calibration of the reference suite remains CALIBRATION_PENDING / ENGINEERING_FIXTURE_ONLY by the owner's ruling; not claimed as approval.",
+    "T29/T30 agent-execution trials are coordinator-run; no trial record exists in this tree and none was fabricated."
+  ],
+  "item": "MG-048",
+  "rebase": {
+    "base": "candidate re-based onto current main 38eedad62f205a836dd3e4ea20fd22ca4c999b77 (merge train #2121) after the pre-publication check found main had moved; merge commit c4243fc4d",
+    "conflicts": "five: role-library/_index.json (main's content taken whole, release version stamp re-applied), presentation_job/manifest.py and manifest_assert.py (both sides had independently set the manifest floor to 71, ours for phase P8.15-MOTION and main's for fanout workers declarations; the union keeps floor 71 with both rationales recorded), MANIFEST-SOURCE.txt and universal-sops/_content-manifest.json (both re-pointed to the merged PIPELINE-MANIFEST.json's actual sha256 4176606b839bc9b3c75954b7a4d24102a486cbdf06ce88fc1f4cd29b02006758, 203071 bytes)",
+    "inherited_main_failure": "tests/test_auto_resume.py::test_a_human_resume_has_no_attempt_to_refund fails identically on a pristine checkout of main 38eedad62; it is the presentation crew's landed state, not a product of this merge, is outside the house set above, and is disclosed rather than fixed by this branch",
+    "post_rebase_checks": "sync_check IN SYNC at manifest_version 71, 63 phases (P8.15-MOTION present, fanout workers declarations present); bump-version.sh --check: all 10 markers agree at v27.1.28 (new main did not consume it); JEV decision_engine files byte-identical to new main; test_intake OK; verify.sh PASS; presentations house set (test_mg036_motion_integration, test_manifest_assert, test_manifest_workers_field, test_deliverables_single_source) 59 passed, 0 failed, improving on the pre-rebase 58 passed 1 failed because main's landed Item 11 work fixed the stale workers premise at the source"
+  },
+  "scope": "Integrated release candidate regression, branch skill72-mg048-candidate. Full logs: workspace evidence mg048 (regression-status.log, regression2-status.log, per-runner logs, python-verbose.log).",
+  "suites": [
+    {
+      "name": "runtime provision (MOTION_RUNTIME_SKIP_APT=1)",
+      "note": "apt step UNVERIFIED as throughout this build",
+      "result": "exit 0"
+    },
+    {
+      "name": "npm ci",
+      "result": "exit 0"
+    },
+    {
+      "name": "npm run build",
+      "result": "exit 0"
+    },
+    {
+      "name": "npm test chain (as a chain)",
+      "note": "chain aborted at run-hyperframes on the mg005 static-record prose truncation (record 'lock-314fc289' vs derived 'lock-314f' in this longer worktree path): checkout-path dependent, measurements identical, not drift. Every runner was then run individually; see below.",
+      "result": "exit 1"
+    },
+    {
+      "name": "npm runners individually",
+      "note": "corpus 15/15, adapters 19/19, remotion 15/15, charts 36/36, catalog 75/75, hyperframes 13/13 cases (1 failed static-record check, the truncation artifact above), image-components 7/7, compositing 42/42, typography 35/35, diagrams 22, layout 29/29, chart-components 15/15, timeline 39/39, lint 49/49, preview 14/14, approvals 26/26, cache 49/49, resources 12/12, security 58/58, determinism 9/9, motion-proof 14, export-profiles 12/12, status 9/9",
+      "result": "all exit 0"
+    },
+    {
+      "name": "run-hyperframes in the main checkout (same record, same code at build head)",
+      "note": "corroborates the worktree-path truncation artifact",
+      "result": "exit 0"
+    },
+    {
+      "name": "Python full suite (unittest discover, 424 tests)",
+      "note": "solo verbose run: Ran 424 tests, FAILED (failures=1): test_intake.LegacyDefaultTests.test_no_document_presents_legacy_as_default, caused by references/animation-contract.md line 56 pairing 'legacy' with 'default' outside a negation (introduced by the MG-042 reconciliation wording). Fixed by a one-line reword that keeps the meaning; test_intake then passes 7/7 and verify.sh passes. Two earlier overlapped runs each showed the same single F; the overlapping processes were killed and the solo run governs.",
+      "result": "423 pass, 1 fail, then fixed"
+    },
+    {
+      "name": "presentations house pytest (scratch venv)",
+      "note": "the failure is test_manifest_workers_field.py::test_shipped_manifest_parses_unchanged_workers_all_one, reproduced identically on the pristine base 1d21d735b by MG-036's verifier (stale workers==1 premise); not a candidate regression",
+      "result": "58 passed, 1 failed"
+    },
+    {
+      "name": "sync_check.py",
+      "result": "IN SYNC, manifest_version 71, 63 phases"
+    },
+    {
+      "name": "Skill 47 suites (test_motion_status, test_cc_board)",
+      "result": "exit 0, ALL BEHAVIORS HOLD (both)"
+    },
+    {
+      "name": "verify.sh",
+      "result": "SKILL 72 VERIFY PASS (before and after the animation-contract reword)"
+    },
+    {
+      "name": "check_matrix.py",
+      "note": "34 rows: 29 implemented, 3 partial (T22 PowerPoint playback UNVERIFIED on every platform; T27 awaiting MG-049/MG-050; T32 production authority is a deployment act), 2 pending (T29/T30 coordinator-run trials)",
+      "result": "exit 0"
+    },
+    {
+      "name": "T27-PRE",
+      "note": "record at tests/evidence/mg048/t27-pre.json",
+      "result": "pass 9/9"
+    },
+    {
+      "name": "T28 / T31 (run_acceptance.py)",
+      "result": "pass 8/8 each, exit 0"
+    },
+    {
+      "name": "T29 / T30 / T32 / T33 / T34 (run_acceptance.py harness)",
+      "note": "the harness declines to execute them and fabricates no evidence; their substance is carried by the owning suites above (run-approvals, run-motion-proof, run-status, test_qc, reference suite)",
+      "result": "exit 3 by design"
+    }
+  ]
+}

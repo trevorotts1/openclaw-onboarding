@@ -1,0 +1,90 @@
+{
+  "schema_version": "2.0",
+  "id": "story-product-tour",
+  "beats": [
+    {
+      "id": "beat-reveal",
+      "scene_id": "product-01",
+      "job": "Show the actual product",
+      "viewer_question": "What does the product look like up close?",
+      "intended_understanding": "The viewer has seen the real device, not a rendering of it.",
+      "visual_verb": "reveal",
+      "subject_ids": [
+        "product-device"
+      ],
+      "representation": "image",
+      "explanatory": true,
+      "initial_state": "The device sits in shadow at the edge of frame.",
+      "transformation": "A mask opens across the device as light reaches it.",
+      "proof_state": "The device is fully visible with its label legible.",
+      "final_state": "The device holds center frame.",
+      "asset_ids": [
+        "product-front"
+      ],
+      "data_ids": [],
+      "essential_text": [
+        "The device, up close"
+      ],
+      "proof_frames": [
+        60
+      ],
+      "typography_only_exception": null
+    },
+    {
+      "id": "beat-compare",
+      "scene_id": "product-02",
+      "job": "Compare front and detail",
+      "viewer_question": "What detail distinguishes this model?",
+      "intended_understanding": "The machined dial is the distinguishing detail.",
+      "visual_verb": "compare",
+      "subject_ids": [
+        "product-device",
+        "product-detail"
+      ],
+      "representation": "image",
+      "explanatory": true,
+      "initial_state": "Full device on the left, detail panel empty.",
+      "transformation": "The detail photograph slides in beside the full view.",
+      "proof_state": "Both photographs are visible at matched scale.",
+      "final_state": "The detail holds with its caption.",
+      "asset_ids": [
+        "product-front",
+        "product-detail"
+      ],
+      "data_ids": [],
+      "essential_text": [
+        "Machined dial, standard on every unit"
+      ],
+      "proof_frames": [
+        90
+      ],
+      "typography_only_exception": null
+    },
+    {
+      "id": "beat-emphasis",
+      "scene_id": "product-02",
+      "job": "Land the one promise",
+      "viewer_question": "What should the viewer remember?",
+      "intended_understanding": "One promise line, held still.",
+      "visual_verb": "isolate",
+      "subject_ids": [
+        "promise-line"
+      ],
+      "representation": "typography",
+      "explanatory": false,
+      "initial_state": "The comparison still sits behind, dimmed.",
+      "transformation": "The promise line fades up alone; nothing else moves.",
+      "proof_state": "The line is the only bright element.",
+      "final_state": "The line holds to the cut.",
+      "asset_ids": [],
+      "data_ids": [],
+      "essential_text": [
+        "Built to be repaired, not replaced"
+      ],
+      "proof_frames": [
+        150
+      ],
+      "typography_only_exception": "Closing emphasis card, not an explanatory beat."
+    }
+  ]
+}

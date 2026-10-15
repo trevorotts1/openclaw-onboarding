@@ -51,7 +51,11 @@ Bright, human, real. No dark-style designs. No generic AI-polished look: no ster
 
 ## Voice
 
-For the Fish Audio voiceover: delivery notes for the voice model.
+Delivery notes for the job's narration, when the brief calls for
+narration at all (silent modes and VSL inserts have none; see
+`references/audio-policy.md`). The reference id field is the Fish
+Audio voice reference, filled only when the resolved audio plan
+uses Fish Audio.
 
 - Reference id:
 - Pace:

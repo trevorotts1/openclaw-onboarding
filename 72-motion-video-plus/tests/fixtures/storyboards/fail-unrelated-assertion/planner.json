@@ -1,0 +1,27 @@
+{
+  "planner_version": "1.0",
+  "storyboard_id": "story-unrelated-assertion",
+  "beats": [
+    {
+      "beat_id": "beat-traverse",
+      "idea": "One item travels three stages",
+      "viewer_takeaway": "takeaway",
+      "evidence_kind": "illustrative_metaphor",
+      "component_id": "C07",
+      "engine": "hyperframes",
+      "selection_reason": "reason",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "bg-drift"
+      ]
+    }
+  ]
+}

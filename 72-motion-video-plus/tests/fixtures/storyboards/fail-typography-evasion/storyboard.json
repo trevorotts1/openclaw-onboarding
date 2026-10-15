@@ -1,0 +1,114 @@
+{
+  "schema_version": "2.0",
+  "id": "story-typography-evasion",
+  "beats": [
+    {
+      "id": "beat-chart-token",
+      "scene_id": "bar-01",
+      "job": "One real chart",
+      "viewer_question": "How do the groups compare?",
+      "intended_understanding": "One chart carries a fraction of the explanation.",
+      "visual_verb": "compare",
+      "subject_ids": [
+        "bar-a",
+        "bar-b",
+        "bar-c"
+      ],
+      "representation": "chart",
+      "explanatory": true,
+      "initial_state": "Marks at zero.",
+      "transformation": "Widths grow together.",
+      "proof_state": "Widths match the dataset.",
+      "final_state": "Chart holds.",
+      "asset_ids": [],
+      "data_ids": [
+        "bars-illustrative"
+      ],
+      "essential_text": [
+        "Compare the three groups"
+      ],
+      "proof_frames": [
+        75
+      ],
+      "typography_only_exception": null
+    },
+    {
+      "id": "beat-evade-1",
+      "scene_id": "words-01",
+      "job": "Explain in words anyway",
+      "viewer_question": "What does the text say?",
+      "intended_understanding": "The viewer reads the rest of the explanation.",
+      "visual_verb": "reveal",
+      "subject_ids": [
+        "line-1"
+      ],
+      "representation": "typography",
+      "explanatory": true,
+      "initial_state": "Blank.",
+      "transformation": "A line of text fades in.",
+      "proof_state": "The line is on screen.",
+      "final_state": "The line holds.",
+      "asset_ids": [],
+      "data_ids": [],
+      "essential_text": [
+        "Explanation line 1"
+      ],
+      "proof_frames": [
+        30
+      ],
+      "typography_only_exception": "Kinetic typography is the author's declared style for the whole piece."
+    },
+    {
+      "id": "beat-evade-2",
+      "scene_id": "words-02",
+      "job": "Explain in words anyway",
+      "viewer_question": "What does the text say?",
+      "intended_understanding": "The viewer reads the rest of the explanation.",
+      "visual_verb": "reveal",
+      "subject_ids": [
+        "line-2"
+      ],
+      "representation": "typography",
+      "explanatory": true,
+      "initial_state": "Blank.",
+      "transformation": "A line of text fades in.",
+      "proof_state": "The line is on screen.",
+      "final_state": "The line holds.",
+      "asset_ids": [],
+      "data_ids": [],
+      "essential_text": [
+        "Explanation line 2"
+      ],
+      "proof_frames": [
+        30
+      ],
+      "typography_only_exception": "Kinetic typography is the author's declared style for the whole piece."
+    },
+    {
+      "id": "beat-evade-3",
+      "scene_id": "words-03",
+      "job": "Explain in words anyway",
+      "viewer_question": "What does the text say?",
+      "intended_understanding": "The viewer reads the rest of the explanation.",
+      "visual_verb": "reveal",
+      "subject_ids": [
+        "line-3"
+      ],
+      "representation": "typography",
+      "explanatory": true,
+      "initial_state": "Blank.",
+      "transformation": "A line of text fades in.",
+      "proof_state": "The line is on screen.",
+      "final_state": "The line holds.",
+      "asset_ids": [],
+      "data_ids": [],
+      "essential_text": [
+        "Explanation line 3"
+      ],
+      "proof_frames": [
+        30
+      ],
+      "typography_only_exception": "Kinetic typography is the author's declared style for the whole piece."
+    }
+  ]
+}

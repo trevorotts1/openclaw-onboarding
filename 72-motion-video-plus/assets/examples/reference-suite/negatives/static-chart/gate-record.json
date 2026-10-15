@@ -1,0 +1,19 @@
+{
+  "negative": "static_chart",
+  "gate": "MG-032 fake-motion detection (motion-proof evaluator)",
+  "command": "runtime/tests/run-motion-proof.js (MG-032 suite); failing case excerpted verbatim into mg032-measurements-excerpt.json",
+  "artifact": "decoy-f45.png",
+  "expected": "fail",
+  "gate_pass": false,
+  "category": "MG_FAKE_MOTION",
+  "exit_code": 6,
+  "detail": "subject bar-a: decoded width 480px, expected 240px (tolerance 2); subject bar-b: decoded width 720px, expected 360px (tolerance 2); subject bar-c: decoded width 1200px, expected 600px (tolerance 2); each bar did not move between the initial and proof states: the chart is static at this checkpoint whatever else in the frame is moving. Context change between frames 0 and 75 measured 5.11 mean absolute difference (the moving headline), against 0.04 for the honest positive.",
+  "reason_it_fails": "The chart itself never animates: at the frame-45 proof state the bars already sit at their final widths (480, 720, 1200) instead of the declared proof widths (240, 360, 600). Only the headline moves, which is decorative motion around a static subject. The evaluator refuses it as fake motion.",
+  "staged": "The shipped MG-032 decoy composition (runtime/tests/motion-proof/decoy-composition.ts): a C05-shaped scene whose bars are rendered at final width from frame 0 while the headline animates. The frame in this folder is the decoy at frame 45, copied from tests/evidence/mg032/; the positive frame beside it is the honest render at the same frame, bars at half width.",
+  "directive_case": "Section 8.4 failure fixture 2: static chart with only the headline moving",
+  "artifacts": {
+    "decoy_frame": "decoy-f45.png",
+    "gate_record": "mg032-measurements-excerpt.json",
+    "positive_frame": "positive-f45.png"
+  }
+}

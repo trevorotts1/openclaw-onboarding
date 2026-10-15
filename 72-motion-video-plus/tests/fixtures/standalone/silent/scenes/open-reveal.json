@@ -1,0 +1,68 @@
+{
+  "schema_version": "mg005-1",
+  "id": "open-reveal",
+  "component_id": "C01",
+  "component_version": "1.0.0",
+  "engine": "hyperframes",
+  "duration_frames": 90,
+  "asset_file": "assets/subject.svg",
+  "asset_sha256": "b5dfb9fa7ed796a9a5e3d4f61fb95d706e089f8effa454770bce469727d6f134",
+  "font_ref": "font-fixture-sans",
+  "canvas": {
+    "width": 1920,
+    "height": 1080
+  },
+  "design": {
+    "colors": {
+      "background": "#F7F4EE",
+      "ink": "#192A38",
+      "accent": "#C04A26"
+    }
+  },
+  "subject": {
+    "id": "work-crate",
+    "box": {
+      "x": 360,
+      "y": 190,
+      "width": 1200,
+      "height": 690
+    },
+    "measure_color": "#C04A26"
+  },
+  "copy": {
+    "headline": "Inside every delivery: the work itself",
+    "caption": "One work crate, uncovered in full. Nothing else in the frame moves.",
+    "fixture_label": "ENGINEERING FIXTURE - ILLUSTRATIVE OBJECT"
+  },
+  "headline_px": 84,
+  "caption_px": 40,
+  "motion": {
+    "kind": "mask_reveal",
+    "start_frame": 15,
+    "end_frame_exclusive": 60,
+    "hold_to_frame_exclusive": 90
+  },
+  "semantic_motion_assertions": [
+    {
+      "id": "reveal-initial",
+      "kind": "subject_reveal",
+      "frame": 0,
+      "min_fraction": 0,
+      "max_fraction": 0.02
+    },
+    {
+      "id": "reveal-proof",
+      "kind": "subject_reveal",
+      "frame": 37,
+      "min_fraction": 0.35,
+      "max_fraction": 0.75
+    },
+    {
+      "id": "reveal-final",
+      "kind": "subject_reveal",
+      "frame": 89,
+      "min_fraction": 0.97,
+      "max_fraction": 1
+    }
+  ]
+}

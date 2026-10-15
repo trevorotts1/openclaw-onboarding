@@ -1,0 +1,342 @@
+{
+ "item": "MG-038",
+ "section": "Directive MG-038: add the mobile VSL vertical derivative workflow",
+ "handoff_id": "handoff-vsl-mobile-fixture",
+ "insert_job_id": "fixture-vsl-mobile",
+ "derivative_of": {
+  "desktop_handoff_id": "handoff-vsl-desktop-fixture",
+  "desktop_job_id": "fixture-vsl-desktop",
+  "relationship": "vertical_derivative_recomposed"
+ },
+ "canvas": {
+  "width": 1080,
+  "height": 1920,
+  "fps": 30
+ },
+ "slot": {
+  "start_frame": 900,
+  "end_frame_exclusive": 1080
+ },
+ "layout": {
+  "variant": "portrait",
+  "layout_hash": "94b76d21379b5ad579af8e9f6234fe105793dfcb90bf1832f3e4a9addf915f76",
+  "plot": {
+   "x": 200,
+   "width": 740
+  },
+  "expected_bar_widths": {
+   "half_reveal": [
+    148.0,
+    222.0,
+    370.0
+   ],
+   "final": [
+    296.0,
+    444.0,
+    740.0
+   ]
+  }
+ },
+ "recomposition": {
+  "probe": {
+   "width": 1080,
+   "height": 1920,
+   "frame_count": 180
+  },
+  "measured": {
+   "half_reveal_frame": 45,
+   "half_reveal_widths": [
+    148,
+    222,
+    370
+   ],
+   "final_frame": 75,
+   "final_widths": [
+    296,
+    444,
+    740
+   ],
+   "row_centroids_y": [
+    569.5,
+    869.5,
+    1169.5
+   ],
+   "expected_row_centroids_y": [
+    570.0,
+    870.0,
+    1170.0
+   ]
+  },
+  "counterfactuals": {
+   "uniform_scale": {
+    "factor": 0.5625,
+    "predicted_widths": [
+     270.0,
+     405.0,
+     675.0
+    ],
+    "min_abs_difference": 26.0
+   },
+   "center_crop": {
+    "factor": 1.7777777777777777,
+    "source_window": {
+     "x_start": 656.25,
+     "x_end": 1263.75
+    },
+    "predicted_row_centroids_y": [
+     720.0,
+     1004.44,
+     1288.89
+    ],
+    "min_abs_difference": 119.39,
+    "landscape_bar_left_edge": 420,
+    "bar_origins_inside_window": false
+   }
+  },
+  "verdict": "pass"
+ },
+ "fit": {
+  "verdict": "pass",
+  "narration": {
+   "asset_ref": "fixture-parent-audio",
+   "same_approved_narration": true,
+   "cue": {
+    "id": "fixture-cue",
+    "segment_id": "narr-cue",
+    "word_index": 0,
+    "word_start_sample": 1440000,
+    "resolved_frame": 900,
+    "slot_start_frame": 900,
+    "resolution_method": "word startSample x fps / sample_rate, sample-exact integer arithmetic at 48000 Hz (the resolution the shipped compiler records as the sidecar cue anchor)"
+   },
+   "compiled_total_frames": 180,
+   "slot_length_frames": 180,
+   "parent_total_frames": 1440
+  },
+  "text_elements": [
+   {
+    "element": "headline",
+    "role": "headline",
+    "authored_px": 112,
+    "floor_px": 96,
+    "effective_px": 112,
+    "verdict": "pass"
+   },
+   {
+    "element": "category_labels",
+    "role": "chart_category_label",
+    "authored_px": 60,
+    "floor_px": 54,
+    "effective_px": 60,
+    "verdict": "pass"
+   },
+   {
+    "element": "values",
+    "role": "chart_value",
+    "authored_px": 64,
+    "floor_px": 60,
+    "effective_px": 64,
+    "verdict": "pass"
+   },
+   {
+    "element": "disclosure",
+    "role": "disclosure",
+    "authored_px": 48,
+    "floor_px": 40,
+    "effective_px": 48,
+    "verdict": "pass"
+   }
+  ],
+  "caption_profile": {
+   "font_size_px": 64,
+   "placement": "lower_third",
+   "role": "essential_support"
+  },
+  "caption_entries": [
+   {
+    "id": "cap-intro",
+    "role": "essential_support",
+    "floor_px": 54,
+    "effective_px": 64,
+    "verdict": "pass"
+   },
+   {
+    "id": "cap-cue",
+    "role": "essential_support",
+    "floor_px": 54,
+    "effective_px": 64,
+    "verdict": "pass"
+   },
+   {
+    "id": "cap-outro",
+    "role": "essential_support",
+    "floor_px": 54,
+    "effective_px": 64,
+    "verdict": "pass"
+   }
+  ]
+ },
+ "motion_proof": {
+  "verdict": "pass",
+  "assertions": [
+   {
+    "role": "initial",
+    "frame": 0,
+    "expected": [
+     0,
+     0,
+     0
+    ],
+    "geometry_measured": [
+     0,
+     0,
+     0
+    ],
+    "raster_measured": [
+     0,
+     0,
+     0
+    ],
+    "verdict": "pass",
+    "detail": "bar widths agree three ways at frame 0: spec derivation, component geometry, and decoded raster all read [0, 0, 0]"
+   },
+   {
+    "role": "proof",
+    "frame": 45,
+    "expected": [
+     148,
+     222,
+     370
+    ],
+    "geometry_measured": [
+     148,
+     222,
+     370
+    ],
+    "raster_measured": [
+     148,
+     222,
+     370
+    ],
+    "verdict": "pass",
+    "detail": "bar widths agree three ways at frame 45: spec derivation, component geometry, and decoded raster all read [148, 222, 370]"
+   },
+   {
+    "role": "final",
+    "frame": 75,
+    "expected": [
+     296,
+     444,
+     740
+    ],
+    "geometry_measured": [
+     296,
+     444,
+     740
+    ],
+    "raster_measured": [
+     296,
+     444,
+     740
+    ],
+    "verdict": "pass",
+    "detail": "bar widths agree three ways at frame 75: spec derivation, component geometry, and decoded raster all read [296, 444, 740]"
+   },
+   {
+    "role": "hold",
+    "frame": 179,
+    "expected": [
+     296,
+     444,
+     740
+    ],
+    "geometry_measured": [
+     296,
+     444,
+     740
+    ],
+    "raster_measured": [
+     296,
+     444,
+     740
+    ],
+    "verdict": "pass",
+    "detail": "bar widths agree three ways at frame 179: spec derivation, component geometry, and decoded raster all read [296, 444, 740]"
+   }
+  ]
+ },
+ "qc_gate": {
+  "verdict": "pass",
+  "mode": "package",
+  "summary": {
+   "total": 27,
+   "pass": 19,
+   "fail": 0,
+   "skipped_with_reason": 8,
+   "not_run": 0,
+   "failed_checks": [],
+   "mandatory_not_run": []
+  },
+  "fonts_check": {
+   "id": "package.fonts",
+   "title": "declared fonts resolve without substitution",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "every declared font requirement resolves to an installed family or a package font file",
+   "command": "fc-list : family",
+   "exit_status": 0,
+   "observed": {
+    "fonts": [
+     {
+      "id": "font-fixture-sans",
+      "family_alias": "Liberation Sans",
+      "source": "runtime_registry",
+      "status": "resolved"
+     }
+    ],
+    "installed_family_count": 1535
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg038/evidence/produce/delivery-package/assets.json"
+  }
+ },
+ "font_declaration": {
+  "intake_family_alias": "fixture-sans",
+  "qc_facing_family_alias": "Liberation Sans",
+  "resolution_source": "runtime/src/remotion/fonts.ts ALIAS_REGISTRY (the registry the adapter resolves the alias through)",
+  "disclosure": "The delivery package's QC-facing assets record declares the font requirement under the resolved family name, following the MG-035 delivery-stage convention, because the MG-034 gate compares family names against fontconfig and cannot resolve the canonical alias token (the pending checker fix is recorded at MG-037). The intake assets record with the canonical alias is retained in the delivery package as intake-assets.json. The render itself resolved the alias through the runtime registry, as it refuses to render otherwise."
+ },
+ "artifact": {
+  "path": "insert-mobile.mp4",
+  "sha256": "a61f654a31706f9a054ec319a8f5373ef1579ad4239fe66c27c2d1747777030b",
+  "bytes": 59612
+ },
+ "retained_files": {
+  "delivery-record.json": {
+   "sha256": "9fdd43c7ef17f41ce214e62850195269caf1655b80608fb63d96b16726471360",
+   "bytes": 3957
+  },
+  "fit-report.json": {
+   "sha256": "b9ac349ef0c3dee908ca14cf6714e36dfd593bf639e3f2ce79cc5952bb49cbdc",
+   "bytes": 2361
+  },
+  "qc-mobile.json": {
+   "sha256": "8ac92c8d6b1e797222d63c9d0703efec9b8c0847cd4c749b596dd9ecc3b229dc",
+   "bytes": 18812
+  },
+  "motion-proof-record.json": {
+   "sha256": "bf61d81ae466193194df268aadf4c0476698ca6d083278c567584a697958e06d",
+   "bytes": 3223
+  },
+  "insert-mobile.mp4": {
+   "sha256": "a61f654a31706f9a054ec319a8f5373ef1579ad4239fe66c27c2d1747777030b",
+   "bytes": 59612
+  },
+  "poster.png": {
+   "sha256": "ddfd59afc07e64a7fd52e64c4c18d4e9ead0606098fff1dfc202cf8d5ff6ecbc",
+   "bytes": 105820
+  }
+ },
+ "note": "Produced by scripts/vsl_mobile.py produce on the acceptance fixture: the staged vsl_mobile job passes the contracts layer, compiles its own timeline in slot mode, renders through the shipped dispatcher under the shared runtime, passes the MG-032 motion proof under a portrait case, and passes the MG-034 package-lane gate. Fixture context: the approval record carries authority_status not_verified, as the shipped suites do."
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": "2.0",
+  "id": "proof-bars",
+  "kind": "illustrative",
+  "source_note": "Original engineering fixture. Values are not client or business-performance evidence.",
+  "units": "crates",
+  "domain": [
+    0,
+    30
+  ],
+  "rows": [
+    {
+      "id": "a",
+      "label": "Packed",
+      "value": 12
+    },
+    {
+      "id": "b",
+      "label": "Shipped",
+      "value": 18
+    },
+    {
+      "id": "c",
+      "label": "Delivered",
+      "value": 30
+    }
+  ]
+}

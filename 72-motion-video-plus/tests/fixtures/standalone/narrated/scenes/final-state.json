@@ -1,0 +1,67 @@
+{
+  "schema_version": "2.0",
+  "id": "final-state",
+  "component_id": "C05",
+  "component_version": "1.0.0",
+  "engine": "remotion",
+  "layout_variant": "landscape",
+  "duration_frames": 120,
+  "asset_ids": [],
+  "data_path": "data/final-bars.json",
+  "design_path": "design.json",
+  "copy": {
+    "headline": "Delivered, measured, and held",
+    "disclosure": "Illustrative example"
+  },
+  "motion": {
+    "kind": "linear_bar_reveal",
+    "start_frame": 10,
+    "end_frame_exclusive": 40,
+    "hold_to_frame_exclusive": 120,
+    "overshoot_data": false
+  },
+  "semantic_motion_assertions": [
+    {
+      "id": "final-ratios",
+      "kind": "bar_widths",
+      "subject_ids": [
+        "bar-a",
+        "bar-b",
+        "bar-c"
+      ],
+      "frame": 40,
+      "expected_values": [
+        1200.0,
+        1200.0,
+        1200.0
+      ],
+      "tolerance": 1,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    },
+    {
+      "id": "hold-ratios",
+      "kind": "bar_widths",
+      "subject_ids": [
+        "bar-a",
+        "bar-b",
+        "bar-c"
+      ],
+      "frame": 119,
+      "expected_values": [
+        1200.0,
+        1200.0,
+        1200.0
+      ],
+      "tolerance": 1,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    }
+  ]
+}

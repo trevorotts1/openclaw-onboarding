@@ -1,0 +1,34 @@
+{
+  "id": "flow-01",
+  "semantic_motion_assertions": [
+    {
+      "id": "item-traverses-stages",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "work-item"
+      ],
+      "frame": 90,
+      "expected_values": [],
+      "tolerance": 0,
+      "unit": "normalized",
+      "evidence": [
+        "decoded_frame"
+      ]
+    },
+    {
+      "id": "gate-branch",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "work-item",
+        "decision-gate"
+      ],
+      "frame": 120,
+      "expected_values": [],
+      "tolerance": 0,
+      "unit": "normalized",
+      "evidence": [
+        "decoded_frame"
+      ]
+    }
+  ]
+}

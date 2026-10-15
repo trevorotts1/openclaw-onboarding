@@ -1,0 +1,148 @@
+{
+ "calibration_status": "CALIBRATION_PENDING and ENGINEERING_FIXTURE_ONLY: no component example in this index is owner approved, and no score recorded anywhere in this suite is owner approval.",
+ "components": [
+  {
+   "component_id": "C01",
+   "engine": "hyperframes",
+   "frames": [
+    "frames/c01-f0.png",
+    "frames/c01-f60.png",
+    "frames/c01-f149.png"
+   ],
+   "name": "Image-led statement",
+   "proof": "Subject integrity, deliberate crop, readable opening and proof frames. Decoded-frame reveal fractions 0.000, 0.625, 1.000 against the declared bands.",
+   "record": "tests/evidence/mg044/measurements.json (c01_reveal) and tests/evidence/mg005/measurements.json",
+   "state": "available (MG-044 bundle)"
+  },
+  {
+   "component_id": "C02",
+   "engine": "hyperframes",
+   "frames": [
+    "frames/c02-f0.png",
+    "frames/c02-f60.png",
+    "frames/c02-f150.png"
+   ],
+   "name": "Product-detail demonstration",
+   "proof": "Original UI fidelity; annotation follows the correct detail. Detail fraction normalized 0.158 (wide), 0.480 (mid-zoom), 1.000 (close); MG-012 upscale factor 1.5 within the 2x limit; anchor round-trip exact.",
+   "record": "tests/evidence/mg044/measurements.json (c02_geometry, c02_detail, c02_clip)",
+   "state": "available (MG-044 bundle); the example screen is a labeled fictional fixture, VREF-04 stays BLOCKED_ASSET for real product proof"
+  },
+  {
+   "component_id": "C03",
+   "engine": "hyperframes",
+   "frames": [
+    "frames/c03-f0.png",
+    "frames/c03-f60.png",
+    "frames/c03-f179.png"
+   ],
+   "name": "Before/after comparison",
+   "proof": "Both states and the comparison boundary visible. Decoded-frame after-state fractions 0.000, 0.445, 1.000 normalized, boundary resting at the declared 0.55 rest fraction.",
+   "record": "tests/evidence/mg044/measurements.json (c03_compare, c03_clip)",
+   "state": "available (MG-044 bundle)"
+  },
+  {
+   "component_id": "C04",
+   "engine": "remotion",
+   "frames": [
+    "frames/c04-f30.png",
+    "frames/c04-f75.png",
+    "frames/c04-f170.png"
+   ],
+   "name": "Object-through-mechanism",
+   "proof": "Persistent identity, causal order, final outcome. One object's centroid measured from decoded raster at frames 30, 75, 170 along the mechanism path (MG-032 transit case, verdict pass).",
+   "record": "tests/evidence/mg017/measurements.json and tests/evidence/mg032/measurements.json (c04_mechanism)",
+   "state": "available (MG-017 bundle)"
+  },
+  {
+   "component_id": "C05",
+   "engine": "remotion (also built natively in Hyperframes by MG-016)",
+   "frames": [
+    "frames/c05-f0.png",
+    "frames/c05-f45.png",
+    "frames/c05-f75.png",
+    "frames/c05-f179.png"
+   ],
+   "name": "Bar comparison",
+   "proof": "Intermediate geometry and exact final ratios and labels: widths [0,0,0], [240,360,600], [480,720,1200], held, measured three ways (Section 17.2 states).",
+   "record": "tests/evidence/mg006/measurements.json and tests/evidence/mg032/measurements.json (c05_positive)",
+   "state": "available (MG-006 bundle)"
+  },
+  {
+   "component_id": "C06",
+   "engine": "remotion (Hyperframes sample also shipped)",
+   "frames": [
+    "frames/c06-f0.png",
+    "frames/c06-f45.png",
+    "frames/c06-f150.png",
+    "frames/c06-hf-f45.png",
+    "frames/c06-hf-f150.png"
+   ],
+   "name": "Line trend",
+   "proof": "Time order, correct plotted points, no fabricated smoothing: dot presence at frames 0, 45, 75, 150 and the annotation border probe, per the MG-016 record. The c06-f* frames are the Remotion render; the c06-hf-f* frames are the Hyperframes sample after the MG-044 layout polish (axis caption moved into the left rail, fixture label moved to the disclosure row), measured in the polish record.",
+   "record": "tests/evidence/mg016/measurements.json and tests/evidence/mg044/c06-polish.json",
+   "state": "available (MG-016 bundle)"
+  },
+  {
+   "component_id": "C07",
+   "engine": "remotion",
+   "frames": [
+    "frames/c07-f45.png",
+    "frames/c07-f75.png"
+   ],
+   "name": "Stacked allocation",
+   "proof": "Segment values, sums, units, and color and label mapping, per the MG-016 record.",
+   "record": "tests/evidence/mg016/measurements.json",
+   "state": "available (MG-016 bundle)"
+  },
+  {
+   "component_id": "C08",
+   "engine": "remotion",
+   "frames": [
+    "frames/c08-f45.png",
+    "frames/c08-f75.png"
+   ],
+   "name": "Waterfall explanation",
+   "proof": "Arithmetic equality and correct connector and baseline behavior, per the MG-016 record (the Section 8 waterfall: 100 + 25 - 10 = 115).",
+   "record": "tests/evidence/mg016/measurements.json",
+   "state": "available (MG-016 bundle)"
+  },
+  {
+   "component_id": "C09",
+   "engine": "remotion",
+   "frames": [],
+   "name": "Causal/branching diagram",
+   "proof": "Meaningful branch selection, no orphan edges or label collisions, per the MG-017 diagram record. No still is copied into this folder: the shipped MG-017 evidence for C09 is its measurements record, and no frame is fabricated for this index.",
+   "record": "tests/evidence/mg017/measurements.json",
+   "state": "available (MG-017 bundle)"
+  },
+  {
+   "component_id": "C10",
+   "engine": "qualified-native-integration",
+   "frames": [],
+   "name": "Spatial/depth explanation",
+   "proof": "Not shippable yet: occlusion and perspective evidence plus a readable final composition are required, and no bundle has registered them. Control: the MG-032 depth case refuses a depth claim asserted with no occlusion or depth evidence (MG_CAPABILITY_UNSUPPORTED, exit 3, tests/evidence/mg032/measurements.json).",
+   "record": "runtime/src/catalog/pending.ts (C10 entry states the reason)",
+   "state": "unavailable: no owning item named in the Section 15 table; a qualified native 3D or spatial integration is a new design decision, not a by-product of the C01 to C03 machinery"
+  },
+  {
+   "component_id": "C11",
+   "engine": "either",
+   "frames": [],
+   "name": "Evidence/offer reveal",
+   "proof": "Not shippable yet: authentic content, hierarchy, and an adequate final hold are required, and no bundle has registered them.",
+   "record": "runtime/src/catalog/pending.ts (C11 entry states the reason)",
+   "state": "unavailable: no owning item named in the Section 15 table; the evidence-authenticity workflow is a new design decision"
+  },
+  {
+   "component_id": "C12",
+   "engine": "either",
+   "frames": [],
+   "name": "Presenter-safe loop/reveal",
+   "proof": "Not shippable yet: no jump at the loop seam and no disappearing essential information are required, and no bundle has registered them.",
+   "record": "runtime/src/catalog/pending.ts (C12 entry states the reason)",
+   "state": "unavailable: no owning item named in the Section 15 table; loop-seam machinery is a new design decision"
+  }
+ ],
+ "item": "MG-044",
+ "note": "Frames are decoded stills from the shipped producers' own evidence, copied without alteration; hashes for every file are in ../evidence-index.json. The C06 Hyperframes stills (c06-hf-f*) are the deliberate MG-044 re-adoption: the chart-components suite regenerated them after the layout polish and the MG-016 static measurements record still verifies unchanged."
+}

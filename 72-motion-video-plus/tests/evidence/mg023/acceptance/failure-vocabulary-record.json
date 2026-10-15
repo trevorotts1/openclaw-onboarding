@@ -1,0 +1,22 @@
+{
+  "allOk": true,
+  "checks": [
+    {
+      "check": "missing_final_words_fail_by_name",
+      "ok": true
+    },
+    {
+      "check": "clipped_output_fails_by_name",
+      "ok": true
+    },
+    {
+      "check": "off_target_loudness_fails_by_name",
+      "ok": true
+    },
+    {
+      "check": "undoctored_output_passes",
+      "ok": true
+    }
+  ],
+  "example": "failure-vocabulary"
+}

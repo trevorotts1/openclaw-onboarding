@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "assets": {
+    "hero-image": {
+      "source": "client_supplied",
+      "rights_status": "client_supplied",
+      "role": "hero_image"
+    },
+    "mood-reference": {
+      "source": "created_in_house",
+      "rights_status": "owned",
+      "role": "mood_reference"
+    }
+  }
+}

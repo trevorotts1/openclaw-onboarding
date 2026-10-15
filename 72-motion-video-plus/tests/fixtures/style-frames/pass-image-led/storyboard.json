@@ -1,0 +1,34 @@
+{
+  "schema_version": "2.0",
+  "job_id": "fixture-style-image-led",
+  "beats": [
+    {
+      "id": "beat-hero",
+      "scene_id": "hero-01",
+      "from_frame": 0,
+      "duration_frames": 180,
+      "representation": "image",
+      "narrative_function": "Meet the mentor in a real room before any claim is made.",
+      "spoken_intent": null,
+      "visual_intent": "A bright room, a desk, and the mentor already present; the crop widens to the full room as the headline lands.",
+      "asset_ids": [
+        "mentor-desk-illustration"
+      ],
+      "data_ids": [],
+      "evidence_kind": "illustrative",
+      "essential_text": [
+        "Real mentors.",
+        "Real rooms."
+      ],
+      "reveal": {
+        "kind": "mask",
+        "final_state_claim": "At the final style frame the whole room and the mentor are visible with the headline settled at left."
+      },
+      "proof_frames": [
+        0,
+        90,
+        150
+      ]
+    }
+  ]
+}

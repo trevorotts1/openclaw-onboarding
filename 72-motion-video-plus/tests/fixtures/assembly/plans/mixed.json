@@ -1,0 +1,160 @@
+{
+  "timeline": {
+    "schema_version": "2.0",
+    "job_id": "mg022-mixed",
+    "fps": 30,
+    "total_frames": 150,
+    "scenes": [
+      {
+        "id": "a",
+        "start_frame": 0,
+        "end_frame_exclusive": 60,
+        "source_start_frame": 0,
+        "transition_in_frames": 0,
+        "transition_out_frames": 15
+      },
+      {
+        "id": "b",
+        "start_frame": 45,
+        "end_frame_exclusive": 105,
+        "source_start_frame": 0,
+        "transition_in_frames": 15,
+        "transition_out_frames": 15
+      },
+      {
+        "id": "c",
+        "start_frame": 90,
+        "end_frame_exclusive": 150,
+        "source_start_frame": 0,
+        "transition_in_frames": 15,
+        "transition_out_frames": 0
+      }
+    ],
+    "events": [],
+    "parent_slot": null,
+    "audio_owner": "self"
+  },
+  "sidecar": {
+    "schema_version": "1.0",
+    "item": "MG-021",
+    "job_id": "mg022-mixed",
+    "fps": 30,
+    "sample_rate": 48000,
+    "rounding_rule": "round_half_up",
+    "mode": "program",
+    "total_frames": 150,
+    "total_samples": 240000,
+    "scenes": [
+      {
+        "id": "a",
+        "placedRange": {
+          "startFrame": 0,
+          "endFrameExclusive": 60
+        },
+        "durationFrames": 60,
+        "sourceRange": {
+          "startFrame": 0,
+          "endFrameExclusive": 60
+        },
+        "sourceRangeSamples": {
+          "startSample": 0,
+          "endSampleExclusive": 96000
+        },
+        "transitionInFrames": 0,
+        "transitionOutFrames": 15
+      },
+      {
+        "id": "b",
+        "placedRange": {
+          "startFrame": 45,
+          "endFrameExclusive": 105
+        },
+        "durationFrames": 60,
+        "sourceRange": {
+          "startFrame": 0,
+          "endFrameExclusive": 60
+        },
+        "sourceRangeSamples": {
+          "startSample": 0,
+          "endSampleExclusive": 96000
+        },
+        "transitionInFrames": 15,
+        "transitionOutFrames": 15
+      },
+      {
+        "id": "c",
+        "placedRange": {
+          "startFrame": 90,
+          "endFrameExclusive": 150
+        },
+        "durationFrames": 60,
+        "sourceRange": {
+          "startFrame": 0,
+          "endFrameExclusive": 60
+        },
+        "sourceRangeSamples": {
+          "startSample": 0,
+          "endSampleExclusive": 96000
+        },
+        "transitionInFrames": 15,
+        "transitionOutFrames": 0
+      }
+    ],
+    "handles": [
+      {
+        "id": "t1",
+        "fromSceneId": "a",
+        "toSceneId": "b",
+        "ownerSceneId": "a",
+        "frames": 15,
+        "placedRange": {
+          "startFrame": 45,
+          "endFrameExclusive": 60
+        },
+        "midpointFrameTimesTwo": 105,
+        "midpointSample": 84000
+      },
+      {
+        "id": "t2",
+        "fromSceneId": "b",
+        "toSceneId": "c",
+        "ownerSceneId": "c",
+        "frames": 15,
+        "placedRange": {
+          "startFrame": 90,
+          "endFrameExclusive": 105
+        },
+        "midpointFrameTimesTwo": 195,
+        "midpointSample": 156000
+      }
+    ],
+    "cues": [],
+    "narration": [
+      {
+        "id": "n1",
+        "startFrame": 0,
+        "endFrameExclusive": 50,
+        "startSample": 0,
+        "endSampleExclusive": 80000
+      },
+      {
+        "id": "n2",
+        "startFrame": 50,
+        "endFrameExclusive": 100,
+        "startSample": 80000,
+        "endSampleExclusive": 160000
+      },
+      {
+        "id": "n3",
+        "startFrame": 100,
+        "endFrameExclusive": 150,
+        "startSample": 160000,
+        "endSampleExclusive": 240000
+      }
+    ],
+    "captions": [],
+    "sfx": [],
+    "property_overlaps_declared": [],
+    "slot": null
+  }
+}

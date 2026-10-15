@@ -23,6 +23,9 @@
  * Usage:
  *   node scripts/render.js --manifest run/manifest.json --scene scene-01 \
  *     --outdir work/scenes/scene-01 [--preview] [--resume] [--chunk-frames 300]
+ *   --preview renders the same composition at a scaled size (default
+ *   --preview-scale 0.5) at the FULL manifest fps. --rough is the only
+ *   reduced-fps mode and labels its output rough_layout_only (MG-024).
  *
  * Review modes (no scene render; each exits after running):
  *   node scripts/render.js --still 12.5 --manifest run/manifest.json \
@@ -76,9 +79,36 @@ async function main() {
   const scene = manifest.scenes.find(s => s.id === sceneId);
   if (!scene) { log('scene not found: ' + sceneId); process.exit(2); }
 
-  const fps = preview ? 15 : manifest.fps;
-  const width = preview ? 960 : manifest.width;
-  const height = preview ? 540 : manifest.height;
+  // MG-024 preview model. A preview is the same composition at lower
+  // spatial resolution and, by default, the SAME frame rate as the
+  // final: full fps is what makes preview timing, sync, and motion
+  // review trustworthy. The old code forced 960x540 at 15 fps for
+  // every scene regardless of the manifest; the size never even
+  // reached the pixels (Playwright screenshots the stage element at
+  // its own authored size, whatever the viewport says), while the
+  // 15 fps silently halved the frame count, so motion was being
+  // judged on half the authored frames. Now the scale derives from
+  // THIS manifest's canvas, and the capture applies the same scale
+  // to the stage (see the transform in the chunk loop) so the output
+  // really is the scaled composition. Only --rough drops the frame
+  // rate (15 fps when the manifest is faster, else half), and a
+  // rough render is labeled rough_layout_only in its sidecar record:
+  // layout evidence, never motion evidence. The V2 runtime's shared
+  // preview planner (runtime/src/preview/plan.ts) uses the same
+  // rules; this dependency-free script cannot import it.
+  const rough = preview && has('rough');
+  const rawScale = arg('preview-scale', '0.5');
+  const parsedScale = parseFloat(rawScale);
+  const previewScale = preview ? parsedScale : 1;
+  if (preview && !(previewScale > 0 && previewScale <= 1)) {
+    log('--preview-scale must be a number in (0, 1]; got ' + rawScale);
+    process.exit(2);
+  }
+  const evenDim = (v) => Math.max(2, Math.round(v / 2) * 2);
+  const width = previewScale !== 1 ? evenDim(manifest.width * previewScale) : manifest.width;
+  const height = previewScale !== 1 ? evenDim(manifest.height * previewScale) : manifest.height;
+  const roughFps = manifest.fps > 15 ? 15 : Math.max(1, Math.floor(manifest.fps / 2));
+  const fps = rough ? roughFps : manifest.fps;
   const totalFrames = Math.round(scene.duration_seconds * fps);
   const htmlPath = path.resolve(path.dirname(manifestPath), scene.file);
   if (!fs.existsSync(htmlPath)) { log('missing scene file: ' + htmlPath); process.exit(2); }
@@ -89,10 +119,16 @@ async function main() {
   if (resume && fs.existsSync(statePath)) {
     try {
       const st = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-      if (st.scene === sceneId && st.fps === fps) doneThrough = st.doneThrough;
+      // MG-024: the state also keys on the capture dimensions. A
+      // preview now runs at the manifest fps, so fps alone no longer
+      // separates a scaled preview's frames from a final's; a state
+      // recorded at other dimensions must not resume this render.
+      if (st.scene === sceneId && st.fps === fps && st.width === width && st.height === height) {
+        doneThrough = st.doneThrough;
+      }
     } catch (e) { log('unreadable state file, starting over: ' + e.message); }
   }
-  const saveState = (n) => fs.writeFileSync(statePath, JSON.stringify({ scene: sceneId, fps, doneThrough: n }));
+  const saveState = (n) => fs.writeFileSync(statePath, JSON.stringify({ scene: sceneId, fps, width, height, doneThrough: n }));
 
   const frameName = (n) => path.join(outDir, 'frame_' + String(n).padStart(6, '0') + '.png');
   let start = doneThrough + 1;
@@ -114,6 +150,21 @@ async function main() {
       const dur = await page.evaluate(() => window.__sceneDuration);
       if (typeof dur === 'number' && Math.abs(dur - scene.duration_seconds) > 0.05) {
         throw new Error('__sceneDuration ' + dur + ' != manifest ' + scene.duration_seconds);
+      }
+      if (previewScale !== 1) {
+        // Scale the stage itself, not just the viewport: the element
+        // screenshot rasterizes the stage's transformed box, so the
+        // captured PNGs come out at the preview size with the layout
+        // geometry preserved exactly (verified by MG-024 decoded
+        // measurement: a bar authored at x=108 with width 432 in a
+        // 1080-wide stage captures at x=54 with width 216 at scale
+        // 0.5). Without this the viewport size is ignored by the
+        // capture, which is why the old 960x540 forcing was inert.
+        await page.evaluate((s) => {
+          const stage = document.querySelector('#stage');
+          stage.style.transformOrigin = '0 0';
+          stage.style.transform = 'scale(' + s + ')';
+        }, previewScale);
       }
       for (let n = c0; n < c1; n++) {
         const t = n / fps;
@@ -158,7 +209,31 @@ async function main() {
   } catch (e) {
     log('cleanup warning: ' + e.message);
   }
-  process.stdout.write(JSON.stringify({ scene: sceneId, segment: segPath, frames: totalFrames }) + '\n');
+  // MG-024: a preview render leaves a review record next to the
+  // segment: the label (rough_layout_only when --rough dropped the
+  // frame rate), the scale, and the fps and dimensions of both the
+  // source composition and this preview.
+  let previewInfo = null;
+  if (preview) {
+    previewInfo = {
+      kind: rough ? 'rough_layout_only' : 'preview',
+      scale: previewScale,
+      fps: fps,
+      width: width,
+      height: height,
+      sourceFps: manifest.fps,
+      sourceWidth: manifest.width,
+      sourceHeight: manifest.height,
+    };
+    fs.writeFileSync(
+      path.join(outDir, sceneId + '.preview.json'),
+      JSON.stringify({ scene: sceneId, segment: segPath, ...previewInfo }, null, 2) + '\n'
+    );
+  }
+  process.stdout.write(JSON.stringify({
+    scene: sceneId, segment: segPath, frames: totalFrames,
+    ...(previewInfo ? { preview: previewInfo } : {}),
+  }) + '\n');
 }
 
 main().catch(e => { log('FATAL: ' + (e && e.stack || e)); process.exit(1); });
@@ -301,5 +376,3 @@ async function cliprangeMode(manifestPath, sceneId, outDir) {
   }
   log('clip: ' + out);
 }
-
-main().catch(e => { log('FATAL: ' + (e && e.stack || e)); process.exit(1); });

@@ -1,0 +1,28 @@
+[
+  {
+    "schema_version": "2.0",
+    "approval_id": "fixture-design-approval-style-chart",
+    "job_id": "fixture-style-chart",
+    "company_id": "fixture-company",
+    "scope": "design",
+    "decision": "approved",
+    "subject_revision": "8e6467e145c057617157aec6fdd6223299194b8ba38e0ed209373f310f6c0dd0",
+    "artifact_refs": [
+      {
+        "path": "style-frames/bar-01-first.png",
+        "sha256": "64a57a53969d40c21c3f66a187eab0c75ab8a038a472db929f02e525fa01fd39"
+      },
+      {
+        "path": "style-frames/bar-01-key_proof.png",
+        "sha256": "06a09482b938782f061b18b9a55abe5df6370c8fb87aab2bc3f10928378883d5"
+      },
+      {
+        "path": "style-frames/bar-01-final.png",
+        "sha256": "6813a262fede17c1aa4e3097490adbf994ec21a4dedbb70190671cf3a8c29f87"
+      }
+    ],
+    "actor_id": "fixture-test-issuer",
+    "source_event_ref": "fixture-event:mg010-style-frames-chart-001",
+    "authority_status": "verified"
+  }
+]

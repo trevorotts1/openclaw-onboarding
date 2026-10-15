@@ -1,0 +1,669 @@
+{
+  "base_commit": "c8ecad069",
+  "item": "MG-043",
+  "purpose": "Machine-readable registry of the directive Section 9 test matrix (T01-T27) plus the Section 18 additions (T28-T34). Every row names its subject items, its state on this base, the evidence files that implement it today, and, for work that cannot exist yet, the owning item it waits on. Validated by tests/check_matrix.py and tests/unit/test_matrix_registry.py. A row is 'implemented' only when its evidence files exist and its good/bad pair runs today; 'partial' when a named part runs today and the rest is owned by a later item; 'pending' when the subject does not exist yet. No row may be reported as passing on the strength of this registry alone: the registry points at evidence, it is not evidence.",
+  "states": {
+    "implemented": "The test runs today against subjects that exist on this base; evidence files are listed and exist.",
+    "partial": "A named part runs today (evidence listed); the remainder is owned by the items in blocked_on.",
+    "pending": "The subject does not exist on this base yet; blocked_on names the owning item(s). No acceptance is claimed."
+  },
+  "tests": [
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-corpus.ts",
+        "tests/unit/test_motion_contracts.py",
+        "tests/unit/test_migrate_manifest.py"
+      ],
+      "gate": {
+        "bad": "Eleven shared invalid mutations (unknown key, off-aspect canvas, duplicate scene id, broken timeline total, unknown component, reversed dataset domain, VSL audio/parent violations) are rejected with the same first error category in both layers.",
+        "good": "All four delivery-mode fixture jobs validate with zero findings in both the TypeScript and Python contract layers."
+      },
+      "id": "T01",
+      "name": "Schema and migration",
+      "notes": "Shared Python/TS acceptance and rejection corpus (directive 16.6 rule 12). V1 data preservation is covered by the migrator tests.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-007",
+        "MG-008"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "tests/unit/test_authoring_policy.py",
+        "tests/unit/test_intake.py",
+        "references/renderer-routing.md"
+      ],
+      "gate": {
+        "bad": "The policy gate flags mandate language (a required or prescribed authoring model or vendor) in the governing documents; the predicate is proven against synthetic mandated text in the same test file.",
+        "good": "SKILL.md and INSTRUCTIONS.md carry the authoring-model freedom rule (client selection or configured default; recommendations are guidance only), and every render suite executes locally with no LLM credential present."
+      },
+      "id": "T02",
+      "name": "Model/harness independence",
+      "notes": "The render-without-a-key half is exercised continuously by T04/T05, which run in this environment with no authoring-model credential. The policy-text half is guarded by test_authoring_policy.py, added by MG-043 because MG-002 shipped the policy without an automated regression gate.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-002"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "scripts/migrate_install.py",
+        "tests/unit/test_migration_install.py",
+        "tests/unit/test_runtime_rollback.py"
+      ],
+      "gate": {
+        "bad": "The clean-install script exits nonzero when any stage fails; a failed or interrupted provision leaves the previously verified runtime active (provisioner design, MG-003).",
+        "good": "A fresh tracked-files-only copy of the skill plus shared runtime installs (npm ci + provisioner, skip-apt on this box), the provisioner's real launch-and-render probe passes for both engines, and the fast validation suite runs against the fresh tree."
+      },
+      "id": "T03",
+      "name": "Shared runtime installation",
+      "notes": "MG-041 landed the transactional install, upgrade, and rollback lifecycle, and its suites pass in the MG-048 candidate regression; the shared runtime provisioner (shared-utils/motion-render-runtime/provision.sh) ran as step (a) of that regression with exit 0. The apt package step stays UNVERIFIED on every run of this build, including the candidate regression, and is recorded as such in the MG-041 evidence; nothing in this row claims it was observed.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-003",
+        "MG-041"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-hyperframes.ts",
+        "tests/evidence/mg005/measurements.json"
+      ],
+      "gate": {
+        "bad": "A missing asset and an unknown component fail with structured categories and produce no success evidence; a missing runtime reports unavailable instead of a fabricated ready.",
+        "good": "Valid project, nested and media fixtures render; opening, proof, and final frames measure the Section 17.2 states from decoded frames; the final render holds the exact frame count."
+      },
+      "id": "T04",
+      "name": "Hyperframes native render",
+      "notes": "Measurements are a static record since MG-043: the runner compares fresh measurements against tests/evidence/mg005/measurements.json and fails on drift instead of rewriting it.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-005"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-remotion.ts",
+        "tests/evidence/mg006/measurements.json"
+      ],
+      "gate": {
+        "bad": "A missing dataset, a wrong-mode canvas, missing font bytes, and a scene missing required copy each fail with named categories and no artifact.",
+        "good": "The registered C05 composition renders with identical props in landscape and portrait, proof states match the Section 17.2 table instrumented and decoded, and a repeat render in shuffled seek order measures identically."
+      },
+      "id": "T05",
+      "name": "Remotion native render",
+      "notes": "Measurements are a static record since MG-043: the runner compares fresh measurements against tests/evidence/mg006/measurements.json and fails on drift instead of rewriting it.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-006"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-adapters.ts",
+        "tests/unit/test_powerpoint_package.py",
+        "tests/unit/test_vsl_handoff.py",
+        "tests/unit/test_standalone.py"
+      ],
+      "gate": {
+        "bad": "Mode-mismatched canvases and VSL audio/parent violations are rejected at validation (see T01 bad corpus).",
+        "good": "Both engines render representative fixture jobs; all four mode fixtures validate and route under their format and audio contracts."
+      },
+      "id": "T06",
+      "name": "Engine/mode matrix",
+      "notes": "All four production mode packages exist and pass in the MG-048 candidate regression: PowerPoint package, VSL desktop handoff, VSL mobile recomposition, and the standalone end-to-end build.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-004",
+        "MG-008",
+        "MG-035",
+        "MG-036",
+        "MG-037",
+        "MG-038",
+        "MG-039"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-typography.ts",
+        "runtime/tests/run-layout.ts",
+        "runtime/tests/run-remotion.ts"
+      ],
+      "gate": {
+        "bad": "Missing font bytes fail the render instead of substituting a font (run-remotion negative case); a layout that passes full-frame fails as a half-scale inset in the layout suite.",
+        "good": "The actual fixture font loads and measures; long copy, small placement, clipping, and overlap cases produce the contracted verdicts at effective (destination) sizes."
+      },
+      "id": "T07",
+      "name": "Typography and fonts",
+      "notes": "",
+      "state": "implemented",
+      "subject_items": [
+        "MG-013",
+        "MG-014"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-compositing.ts",
+        "tests/unit/test_prepare_assets.py",
+        "tests/fixtures/assets/valid-set",
+        "tests/fixtures/assets/missing-required"
+      ],
+      "gate": {
+        "bad": "Missing required assets, reference-only assets used as footage, unapproved derivatives, and redrawn logos are rejected by the fixture sets under tests/fixtures/assets/.",
+        "good": "The valid asset set passes provenance and usage checks; compositing keeps the original/derivative distinction and protects focal regions within the maximum zoom."
+      },
+      "id": "T08",
+      "name": "Image integrity and crop",
+      "notes": "",
+      "state": "implemented",
+      "subject_items": [
+        "MG-011",
+        "MG-012"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-charts.ts",
+        "runtime/tests/run-chart-components.ts"
+      ],
+      "gate": {
+        "bad": "Negative and missing-value cases follow the dataset's declared policy or are refused; a non-zero domain minimum cannot shrink a bar to a false zero (the closed D-CHART-BASELINE case is pinned in the chart-components suite).",
+        "good": "Bar ratios, line points, stacked totals, and waterfall arithmetic match the declared datasets, including the zero-baseline rule for length comparisons."
+      },
+      "id": "T09",
+      "name": "Chart correctness",
+      "notes": "",
+      "state": "implemented",
+      "subject_items": [
+        "MG-015",
+        "MG-016"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-diagrams.ts",
+        "tests/unit/test_storyboard_planner.py",
+        "tests/fixtures/storyboards/pass-mechanism"
+      ],
+      "gate": {
+        "bad": "Orphan edges, orphan nodes, undeclared branch selections, and disconnected subject paths are refused by the diagram model.",
+        "good": "A persistent object follows the correct route and branch through before, proof, and after states; causality is executable (a downstream node cannot activate before its upstream completes)."
+      },
+      "id": "T10",
+      "name": "Mechanism semantics",
+      "notes": "",
+      "state": "implemented",
+      "subject_items": [
+        "MG-009",
+        "MG-017"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-preview.ts",
+        "runtime/tests/run-motion-proof.ts"
+      ],
+      "gate": {
+        "bad": "A static chart with a moving title or decor must be rejected at review; that rendered-proof half does not exist yet.",
+        "good": "Planning enforces non-text explanatory coverage: text-only storyboards and beats without literal proof evidence are rejected before production; subject-owned motion assertions are required per beat."
+      },
+      "id": "T11",
+      "name": "Fake-motion rejection",
+      "notes": "The preview half landed with MG-024 (run-preview) and the rendered-proof half with MG-032 (run-motion-proof); both pass in the MG-048 candidate regression.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-009",
+        "MG-032"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-timeline.ts",
+        "runtime/tests/run-remotion.ts",
+        "tests/unit/test_tts_segmentation.py"
+      ],
+      "gate": {
+        "bad": "A second transition on one boundary, narration overrunning picture, and slot content that overflows or underfills its slot each fail with named timeline errors instead of silent truncation.",
+        "good": "One compiled timeline governs scenes, transitions, captions, narration, and SFX at 30 and 60 fps: each overlap is subtracted exactly once with one named owner, half-open intervals convert explicitly, and the last frame stays in bounds."
+      },
+      "id": "T12",
+      "name": "Frame/timeline arithmetic",
+      "notes": "",
+      "state": "implemented",
+      "subject_items": [
+        "MG-020",
+        "MG-021"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "tests/unit/test_assemble.py"
+      ],
+      "gate": {
+        "bad": "The legacy assembler's known defects (tuple crash, invalid single-scene graph, offset audio indexes, -shortest concealment) must be reproduced and then fail against the replacement.",
+        "good": "Single and multiple scenes, mixed engines, no-audio and multi-audio jobs assemble with valid filter graphs and correct stream maps."
+      },
+      "id": "T13",
+      "name": "Assembly filter graph",
+      "notes": "MG-022 landed the governed assembler and its suite passes in the MG-048 candidate regression (full Python suite). The temporal-mix half of the gate is T14.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-022"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "tests/unit/test_audio_policy.py",
+        "tests/unit/test_assemble.py"
+      ],
+      "gate": {
+        "bad": "A mix that drops, duplicates, or truncates a stem, or that resets a synthesized score, fails measurement.",
+        "good": "Declared stems are included exactly once, known cues align to the compiled timeline, final narration words are intact, and the final mix measures to the mode's policy."
+      },
+      "id": "T14",
+      "name": "Audio and sync",
+      "notes": "MG-023 landed the loudness and content ruleset and its suites pass in the MG-048 candidate regression (full Python suite, including the measured RMS, silence, and loudness cases).",
+      "state": "implemented",
+      "subject_items": [
+        "MG-023"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-preview.ts",
+        "tests/evidence/mg024/measurements.json"
+      ],
+      "gate": {
+        "bad": "A reduced-fps preview is labeled rough_layout_only and a named gate refuses it as motion evidence; fps or aspect mismatches are refused independently of the label.",
+        "good": "Scaled previews preserve the final's geometry, content, and timing (decoded landmark agreement), and a 9:16 job's preview stays vertical; preview and final consume identical props and timing, proven by hashes."
+      },
+      "id": "T15",
+      "name": "Preview/final consistency",
+      "notes": "",
+      "state": "implemented",
+      "subject_items": [
+        "MG-024"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-approvals.ts",
+        "tests/unit/test_check_approvals.py"
+      ],
+      "gate": {
+        "bad": "Stale or missing approval fails, and a diagnostic render cannot be promoted as client-ready.",
+        "good": "A final production render requires a valid approval for its immutable job revision; an unchanged revision reuses its approval."
+      },
+      "id": "T16",
+      "name": "Gate integrity",
+      "notes": "MG-025 landed the approval trust machinery and both suites pass in the MG-048 candidate regression (run-approvals 26/26).",
+      "state": "implemented",
+      "subject_items": [
+        "MG-025"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-determinism.ts"
+      ],
+      "gate": {
+        "bad": "A deliberately non-seek-safe harness fixture (wall clock or unseeded random) is caught; a 20 px data-mark shift fails the comparison.",
+        "good": "Cold, forward, reverse, and randomized seeks produce identical decoded pixels per engine in the pinned environment, with environment metadata stored alongside the goldens."
+      },
+      "id": "T17",
+      "name": "Determinism",
+      "notes": "MG-026 landed the determinism verifier and run-determinism passes in the MG-048 candidate regression (9/9), including the staged-shift tolerance-honesty case.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-026"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-cache.ts"
+      ],
+      "gate": {
+        "bad": "Changed image, text, font, data, or runtime invalidates exactly the dependent scenes; a stale state file keyed only on scene id and fps is rejected.",
+        "good": "An interrupted render resumes without repeating valid scenes, and completed artifacts are verified before reuse."
+      },
+      "id": "T18",
+      "name": "Resume/cache invalidation",
+      "notes": "MG-027 landed the content addressed cache and run-cache passes in the MG-048 candidate regression (49/49 checks), including the render killed mid-flight and resumed case this row was registered for; the dispatcher wiring that reuses the cache in production landed at MG-046 and is proven by run-status.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-027"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-resources.ts",
+        "runtime/tests/run-security.ts"
+      ],
+      "gate": {
+        "bad": "One job's cancellation or failure must not kill another job's render or the owner's browser; no orphan processes remain.",
+        "good": "Concurrent jobs stay within the shared concurrency ceiling and measured memory/disk bounds; cancellation frees reservations and terminates only job-owned processes."
+      },
+      "id": "T19",
+      "name": "Resource/cancellation safety",
+      "notes": "MG-028 (budgets) and MG-029 (isolation) landed; run-resources (12/12) and run-security (58/58) pass in the MG-048 candidate regression.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-028",
+        "MG-029"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-lint.ts",
+        "runtime/tests/run-motion-proof.ts",
+        "tests/unit/test_qc.py"
+      ],
+      "gate": {
+        "bad": "Dynamically constructed or aliased timers are named violations; a missing engine or FFmpeg, or a failed audit, cannot pass QC (the QC propagation half is MG-034).",
+        "good": "Real forbidden timers fail in both lint layers while quoted or commented mentions pass; engine-aware rules validate each engine's own contract, and the report states the visual audit as pending rather than passed."
+      },
+      "id": "T20",
+      "name": "Lint and tool failures",
+      "notes": "MG-034 landed the fail-closed technical QC and test_qc passes in the MG-048 candidate regression alongside the lint and motion-proof runners.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-030",
+        "MG-034"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "tests/unit/test_critique_bundle.py"
+      ],
+      "gate": {
+        "bad": "A defect planted near the end must appear in the bundle; missing required coverage fails, and a sheet-generation failure cannot print PASS.",
+        "good": "A five-minute fixture's review bundle paginates samples across the whole runtime plus targeted frames at every boundary, proof state, text swap, and final hold, with coverage.json accounting for every interval."
+      },
+      "id": "T21",
+      "name": "Complete review coverage",
+      "notes": "MG-031 landed the complete-runtime critique bundle and its suite passes in the MG-048 candidate regression.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-031"
+      ]
+    },
+    {
+      "blocked_on": [
+        "MG-035"
+      ],
+      "evidence": [
+        "tests/unit/test_powerpoint_package.py"
+      ],
+      "gate": {
+        "bad": "An OOXML package that merely assembles, or an MP4 played only in a browser, does not satisfy this test (directive 9.2).",
+        "good": "Embedded media still works after relocation, playback and poster are tested in actual PowerPoint on the claimed platform, a PDF fallback exists, and inset placement stays legible."
+      },
+      "id": "T22",
+      "name": "PowerPoint real integration",
+      "notes": "The packaging half landed (MG-035) and the presentation integration half landed (MG-036); both suites pass in the MG-048 candidate regression. The remaining leg is playback of a produced package inside Microsoft PowerPoint itself, which is UNVERIFIED on every platform: it was never tested in real PowerPoint, so this row does not claim it. The residual is a platform test owned by the PowerPoint surface (MG-035), not a build delay.",
+      "state": "partial",
+      "subject_items": [
+        "MG-035",
+        "MG-036"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "tests/unit/test_vsl_handoff.py",
+        "tests/unit/test_vsl_mobile.py"
+      ],
+      "gate": {
+        "bad": "A mobile asset that is a crop of the desktop composition, or an insert that shifts the parent's audio, fails.",
+        "good": "Desktop and mobile assets land at the intended speech cue in the parent production without duplicate audio or changed claims."
+      },
+      "id": "T23",
+      "name": "VSL parent integration",
+      "notes": "MG-037 (desktop handoff) and MG-038 (mobile recomposition) landed and both suites pass in the MG-048 candidate regression.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-037",
+        "MG-038"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-export-profiles.ts"
+      ],
+      "gate": {
+        "bad": "A profile that claims transparency but renders a baked background fails the alpha measurement.",
+        "good": "An export profile produces actual varying alpha, composites correctly on light and dark, uses the correct codec/profile, and ships an opaque fallback."
+      },
+      "id": "T24",
+      "name": "Transparency/export",
+      "notes": "MG-040 landed export profiles as data with live-probe qualification; run-export-profiles passes in the MG-048 candidate regression (12/12), and the production routing wiring landed at MG-046.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-040"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "tests/unit/test_reference_suite.py",
+        "assets/examples/reference-suite/reference-registry.json",
+        "assets/examples/reference-suite/evidence-index.json",
+        "tests/evidence/mg044/measurements.json"
+      ],
+      "gate": {
+        "bad": "Exemplars that are title cards, or scores without evidence, fail; a passing technical suite is not artistic approval.",
+        "good": "The Section 8 sequence and catalog examples ship with independent evidence and an honest owner calibration status."
+      },
+      "id": "T25",
+      "name": "Complete visual reference",
+      "notes": "Run: python3 -m unittest tests.unit.test_reference_suite (from the skill root). Owner calibration is the owner's decision (CALIBRATION_PENDING / ENGINEERING_FIXTURE_ONLY states stand until the owner reviews); it is a bypass lane and blocks no other row.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-033",
+        "MG-044"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "tests/unit/test_migration_install.py",
+        "tests/unit/test_runtime_rollback.py"
+      ],
+      "gate": {
+        "bad": "Any change in the legacy paths' outputs, or client data loss during migration, fails the release.",
+        "good": "A still-only presentation, a legacy replay, and Skill 47 rendering behave as before, and updater/client data is preserved."
+      },
+      "id": "T26",
+      "name": "Existing-workflow regression",
+      "notes": "All four compatibility legs ran green in the MG-048 candidate regression: the still-only presentation path is unchanged (the presentations house suite, including the MG-036 motion integration tests, passed; its one failure is the pre-existing test_manifest_workers_field premise that fails identically on the pristine base), legacy jobs replay through the documented legacy path (test_intake and the corpus), Skill 47 renders and hands off (its status and board suites pass), and the updater preserves client data (the migration, install, and rollback suites cited here).",
+      "state": "implemented",
+      "subject_items": [
+        "MG-036",
+        "MG-041",
+        "MG-048"
+      ]
+    },
+    {
+      "blocked_on": [
+        "MG-049",
+        "MG-050"
+      ],
+      "evidence": [
+        "tests/evidence/mg048/t27-pre.json"
+      ],
+      "gate": {
+        "bad": "A batch that merges without its bundle, or a tag pointing at the wrong commit, fails.",
+        "good": "T27-PRE: no duplicate task, required artifacts exist, and the release plan agrees with the version and changelog. T27-MERGE and T27-TAG run only after their remote events exist."
+      },
+      "id": "T27",
+      "name": "Task/delivery/release truth",
+      "notes": "T27-PRE ran on the integrated candidate at MG-048 and passes 9/9 (record cited): no duplicate task (50 unique ledger items), required artifacts exist, the release plan agrees with the version (v27.1.28) and the changelog, bump-version --check is green, the batch-prep machinery test passes, and the previous release tag v27.1.27 is in place. T27-MERGE and T27-TAG run only after their remote events, which wait for the owner's merge word; MG-049 and MG-050 own them.",
+      "state": "partial",
+      "subject_items": [
+        "MG-046",
+        "MG-049",
+        "MG-050"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "tests/run_acceptance.py",
+        "tests/unit/test_run_acceptance.py",
+        "tests/evidence/mg043/T28-directive-conformance.json"
+      ],
+      "gate": {
+        "bad": "The same checks fail on a workspace with a dependency cycle, a missing item, or a table/JSON disagreement; those failure modes are unit-tested in tests/unit/test_run_acceptance.py.",
+        "good": "The acceptance runner verifies exactly 50 MG IDs, a complete and acyclic dependency graph, agreement between the Section 15 table and the Section 16.12 JSON, resolution of every cited source reference, parseability of every marked JSON file in the spec workspace, and validation of the shared mode fixtures."
+      },
+      "id": "T28",
+      "name": "Directive/contract consistency",
+      "notes": "Run: python3 tests/run_acceptance.py --test T28 --spec-workspace SPEC_DIR --directive DIRECTIVE.md --evidence-dir EVIDENCE_DIR (directive 18.6 command surface).",
+      "state": "implemented",
+      "subject_items": [
+        "MG-001",
+        "MG-007",
+        "MG-042"
+      ]
+    },
+    {
+      "blocked_on": [
+        "MG-048"
+      ],
+      "evidence": [],
+      "gate": {
+        "bad": "A trial that silently drops a requirement, or whose deviations are unrecorded, fails.",
+        "good": "Trial A: a fresh agent completes the bounded native-engine slice and its negative tests from the provided handoff, with recorded deviations and independent review."
+      },
+      "id": "T29",
+      "name": "Fresh-agent implementation trial",
+      "notes": "Agent-execution trial (directive 18.2). The harness entry point reports exit 3 by design on the candidate, verified in the MG-048 regression: the trial is run by the coordinator from the published documents alone and its record belongs to that run; no trial evidence is fabricated here.",
+      "state": "pending",
+      "subject_items": [
+        "MG-005",
+        "MG-006"
+      ]
+    },
+    {
+      "blocked_on": [
+        "MG-048"
+      ],
+      "evidence": [],
+      "gate": {
+        "bad": "A resume that repeats resolved intake or accepts stale evidence fails.",
+        "good": "Trial B: a fresh context resumes correctly, rejects stale evidence, and preserves valid work without repeating resolved intake."
+      },
+      "id": "T30",
+      "name": "Fresh-context resume",
+      "notes": "Agent-execution trial (directive 18.3). The harness entry point reports exit 3 by design on the candidate, verified in the MG-048 regression; the trial itself is coordinator-run and no trial evidence is fabricated here. The cache machinery the trial exercises landed at MG-027 with dispatcher wiring at MG-046.",
+      "state": "pending",
+      "subject_items": [
+        "MG-027"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "tests/run_acceptance.py",
+        "tests/unit/test_run_acceptance.py",
+        "tests/evidence/mg043/T31-contract-usability.json"
+      ],
+      "gate": {
+        "bad": "An extractor run that drops items or fixtures, or a Python/TypeScript verdict disagreement, fails the check.",
+        "good": "The extraction helper runs in a clean path and produces the full spec workspace; Python and TypeScript schema verdicts agree on the shared fixtures, including one shared invalid mutation; the documented commands match the built CLI help."
+      },
+      "id": "T31",
+      "name": "Fixture/command usability",
+      "notes": "Run: python3 tests/run_acceptance.py --test T31 --spec-workspace SPEC_DIR --directive DIRECTIVE.md --extractor EXTRACT_MOTION_SPEC.PY --evidence-dir EVIDENCE_DIR.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-007"
+      ]
+    },
+    {
+      "blocked_on": [
+        "MG-025"
+      ],
+      "evidence": [
+        "runtime/tests/run-approvals.ts",
+        "runtime/tests/run-status.ts"
+      ],
+      "gate": {
+        "bad": "Wrong actor, job, company, or revision, a test issuer in production, a self-written approval, and a replayed event are each rejected.",
+        "good": "A genuine configured authority verifies end to end."
+      },
+      "id": "T32",
+      "name": "Approval and identity trust",
+      "notes": "Every rejection leg of the gate (forged, altered, expired, job-swapped, unapproved-fixture approvals) and the happy path against the test-scoped authority pass in the MG-048 candidate regression (run-approvals 26/26, run-status 9/9 including the production lifecycle). The residual is verification against a genuine configured production authority (owner keyring and reviewer registry), which is a deployment act, not a build item; the machinery refuses production sign-off from fixture context by construction.",
+      "state": "partial",
+      "subject_items": [
+        "MG-025",
+        "MG-029",
+        "MG-046"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-motion-proof.ts",
+        "tests/unit/test_reference_suite.py"
+      ],
+      "gate": {
+        "bad": "Every prescribed anti-gaming mutation (moved data marks, swapped labels, static subject under moving decor) is rejected.",
+        "good": "The applicable Section 17 M01-M16 checks and chart states pass, and an independent reviewer sees the actual clips and frames."
+      },
+      "id": "T33",
+      "name": "Quantitative visual proof",
+      "notes": "MG-032's motion proof (the static decoy fails as MG_FAKE_MOTION), MG-033's evidence-bound rubric, and MG-044's reference suite pass in the MG-048 candidate regression. Owner calibration of the reference exemplars remains CALIBRATION_PENDING by the owner's own ruling and is recorded as such in the suite; it is not claimed here.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-013",
+        "MG-015",
+        "MG-032",
+        "MG-033"
+      ]
+    },
+    {
+      "blocked_on": [],
+      "evidence": [
+        "runtime/tests/run-approvals.ts",
+        "tests/unit/test_qc.py"
+      ],
+      "gate": {
+        "bad": "Fixture mode cannot deliver into production, and a stale preview permit is rejected.",
+        "good": "A final render accepts the correct current preview permit without demanding nonexistent final QC; delivery requires final QC and an authorized release."
+      },
+      "id": "T34",
+      "name": "Lifecycle without circular gates",
+      "notes": "The MG-025 and MG-034 ordering (preview approval gates production render; final QC record gates delivery) is proven by run-approvals and test_qc in the MG-048 candidate regression.",
+      "state": "implemented",
+      "subject_items": [
+        "MG-025",
+        "MG-034"
+      ]
+    }
+  ]
+}

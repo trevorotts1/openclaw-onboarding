@@ -1,0 +1,52 @@
+{
+  "schema_version": "mg005-1",
+  "id": "detail-zoom",
+  "component_id": "C01",
+  "component_version": "1.0.0",
+  "variant": "nested_detail",
+  "engine": "hyperframes",
+  "duration_frames": 90,
+  "asset_file": "assets/subject.svg",
+  "asset_sha256": "b5dfb9fa7ed796a9a5e3d4f61fb95d706e089f8effa454770bce469727d6f134",
+  "font_ref": "font-fixture-sans",
+  "canvas": {
+    "width": 1920,
+    "height": 1080
+  },
+  "design": {
+    "colors": {
+      "background": "#F7F4EE",
+      "ink": "#192A38",
+      "accent": "#C04A26"
+    }
+  },
+  "subject": {
+    "id": "work-crate",
+    "box": {
+      "x": 120,
+      "y": 250,
+      "width": 1000,
+      "height": 620
+    },
+    "measure_color": "#C04A26"
+  },
+  "detail": {
+    "box": {
+      "x": 1220,
+      "y": 330,
+      "width": 580,
+      "height": 300
+    },
+    "start_frame": 24,
+    "measure_color": "#1D6FB8",
+    "variables": {
+      "label": "crates delivered this week",
+      "value": "128"
+    }
+  },
+  "copy": {
+    "headline": "The work, with its detail attached",
+    "fixture_label": "ENGINEERING FIXTURE - ILLUSTRATIVE OBJECT"
+  },
+  "headline_px": 84
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": "2.0",
+  "id": "storyboard-valid-set",
+  "beats": [
+    {
+      "id": "beat-01",
+      "scene_id": "scene-01",
+      "asset_ids": [
+        "hero-image"
+      ]
+    },
+    {
+      "id": "beat-02",
+      "scene_id": "scene-02",
+      "asset_ids": [
+        "data-chart"
+      ]
+    }
+  ]
+}

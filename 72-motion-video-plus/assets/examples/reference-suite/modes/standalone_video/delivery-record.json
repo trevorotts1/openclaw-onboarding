@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.0",
+  "item": "MG-039",
+  "kind": "standalone_delivery_record",
+  "job_id": "fixture-standalone-silent",
+  "mode": "standalone_video",
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "fps": 30,
+  "total_frames": 405,
+  "video_profile": "h264_opaque",
+  "poster_frame": 390,
+  "job_package_dir": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job",
+  "assets": [
+    {
+      "kind": "final_mp4",
+      "path": "renders/final.mp4",
+      "sha256": "142d44a2d5afb5a56b5dd41d5f57f51a5053ab581747e987645200fe464b30f4",
+      "bytes": 437478
+    },
+    {
+      "kind": "poster",
+      "path": "delivery/poster.png",
+      "sha256": "1f8b6eb7e0d6172bdfec38fb35a08d7a9453a7435c94df23970f5b4f2d44204f",
+      "bytes": 207914
+    },
+    {
+      "kind": "source_package",
+      "path": "delivery/source-package.json",
+      "sha256": "cdbe26a3c2e144c93b2ad2e34840236e8bbb155ad38793809325fbae02455155",
+      "bytes": 2587
+    },
+    {
+      "kind": "placement_metadata",
+      "path": "delivery/placement.json",
+      "sha256": "4a52574f5d205024874f07cee1c8631c8fe650506dc648aee57e70a43c35e8de",
+      "bytes": 649
+    },
+    {
+      "kind": "review_record",
+      "path": "review/review-record.json",
+      "sha256": "11dc86cc66d01a36a92123fd1ebda5aff4fe75ff6b00f65e556f41afde7389e6",
+      "bytes": 11868
+    },
+    {
+      "kind": "review_dashboard",
+      "path": "review/review-dashboard.md",
+      "sha256": "ed84fed5120f5ca749c14187b54adb3feed35c6cf45287c5883c0f1d2240da8f",
+      "bytes": 10018
+    },
+    {
+      "kind": "qc_record",
+      "path": "qc/final-qc.json",
+      "sha256": "d6c8cbc8206ca3159c00edebbd78ee9d04eead08d4c05046d4723918b70a1e3a",
+      "bytes": 28799
+    },
+    {
+      "kind": "coverage_record",
+      "path": "review/fixture-standalone-silent__coverage.json",
+      "sha256": "77b9a0121c479575578dd354556ebf439bc33b4111f9d10e645be2c352b63859",
+      "bytes": 12662
+    },
+    {
+      "kind": "motion_proof",
+      "path": "motion-proof.json",
+      "sha256": "201e2627e27032ddc22ecac85b18cb3048c6e51e1ca82f03414cc9a71f15428b",
+      "bytes": 6585
+    },
+    {
+      "kind": "timeline",
+      "path": "timeline.json",
+      "sha256": "72818c8ac62847371ea5924296db7d43789d7c1bc457f4e0ae2b2b9cc2e2920f",
+      "bytes": 2142
+    },
+    {
+      "kind": "timeline_sidecar",
+      "path": "timeline-sidecar.json",
+      "sha256": "b72b24e048092ff73c6243d24ca5593d059aaba32d90798e21c63c21d40d425b",
+      "bytes": 5004
+    },
+    {
+      "kind": "render_receipt",
+      "path": "render-receipt.json",
+      "sha256": "edc88f844c4ddada9ca0b8f193c78fa18412415d82faae1bd936c73f739bfc75",
+      "bytes": 5686
+    }
+  ],
+  "verification": {
+    "qc_verdict": "pass",
+    "coverage_verdict": "complete",
+    "proof_verdict": "pass",
+    "review_verdict": "ship"
+  }
+}

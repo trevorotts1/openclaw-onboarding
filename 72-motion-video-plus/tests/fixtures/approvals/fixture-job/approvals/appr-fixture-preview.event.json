@@ -1,0 +1,17 @@
+{
+  "event_id": "evt-appr-fixture-preview",
+  "approval_id": "appr-fixture-preview",
+  "job_id": "mg025-fixture-job",
+  "company_id": "mg025-company",
+  "scope": "preview",
+  "decision": "approved",
+  "subject_revision": "11c71ea2478d9ea611dacbfc58938823a5ea56b5b9de6f5cca51c323ea324077",
+  "actor_id": "fixture-test-issuer",
+  "artifact_refs": [
+    {
+      "path": "timeline.json",
+      "sha256": "1f5382e6e6f98be5e69d0347f0462db77afd17bcdf92841af73e90ef1efdaa80"
+    }
+  ],
+  "signature": "0fc2449b0794f6c45ad7d2962f0bdda9236a143977b5d1cd0b0eb32c42e6cd71"
+}

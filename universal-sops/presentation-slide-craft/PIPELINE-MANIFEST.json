@@ -1568,6 +1568,39 @@
       ]
     },
     {
+      "id": "P8.15-MOTION",
+      "order": 8.15,
+      "name": "Governed Motion Audit (Skill 72 MG-036)",
+      "owning_role": "pptx-assembly-specialist",
+      "sop_refs": [
+        "pptx-assembly-specialist-sops.md"
+      ],
+      "produces_artifact": [
+        "working/checkpoints/motion.json",
+        "working/checkpoints/slide_media_manifest.json"
+      ],
+      "gate_codes": [],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_motion_media",
+        "label": "governed motion plan: every declared motion slide is authenticated against its Skill 72 package or degraded to static with a reason code in working/checkpoints/motion.json (Skill 72 MG-036)"
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/motion_phase.py --run-dir {run_dir}"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 10,
+      "consumes": [
+        "working/copy/slides.json",
+        "*-FINAL.pptx"
+      ]
+    },
+    {
       "id": "P8.2-GUIDE",
       "order": 8.2,
       "name": "Presenter Guide PDF",
@@ -2037,7 +2070,8 @@
       "heartbeat_minutes": 120,
       "consumes": [
         "renders/slide-*.png",
-        "working/deliverables/PRESENTERS-SPEECH.md"
+        "working/deliverables/PRESENTERS-SPEECH.md",
+        "working/checkpoints/slide_media_manifest.json"
       ]
     },
     {

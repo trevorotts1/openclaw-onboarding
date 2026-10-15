@@ -1,0 +1,35 @@
+{
+  "schema_version": "2.0",
+  "assets": [
+    {
+      "id": "hero-image",
+      "path": "media/hero.png",
+      "sha256": "9444f152163701e75b6425b5a5e495dc1fb303bfd5d14321a440dcbb7c93e070",
+      "kind": "image",
+      "usage": "embed_original",
+      "rights_ref": "rights/hero-client-supplied",
+      "focal_point": null
+    },
+    {
+      "id": "fine-photo",
+      "path": "media/photo-fine.png",
+      "sha256": "496058f3ca724166c8a4257325269e8778a076640b5c1e7b7e54141e11d3efaa",
+      "kind": "image",
+      "usage": "embed_original",
+      "rights_ref": "rights/fine-internal",
+      "focal_point": null
+    }
+  ],
+  "font_requirements": [
+    {
+      "id": "font-fixture-sans",
+      "source": "runtime_registry",
+      "family_alias": "fixture-sans",
+      "weights": [
+        400,
+        700
+      ],
+      "substitution": "forbidden"
+    }
+  ]
+}

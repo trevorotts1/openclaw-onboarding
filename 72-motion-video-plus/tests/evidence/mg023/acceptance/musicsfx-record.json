@@ -1,0 +1,79 @@
+{
+  "allOk": true,
+  "audioPlan": {
+    "audioOwner": "self",
+    "exclusions": [],
+    "loudnessTarget": {
+      "integratedLufs": -14.0,
+      "truePeakDb": -1.0
+    },
+    "mix": {
+      "ducking": {
+        "attack": 20,
+        "ratio": 8,
+        "release": 400,
+        "threshold": 0.02
+      },
+      "musicVolume": 0.9
+    },
+    "mode": "own",
+    "music": {
+      "kind": "supplied",
+      "path": "audio/music.wav"
+    },
+    "narration": [
+      "n1"
+    ],
+    "policyVersion": "mg023-1",
+    "sfx": [
+      "x1",
+      "x2"
+    ]
+  },
+  "checks": [
+    {
+      "check": "encoded_loudness_within_tolerance",
+      "integratedDeltaLufs": 0.04,
+      "measured": {
+        "integratedLufs": -13.96,
+        "lra": 0.4,
+        "offset": -0.37,
+        "threshold": -24.12,
+        "truePeakDb": -7.2
+      },
+      "ok": true,
+      "truePeakOverDb": -6.2
+    },
+    {
+      "check": "score_audible_in_planned_sections",
+      "expectedRmsDbfs": -8.87,
+      "ok": true,
+      "windowRmsDbfs": -16.79
+    },
+    {
+      "bandRatio": 0.431,
+      "check": "final_words_present_at_planned_end",
+      "ok": true
+    },
+    {
+      "check": "output_not_clipped",
+      "ok": true,
+      "outputPeakDbfs": -7.2
+    },
+    {
+      "bandAmplitude": 5003,
+      "check": "independent_band_measurement_of_score",
+      "ok": true
+    },
+    {
+      "check": "stems_preserved_and_audible",
+      "ok": true,
+      "stemRmsDbfs": {
+        "music": -11.54,
+        "narration": -13.42,
+        "sfx": -20.41
+      }
+    }
+  ],
+  "example": "musicsfx"
+}

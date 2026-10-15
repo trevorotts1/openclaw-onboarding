@@ -1,0 +1,661 @@
+{
+ "$defs": {
+  "sha256": {
+   "pattern": "^[0-9a-f]{64}$",
+   "type": "string"
+  }
+ },
+ "$id": "https://blackceo.local/skill72/powerpoint-package-schema.json",
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "additionalProperties": false,
+ "description": "The governed record the MG-035 delivery packager writes into every powerpoint_graphic package. It binds the rendered artifact, the deliberately selected poster, the static fallback, the playback metadata, the placement text audit, and the MG-034 final QC record by hash. This is the MG-035 layer's own schema; the canonical contracts library (references/contracts-v2.schema.json) is not edited by MG-035.",
+ "properties": {
+  "artifact": {
+   "additionalProperties": false,
+   "properties": {
+    "bytes": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "file": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "probe": {
+     "additionalProperties": false,
+     "properties": {
+      "audio_streams": {
+       "minimum": 0,
+       "type": "integer"
+      },
+      "codec": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "duration_seconds": {
+       "minimum": 0,
+       "type": "number"
+      },
+      "fps": {
+       "exclusiveMinimum": 0,
+       "type": "number"
+      },
+      "frames": {
+       "minimum": 1,
+       "type": "integer"
+      },
+      "height": {
+       "minimum": 1,
+       "type": "integer"
+      },
+      "pixel_format": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "width": {
+       "minimum": 1,
+       "type": "integer"
+      }
+     },
+     "required": [
+      "codec",
+      "pixel_format",
+      "width",
+      "height",
+      "frames",
+      "fps",
+      "duration_seconds",
+      "audio_streams"
+     ],
+     "type": "object"
+    },
+    "sha256": {
+     "$ref": "#/$defs/sha256"
+    }
+   },
+   "required": [
+    "file",
+    "sha256",
+    "bytes",
+    "probe"
+   ],
+   "type": "object"
+  },
+  "audio": {
+   "additionalProperties": false,
+   "properties": {
+    "artifact_audio_streams": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "policy_version": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "resolved_mode": {
+     "enum": [
+      "none",
+      "inherited",
+      "own"
+     ]
+    }
+   },
+   "required": [
+    "resolved_mode",
+    "policy_version",
+    "artifact_audio_streams"
+   ],
+   "type": "object"
+  },
+  "checks": {
+   "additionalProperties": false,
+   "properties": {
+    "hold_final": {
+     "additionalProperties": false,
+     "properties": {
+      "poster_equals_final_state": {
+       "type": [
+        "boolean",
+        "null"
+       ]
+      },
+      "reason": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "status": {
+       "enum": [
+        "pass",
+        "not_applicable"
+       ]
+      }
+     },
+     "required": [
+      "status"
+     ],
+     "type": "object"
+    },
+    "loop_seam": {
+     "additionalProperties": false,
+     "properties": {
+      "ratio": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "reason": {
+       "type": [
+        "string",
+        "null"
+       ]
+      },
+      "seam_mean_abs_diff": {
+       "type": [
+        "number",
+        "null"
+       ]
+      },
+      "status": {
+       "enum": [
+        "pass",
+        "not_applicable"
+       ]
+      },
+      "typical_step_mean_abs_diff": {
+       "type": [
+        "number",
+        "null"
+       ]
+      }
+     },
+     "required": [
+      "status"
+     ],
+     "type": "object"
+    }
+   },
+   "required": [
+    "loop_seam",
+    "hold_final"
+   ],
+   "type": "object"
+  },
+  "deck": {
+   "additionalProperties": false,
+   "properties": {
+    "bytes": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "embed_verified": {
+     "const": true
+    },
+    "file": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "media_part": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "sha256": {
+     "$ref": "#/$defs/sha256"
+    },
+    "slides": {
+     "minimum": 1,
+     "type": "integer"
+    }
+   },
+   "required": [
+    "file",
+    "sha256",
+    "bytes",
+    "slides",
+    "media_part",
+    "embed_verified"
+   ],
+   "type": "object"
+  },
+  "export": {
+   "additionalProperties": false,
+   "properties": {
+    "export_record_sha256": {
+     "pattern": "^[0-9a-f]{64}$",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "profile": {
+     "const": "h264_opaque"
+    }
+   },
+   "required": [
+    "profile",
+    "export_record_sha256"
+   ],
+   "type": "object"
+  },
+  "fallback": {
+   "additionalProperties": false,
+   "properties": {
+    "bytes": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "carries": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "file": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "sha256": {
+     "$ref": "#/$defs/sha256"
+    },
+    "source_frame": {
+     "minimum": 0,
+     "type": "integer"
+    }
+   },
+   "required": [
+    "file",
+    "sha256",
+    "bytes",
+    "source_frame",
+    "carries"
+   ],
+   "type": "object"
+  },
+  "generated_by": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "item": {
+   "const": "MG-035"
+  },
+  "job_id": {
+   "minLength": 1,
+   "type": "string"
+  },
+  "mode": {
+   "const": "powerpoint_graphic"
+  },
+  "placement": {
+   "additionalProperties": false,
+   "properties": {
+    "caveat": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "display_height_px": {
+     "exclusiveMinimum": 0,
+     "type": "number"
+    },
+    "display_width_px": {
+     "exclusiveMinimum": 0,
+     "type": "number"
+    },
+    "essential_text": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "kind": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "roles": {
+     "items": {
+      "additionalProperties": false,
+      "properties": {
+       "authored_px": {
+        "exclusiveMinimum": 0,
+        "type": "number"
+       },
+       "design_field": {
+        "minLength": 1,
+        "type": "string"
+       },
+       "effective_px": {
+        "exclusiveMinimum": 0,
+        "type": "number"
+       },
+       "floor_px": {
+        "exclusiveMinimum": 0,
+        "type": "number"
+       },
+       "layout_variant": {
+        "minLength": 1,
+        "type": "string"
+       },
+       "role": {
+        "minLength": 1,
+        "type": "string"
+       },
+       "scene_id": {
+        "minLength": 1,
+        "type": "string"
+       },
+       "verdict": {
+        "enum": [
+         "pass"
+        ]
+       }
+      },
+      "required": [
+       "scene_id",
+       "layout_variant",
+       "role",
+       "design_field",
+       "authored_px",
+       "floor_px",
+       "effective_px",
+       "verdict"
+      ],
+      "type": "object"
+     },
+     "type": "array"
+    },
+    "scale": {
+     "exclusiveMinimum": 0,
+     "type": "number"
+    },
+    "slide_height_in": {
+     "exclusiveMinimum": 0,
+     "type": "number"
+    },
+    "slide_width_in": {
+     "exclusiveMinimum": 0,
+     "type": "number"
+    }
+   },
+   "required": [
+    "kind",
+    "display_width_px",
+    "display_height_px",
+    "slide_width_in",
+    "slide_height_in",
+    "scale",
+    "roles",
+    "essential_text",
+    "caveat"
+   ],
+   "type": "object"
+  },
+  "platform": {
+   "additionalProperties": false,
+   "properties": {
+    "powerpoint_playback": {
+     "const": "UNVERIFIED"
+    },
+    "statement": {
+     "minLength": 1,
+     "type": "string"
+    }
+   },
+   "required": [
+    "powerpoint_playback",
+    "statement"
+   ],
+   "type": "object"
+  },
+  "playback": {
+   "additionalProperties": false,
+   "properties": {
+    "end": {
+     "enum": [
+      "hold_final",
+      "loop"
+     ]
+    },
+    "final_hold_state": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "intended_duration_frames": {
+     "minimum": 1,
+     "type": "integer"
+    },
+    "intended_duration_seconds": {
+     "exclusiveMinimum": 0,
+     "type": "number"
+    },
+    "repeat": {
+     "enum": [
+      "once",
+      "loop"
+     ]
+    },
+    "start": {
+     "enum": [
+      "on_click",
+      "automatic"
+     ]
+    }
+   },
+   "required": [
+    "start",
+    "repeat",
+    "end",
+    "intended_duration_frames",
+    "intended_duration_seconds",
+    "final_hold_state"
+   ],
+   "type": "object"
+  },
+  "poster": {
+   "additionalProperties": false,
+   "properties": {
+    "bytes": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "declared_poster_frame": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "file": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "frame": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "height": {
+     "minimum": 1,
+     "type": "integer"
+    },
+    "measured": {
+     "additionalProperties": true,
+     "type": [
+      "object",
+      "null"
+     ]
+    },
+    "motion_complete_frame": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "per_scene": {
+     "items": {
+      "additionalProperties": false,
+      "properties": {
+       "hold_interval_placed": {
+        "items": {
+         "type": "integer"
+        },
+        "maxItems": 2,
+        "minItems": 2,
+        "type": "array"
+       },
+       "motion_interval_placed": {
+        "items": {
+         "type": "integer"
+        },
+        "maxItems": 2,
+        "minItems": 2,
+        "type": "array"
+       },
+       "scene_id": {
+        "minLength": 1,
+        "type": "string"
+       }
+      },
+      "required": [
+       "scene_id",
+       "motion_interval_placed",
+       "hold_interval_placed"
+      ],
+      "type": "object"
+     },
+     "type": "array"
+    },
+    "reason": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "rule": {
+     "enum": [
+      "manifest_declared_in_final_hold",
+      "proof_event_in_final_hold",
+      "final_hold_start",
+      "loop_representative_declared",
+      "loop_representative_proof"
+     ]
+    },
+    "sha256": {
+     "$ref": "#/$defs/sha256"
+    },
+    "stable_interval": {
+     "items": {
+      "type": "integer"
+     },
+     "maxItems": 2,
+     "minItems": 2,
+     "type": "array"
+    },
+    "state": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "width": {
+     "minimum": 1,
+     "type": "integer"
+    }
+   },
+   "required": [
+    "file",
+    "sha256",
+    "bytes",
+    "width",
+    "height",
+    "frame",
+    "state",
+    "rule",
+    "reason",
+    "stable_interval",
+    "motion_complete_frame",
+    "declared_poster_frame",
+    "per_scene",
+    "measured"
+   ],
+   "type": "object"
+  },
+  "qc": {
+   "additionalProperties": false,
+   "properties": {
+    "artifact_sha256": {
+     "$ref": "#/$defs/sha256"
+    },
+    "checks_failed": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "checks_passed": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "record_file": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "record_sha256": {
+     "$ref": "#/$defs/sha256"
+    },
+    "verdict": {
+     "const": "pass"
+    }
+   },
+   "required": [
+    "record_file",
+    "record_sha256",
+    "verdict",
+    "artifact_sha256",
+    "checks_passed",
+    "checks_failed"
+   ],
+   "type": "object"
+  },
+  "schema_version": {
+   "const": "1.0"
+  },
+  "source_job": {
+   "additionalProperties": false,
+   "properties": {
+    "design_sha256": {
+     "$ref": "#/$defs/sha256"
+    },
+    "manifest_sha256": {
+     "$ref": "#/$defs/sha256"
+    },
+    "sidecar_sha256": {
+     "$ref": "#/$defs/sha256"
+    },
+    "storyboard_sha256": {
+     "$ref": "#/$defs/sha256"
+    },
+    "timeline_sha256": {
+     "$ref": "#/$defs/sha256"
+    }
+   },
+   "required": [
+    "manifest_sha256",
+    "timeline_sha256",
+    "sidecar_sha256",
+    "storyboard_sha256",
+    "design_sha256"
+   ],
+   "type": "object"
+  }
+ },
+ "required": [
+  "schema_version",
+  "item",
+  "job_id",
+  "mode",
+  "generated_by",
+  "source_job",
+  "artifact",
+  "export",
+  "audio",
+  "poster",
+  "fallback",
+  "playback",
+  "placement",
+  "checks",
+  "qc",
+  "deck",
+  "platform"
+ ],
+ "title": "Skill 72 powerpoint_graphic delivery package record (MG-035)",
+ "type": "object"
+}

@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "item": "MG-039",
+  "kind": "standalone_source_package",
+  "job_id": "fixture-standalone-silent",
+  "authoring_package_root": "/home/hatch/workspace/skill72-v2/wt-mg044/72-motion-video-plus/tests/fixtures/standalone/silent",
+  "files": [
+    {
+      "path": "assets/subject.svg",
+      "sha256": "b5dfb9fa7ed796a9a5e3d4f61fb95d706e089f8effa454770bce469727d6f134",
+      "bytes": 863
+    },
+    {
+      "path": "assets.json",
+      "sha256": "1b762b6ae3677dd4f92ebc98f78eaa38cc422f9a104964327b12a84bb6b495e3",
+      "bytes": 674
+    },
+    {
+      "path": "build-plan.json",
+      "sha256": "9c84a3f351f0200eb66fab5f180e109cba206a43e2ea962d938f76f30169a0db",
+      "bytes": 1497
+    },
+    {
+      "path": "data/final-bars.json",
+      "sha256": "de547d031e4be6e6cde6faf90b396a5c034ecb95b3d4f32d60ae7879571a2951",
+      "bytes": 475
+    },
+    {
+      "path": "data/proof-bars.json",
+      "sha256": "f33eedc860b29bbd3b5ffae6f634ed0fedbe2a0ae359af2c9a9f5ac34faba981",
+      "bytes": 477
+    },
+    {
+      "path": "design.json",
+      "sha256": "abe83a1eaf8dfc8d70ee5b9be324871c4d2a76644dbb91f472b215f1b7fffd16",
+      "bytes": 1221
+    },
+    {
+      "path": "manifest.json",
+      "sha256": "bea7fb538a65cd9b78223fcfb536939d23ef36b361861f1cf4a8dd8da51d6ae1",
+      "bytes": 1557
+    },
+    {
+      "path": "proof-cases/final-state.case.json",
+      "sha256": "3911f0234f95c7fcf41553b44da69e9e468107d2ad567be6157b904c4825fa84",
+      "bytes": 877
+    },
+    {
+      "path": "proof-cases/proof-chart.case.json",
+      "sha256": "be74d2d8f15ad2507e67d94b16360f1225f43fc8728071fe810498e32127ed86",
+      "bytes": 877
+    },
+    {
+      "path": "scenes/detail-zoom.json",
+      "sha256": "e11055f9bdd41bae03ec542f00cae2749bcd119a0b1d5842222e12a016997703",
+      "bytes": 1117
+    },
+    {
+      "path": "scenes/final-state.json",
+      "sha256": "fd135ed23cb30e9151a7f4b3a86086c4b4f4e866808d8d1943ecc4577312fce7",
+      "bytes": 1346
+    },
+    {
+      "path": "scenes/open-reveal.json",
+      "sha256": "d81ed15abb6ed438781cfbe698aa6b1250e01da6c0057524c9f1a46709db1664",
+      "bytes": 1547
+    },
+    {
+      "path": "scenes/proof-chart.json",
+      "sha256": "be5491abe653482ac049d3c4659359c5ee2ee7cb77eaac1f69f93aba6d4d1b3b",
+      "bytes": 1341
+    },
+    {
+      "path": "storyboard.json",
+      "sha256": "d9ed0b5fe78c09683dd8f5e1f9c22ad1b32ceab665eb40b243d9b376d13c931c",
+      "bytes": 4812
+    },
+    {
+      "path": "timeline.json",
+      "sha256": "72818c8ac62847371ea5924296db7d43789d7c1bc457f4e0ae2b2b9cc2e2920f",
+      "bytes": 2142
+    }
+  ]
+}

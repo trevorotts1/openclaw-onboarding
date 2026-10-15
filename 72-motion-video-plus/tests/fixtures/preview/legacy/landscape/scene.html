@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>MG-024 legacy fixture scene (landscape)</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #F7F4EE; }
+  #stage { position: relative; width: 1920px; height: 1080px; background: #F7F4EE; overflow: hidden; }
+  #bar { position: absolute; left: 192px; top: 480px; width: 0; height: 120px; background: #C04A26; }
+  #label { position: absolute; left: 192px; top: 340px; font: 700 64px sans-serif; color: #192A38; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="label">Legacy preview fixture</div>
+  <div id="bar"></div>
+</div>
+<script>
+  // Legacy __setTime scene per references/animation-contract.md: every
+  // animated property is a pure function of t (seconds). The bar grows
+  // linearly from t=0.5s to t=2.5s of a 3s scene; its full width is
+  // 1536px (80% of the 1920px stage). Geometry is fixed pixels against
+  // the known stage size; nothing depends on the viewport.
+  window.__sceneDuration = 3;
+  window.__choreography = { intent: "decisive_reveal", behaviors: ["linear"], data_marks: true };
+  window.__setTime = function (t) {
+    var p = (t - 0.5) / 2.0;
+    if (p < 0) p = 0;
+    if (p > 1) p = 1;
+    document.getElementById('bar').style.width = (p * 1536) + 'px';
+  };
+  window.__setTime(0);
+</script>
+</body>
+</html>

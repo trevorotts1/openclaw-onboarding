@@ -1,0 +1,34 @@
+{
+  "schema_version": "2.0",
+  "id": "story-unrelated-assertion",
+  "beats": [
+    {
+      "id": "beat-traverse",
+      "scene_id": "flow-01",
+      "job": "Follow one work item",
+      "viewer_question": "What happens to a request?",
+      "intended_understanding": "The same item passes all three stages.",
+      "visual_verb": "traverse",
+      "subject_ids": [
+        "work-item"
+      ],
+      "representation": "mechanism",
+      "explanatory": true,
+      "initial_state": "The item waits at intake.",
+      "transformation": "The item travels the stage path.",
+      "proof_state": "The item is inside the decision stage.",
+      "final_state": "The item exits complete.",
+      "asset_ids": [],
+      "data_ids": [],
+      "essential_text": [
+        "Intake",
+        "Decision",
+        "Execution"
+      ],
+      "proof_frames": [
+        90
+      ],
+      "typography_only_exception": null
+    }
+  ]
+}

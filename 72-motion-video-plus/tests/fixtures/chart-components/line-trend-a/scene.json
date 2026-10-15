@@ -1,0 +1,47 @@
+{
+  "schema_version": "2.0",
+  "id": "trend-01",
+  "component_id": "C06",
+  "component_version": "1.0.0",
+  "engine": "remotion",
+  "layout_variant": "landscape",
+  "duration_frames": 180,
+  "asset_ids": [],
+  "data_path": "dataset.json",
+  "design_path": "design.json",
+  "copy": {
+    "headline": "Signups climb through the spring cohort",
+    "disclosure": "Illustrative example"
+  },
+  "motion": {
+    "kind": "line_trend_reveal",
+    "start_frame": 15,
+    "end_frame_exclusive": 75,
+    "hold_to_frame_exclusive": 180,
+    "overshoot_data": false
+  },
+  "semantic_motion_assertions": [
+    {
+      "id": "trend-bounds",
+      "kind": "timeline_bounds",
+      "subject_ids": [
+        "trend-01"
+      ],
+      "frame": 75,
+      "expected_values": [],
+      "tolerance": 0,
+      "unit": "frames",
+      "evidence": [
+        "geometry"
+      ]
+    }
+  ],
+  "annotations": [
+    {
+      "id": "ann-apr",
+      "row_id": "apr",
+      "text": "April: the referral cohort lands"
+    }
+  ],
+  "focus_row_id": "apr"
+}

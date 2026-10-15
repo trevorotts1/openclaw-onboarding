@@ -1,0 +1,236 @@
+{
+ "item": "MG-021",
+ "generated_by": "one-off node script against the built timeline module (not part of the test suite); the run-timeline suite asserts the same numbers on every run and fails on drift rather than rewriting this record",
+ "sample_rate": 48000,
+ "rounding_rule": "round_half_up",
+ "conversion_cases": {
+  "frame_150_at_30fps_samples": 240000,
+  "frame_75_at_60fps_samples": 60000,
+  "beat7_117bpm_seconds": 3.58974358974359,
+  "beat7_117bpm_sample": 172308,
+  "beat7_117bpm_frame_at_30fps": 108,
+  "word_sample_59256_frame_at_30fps": 37,
+  "half_sample_tie_rounds_up": 1
+ },
+ "program": {
+  "total_frames": 825,
+  "total_seconds": 27.5,
+  "total_samples": 1320000,
+  "placed_ranges": [
+   [
+    0,
+    150
+   ],
+   [
+    135,
+    285
+   ],
+   [
+    270,
+    420
+   ],
+   [
+    405,
+    555
+   ],
+   [
+    540,
+    690
+   ],
+   [
+    675,
+    825
+   ]
+  ],
+  "handles": [
+   {
+    "id": "t1",
+    "owner": "s1",
+    "range": [
+     135,
+     150
+    ],
+    "midpoint_frame_times_two": 285,
+    "midpoint_sample": 228000
+   },
+   {
+    "id": "t2",
+    "owner": "s3",
+    "range": [
+     270,
+     285
+    ],
+    "midpoint_frame_times_two": 555,
+    "midpoint_sample": 444000
+   },
+   {
+    "id": "t3",
+    "owner": "s3",
+    "range": [
+     405,
+     420
+    ],
+    "midpoint_frame_times_two": 825,
+    "midpoint_sample": 660000
+   },
+   {
+    "id": "t4",
+    "owner": "s5",
+    "range": [
+     540,
+     555
+    ],
+    "midpoint_frame_times_two": 1095,
+    "midpoint_sample": 876000
+   },
+   {
+    "id": "t5",
+    "owner": "s5",
+    "range": [
+     675,
+     690
+    ],
+    "midpoint_frame_times_two": 1365,
+    "midpoint_sample": 1092000
+   }
+  ],
+  "cues": [
+   {
+    "id": "q2",
+    "frame": 37,
+    "sample": 59256,
+    "anchor": "spoken_word"
+   },
+   {
+    "id": "q1",
+    "frame": 145,
+    "sample": 232000,
+    "anchor": "semantic_state"
+   },
+   {
+    "id": "q3",
+    "frame": 154,
+    "sample": 246154,
+    "anchor": "music_beat"
+   }
+  ],
+  "narration_samples": [
+   [
+    0,
+    480000
+   ],
+   [
+    480000,
+    1120000
+   ],
+   [
+    1120000,
+    1320000
+   ]
+  ],
+  "s3_source_range": [
+   45,
+   195
+  ],
+  "declared_property_overlap": {
+   "sceneId": "s4",
+   "property": "panel.opacity",
+   "earlierWriteIndex": 0,
+   "laterWriteIndex": 1,
+   "overlapRange": {
+    "startFrame": 80,
+    "endFrameExclusive": 90
+   }
+  },
+  "remotion_scene_s2": {
+   "sceneId": "s2",
+   "fromFrame": 135,
+   "durationInFrames": 150,
+   "inclusiveRange": [
+    135,
+    284
+   ],
+   "transitionInFrames": 15,
+   "transitionOutFrames": 15
+  },
+  "hyperframes_scene_s2": {
+   "sceneId": "s2",
+   "startSec": 4.5,
+   "durationSec": 5,
+   "endSec": 9.5,
+   "transitionInSec": 0.5,
+   "transitionOutSec": 0.5
+  }
+ },
+ "slot": {
+  "total_frames": 900,
+  "total_samples": 1440000,
+  "placed_ranges": [
+   [
+    0,
+    320
+   ],
+   [
+    290,
+    610
+   ],
+   [
+    580,
+    900
+   ]
+  ],
+  "parent_slot": [
+   300,
+   1200
+  ],
+  "granted_handles": [
+   20,
+   20
+  ],
+  "used_handles": [
+   15,
+   15
+  ],
+  "scene_transition_edges": [
+   [
+    15,
+    30
+   ],
+   [
+    30,
+    30
+   ],
+   [
+    30,
+    15
+   ]
+  ],
+  "cue_qb": {
+   "frame": 290,
+   "sample": 464000
+  }
+ },
+ "slot_single": {
+  "total_frames": 900,
+  "placed_ranges": [
+   [
+    0,
+    900
+   ]
+  ]
+ },
+ "sixty_fps": {
+  "total_frames": 570,
+  "total_samples": 456000,
+  "placed_ranges": [
+   [
+    0,
+    300
+   ],
+   [
+    270,
+    570
+   ]
+  ]
+ }
+}

@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "handoff_id": "handoff-vsl-desktop-fixture",
+  "insert_job_id": "fixture-vsl-desktop",
+  "parent_job_id": "fixture-parent-vsl",
+  "engine": "remotion",
+  "component_id": "C05",
+  "artifacts": {
+    "mp4": {
+      "path": "insert.mp4",
+      "sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+      "bytes": 62659
+    },
+    "source_package": {
+      "path": "/home/hatch/workspace/skill72-v2/.scratch/mg044/vsl-desktop/work/insert-job"
+    },
+    "poster": {
+      "path": "poster.png",
+      "sha256": "8bd9efd480e36ecf6ddca0bd7299ce6e271c927546c42adb43123c573a756b4a",
+      "bytes": 101204,
+      "frame": 150
+    }
+  },
+  "timing": {
+    "slot": {
+      "start_frame": 900,
+      "end_frame_exclusive": 1080
+    },
+    "cue_id": "fixture-cue",
+    "cue_frame": 900,
+    "insert_duration_frames": 180,
+    "placed_start_frame": 900,
+    "placed_end_frame_exclusive": 1080,
+    "compiled_timeline_path": "compiled-timeline.json",
+    "sidecar_path": "timeline-sidecar.json"
+  },
+  "approval": {
+    "approval_id": "handoff-vsl-desktop-fixture-delivery",
+    "scope": "delivery",
+    "decision": "approved",
+    "authority_status": "not_verified",
+    "execution_context": "fixture"
+  },
+  "proof": {
+    "motion_proof_verdict": null,
+    "qc_report_path": null
+  }
+}

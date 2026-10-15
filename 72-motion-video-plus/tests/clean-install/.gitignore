@@ -1,0 +1,3 @@
+# Clean-install scratch: the pristine materialized tree and stage logs.
+# Regenerated on every run of run-clean-install.sh; never committed.
+work/

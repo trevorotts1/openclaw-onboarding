@@ -1,0 +1,75 @@
+{
+  "suite": "mg044-image-components",
+  "note": "C01, C02, and C03 catalog bundles (MG-044): catalog dispatch, MG-012 geometry, adapter validation, decoded-frame proof, and final frame counts. Clips live in the git-ignored work directory; their decoded-frame hashes are recorded here.",
+  "catalog": {
+    "available": [
+      "C01",
+      "C02",
+      "C03"
+    ],
+    "fixture_scenes_validated": 3
+  },
+  "c02_geometry": {
+    "window": {
+      "x": 711,
+      "y": 292,
+      "width": 480,
+      "height": 276,
+      "zoom": 2.5
+    },
+    "anchor": {
+      "x": 1450,
+      "y": 457.012
+    },
+    "upscale": {
+      "factor": 1.5,
+      "limit": 2,
+      "required": {
+        "width": 900,
+        "height": 518
+      },
+      "withinLimit": true
+    }
+  },
+  "c01_reveal": {
+    "observations": [
+      "assertion reveal-initial at frame 0: subject \"work-crate\" revealed fraction 0.000 (raw color fraction 0.000, hold reference 0.160), expected within [0, 0.02]: PASS",
+      "assertion reveal-proof at frame 60: subject \"work-crate\" revealed fraction 0.625 (raw color fraction 0.100, hold reference 0.160), expected within [0.4, 0.85]: PASS",
+      "assertion reveal-final at frame 149: subject \"work-crate\" revealed fraction 1.000 (raw color fraction 0.160, hold reference 0.160), expected within [0.97, 1]: PASS"
+    ]
+  },
+  "c02_detail": {
+    "raw_fractions": {
+      "f0": 0.007961,
+      "f60": 0.024191,
+      "f150": 0.050372
+    },
+    "normalized": {
+      "f0": 0.158042,
+      "f60": 0.480253,
+      "f150": 1
+    }
+  },
+  "c02_clip": {
+    "path": "/home/hatch/workspace/skill72-v2/wt-mg044/72-motion-video-plus/tests/evidence/mg044/work/c02-job/renders/hyperframes/final.mp4",
+    "decoded_sha256": "e046c1d7e0df7b4d195f43429f4196d466aa7fa61ab1b823dd6f87b6aa57ba17",
+    "frames": 180
+  },
+  "c03_compare": {
+    "observations": [
+      "assertion wipe-initial at frame 0: after-state \"board-state\" fraction 0.000 (raw color fraction 0.000, hold reference 0.029), expected within [0, 0.02]: PASS",
+      "assertion wipe-proof at frame 60: after-state \"board-state\" fraction 0.445 (raw color fraction 0.013, hold reference 0.029), expected within [0.4, 0.6]: PASS",
+      "assertion wipe-final at frame 179: after-state \"board-state\" fraction 1.000 (raw color fraction 0.029, hold reference 0.029), expected within [0.97, 1]: PASS"
+    ]
+  },
+  "c03_clip": {
+    "path": "/home/hatch/workspace/skill72-v2/wt-mg044/72-motion-video-plus/tests/evidence/mg044/work/c03-job/renders/hyperframes/final.mp4",
+    "decoded_sha256": "6eaf98efaaf9084425f2e5571d65cb8348d233c0ed069d1c439bb1656a0a2b6f",
+    "frames": 180
+  },
+  "cases": {
+    "passed": 7,
+    "failed": 0,
+    "total": 7
+  }
+}

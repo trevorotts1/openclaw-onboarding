@@ -1,0 +1,26 @@
+{
+  "schema_version": "2.0",
+  "assets": [
+    {
+      "id": "subject-crate",
+      "path": "assets/subject.svg",
+      "sha256": "b5dfb9fa7ed796a9a5e3d4f61fb95d706e089f8effa454770bce469727d6f134",
+      "kind": "svg",
+      "usage": "embed_original",
+      "rights_ref": "Original engineering fixture authored for Skill 72 (the MG-005 work-crate subject, reused by MG-039). No third-party rights.",
+      "focal_point": null
+    }
+  ],
+  "font_requirements": [
+    {
+      "id": "font-fixture-sans",
+      "source": "runtime_registry",
+      "family_alias": "fixture-sans",
+      "weights": [
+        400,
+        700
+      ],
+      "substitution": "forbidden"
+    }
+  ]
+}

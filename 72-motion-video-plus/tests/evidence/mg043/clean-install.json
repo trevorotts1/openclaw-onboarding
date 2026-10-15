@@ -1,0 +1,15 @@
+{
+  "test": "T03 clean-install (MG-043)",
+  "status": "pass",
+  "failed_stage": null,
+  "detail": "",
+  "started_at": "2026-10-14T23:56:38Z",
+  "duration_seconds": 313,
+  "materialization": "git archive HEAD (tracked files only)",
+  "provision_skip_apt": true,
+  "apt_step": "skipped via MOTION_RUNTIME_SKIP_APT; UNVERIFIED on this box",
+  "runtime_lock": "lock-314fc289b233ca9e",
+  "node": "v24.20.0",
+  "platform": "Linux-7.0.0-39-generic-x86_64-with-glibc2.39",
+  "smoke": "npm run build + run-corpus + run-charts against the fresh tree"
+}

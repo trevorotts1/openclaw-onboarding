@@ -1,0 +1,17 @@
+{
+  "event_id": "evt-appr-prod-preview",
+  "approval_id": "appr-prod-preview",
+  "job_id": "mg025-prod-job",
+  "company_id": "mg025-company",
+  "scope": "preview",
+  "decision": "approved",
+  "subject_revision": "24f72e4d5e8cbc250e038000a0a4031c9c592d11e2c264613bbf1624e261c32a",
+  "actor_id": "reviewer-independent",
+  "artifact_refs": [
+    {
+      "path": "timeline.json",
+      "sha256": "34674e46f8f7150022157e4ecce6f3f12cb8023f575c10a5ef1cbdb556644ca3"
+    }
+  ],
+  "signature": "9e4832212d1954b832efdd6216935001765ee828356aa9b9892d3e50e23989e9"
+}

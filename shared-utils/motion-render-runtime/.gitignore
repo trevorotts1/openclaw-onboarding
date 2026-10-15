@@ -1,0 +1,7 @@
+# Generated runtime state for the shared motion render runtime.
+# Only code, package.json and package-lock.json are committed here.
+node_modules/
+.runtime/
+.cache/
+runtime-lock.json
+.probe-work/

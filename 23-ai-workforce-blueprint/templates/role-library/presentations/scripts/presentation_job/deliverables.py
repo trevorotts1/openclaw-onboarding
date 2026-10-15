@@ -390,6 +390,137 @@ DELIVERABLES_GATED_SEPARATELY = {
 }
 
 
+# ---------------------------------------------------------------------------
+# MG-036 (Skill 72 Motion Graphics V2, directive Section 14 P07) — motion
+# components are CONDITIONAL component dependencies nested under the
+# canonical deliverables they ride in. They are NOT top-level bundle
+# items: a still-only deck owes none of them, and folding them into
+# DELIVERABLE_AUDIT_SPEC would break the manifest lockstep the B1 note
+# above documents (REQUIRED_KEYS must equal PIPELINE-MANIFEST
+# build_bundle_files at exactly the canonical set).
+#
+# A component below is required only when a slide declares
+# media.kind == "motion" AND the deck elected motion (intake
+# want_motion_graphics == yes, default NO). The parent entries are
+# resolved from DELIVERABLE_AUDIT_SPEC at call time by
+# motion_component_dependencies() — never copied — so the required set
+# derives from the current canonical definitions, and a parent key
+# leaving the canonical spec fails loud instead of orphaning this
+# contract. The run record that carries the per-slide truth is
+# working/checkpoints/motion.json; the webinar consumer reads
+# working/checkpoints/slide_media_manifest.json. Contract document:
+# 72-motion-video-plus/references/integration-contracts.md.
+# ---------------------------------------------------------------------------
+MOTION_COMPONENT_DEPENDENCIES = {
+    "deck_pptx": [
+        {
+            "component": "motion_clip",
+            "artifact": "working/motion/slide-{nn}/package/component.mp4",
+            "producing_phase": "P8.15-MOTION",
+            "producing_script": (
+                "72-motion-video-plus/scripts/powerpoint_package.py "
+                "(Skill 72 render + package); embedded by "
+                "build_deck.py add_motion_media; audited by "
+                "scripts/motion_phase.py"),
+            "gate_codes": ["MOTION_PACKAGE_MISSING", "MOTION_QC_FAILED",
+                           "MOTION_HASH_MISMATCH", "MOTION_EMBED_MISSING"],
+            "required_when": (
+                "a slide declares media.kind == 'motion' and the deck "
+                "elected motion graphics"),
+            "sop": "72-motion-video-plus/references/integration-contracts.md",
+        },
+        {
+            "component": "motion_poster",
+            "artifact": "working/motion/slide-{nn}/package/poster.png",
+            "producing_phase": "P8.15-MOTION",
+            "producing_script": (
+                "72-motion-video-plus/scripts/poster_select.py + "
+                "powerpoint_package.py (Skill 72)"),
+            "gate_codes": ["MOTION_POSTER_MISMATCH"],
+            "required_when": (
+                "a slide declares media.kind == 'motion' and the deck "
+                "elected motion graphics; the poster must be "
+                "byte-identical to the slide's QC PNG "
+                "(renders/slide-{nn}.png)"),
+            "sop": "72-motion-video-plus/references/powerpoint-packaging.md",
+        },
+    ],
+    "deck_pdf": [
+        {
+            "component": "motion_poster",
+            "artifact": "working/motion/slide-{nn}/package/poster.png",
+            "producing_phase": "P8.15-MOTION",
+            "producing_script": (
+                "72-motion-video-plus/scripts/poster_select.py + "
+                "powerpoint_package.py (Skill 72)"),
+            "gate_codes": ["MOTION_POSTER_MISMATCH"],
+            "required_when": (
+                "a slide declares media.kind == 'motion' and the deck "
+                "elected motion graphics; the PDF/export fallback is "
+                "the labeled poster derivative, kept separate from "
+                "movie playback"),
+            "sop": "72-motion-video-plus/references/integration-contracts.md",
+        },
+    ],
+    "webinar_mp4": [
+        {
+            "component": "motion_clip",
+            "artifact": "working/motion/slide-{nn}/package/component.mp4",
+            "producing_phase": "P8.15-MOTION",
+            "producing_script": (
+                "the SAME package the deck embeds; consumed by "
+                "build_webinar_video.py + webinar_ffmpeg.py "
+                "prepare_motion_clip from the slide-media manifest"),
+            "gate_codes": ["MOTION_PACKAGE_MISSING", "MOTION_HASH_MISMATCH",
+                           "MOTION_CLIP_EXCEEDS_SLOT"],
+            "required_when": (
+                "a slide declares media.kind == 'motion' and the deck "
+                "elected motion graphics"),
+            "sop": "72-motion-video-plus/references/integration-contracts.md",
+        },
+        {
+            "component": "motion_source_evidence",
+            "artifact": "working/motion/slide-{nn}/package/package-record.json",
+            "producing_phase": "P8.15-MOTION",
+            "producing_script": (
+                "72-motion-video-plus/scripts/powerpoint_package.py "
+                "(Skill 72); bound by hash in working/checkpoints/"
+                "motion.json"),
+            "gate_codes": ["MOTION_RECEIPT_MISMATCH",
+                           "MOTION_RECORD_INVALID"],
+            "required_when": (
+                "a slide declares media.kind == 'motion' and the deck "
+                "elected motion graphics"),
+            "sop": "72-motion-video-plus/references/integration-contracts.md",
+        },
+    ],
+}
+
+
+def motion_component_dependencies():
+    """Resolve MOTION_COMPONENT_DEPENDENCIES against the CURRENT
+    canonical spec: {parent_key: {"deliverable": <the live
+    DELIVERABLE_AUDIT_SPEC entry>, "components": [...]}}.
+
+    Raises KeyError when a parent key is no longer in
+    DELIVERABLE_AUDIT_SPEC — the motion contract must be reconciled
+    with the canonical definitions, never silently orphaned. Nothing
+    here hardcodes a bundle count: parents and their metadata derive
+    from DELIVERABLE_AUDIT_SPEC at call time."""
+    by_key = {spec["key"]: spec for spec in DELIVERABLE_AUDIT_SPEC}
+    resolved = {}
+    for parent_key, components in MOTION_COMPONENT_DEPENDENCIES.items():
+        if parent_key not in by_key:
+            raise KeyError(
+                f"motion component parent {parent_key!r} is not in the "
+                f"canonical DELIVERABLE_AUDIT_SPEC; reconcile "
+                f"MOTION_COMPONENT_DEPENDENCIES with the canonical "
+                f"definitions")
+        resolved[parent_key] = {"deliverable": by_key[parent_key],
+                                "components": components}
+    return resolved
+
+
 def _expand_filename(template: str, deck_slug: str) -> str:
     """Expand a {deck_slug}-templated filename for a specific deck_slug."""
     return template.replace("{deck_slug}", deck_slug)
@@ -517,6 +648,8 @@ __all__ = [
     "BUNDLE_COMPLETE_FILENAME",
     "AF_BUNDLE_INCOMPLETE",
     "DELIVERABLES_GATED_SEPARATELY",
+    "MOTION_COMPONENT_DEPENDENCIES",
+    "motion_component_dependencies",
     "BYTES_PER_SLIDE",
     "MIN_BYTES_ABSOLUTE",
     "guide_floor",

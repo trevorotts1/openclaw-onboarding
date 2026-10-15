@@ -1,0 +1,144 @@
+{
+  "schema_version": "1.0",
+  "kind": "motion_proof_record",
+  "item": "MG-032",
+  "case_id": "c05-bar-reveal-portrait",
+  "job_id": "fixture-vsl-mobile",
+  "scene_id": "bar-01",
+  "component_id": "C05",
+  "verdict": "pass",
+  "category": null,
+  "exit_code": 0,
+  "bindings": {
+    "video_sha256": "a61f654a31706f9a054ec319a8f5373ef1579ad4239fe66c27c2d1747777030b",
+    "coverage_job_id": "fixture-vsl-mobile",
+    "coverage_verdict": "complete",
+    "review_label": null,
+    "review_engine": null
+  },
+  "assertions": [
+    {
+      "role": "initial",
+      "frame": 0,
+      "expected": [
+        0,
+        0,
+        0
+      ],
+      "geometry_measured": [
+        0,
+        0,
+        0
+      ],
+      "raster_measured": [
+        0,
+        0,
+        0
+      ],
+      "verdict": "pass",
+      "detail": "bar widths agree three ways at frame 0: spec derivation, component geometry, and decoded raster all read [0, 0, 0]"
+    },
+    {
+      "role": "proof",
+      "frame": 45,
+      "expected": [
+        148,
+        222,
+        370
+      ],
+      "geometry_measured": [
+        148,
+        222,
+        370
+      ],
+      "raster_measured": [
+        148,
+        222,
+        370
+      ],
+      "verdict": "pass",
+      "detail": "bar widths agree three ways at frame 45: spec derivation, component geometry, and decoded raster all read [148, 222, 370]"
+    },
+    {
+      "role": "final",
+      "frame": 75,
+      "expected": [
+        296,
+        444,
+        740
+      ],
+      "geometry_measured": [
+        296,
+        444,
+        740
+      ],
+      "raster_measured": [
+        296,
+        444,
+        740
+      ],
+      "verdict": "pass",
+      "detail": "bar widths agree three ways at frame 75: spec derivation, component geometry, and decoded raster all read [296, 444, 740]"
+    },
+    {
+      "role": "hold",
+      "frame": 179,
+      "expected": [
+        296,
+        444,
+        740
+      ],
+      "geometry_measured": [
+        296,
+        444,
+        740
+      ],
+      "raster_measured": [
+        296,
+        444,
+        740
+      ],
+      "verdict": "pass",
+      "detail": "bar widths agree three ways at frame 179: spec derivation, component geometry, and decoded raster all read [296, 444, 740]"
+    }
+  ],
+  "occlusion": null,
+  "context_change": {
+    "mean_abs_diff": 0.02,
+    "frames": [
+      0,
+      75
+    ]
+  },
+  "clip": {
+    "path": "clip.mp4",
+    "frames": 60,
+    "fps": "30/1",
+    "sha256": "ad381a5e5365ba2d5fbdea56dda53c8c42997e3586f6ca28e9636a5861dc58bf"
+  },
+  "frames": [
+    {
+      "frame": 0,
+      "path": "frames/f0.png",
+      "sha256": "c1eb697a5156b0675722556c8cef3b61e77a4d7a02dedd1e358fe5a78aa77b84"
+    },
+    {
+      "frame": 45,
+      "path": "frames/f45.png",
+      "sha256": "7ee57e130841563016a3f9f0a8f17101d236d7fa3a20d9bbc9fc885d4258f99b"
+    },
+    {
+      "frame": 75,
+      "path": "frames/f75.png",
+      "sha256": "4dcf5bc5608fe0484c9f130abb18d5b38c30475b3e0af4ff0389cafeefd7575a"
+    },
+    {
+      "frame": 179,
+      "path": "frames/f179.png",
+      "sha256": "ad572b6a178d4fcca52461b3ce95f9771f605be63e8fc26b0142ed008fa207b3"
+    }
+  ],
+  "human_verdict": null,
+  "findings": [],
+  "generated_at": "2026-10-15T06:43:02.527Z"
+}

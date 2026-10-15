@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hyperframes composition with a wall-clock timer (MG-030 lint fixture)</title>
+<style>
+  html, body { margin: 0; background: #F7F4EE; }
+  .clip { position: absolute; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="hf-clock" data-start="0" data-duration="6" data-width="1920" data-height="1080">
+  <div id="headline" class="clip" data-start="0" data-duration="6" data-track-index="0">Fixture headline</div>
+</div>
+<script src="gsap.min.js"></script>
+<script>
+  const tl = gsap.timeline({ paused: true });
+  tl.fromTo("#headline", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "none" }, 0);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["hf-clock"] = tl;
+  tl.seek(0);
+  setInterval(function () {}, 250);
+</script>
+</body>
+</html>

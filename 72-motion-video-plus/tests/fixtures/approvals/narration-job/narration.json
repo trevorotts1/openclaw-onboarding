@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "job_id": "mg025-narration-job",
+  "kind": "narration_script",
+  "scenes": [
+    {
+      "scene_id": "bar-01",
+      "text": "Compare the three groups. The third group is the largest, and every length stays proportional on one shared scale.",
+      "measured": {
+        "start_sample": 0,
+        "end_sample": 240000
+      },
+      "voice_ref": null
+    }
+  ]
+}

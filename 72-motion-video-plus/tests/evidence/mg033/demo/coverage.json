@@ -1,0 +1,185 @@
+{
+  "coverage": {
+    "accounted_frames": 180,
+    "covered_frames": 180,
+    "covered_intervals": [
+      {
+        "end_frame_exclusive": 180,
+        "end_seconds": 6.0,
+        "start_frame": 0,
+        "start_seconds": 0.0
+      }
+    ],
+    "omitted_frames": 0,
+    "omitted_intervals": []
+  },
+  "declared_total_frames": 180,
+  "findings": [],
+  "inputs": {
+    "beats": {
+      "sha256": "80884fbed4ee8d5d47fed0cd0c3874d1f5dfeddbf4015e475b183af3a4bce9de"
+    },
+    "review_record": null,
+    "sidecar": null,
+    "timeline": {
+      "sha256": "e6a63242afb73cabfc38bfc30846aa58b278ea83fc8584838232a5080f9d0f7d"
+    }
+  },
+  "item": "MG-031",
+  "job_id": "fixture-powerpoint-graphic",
+  "policy": {
+    "destinations": [],
+    "interval_seconds": 5.0,
+    "sheet_columns": 4,
+    "tile_width": 480
+  },
+  "samples": [
+    {
+      "files": {
+        "full": "frames/full/fixture-powerpoint-graphic__f0000000.png"
+      },
+      "frame": 0,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "bar-01",
+      "status": "extracted",
+      "time_seconds": 0.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-powerpoint-graphic__f0000000.png"
+      },
+      "frame": 0,
+      "kind": "scene_boundary_start",
+      "ref": null,
+      "required": true,
+      "scene_id": "bar-01",
+      "status": "extracted",
+      "time_seconds": 0.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-powerpoint-graphic__f0000015.png"
+      },
+      "frame": 15,
+      "kind": "reveal_start",
+      "ref": "reveal-start",
+      "required": true,
+      "scene_id": "bar-01",
+      "status": "extracted",
+      "time_seconds": 0.5
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-powerpoint-graphic__f0000045.png"
+      },
+      "frame": 45,
+      "kind": "beat",
+      "ref": "beat_0",
+      "required": true,
+      "scene_id": "bar-01",
+      "status": "extracted",
+      "time_seconds": 1.5
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-powerpoint-graphic__f0000075.png"
+      },
+      "frame": 75,
+      "kind": "hold_start",
+      "ref": "final-hold",
+      "required": true,
+      "scene_id": "bar-01",
+      "status": "extracted",
+      "time_seconds": 2.5
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-powerpoint-graphic__f0000075.png"
+      },
+      "frame": 75,
+      "kind": "proof",
+      "ref": "final-proof",
+      "required": true,
+      "scene_id": "bar-01",
+      "status": "extracted",
+      "time_seconds": 2.5
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-powerpoint-graphic__f0000150.png"
+      },
+      "frame": 150,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "bar-01",
+      "status": "extracted",
+      "time_seconds": 5.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-powerpoint-graphic__f0000179.png"
+      },
+      "frame": 179,
+      "kind": "final_frame",
+      "ref": null,
+      "required": true,
+      "scene_id": "bar-01",
+      "status": "extracted",
+      "time_seconds": 5.967
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-powerpoint-graphic__f0000179.png"
+      },
+      "frame": 179,
+      "kind": "scene_boundary_end",
+      "ref": null,
+      "required": true,
+      "scene_id": "bar-01",
+      "status": "extracted",
+      "time_seconds": 5.967
+    }
+  ],
+  "schema_version": "1.0",
+  "sheets": {
+    "interval": [
+      {
+        "frames": [
+          "fixture-powerpoint-graphic__f0000000.png",
+          "fixture-powerpoint-graphic__f0000150.png"
+        ],
+        "path": "fixture-powerpoint-graphic__samples__p01.png",
+        "tile_height": 270,
+        "tile_width": 480
+      }
+    ],
+    "targeted": [
+      {
+        "frames": [
+          "fixture-powerpoint-graphic__f0000000.png",
+          "fixture-powerpoint-graphic__f0000015.png",
+          "fixture-powerpoint-graphic__f0000045.png",
+          "fixture-powerpoint-graphic__f0000075.png",
+          "fixture-powerpoint-graphic__f0000179.png"
+        ],
+        "path": "fixture-powerpoint-graphic__targeted__p01.png",
+        "tile_height": 270,
+        "tile_width": 480
+      }
+    ]
+  },
+  "verdict": "complete",
+  "video": {
+    "bytes": 62659,
+    "duration_seconds": 6.0,
+    "fps": "30/1",
+    "height": 1080,
+    "path": "/home/hatch/workspace/skill72-v2/wt-mg032/shared-utils/motion-render-runtime/.runtime/mg032-tests/render-c05/renders/remotion/final.mp4",
+    "probed_frames": 180,
+    "sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+    "width": 1920
+  }
+}

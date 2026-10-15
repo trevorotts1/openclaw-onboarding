@@ -1,0 +1,48 @@
+{
+  "source": "tests/evidence/mg032/measurements.json (MG-032 suite record, copied excerpt)",
+  "decoy_static_chart": {
+    "verdict": "fail",
+    "exit_code": 6,
+    "category": "MG_FAKE_MOTION",
+    "context_change_mean_abs_diff": 5.11,
+    "frame_45_raster_measured": [
+      480,
+      720,
+      1200
+    ],
+    "frame_45_expected": [
+      240,
+      360,
+      600
+    ],
+    "detail": "subject bar-a: decoded width 480px, expected 240px (tolerance 2); subject bar-b: decoded width 720px, expected 360px (tolerance 2); subject bar-c: decoded width 1200px, expected 600px (tolerance 2); subject bar-a did not move between the initial and proof states (decoded 480px -> 480px): the chart is static at this checkpoint whatever else in the frame is moving; subject bar-b did not move between the initial and proof states (decoded 720px -> 720px): the chart is static at this checkpoint whatever else in the frame is moving; subject bar-c did not move between the initial and proof states (decoded 1200px -> 1200px): the chart is static at this checkpoint whatever else in the frame is moving"
+  },
+  "c05_positive_summary": {
+    "verdict": "pass",
+    "exit_code": 0,
+    "frame_45": {
+      "expected": [
+        240,
+        360,
+        600
+      ],
+      "geometry_measured": [
+        240,
+        360,
+        600
+      ],
+      "raster_measured": [
+        240,
+        360,
+        600
+      ]
+    },
+    "context_change": {
+      "mean_abs_diff": 0.04,
+      "frames": [
+        0,
+        75
+      ]
+    }
+  }
+}

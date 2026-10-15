@@ -1,0 +1,484 @@
+{
+  "coverage": {
+    "accounted_frames": 405,
+    "covered_frames": 405,
+    "covered_intervals": [
+      {
+        "end_frame_exclusive": 405,
+        "end_seconds": 13.5,
+        "start_frame": 0,
+        "start_seconds": 0.0
+      }
+    ],
+    "omitted_frames": 0,
+    "omitted_intervals": []
+  },
+  "declared_total_frames": 405,
+  "findings": [],
+  "inputs": {
+    "beats": null,
+    "review_record": null,
+    "sidecar": {
+      "sha256": "b72b24e048092ff73c6243d24ca5593d059aaba32d90798e21c63c21d40d425b"
+    },
+    "timeline": {
+      "sha256": "72818c8ac62847371ea5924296db7d43789d7c1bc457f4e0ae2b2b9cc2e2920f"
+    }
+  },
+  "item": "MG-031",
+  "job_id": "fixture-standalone-silent",
+  "policy": {
+    "destinations": [],
+    "interval_seconds": 1.0,
+    "sheet_columns": 4,
+    "tile_width": 480
+  },
+  "samples": [
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000000.png"
+      },
+      "frame": 0,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "open-reveal",
+      "status": "extracted",
+      "time_seconds": 0.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000000.png"
+      },
+      "frame": 0,
+      "kind": "scene_boundary_start",
+      "ref": null,
+      "required": true,
+      "scene_id": "open-reveal",
+      "status": "extracted",
+      "time_seconds": 0.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000015.png"
+      },
+      "frame": 15,
+      "kind": "reveal_start",
+      "ref": "cue-open-reveal-reveal",
+      "required": true,
+      "scene_id": "open-reveal",
+      "status": "extracted",
+      "time_seconds": 0.5
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000030.png"
+      },
+      "frame": 30,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "open-reveal",
+      "status": "extracted",
+      "time_seconds": 1.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000060.png"
+      },
+      "frame": 60,
+      "kind": "hold_start",
+      "ref": "cue-open-reveal-hold",
+      "required": true,
+      "scene_id": "open-reveal",
+      "status": "extracted",
+      "time_seconds": 2.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000060.png"
+      },
+      "frame": 60,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "open-reveal",
+      "status": "extracted",
+      "time_seconds": 2.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000075.png"
+      },
+      "frame": 75,
+      "kind": "scene_boundary_start",
+      "ref": null,
+      "required": true,
+      "scene_id": "detail-zoom",
+      "status": "extracted",
+      "time_seconds": 2.5
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000089.png"
+      },
+      "frame": 89,
+      "kind": "scene_boundary_end",
+      "ref": null,
+      "required": true,
+      "scene_id": "open-reveal",
+      "status": "extracted",
+      "time_seconds": 2.967
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000090.png"
+      },
+      "frame": 90,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "detail-zoom",
+      "status": "extracted",
+      "time_seconds": 3.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000099.png"
+      },
+      "frame": 99,
+      "kind": "cue",
+      "ref": "cue-detail-zoom-detail",
+      "required": false,
+      "scene_id": "detail-zoom",
+      "status": "extracted",
+      "time_seconds": 3.3
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000120.png"
+      },
+      "frame": 120,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "detail-zoom",
+      "status": "extracted",
+      "time_seconds": 4.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000123.png"
+      },
+      "frame": 123,
+      "kind": "hold_start",
+      "ref": "cue-detail-zoom-hold",
+      "required": true,
+      "scene_id": "detail-zoom",
+      "status": "extracted",
+      "time_seconds": 4.1
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000150.png"
+      },
+      "frame": 150,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "detail-zoom",
+      "status": "extracted",
+      "time_seconds": 5.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000150.png"
+      },
+      "frame": 150,
+      "kind": "scene_boundary_start",
+      "ref": null,
+      "required": true,
+      "scene_id": "proof-chart",
+      "status": "extracted",
+      "time_seconds": 5.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000164.png"
+      },
+      "frame": 164,
+      "kind": "scene_boundary_end",
+      "ref": null,
+      "required": true,
+      "scene_id": "detail-zoom",
+      "status": "extracted",
+      "time_seconds": 5.467
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000165.png"
+      },
+      "frame": 165,
+      "kind": "reveal_start",
+      "ref": "cue-proof-chart-reveal",
+      "required": true,
+      "scene_id": "proof-chart",
+      "status": "extracted",
+      "time_seconds": 5.5
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000180.png"
+      },
+      "frame": 180,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "proof-chart",
+      "status": "extracted",
+      "time_seconds": 6.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000210.png"
+      },
+      "frame": 210,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "proof-chart",
+      "status": "extracted",
+      "time_seconds": 7.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000225.png"
+      },
+      "frame": 225,
+      "kind": "hold_start",
+      "ref": "cue-proof-chart-hold",
+      "required": true,
+      "scene_id": "proof-chart",
+      "status": "extracted",
+      "time_seconds": 7.5
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000225.png"
+      },
+      "frame": 225,
+      "kind": "proof",
+      "ref": "cue-proof-chart-proof",
+      "required": true,
+      "scene_id": "proof-chart",
+      "status": "extracted",
+      "time_seconds": 7.5
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000240.png"
+      },
+      "frame": 240,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "proof-chart",
+      "status": "extracted",
+      "time_seconds": 8.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000270.png"
+      },
+      "frame": 270,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "proof-chart",
+      "status": "extracted",
+      "time_seconds": 9.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000285.png"
+      },
+      "frame": 285,
+      "kind": "scene_boundary_start",
+      "ref": null,
+      "required": true,
+      "scene_id": "final-state",
+      "status": "extracted",
+      "time_seconds": 9.5
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000295.png"
+      },
+      "frame": 295,
+      "kind": "reveal_start",
+      "ref": "cue-final-state-reveal",
+      "required": true,
+      "scene_id": "final-state",
+      "status": "extracted",
+      "time_seconds": 9.833
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000299.png"
+      },
+      "frame": 299,
+      "kind": "scene_boundary_end",
+      "ref": null,
+      "required": true,
+      "scene_id": "proof-chart",
+      "status": "extracted",
+      "time_seconds": 9.967
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000300.png"
+      },
+      "frame": 300,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "final-state",
+      "status": "extracted",
+      "time_seconds": 10.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000325.png"
+      },
+      "frame": 325,
+      "kind": "hold_start",
+      "ref": "cue-final-state-hold",
+      "required": true,
+      "scene_id": "final-state",
+      "status": "extracted",
+      "time_seconds": 10.833
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000330.png"
+      },
+      "frame": 330,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "final-state",
+      "status": "extracted",
+      "time_seconds": 11.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000360.png"
+      },
+      "frame": 360,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "final-state",
+      "status": "extracted",
+      "time_seconds": 12.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000390.png"
+      },
+      "frame": 390,
+      "kind": "interval",
+      "ref": null,
+      "required": false,
+      "scene_id": "final-state",
+      "status": "extracted",
+      "time_seconds": 13.0
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000404.png"
+      },
+      "frame": 404,
+      "kind": "final_frame",
+      "ref": null,
+      "required": true,
+      "scene_id": "final-state",
+      "status": "extracted",
+      "time_seconds": 13.467
+    },
+    {
+      "files": {
+        "full": "frames/full/fixture-standalone-silent__f0000404.png"
+      },
+      "frame": 404,
+      "kind": "scene_boundary_end",
+      "ref": null,
+      "required": true,
+      "scene_id": "final-state",
+      "status": "extracted",
+      "time_seconds": 13.467
+    }
+  ],
+  "schema_version": "1.0",
+  "sheets": {
+    "interval": [
+      {
+        "frames": [
+          "fixture-standalone-silent__f0000000.png",
+          "fixture-standalone-silent__f0000030.png",
+          "fixture-standalone-silent__f0000060.png",
+          "fixture-standalone-silent__f0000090.png",
+          "fixture-standalone-silent__f0000120.png",
+          "fixture-standalone-silent__f0000150.png",
+          "fixture-standalone-silent__f0000180.png",
+          "fixture-standalone-silent__f0000210.png",
+          "fixture-standalone-silent__f0000240.png",
+          "fixture-standalone-silent__f0000270.png",
+          "fixture-standalone-silent__f0000300.png",
+          "fixture-standalone-silent__f0000330.png",
+          "fixture-standalone-silent__f0000360.png",
+          "fixture-standalone-silent__f0000390.png"
+        ],
+        "path": "fixture-standalone-silent__samples__p01.png",
+        "tile_height": 270,
+        "tile_width": 480
+      }
+    ],
+    "targeted": [
+      {
+        "frames": [
+          "fixture-standalone-silent__f0000000.png",
+          "fixture-standalone-silent__f0000015.png",
+          "fixture-standalone-silent__f0000060.png",
+          "fixture-standalone-silent__f0000075.png",
+          "fixture-standalone-silent__f0000089.png",
+          "fixture-standalone-silent__f0000099.png",
+          "fixture-standalone-silent__f0000123.png",
+          "fixture-standalone-silent__f0000150.png",
+          "fixture-standalone-silent__f0000164.png",
+          "fixture-standalone-silent__f0000165.png",
+          "fixture-standalone-silent__f0000225.png",
+          "fixture-standalone-silent__f0000285.png",
+          "fixture-standalone-silent__f0000295.png",
+          "fixture-standalone-silent__f0000299.png",
+          "fixture-standalone-silent__f0000325.png",
+          "fixture-standalone-silent__f0000404.png"
+        ],
+        "path": "fixture-standalone-silent__targeted__p01.png",
+        "tile_height": 270,
+        "tile_width": 480
+      }
+    ]
+  },
+  "verdict": "complete",
+  "video": {
+    "bytes": 437478,
+    "duration_seconds": 13.5,
+    "fps": "30/1",
+    "height": 1080,
+    "path": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4",
+    "probed_frames": 405,
+    "sha256": "142d44a2d5afb5a56b5dd41d5f57f51a5053ab581747e987645200fe464b30f4",
+    "width": 1920
+  }
+}

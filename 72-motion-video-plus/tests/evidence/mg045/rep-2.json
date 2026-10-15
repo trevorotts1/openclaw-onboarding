@@ -1,0 +1,1830 @@
+{
+  "item": "MG-045",
+  "rep": 2,
+  "generatedAt": "2026-10-15T05:57:35.965Z",
+  "machine": {
+    "totalMemMB": 7935,
+    "freeMemMB": 3393,
+    "cpuCount": 2,
+    "platform": "linux x64",
+    "nodeVersion": "v24.20.0",
+    "measuredAt": "2026-10-15T05:57:35.965Z",
+    "loadAvg": [
+      7.12,
+      7.89,
+      5.97
+    ]
+  },
+  "runtime": {
+    "lockId": "lock-314fc289b233ca9e",
+    "remotion": "4.0.535",
+    "hyperframes": "0.8.155",
+    "lockTimestamp": "2026-10-15T04:45:41.764Z"
+  },
+  "sharedBundleDirBytes": 28515093,
+  "cells": [
+    {
+      "kind": "cell",
+      "item": "MG-045",
+      "cellId": "chart-remotion",
+      "sceneKind": "chart",
+      "engine": "remotion",
+      "rep": 2,
+      "deliberate": false,
+      "startedAtIso": "2026-10-15T05:46:00.307Z",
+      "finishedAtIso": "2026-10-15T05:47:06.745Z",
+      "machine": {
+        "totalMemMB": 7935,
+        "freeMemMB": 2854,
+        "cpuCount": 2,
+        "platform": "linux x64",
+        "nodeVersion": "v24.20.0",
+        "measuredAt": "2026-10-15T05:46:00.308Z",
+        "loadAvg": [
+          5.62,
+          5.48,
+          3.48
+        ]
+      },
+      "runtime": {
+        "lockId": "lock-314fc289b233ca9e",
+        "remotion": "4.0.535",
+        "hyperframes": "0.8.155",
+        "lockTimestamp": "2026-10-15T04:45:41.764Z"
+      },
+      "scene": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationFrames": 180,
+        "scenes": [
+          {
+            "id": "bar-01",
+            "durationFrames": 180
+          }
+        ]
+      },
+      "status": "passed",
+      "failedStage": null,
+      "error": null,
+      "stages": [
+        {
+          "name": "stageJob",
+          "startedAt": 1792043160309,
+          "endedAt": 1792043160313,
+          "ms": 4,
+          "ok": true,
+          "detail": {
+            "jobDir": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-remotion/job",
+            "jobId": "fixture-powerpoint-graphic"
+          }
+        },
+        {
+          "name": "setup",
+          "startedAt": 1792043160313,
+          "endedAt": 1792043160316,
+          "ms": 3,
+          "ok": true,
+          "detail": {
+            "engine": "remotion",
+            "engineVersion": "4.0.535",
+            "runtimeLockId": "lock-314fc289b233ca9e",
+            "node": "v24.20.0",
+            "platform": "linux x64",
+            "probeDetail": "runtime lock lock-314fc289b233ca9e records remotion pass",
+            "bundleEntriesBefore": [
+              "c6421cf779ed860014ecad86-lock-314fc289b233ca9e"
+            ]
+          }
+        },
+        {
+          "name": "compile",
+          "startedAt": 1792043160316,
+          "endedAt": 1792043161139,
+          "ms": 823,
+          "ok": true,
+          "detail": {
+            "contractsDispatchMs": 802,
+            "jobConstruction": "loadValidatedJob (contracts layer dispatch)",
+            "timelineCompileMs": 6,
+            "totalFrames": 180,
+            "adapterValidateMs": 13,
+            "validateValid": true,
+            "validateFindings": 0,
+            "sidecarSchema": "1.0"
+          }
+        },
+        {
+          "name": "assetPrep",
+          "startedAt": 1792043161139,
+          "endedAt": 1792043161196,
+          "ms": 57,
+          "ok": true,
+          "detail": {
+            "sceneKeys": {
+              "bar-01": "60e5e83ef9f5612e44c6ed6809fc0ccba2bc141ae0be402b233d7410bd5b7b94"
+            },
+            "bytesHashed": 1549,
+            "inputClasses": {
+              "bar-01": [
+                "scene_source",
+                "props",
+                "fonts",
+                "data",
+                "timing",
+                "geometry",
+                "export",
+                "versions",
+                "runtime"
+              ]
+            },
+            "note": "input collection is re-run on every execution; the cache stores renders keyed by these inputs, it does not store the inputs themselves"
+          }
+        },
+        {
+          "name": "still1",
+          "startedAt": 1792043161196,
+          "endedAt": 1792043164198,
+          "ms": 3002,
+          "ok": true,
+          "detail": {
+            "frame": 75,
+            "bytes": 101204,
+            "dims": {
+              "width": 1920,
+              "height": 1080
+            },
+            "bundleEntriesAfter": [
+              "c6421cf779ed860014ecad86-lock-314fc289b233ca9e"
+            ]
+          }
+        },
+        {
+          "name": "still2",
+          "startedAt": 1792043164198,
+          "endedAt": 1792043166693,
+          "ms": 2495,
+          "ok": true,
+          "detail": {
+            "frame": 45,
+            "bytes": 101198,
+            "dims": {
+              "width": 1920,
+              "height": 1080
+            },
+            "instance": "fresh adapter instance"
+          }
+        },
+        {
+          "name": "preview",
+          "startedAt": 1792043166693,
+          "endedAt": 1792043188079,
+          "ms": 21387,
+          "ok": true,
+          "detail": {
+            "bytes": 62659,
+            "probe": {
+              "width": 1920,
+              "height": 1080,
+              "fpsNumerator": 30,
+              "fpsDenominator": 1,
+              "frameCount": 180,
+              "durationSeconds": 6
+            },
+            "adapterDurationMs": 20730,
+            "options": "full scale"
+          }
+        },
+        {
+          "name": "render",
+          "startedAt": 1792043188079,
+          "endedAt": 1792043216772,
+          "ms": 28693,
+          "ok": true,
+          "detail": {
+            "bytes": 62659,
+            "probe": {
+              "width": 1920,
+              "height": 1080,
+              "fpsNumerator": 30,
+              "fpsDenominator": 1,
+              "frameCount": 180,
+              "durationSeconds": 6
+            },
+            "adapterDurationMs": 25918,
+            "hasExportRecord": true
+          }
+        },
+        {
+          "name": "encode",
+          "startedAt": 1792043216772,
+          "endedAt": 1792043223436,
+          "ms": 6664,
+          "ok": true,
+          "detail": {
+            "bytes": 62826,
+            "settings": "libx264 crf 16 yuv420p, isolated re-encode of the final (MG-028 method)"
+          }
+        },
+        {
+          "name": "qc",
+          "startedAt": 1792043223436,
+          "endedAt": 1792043226744,
+          "ms": 3309,
+          "ok": true,
+          "detail": {
+            "verdict": "complete",
+            "exitCode": 0,
+            "coveredFrames": 180,
+            "accountedFrames": 180,
+            "samples": 6,
+            "note": "a non-complete verdict is recorded as data; the bundle builder ran and reported, which is what this stage measures"
+          }
+        }
+      ],
+      "artifacts": {
+        "stills": [
+          {
+            "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-remotion/renders/renders/remotion/still-landscape-f75.png",
+            "bytes": 101204,
+            "probe": null
+          },
+          {
+            "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-remotion/renders/renders/remotion/still-landscape-f45.png",
+            "bytes": 101198,
+            "probe": null
+          }
+        ],
+        "preview": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-remotion/renders/renders/remotion/preview.mp4",
+          "bytes": 62659,
+          "probe": {
+            "width": 1920,
+            "height": 1080,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 180,
+            "durationSeconds": 6
+          }
+        },
+        "final": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-remotion/renders/renders/remotion/final.mp4",
+          "bytes": 62659,
+          "probe": {
+            "width": 1920,
+            "height": 1080,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 180,
+            "durationSeconds": 6
+          }
+        },
+        "encode": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-remotion/encode/final-reencode.mp4",
+          "bytes": 62826,
+          "probe": {
+            "width": 1920,
+            "height": 1080,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 180,
+            "durationSeconds": 6
+          }
+        }
+      },
+      "qc": {
+        "verdict": "complete",
+        "coveragePath": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-remotion/qc/fixture-powerpoint-graphic__coverage.json"
+      },
+      "wallMs": 66438,
+      "resources": {
+        "peakRssMB": 1300,
+        "peakProcesses": 8,
+        "peakBrowserMains": 2,
+        "peakDiskBytes": 2170822,
+        "finalDiskBytes": 1325127,
+        "phasePeaks": {
+          "stageJob": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 4
+          },
+          "setup": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 3
+          },
+          "compile": {
+            "peakRssMB": 104,
+            "peakBrowserMains": 0,
+            "peakProcesses": 1,
+            "wallMs": 823
+          },
+          "assetPrep": {
+            "peakRssMB": 109,
+            "peakBrowserMains": 0,
+            "peakProcesses": 1,
+            "wallMs": 57
+          },
+          "still1": {
+            "peakRssMB": 636,
+            "peakBrowserMains": 2,
+            "peakProcesses": 6,
+            "wallMs": 3002
+          },
+          "still2": {
+            "peakRssMB": 649,
+            "peakBrowserMains": 1,
+            "peakProcesses": 6,
+            "wallMs": 2495
+          },
+          "preview": {
+            "peakRssMB": 1300,
+            "peakBrowserMains": 1,
+            "peakProcesses": 8,
+            "wallMs": 21387
+          },
+          "render": {
+            "peakRssMB": 1292,
+            "peakBrowserMains": 1,
+            "peakProcesses": 8,
+            "wallMs": 28693
+          },
+          "encode": {
+            "peakRssMB": 687,
+            "peakBrowserMains": 0,
+            "peakProcesses": 3,
+            "wallMs": 6664
+          },
+          "qc": {
+            "peakRssMB": 300,
+            "peakBrowserMains": 0,
+            "peakProcesses": 4,
+            "wallMs": 3309
+          }
+        }
+      }
+    },
+    {
+      "kind": "cell",
+      "item": "MG-045",
+      "cellId": "chart-hyperframes",
+      "sceneKind": "chart",
+      "engine": "hyperframes",
+      "rep": 2,
+      "deliberate": false,
+      "startedAtIso": "2026-10-15T05:47:07.346Z",
+      "finishedAtIso": "2026-10-15T05:49:55.063Z",
+      "machine": {
+        "totalMemMB": 7935,
+        "freeMemMB": 2497,
+        "cpuCount": 2,
+        "platform": "linux x64",
+        "nodeVersion": "v24.20.0",
+        "measuredAt": "2026-10-15T05:47:07.347Z",
+        "loadAvg": [
+          7.75,
+          6.2,
+          3.87
+        ]
+      },
+      "runtime": {
+        "lockId": "lock-314fc289b233ca9e",
+        "remotion": "4.0.535",
+        "hyperframes": "0.8.155",
+        "lockTimestamp": "2026-10-15T04:45:41.764Z"
+      },
+      "scene": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationFrames": 180,
+        "scenes": [
+          {
+            "id": "bar-01",
+            "durationFrames": 180
+          }
+        ]
+      },
+      "status": "passed",
+      "failedStage": null,
+      "error": null,
+      "stages": [
+        {
+          "name": "stageJob",
+          "startedAt": 1792043227348,
+          "endedAt": 1792043227352,
+          "ms": 4,
+          "ok": true,
+          "detail": {
+            "jobDir": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-hyperframes/job",
+            "jobId": "fixture-powerpoint-graphic"
+          }
+        },
+        {
+          "name": "setup",
+          "startedAt": 1792043227352,
+          "endedAt": 1792043227537,
+          "ms": 184,
+          "ok": true,
+          "detail": {
+            "engine": "hyperframes",
+            "engineVersion": "0.8.155",
+            "runtimeLockId": "lock-314fc289b233ca9e",
+            "node": "v24.20.0",
+            "platform": "linux x64",
+            "probeDetail": "Hyperframes CLI 0.8.155 launched from the shared runtime install lock-314fc289b233ca9e; runtime lock /home/hatch/workspace/skill72-v2/wt-mg045/shared-utils/motion-render-runtime/.runtime/runtime-lock.json records a hyperframes pass at 2026-10-15T04:45:41.764Z.",
+            "bundleEntriesBefore": "not a remotion cell"
+          }
+        },
+        {
+          "name": "compile",
+          "startedAt": 1792043227537,
+          "endedAt": 1792043243442,
+          "ms": 15905,
+          "ok": true,
+          "detail": {
+            "contractsDispatchMs": 0,
+            "jobConstruction": "direct ValidatedMotionJob construction (MG-005 suite pattern; the contracts scene shapes do not dispatch C01 scenes on this base, the documented MG-025 divergence)",
+            "timelineCompileMs": 193,
+            "totalFrames": 180,
+            "adapterValidateMs": 15711,
+            "validateValid": true,
+            "validateFindings": 0,
+            "sidecarSchema": "1.0"
+          }
+        },
+        {
+          "name": "assetPrep",
+          "startedAt": 1792043243442,
+          "endedAt": 1792043243443,
+          "ms": 2,
+          "ok": true,
+          "detail": {
+            "sceneKeys": {
+              "bar-01": "c33ad23dad65e58afd0655089468bff0426aa5f2b00efdb84fa29f864b508614"
+            },
+            "bytesHashed": 1738,
+            "inputClasses": {
+              "bar-01": [
+                "scene_source",
+                "props (scene document, hyperframes basis)",
+                "data",
+                "timing",
+                "geometry",
+                "export",
+                "versions",
+                "runtime"
+              ]
+            },
+            "note": "input collection is re-run on every execution; the cache stores renders keyed by these inputs, it does not store the inputs themselves"
+          }
+        },
+        {
+          "name": "still1",
+          "startedAt": 1792043243443,
+          "endedAt": 1792043250814,
+          "ms": 7371,
+          "ok": true,
+          "detail": {
+            "frame": 75,
+            "bytes": 65575,
+            "dims": {
+              "width": 1920,
+              "height": 1080
+            },
+            "bundleEntriesAfter": "not a remotion cell"
+          }
+        },
+        {
+          "name": "still2",
+          "startedAt": 1792043250814,
+          "endedAt": 1792043257966,
+          "ms": 7152,
+          "ok": true,
+          "detail": {
+            "frame": 45,
+            "bytes": 64048,
+            "dims": {
+              "width": 1920,
+              "height": 1080
+            },
+            "instance": "same adapter instance"
+          }
+        },
+        {
+          "name": "preview",
+          "startedAt": 1792043257966,
+          "endedAt": 1792043308692,
+          "ms": 50726,
+          "ok": true,
+          "detail": {
+            "bytes": 184408,
+            "probe": {
+              "width": 1920,
+              "height": 1080,
+              "fpsNumerator": 30,
+              "fpsDenominator": 1,
+              "frameCount": 180,
+              "durationSeconds": 6
+            },
+            "adapterDurationMs": 49482,
+            "options": "full scale"
+          }
+        },
+        {
+          "name": "render",
+          "startedAt": 1792043308692,
+          "endedAt": 1792043375490,
+          "ms": 66798,
+          "ok": true,
+          "detail": {
+            "bytes": 228879,
+            "probe": {
+              "width": 1920,
+              "height": 1080,
+              "fpsNumerator": 30,
+              "fpsDenominator": 1,
+              "frameCount": 180,
+              "durationSeconds": 6
+            },
+            "adapterDurationMs": 64701,
+            "hasExportRecord": true
+          }
+        },
+        {
+          "name": "encode",
+          "startedAt": 1792043375490,
+          "endedAt": 1792043387633,
+          "ms": 12143,
+          "ok": true,
+          "detail": {
+            "bytes": 130447,
+            "settings": "libx264 crf 16 yuv420p, isolated re-encode of the final (MG-028 method)"
+          }
+        },
+        {
+          "name": "qc",
+          "startedAt": 1792043387633,
+          "endedAt": 1792043395063,
+          "ms": 7430,
+          "ok": true,
+          "detail": {
+            "verdict": "complete",
+            "exitCode": 0,
+            "coveredFrames": 180,
+            "accountedFrames": 180,
+            "samples": 6,
+            "note": "a non-complete verdict is recorded as data; the bundle builder ran and reported, which is what this stage measures"
+          }
+        }
+      ],
+      "artifacts": {
+        "stills": [
+          {
+            "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-hyperframes/job/renders/hyperframes/bar-01/still-75.png",
+            "bytes": 65575,
+            "probe": null
+          },
+          {
+            "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-hyperframes/job/renders/hyperframes/bar-01/still-45.png",
+            "bytes": 64048,
+            "probe": null
+          }
+        ],
+        "preview": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-hyperframes/job/renders/hyperframes/preview.mp4",
+          "bytes": 184408,
+          "probe": {
+            "width": 1920,
+            "height": 1080,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 180,
+            "durationSeconds": 6
+          }
+        },
+        "final": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-hyperframes/job/renders/hyperframes/final.mp4",
+          "bytes": 228879,
+          "probe": {
+            "width": 1920,
+            "height": 1080,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 180,
+            "durationSeconds": 6
+          }
+        },
+        "encode": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-hyperframes/encode/final-reencode.mp4",
+          "bytes": 130447,
+          "probe": {
+            "width": 1920,
+            "height": 1080,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 180,
+            "durationSeconds": 6
+          }
+        }
+      },
+      "qc": {
+        "verdict": "complete",
+        "coveragePath": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/chart-hyperframes/qc/fixture-powerpoint-graphic__coverage.json"
+      },
+      "wallMs": 167717,
+      "resources": {
+        "peakRssMB": 1369,
+        "peakProcesses": 10,
+        "peakBrowserMains": 4,
+        "peakDiskBytes": 12960265,
+        "finalDiskBytes": 2422973,
+        "phasePeaks": {
+          "stageJob": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 4
+          },
+          "setup": {
+            "peakRssMB": 129,
+            "peakBrowserMains": 0,
+            "peakProcesses": 2,
+            "wallMs": 184
+          },
+          "compile": {
+            "peakRssMB": 902,
+            "peakBrowserMains": 1,
+            "peakProcesses": 10,
+            "wallMs": 15905
+          },
+          "assetPrep": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 2
+          },
+          "still1": {
+            "peakRssMB": 814,
+            "peakBrowserMains": 1,
+            "peakProcesses": 8,
+            "wallMs": 7371
+          },
+          "still2": {
+            "peakRssMB": 820,
+            "peakBrowserMains": 2,
+            "peakProcesses": 8,
+            "wallMs": 7152
+          },
+          "preview": {
+            "peakRssMB": 985,
+            "peakBrowserMains": 3,
+            "peakProcesses": 9,
+            "wallMs": 50726
+          },
+          "render": {
+            "peakRssMB": 1369,
+            "peakBrowserMains": 4,
+            "peakProcesses": 9,
+            "wallMs": 66798
+          },
+          "encode": {
+            "peakRssMB": 601,
+            "peakBrowserMains": 0,
+            "peakProcesses": 2,
+            "wallMs": 12143
+          },
+          "qc": {
+            "peakRssMB": 209,
+            "peakBrowserMains": 0,
+            "peakProcesses": 3,
+            "wallMs": 7430
+          }
+        }
+      }
+    },
+    {
+      "kind": "cell",
+      "item": "MG-045",
+      "cellId": "image-hyperframes",
+      "sceneKind": "image",
+      "engine": "hyperframes",
+      "rep": 2,
+      "deliberate": false,
+      "startedAtIso": "2026-10-15T05:49:56.049Z",
+      "finishedAtIso": "2026-10-15T05:53:12.901Z",
+      "machine": {
+        "totalMemMB": 7935,
+        "freeMemMB": 3312,
+        "cpuCount": 2,
+        "platform": "linux x64",
+        "nodeVersion": "v24.20.0",
+        "measuredAt": "2026-10-15T05:49:56.050Z",
+        "loadAvg": [
+          7.38,
+          7.04,
+          4.6
+        ]
+      },
+      "runtime": {
+        "lockId": "lock-314fc289b233ca9e",
+        "remotion": "4.0.535",
+        "hyperframes": "0.8.155",
+        "lockTimestamp": "2026-10-15T04:45:41.764Z"
+      },
+      "scene": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationFrames": 150,
+        "scenes": [
+          {
+            "id": "reveal-01",
+            "durationFrames": 150
+          }
+        ]
+      },
+      "status": "passed",
+      "failedStage": null,
+      "error": null,
+      "stages": [
+        {
+          "name": "stageJob",
+          "startedAt": 1792043396052,
+          "endedAt": 1792043396095,
+          "ms": 42,
+          "ok": true,
+          "detail": {
+            "jobDir": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/image-hyperframes/job",
+            "jobId": "mg045-image-led"
+          }
+        },
+        {
+          "name": "setup",
+          "startedAt": 1792043396095,
+          "endedAt": 1792043396555,
+          "ms": 461,
+          "ok": true,
+          "detail": {
+            "engine": "hyperframes",
+            "engineVersion": "0.8.155",
+            "runtimeLockId": "lock-314fc289b233ca9e",
+            "node": "v24.20.0",
+            "platform": "linux x64",
+            "probeDetail": "Hyperframes CLI 0.8.155 launched from the shared runtime install lock-314fc289b233ca9e; runtime lock /home/hatch/workspace/skill72-v2/wt-mg045/shared-utils/motion-render-runtime/.runtime/runtime-lock.json records a hyperframes pass at 2026-10-15T04:45:41.764Z.",
+            "bundleEntriesBefore": "not a remotion cell"
+          }
+        },
+        {
+          "name": "compile",
+          "startedAt": 1792043396556,
+          "endedAt": 1792043418337,
+          "ms": 21782,
+          "ok": true,
+          "detail": {
+            "contractsDispatchMs": 0,
+            "jobConstruction": "direct ValidatedMotionJob construction (MG-005 suite pattern; the contracts scene shapes do not dispatch C01 scenes on this base, the documented MG-025 divergence)",
+            "timelineCompileMs": 505,
+            "totalFrames": 150,
+            "adapterValidateMs": 21273,
+            "validateValid": true,
+            "validateFindings": 0,
+            "sidecarSchema": "1.0"
+          }
+        },
+        {
+          "name": "assetPrep",
+          "startedAt": 1792043418337,
+          "endedAt": 1792043418341,
+          "ms": 3,
+          "ok": true,
+          "detail": {
+            "sceneKeys": {
+              "reveal-01": "87b07366a63e51a5f405c7fc715c1d2dbd86f2b3df213395361d65194f635bca"
+            },
+            "bytesHashed": 12934,
+            "inputClasses": {
+              "reveal-01": [
+                "scene_source",
+                "props",
+                "assets",
+                "fonts",
+                "timing",
+                "geometry",
+                "export",
+                "versions",
+                "runtime"
+              ]
+            },
+            "note": "input collection is re-run on every execution; the cache stores renders keyed by these inputs, it does not store the inputs themselves"
+          }
+        },
+        {
+          "name": "still1",
+          "startedAt": 1792043418341,
+          "endedAt": 1792043429802,
+          "ms": 11461,
+          "ok": true,
+          "detail": {
+            "frame": 60,
+            "bytes": 47203,
+            "dims": {
+              "width": 1920,
+              "height": 1080
+            },
+            "bundleEntriesAfter": "not a remotion cell"
+          }
+        },
+        {
+          "name": "still2",
+          "startedAt": 1792043429802,
+          "endedAt": 1792043441853,
+          "ms": 12052,
+          "ok": true,
+          "detail": {
+            "frame": 90,
+            "bytes": 52931,
+            "dims": {
+              "width": 1920,
+              "height": 1080
+            },
+            "instance": "same adapter instance"
+          }
+        },
+        {
+          "name": "preview",
+          "startedAt": 1792043441853,
+          "endedAt": 1792043507719,
+          "ms": 65866,
+          "ok": true,
+          "detail": {
+            "bytes": 163654,
+            "probe": {
+              "width": 1920,
+              "height": 1080,
+              "fpsNumerator": 30,
+              "fpsDenominator": 1,
+              "frameCount": 150,
+              "durationSeconds": 5
+            },
+            "adapterDurationMs": 64639,
+            "options": "full scale"
+          }
+        },
+        {
+          "name": "render",
+          "startedAt": 1792043507719,
+          "endedAt": 1792043579441,
+          "ms": 71722,
+          "ok": true,
+          "detail": {
+            "bytes": 238243,
+            "probe": {
+              "width": 1920,
+              "height": 1080,
+              "fpsNumerator": 30,
+              "fpsDenominator": 1,
+              "frameCount": 150,
+              "durationSeconds": 5
+            },
+            "adapterDurationMs": 70317,
+            "hasExportRecord": true
+          }
+        },
+        {
+          "name": "encode",
+          "startedAt": 1792043579441,
+          "endedAt": 1792043587859,
+          "ms": 8418,
+          "ok": true,
+          "detail": {
+            "bytes": 143238,
+            "settings": "libx264 crf 16 yuv420p, isolated re-encode of the final (MG-028 method)"
+          }
+        },
+        {
+          "name": "qc",
+          "startedAt": 1792043587859,
+          "endedAt": 1792043592901,
+          "ms": 5042,
+          "ok": true,
+          "detail": {
+            "verdict": "complete",
+            "exitCode": 0,
+            "coveredFrames": 150,
+            "accountedFrames": 150,
+            "samples": 6,
+            "note": "a non-complete verdict is recorded as data; the bundle builder ran and reported, which is what this stage measures"
+          }
+        }
+      ],
+      "artifacts": {
+        "stills": [
+          {
+            "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/image-hyperframes/job/renders/hyperframes/reveal-01/still-60.png",
+            "bytes": 47203,
+            "probe": null
+          },
+          {
+            "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/image-hyperframes/job/renders/hyperframes/reveal-01/still-90.png",
+            "bytes": 52931,
+            "probe": null
+          }
+        ],
+        "preview": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/image-hyperframes/job/renders/hyperframes/preview.mp4",
+          "bytes": 163654,
+          "probe": {
+            "width": 1920,
+            "height": 1080,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 150,
+            "durationSeconds": 5
+          }
+        },
+        "final": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/image-hyperframes/job/renders/hyperframes/final.mp4",
+          "bytes": 238243,
+          "probe": {
+            "width": 1920,
+            "height": 1080,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 150,
+            "durationSeconds": 5
+          }
+        },
+        "encode": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/image-hyperframes/encode/final-reencode.mp4",
+          "bytes": 143238,
+          "probe": {
+            "width": 1920,
+            "height": 1080,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 150,
+            "durationSeconds": 5
+          }
+        }
+      },
+      "qc": {
+        "verdict": "complete",
+        "coveragePath": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/image-hyperframes/qc/mg045-image-led__coverage.json"
+      },
+      "wallMs": 196852,
+      "resources": {
+        "peakRssMB": 1350,
+        "peakProcesses": 10,
+        "peakBrowserMains": 3,
+        "peakDiskBytes": 12901835,
+        "finalDiskBytes": 2396083,
+        "phasePeaks": {
+          "stageJob": {
+            "peakRssMB": 74,
+            "peakBrowserMains": 0,
+            "peakProcesses": 1,
+            "wallMs": 42
+          },
+          "setup": {
+            "peakRssMB": 130,
+            "peakBrowserMains": 0,
+            "peakProcesses": 2,
+            "wallMs": 461
+          },
+          "compile": {
+            "peakRssMB": 910,
+            "peakBrowserMains": 2,
+            "peakProcesses": 10,
+            "wallMs": 21782
+          },
+          "assetPrep": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 3
+          },
+          "still1": {
+            "peakRssMB": 816,
+            "peakBrowserMains": 1,
+            "peakProcesses": 8,
+            "wallMs": 11461
+          },
+          "still2": {
+            "peakRssMB": 822,
+            "peakBrowserMains": 1,
+            "peakProcesses": 8,
+            "wallMs": 12052
+          },
+          "preview": {
+            "peakRssMB": 981,
+            "peakBrowserMains": 1,
+            "peakProcesses": 9,
+            "wallMs": 65866
+          },
+          "render": {
+            "peakRssMB": 1350,
+            "peakBrowserMains": 3,
+            "peakProcesses": 9,
+            "wallMs": 71722
+          },
+          "encode": {
+            "peakRssMB": 602,
+            "peakBrowserMains": 0,
+            "peakProcesses": 2,
+            "wallMs": 8418
+          },
+          "qc": {
+            "peakRssMB": 208,
+            "peakBrowserMains": 0,
+            "peakProcesses": 3,
+            "wallMs": 5042
+          }
+        }
+      }
+    },
+    {
+      "kind": "cell",
+      "item": "MG-045",
+      "cellId": "mixed-hyperframes",
+      "sceneKind": "mixed",
+      "engine": "hyperframes",
+      "rep": 2,
+      "deliberate": false,
+      "startedAtIso": "2026-10-15T05:53:13.730Z",
+      "finishedAtIso": "2026-10-15T05:57:12.536Z",
+      "machine": {
+        "totalMemMB": 7935,
+        "freeMemMB": 3121,
+        "cpuCount": 2,
+        "platform": "linux x64",
+        "nodeVersion": "v24.20.0",
+        "measuredAt": "2026-10-15T05:53:13.732Z",
+        "loadAvg": [
+          10.22,
+          7.76,
+          5.25
+        ]
+      },
+      "runtime": {
+        "lockId": "lock-314fc289b233ca9e",
+        "remotion": "4.0.535",
+        "hyperframes": "0.8.155",
+        "lockTimestamp": "2026-10-15T04:45:41.764Z"
+      },
+      "scene": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationFrames": 330,
+        "scenes": [
+          {
+            "id": "bar-01",
+            "durationFrames": 180
+          },
+          {
+            "id": "reveal-01",
+            "durationFrames": 150
+          }
+        ]
+      },
+      "status": "passed",
+      "failedStage": null,
+      "error": null,
+      "stages": [
+        {
+          "name": "stageJob",
+          "startedAt": 1792043593744,
+          "endedAt": 1792043593776,
+          "ms": 32,
+          "ok": true,
+          "detail": {
+            "jobDir": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/mixed-hyperframes/job",
+            "jobId": "mg045-mixed-program"
+          }
+        },
+        {
+          "name": "setup",
+          "startedAt": 1792043593776,
+          "endedAt": 1792043594046,
+          "ms": 269,
+          "ok": true,
+          "detail": {
+            "engine": "hyperframes",
+            "engineVersion": "0.8.155",
+            "runtimeLockId": "lock-314fc289b233ca9e",
+            "node": "v24.20.0",
+            "platform": "linux x64",
+            "probeDetail": "Hyperframes CLI 0.8.155 launched from the shared runtime install lock-314fc289b233ca9e; runtime lock /home/hatch/workspace/skill72-v2/wt-mg045/shared-utils/motion-render-runtime/.runtime/runtime-lock.json records a hyperframes pass at 2026-10-15T04:45:41.764Z.",
+            "bundleEntriesBefore": "not a remotion cell"
+          }
+        },
+        {
+          "name": "compile",
+          "startedAt": 1792043594046,
+          "endedAt": 1792043629194,
+          "ms": 35149,
+          "ok": true,
+          "detail": {
+            "contractsDispatchMs": 0,
+            "jobConstruction": "direct ValidatedMotionJob construction (MG-005 suite pattern; the contracts scene shapes do not dispatch C01 scenes on this base, the documented MG-025 divergence)",
+            "timelineCompileMs": 309,
+            "totalFrames": 330,
+            "adapterValidateMs": 34837,
+            "validateValid": true,
+            "validateFindings": 0,
+            "sidecarSchema": "1.0"
+          }
+        },
+        {
+          "name": "assetPrep",
+          "startedAt": 1792043629194,
+          "endedAt": 1792043629203,
+          "ms": 9,
+          "ok": true,
+          "detail": {
+            "sceneKeys": {
+              "bar-01": "4e25a3415ebdc040d41de388d1849faf90dac1939a7b1691b19a6bb8cd5f34f5",
+              "reveal-01": "5378b9b47983bb5b91c5a4f3ba2ab2d2d93e5d0c1181d4716ff6aa3ed53dd9dd"
+            },
+            "bytesHashed": 14672,
+            "inputClasses": {
+              "bar-01": [
+                "scene_source",
+                "props (scene document, hyperframes basis)",
+                "data",
+                "timing",
+                "geometry",
+                "export",
+                "versions",
+                "runtime"
+              ],
+              "reveal-01": [
+                "scene_source",
+                "props",
+                "assets",
+                "fonts",
+                "timing",
+                "geometry",
+                "export",
+                "versions",
+                "runtime"
+              ]
+            },
+            "note": "input collection is re-run on every execution; the cache stores renders keyed by these inputs, it does not store the inputs themselves"
+          }
+        },
+        {
+          "name": "still1",
+          "startedAt": 1792043629203,
+          "endedAt": 1792043639720,
+          "ms": 10517,
+          "ok": true,
+          "detail": {
+            "frame": 75,
+            "bytes": 65575,
+            "dims": {
+              "width": 1920,
+              "height": 1080
+            },
+            "bundleEntriesAfter": "not a remotion cell"
+          }
+        },
+        {
+          "name": "still2",
+          "startedAt": 1792043639720,
+          "endedAt": 1792043648142,
+          "ms": 8422,
+          "ok": true,
+          "detail": {
+            "frame": 240,
+            "bytes": 47203,
+            "dims": {
+              "width": 1920,
+              "height": 1080
+            },
+            "instance": "same adapter instance"
+          }
+        },
+        {
+          "name": "preview",
+          "startedAt": 1792043648142,
+          "endedAt": 1792043730107,
+          "ms": 81966,
+          "ok": true,
+          "detail": {
+            "bytes": 346647,
+            "probe": {
+              "width": 1920,
+              "height": 1080,
+              "fpsNumerator": 30,
+              "fpsDenominator": 1,
+              "frameCount": 330,
+              "durationSeconds": 11
+            },
+            "adapterDurationMs": 81352,
+            "options": "full scale"
+          }
+        },
+        {
+          "name": "render",
+          "startedAt": 1792043730108,
+          "endedAt": 1792043818027,
+          "ms": 87919,
+          "ok": true,
+          "detail": {
+            "bytes": 465706,
+            "probe": {
+              "width": 1920,
+              "height": 1080,
+              "fpsNumerator": 30,
+              "fpsDenominator": 1,
+              "frameCount": 330,
+              "durationSeconds": 11
+            },
+            "adapterDurationMs": 86731,
+            "hasExportRecord": true
+          }
+        },
+        {
+          "name": "encode",
+          "startedAt": 1792043818027,
+          "endedAt": 1792043827414,
+          "ms": 9387,
+          "ok": true,
+          "detail": {
+            "bytes": 272963,
+            "settings": "libx264 crf 16 yuv420p, isolated re-encode of the final (MG-028 method)"
+          }
+        },
+        {
+          "name": "qc",
+          "startedAt": 1792043827414,
+          "endedAt": 1792043832536,
+          "ms": 5122,
+          "ok": true,
+          "detail": {
+            "verdict": "complete",
+            "exitCode": 0,
+            "coveredFrames": 330,
+            "accountedFrames": 330,
+            "samples": 11,
+            "note": "a non-complete verdict is recorded as data; the bundle builder ran and reported, which is what this stage measures"
+          }
+        }
+      ],
+      "artifacts": {
+        "stills": [
+          {
+            "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/mixed-hyperframes/job/renders/hyperframes/bar-01/still-75.png",
+            "bytes": 65575,
+            "probe": null
+          },
+          {
+            "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/mixed-hyperframes/job/renders/hyperframes/reveal-01/still-240.png",
+            "bytes": 47203,
+            "probe": null
+          }
+        ],
+        "preview": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/mixed-hyperframes/job/renders/hyperframes/preview.mp4",
+          "bytes": 346647,
+          "probe": {
+            "width": 1920,
+            "height": 1080,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 330,
+            "durationSeconds": 11
+          }
+        },
+        "final": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/mixed-hyperframes/job/renders/hyperframes/final.mp4",
+          "bytes": 465706,
+          "probe": {
+            "width": 1920,
+            "height": 1080,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 330,
+            "durationSeconds": 11
+          }
+        },
+        "encode": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/mixed-hyperframes/encode/final-reencode.mp4",
+          "bytes": 272963,
+          "probe": {
+            "width": 1920,
+            "height": 1080,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 330,
+            "durationSeconds": 11
+          }
+        }
+      },
+      "qc": {
+        "verdict": "complete",
+        "coveragePath": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/mixed-hyperframes/qc/mg045-mixed-program__coverage.json"
+      },
+      "wallMs": 238806,
+      "resources": {
+        "peakRssMB": 1359,
+        "peakProcesses": 10,
+        "peakBrowserMains": 4,
+        "peakDiskBytes": 6308003,
+        "finalDiskBytes": 5334739,
+        "phasePeaks": {
+          "stageJob": {
+            "peakRssMB": 74,
+            "peakBrowserMains": 0,
+            "peakProcesses": 1,
+            "wallMs": 32
+          },
+          "setup": {
+            "peakRssMB": 129,
+            "peakBrowserMains": 0,
+            "peakProcesses": 2,
+            "wallMs": 269
+          },
+          "compile": {
+            "peakRssMB": 931,
+            "peakBrowserMains": 2,
+            "peakProcesses": 10,
+            "wallMs": 35149
+          },
+          "assetPrep": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 9
+          },
+          "still1": {
+            "peakRssMB": 812,
+            "peakBrowserMains": 1,
+            "peakProcesses": 8,
+            "wallMs": 10517
+          },
+          "still2": {
+            "peakRssMB": 824,
+            "peakBrowserMains": 1,
+            "peakProcesses": 8,
+            "wallMs": 8422
+          },
+          "preview": {
+            "peakRssMB": 987,
+            "peakBrowserMains": 1,
+            "peakProcesses": 9,
+            "wallMs": 81966
+          },
+          "render": {
+            "peakRssMB": 1359,
+            "peakBrowserMains": 4,
+            "peakProcesses": 9,
+            "wallMs": 87919
+          },
+          "encode": {
+            "peakRssMB": 622,
+            "peakBrowserMains": 0,
+            "peakProcesses": 2,
+            "wallMs": 9387
+          },
+          "qc": {
+            "peakRssMB": 230,
+            "peakBrowserMains": 0,
+            "peakProcesses": 3,
+            "wallMs": 5122
+          }
+        }
+      }
+    },
+    {
+      "kind": "cell",
+      "item": "MG-045",
+      "cellId": "degraded-chart-remotion",
+      "sceneKind": "degraded",
+      "engine": "remotion",
+      "rep": 2,
+      "deliberate": true,
+      "startedAtIso": "2026-10-15T05:57:13.203Z",
+      "finishedAtIso": "2026-10-15T05:57:34.758Z",
+      "machine": {
+        "totalMemMB": 7935,
+        "freeMemMB": 3351,
+        "cpuCount": 2,
+        "platform": "linux x64",
+        "nodeVersion": "v24.20.0",
+        "measuredAt": "2026-10-15T05:57:13.204Z",
+        "loadAvg": [
+          7.7,
+          8.05,
+          5.96
+        ]
+      },
+      "runtime": {
+        "lockId": "lock-314fc289b233ca9e",
+        "remotion": "4.0.535",
+        "hyperframes": "0.8.155",
+        "lockTimestamp": "2026-10-15T04:45:41.764Z"
+      },
+      "scene": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationFrames": 180,
+        "scenes": [
+          {
+            "id": "bar-01",
+            "durationFrames": 180
+          }
+        ]
+      },
+      "status": "passed",
+      "failedStage": null,
+      "error": null,
+      "stages": [
+        {
+          "name": "stageJob",
+          "startedAt": 1792043833211,
+          "endedAt": 1792043833220,
+          "ms": 9,
+          "ok": true,
+          "detail": {
+            "jobDir": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/degraded-chart-remotion/job",
+            "jobId": "fixture-powerpoint-graphic"
+          }
+        },
+        {
+          "name": "setup",
+          "startedAt": 1792043833220,
+          "endedAt": 1792043833241,
+          "ms": 21,
+          "ok": true,
+          "detail": {
+            "engine": "remotion",
+            "engineVersion": "4.0.535",
+            "runtimeLockId": "lock-314fc289b233ca9e",
+            "node": "v24.20.0",
+            "platform": "linux x64",
+            "probeDetail": "runtime lock lock-314fc289b233ca9e records remotion pass",
+            "bundleEntriesBefore": [
+              "c6421cf779ed860014ecad86-lock-314fc289b233ca9e"
+            ]
+          }
+        },
+        {
+          "name": "compile",
+          "startedAt": 1792043833241,
+          "endedAt": 1792043834110,
+          "ms": 869,
+          "ok": true,
+          "detail": {
+            "contractsDispatchMs": 853,
+            "jobConstruction": "loadValidatedJob (contracts layer dispatch)",
+            "timelineCompileMs": 4,
+            "totalFrames": 180,
+            "adapterValidateMs": 11,
+            "validateValid": true,
+            "validateFindings": 0,
+            "sidecarSchema": "1.0"
+          }
+        },
+        {
+          "name": "assetPrep",
+          "startedAt": 1792043834110,
+          "endedAt": 1792043834125,
+          "ms": 16,
+          "ok": true,
+          "detail": {
+            "sceneKeys": {
+              "bar-01": "60e5e83ef9f5612e44c6ed6809fc0ccba2bc141ae0be402b233d7410bd5b7b94"
+            },
+            "bytesHashed": 1549,
+            "inputClasses": {
+              "bar-01": [
+                "scene_source",
+                "props",
+                "fonts",
+                "data",
+                "timing",
+                "geometry",
+                "export",
+                "versions",
+                "runtime"
+              ]
+            },
+            "note": "input collection is re-run on every execution; the cache stores renders keyed by these inputs, it does not store the inputs themselves"
+          }
+        },
+        {
+          "name": "still1",
+          "startedAt": 1792043834125,
+          "endedAt": 1792043841983,
+          "ms": 7858,
+          "ok": true,
+          "detail": {
+            "frame": 75,
+            "bytes": 101204,
+            "dims": {
+              "width": 1920,
+              "height": 1080
+            },
+            "bundleEntriesAfter": [
+              "c6421cf779ed860014ecad86-lock-314fc289b233ca9e"
+            ]
+          }
+        },
+        {
+          "name": "still2",
+          "startedAt": 1792043841983,
+          "endedAt": 1792043845654,
+          "ms": 3671,
+          "ok": true,
+          "detail": {
+            "frame": 45,
+            "bytes": 101198,
+            "dims": {
+              "width": 1920,
+              "height": 1080
+            },
+            "instance": "fresh adapter instance"
+          }
+        },
+        {
+          "name": "preview",
+          "startedAt": 1792043845654,
+          "endedAt": 1792043854758,
+          "ms": 9104,
+          "ok": true,
+          "detail": {
+            "bytes": 31680,
+            "probe": {
+              "width": 960,
+              "height": 540,
+              "fpsNumerator": 30,
+              "fpsDenominator": 1,
+              "frameCount": 180,
+              "durationSeconds": 6
+            },
+            "adapterDurationMs": 8872,
+            "options": {
+              "scale": 0.5
+            }
+          }
+        },
+        {
+          "name": "render",
+          "startedAt": 1792043854758,
+          "endedAt": 1792043854758,
+          "ms": 0,
+          "ok": true,
+          "detail": {
+            "skipped": "degraded cell measures the preview path only; its output is fidelity-compared against the full preview in analysis"
+          }
+        },
+        {
+          "name": "encode",
+          "startedAt": 1792043854758,
+          "endedAt": 1792043854758,
+          "ms": 0,
+          "ok": true,
+          "detail": {
+            "skipped": "no final render in the degraded cell"
+          }
+        },
+        {
+          "name": "qc",
+          "startedAt": 1792043854758,
+          "endedAt": 1792043854758,
+          "ms": 0,
+          "ok": true,
+          "detail": {
+            "skipped": "no final render in the degraded cell"
+          }
+        }
+      ],
+      "artifacts": {
+        "stills": [
+          {
+            "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/degraded-chart-remotion/renders/renders/remotion/still-landscape-f75.png",
+            "bytes": 101204,
+            "probe": null
+          },
+          {
+            "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/degraded-chart-remotion/renders/renders/remotion/still-landscape-f45.png",
+            "bytes": 101198,
+            "probe": null
+          }
+        ],
+        "preview": {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/degraded-chart-remotion/renders/renders/remotion/preview-scale-0p5.mp4",
+          "bytes": 31680,
+          "probe": {
+            "width": 960,
+            "height": 540,
+            "fpsNumerator": 30,
+            "fpsDenominator": 1,
+            "frameCount": 180,
+            "durationSeconds": 6
+          }
+        },
+        "final": null,
+        "encode": null
+      },
+      "qc": null,
+      "wallMs": 21555,
+      "resources": {
+        "peakRssMB": 978,
+        "peakProcesses": 8,
+        "peakBrowserMains": 2,
+        "peakDiskBytes": 2052142,
+        "finalDiskBytes": 247539,
+        "phasePeaks": {
+          "stageJob": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 9
+          },
+          "setup": {
+            "peakRssMB": 74,
+            "peakBrowserMains": 0,
+            "peakProcesses": 1,
+            "wallMs": 21
+          },
+          "compile": {
+            "peakRssMB": 106,
+            "peakBrowserMains": 0,
+            "peakProcesses": 1,
+            "wallMs": 869
+          },
+          "assetPrep": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 16
+          },
+          "still1": {
+            "peakRssMB": 625,
+            "peakBrowserMains": 1,
+            "peakProcesses": 6,
+            "wallMs": 7858
+          },
+          "still2": {
+            "peakRssMB": 639,
+            "peakBrowserMains": 2,
+            "peakProcesses": 6,
+            "wallMs": 3671
+          },
+          "preview": {
+            "peakRssMB": 978,
+            "peakBrowserMains": 2,
+            "peakProcesses": 8,
+            "wallMs": 9104
+          },
+          "render": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 0
+          },
+          "encode": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 0
+          },
+          "qc": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 0
+          }
+        }
+      }
+    },
+    {
+      "kind": "cell",
+      "item": "MG-045",
+      "cellId": "sabotage-chart-remotion",
+      "sceneKind": "sabotage",
+      "engine": "remotion",
+      "rep": 2,
+      "deliberate": true,
+      "startedAtIso": "2026-10-15T05:57:35.231Z",
+      "finishedAtIso": "2026-10-15T05:57:35.949Z",
+      "machine": {
+        "totalMemMB": 7935,
+        "freeMemMB": 3374,
+        "cpuCount": 2,
+        "platform": "linux x64",
+        "nodeVersion": "v24.20.0",
+        "measuredAt": "2026-10-15T05:57:35.232Z",
+        "loadAvg": [
+          7.12,
+          7.89,
+          5.97
+        ]
+      },
+      "runtime": {
+        "lockId": "lock-314fc289b233ca9e",
+        "remotion": "4.0.535",
+        "hyperframes": "0.8.155",
+        "lockTimestamp": "2026-10-15T04:45:41.764Z"
+      },
+      "scene": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30,
+        "durationFrames": 180,
+        "scenes": [
+          {
+            "id": "bar-01",
+            "durationFrames": 180
+          }
+        ]
+      },
+      "status": "failed",
+      "failedStage": "compile",
+      "error": "adapter validate failed: MG_SCHEMA_INVALID",
+      "stages": [
+        {
+          "name": "stageJob",
+          "startedAt": 1792043855232,
+          "endedAt": 1792043855237,
+          "ms": 5,
+          "ok": true,
+          "detail": {
+            "jobDir": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/rep-2/sabotage-chart-remotion/job",
+            "jobId": "fixture-powerpoint-graphic"
+          }
+        },
+        {
+          "name": "setup",
+          "startedAt": 1792043855237,
+          "endedAt": 1792043855239,
+          "ms": 1,
+          "ok": true,
+          "detail": {
+            "engine": "remotion",
+            "engineVersion": "4.0.535",
+            "runtimeLockId": "lock-314fc289b233ca9e",
+            "node": "v24.20.0",
+            "platform": "linux x64",
+            "probeDetail": "runtime lock lock-314fc289b233ca9e records remotion pass",
+            "bundleEntriesBefore": [
+              "c6421cf779ed860014ecad86-lock-314fc289b233ca9e"
+            ]
+          }
+        },
+        {
+          "name": "compile",
+          "startedAt": 1792043855239,
+          "endedAt": 1792043855949,
+          "ms": 710,
+          "ok": false,
+          "detail": {},
+          "error": "adapter validate failed: MG_SCHEMA_INVALID"
+        }
+      ],
+      "artifacts": {
+        "stills": [],
+        "preview": null,
+        "final": null,
+        "encode": null
+      },
+      "qc": null,
+      "wallMs": 718,
+      "resources": {
+        "peakRssMB": 103,
+        "peakProcesses": 1,
+        "peakBrowserMains": 0,
+        "peakDiskBytes": 8611,
+        "finalDiskBytes": 8611,
+        "phasePeaks": {
+          "stageJob": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 5
+          },
+          "setup": {
+            "peakRssMB": 0,
+            "peakBrowserMains": 0,
+            "peakProcesses": 0,
+            "wallMs": 1
+          },
+          "compile": {
+            "peakRssMB": 103,
+            "peakBrowserMains": 0,
+            "peakProcesses": 1,
+            "wallMs": 710
+          }
+        }
+      }
+    }
+  ]
+}

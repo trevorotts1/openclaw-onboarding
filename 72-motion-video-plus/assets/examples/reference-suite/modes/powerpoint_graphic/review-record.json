@@ -1,0 +1,242 @@
+{
+ "artifact": {
+  "bundle_dir": "modes/powerpoint_graphic",
+  "coverage_record": "coverage.json",
+  "mode": "powerpoint_graphic",
+  "video": {
+   "path": "modes/powerpoint_graphic/clip.mp4",
+   "sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f"
+  }
+ },
+ "author": {
+  "id": "remotion-production-adapter",
+  "kind": "system",
+  "vision_capable": false
+ },
+ "dimensions": [
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "visual_storytelling",
+   "evidence": [
+    {
+     "detail": "Frame 0: the headline 'Compare the three groups', the three category labels, and the values are all composed before any bar exists; the promise of the piece is readable in the first frame.",
+     "ref": "../../components/frames/c05-f0.png",
+     "type": "frame"
+    },
+    {
+     "detail": "Frame 45 (proof state): the bars are mid-reveal in the same ratio as the values, so the single statement the piece makes is enacted, not just announced.",
+     "ref": "../../components/frames/c05-f45.png",
+     "type": "frame"
+    }
+   ],
+   "reference_comparison": "Against VREF-02's own terms the framing promise is kept exactly: the Section 17.2 frame-0 state and the proof state both match the reference definition. The piece is one beat with no development beyond the reveal, which is fixture-grade storytelling by design.",
+   "score": 6,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "asset_relevance",
+   "evidence": [
+    {
+     "detail": "Frame 179: the only visual asset on screen is the bar chart, which is the subject of the beat; no stock imagery, decoration, or unrelated prop appears anywhere in the 180 frames.",
+     "ref": "../../components/frames/c05-f179.png",
+     "type": "frame"
+    },
+    {
+     "detail": "The package record accounts for every element: the deck media is byte-identical to the rendered component and the poster and fallback stills derive from the declared frames.",
+     "ref": "package-record.json",
+     "type": "document"
+    }
+   ],
+   "reference_comparison": "The reference is a data-beat fixture, so relevance is judged on the chart itself: it is exactly the asset the beat calls for, and nothing off-brief is present.",
+   "score": 7,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [
+    {
+     "cause": "One type style serves both the category labels and the data figures; no emphasis treatment distinguishes the numbers the piece exists to show.",
+     "defect_id": "TYPO-1",
+     "description": "Value figures and category labels are set at the same size and weight, so the values carry no typographic emphasis over the labels they quantify.",
+     "first_seen_round": 1,
+     "resolution_evidence": null,
+     "resolved": false,
+     "severity": "minor"
+    },
+    {
+     "cause": "The portrait label column width cannot fit the category label on one line at the label size, so the label wraps mid-phrase.",
+     "defect_id": "TYPO-2",
+     "description": "In the portrait variant the category labels wrap to two lines, reading as a stacked accident rather than a designed label.",
+     "first_seen_round": 1,
+     "resolution_evidence": null,
+     "resolved": false,
+     "severity": "minor"
+    }
+   ],
+   "dimension": "typography_readability",
+   "evidence": [
+    {
+     "detail": "Frame 45 at full resolution: the 112 px headline is commanding and the labels and values are crisp; nothing the viewer must read is small or low contrast against the #F7F4EE field.",
+     "ref": "../../components/frames/c05-f45.png",
+     "type": "frame"
+    },
+    {
+     "detail": "The MG-034 final QC record for the package passes its font checks with the fixture font embedded, no substitution.",
+     "ref": "qc-record.json",
+     "type": "document"
+    }
+   ],
+   "reference_comparison": "Preserves the reference type behavior where it matters most: headline size and label clarity match the Section 17.2 proof material. Departs in the two recorded defects, carried from the MG-033 demonstration review of the same render.",
+   "score": 7,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [
+    {
+     "cause": "A single fixed value column at the frame's right edge serves every row in every state, instead of values anchored to the marks they describe.",
+     "defect_id": "COMP-1",
+     "description": "Value labels are anchored to a fixed right column; at the proof state the values sit far from their bar ends, leaving the right-center field empty in every state of the piece.",
+     "first_seen_round": 1,
+     "resolution_evidence": null,
+     "resolved": false,
+     "severity": "major"
+    }
+   ],
+   "dimension": "composition",
+   "evidence": [
+    {
+     "detail": "Frame 45: bars occupy the left half at widths 240/360/600 while the values sit at the right edge; the middle-right of the frame is empty field.",
+     "ref": "../../components/frames/c05-f45.png",
+     "type": "frame"
+    },
+    {
+     "detail": "Frame 179 (hold state): even at full reveal the values keep the same stranded column, so the emptiness is structural, not a mid-animation artifact.",
+     "ref": "../../components/frames/c05-f179.png",
+     "type": "frame"
+    }
+   ],
+   "reference_comparison": "The grid, margins, and row rhythm match the reference exactly, and the frame identity is stable across all states. The departure is the reference's own known weakness, recorded rather than excused (the same COMP-1 the MG-033 review recorded).",
+   "score": 6,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "motion_clarity",
+   "evidence": [
+    {
+     "detail": "MG-032 proof record, verdict pass: bar widths agree three ways (spec derivation, component geometry, decoded raster) at frames 0, 45, 75, and 179, bound to a full-fps clip over the reveal interval.",
+     "ref": "../../negatives/static-chart/mg032-measurements-excerpt.json",
+     "type": "proof_record"
+    },
+    {
+     "detail": "Context change outside the subject regions measures 0.04 mean absolute difference between frames 0 and 75: essentially zero decorative motion, so the movement the viewer sees is the subject itself.",
+     "ref": "../../negatives/static-chart/mg032-measurements-excerpt.json",
+     "type": "proof_record"
+    }
+   ],
+   "reference_comparison": "This is the dimension the reference exists to define, and the artifact meets the definition exactly: the Section 17.2 proof widths at frame 45 and the hold behavior at frames 150 to 179 are reproduced under an independent evaluator. The score stops at 9: the evidence covers one linear reveal family, and the reference is not owner-calibrated.",
+   "score": 9,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "data_proof_integrity",
+   "evidence": [
+    {
+     "detail": "Proof record assertions: expected, geometry-measured, and raster-measured widths are identical at every checkpoint ([0,0,0], [240,360,600], [480,720,1200], [480,720,1200]).",
+     "ref": "../../negatives/static-chart/mg032-measurements-excerpt.json",
+     "type": "proof_record"
+    },
+    {
+     "detail": "The dataset in this folder denominates the widths by the explicit pivotal value 30 and labels itself illustrative; frame 0 prints the true final values as the comparison's terms, with no bar overstating the data.",
+     "ref": "dataset.json",
+     "type": "document"
+    }
+   ],
+   "reference_comparison": "Integrity against the reference is exact: proportional widths, explicit pivotal denominator, half-reveal proof point, verified by decoded pixels rather than the scene's own claims. The score stops at 9 because the reference is an engineering fixture, not owner-calibrated.",
+   "score": 9,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [
+    {
+     "cause": "The package was produced and verified on a Linux build host; no Microsoft PowerPoint playback pass exists in the shipped evidence.",
+     "defect_id": "PKG-1",
+     "description": "Playback inside Microsoft PowerPoint (autoplay, hold-final behavior in the real application) is UNVERIFIED; what is verified is the package: deck structure, byte-identical embedded media, poster, and fallback still.",
+     "first_seen_round": 1,
+     "resolution_evidence": null,
+     "resolved": false,
+     "severity": "minor"
+    }
+   ],
+   "dimension": "destination_fit",
+   "evidence": [
+    {
+     "detail": "Package record: the test deck embeds media byte-identical to clip.mp4, the poster is the declared frame 150, and a fallback still ships for hosts that cannot play video.",
+     "ref": "package-record.json",
+     "type": "document"
+    },
+    {
+     "detail": "Poster frame 150: the hold state a presenter lands on, bars at final widths with the disclosure printed on the piece.",
+     "ref": "poster.png",
+     "type": "frame"
+    }
+   ],
+   "reference_comparison": "Landscape fit is exact against the mode geometry the reference defines, and both slide placements (full-slide and inset) are exercised by the MG-035 package record. The recorded defect is the honest limit of the host, disclosed rather than hidden.",
+   "score": 8,
+   "status": "scored"
+  },
+  {
+   "audio_judgment": false,
+   "defects": [],
+   "dimension": "finishing",
+   "evidence": [
+    {
+     "detail": "Frame 179: edges are clean, the hold state is stable, no placeholder, debug mark, or stray element appears, and the 'Illustrative example' disclosure is printed on the piece itself.",
+     "ref": "../../components/frames/c05-f179.png",
+     "type": "frame"
+    },
+    {
+     "detail": "The mode is silent by design (audio mode none in the manifest), so no sound judgment is signed in this review.",
+     "ref": "manifest.json",
+     "type": "document"
+    }
+   ],
+   "reference_comparison": "Against the reference's finishing bar the piece is clean and honestly labeled. It is also deliberately plain: one accent, no brand lockup, no end treatment. That plainness is correct for an engineering fixture and would be unfinished for a client piece; the score reflects the fixture context.",
+   "score": 7,
+   "status": "scored"
+  }
+ ],
+ "escalation_basis": null,
+ "item": "MG-033",
+ "job_id": "fixture-powerpoint-graphic",
+ "kind": "creative_review_record",
+ "notes": "Reference-suite review of the MG-035 PowerPoint graphic package, scored under the MG-033 protocol by an engineering reviewer independent of the render pipeline. The underlying render is the same artifact the MG-033 demonstration review scored; its design defects (COMP-1, TYPO-1, TYPO-2) are carried verbatim because the render is unchanged. All scores are provisional: VREF-02 is ENGINEERING_FIXTURE_ONLY and no score here is owner approval.",
+ "provisional": true,
+ "reference": {
+  "approval_record": null,
+  "calibration_state": "ENGINEERING_FIXTURE_ONLY",
+  "reference_id": "VREF-02"
+ },
+ "remediation": [
+  "COMP-1",
+  "PKG-1",
+  "TYPO-1",
+  "TYPO-2"
+ ],
+ "reviewer": {
+  "id": "mg044-reference-suite-reviewer",
+  "kind": "agent",
+  "vision_capable": true
+ },
+ "round": 1,
+ "schema_version": "1.0",
+ "verdict": "another_round"
+}

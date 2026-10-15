@@ -1,0 +1,53 @@
+{
+  "runtimeLockId": "lock-314fc289b233ca9e",
+  "lockGeneratedAt": "2026-10-14T20:41:28.947Z",
+  "lockResult": "pass",
+  "engines": {
+    "remotion": "4.0.535",
+    "hyperframes": "0.8.155",
+    "gsap": "3.15.0"
+  },
+  "node": {
+    "process": "v24.20.0",
+    "lockRecorded": "v24.20.0"
+  },
+  "platform": {
+    "os": "linux",
+    "arch": "x64",
+    "osRelease": "7.0.0-39-generic",
+    "lockRecorded": "linux/x64",
+    "cpuCount": 2
+  },
+  "browser": {
+    "revision": "157.0.8080.0",
+    "versionString": "Chromium 157.0.8080.0"
+  },
+  "ffmpegFirstLine": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers",
+  "fonts": {
+    "requirementId": "font-fixture-sans",
+    "remotion": [
+      {
+        "weight": 400,
+        "fileName": "LiberationSans-Regular.ttf",
+        "sha256": "4659bc0c58c5028dd488ec928d41d9265db43d9b669fc14ca8b0832daca7b144"
+      },
+      {
+        "weight": 700,
+        "fileName": "LiberationSans-Bold.ttf",
+        "sha256": "3973aa5054fb467dd5627245d3dc82e37bf16fe075756156a570455871351582"
+      }
+    ],
+    "hyperframes": [
+      {
+        "weight": 400,
+        "fileName": "LiberationSans-Regular.ttf",
+        "sha256": "4659bc0c58c5028dd488ec928d41d9265db43d9b669fc14ca8b0832daca7b144"
+      },
+      {
+        "weight": 700,
+        "fileName": "LiberationSans-Bold.ttf",
+        "sha256": "3973aa5054fb467dd5627245d3dc82e37bf16fe075756156a570455871351582"
+      }
+    ]
+  }
+}

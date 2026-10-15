@@ -1,0 +1,251 @@
+{
+ "item": "MG-035",
+ "section": "Directive MG-035: package PowerPoint motion components correctly",
+ "job_id": "fixture-powerpoint-graphic",
+ "job_package": {
+  "note": "assembled in scratch from the fixture sources; compiled timeline and sidecar from the real TS compiler; final rendered through the shipped Remotion dispatcher (shared runtime, remotion 4.0.535); review bundle from scripts/critique_bundle.py",
+  "manifest_sha256": "0e7246b4aeb0645f080d923802b0fef6d2fa66e89a285b4f1ba300359f137c7e",
+  "timeline_sha256": "5533c067977770418cbcae6f2576d8eae9c6502c49efa71cd768a3c03c391e95",
+  "sidecar_sha256": "37154df00669586b42cda89edb1a7790e70ed87839eeb36738d11c35f4d48137"
+ },
+ "render": {
+  "artifact_sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+  "export_profile": "h264_opaque",
+  "export_route": {
+   "engine": "remotion",
+   "kind": "engine_native",
+   "detail": "Remotion renderMedia with codec h264, pixelFormat yuv420p, crf 16 (the historical final path)."
+  },
+  "stream": {
+   "codec": "h264",
+   "pixelFormat": "yuv420p",
+   "width": 1920,
+   "height": 1080,
+   "frameCount": 180,
+   "fpsNumerator": 30,
+   "fpsDenominator": 1
+  }
+ },
+ "qc_gate": {
+  "verdict": "pass",
+  "summary": {
+   "total": 27,
+   "pass": 19,
+   "fail": 0,
+   "skipped_with_reason": 8,
+   "not_run": 0,
+   "failed_checks": [],
+   "mandatory_not_run": []
+  },
+  "artifact_sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+  "produced_by": "the genuine MG-034 scripts/qc.py, run from that item's branch worktree (wt-mg034); MG-034 is not part of this item's base, and the packager consumes the record without importing the QC layer"
+ },
+ "poster": {
+  "file": "poster.png",
+  "sha256": "c515557dc42ea2cde529cbe0d78035f27032520eee497e6a8638b2fc2474707c",
+  "bytes": 160020,
+  "width": 1920,
+  "height": 1080,
+  "frame": 150,
+  "state": "final_hold",
+  "rule": "manifest_declared_in_final_hold",
+  "reason": "the manifest declares frame 150 and the compiled plan places it inside the terminal hold [75, 180) with every scene's motion complete, so the poster shows the piece's final readable state",
+  "stable_interval": [
+   75,
+   180
+  ],
+  "motion_complete_frame": 75,
+  "declared_poster_frame": 150,
+  "per_scene": [
+   {
+    "scene_id": "bar-01",
+    "motion_interval_placed": [
+     15,
+     75
+    ],
+    "hold_interval_placed": [
+     75,
+     180
+    ]
+   }
+  ],
+  "measured": {
+   "basis": "final_hold",
+   "poster_frame": 150,
+   "final_frame": 179,
+   "vs_final_frame": {
+    "mean_abs_diff": 0.0006,
+    "max_abs_diff": 3,
+    "fraction_channels_over_8": 0.0
+   },
+   "equals_final_state": true,
+   "mid_reveal_frame": 45,
+   "vs_mid_reveal_frame": {
+    "mean_abs_diff": 7.4424,
+    "max_abs_diff": 202,
+    "fraction_channels_over_8": 0.052083
+   },
+   "differs_from_mid_reveal": true
+  }
+ },
+ "fallback": {
+  "file": "fallback.png",
+  "sha256": "c515557dc42ea2cde529cbe0d78035f27032520eee497e6a8638b2fc2474707c",
+  "bytes": 160020,
+  "source_frame": 150,
+  "carries": "the poster's readable final state: every scene's motion complete, all essential text at its final value, held still for reading"
+ },
+ "playback": {
+  "start": "on_click",
+  "repeat": "once",
+  "end": "hold_final",
+  "intended_duration_frames": 180,
+  "intended_duration_seconds": 6.0,
+  "final_hold_state": "the piece ends on frame 179 and holds it: the final readable state the poster shows"
+ },
+ "placement": {
+  "kind": "full_frame",
+  "display_width_px": 1920.0,
+  "display_height_px": 1080.0,
+  "slide_width_in": 10.0,
+  "slide_height_in": 5.625,
+  "scale": 1.0,
+  "roles": [
+   {
+    "scene_id": "bar-01",
+    "layout_variant": "landscape",
+    "role": "headline",
+    "design_field": "headline_px",
+    "authored_px": 112.0,
+    "floor_px": 96.0,
+    "effective_px": 112.0,
+    "verdict": "pass"
+   },
+   {
+    "scene_id": "bar-01",
+    "layout_variant": "landscape",
+    "role": "chart_category_label",
+    "design_field": "label_px",
+    "authored_px": 64.0,
+    "floor_px": 54.0,
+    "effective_px": 64.0,
+    "verdict": "pass"
+   },
+   {
+    "scene_id": "bar-01",
+    "layout_variant": "landscape",
+    "role": "chart_value",
+    "design_field": "value_px",
+    "authored_px": 72.0,
+    "floor_px": 60.0,
+    "effective_px": 72.0,
+    "verdict": "pass"
+   },
+   {
+    "scene_id": "bar-01",
+    "layout_variant": "landscape",
+    "role": "disclosure",
+    "design_field": "disclosure_px",
+    "authored_px": 48.0,
+    "floor_px": 40.0,
+    "effective_px": 48.0,
+    "verdict": "pass"
+   }
+  ],
+  "essential_text": [
+   "Compare the three groups",
+   "Group A",
+   "Group B",
+   "Group C",
+   "12",
+   "18",
+   "30",
+   "Illustrative example"
+  ],
+  "caveat": "Font size against the MG-013 role floors is necessary evidence, not a complete legibility guarantee (M07): glyph size, weight, contrast, and viewing distance also govern whether the placed component reads."
+ },
+ "checks": {
+  "loop_seam": {
+   "status": "not_applicable",
+   "reason": "playback repeat is 'once'; the seam check governs loop packages only",
+   "seam_mean_abs_diff": null,
+   "typical_step_mean_abs_diff": null,
+   "ratio": null
+  },
+  "hold_final": {
+   "status": "pass",
+   "poster_equals_final_state": true,
+   "reason": null
+  }
+ },
+ "moved_deck_proof": {
+  "deck": "/home/hatch/workspace/skill72-v2/scratch-mg035/evidence-run/moved/renamed-test-deck.pptx",
+  "deck_sha256": "44c7490b0b414d468340457772f4baaf60c83a113c545ddfe2aa624f6ebe1894",
+  "content_types_declare_mp4": true,
+  "external_relationships_on_video_slide": [],
+  "all_relationships_internal": true,
+  "media_part": "ppt/media/media1.mp4",
+  "media_bytes": 62659,
+  "media_sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+  "media_matches_packaged_artifact": true,
+  "media_probe": {
+   "codec": "h264",
+   "pixel_format": "yuv420p",
+   "width": 1920,
+   "height": 1080,
+   "frames": 180,
+   "duration_seconds": 6.0
+  },
+  "poster_part": "ppt/media/image1.png",
+  "poster_sha256": "c515557dc42ea2cde529cbe0d78035f27032520eee497e6a8638b2fc2474707c",
+  "poster_is_video_slide_image": true,
+  "fallback_slide": {
+   "part": "ppt/media/image2.png",
+   "sha256": "c515557dc42ea2cde529cbe0d78035f27032520eee497e6a8638b2fc2474707c"
+  }
+ },
+ "pdf_proof": {
+  "tool": "LibreOffice headless (soffice) on Linux",
+  "pdf_pages": 2,
+  "page_mean_abs_diff_vs_poster": [
+   1.6289,
+   1.5643
+  ],
+  "powerpoint_pdf_export": "UNVERIFIED"
+ },
+ "platform": {
+  "powerpoint_playback": "UNVERIFIED",
+  "statement": "Playback inside Microsoft PowerPoint is UNVERIFIED on every platform: this package was built and structurally verified on Linux, where PowerPoint is not available. The deck's embed is proven from the file itself (the media part is inside the deck, byte-identical to component.mp4, and parses); whether PowerPoint plays it is a separate claim this build does not make."
+ },
+ "font_seam": {
+  "intake_alias": "fixture-sans",
+  "resolved_family": "Liberation Sans",
+  "note": "the canonical contracts schema constrains family_alias to an ID token and the runtime registry maps the token to the family; MG-034 package.fonts resolves by exact family name through fontconfig, so the delivery-stage assets record names the resolved family and the intake record is kept beside it as intake-assets.json in the job package. See references/powerpoint-packaging.md."
+ },
+ "retained_files": {
+  "package-record.json": {
+   "sha256": "2c70f0f48b2751c7066f53a1676130721903c0a4aa32ecc9bb55c1cb4dd0110d",
+   "bytes": 5724
+  },
+  "test-deck.pptx": {
+   "sha256": "44c7490b0b414d468340457772f4baaf60c83a113c545ddfe2aa624f6ebe1894",
+   "bytes": 393995
+  },
+  "poster.png": {
+   "sha256": "c515557dc42ea2cde529cbe0d78035f27032520eee497e6a8638b2fc2474707c",
+   "bytes": 160020
+  },
+  "fallback.png": {
+   "sha256": "c515557dc42ea2cde529cbe0d78035f27032520eee497e6a8638b2fc2474707c",
+   "bytes": 160020
+  },
+  "component.mp4": {
+   "sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+   "bytes": 62659
+  },
+  "final-qc.json": {
+   "sha256": "49c1b3e39bf641553e74d71c810208cfc7ea3d8d8bce41e874953454dc9a37a5",
+   "bytes": 30193
+  }
+ }
+}

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chart with overshooting data marks</title>
+<style>
+  html, body { margin: 0; background: #ffffff; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+           font-family: sans-serif; color: #14213d; }
+  .bar { position: absolute; left: 360px; height: 90px; background: #2a9d8f; }
+  .bar.b2 { background: #e9c46a; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="bar b1" id="bar1" style="top: 285px;"></div>
+  <div class="bar b2" id="bar2" style="top: 455px;"></div>
+</div>
+<script>
+window.__sceneDuration = 6;
+window.__choreography = {"intent": "continuous_data_change", "behaviors": ["spring"], "data_marks": true};
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function spring(p) { return 1 - Math.cos(p * 9) * Math.exp(-p * 4); }
+var finals = [900, 1200];
+window.__setTime = function (t) {
+  var p = clamp01((t - 0.5) / 3);
+  for (var i = 0; i < 2; i++) {
+    var el = document.getElementById("bar" + (i + 1));
+    el.style.width = (finals[i] * spring(p)) + "px";
+  }
+};
+window.__setTime(0);
+</script>
+</body>
+</html>

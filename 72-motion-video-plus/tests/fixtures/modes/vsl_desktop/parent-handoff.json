@@ -1,0 +1,13 @@
+{
+  "schema_version": "2.0",
+  "parent_job_id": "fixture-parent-vsl",
+  "parent_task_id": "fixture-parent-task",
+  "company_id": "fixture-company",
+  "fps": 30,
+  "slot": {"start_frame": 900, "end_frame_exclusive": 1080},
+  "canvas": {"width": 1920, "height": 1080, "fps": 30},
+  "narration_cue": {"id": "fixture-cue", "frame": 900, "kind": "fixture_timing_marker_not_real_speech"},
+  "audio_owner": "parent",
+  "allow_speed_change": false,
+  "allow_slot_resize": false
+}

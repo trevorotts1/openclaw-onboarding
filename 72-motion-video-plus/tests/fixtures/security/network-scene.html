@@ -1,0 +1,51 @@
+<!doctype html>
+<!-- MG-029 fixture: a hostile scene. On load it attempts network
+     egress three ways (host loopback service, host primary-interface
+     address, a public URL) and records each outcome into the DOM so a
+     headless --dump-dom run shows what it tried. Placeholders
+     __LOOPBACK_URL__, __HOSTIP_URL__, __PUBLIC_URL__ are substituted
+     by the test runner with the recorder endpoints of the run.
+     Rendered under a working network policy, every attempt must fail
+     and the recorder must see nothing. -->
+<html>
+<head><meta charset="utf-8"><title>network-scene</title></head>
+<body>
+<div id="stage" style="width:640px;height:360px;background:#fff">network scene</div>
+<pre id="results">pending</pre>
+<script>
+window.__sceneDuration = 1;
+window.__setTime = function (t) {};
+const targets = [
+  ["loopback", "__LOOPBACK_URL__"],
+  ["hostip", "__HOSTIP_URL__"],
+  ["public", "__PUBLIC_URL__"]
+];
+const results = {};
+let done = 0;
+function finish() {
+  done += 1;
+  if (done === targets.length) {
+    document.getElementById("results").textContent =
+      targets.map(([name]) => name + "=" + results[name]).join(" ");
+  }
+}
+for (const [name, url] of targets) {
+  // An image beacon as well as a fetch: two independent egress
+  // mechanisms, so the recorder's hit log is the evidence even if one
+  // mechanism is policy-blocked inside the browser itself.
+  const img = new Image();
+  img.src = url.replace("/hit-", "/beacon-");
+  fetch(url, { mode: "no-cors" })
+    .then(() => { results[name] = "reached"; finish(); })
+    .catch(() => { results[name] = "blocked"; finish(); });
+}
+setTimeout(() => {
+  for (const [name] of targets) {
+    if (!(name in results)) results[name] = "timeout";
+  }
+  document.getElementById("results").textContent =
+    targets.map(([name]) => name + "=" + results[name]).join(" ");
+}, 4000);
+</script>
+</body>
+</html>

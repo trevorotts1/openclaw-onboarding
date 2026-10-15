@@ -1,0 +1,26 @@
+{
+  "schema_version": "2.0",
+  "id": "story-bars",
+  "beats": [
+    {
+      "id": "beat-bars",
+      "scene_id": "bar-01",
+      "job": "Compare three quantities",
+      "viewer_question": "How do the three groups compare?",
+      "intended_understanding": "The third group is largest and the other lengths remain proportional.",
+      "visual_verb": "compare",
+      "subject_ids": ["bar-a", "bar-b", "bar-c"],
+      "representation": "chart",
+      "explanatory": true,
+      "initial_state": "Labeled marks begin at zero on a shared scale.",
+      "transformation": "The three bar widths increase together on one linear progress clock.",
+      "proof_state": "Widths equal 12:18:30 on the same zero-based domain.",
+      "final_state": "Marks, values and labels hold still for reading.",
+      "asset_ids": [],
+      "data_ids": ["bars-illustrative"],
+      "essential_text": ["Compare the three groups", "Group A", "Group B", "Group C", "12", "18", "30", "Illustrative example"],
+      "proof_frames": [15, 45, 75, 179],
+      "typography_only_exception": null
+    }
+  ]
+}

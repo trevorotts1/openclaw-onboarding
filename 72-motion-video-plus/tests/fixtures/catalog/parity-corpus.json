@@ -1,0 +1,1478 @@
+{
+  "description": "MG-018 verdict-parity corpus. Each case is a complete scene document staged into the shipped powerpoint_graphic fixture job; expected verdicts were probed against the shipped MG-007 validators (TypeScript validateJob and Python motion_contracts.py agree on every case). catalogCategory differs from shippedCategory only for reject-component-c06-unavailable, by design: the catalog has registered C06 by identity but cannot dispatch it yet (MG_CAPABILITY_UNSUPPORTED), while the contracts layer has not registered it at all (MG_UNKNOWN_COMPONENT). Accept/reject verdicts are identical on every case.",
+  "stagedJobFixture": "tests/fixtures/modes/powerpoint_graphic",
+  "stagedScenePath": "scenes/bar-01.json",
+  "cases": [
+    {
+      "name": "valid-fixture",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": true,
+        "shippedCategory": null,
+        "catalogCategory": null
+      }
+    },
+    {
+      "name": "valid-engine-hyperframes",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "hyperframes",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": true,
+        "shippedCategory": null,
+        "catalogCategory": null
+      }
+    },
+    {
+      "name": "valid-layout-portrait",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "portrait",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": true,
+        "shippedCategory": null,
+        "catalogCategory": null
+      }
+    },
+    {
+      "name": "valid-headline-change",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "A different headline",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": true,
+        "shippedCategory": null,
+        "catalogCategory": null
+      }
+    },
+    {
+      "name": "reject-extra-key",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ],
+        "unexpected": true
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_SCHEMA_INVALID",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    },
+    {
+      "name": "reject-missing-copy",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_SCHEMA_INVALID",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    },
+    {
+      "name": "reject-unknown-component-c99",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C99",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_UNKNOWN_COMPONENT",
+        "catalogCategory": "MG_UNKNOWN_COMPONENT"
+      }
+    },
+    {
+      "name": "reject-component-c06-wrong-shape",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C06",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_UNKNOWN_COMPONENT",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    },
+    {
+      "name": "reject-version-2",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "2.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_SCHEMA_INVALID",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    },
+    {
+      "name": "reject-motion-kind",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "spring_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_SCHEMA_INVALID",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    },
+    {
+      "name": "reject-overshoot-true",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": true
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_SCHEMA_INVALID",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    },
+    {
+      "name": "reject-duration-zero",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 0,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_SCHEMA_INVALID",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    },
+    {
+      "name": "reject-assertions-empty",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": []
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_SCHEMA_INVALID",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    },
+    {
+      "name": "reject-data-path-escape",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "../bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_SCHEMA_INVALID",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    },
+    {
+      "name": "reject-engine-legacy",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "legacy",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_SCHEMA_INVALID",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    },
+    {
+      "name": "reject-motion-end-equals-start",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 15,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_TIMELINE_INVALID",
+        "catalogCategory": "MG_TIMELINE_INVALID"
+      }
+    },
+    {
+      "name": "reject-hold-past-duration",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 181,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_TIMELINE_INVALID",
+        "catalogCategory": "MG_TIMELINE_INVALID"
+      }
+    },
+    {
+      "name": "reject-missing-component-id",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_SCHEMA_INVALID",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    },
+    {
+      "name": "reject-bad-assertion-kind",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "component_version": "1.0.0",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "sparkles",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_SCHEMA_INVALID",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    },
+    {
+      "name": "reject-missing-component-version",
+      "scene": {
+        "schema_version": "2.0",
+        "id": "bar-01",
+        "component_id": "C05",
+        "engine": "remotion",
+        "layout_variant": "landscape",
+        "duration_frames": 180,
+        "asset_ids": [],
+        "data_path": "data/bars.json",
+        "design_path": "design.json",
+        "copy": {
+          "headline": "Compare the three groups",
+          "disclosure": "Illustrative example"
+        },
+        "motion": {
+          "kind": "linear_bar_reveal",
+          "start_frame": 15,
+          "end_frame_exclusive": 75,
+          "hold_to_frame_exclusive": 180,
+          "overshoot_data": false
+        },
+        "semantic_motion_assertions": [
+          {
+            "id": "half-reveal",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 45,
+            "expected_values": [
+              240,
+              360,
+              600
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame",
+              "full_fps_clip"
+            ]
+          },
+          {
+            "id": "final-ratios",
+            "kind": "bar_widths",
+            "subject_ids": [
+              "bar-a",
+              "bar-b",
+              "bar-c"
+            ],
+            "frame": 75,
+            "expected_values": [
+              480,
+              720,
+              1200
+            ],
+            "tolerance": 1,
+            "unit": "source_px",
+            "evidence": [
+              "geometry",
+              "decoded_frame"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "accept": false,
+        "shippedCategory": "MG_SCHEMA_INVALID",
+        "catalogCategory": "MG_SCHEMA_INVALID"
+      }
+    }
+  ]
+}

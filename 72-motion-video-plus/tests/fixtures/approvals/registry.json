@@ -1,0 +1,23 @@
+[
+  {
+    "actor_id": "fixture-test-issuer",
+    "role": "test",
+    "policies": [
+      "fixture_only"
+    ]
+  },
+  {
+    "actor_id": "owner-t-otts",
+    "role": "owner",
+    "policies": [
+      "owner_or_existing_authorized_reviewer"
+    ]
+  },
+  {
+    "actor_id": "reviewer-independent",
+    "role": "authorized_reviewer",
+    "policies": [
+      "owner_or_existing_authorized_reviewer"
+    ]
+  }
+]

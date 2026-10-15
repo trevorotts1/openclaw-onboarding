@@ -1,0 +1,67 @@
+{
+  "allOk": true,
+  "audioPlan": {
+    "audioOwner": "self",
+    "exclusions": [],
+    "loudnessTarget": {
+      "integratedLufs": -14.0,
+      "truePeakDb": -1.0
+    },
+    "mix": {
+      "ducking": null,
+      "musicVolume": 0.9
+    },
+    "mode": "own",
+    "music": {
+      "bpm": 120.0,
+      "kind": "synthesized",
+      "path": "/home/hatch/mg023-accept-ppsajcnw/synthown-media/generated/score.wav",
+      "seed": 7
+    },
+    "narration": [
+      "n1"
+    ],
+    "policyVersion": "mg023-1",
+    "sfx": []
+  },
+  "checks": [
+    {
+      "check": "encoded_loudness_within_tolerance",
+      "integratedDeltaLufs": -0.03,
+      "measured": {
+        "integratedLufs": -14.03,
+        "lra": 5.3,
+        "offset": 1.93,
+        "threshold": -24.03,
+        "truePeakDb": -3.55
+      },
+      "ok": true,
+      "truePeakOverDb": -2.55
+    },
+    {
+      "check": "score_audible_in_planned_sections",
+      "expectedRmsDbfs": -15.63,
+      "ok": true,
+      "windowRmsDbfs": -21.9
+    },
+    {
+      "bandRatio": 0.721,
+      "check": "final_words_present_at_planned_end",
+      "ok": true
+    },
+    {
+      "check": "output_not_clipped",
+      "ok": true,
+      "outputPeakDbfs": -3.8
+    },
+    {
+      "check": "stems_preserved_and_audible",
+      "ok": true,
+      "stemRmsDbfs": {
+        "music": -18.64,
+        "narration": -13.42
+      }
+    }
+  ],
+  "example": "synthown"
+}

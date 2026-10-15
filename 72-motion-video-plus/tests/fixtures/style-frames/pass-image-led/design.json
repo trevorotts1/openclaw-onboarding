@@ -1,0 +1,59 @@
+{
+  "schema_version": "2.0",
+  "id": "fixture-style-image",
+  "calibration_status": "engineering_fixture_not_owner_approved",
+  "font_ref": "font-fixture-sans",
+  "colors": {
+    "background": "#FBF7EF",
+    "ink": "#1D2B36",
+    "accent": "#C75B27"
+  },
+  "layouts": {
+    "landscape": {
+      "headline_px": 92,
+      "label_px": 34,
+      "value_px": 40,
+      "disclosure_px": 28,
+      "plot": {
+        "x": 880,
+        "y": 140,
+        "width": 920,
+        "height": 800
+      },
+      "bar_height": 8,
+      "row_y": [
+        292
+      ],
+      "headline_box": {
+        "x": 96,
+        "y": 240,
+        "width": 720,
+        "height": 260
+      }
+    },
+    "portrait": {
+      "headline_px": 84,
+      "label_px": 32,
+      "value_px": 36,
+      "disclosure_px": 26,
+      "plot": {
+        "x": 60,
+        "y": 700,
+        "width": 960,
+        "height": 700
+      },
+      "bar_height": 8,
+      "row_y": [
+        240
+      ],
+      "headline_box": {
+        "x": 60,
+        "y": 200,
+        "width": 960,
+        "height": 240
+      }
+    }
+  },
+  "essential_text_shrink": false,
+  "artifact_policy": "fixture_not_visual_gold_standard"
+}

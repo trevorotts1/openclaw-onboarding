@@ -1,0 +1,34 @@
+{
+  "schema_version": "2.0",
+  "id": "story-missing-asset",
+  "beats": [
+    {
+      "id": "beat-reveal",
+      "scene_id": "product-01",
+      "job": "Show the actual product",
+      "viewer_question": "What does the product look like?",
+      "intended_understanding": "The viewer has seen the real device.",
+      "visual_verb": "reveal",
+      "subject_ids": [
+        "product-device"
+      ],
+      "representation": "image",
+      "explanatory": true,
+      "initial_state": "The device sits in shadow.",
+      "transformation": "A mask opens across the device.",
+      "proof_state": "The device is fully visible.",
+      "final_state": "The device holds center frame.",
+      "asset_ids": [
+        "product-studio-photo"
+      ],
+      "data_ids": [],
+      "essential_text": [
+        "The device, up close"
+      ],
+      "proof_frames": [
+        60
+      ],
+      "typography_only_exception": null
+    }
+  ]
+}

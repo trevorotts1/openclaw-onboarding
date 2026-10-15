@@ -1,0 +1,174 @@
+{
+  "schema_version": "2.0",
+  "id": "c04-before-after",
+  "component_id": "C04",
+  "component_version": "1.0.0",
+  "engine": "remotion",
+  "layout_variant": "landscape",
+  "duration_frames": 150,
+  "copy": {
+    "headline": "The same work, before and after",
+    "disclosure": "Illustrative transformation. The diagram shows the change of state; it does not prove a business outcome."
+  },
+  "diagram": {
+    "pattern": "before_after_system",
+    "nodes": [
+      {
+        "id": "inbox-before",
+        "label": "Unsorted inbox",
+        "kind": "state",
+        "pair_id": "inbox",
+        "state_role": "before"
+      },
+      {
+        "id": "inbox-after",
+        "label": "Prioritized inbox",
+        "kind": "state",
+        "pair_id": "inbox",
+        "state_role": "after"
+      },
+      {
+        "id": "calendar-before",
+        "label": "Clashing calendar",
+        "kind": "state",
+        "pair_id": "calendar",
+        "state_role": "before"
+      },
+      {
+        "id": "calendar-after",
+        "label": "Confirmed calendar",
+        "kind": "state",
+        "pair_id": "calendar",
+        "state_role": "after"
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-inbox-before-inbox-after",
+        "source": "inbox-before",
+        "target": "inbox-after",
+        "kind": "transform"
+      },
+      {
+        "id": "edge-calendar-before-calendar-after",
+        "source": "calendar-before",
+        "target": "calendar-after",
+        "kind": "transform"
+      }
+    ],
+    "subject": {
+      "id": "request-001",
+      "label": "Request",
+      "path_node_ids": [
+        "inbox-before",
+        "inbox-after"
+      ]
+    },
+    "selected_branch_edge_id": null,
+    "relief": null,
+    "timing": {
+      "start_frame": 15,
+      "end_frame_exclusive": 105,
+      "hold_to_frame_exclusive": 150
+    },
+    "canvas": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 30
+    }
+  },
+  "semantic_motion_assertions": [
+    {
+      "id": "ba-timeline",
+      "kind": "timeline_bounds",
+      "subject_ids": [
+        "request-001"
+      ],
+      "frame": 0,
+      "expected_values": [
+        15,
+        105,
+        150,
+        150
+      ],
+      "tolerance": 0,
+      "unit": "frames",
+      "evidence": [
+        "geometry"
+      ]
+    },
+    {
+      "id": "ba-labels",
+      "kind": "text_readability",
+      "subject_ids": [
+        "inbox-before",
+        "inbox-after",
+        "calendar-before",
+        "calendar-after"
+      ],
+      "frame": 149,
+      "expected_values": [
+        0
+      ],
+      "tolerance": 0,
+      "unit": "normalized",
+      "evidence": [
+        "geometry"
+      ]
+    },
+    {
+      "id": "subject-at-30",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "request-001"
+      ],
+      "frame": 30,
+      "expected_values": [
+        505.83,
+        464
+      ],
+      "tolerance": 2,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    },
+    {
+      "id": "subject-at-60",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "request-001"
+      ],
+      "frame": 60,
+      "expected_values": [
+        955.5,
+        464
+      ],
+      "tolerance": 2,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    },
+    {
+      "id": "subject-at-140",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "request-001"
+      ],
+      "frame": 140,
+      "expected_values": [
+        1630,
+        464
+      ],
+      "tolerance": 2,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    }
+  ]
+}

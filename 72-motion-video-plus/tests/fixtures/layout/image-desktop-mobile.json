@@ -1,0 +1,153 @@
+{
+  "content": {
+    "schema_version": "1.0",
+    "id": "job-image-hero",
+    "message": "The kit arrives ready to work.",
+    "headline": "Everything in one kit",
+    "cta": "See the kit",
+    "image": {
+      "assetId": "hero-kit-photo",
+      "usage": "embed_original",
+      "source": {
+        "width": 2400,
+        "height": 1600
+      },
+      "focalPoint": {
+        "x": 0.3,
+        "y": 0.45
+      },
+      "protectedRegions": [
+        {
+          "id": "face",
+          "label": "face",
+          "box": {
+            "x": 0.22,
+            "y": 0.3,
+            "width": 0.16,
+            "height": 0.28
+          }
+        }
+      ]
+    }
+  },
+  "variants": [
+    {
+      "schema_version": "1.0",
+      "id": "image-desktop",
+      "contentId": "job-image-hero",
+      "destination": "vsl_desktop",
+      "canvas": {
+        "width": 1920,
+        "height": 1080
+      },
+      "exportAspect": {
+        "w": 16,
+        "h": 9
+      },
+      "font": {
+        "family": "Liberation Sans",
+        "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "weight": 700
+      },
+      "safeAreaProfile": "clean-full-frame-1920x1080",
+      "imageBox": {
+        "x": 0,
+        "y": 0,
+        "width": 1920,
+        "height": 1080
+      },
+      "elements": [
+        {
+          "id": "headline",
+          "role": "headline",
+          "ref": {
+            "field": "headline"
+          },
+          "sizePx": 112,
+          "box": {
+            "x": 80,
+            "y": 60,
+            "width": 1200,
+            "height": 170
+          }
+        },
+        {
+          "id": "cta",
+          "role": "cta",
+          "ref": {
+            "field": "cta"
+          },
+          "sizePx": 84,
+          "box": {
+            "x": 80,
+            "y": 880,
+            "width": 700,
+            "height": 120
+          }
+        }
+      ],
+      "placement": {
+        "kind": "full_frame"
+      }
+    },
+    {
+      "schema_version": "1.0",
+      "id": "image-mobile",
+      "contentId": "job-image-hero",
+      "destination": "vsl_mobile",
+      "canvas": {
+        "width": 1080,
+        "height": 1920
+      },
+      "exportAspect": {
+        "w": 9,
+        "h": 16
+      },
+      "font": {
+        "family": "Liberation Sans",
+        "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "weight": 700
+      },
+      "safeAreaProfile": "clean-full-frame-1080x1920",
+      "imageBox": {
+        "x": 0,
+        "y": 0,
+        "width": 1080,
+        "height": 1920
+      },
+      "elements": [
+        {
+          "id": "headline",
+          "role": "headline",
+          "ref": {
+            "field": "headline"
+          },
+          "sizePx": 104,
+          "box": {
+            "x": 70,
+            "y": 120,
+            "width": 940,
+            "height": 280
+          }
+        },
+        {
+          "id": "cta",
+          "role": "cta",
+          "ref": {
+            "field": "cta"
+          },
+          "sizePx": 84,
+          "box": {
+            "x": 70,
+            "y": 1560,
+            "width": 800,
+            "height": 130
+          }
+        }
+      ],
+      "placement": {
+        "kind": "full_frame"
+      }
+    }
+  ]
+}

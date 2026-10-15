@@ -1,0 +1,27 @@
+{
+  "coverage": {
+    "accounted_frames": 180,
+    "covered_frames": 180,
+    "covered_intervals": [],
+    "omitted_frames": 0,
+    "omitted_intervals": []
+  },
+  "declared_total_frames": 180,
+  "findings": [],
+  "item": "MG-031",
+  "job_id": "fixture-review-job",
+  "samples": [],
+  "schema_version": "1.0",
+  "sheets": [],
+  "verdict": "complete",
+  "video": {
+    "bytes": 1000,
+    "duration_seconds": 6.0,
+    "fps": "30/1",
+    "height": 1080,
+    "path": "fixture.mp4",
+    "probed_frames": 180,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "width": 1920
+  }
+}

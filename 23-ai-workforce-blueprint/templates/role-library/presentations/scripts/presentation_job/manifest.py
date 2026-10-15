@@ -38,6 +38,7 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     "P-STYLE-PREVIEW": 45,
     "P8-ASSEMBLE": 30,
     "P8.1-PDF-EXPORT": 15,
+    "P8.15-MOTION": 20,        # MG-036: governed motion audit (hash proofs over the delivered deck + packages)
     "P8.2-GUIDE": 20,
     "P8.25-WORKBOOK": 30,      # Feature L2-D: kie.ai page design (parallel) + reportlab assembly
     "P8.4-FISH-TAG": 15,
@@ -986,11 +987,13 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # with explicit executor.capability (ghl_workflow_install / ghl_page_install)
 # + gate_codes AF-U-FORM-GATE / AF-U-GHL-SALES / AF-U-GHL-VSL.
 # 69 -> 70 (KIE rule 12): the 9,000-18,000 prompt band is retired from the manifest in favor of the shared enforcer.
-# 70 -> 71 (FIX-PLAN Item 11, B23): every fanout phase declares workers (its own
+# 70 -> 71 (two changes land on the same floor in the same release):
+# (FIX-PLAN Item 11, B23): every fanout phase declares workers (its own
 # fanout batch_width; P9-SPEECH declares an explicit 1, deliberately serial, its
 # executor is the speech harness script), and an undeclared fanout width now
 # warns at load (Manifest.fanout_width_warnings, sync_check W2, run record)
 # instead of silently defaulting to 1.
+# (Skill 72 MG-036): phase P8.15-MOTION added.
 MIN_MANIFEST_VERSION = 71  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)

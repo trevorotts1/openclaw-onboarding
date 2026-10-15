@@ -1,0 +1,13 @@
+{
+  "schema_version": "2.0",
+  "approval_id": "fixture-pending-review",
+  "job_id": "fixture-powerpoint-graphic",
+  "company_id": "fixture-company",
+  "scope": "preview",
+  "decision": "pending",
+  "subject_revision": "af6f7bbd0d3bb6eaacc9bef33f91fd89acc287823137a143cc2c4b92bd7eb6cd",
+  "artifact_refs": [],
+  "actor_id": null,
+  "source_event_ref": null,
+  "authority_status": "not_verified"
+}

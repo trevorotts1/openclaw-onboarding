@@ -1,0 +1,187 @@
+{
+ "beats": [
+  {
+   "component": "C01",
+   "engine": "hyperframes",
+   "evidence": {
+    "clip": "clips/beat1-c01.mp4 (sha256 c4766e50b33ce6f92a94373b789deade1612303e172b8d3e777f8733940a5f4f; rendered from the MG-044 C01 job by tools/render-c01-clip.mjs and reproduced byte for byte; MG-033 review at ../components/c01/review-record.json with coverage at ../components/c01/coverage.json)",
+    "frames": [
+     "frames/beat1-c01-f0.png",
+     "frames/beat1-c01-f60.png",
+     "frames/beat1-c01-f149.png"
+    ],
+    "record": "tests/evidence/mg005/measurements.json"
+   },
+   "frames": [
+    0,
+    120
+   ],
+   "seconds": [
+    0,
+    4
+   ],
+   "storyboard_intent": "Image-led human problem: the approved subject is uncovered by its own mask reveal; the subject itself changes state (revealed fraction 0.000 at frame 0, 0.625 at frame 60, 1.000 at frame 149 in the MG-005 record). The suite's subject is the labeled illustrative work-crate fixture; a production job substitutes the approved human or workplace image under the same component contract."
+  },
+  {
+   "component": "C04",
+   "engine": "remotion",
+   "evidence": {
+    "frames": [
+     "frames/beat2-c04-f30.png",
+     "frames/beat2-c04-f75.png",
+     "frames/beat2-c04-f170.png"
+    ],
+    "record": "tests/evidence/mg017/measurements.json (object centroid measured at frames 30, 75, 170 in the MG-032 record: [581.31, 540], [949.75, 540], [1441, 540])"
+   },
+   "frames": [
+    120,
+    300
+   ],
+   "seconds": [
+    4,
+    10
+   ],
+   "storyboard_intent": "Mechanism: one persistent object travels intake, decision, execution; the bottleneck is removed as the same object (never a replacement) completes the path."
+  },
+  {
+   "component": "C05",
+   "dataset": {
+    "labels": [
+     "Group A",
+     "Group B",
+     "Group C"
+    ],
+    "pivotal": 30,
+    "source": "tests/fixtures/modes/powerpoint_graphic/data/dataset.json (illustrative, labeled on the artifact)",
+    "values": [
+     12,
+     18,
+     30
+    ]
+   },
+   "engine": "remotion (also built natively in Hyperframes by MG-016)",
+   "evidence": {
+    "frames": [
+     "frames/beat3-c05-f45.png"
+    ],
+    "record": "tests/evidence/mg006/measurements.json and tests/evidence/mg032/measurements.json (frame 45 widths 240, 360, 600 measured three ways)",
+    "clip": "clips/beat3-bars.mp4 (the MG-035 package render of this chart, sha256 1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f)"
+   },
+   "frames": [
+    300,
+    510
+   ],
+   "seconds": [
+    10,
+    17
+   ],
+   "storyboard_intent": "Animated bars with illustrative values 12, 18, 30, labeled Illustrative example on the piece itself. The bars are the motion: widths 0 at frame 0, half at the proof frame, final 480, 720, 1200 held."
+  },
+  {
+   "component": "C08",
+   "dataset": {
+    "base": 100,
+    "source": "tests/fixtures/chart-components/waterfall-a (illustrative)",
+    "steps": [
+     {
+      "label": "Starting queue",
+      "value": 100
+     },
+     {
+      "label": "Automation added",
+      "value": 25
+     },
+     {
+      "label": "Manual review removed",
+      "value": -10
+     },
+     {
+      "label": "Closing queue",
+      "value": 115
+     }
+    ]
+   },
+   "engine": "remotion",
+   "evidence": {
+    "frames": [
+     "frames/beat4-c08-f45.png",
+     "frames/beat4-c08-f75.png"
+    ],
+    "record": "tests/evidence/mg016/measurements.json (C08 waterfall cases)"
+   },
+   "frames": [
+    510,
+    690
+   ],
+   "seconds": [
+    17,
+    23
+   ],
+   "storyboard_intent": "Waterfall: 100 + 25 - 10 = 115, connectors and baseline behavior proven by the C08 bundle."
+  },
+  {
+   "component": "C02",
+   "engine": "hyperframes",
+   "evidence": {
+    "frames": [
+     "frames/beat5-c02-f0.png",
+     "frames/beat5-c02-f60.png",
+     "frames/beat5-c02-f150.png"
+    ],
+    "record": "tests/evidence/mg044/measurements.json (detail fraction normalized 0.158, 0.480, 1.000; upscale factor 1.5 within the 2x limit)",
+    "clip": "clips/beat5-detail.mp4 (the MG-044 C02 final render; decoded-frame sha256 in tests/evidence/mg044/measurements.json case c02_clip)",
+    "component_clip": "../components/clips/c02-detail.mp4 (same render, filed with the component example)"
+   },
+   "frames": [
+    690,
+    810
+   ],
+   "seconds": [
+    23,
+    27
+   ],
+   "storyboard_intent": "Interface proof: the product detail demonstration on the labeled fictional product fixture, with the annotation attached to the approve button at every zoom step. This beat is a fictional fixture and is never described as real proof; VREF-04 stays BLOCKED_ASSET for a real product screenshot."
+  },
+  {
+   "component": "C12-shape resolve (stable CTA hold; C12 itself remains unavailable)",
+   "engine": "hyperframes and remotion both hold a stable final frame",
+   "evidence": {
+    "clip": "modes/standalone_video/final.mp4 (the standalone program's final-state scene holds its designed final state from frame 285 to 405; the poster in modes/standalone_video/poster.png is that held state)",
+    "frames": [
+     "frames/beat6-cta-final.png"
+    ],
+    "record": "tests/fixtures/standalone/silent (final-state scene: the standalone program ends on a stable readable final state, frames 285 to 405)"
+   },
+   "frames": [
+    810,
+    900
+   ],
+   "seconds": [
+    27,
+    30
+   ],
+   "storyboard_intent": "Resolve: one large, stable, readable call to action, held to the end with no further motion competing with it."
+  }
+ ],
+ "canvas": {
+  "fps": 30,
+  "height": 1080,
+  "width": 1920
+ },
+ "engine_jobs": {
+  "hyperframes_job": "tests/evidence/mg005 (C01 reveal job: validation, decoded-frame assertions, 150-frame final render through the Hyperframes adapter)",
+  "note": "Section 8.3: the image, mechanism, and interface beats exercise Hyperframes; the chart beats exercise Remotion; a small complete job is rendered through each engine individually. Both jobs below are complete shipped jobs, not excerpts.",
+  "remotion_job": "tests/evidence/mg006 (C05 job: validation, decoded-frame proof states, 180-frame final render through the Remotion adapter)"
+ },
+ "frames_total": 900,
+ "item": "MG-044",
+ "modes_exercised": [
+  "powerpoint_graphic",
+  "vsl_desktop",
+  "vsl_mobile",
+  "standalone_video"
+ ],
+ "note": "Illustrative demonstration package, assembled from the shipped producers' own evidence. Each beat names the component, the engine, and the evidence record that proves the motion; no stitched 30-second render is claimed, because no shipped producer assembles this exact sequence as one job. The standalone mode example (modes/standalone_video/) is a complete program built end to end by the shipped standalone producer.",
+ "seconds_total": 30,
+ "title": "Show how the system changes the work (Section 8 reference sequence)"
+}

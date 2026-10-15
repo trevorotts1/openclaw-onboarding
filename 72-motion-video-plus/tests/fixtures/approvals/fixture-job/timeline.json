@@ -1,0 +1,38 @@
+{
+  "schema_version": "2.0",
+  "job_id": "mg025-fixture-job",
+  "fps": 30,
+  "total_frames": 180,
+  "scenes": [
+    {
+      "id": "bar-01",
+      "start_frame": 0,
+      "end_frame_exclusive": 180,
+      "source_start_frame": 0,
+      "transition_in_frames": 0,
+      "transition_out_frames": 0
+    }
+  ],
+  "events": [
+    {
+      "id": "reveal-start",
+      "scene_id": "bar-01",
+      "frame": 15,
+      "type": "reveal_start"
+    },
+    {
+      "id": "final-proof",
+      "scene_id": "bar-01",
+      "frame": 75,
+      "type": "proof"
+    },
+    {
+      "id": "final-hold",
+      "scene_id": "bar-01",
+      "frame": 75,
+      "type": "hold_start"
+    }
+  ],
+  "parent_slot": null,
+  "audio_owner": "none"
+}

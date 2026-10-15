@@ -1,0 +1,133 @@
+{
+  "envRemovedNames": [
+    "ALL_PROXY",
+    "AWS_CA_BUNDLE",
+    "COLOR",
+    "CURL_CA_BUNDLE",
+    "EDITOR",
+    "FISH_AUDIO_API_KEY",
+    "GEMINI_API_KEY",
+    "GIT_SSL_CAINFO",
+    "HATCH_API_SOCKET",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "INIT_CWD",
+    "JARVIS_AUTHD_INGRESS_ALLOWED_USERS",
+    "JARVIS_AUTHD_SOCK",
+    "JARVIS_BIN_DIR",
+    "JARVIS_CD_CHANNEL",
+    "JARVIS_CD_PINNED",
+    "JARVIS_DAEMON_EGRESS_APPROVAL_SOCK",
+    "JARVIS_EGRESS_APPROVAL_ADMIN_SOCK",
+    "JARVIS_EGRESS_APPROVAL_EVENTS_SOCK",
+    "JARVIS_FQDN",
+    "JARVIS_HATCHLING_ID",
+    "JARVIS_HOME",
+    "JARVIS_INFERENCE_HOSTNAME",
+    "JARVIS_INFERENCE_PROXY_SOCK",
+    "JARVIS_IS_ASSIGNED",
+    "JARVIS_MEMORY_SOCK",
+    "JARVIS_PRESENTATION_LOCALE",
+    "JARVIS_REQUEST_MODE",
+    "JARVIS_RESCUE_SIGNAL_SOCK",
+    "JARVIS_RUNTIME_CONTEXT_TOKEN",
+    "JARVIS_SANDBOX_API_SOCK",
+    "JARVIS_SECURITY_SOCK",
+    "JARVIS_SENTINEL_HTTP_API_SOCKET",
+    "JARVIS_SESSION_ID",
+    "JARVIS_STEFI_PROXY_SOCK",
+    "JARVIS_TELEMETRY_PROXY_SOCK",
+    "JARVIS_TIER",
+    "JARVIS_TOOL_CALL_ID",
+    "JARVIS_TRACE_CONTEXT",
+    "JARVIS_USER_TIMEZONE",
+    "JARVIS_VM_COMPUTE_REGION",
+    "JARVIS_VM_DATA_REGION",
+    "KIE_API_KEY",
+    "MG029_PLANTED_SECRET",
+    "NODE",
+    "NODE_EXTRA_CA_CERTS",
+    "NODE_OPTIONS",
+    "NODE_USE_ENV_PROXY",
+    "NO_PROXY",
+    "OLDPWD",
+    "PWD",
+    "REQUESTS_CA_BUNDLE",
+    "SHLVL",
+    "SSL_CERT_FILE",
+    "WGETRC",
+    "_",
+    "all_proxy",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "npm_command",
+    "npm_config_cache",
+    "npm_config_global_prefix",
+    "npm_config_globalconfig",
+    "npm_config_init_module",
+    "npm_config_local_prefix",
+    "npm_config_node_gyp",
+    "npm_config_noproxy",
+    "npm_config_npm_version",
+    "npm_config_prefix",
+    "npm_config_user_agent",
+    "npm_config_userconfig",
+    "npm_execpath",
+    "npm_lifecycle_event",
+    "npm_lifecycle_script",
+    "npm_node_execpath",
+    "npm_package_engines_node",
+    "npm_package_json",
+    "npm_package_name",
+    "npm_package_version"
+  ],
+  "originRequests": [
+    {
+      "method": "GET",
+      "path": "/asset.png",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/%2e%2e/origin-secret.txt",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/linked.txt",
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/nope.png",
+      "status": 404
+    },
+    {
+      "method": "POST",
+      "path": "/asset.png",
+      "status": 405
+    }
+  ],
+  "sweepOutput": "sweep: terminated 2 recorded render process(es) across 2 job(s); 0 already exited; 1 left running (ownership not provable)",
+  "namespaceProbe": {
+    "supported": true,
+    "flavor": "-n",
+    "canRaiseLoopback": true,
+    "detail": "unshare -n creates a network namespace and iproute2 raises loopback inside it"
+  },
+  "recorderHits": [
+    "/hit-loopback",
+    "/hit-loopback",
+    "/beacon-loopback"
+  ],
+  "adapterRecords": [
+    {
+      "role": "hyperframes",
+      "pid": 91014,
+      "state": "exited"
+    }
+  ],
+  "passed": 57,
+  "failed": 0
+}

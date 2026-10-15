@@ -1,0 +1,31 @@
+{
+  "example": "legacy",
+  "mode": "legacy",
+  "output": "tests/evidence/mg022/outputs/legacy.mp4",
+  "expected_frames": 75,
+  "probe_frames": 75,
+  "recount_frames": 75,
+  "duration_seconds": 2.517,
+  "stream_map": [
+    {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 640,
+      "height": 360,
+      "sample_rate": null
+    },
+    {
+      "index": 1,
+      "codec_type": "audio",
+      "codec_name": "aac",
+      "width": null,
+      "height": null,
+      "sample_rate": "96000"
+    }
+  ],
+  "last_frame_sha256": "60dc037427112e9cf3612d3df95ff699288261e68321e80954a846fac93c1a40",
+  "voiceover_440hz_at_0.25s": 1755.7,
+  "narrated_voice_present": true,
+  "note": "music and SFX placement detail is in the probe inputs; the synthesized score is mixed (D-ASSEMBLE-MUSIC-RESET fix)"
+}

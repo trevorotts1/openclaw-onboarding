@@ -1,0 +1,185 @@
+{
+  "schema_version": "2.0",
+  "id": "c09-branching",
+  "component_id": "C09",
+  "component_version": "1.0.0",
+  "engine": "remotion",
+  "layout_variant": "landscape",
+  "duration_frames": 180,
+  "copy": {
+    "headline": "Where an application goes next",
+    "disclosure": "Illustrative decision rule. The diagram shows the rule; it does not prove an outcome."
+  },
+  "diagram": {
+    "pattern": "branching_decision",
+    "nodes": [
+      {
+        "id": "application",
+        "label": "Application",
+        "kind": "input"
+      },
+      {
+        "id": "qualified",
+        "label": "Qualified?",
+        "kind": "decision"
+      },
+      {
+        "id": "enroll",
+        "label": "Enroll",
+        "kind": "outcome"
+      },
+      {
+        "id": "nurture",
+        "label": "Nurture",
+        "kind": "outcome"
+      },
+      {
+        "id": "decline",
+        "label": "Decline",
+        "kind": "outcome"
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-application-qualified",
+        "source": "application",
+        "target": "qualified",
+        "kind": "flow"
+      },
+      {
+        "id": "edge-qualified-enroll",
+        "source": "qualified",
+        "target": "enroll",
+        "kind": "branch"
+      },
+      {
+        "id": "edge-qualified-nurture",
+        "source": "qualified",
+        "target": "nurture",
+        "kind": "branch"
+      },
+      {
+        "id": "edge-qualified-decline",
+        "source": "qualified",
+        "target": "decline",
+        "kind": "branch"
+      }
+    ],
+    "subject": {
+      "id": "applicant-001",
+      "label": "Applicant",
+      "path_node_ids": [
+        "application",
+        "qualified",
+        "enroll"
+      ]
+    },
+    "selected_branch_edge_id": "edge-qualified-enroll",
+    "relief": null,
+    "timing": {
+      "start_frame": 10,
+      "end_frame_exclusive": 130,
+      "hold_to_frame_exclusive": 180
+    },
+    "canvas": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 30
+    }
+  },
+  "semantic_motion_assertions": [
+    {
+      "id": "c09-timeline",
+      "kind": "timeline_bounds",
+      "subject_ids": [
+        "applicant-001"
+      ],
+      "frame": 0,
+      "expected_values": [
+        10,
+        130,
+        180,
+        180
+      ],
+      "tolerance": 0,
+      "unit": "frames",
+      "evidence": [
+        "geometry"
+      ]
+    },
+    {
+      "id": "c09-labels-readable",
+      "kind": "text_readability",
+      "subject_ids": [
+        "application",
+        "qualified",
+        "enroll",
+        "nurture",
+        "decline"
+      ],
+      "frame": 179,
+      "expected_values": [
+        0
+      ],
+      "tolerance": 0,
+      "unit": "normalized",
+      "evidence": [
+        "geometry"
+      ]
+    },
+    {
+      "id": "subject-at-40",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "applicant-001"
+      ],
+      "frame": 40,
+      "expected_values": [
+        651,
+        540
+      ],
+      "tolerance": 2,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    },
+    {
+      "id": "subject-at-90",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "applicant-001"
+      ],
+      "frame": 90,
+      "expected_values": [
+        1203,
+        405.33
+      ],
+      "tolerance": 2,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    },
+    {
+      "id": "subject-at-170",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "applicant-001"
+      ],
+      "frame": 170,
+      "expected_values": [
+        1735,
+        388
+      ],
+      "tolerance": 2,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    }
+  ]
+}

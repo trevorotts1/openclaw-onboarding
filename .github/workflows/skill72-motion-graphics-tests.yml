@@ -1,0 +1,99 @@
+name: Skill 72 motion graphics tests (MG-043)
+
+# Per-change gate for the Skill 72 Motion Graphics V2 build. Path-scoped
+# to the skill (plus this workflow) so unrelated work never pays for it.
+#
+# fast-gate job: runs 72-motion-video-plus/tests/ci/run-fast-gate.sh,
+# which is the single source of truth for the gate's commands:
+#   1. verify.sh (install verifier, including the manifest schema
+#      structure check and the tracked-files em dash scan)
+#   2. npm run test:fast (render-free TypeScript suites: corpus,
+#      charts, catalog, typography, layout, timeline, lint)
+#   3. the Python unit suite (python3 -m unittest discover)
+#   4. tests/check_matrix.py (T01-T34 registry consistency)
+#   5. a sabotage self-test: the corpus suite re-run against fixtures
+#      with one assembly input deleted must go RED, or the gate itself
+#      fails. A gate that cannot go red is not a gate.
+#
+# clean-install job: runs the T03 clean-install test
+# (72-motion-video-plus/tests/clean-install/run-clean-install.sh):
+# a pristine git-archive copy of the skill and shared runtime is
+# installed, provisioned (with the provisioner's real launch-and-render
+# probe), and smoked. Heavier, so it runs as its own job.
+#
+# The heavy full suite (real renders through both engines) is NOT run
+# here; it is the pre-release suite (npm test in the skill runtime) and
+# runs on the integrated candidate per MG-048.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "72-motion-video-plus/**"
+      - ".github/workflows/skill72-motion-graphics-tests.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "72-motion-video-plus/**"
+      - ".github/workflows/skill72-motion-graphics-tests.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  fast-gate:
+    name: Skill 72 fast gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install "jsonschema==4.10.3"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: 72-motion-video-plus/runtime/package-lock.json
+
+      - name: Run the fast gate
+        env:
+          CI: "true"
+        run: bash 72-motion-video-plus/tests/ci/run-fast-gate.sh
+
+  clean-install:
+    name: Skill 72 clean install (T03)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install "jsonschema==4.10.3"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: 72-motion-video-plus/runtime/package-lock.json
+
+      - name: Run the clean-install test
+        env:
+          # The runner image already carries the Chromium system
+          # libraries the provisioner would apt-install.
+          MOTION_RUNTIME_SKIP_APT: "1"
+        run: bash 72-motion-video-plus/tests/clean-install/run-clean-install.sh

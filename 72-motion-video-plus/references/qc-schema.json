@@ -1,0 +1,320 @@
+{
+ "$defs": {
+  "check": {
+   "properties": {
+    "category": {
+     "description": "Directive Section 16.9 category for a failed check; null unless the check failed.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "code": {
+     "description": "Stable failure code (QC_* or a consumed MG-023 ASSEMBLE_* code); null unless the check failed.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "command": {
+     "description": "The exact command the check ran, when it ran one.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "evidence": {
+     "description": "Pointer to the evidence the result rests on: the artifact, a consumed record, or a produced file.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "exit_status": {
+     "description": "The exit status of the command (or of each command, in order); null when the tool never started or no command applies.",
+     "items": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "type": [
+      "integer",
+      "array",
+      "null"
+     ]
+    },
+    "id": {
+     "minLength": 1,
+     "type": "string"
+    },
+    "mandatory": {
+     "type": "boolean"
+    },
+    "message": {
+     "type": "string"
+    },
+    "observed": {
+     "description": "The measured values the verdict rests on: expected versus observed, intervals, hashes, measurements.",
+     "type": "object"
+    },
+    "status": {
+     "enum": [
+      "PASS",
+      "FAIL",
+      "SKIPPED_WITH_REASON",
+      "NOT_RUN"
+     ]
+    },
+    "title": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "title",
+    "mandatory",
+    "status",
+    "message",
+    "observed"
+   ],
+   "type": "object"
+  }
+ },
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "description": "The report scripts/qc.py emits for one final artifact. It doubles as the job's final-QC record: the top-level artifact_path, artifact_sha256, and verdict fields are the ones the MG-025 delivery gate consumes. Every check carries an explicit status; PASS is only ever minted by a measurement that ran. Validate emitted reports with this schema (the jsonschema Draft 2020-12 validator, as scripts/motion_contracts.py does for the contracts).",
+ "properties": {
+  "artifact_bytes": {
+   "minimum": 0,
+   "type": [
+    "integer",
+    "null"
+   ]
+  },
+  "artifact_path": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "artifact_sha256": {
+   "pattern": "^[0-9a-f]{64}$",
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "checks": {
+   "items": {
+    "$ref": "#/$defs/check"
+   },
+   "type": "array"
+  },
+  "exit_code": {
+   "minimum": 0,
+   "type": "integer"
+  },
+  "first_error_category": {
+   "enum": [
+    null,
+    "MG_FOREIGN_JOB",
+    "MG_HASH_MISMATCH",
+    "MG_SECURITY_VIOLATION",
+    "MG_SCHEMA_INVALID",
+    "MG_UNKNOWN_COMPONENT",
+    "MG_MODE_MISMATCH",
+    "MG_TIMELINE_INVALID",
+    "MG_INPUT_MISSING",
+    "MG_CAPABILITY_UNSUPPORTED",
+    "MG_ENCODE_FAILED",
+    "MG_QC_FAILED",
+    "MG_COVERAGE_INCOMPLETE"
+   ],
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "generatedAt": {
+   "type": "string"
+  },
+  "inputs": {
+   "additionalProperties": {
+    "properties": {
+     "path": {
+      "type": "string"
+     },
+     "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+     }
+    },
+    "required": [
+     "path",
+     "sha256"
+    ],
+    "type": "object"
+   },
+   "type": "object"
+  },
+  "item": {
+   "const": "MG-034"
+  },
+  "job_id": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "mode": {
+   "enum": [
+    "package",
+    "plan",
+    "legacy",
+    "error"
+   ]
+  },
+  "plan": {
+   "properties": {
+    "audio_mode": {
+     "enum": [
+      null,
+      "none",
+      "inherited",
+      "own",
+      "legacy"
+     ],
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "canvas": {
+     "items": {
+      "type": "integer"
+     },
+     "maxItems": 2,
+     "minItems": 2,
+     "type": [
+      "array",
+      "null"
+     ]
+    },
+    "fps": {
+     "type": [
+      "number",
+      "null"
+     ]
+    },
+    "job_id": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "total_frames": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "total_samples": {
+     "type": [
+      "integer",
+      "null"
+     ]
+    },
+    "video_profile": {
+     "enum": [
+      null,
+      "h264_opaque",
+      "prores_4444_alpha",
+      "vp9_alpha"
+     ],
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   "type": [
+    "object",
+    "null"
+   ]
+  },
+  "schema_version": {
+   "const": "1.0"
+  },
+  "summary": {
+   "properties": {
+    "fail": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "failed_checks": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "mandatory_not_run": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "not_run": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "pass": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "skipped_with_reason": {
+     "minimum": 0,
+     "type": "integer"
+    },
+    "total": {
+     "minimum": 0,
+     "type": "integer"
+    }
+   },
+   "required": [
+    "total",
+    "pass",
+    "fail",
+    "skipped_with_reason",
+    "not_run",
+    "failed_checks",
+    "mandatory_not_run"
+   ],
+   "type": "object"
+  },
+  "tool": {
+   "const": "qc.py"
+  },
+  "tool_version": {
+   "type": "string"
+  },
+  "verdict": {
+   "enum": [
+    "pass",
+    "fail"
+   ]
+  }
+ },
+ "required": [
+  "schema_version",
+  "item",
+  "tool",
+  "verdict",
+  "exit_code",
+  "artifact_path",
+  "artifact_sha256",
+  "checks",
+  "summary"
+ ],
+ "title": "Skill 72 technical QC report (MG-034)",
+ "type": "object"
+}

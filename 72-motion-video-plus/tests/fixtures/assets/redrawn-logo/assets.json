@@ -1,0 +1,26 @@
+{
+  "schema_version": "2.0",
+  "assets": [
+    {
+      "id": "client-logo",
+      "path": "media/logo.png",
+      "sha256": "c91f1c3ba1bd8023cd333d3fa6a0d4783f6a595ceb0d31d910c149ae7327945c",
+      "kind": "image",
+      "usage": "embed_original",
+      "rights_ref": "rights/logo-brand-owner",
+      "focal_point": null
+    }
+  ],
+  "font_requirements": [
+    {
+      "id": "font-fixture-sans",
+      "source": "runtime_registry",
+      "family_alias": "fixture-sans",
+      "weights": [
+        400,
+        700
+      ],
+      "substitution": "forbidden"
+    }
+  ]
+}

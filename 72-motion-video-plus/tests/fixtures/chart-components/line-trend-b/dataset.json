@@ -1,0 +1,48 @@
+{
+  "schema_version": "2.0",
+  "id": "trend-net-flow",
+  "kind": "illustrative",
+  "source_note": "Illustrative fixture data for engineering tests. Values are not client or business-performance evidence.",
+  "units": "net new accounts",
+  "domain": [
+    -20,
+    40
+  ],
+  "scale_type": "linear",
+  "missing_value_policy": "error",
+  "display_rounding": {
+    "decimals": 0
+  },
+  "rows": [
+    {
+      "id": "q1",
+      "label": "North America enterprise renewals",
+      "value": -12
+    },
+    {
+      "id": "q2",
+      "label": "Self-serve trial conversions",
+      "value": 0
+    },
+    {
+      "id": "q3",
+      "label": "Partner channel expansion",
+      "value": 8
+    },
+    {
+      "id": "q4",
+      "label": "Seasonal churn adjustment",
+      "value": -4
+    },
+    {
+      "id": "q5",
+      "label": "International expansion phase",
+      "value": 20
+    },
+    {
+      "id": "q6",
+      "label": "Annual plan prepayments",
+      "value": 40
+    }
+  ]
+}

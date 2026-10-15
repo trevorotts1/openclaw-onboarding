@@ -1,0 +1,17 @@
+{
+  "allOk": true,
+  "checks": [
+    {
+      "check": "no_audio_stream",
+      "ok": true,
+      "streams": [
+        "video"
+      ]
+    },
+    {
+      "check": "resolved_mode_none",
+      "ok": true
+    }
+  ],
+  "example": "noaudio"
+}

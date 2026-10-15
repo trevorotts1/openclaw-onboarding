@@ -1,0 +1,1 @@
+{"canvas":{"height":1080,"width":1920},"duration_frames":180,"id":"fail-subject-vanishes","schema_version":"2.0","subject":{"box":{"height":930,"width":540,"x":690,"y":150},"id":"speaker"},"subject_motion":{"direction":"left","from_fraction":1,"kind":"reveal","range":{"end_frame_exclusive":120,"start_frame":30},"subject_id":"speaker","to_fraction":0}}

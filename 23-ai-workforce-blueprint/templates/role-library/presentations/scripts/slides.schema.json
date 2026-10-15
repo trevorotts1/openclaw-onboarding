@@ -38,6 +38,75 @@
         "type": "string",
         "enum": ["t2i"],
         "description": "Image generation mode. The DETERMINISTIC pipeline uses ONLY 't2i' (gpt-image-2-5-sunburst-text-to-image) — the copy is rendered into a freshly generated photographic scene. (Image-to-image logo placement remains available via the separate kie_generate.py helper but is out of scope for build_deck.py.) Defaults to 't2i' if omitted."
+      },
+      "media": {
+        "description": "Optional typed per-slide media choice (Skill 72 directive Section 14.2, MG-036). This is the MEDIA choice, never the image-generation 'mode' above. Absent media means {\"kind\": \"still\"}: the slide is the deterministic KIE still image, exactly as before. The motion alternative names an authenticated Skill 72 component by its job manifest, its approved render receipt, and its poster; build_deck.py validates the governed MG-035 package (package record, MG-034 QC verdict, poster parity, receipt binding, hashes) before anything is embedded, and every failure degrades the slide to its still with a reason code in working/checkpoints/motion.json. Motion is elected per deck (intake want_motion_graphics, default NO) and capped at 2 pieces per deck (Slot A slide 1, Slot B a section divider). Invariants JSON Schema cannot express (the placement rectangle lies inside [0,1] and preserves 16:9; paths resolve inside the run root with symlinks resolved before containment; hashes match the receipt and the package record) are enforced by build_deck.validate_motion_slide_artifacts.",
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind"],
+            "properties": {
+              "kind": { "const": "still" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "motion_manifest_path", "approved_render_receipt_path", "poster_path", "placement", "playback", "webinar_policy"],
+            "properties": {
+              "kind": { "const": "motion" },
+              "motion_manifest_path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Run-relative path of the Skill 72 job manifest for this slide's component (e.g. working/motion/slide-02/manifest.json)."
+              },
+              "approved_render_receipt_path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Run-relative path of the approved Skill 72 render receipt binding the rendered artifact by hash and job identity (e.g. working/motion/slide-02/renders/artifacts.json)."
+              },
+              "poster_path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Run-relative path of the component's poster PNG; byte-identical to the slide's QC PNG (renders/slide-NN.png) and to the MG-035 package poster."
+              },
+              "placement": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["x", "y", "width", "height"],
+                "description": "Rectangle normalized to the slide: x/y within [0,1], width/height positive and at most 1, the whole rectangle inside the slide and preserving the component's 16:9 (the inside-slide and aspect invariants are enforced in code).",
+                "properties": {
+                  "x": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "y": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+                  "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+                }
+              },
+              "playback": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["start", "repeat", "end"],
+                "description": "Playback contract (the canonical contracts-v2 playback shape); must equal the MG-035 package record's playback values, enforced in code.",
+                "properties": {
+                  "start": { "enum": ["on_click", "automatic"] },
+                  "repeat": { "enum": ["once", "loop"] },
+                  "end": { "enum": ["hold_final", "loop"] }
+                }
+              },
+              "webinar_policy": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["fit", "duplicate_audio"],
+                "description": "How the same component joins the webinar render: fit is exact_slot, hold_final, or approved_loop; no implicit speed-stretch or crop is permitted (enforced in code). duplicate_audio must be false: the component is silent and the parent narration owns the audio.",
+                "properties": {
+                  "fit": { "enum": ["exact_slot", "hold_final", "approved_loop"] },
+                  "duplicate_audio": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        ]
       }
     }
   },

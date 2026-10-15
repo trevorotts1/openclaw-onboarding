@@ -1,0 +1,65 @@
+{
+  "engines": [
+    {
+      "engine": "hyperframes",
+      "probeStatus": "ready",
+      "installedVersion": "0.8.155",
+      "runtimeLockId": "lock-314fc289b233ca9e",
+      "probedAt": "2026-10-14T04:52:19.688Z",
+      "platform": "linux/x64",
+      "codecs": [],
+      "transparency": {
+        "alphaVideo": false,
+        "profiles": []
+      },
+      "mediaTypes": [],
+      "features3d": [],
+      "evidence": [
+        "MG-003 probe.mjs (shared runtime lock lock-314fc289b233ca9e) ran the pinned hyperframes CLI: --version reported 0.8.155 and doctor exited 0 with its core Chrome and FFmpeg checks passing on linux/x64; runtime-lock.json result: pass.",
+        "Coordinator re-ran provision.sh fast path on 2026-10-14: hyperframes probe leg re-passed, exit 0.",
+        "The MG-003 probe performed no Hyperframes render; the first render evidence comes from MG-005. No codec, media, transparency, or 3D capability is claimed here."
+      ]
+    },
+    {
+      "engine": "remotion",
+      "probeStatus": "ready",
+      "installedVersion": "4.0.535",
+      "runtimeLockId": "lock-314fc289b233ca9e",
+      "probedAt": "2026-10-14T04:52:19.688Z",
+      "platform": "linux/x64",
+      "codecs": [],
+      "transparency": {
+        "alphaVideo": false,
+        "profiles": []
+      },
+      "mediaTypes": [
+        "image/png"
+      ],
+      "features3d": [],
+      "evidence": [
+        "MG-003 probe.mjs (shared runtime lock lock-314fc289b233ca9e) rendered a real one-frame 320x180 PNG (6297 bytes, signature and dimensions verified) via @remotion/bundler and @remotion/renderer with Chromium 157.0.8080.0 on linux/x64; runtime-lock.json result: pass.",
+        "Coordinator re-ran provision.sh fast path on 2026-10-14: probe re-passed with identical measured output, exit 0.",
+        "No video codec, transparency, or 3D capability was measured by this probe; those lists stay empty until a render probe measures them."
+      ]
+    },
+    {
+      "codecs": [],
+      "engine": "legacy",
+      "evidence": [],
+      "features3d": [],
+      "installedVersion": null,
+      "mediaTypes": [],
+      "platform": null,
+      "probeStatus": "unprobed",
+      "probedAt": null,
+      "runtimeLockId": null,
+      "transparency": {
+        "alphaVideo": false,
+        "profiles": []
+      }
+    }
+  ],
+  "generatedAt": "2026-10-14T04:59:54.613Z",
+  "schemaVersion": "1.0",
+  "source": "shared runtime probe records (runtime lock)"
+}

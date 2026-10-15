@@ -1,0 +1,6 @@
+# MG-022 rendered outputs and generated media are regenerable at any
+# time (tests/evidence/mg022/verify_acceptance.py); only the probe and
+# acceptance records are committed.
+outputs/
+work/
+__pycache__/

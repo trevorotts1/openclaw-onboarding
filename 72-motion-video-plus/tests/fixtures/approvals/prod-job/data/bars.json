@@ -1,0 +1,13 @@
+{
+  "schema_version": "2.0",
+  "id": "bars-illustrative",
+  "kind": "illustrative",
+  "source_note": "Original engineering fixture. Values are not client or business-performance evidence.",
+  "units": "items",
+  "domain": [0, 30],
+  "rows": [
+    {"id": "a", "label": "Group A", "value": 12},
+    {"id": "b", "label": "Group B", "value": 18},
+    {"id": "c", "label": "Group C", "value": 30}
+  ]
+}

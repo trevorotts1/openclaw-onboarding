@@ -1,0 +1,52 @@
+{
+  "item": "MG-040",
+  "kind": "alpha-measurements",
+  "generatedAt": "2026-10-15T03:31:25.837Z",
+  "measurements": {
+    "prores_4444_alpha": {
+      "codec": "prores",
+      "pixelFormat": "yuva444p12le",
+      "distinctAlphaValues": 190,
+      "partialAlphaPixels": 8129,
+      "transparentPixels": 36882,
+      "opaquePixels": 12589
+    },
+    "vp9_alpha": {
+      "codec": "vp9",
+      "pixelFormat": "yuv420p",
+      "distinctAlphaValues": 255,
+      "partialAlphaPixels": 8434,
+      "transparentPixels": 36721,
+      "opaquePixels": 12445
+    },
+    "generations": {
+      "proresCheckerMaeGen2": 0.05720899470899471,
+      "unmanagedCheckerMaeGen1": 88.49669312169311,
+      "unmanagedCheckerMaeGen2": 89.26851851851852
+    },
+    "hyperframesProres": {
+      "verdict": "verified_alpha",
+      "partialAlphaPixels": 36527,
+      "framesMeasured": [
+        0,
+        90
+      ]
+    },
+    "hyperframesVp9": {
+      "verdict": "verified_alpha",
+      "partialAlphaPixels": 65002,
+      "framesMeasured": [
+        0,
+        90
+      ]
+    },
+    "remotionProres": {
+      "verdict": "alpha_opaque_content",
+      "partialAlphaPixels": 0,
+      "framesMeasured": [
+        0,
+        90
+      ]
+    }
+  }
+}

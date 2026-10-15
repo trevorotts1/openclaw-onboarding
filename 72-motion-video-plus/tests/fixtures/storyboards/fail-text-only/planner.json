@@ -1,0 +1,69 @@
+{
+  "planner_version": "1.0",
+  "storyboard_id": "story-text-only",
+  "beats": [
+    {
+      "beat_id": "beat-words-1",
+      "idea": "Text line 1",
+      "viewer_takeaway": "takeaway",
+      "evidence_kind": "illustrative_metaphor",
+      "component_id": "C01",
+      "engine": "hyperframes",
+      "selection_reason": "reason",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "line-1-legible"
+      ]
+    },
+    {
+      "beat_id": "beat-words-2",
+      "idea": "Text line 2",
+      "viewer_takeaway": "takeaway",
+      "evidence_kind": "illustrative_metaphor",
+      "component_id": "C01",
+      "engine": "hyperframes",
+      "selection_reason": "reason",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "line-2-legible"
+      ]
+    },
+    {
+      "beat_id": "beat-words-3",
+      "idea": "Text line 3",
+      "viewer_takeaway": "takeaway",
+      "evidence_kind": "illustrative_metaphor",
+      "component_id": "C01",
+      "engine": "hyperframes",
+      "selection_reason": "reason",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "line-3-legible"
+      ]
+    }
+  ]
+}

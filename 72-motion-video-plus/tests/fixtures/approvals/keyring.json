@@ -1,0 +1,5 @@
+{
+  "fixture-test-issuer": "fixture-test-key-not-a-secret",
+  "owner-t-otts": "mg025-test-owner-key",
+  "reviewer-independent": "mg025-test-reviewer-key"
+}

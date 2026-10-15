@@ -1,0 +1,29 @@
+{
+  "schema_version": "2.0",
+  "assets": [
+    {
+      "id": "hero-image",
+      "path": "assets/hero.png",
+      "sha256": "0e7ddfce68592c66b02f9fedc37bd14ed48a1afdccf055b94dbf2da1b8fc77db",
+      "kind": "image",
+      "usage": "embed_original",
+      "rights_ref": "fixture-rights: original test image generated for MG-025 fixtures",
+      "focal_point": {
+        "x": 0.5,
+        "y": 0.5
+      }
+    }
+  ],
+  "font_requirements": [
+    {
+      "id": "font-fixture-sans",
+      "source": "runtime_registry",
+      "family_alias": "fixture-sans",
+      "weights": [
+        400,
+        700
+      ],
+      "substitution": "forbidden"
+    }
+  ]
+}
