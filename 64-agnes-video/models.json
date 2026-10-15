@@ -1,7 +1,8 @@
 {
   "skill": "64-agnes-video",
   "registry_version": "1.2.0",
-  "last_verified_at": "2026-08-26",
+  "last_verified_at": "2026-10-15",
+  "last_verified_note": "refreshed for the Agnes Drama Ad Factory build: agnes-video-v2.0 was retired by the vendor on 2026-09-25 23:59:59 (UTC+8) and is now active:false (source read 2026-10-13); flash facts unchanged since 2026-08-26",
   "models": [
     {
       "provider": "agnes",
@@ -77,7 +78,7 @@
       "poll_note": "poll ~1-2s initially as vendor docs allow; sane backoff on 429, do not hardcode a ceiling",
       "sync": false,
       "sync_note": "async create + retrieve",
-      "last_verified_at": "2026-08-26",
+      "last_verified_at": "2026-10-15",
       "source_urls": [
         "https://wiki.agnes-ai.com/en/docs/agnes-video-25-flash.md",
         "https://wiki.agnes-ai.com/en/docs/tokenplan.md",
@@ -89,7 +90,7 @@
         "token_plan_note": "tokenplan.md lists agnes-video-2.5-flash (all Starter/Plus/Pro tiers identical; 500 video-sec/day)",
         "pricing_list": "$0.025/second (720P)",
         "pricing_current": "$0/second limited-time free promo",
-        "never_auto_select": "agnes-video-2.5 (full, non-flash): NOT in token plan, priced $0.025/$0.040/$0.055 per second at 720P/960P/2K \u2014 NEVER auto-select; only flash and v2.0 are in the token plan"
+        "never_auto_select": "agnes-video-2.5 (full, non-flash): NOT in token plan, priced $0.025/$0.040/$0.055 per second at 720P/960P/2K \u2014 NEVER auto-select; only flash is in the token plan (agnes-video-v2.0 was retired 2026-09-25)"
       },
       "known_inconsistencies": [
         "prompt cap NOT published (cap_status NOT_PUBLISHED; never invent a number)",
@@ -102,7 +103,7 @@
     },
     {
       "provider": "agnes",
-      "display_name": "Agnes Video V2.0",
+      "display_name": "Agnes Video V2.0 (Retired)",
       "canonical_model_id": "agnes-video-v2.0",
       "aliases": [
         "agnes video 2.0",
@@ -170,19 +171,19 @@
       },
       "sync": false,
       "sync_note": "async create + retrieve; poll per vendor (initial ~1-2s, backoff on 429)",
-      "last_verified_at": "2026-08-26",
+      "last_verified_at": "2026-10-15",
       "source_urls": [
         "https://wiki.agnes-ai.com/en/docs/agnes-video-v20.md",
         "https://wiki.agnes-ai.com/en/docs/tokenplan.md",
         "https://wiki.agnes-ai.com/en/docs/pricing.md"
       ],
       "plan_restriction": {
-        "token_plan_model": true,
+        "token_plan_model": false,
         "token_plan_video_seconds_per_day": 500,
-        "token_plan_note": "tokenplan.md lists agnes-video-v2.0 (all Starter/Plus/Pro tiers identical; 500 video-sec/day)",
-        "pricing_list": "$0.005/second",
-        "pricing_current": "$0/second (vendor: 'Video duration is currently $0 / second')",
-        "never_auto_select": "agnes-video-2.5 (full, non-flash) is separate and PAID \u2014 NEVER auto-select; only flash and v2.0 are in the token plan"
+        "token_plan_note": "RETIRED 2026-09-25 \u2014 no longer listed in tokenplan.md; the flash entry is the only video model in the token plan",
+        "pricing_list": "$0.005/second (pre-retirement; no longer purchasable)",
+        "pricing_current": "$0/second (pre-retirement)",
+        "never_auto_select": "RETIRED \u2014 never select agnes-video-v2.0; only agnes-video-2.5-flash is approved. The full paid agnes-video-2.5 remains PAID and is also never auto-selected"
       },
       "known_inconsistencies": [
         "n not stated for v2.0 (flash n=1) \u2014 left null, never fabricated",
@@ -190,14 +191,19 @@
         "create example documents image as optional single URL while extra_body.image array is the keyframe workflow; both documented by vendor",
         "prompt cap NOT published (cap_status NOT_PUBLISHED; never invent a number)"
       ],
-      "active": true,
+      "active": false,
+      "retired_at": "2026-09-25",
+      "retired_at_note": "vendor retirement deadline 2026-09-25 23:59:59 (UTC+8)",
+      "retired_reason": "Migrate to the Agnes Video 2.5 series",
+      "retired_source_url": "https://wiki.agnes-ai.com/en/docs/agnes-video-v20.md",
+      "replaced_by": "agnes-video-2.5-flash",
       "source_url": "https://wiki.agnes-ai.com/en/docs/agnes-video-v20.md"
     }
   ],
   "never_auto_select": [
     {
       "canonical_model_id": "agnes-video-2.5",
-      "reason": "full paid 2.5 (720P $0.025/s, 960P $0.040/s, 2K $0.055/s) is NOT in the token plan; tokenplan.md lists ONLY agnes-video-2.5-flash and agnes-video-v2.0",
+      "reason": "full paid 2.5 (720P $0.025/s, 960P $0.040/s, 2K $0.055/s) is NOT in the token plan; tokenplan.md lists ONLY agnes-video-2.5-flash (agnes-video-v2.0 was retired 2026-09-25 and is active:false)",
       "evidence": "https://wiki.agnes-ai.com/en/docs/tokenplan.md / https://wiki.agnes-ai.com/en/docs/pricing.md"
     }
   ]
