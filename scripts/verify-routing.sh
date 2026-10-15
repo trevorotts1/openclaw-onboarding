@@ -7,9 +7,13 @@
 #   G3  PRIME DIRECTIVE (CEO_ORCHESTRATOR_RULE_V4_3) present in the resolved SOUL.md
 #   G3b (V4.3) heading present in the installed ceo-routing-doctrine plugin dist
 #   G4  default agent has skills:[] in openclaw.json (pptx skill physically blocked)
-#       "default agent" = default:true -> id="main" -> router id -> the id the CLI
-#       prints as "(default)" -> a single-entry agents.entries (2026.10.x removed
-#       the per-entry default marker, so those last two are the live path now)
+#       "default agent" = agents.defaults.systemAgent.agentId -> default:true ->
+#       `agents list --json` isDefault -> id="main" -> router id ->
+#       the id the CLI prints as "(default)" -> a single-entry agents.entries
+#       (2026.10.x removed the per-entry default marker, so the config/JSON
+#       sources are the live path now; they work with openclaw off PATH and
+#       resolve agents that live as files under <oc-root>/agents/ instead of in
+#       agents.list)
 #   G5  workspace real-path is in skills.load.allowSymlinkTargets
 #   G6  at least one department workspace row exists in mission-control.db
 #   G7  CEO/main agent tools policy. The production-tool deny (write/edit/
@@ -130,6 +134,34 @@ if command -v openclaw >/dev/null 2>&1; then
   OC_VERSION="$(printf '%s' "$_oc_raw" | grep -oE '20[0-9]{2}\.[0-9]+\.[0-9]+' | head -n1 || true)"
 fi
 OC_VERSION="${FLEET_OC_VERSION_OVERRIDE:-$OC_VERSION}"
+
+# ─── openclaw CLI probe (B3 — PATH alone is not enough) ──────────────────────
+# A PATH-only lookup means that on a box whose openclaw lives outside PATH BOTH
+# CLI sources — `agents list --json` isDefault and the "(default)" text line —
+# silently never run, leaving only systemAgent.agentId. That is exactly the
+# off-PATH condition the order names.
+# Candidate list follows the existing precedent in scripts/_rr_registry_lib.py
+# PROBE_SH ($HOME/.openclaw/bin, /usr/local/bin, /data/.openclaw/bin) plus the
+# Homebrew and /usr/bin locations. PATH wins when it resolves; otherwise the
+# first executable absolute candidate. One binary is resolved ONCE here and
+# exported, so G4 and G7 run the same CLI, and the full tried-list is exported
+# so a failure message can name every source probed (B4).
+_OC_CLI_CANDIDATES=("$HOME/.openclaw/bin/openclaw" "/usr/local/bin/openclaw" "/data/.openclaw/bin/openclaw" "/opt/homebrew/bin/openclaw" "/usr/bin/openclaw")
+OC_CLI_BIN="$(command -v openclaw 2>/dev/null || true)"
+if [ -z "$OC_CLI_BIN" ]; then
+  for _oc_cand in "${_OC_CLI_CANDIDATES[@]}"; do
+    if [ -x "$_oc_cand" ]; then OC_CLI_BIN="$_oc_cand"; break; fi
+  done
+fi
+OC_CLI_TRIED="PATH"
+for _oc_cand in "${_OC_CLI_CANDIDATES[@]}"; do OC_CLI_TRIED="$OC_CLI_TRIED, $_oc_cand"; done
+export VERIFY_ROUTING_OC_CLI="$OC_CLI_BIN"
+export VERIFY_ROUTING_OC_CLI_TRIED="$OC_CLI_TRIED"
+if [ -n "$OC_CLI_BIN" ]; then
+  _info "openclaw CLI probe: using $OC_CLI_BIN"
+else
+  _info "openclaw CLI probe: CLI probes skipped (openclaw not found at any probed path: $OC_CLI_TRIED)"
+fi
 
 # _ver_ge A B → 0 if version A >= version B (numeric YYYY.M.P compare).
 _ver_ge() {
@@ -287,18 +319,36 @@ else
   FAILURES=$((FAILURES + 1))
 fi
 
-# ─── G4: default agent has skills:[] ─────────────────────────────────────────
-# The "default agent" is the first entry in agents.list with default:true;
-# if none carries that flag, fall back to id=="main" (pre-v10 convention), then
-# a router id, then the id `openclaw agents list` prints as "(default)", then a
-# single-entry agents.entries (2026.10.x has no default marker at all).
-# Boxes whose primary agent is named "ceo", "dept-master-orchestrator", or any
-# other router id are gated; a PERSONAL-ASSISTANT-default box (default agent is
-# NOT a router) is a VALID topology — skills:[] is NOT required there and its
-# absence must NOT FATAL (v13.2.2 PA-freeze guard).
-_info "G4: detecting default agent and checking skills:[] in $OC_CONFIG"
-G4_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
-import json, sys
+# ─── shared default-agent resolution — ONE chain for BOTH G4 and G7 ─────────
+# B1: on the exact box class this order is about (agents.list EMPTY, the default
+# agent living only as a file under <oc-root>/agents/, no default:true, no
+# id=main) G4 resolved the default (PA_DEFAULT_OK) while G7, matching CONFIG
+# ENTRIES only, returned NO_CEO_AGENT and FATAL'd. Both gates now exec this ONE
+# body, so the chain cannot drift between them again.
+#
+# Resolution order — unchanged from baseline, identical in G4 and G7:
+#   1 agents.defaults.systemAgent.agentId    (config entry OR on-disk agent dir)
+#   2 default:true                           (legacy per-entry marker)
+#   3 `openclaw agents list --json` isDefault (config entry OR on-disk agent dir)
+#   4 id == "main"
+#   5 router-id heuristic
+#   6 the id `openclaw agents list` prints as "(default)"
+#   7 a single-entry roster
+#
+# Every CLI call goes through the probed binary exported above (B3) and swallows
+# binary absent / non-zero exit / malformed JSON / timeout, falling through to
+# the next source instead of aborting the script. Exported to both gate bodies
+# as VERIFY_ROUTING_RESOLVE_FILE; each body fails loud if it is missing.
+# argv: [1] openclaw.json, [2] the OpenClaw root.
+# A heredoc wrapped in $(cat ...) inside an assignment makes bash's
+# INCREMENTAL reader desync: `bash -n` (whole-file parse) accepts it, but a
+# real run misparses everything after it. Write the body to a temp file with
+# a plain redirect instead; both gate bodies exec(compile(open(path)...)).
+VERIFY_ROUTING_RESOLVE_FILE="$(mktemp "${TMPDIR:-/tmp}/onb-w1-PRF-002-resolver.XXXXXX.py")"
+trap 'rm -f "$VERIFY_ROUTING_RESOLVE_FILE"' EXIT
+cat > "$VERIFY_ROUTING_RESOLVE_FILE" <<'PYEOF'
+import json, os, re, subprocess, sys
+from pathlib import Path
 
 def _oc_agents(cfg):
     """Live agent dicts + an identity->id map, from agents.entries (canonical,
@@ -322,6 +372,7 @@ def _oc_agents(cfg):
         ids = {id(a): a.get("id") for a in lst}
     return lst, ids
 
+_OC_IDS = {}
 
 def _oc_id(ag, default="<unknown>"):
     """Agent id for a dict returned by _oc_agents()."""
@@ -329,7 +380,63 @@ def _oc_id(ag, default="<unknown>"):
         return default
     return _OC_IDS.get(id(ag)) or ag.get("id") or default
 
-from pathlib import Path
+def _oc_agent_dir(cid):
+    """<oc-root>/agents/<cid>/ when it is a safe, existing directory, else None.
+    OpenClaw 2026.10.x keeps agents as files there and openclaw.json may carry
+    NO list/entries row for them, so an id from systemAgent.agentId or
+    `agents list --json` is a real resolution even when it matches no config
+    entry."""
+    if not isinstance(cid, str) or not cid or "/" in cid or cid in (".", ".."):
+        return None
+    try:
+        p = Path(sys.argv[2]) / "agents" / cid
+        return p if p.is_dir() else None
+    except Exception:
+        return None
+
+def _oc_agent_on_disk(cid):
+    return _oc_agent_dir(cid) is not None
+
+_AGENTS = []
+
+def _source_file_backed(ag):
+    """True when `ag` is a SYNTHESIZED {"id": ...} stub (the agent exists only
+    as a file under <oc-root>/agents/ and has NO openclaw.json entry), false
+    for a live config entry. Identity-based: config entries are the SAME
+    objects _oc_agents() returns."""
+    if not isinstance(ag, dict):
+        return False
+    return all(a is not ag for a in _AGENTS)
+
+def _agent_manifests(cid):
+    """[(file, dict)] for every flat *.json manifest directly under the agent's
+    own directory — real, readable evidence for an agent that has NO
+    openclaw.json entry. Unreadable/non-JSON files are skipped, never guessed."""
+    d = _oc_agent_dir(cid)
+    if d is None:
+        return []
+    out = []
+    try:
+        for f in sorted(d.glob("*.json")):
+            try:
+                data = json.loads(f.read_text())
+            except Exception:
+                continue
+            if isinstance(data, dict):
+                out.append((f.name, data))
+    except Exception:
+        pass
+    return out
+
+def _disk_field(cid, key, kind):
+    """(value, "agents/<cid>/<file>") for the first `key` of type `kind` in the
+    agent's own directory manifests, else (None, None). Callers must report the
+    None/None case as INSUFFICIENT EVIDENCE — never as a pass."""
+    for name, data in _agent_manifests(cid):
+        v = data.get(key)
+        if isinstance(v, kind):
+            return v, "agents/%s/%s" % (cid, name)
+    return None, None
 
 # Router identity — keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS.
 ROUTER_IDS = {
@@ -346,55 +453,172 @@ def _is_router(ag):
         return True
     return _oc_id(ag, "") in ROUTER_IDS
 
-try:
-    cfg = json.loads(Path(sys.argv[1]).read_text())
-    agents_list, _OC_IDS = _oc_agents(cfg)
+# Probed CLI (exported by the shell once for both gates) + the tried list, so a
+# failure message can name every source probed (B4).
+OC_CLI_BIN = os.environ.get("VERIFY_ROUTING_OC_CLI", "")
+OC_CLI_TRIED = os.environ.get("VERIFY_ROUTING_OC_CLI_TRIED", "PATH")
 
-    # Priority 1: agent with default:true
-    default_agent = None
-    for ag in agents_list:
-        if ag.get("default") is True:
-            default_agent = ag
-            break
+SOURCES_TRIED = (
+    "agents.defaults.systemAgent.agentId",
+    "default:true",
+    "openclaw agents list --json isDefault",
+    "id=main",
+    "router-id heuristic",
+    "openclaw agents list '(default)' text",
+    "single-entry roster",
+)
 
-    # Priority 2: fall back to id=="main" (legacy convention)
-    if default_agent is None:
-        for ag in agents_list:
-            if _oc_id(ag) == "main":
-                default_agent = ag
-                break
+def _cli(args, timeout=30):
+    """Run the probed openclaw binary. NEVER raises and never aborts the
+    script: binary absent, non-zero exit, malformed output and timeout all
+    return None so the caller falls through to the next source (B3)."""
+    if not OC_CLI_BIN:
+        return None
+    try:
+        p = subprocess.run([OC_CLI_BIN] + list(args),
+                           capture_output=True, text=True, timeout=timeout)
+    except Exception:
+        return None
+    if p.returncode != 0:
+        return None
+    return p.stdout or ""
 
-    # Priority 3: a known router/CEO id (mirrors G7). A box whose router is not
-    # literally named "main" must not read as "no default agent".
-    if default_agent is None:
-        for ag in agents_list:
-            if _oc_id(ag) in ROUTER_IDS:
-                default_agent = ag
-                break
+def cli_probe_note():
+    """B4: distinguish 'probes were skipped' from 'probed and found nothing'."""
+    if OC_CLI_BIN:
+        return "CLI probed and found no default (openclaw at %s)" % OC_CLI_BIN
+    return "CLI probes skipped (openclaw not found at any probed path: %s)" % OC_CLI_TRIED
 
-    # Priority 4 (OpenClaw 2026.10.x, verified 2026-10-13 on a live box): the
-    # per-entry `default` marker no longer exists — the config schema rejects it
-    # and `openclaw doctor --fix` strips it. The CLI still resolves and PRINTS
-    # the default, so ask the runtime; a single-agent box is unambiguous anyway
-    # (one entry IS the default agent).
-    if default_agent is None:
+def no_resolution_note():
+    return ("sources tried, in order: " + ", ".join(SOURCES_TRIED)
+            + "; " + cli_probe_note())
+
+def resolve_default_agent(cfg):
+    """THE default-agent chain, shared by G4 and G7 (B1).
+
+    Returns (agent_or_None, source_or_None, agents). The agent is a LIVE
+    config entry when one matches, else {"id": ...} for an agent that exists
+    only as a file under <oc-root>/agents/ (2026.10.x file-backed agent)."""
+    global _OC_IDS, _AGENTS
+    agents, _OC_IDS = _oc_agents(cfg)
+    _AGENTS = agents
+
+    def match(sid, allow_disk=True):
+        """Config entry first; for the sources that accepted a file-backed agent
+        on baseline (systemAgent, --json isDefault, "(default)" text) an id that
+        exists only under <oc-root>/agents/ counts too. allow_disk=False keeps
+        the id=main / router-id steps config-entry-only, exactly as before."""
+        if not isinstance(sid, str) or not sid:
+            return None
+        ag = next((a for a in agents if _oc_id(a) == sid), None)
+        if ag is None and allow_disk and _oc_agent_on_disk(sid):
+            ag = {"id": sid}
+        return ag
+
+    # 1 (config-only, works with openclaw OFF PATH): agents.defaults.systemAgent
+    # .agentId — the runtime's own choice, the same order
+    # scripts/onboarding-state.sh obs_default_agent() uses. Accepted when it
+    # names a config entry OR an on-disk agent dir, so a file-backed default
+    # resolves instead of reading "no default agent".
+    _sa = ((cfg.get("agents", {}) or {}).get("defaults", {}) or {}).get("systemAgent", {}) or {}
+    _sa_id = _sa.get("agentId") if isinstance(_sa, dict) else None
+    if isinstance(_sa_id, str) and _sa_id:
+        ag = match(_sa_id)
+        if ag is not None:
+            return ag, "agents.defaults.systemAgent.agentId", agents
+
+    # 2 default:true (legacy marker; 2026.10.x strips it)
+    for ag in agents:
+        if isinstance(ag, dict) and ag.get("default") is True:
+            return ag, "default:true", agents
+
+    # 3 (OpenClaw 2026.10.x): the per-entry `default` marker no longer exists —
+    # the config schema rejects it and `openclaw doctor --fix` strips it. The
+    # CLI still resolves and PRINTS the default, so ask the runtime. `--json` +
+    # isDefault is the structured answer (survives CLI text reformatting and
+    # sees file-backed agents) and outranks the id-guessing fallbacks below.
+    out = _cli(["agents", "list", "--json"])
+    if out:
         try:
-            import re as _re, shutil as _sh, subprocess as _sp
-            if _sh.which("openclaw"):
-                _out = _sp.run(["openclaw", "agents", "list"], capture_output=True,
-                               text=True, timeout=30).stdout or ""
-                _out = _re.sub(r"\x1b\[[0-9;]*m", "", _out)
-                _m = _re.search(r"^\s*-\s*(\S+)\s*\(default\)", _out, _re.M)
-                if _m:
-                    default_agent = next((ag for ag in agents_list
-                                          if _oc_id(ag) == _m.group(1)), None)
+            rows = json.loads(out)
+            if isinstance(rows, dict):
+                rows = rows.get("agents") or rows.get("list") or []
+            for r in (rows if isinstance(rows, list) else []):
+                if isinstance(r, dict) and r.get("isDefault") is True:
+                    rid = r.get("id") or r.get("agentId") or r.get("name")
+                    ag = match(rid)
+                    if ag is not None:
+                        return ag, "openclaw agents list --json isDefault", agents
         except Exception:
             pass
-    if default_agent is None and len(agents_list) == 1:
-        default_agent = agents_list[0]
+
+    # 4 fall back to id=="main" (legacy convention, config entries only)
+    ag = match("main", allow_disk=False)
+    if ag is not None:
+        return ag, "id=main", agents
+
+    # 5 a known router/CEO id. A box whose router is not literally named "main"
+    # must not read as "no default agent".
+    for ag in agents:
+        if _oc_id(ag) in ROUTER_IDS:
+            return ag, "router-id heuristic", agents
+
+    # 6 the id `openclaw agents list` prints as "(default)" (text form, the
+    # pre-`--json` path — kept for CLIs that only emit the table).
+    out = _cli(["agents", "list"])
+    if out:
+        try:
+            out = re.sub(r"\x1b\[[0-9;]*m", "", out)
+            m = re.search(r"^\s*-\s*(\S+)\s*\(default\)", out, re.M)
+            if m:
+                ag = match(m.group(1))
+                if ag is not None:
+                    return ag, "openclaw agents list '(default)' text", agents
+        except Exception:
+            pass
+
+    # 7 the only agent on the box
+    if len(agents) == 1:
+        return agents[0], "single-entry roster", agents
+    return None, None, agents
+PYEOF
+export VERIFY_ROUTING_RESOLVE_FILE
+
+# ─── G4: default agent has skills:[] ─────────────────────────────────────────
+# The "default agent" is resolved by the shared chain above (ONE body, used by
+# G4 AND G7 — see "shared default-agent resolution"): agents.defaults.
+# systemAgent.agentId (config entry OR on-disk agent dir; config-only, works
+# with openclaw off PATH), then the first entry in agents.list with
+# default:true, then the isDefault flag from `agents list --json` (structured:
+# survives CLI text reformatting and resolves file-backed agents), then
+# id=="main" (pre-v10 convention), then a router id, then the id
+# `openclaw agents list` prints as "(default)", then a single-entry
+# agents.entries (2026.10.x has no default marker at all).
+# Boxes whose primary agent is named "ceo", "dept-master-orchestrator", or any
+# other router id are gated; a PERSONAL-ASSISTANT-default box (default agent is
+# NOT a router) is a VALID topology — skills:[] is NOT required there and its
+# absence must NOT FATAL (v13.2.2 PA-freeze guard).
+# Skills are asserted only from evidence that exists: a live config entry (as
+# always), or the FILE-BACKED agent's own <oc-root>/agents/<id>/*.json
+# manifests. No skills evidence at all → UNKNOWN_SKILLS / INSUFFICIENT EVIDENCE
+# (B2), never an unbacked "inherits installed skills".
+_info "G4: detecting default agent and checking skills:[] in $OC_CONFIG"
+G4_RESULT=$(python3 - "$OC_CONFIG" "$OC_ROOT" <<'PYEOF'
+
+import json, os, sys
+
+_SRC = os.environ.get("VERIFY_ROUTING_RESOLVE_FILE")
+if not _SRC or not os.path.isfile(_SRC):
+    print("ERROR:VERIFY_ROUTING_RESOLVE_FILE not exported (shared resolver missing)")
+    sys.exit(0)
+exec(compile(open(_SRC).read(), "<verify-routing shared default-agent resolver>", "exec"))
+
+try:
+    cfg = json.loads(Path(sys.argv[1]).read_text())
+    default_agent, _source, agents_list = resolve_default_agent(cfg)
 
     if default_agent is None:
-        print("NO_DEFAULT_AGENT")
+        print("NO_DEFAULT_AGENT:" + no_resolution_note())
         sys.exit(0)
 
     agent_id = _oc_id(default_agent)
@@ -406,15 +630,36 @@ try:
         print(f"PA_DEFAULT_OK:{agent_id}")
         sys.exit(0)
 
-    skills = default_agent.get("skills")
-    if isinstance(skills, list) and len(skills) == 0:
-        print(f"EMPTY_SKILLS:{agent_id}")
-    elif skills is None:
-        print(f"PASS:{agent_id}")
+    # B2 (fail-closed skills evidence). A FILE-BACKED agent resolves to a bare
+    # {"id": ...} because it exists only under <oc-root>/agents/ and has NO
+    # openclaw.json entry — the old code then reported "inherits installed
+    # skills" with ZERO evidence. Now the skills policy is read from real
+    # evidence only:
+    #   * config entry carries a list  -> EMPTY_SKILLS / HAS_SKILLS, unchanged
+    #   * config entry has no skills   -> PASS, named as "no skills override"
+    #   * file-backed, own-dir manifests carry a list -> EMPTY_SKILLS / HAS_SKILLS
+    #   * file-backed, no skills evidence anywhere   -> UNKNOWN (INSUFFICIENT
+    #     EVIDENCE): explicit, never an unbacked "inherits installed skills".
+    if not _source_file_backed(default_agent):
+        skills = default_agent.get("skills")
+        if isinstance(skills, list) and len(skills) == 0:
+            print(f"EMPTY_SKILLS:{agent_id}")
+        elif skills is None:
+            print(f"PASS:{agent_id}")
+        else:
+            print(f"HAS_SKILLS:{agent_id}:{json.dumps(skills)}")
     else:
-        print(f"HAS_SKILLS:{agent_id}:{json.dumps(skills)}")
+        skills, _where = _disk_field(agent_id, "skills", list)
+        if skills is not None:
+            if len(skills) == 0:
+                print(f"EMPTY_SKILLS:{agent_id}")
+            else:
+                print(f"HAS_SKILLS:{agent_id}:{json.dumps(skills)}@{_where}")
+        else:
+            print(f"UNKNOWN_SKILLS:{agent_id}")
 except Exception as e:
     print(f"ERROR:{e}")
+
 PYEOF
 ) || G4_RESULT="ERROR:python3_failed"
 
@@ -439,8 +684,18 @@ case "$G4_RESULT" in
     _G4_SKILLS="${_G4_REST#*:}"
     _pass "G4: default agent (id=${_G4_ID}) retains owner-configured skills: ${_G4_SKILLS}"
     ;;
-  NO_DEFAULT_AGENT)
-    _fail "G4: no default agent resolved (no default:true entry, no id=main, no CLI '(default)' line, not a single-agent box)"
+  UNKNOWN_SKILLS:*)
+    # B2 fail-closed: a FILE-BACKED router default has no skills evidence
+    # anywhere, so the gate reports INSUFFICIENT EVIDENCE and names the fields
+    # it could not read. It must never claim "inherits installed skills".
+    _G4_ID="${G4_RESULT#UNKNOWN_SKILLS:}"
+    _fail "G4: default agent (id=${_G4_ID}) is FILE-BACKED (no openclaw.json agents entry) and carries NO skills evidence — INSUFFICIENT EVIDENCE, not 'inherits installed skills'. Checked: agents.entries.${_G4_ID}, agents.list[], ${OC_ROOT}/agents/${_G4_ID}/*.json. Run apply-routing-fix.sh"
+    FAILURES=$((FAILURES + 1))
+    ;;
+  NO_DEFAULT_AGENT:*)
+    # B4: name EVERY source tried and distinguish "probes skipped" from
+    # "probed and found no default".
+    _fail "G4: no default agent resolved — ${G4_RESULT#NO_DEFAULT_AGENT:}"
     FAILURES=$((FAILURES + 1))
     ;;
   ERROR:*)
@@ -582,8 +837,15 @@ fi
 # (exec is now a normal member of CEO_TOOL_ALLOW — the routing path — so the old
 # INTERIM_EXEC fail-warn would fire on every correctly-configured box).
 #
-# The CEO agent is resolved as default:true → id=="main" → known CEO ids → the
-# id `openclaw agents list` prints as "(default)" → a single-agent box.
+# The CEO agent is resolved by the SAME shared chain as G4 (see "shared
+# default-agent resolution" above): agents.defaults.systemAgent.agentId →
+# default:true → the isDefault flag from `agents list --json` → id=="main" →
+# known CEO ids → the id `openclaw agents list` prints as "(default)" → a
+# single-agent box. A FILE-BACKED default (an id with no openclaw.json entry)
+# now resolves here exactly as it does in G4 (B1), so G7 no longer answers
+# NO_CEO_AGENT on a box G4 passes. The tools/GHL checks are never loosened: the
+# file-backed agent's policy is read from its own agents/<id>/*.json manifests,
+# and with no such evidence G7 reports INSUFFICIENT EVIDENCE and FAILS.
 _info "G7: CEO production-tool deny RETIRED (Trevor 2026-08-05) — not enforced; still checking per-agent tools schema validity + GHL MCP deny-by-provider."
 _pass "G7: CEO production-tool deny intentionally absent (retired fleet-wide per Trevor 2026-08-05) — no longer a requirement"
 
@@ -598,100 +860,27 @@ elif [ -f "$HOME/.openclaw/state/ceo-consent.json" ]; then
   _CEO_CONSENT_FILE="$HOME/.openclaw/state/ceo-consent.json"
 fi
 
-G7_RESULT=$(python3 - "$OC_CONFIG" <<'PYEOF'
-import json, sys
+G7_RESULT=$(python3 - "$OC_CONFIG" "$OC_ROOT" <<'PYEOF'
 
-def _oc_agents(cfg):
-    """Live agent dicts + an identity->id map, from agents.entries (canonical,
-    keyed by agent id) with a fallback to legacy agents.list.
+import json, os, sys
 
-    Returns LIVE references into cfg so a caller may mutate an entry and write
-    cfg back — building copies here would make the L2/L5 appliers mutate a
-    throwaway, write the file back unchanged and still report success.
-
-    The id is carried in a side map, NEVER written into the entry:
-    agents.entries.<id> rejects an "id" key ("Unrecognized key: id") and the
-    config would fail validation.
-    """
-    _ag = cfg.get("agents", {}) or {}
-    _en = _ag.get("entries", {}) or {}
-    if isinstance(_en, dict) and _en:
-        lst = [v for v in _en.values() if isinstance(v, dict)]
-        ids = {id(v): k for k, v in _en.items() if isinstance(v, dict)}
-    else:
-        lst = [a for a in (_ag.get("list", []) or []) if isinstance(a, dict)]
-        ids = {id(a): a.get("id") for a in lst}
-    return lst, ids
-
-
-def _oc_id(ag, default="<unknown>"):
-    """Agent id for a dict returned by _oc_agents()."""
-    if not isinstance(ag, dict):
-        return default
-    return _OC_IDS.get(id(ag)) or ag.get("id") or default
-
-from pathlib import Path
-
-# NOTE: the REQUIRED_DENY production-tool set was REMOVED 2026-08-05 (gate
-# retired per Trevor — it caused the write-deny/memoryFlush loop). Do not
-# reintroduce it here; see the G7 header comment above.
-# Router identity — keep IN SYNC with hooks/lib-ceo-tool-gate.sh CEO_ROUTER_IDS.
-CEO_IDS = ("main", "dept-ceo", "ceo", "master-orchestrator", "dept-master-orchestrator")
-ROUTER_IDS = set(CEO_IDS) | {"dept-executive-office"}
-def _is_router(ag):
-    if not isinstance(ag, dict):
-        return False
-    if ag.get("is_master") is True:
-        return True
-    if isinstance(ag.get("role"), str) and ag.get("role").strip().lower() == "router":
-        return True
-    return _oc_id(ag, "") in ROUTER_IDS
+_SRC = os.environ.get("VERIFY_ROUTING_RESOLVE_FILE")
+if not _SRC or not os.path.isfile(_SRC):
+    print("ERROR:VERIFY_ROUTING_RESOLVE_FILE not exported (shared resolver missing)")
+    sys.exit(0)
+exec(compile(open(_SRC).read(), "<verify-routing shared default-agent resolver>", "exec"))
 
 try:
     cfg = json.loads(Path(sys.argv[1]).read_text())
-    agents, _OC_IDS = _oc_agents(cfg)
+    ceo, _source, agents = resolve_default_agent(cfg)
 
-    # DEFECT 2 (v13.1.3) + v13.2.2 PA-FREEZE FIX: resolve the box's default agent
-    # (default:true FIRST, then id=="main", then a known CEO id). If that default
-    # agent is NOT a router (it is a hands-on personal assistant / owner agent),
-    # this is a PA-DEFAULT topology: the CEO tool-gate intentionally does NOT
-    # apply, so G7 PASSES (it must NOT FATAL on a PA default — that false-FATAL is
-    # what the v13.1.3 over-broadening caused downstream).
-    ceo = None
-    for ag in agents:
-        if ag.get("default") is True:
-            ceo = ag; break
     if ceo is None:
-        for ag in agents:
-            if _oc_id(ag) == "main":
-                ceo = ag; break
-    if ceo is None:
-        for ag in agents:
-            if _oc_id(ag) in CEO_IDS:
-                ceo = ag; break
-    # 2026.10.x: no per-entry default marker exists (schema rejects it, doctor
-    # --fix strips it). Ask the CLI for its resolved default, then accept the
-    # only agent on the box. Mirrors G4's priority chain.
-    if ceo is None:
-        try:
-            import re as _re, shutil as _sh, subprocess as _sp
-            if _sh.which("openclaw"):
-                _out = _sp.run(["openclaw", "agents", "list"], capture_output=True,
-                               text=True, timeout=30).stdout or ""
-                _out = _re.sub(r"\x1b\[[0-9;]*m", "", _out)
-                _m = _re.search(r"^\s*-\s*(\S+)\s*\(default\)", _out, _re.M)
-                if _m:
-                    ceo = next((ag for ag in agents if _oc_id(ag) == _m.group(1)), None)
-        except Exception:
-            pass
-    if ceo is None and len(agents) == 1:
-        ceo = agents[0]
-    if ceo is None:
-        print("NO_CEO_AGENT"); sys.exit(0)
+        print("NO_CEO_AGENT:" + no_resolution_note())
+        sys.exit(0)
 
     cid = _oc_id(ceo)
 
-    # PA-DEFAULT topology → no CEO gate expected on the default agent. But if a
+    # PA-DEFAULT topology -> no CEO gate expected on the default agent. But if a
     # SEPARATE router agent ALSO exists on the box (e.g. a dept-ceo alongside a PA
     # default), gate-check THAT router instead so a real router is never missed.
     if not _is_router(ceo):
@@ -701,13 +890,26 @@ try:
         ceo = router
         cid = _oc_id(ceo)
 
-    tools = ceo.get("tools")
+    # B1: a FILE-BACKED agent (id resolved only from <oc-root>/agents/<id>/, no
+    # openclaw.json entry) has no config tools block. Read its OWN directory
+    # manifests for a real tools policy; assert on that exactly as strictly.
+    # With no tools evidence at all, say INSUFFICIENT EVIDENCE instead of
+    # fabricating a NO_TOOLS defect — and never a silent pass.
+    _from_disk = _source_file_backed(ceo)
+    _tools_src = f"openclaw.json agent entry {cid}"
+    if _from_disk:
+        tools, _tools_src = _disk_field(cid, "tools", dict)
+        if tools is None:
+            print(f"NO_ENTRY_INSUFFICIENT_EVIDENCE:{cid}"); sys.exit(0)
+    else:
+        tools = ceo.get("tools")
+
     if not isinstance(tools, dict):
         print(f"NO_TOOLS:{cid}"); sys.exit(0)
 
     # v16.1.3: sessions/agentToAgent are ROOT `tools` keys; on a PER-AGENT tools
     # block they are schema-invalid (AgentEntry.tools is additionalProperties:
-    # false) and fail `openclaw config validate` → reload skipped → cron engine
+    # false) and fail `openclaw config validate` -> reload skipped -> cron engine
     # down on a router-default box. Flag a box still carrying them so the roll's
     # self-heal (apply-routing-fix.sh / apply-fleet-standards.sh) is known to be
     # required. Hard-fail even under an owner-consent carve-out (the corruption
@@ -730,14 +932,12 @@ try:
     if not (ghl_bp or ghl_glob):
         print(f"GHL_NOT_DENIED:{cid}"); sys.exit(0)
 
-    # RETIRED 2026-08-05: the old INTERIM_EXEC fail-warn fired when `exec` was in
-    # tools.allow without a route-task MCP tool. `exec` is now a normal, intended
-    # member of CEO_TOOL_ALLOW (it IS the routing path), so that warn would fire
-    # on every correctly-configured box. Removed with the production-deny gate.
-
-    print(f"PASS:{cid}")
+    # Evidence source is named only for a file-backed agent; a config-backed box
+    # keeps the exact baseline PASS: token.
+    print(f"PASS:{cid}@{_tools_src}" if _from_disk else f"PASS:{cid}")
 except Exception as e:
     print(f"ERROR:{e}")
+
 PYEOF
 ) || G7_RESULT="ERROR:python3_failed"
 
@@ -774,8 +974,17 @@ else
       _fail "G7: CEO agent (id=${_G7_PK%%:*}) carries SCHEMA-INVALID per-agent tools keys [${_G7_PK#*:}] — these belong on ROOT tools (config.tools), not agents.list[].tools; config validate FAILS → reload skipped → cron engine down. Run apply-routing-fix.sh / apply-fleet-standards.sh (v16.1.3 self-heal repairs it)."
       FAILURES=$((FAILURES + 1))
       ;;
-    NO_CEO_AGENT)
-      _fail "G7: no CEO/main agent found in openclaw.json agents.list"
+    NO_ENTRY_INSUFFICIENT_EVIDENCE:*)
+      # B1/B4: a file-backed default resolved (same chain as G4) but there is no
+      # tools policy to assert on — INSUFFICIENT EVIDENCE, named sources, and
+      # still FAILURES+=1 (a gate that cannot verify is not a gate that passed).
+      _fail "G7: default agent (id=${G7_RESULT#NO_ENTRY_INSUFFICIENT_EVIDENCE:}) is FILE-BACKED — no openclaw.json agent entry and no tools policy under its own agents/<id>/*.json, so per-agent tools schema validity and the GHL MCP deny cannot be verified (INSUFFICIENT EVIDENCE). Run apply-routing-fix.sh"
+      FAILURES=$((FAILURES + 1))
+      ;;
+    NO_CEO_AGENT:*)
+      # B4: name EVERY source tried and distinguish "probes skipped" from
+      # "probed and found no default".
+      _fail "G7: no CEO/main agent found — no default agent resolved from any source. ${G7_RESULT#NO_CEO_AGENT:}"
       FAILURES=$((FAILURES + 1))
       ;;
     ERROR:*)
