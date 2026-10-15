@@ -374,11 +374,16 @@ class TestRegistryParity:
         and the build_deck-enforced count to 108. PRES-011 (2026-09-09)
         registers three AF-U rows (AF-U-GHL-SALES, AF-U-GHL-VSL,
         AF-U-FORM-GATE — none build_deck-enforced), so the total moves
-        192 -> 195 while the build_deck-enforced count holds at 108."""
+        192 -> 195 while the build_deck-enforced count holds at 108. The
+        Item 26 GIP doctrine weave (2026-10-14) registers AF-P24 (the five
+        SOP-GIP-01 v2.0 BlackCEO negative classes on Black-subject prompts,
+        build_deck-enforced with py_symbol _blackceo_negative_class_problems),
+        so the total moves 195 -> 196 and the build_deck-enforced count
+        108 -> 109."""
         manifest = json.loads(MANIFEST.read_text())
         enforced = [a for a in manifest["autofails"] if a.get("enforced_by") == "build_deck"]
-        assert len(manifest["autofails"]) == 195  # PRES-011: 192 + 3 AF-U
-        assert len(enforced) == 108
+        assert len(manifest["autofails"]) == 196  # Item 26 GIP weave: 195 + AF-P24
+        assert len(enforced) == 109
 
 
 # ===========================================================================
