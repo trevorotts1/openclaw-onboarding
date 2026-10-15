@@ -248,6 +248,7 @@ never hand-edited. Regenerate:
 | `AF-P13` | build_deck | _negative_block_class_problems |
 | `AF-P14` | build_deck | _spelling_lock_present |
 | `AF-P2` | build_deck | _length_problems |
+| `AF-P24` | build_deck | _blackceo_negative_class_problems |
 | `AF-PACKAGE-CLEAN` | build_deck | check_package_cleanliness |
 | `AF-PEAK-END` | build_deck | _chk_peak_end |
 | `AF-PHASE-REPORT-DONE` | runner | - |

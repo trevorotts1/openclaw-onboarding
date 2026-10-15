@@ -33,6 +33,7 @@ WHAT IT ENFORCES (verify_prompt — the one entry every path calls)
   * length <= the model max, English pin included             (AF-P2, names the chars to CUT)
   * required structural blocks ([ARCHETYPE ...], negative block, "Do not ")
   * 8-class negative block                                    (AF-P13)
+  * 5 BlackCEO negative classes on Black-subject prompts      (AF-P24, Item 26 GIP weave)
   * per-string spelling-lock                                  (AF-P14)
   * density: hex palette + type size + composition token + distinct-word floor (AF-P-DENSITY)
   * verbatim copy baked into the prompt body (when copy is supplied)  (AF-P-VERBATIM)
@@ -175,6 +176,52 @@ NEGATIVE_BLOCK_CLASS_TOKENS = {
         "em dash", "pure-black", "pure black"],
 }
 
+# AF-P24: the FIVE BlackCEO negative classes (SOP-GIP-01 v2.0 Element 10, the
+# Graphics Image Protocol's mandatory representation classes), adopted into the
+# Presentations pipeline by the FIX-PLAN Item 26 doctrine weave (GIP v2.0 landed
+# as draft PR #2005). CONDITIONAL by design, exactly as SOP-GIP-01 v2.0 scopes
+# them: they bind only when the prompt carries a Black / African-descended
+# subject (BLACK_SUBJECT_TOKENS below). A prompt with no Black subject is judged
+# on the 8 base classes alone, so the base gate's verdicts on existing decks do
+# not move. Token sets are tolerant like AF-P13's (any one hit names the class);
+# the QC roles verify the semantics; this is the mechanical floor.
+BLACKCEO_NEGATIVE_BLOCK_CLASS_TOKENS = {
+    "BlackCEO skin chromatic depth": [
+        "melanated skin as gray", "melanated skin as grey",
+        "ashy, muddy", "gray, ashy, muddy", "grey, ashy, muddy",
+        "dull, or desaturated", "dull or desaturated"],
+    "BlackCEO hair strand integrity": [
+        "crush black hair", "featureless black", "individual strands"],
+    "BlackCEO skin microtexture": [
+        "smooth skin to plastic", "plastic/wax", "plastic, wax",
+        "fine microtexture"],
+    "BlackCEO hairstyle fidelity": [
+        "specified hairstyle with a generic", "replace a specified hairstyle",
+        "fuse braids"],
+    "BlackCEO skin-tone direction lock": [
+        "lighten deep skin in aspirational", "darken it for dramatic",
+        "darken deep skin for", "lighten deep skin for"],
+}
+
+# The mechanical half of SOP-GIP-01 v2.0 Element 10's applicability test ("when
+# the prompt includes Black / African-descended subjects"): the prompt names a
+# Black subject directly, or casts one using the GIP-01 v2.0 25-entry skin-tone
+# library (a library label in the people spec means a melanated subject was
+# cast from the library vocabulary SOP-CAST-01 now draws from).
+BLACK_SUBJECT_TOKENS = [
+    "black woman", "black women", "black man", "black men", "black subject",
+    "black person", "black people", "african american", "african-american",
+    "african descended", "african-descended", "melanated",
+    # SOP-GIP-01 v2.0 skin-tone library labels (the casting vocabulary)
+    "butter cream", "light caramel", "honey wheat", "cafe au lait",
+    "golden pecan", "cinnamon sugar", "butterscotch", "caramel bronze",
+    "toffee brown", "copper penny", "milk chocolate", "chestnut brown",
+    "cocoa powder", "burnt sienna", "coffee bean", "dark amber",
+    "mahogany wood", "espresso brown", "dark chocolate", "ebony wood",
+    "midnight brown", "charcoal velvet", "obsidian black", "onyx stone",
+    "jet black",
+]
+
 # AF-P14 — per-string SPELLING-LOCK. At least one marker token must be present.
 SPELLING_LOCK_TOKENS = [
     "spelling-lock", "spelling lock", "letter-for-letter", "letter for letter",
@@ -255,6 +302,26 @@ def _negative_block_class_problems(prompt_lc: str) -> List[str]:
     return missing
 
 
+def _black_subject_present(prompt_lc: str) -> bool:
+    """AF-P24 applicability: True iff the prompt carries a Black / African-descended
+    subject (direct naming, or a SOP-GIP-01 v2.0 skin-tone library label)."""
+    return any(t in prompt_lc for t in BLACK_SUBJECT_TOKENS)
+
+
+def _blackceo_negative_class_problems(prompt_lc: str) -> List[str]:
+    """AF-P24 mechanical half: return the names of any of the FIVE BlackCEO
+    negative classes (SOP-GIP-01 v2.0 Element 10) missing from a prompt that
+    carries a Black subject. Empty list = not applicable (no Black subject) or
+    all five named."""
+    if not _black_subject_present(prompt_lc):
+        return []
+    missing = []
+    for cls, tokens in BLACKCEO_NEGATIVE_BLOCK_CLASS_TOKENS.items():
+        if not any(t in prompt_lc for t in tokens):
+            missing.append(cls)
+    return missing
+
+
 def _spelling_lock_present(prompt_lc: str) -> bool:
     return any(t in prompt_lc for t in SPELLING_LOCK_TOKENS)
 
@@ -307,7 +374,7 @@ def demographic_landmine(text: str) -> Optional[str]:
 
 
 def rich_prompt_quality_problems(prompt_text: str, copy_val=None) -> List[str]:
-    """The QUALITY-LAYER teeth on a single rich prompt (AF-P13 / AF-P14 / AF-P-DENSITY /
+    """The QUALITY-LAYER teeth on a single rich prompt (AF-P13 / AF-P24 / AF-P14 / AF-P-DENSITY /
     AF-P-VERBATIM). Returns a list of fatal problem strings (empty = clears every quality
     gate). Identical to build_deck.py::rich_prompt_quality_problems so every image path
     applies the SAME teeth."""
@@ -320,6 +387,15 @@ def rich_prompt_quality_problems(prompt_text: str, copy_val=None) -> List[str]:
             + ", ".join(missing_classes)
             + " — the 8-class paired negative block (SOP 9.8) is mandatory; a "
             "one-line 'no text' AVOID stub does not satisfy it")
+    missing_bc = _blackceo_negative_class_problems(prompt_lc)
+    if missing_bc:
+        problems.append(
+            "AF-P24: prompt casts a Black / African-descended subject but its "
+            "negative block does not name BlackCEO defect class(es): "
+            + ", ".join(missing_bc)
+            + ": the five SOP-GIP-01 v2.0 BlackCEO classes are mandatory when "
+            "a prompt includes Black subjects (the 13-class block: 8 base + 5 "
+            "BlackCEO; slide-image-creator SOP 9.8 / SOP 9.12)")
     if not _spelling_lock_present(prompt_lc):
         problems.append(
             "AF-P14: no per-string spelling-lock directive (e.g. 'render this exact "
@@ -912,6 +988,26 @@ def _self_test() -> int:
             failures.append(f"minimal gate did not reject {why} prompt")
         except PromptGateError:
             pass
+
+    # AF-P24 (Item 26 GIP weave): the five BlackCEO classes bind only on a
+    # Black-subject prompt. A fully conformant Black-subject negative block
+    # clears; dropping the microtexture sentence names that class; a prompt
+    # with no Black subject is not bound at all.
+    _bc_full = (
+        "a Black woman founder, espresso brown skin. "
+        "Do not render melanated skin as gray, ashy, muddy, dull, or desaturated. "
+        "Do not crush Black hair to featureless black; preserve individual strands and shape. "
+        "Do not smooth skin to plastic/wax/CGI; preserve fine microtexture. "
+        "Do not replace a specified hairstyle with a generic one or fuse braids into clothing. "
+        "Do not lighten deep skin in aspirational scenes or darken it for dramatic effect.")
+    if _blackceo_negative_class_problems(_bc_full.lower()):
+        failures.append("AF-P24 fired on a fully BlackCEO-conformant prompt")
+    _bc_missing = _bc_full.replace(
+        "Do not smooth skin to plastic/wax/CGI; preserve fine microtexture. ", "")
+    if _blackceo_negative_class_problems(_bc_missing.lower()) != ["BlackCEO skin microtexture"]:
+        failures.append("AF-P24 did not name exactly the dropped BlackCEO class")
+    if _blackceo_negative_class_problems("a founder at a desk, warm window light."):
+        failures.append("AF-P24 bound a prompt with no Black subject")
 
     # The pin round-trips.
     pinned = ensure_english_pin("a slide prompt with no pin")
