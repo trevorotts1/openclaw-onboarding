@@ -99,6 +99,9 @@ class FixtureBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
+        if shutil.which("ffmpeg") is None:
+            raise unittest.SkipTest(
+                "ffmpeg is required to synthesize critique fixtures")
         cls.tmp = Path(tempfile.mkdtemp(prefix="mg031-tests-"))
         cls.short_video = cls.tmp / "short.mp4"
         make_video(cls.short_video, "640x360", 12)

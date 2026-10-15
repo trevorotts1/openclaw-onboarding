@@ -103,6 +103,13 @@ if [ -z "$SHARED_RUNTIME_DIR" ]; then
   exit 1
 fi
 info "shared runtime: $SHARED_RUNTIME_DIR"
+# Pin the HyperFrames version for the shared provisioner: the caller's
+# override wins; otherwise the shared runtime's own package pin is the
+# authority (resolved here so the provisioner receives the pinned value
+# explicitly rather than floating). The literal fallback is the current
+# lock pin, used only if the runtime manifest cannot be read.
+HYPERFRAMES_VERSION="${HYPERFRAMES_VERSION:-$(node -p "require('$SHARED_RUNTIME_DIR/package.json').dependencies['hyperframes']" 2>/dev/null || echo 0.8.155)}"
+export HYPERFRAMES_VERSION
 if ! bash "$SHARED_RUNTIME_DIR/provision.sh"; then
   SHARED_RC=$?
   red "Shared engine provisioning FAILED (exit $SHARED_RC). Remotion/HyperFrames are"
