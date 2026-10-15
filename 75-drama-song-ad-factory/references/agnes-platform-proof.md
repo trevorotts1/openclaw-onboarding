@@ -7,8 +7,8 @@ CHANGELOG edit, no Agnes call, no KIE call, no network.
 | | |
 |---|---|
 | Date | 2026-10-15 (times UTC) |
-| Repo / branch | `trevorotts1/openclaw-onboarding`, worktree `/Users/blackceomacmini/agnes-wt/W4-proof-U2`, branch `unit/AGN-W4-proof-U2`, base `origin/main` = `1e1c12dcc0ad336d24c13986973e885e58d95954` |
-| Machine | operator Mac Mini (`TrevelynsMini2`) only — never a client or fleet box |
+| Repo / branch | `trevorotts1/openclaw-onboarding`, worktree `/Users/<operator>/agnes-wt/W4-proof-U2`, branch `unit/AGN-W4-proof-U2`, base `origin/main` = `1e1c12dcc0ad336d24c13986973e885e58d95954` |
+| Machine | operator Mac Mini only (its hostname is deliberately not recorded in a repo file) — never a client or fleet box |
 | Verdict | **BLOCKED — docker not available** on the machine that has to run the container simulation |
 
 ---
@@ -33,7 +33,7 @@ in this receipt.** Two independent facts block the simulation:
 
 ## 2. Instrument probe — docker availability
 
-Raw capture: `/tmp/blackceomacmini-W4-proof-U2-docker-probe.txt` (73 lines / 2049 bytes),
+Raw capture: `/tmp/<operator>-W4-proof-U2-docker-probe.txt` (73 lines / 2049 bytes),
 reproduced here line by line with its exit codes.
 
 ```
@@ -52,10 +52,10 @@ $ ls /opt/homebrew/Cellar/docker/29.7.2/bin/
 docker            # the Homebrew `docker` formula ships the client only
   EXIT=0
 $ ls -l /var/run/docker.sock
-lrwxr-xr-x  1 root  daemon  46 Oct 11 12:19 /var/run/docker.sock -> /Users/blackceomacmini/.docker/run/docker.sock
+lrwxr-xr-x  1 root  daemon  46 Oct 11 12:19 /var/run/docker.sock -> /Users/<operator>/.docker/run/docker.sock
   EXIT=0
 $ readlink /var/run/docker.sock
-/Users/blackceomacmini/.docker/run/docker.sock
+/Users/<operator>/.docker/run/docker.sock
   EXIT=0
 $ test -S "$(readlink /var/run/docker.sock)"
   EXIT=1          # the symlink target does not exist: no daemon has ever started here
@@ -125,7 +125,7 @@ recreate. That is exactly the claim a container recreate has to settle — and i
 
 Derivation of the two contracts from the platform `HOME` alone, each command in an empty environment
 (`env -i`) so nothing from the operator's own shell leaks in. Raw capture:
-`/tmp/blackceomacmini-W4-proof-U2-platform-derived.txt`.
+`/tmp/<operator>-W4-proof-U2-platform-derived.txt`.
 
 **Hostinger** (user `node`, `HOME=/data`):
 
@@ -289,3 +289,9 @@ E  AssertionError: <match at the alias it forbids> ... references/studio-e2e-rec
 Zero new failures: same cases, same counts, base failure unchanged. The failing string itself is not
 quoted here on purpose — this file is inside that test's `references/*.md` sweep, so quoting the alias it
 forbids would add a second failing case to exactly this test.
+
+Repo guards were run against this file too. `bash scripts/qc-assert-no-client-names.sh` reported **0 hits
+from `references/agnes-platform-proof.md`** (32 hits remain repo-wide, all in files this unit never
+touches — pre-existing on the base). That is why every operator path above is written `/Users/<operator>/…`,
+`/tmp/<operator>-W4-proof-U2-…`, the way `references/studio-e2e-receipt.md` already writes them: a raw
+operator home directory name in a tracked file trips that guard, and `main` is green on it.
