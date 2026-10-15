@@ -3,7 +3,7 @@
 **Cluster:** North-Star Doctrine (Step Zero of every job)
 **Doctrine parent:** SOP-NORTHSTAR-00 (Attention Is the Product). The mode never changes the true goal — it only changes the starting point and the gathering method.
 **Owning roles at write time:** Director of Presentations (records the mode decision at intake, SOP 9.3); Attention-Content-Strategist (consumes it at P0B-PRIORITY); Content-to-Presentation-Architect (owns the two content modes, SOP 9.1 / 9.4B)
-**Enforced at the gate by:** `AF-MODE-UNSET` (DOCTRINE-ONLY -- declared here, not yet mechanically wired in build_deck.py). A deck whose `intake.creation_mode` is unset, or is a content mode without `extracted_substance`, cannot reach the arc. See SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md for registration status.
+**Enforced at the gate by:** `AF-MODE-UNSET` (WIRED: enforced_by build_deck, checker `_chk_mode` in build_deck.py, registered in PIPELINE-MANIFEST.autofails with in_ruleset: true, and listed in SOP-SLIDE-00 Section 5). A deck whose `intake.creation_mode` is unset, or is a content mode without `extracted_substance`, cannot reach the arc. See SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md for the registration ledger.
 **Status:** Doctrine SOP. Encodes Powerful-Presentation-Framework Part 1, Part 7.1–7.3, Appendix B, and edge cases 167b/c. Faithful source: `Powerful_Presentation_Framework.md` §1, §7, §13, Appendix B.
 
 ---
@@ -99,10 +99,10 @@ Regardless of mode: the **true goal is a priority shift**; the **seven P's apply
 
 ---
 
-## 7. ENFORCEMENT NOTE (for Agent W3)
+## 7. ENFORCEMENT NOTE (registration record)
 
-- **`AF-MODE-UNSET`** (NEW) — surface: `build_deck` preflight, Phase 0.1. Checker `_chk_mode`: `intake.creation_mode` ∈ {`from_scratch`, `content_personal`, `content_general`}; the two content modes additionally require `extracted_substance` to be present (proves the source was extracted, not merely tidied). Piece P118. DECK-level.
-- Wire through all four SOP-SLIDE-06 lockstep steps (manifest entry + `_chk_mode` in build_deck + Section-5 ruleset row mirrored into SOP-SLIDE-00 + a `test_preflight.py` fixture).
+- **`AF-MODE-UNSET`** (WIRED) -- surface: `build_deck` preflight, Phase 0.1. Checker `_chk_mode`: `intake.creation_mode` ∈ {`from_scratch`, `content_personal`, `content_general`}; the two content modes additionally require `extracted_substance` to be present (proves the source was extracted, not merely tidied). Piece P118. DECK-level.
+- Registration is complete through all four SOP-SLIDE-06 lockstep steps (manifest entry + `_chk_mode` in build_deck + Section-5 ruleset row mirrored into SOP-SLIDE-00 + a `test_preflight.py` fixture); sync_check A3 polices the wiring.
 - Reinforces, does not replace, the existing extract-not-tidy discipline in content-to-presentation-architect SOP 9.3/9.4B (edge case 167d → `AF-CONVERTER-NO-INVENT`, owned by INTEGRATION-00 / the converter).
 
 ---

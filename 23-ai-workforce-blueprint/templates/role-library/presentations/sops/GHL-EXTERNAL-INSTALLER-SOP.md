@@ -1,7 +1,7 @@
 # SOP -- External GHL Installs (P-U-GHL-SALES / P-U-GHL-VSL / P-U-FORM-GATE) [PRES-011]
 
 **Status (PRES-011, 2026-09-09):** LANDED. Executor
-`DEPT/scripts/ghl_external_installer.py`; manifest v69 wires the three
+`DEPT/scripts/ghl_external_installer.py`; manifest v70 wires the three
 phases as script executors with explicit `executor.capability`
 (`ghl_page_install` / `ghl_workflow_install`, owning adapter skill06 /
 skill44); verifiers `phase_verifiers._verify_ghl_sales_install` /
