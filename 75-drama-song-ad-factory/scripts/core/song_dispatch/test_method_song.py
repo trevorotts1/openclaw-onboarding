@@ -18,7 +18,14 @@ Run: python3 -m pytest -q 75-drama-song-ad-factory/scripts/core/song_dispatch/te
 import os
 import sys
 
-import pytest
+try:
+    import pytest
+except ImportError:
+    # CI also runs this file script-style (`python3 <file>`) under an empty
+    # HOME with no third-party modules, where a module-level `import pytest`
+    # is a red build. Only the later pytest step collects these tests, so the
+    # real module is present exactly when it is needed.
+    pytest = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
