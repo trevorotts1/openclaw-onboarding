@@ -72,6 +72,12 @@ write -- per-pair rows are LISTS, never dicts keyed by capability class):
     last_status, pending: [...]} summary;
   profile["model_plan"]                    -- changed ONLY through
     resource_profile.record_model_plan, and only on an accepted switch.
+  profile["model_choices"]                 -- B27's unified record: each
+    decision recorded by record_freshness_decision also lands there, in
+    that record's shape (the offered successor as a recommendation shown
+    on its provider family's row, the client's outcome as the response,
+    an applied switch as the family's selection, written only through
+    resource_profile.record_model_choice).
 
 ROLLBACK: PRESENTATION_MODEL_FRESHNESS=0 makes every public function a
 no-op that writes nothing.
@@ -102,6 +108,17 @@ STATUS_SUCCESSOR = "successor-available"
 STATUS_OFFLINE = "unknown-offline"
 
 OUTCOMES = ("switch", "keep", "defer")
+
+#: The freshness offer as it is described inside B27's unified
+#: model-choice record (the `reason` on the recommendation entry a
+#: decision recorded here folds there). No numbers and no
+#: recommendation vocabulary: this surface never calls its offer a
+#: recommendation in client-facing copy, and a recorded reason must
+#: not go stale against the catalog it names.
+MODEL_CHOICES_REASON = (
+    "Model freshness: a newer model in the same family is listed in "
+    "the provider catalog."
+)
 
 #: Providers whose probe endpoint is not a model list (capacity's probe
 #: def carries models_endpoint=False, e.g. kie's credit read) expose no
@@ -1291,12 +1308,84 @@ def record_check(verdict: Optional[Dict[str, Any]], *, surface: str,
             "pending": [dict(p) for p in pending if isinstance(p, dict)]}
 
 
+def _fold_freshness_decision_into_model_choices(
+        rp: Any, provider: str, successor: Optional[str],
+        final_outcome: str, config_dir: Optional[Any],
+        offered_at: Optional[str]) -> None:
+    """Land one recorded freshness decision in B27's unified
+    model-choice record (profile["model_choices"]), in that record's
+    shape -- the convergence B40's build record named for B27's landing.
+
+    The offered successor is recorded as a recommendation shown on its
+    provider family's row (resource_profile.record_recommendation_shown),
+    stamped with the offer's own time when it is known. The client's
+    outcome becomes the entry's response: "switch" and "switch-refused"
+    are recorded as "accepted" (the client accepted; a refusal is
+    validation's act, its reason kept in the freshness log's detail, not
+    a change of the client's mind); "keep" is "declined"; "defer"
+    records no response, so the entry stands at "offered" -- the unified
+    record's waiting state, exactly as the offer stands in the pending
+    list. An applied switch additionally writes the family's selection
+    through resource_profile.record_model_choice (source "selected"):
+    the client did select the successor. No other outcome writes a
+    selection, and a refused switch never does -- the saved selection
+    did not move.
+
+    Writes go only through resource_profile's model-choice writers. A
+    failure inside the fold is announced on stderr and never un-records
+    the decision the caller already wrote."""
+    if rp is None or not provider or not successor:
+        return
+    try:
+        prof = rp.load_profile(config_dir)
+        row = rp.model_choice_row(provider, profile=prof) or {}
+        entries = row.get("recommendations_shown") or []
+        offered = any(
+            isinstance(e, dict) and e.get("model") == successor
+            and e.get("response") == "offered" for e in entries)
+        if not offered:
+            rp.record_recommendation_shown(
+                provider, successor, MODEL_CHOICES_REASON, profile=prof)
+            if offered_at:
+                fresh = rp.model_choice_row(provider, profile=prof) or {}
+                token = fresh.get("provider_family")
+                for choice_row in prof.get("model_choices") or []:
+                    if isinstance(choice_row, dict) and \
+                            choice_row.get("provider_family") == token:
+                        for entry in reversed(
+                                choice_row.get("recommendations_shown")
+                                or []):
+                            if isinstance(entry, dict) and \
+                                    entry.get("model") == successor and \
+                                    entry.get("response") == "offered":
+                                entry["shown_at"] = offered_at
+                                break
+                        break
+        if final_outcome in ("switch", "switch-refused"):
+            rp.record_recommendation_response(
+                provider, successor, "accepted", profile=prof)
+        elif final_outcome == "keep":
+            rp.record_recommendation_response(
+                provider, successor, "declined", profile=prof)
+        if final_outcome == "switch":
+            rp.record_model_choice(provider, successor,
+                                   source="selected", profile=prof)
+        rp.save_profile(prof, config_dir)
+    except Exception as exc:  # noqa: BLE001 -- the fold never un-records
+        print(f"model freshness: model-choice fold failed "
+              f"({exc.__class__.__name__}: {exc})", file=sys.stderr)
+
+
 def record_freshness_decision(check_id: Optional[str], outcome: str,
                               config_dir: Optional[Any] = None
                               ) -> Optional[Dict[str, Any]]:
     """Record the client's decision for one offered successor, inside a
     profile transaction. The single freshness-decision writer (the
-    convergence pattern B28 set with record_route_decision).
+    convergence pattern B28 set with record_route_decision). Since B27
+    landed (PR #2035), the recorded decision also lands in B27's
+    unified model-choice record through
+    _fold_freshness_decision_into_model_choices -- the convergence this
+    module's build record named for that landing.
 
     outcome is "switch", "keep" or "defer" -- the only three outcomes
     there are. Returns the recorded result {outcome, detail, message,
@@ -1406,6 +1495,10 @@ def record_freshness_decision(check_id: Optional[str], outcome: str,
                         and p.get("successor_model") == successor:
                     p["offered_at"] = decided_at
         summary["pending"] = pending
+
+    _fold_freshness_decision_into_model_choices(
+        rp, provider, successor, final_outcome, config_dir,
+        target.get("offered_at") or target.get("checked_at"))
 
     prov = provider_display(provider)
     if final_outcome == "switch":
