@@ -301,7 +301,12 @@ def test_decide_with_no_first_try_is_the_fallback():
 # ------------------------------------------- the frame gate's extractor -----
 
 def test_tesseract_extractor_is_registered_with_frame_text_at_import():
-    import final_assembler.frame_text as FT
+    # The suite conftest drops skill-tree modules from sys.modules between
+    # collections, so a body-time re-import of frame_text can bind a NEWER
+    # module generation than the one this file's OST registered with — the
+    # identity check must read the exact module object registration ran on.
+    FT = OSTMOD._FT
+    assert FT is not None, "onscreen_text must have loaded frame_text"
     assert OST.REGISTERED is True, "import must register the OCR extractor"
     assert FT.EXTRACTORS[OST.ENGINE] is OST.tesseract_extractor
     # and the frame gate can hand it a frame list and get one entry per frame
