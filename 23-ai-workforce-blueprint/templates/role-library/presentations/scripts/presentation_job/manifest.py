@@ -991,7 +991,12 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # executor is the speech harness script), and an undeclared fanout width now
 # warns at load (Manifest.fanout_width_warnings, sync_check W2, run record)
 # instead of silently defaulting to 1.
-MIN_MANIFEST_VERSION = 71  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 71 -> 73 (PR #2040 refresh, B32 FIX-PLAN Item 26): the GIP weave carried its
+# own v71 claim from a v70 base; main's v71 (Item 11, B23) landed first, and
+# v72 is carried by PR #2038's refresh composed in parallel, so the composed
+# tree (B23 fanout declarations plus the Item 26 AF-P24 weave) takes the next
+# free version, 73.
+MIN_MANIFEST_VERSION = 73  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
