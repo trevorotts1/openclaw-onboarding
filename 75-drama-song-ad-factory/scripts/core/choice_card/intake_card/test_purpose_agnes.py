@@ -20,7 +20,10 @@ import os
 import sys
 import types
 
-import pytest
+try:                                # the empty-home CI smoke run has no pytest
+    import pytest
+except ModuleNotFoundError:
+    pytest = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
