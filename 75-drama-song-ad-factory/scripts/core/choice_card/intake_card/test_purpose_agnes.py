@@ -20,7 +20,14 @@ import os
 import sys
 import types
 
-import pytest
+try:
+    import pytest
+except ModuleNotFoundError:
+    # CI runs every test_*.py under scripts/core with bare python3 and a fresh
+    # empty HOME, so a module-level `import pytest` is a red build there; that
+    # run only imports this module and never calls the test functions, while a
+    # real pytest run always has pytest importable.
+    pytest = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
