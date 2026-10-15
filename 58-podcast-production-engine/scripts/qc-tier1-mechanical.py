@@ -30,9 +30,10 @@
 #   15  PURE deliverable (episode only, no delivery-report or checklist bleed)
 #   16  NO intake contamination (contact PII, consent language, visual brief)
 #
-# NOT OWNED BY THIS SCRIPT (semantic, run on the CHEAP JUDGE tier, e.g. Gemini
-# 3.1 Flash Lite or GLM 5.2, never the writer model, never a build-time
-# reasoning model): check 12 fabrication, check 13 mode perspective, check 14
+# NOT OWNED BY THIS SCRIPT (semantic, run on the QC JUDGE tier: the client's
+# chosen judge model, or their configured default judge model, never the
+# writer model, never a build-time reasoning model): check 12 fabrication,
+# check 13 mode perspective, check 14
 # pronoun correctness. This script reports them as
 # DEFERRED so no caller mistakes a green Tier-1-mechanical result for a fully
 # cleared Tier 1. A green result here means the DETERMINISTIC subset is clean;

@@ -1,5 +1,15 @@
 # Changelog - 58 Podcast Production Engine (58-podcast-production-engine)
 
+## v1.0.18 - 2026-10-13 - refactor(models): client-choice model selection, no prescribed models
+
+- Model selection doctrine applied: this skill no longer prescribes any model by name. Runtime model selection resolves as (1) the client's explicit choice for the task, (2) the client's configured default model, (3) a stop with a clear ask-the-client message. Where an old prescription carried a real rationale, it is kept as a recommendation with its reason, as guidance the client can override, never wired as a fallback value.
+- `config/models.json` (now v2.0.0): the named tier chains are replaced by the `selection` policy block, `client_defaults` (shipped unset), and a `providers` capability registry (provider lanes, base urls, credential labels only; no model names). The `deny_patterns` refusal list is unchanged and still armed.
+- `scripts/model_router.py`: new resolution order (client choice via route context or the PODCAST_MODEL_CHOICE / PODCAST_CONTENT_MODEL / PODCAST_QC_JUDGE_MODEL env labels, then the client's configured defaults, then ClientChoiceRequired, new exit 5). A client-owned config carrying its own per-tier chain is honored as that client's configured default set. The embedded self-test's chain mechanics now run against a synthetic client fixture with example ids.
+- `scripts/guard-no-anthropic-runtime.py` JOB 2: routing assertions rewritten for the selection policy (selection block present with the ask-the-client stop, deny list armed and complete, configured entries deny-clean, judge default distinct from the content default). The old named-cascade assertions are removed with the cascade.
+- `scripts/tests/test_model_router.py`: the tests that asserted the old named-model doctrine are updated alongside the router (the shipped config resolves nothing and asks the client; a client choice beats the configured default); chain mechanics run against the same synthetic client fixture.
+- `config/cost-model.json` (v1.0.1): the schema note now describes a per-model reference price registry keyed by model id, with a note that the operator adds a row for a client-configured model that has none. All price values are unchanged.
+- Prose and config notes across SKILL.md, the modes, the modules, presets, questionnaires, the payload schema, and the smoke-endpoint placeholder now state the client-choice pattern instead of the old named cascade.
+
 ## v1.0.17 - 2026-10-14 - fix(podcast): intake-bridge ledger checksum ordering
 
 - repo-91 (`scripts/webhook/ledger.py`): `_persist_record` re-stamps `_checksum` as the last write to a ledger record, using `podcast_state.py`'s documented formula (SHA-256 over the canonical JSON of every other field). The webhook layer writes the bridge note, the flow binding, a duplicate redelivery and an operator retry onto the same record that `podcast_state.py` already stamped, so the stored stamp went stale and the next transition was refused with "ledger checksum MISMATCH" and rolled back. The formula is unchanged, a record that carries no checksum yet is written unchanged, and no existing record is rewritten.

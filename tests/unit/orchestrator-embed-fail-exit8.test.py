@@ -14,7 +14,6 @@ Run:
 from __future__ import annotations
 
 import asyncio
-import atexit
 import importlib.util
 import json
 import os
@@ -68,37 +67,26 @@ _fake_aiohttp.ClientTimeout = _FakeClientTimeout
 _fake_aiohttp.TCPConnector = _FakeTCPConnector
 sys.modules["aiohttp"] = _fake_aiohttp
 
-# Model-configuration fixture (client-choice doctrine, 2026-10-13):
-# orchestrator.py resolves its phase models at import time, and main()
-# stops with exit 3 when no model is configured anywhere (no client choice
-# and no configured default in openclaw.json), so a run can never fall back
-# to a prescribed model. This test models a CONFIGURED client box: a sandbox
-# HOME whose .openclaw/openclaw.json carries a configured default model,
-# put in place BEFORE the import below and restored immediately after it.
-# The example id is fixture data only; preflight_providers and process_book
-# are stubbed in setUp, so the id is never called. Same reasoning as the
-# _assert_provider_route stub in setUp: model configuration is a separate
-# precondition of main(), while this test exercises only the phase5
-# outcome-to-exit-code mapping.
-_fake_home = tempfile.TemporaryDirectory()
-_fake_home_path = Path(_fake_home.name)
-(_fake_home_path / ".openclaw").mkdir(parents=True)
-(_fake_home_path / ".openclaw" / "openclaw.json").write_text(json.dumps({
-    "agents": {"defaults": {"model": "ollama/example-default-model:cloud"}}
-}))
-_orig_home_env = os.environ.get("HOME")
-os.environ["HOME"] = str(_fake_home_path)
-atexit.register(_fake_home.cleanup)
+# Post-doctrine fixture (2026-10-13 model-selection ruling): the
+# orchestrator resolves its phase models from the client's own
+# configuration (the shared selector, then agents.defaults.model in
+# openclaw.json) and refuses to run unconfigured, exiting 3 at the model
+# gate. This test verifies the phase5-outcome-to-exit-code mapping on a
+# CONFIGURED box, so the import below gets a fixture HOME holding an
+# openclaw.json whose configured default is the simulated client's
+# choice. Without it, module-level resolution (correctly) records
+# ModelNotConfiguredError and main() exits 3 before ever reaching the
+# phase5 tail this test exists to verify.
+_FIXTURE_HOME = Path(tempfile.mkdtemp(prefix="a-u8-home-"))
+(_FIXTURE_HOME / ".openclaw").mkdir(parents=True)
+(_FIXTURE_HOME / ".openclaw" / "openclaw.json").write_text(json.dumps(
+    {"agents": {"defaults": {"model": {"primary": "deepseek/deepseek-v4.1-flash"}}}}))
+os.environ["HOME"] = str(_FIXTURE_HOME)
 
 _spec = importlib.util.spec_from_file_location("orchestrator", _PIPE / "orchestrator.py")
 orch = importlib.util.module_from_spec(_spec)
 sys.modules["orchestrator"] = orch
 _spec.loader.exec_module(orch)
-
-if _orig_home_env is None:
-    os.environ.pop("HOME", None)
-else:
-    os.environ["HOME"] = _orig_home_env
 
 
 def _args(slug: str, source_json: str):

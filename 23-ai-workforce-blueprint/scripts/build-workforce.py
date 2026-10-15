@@ -33,8 +33,8 @@ IMPORTANT:
 - This script is executed BY the AI agent, not run directly by the client
 - The AI reads this file to understand the interview flow and executes it conversationally
 - Questions are generated dynamically based on industry and context, not from a static list
-- The AI MUST be running on a high reasoning model (DeepSeek V4.1 Flash, GLM 5.2, MiMo V2 Pro, Gemini 3.1 Pro, GPT 5.4); Ollama Cloud preferred, OpenRouter backup, thinking=HIGH
-- Research best practices uses openrouter/perplexity/sonar-pro-search
+- The AI MUST be running on the client's chosen model, or their configured default model, with thinking=HIGH. Recommendation: a high-reasoning model (Ollama Cloud preferred, OpenRouter backup), because interview and build quality is set by the reasoning model. Do not prescribe a specific model by name.
+- Research best practices uses the client's chosen research model (see the RESEARCH section: RESEARCH_MODEL env choice, else the client's configured default)
 
 FORBIDDEN CLIENT-FACING LANGUAGE:
 See the canonical machine-readable list: interview/forbidden-jargon.json
@@ -5108,19 +5108,49 @@ def _verify_departments_against_dashboard_config() -> None:
 # RESEARCH FALLBACK (Phase 13 audit - P1)
 # ============================================================
 # When the interview encounters an unknown answer (industry-specific term,
-# unfamiliar role title, missing dept-KPI baseline), the script can call
-# OpenRouter's Perplexity Sonar model for a live web-grounded answer.
+# unfamiliar role title, missing dept-KPI baseline), the script can call the
+# client's chosen research model for a live web-grounded answer.
 # Best-effort: if OPENROUTER_API_KEY is missing or the network is down, the
 # function returns None and the caller falls back to its existing default
 # (per N15 web-research pre-flight already lands authoritative defaults in
 # preflight-research.json).
+#
+# The research model is NEVER prescribed by name here. Resolution:
+#   1. RESEARCH_MODEL env (the client's explicit choice; an OpenRouter slug,
+#      with or without the "openrouter/" prefix);
+#   2. the client's configured default model (agents.defaults.model in the
+#      target openclaw.json), when it names an OpenRouter model;
+#   3. neither: research is skipped with a LOUD stderr message asking the
+#      client to choose a research model. Recommendation: a search-grounded
+#      research model, because this path exists to answer questions the
+#      interview itself cannot.
 
-RESEARCH_MODEL = "openrouter/perplexity/sonar-pro-search"
 RESEARCH_TIMEOUT_S = 12
+
+
+def _research_model() -> str:
+    """The client's research model id (bare OpenRouter slug), or ""."""
+    choice = (os.environ.get("RESEARCH_MODEL") or "").strip()
+    if choice:
+        return choice.removeprefix("openrouter/")
+    try:
+        if os.path.isfile(OPENCLAW_CONFIG):
+            with open(OPENCLAW_CONFIG) as _fh:
+                _cfg = json.load(_fh)
+            _model = ((_cfg.get("agents") or {}).get("defaults") or {}).get("model")
+            if isinstance(_model, dict):
+                _model = _model.get("primary")
+            if isinstance(_model, str) and _model.startswith("openrouter/"):
+                return _model.removeprefix("openrouter/")
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
 
 def research_unknown_answer(question: str, context: str = "", purpose_tier: str = "light") -> str:
     """
-    Best-effort web research via OpenRouter Perplexity Sonar.
+    Best-effort web research via the client's chosen research model
+    (see _research_model(): RESEARCH_MODEL env choice, else the client's
+    configured default model on OpenRouter).
 
     Args:
         question: the unknown answer the agent needs (e.g. "What's the typical
@@ -5131,7 +5161,7 @@ def research_unknown_answer(question: str, context: str = "", purpose_tier: str 
     Returns:
         The model's response text, or None if research is unavailable.
 
-    N1 compliance: Perplexity Sonar is hosted via OpenRouter, NOT Anthropic.
+    N1 compliance: the research model is reached via OpenRouter, NOT Anthropic.
     N15 alignment: this is the runtime counterpart to web-research-preflight.sh
                    - preflight populates static defaults, this fills gaps.
     """
@@ -5162,13 +5192,23 @@ def research_unknown_answer(question: str, context: str = "", purpose_tier: str 
               file=sys.stderr)
         return None
 
+    research_model = _research_model()
+    if not research_model:
+        # LOUD, on purpose: no silent substitute research model. The caller
+        # falls back to its existing default; the operator sees the ask.
+        print("[research] NO RESEARCH MODEL CONFIGURED: ask the client which "
+              "model to use for web research (set RESEARCH_MODEL, or configure "
+              "a default model), skipping web research for: "
+              f"{question[:80]}", file=sys.stderr)
+        return None
+
     max_tokens = {"light": 300, "standard": 700, "heavy": 1500}.get(purpose_tier, 300)
     try:
         import urllib.request
         req = urllib.request.Request(
             "https://openrouter.ai/api/v1/chat/completions",
             data=_json.dumps({
-                "model": RESEARCH_MODEL.removeprefix("openrouter/"),
+                "model": research_model,
                 "messages": [
                     {"role": "system", "content": "You are a research assistant. Cite sources when relevant. Be concise."},
                     {"role": "user", "content": (f"{context}\n\n" if context else "") + question},
@@ -7069,14 +7109,14 @@ Use the Lean Six Sigma DMAIC structure for every SOP. Every SOP file must contai
   If you hit an edge case not covered above:
     - DO NOT GUESS. Guessing is forbidden for any AI employee.
     - You are either ABSOLUTELY SURE of the next step (proceed) or you are NOT SURE (research).
-    - If not sure: run Perplexity research (`openrouter/perplexity/sonar-pro-search`) with a specific query, OR escalate to the {DEPT_HEAD}.
+    - If not sure: run web research with the client's chosen research model (or their configured default) with a specific query, OR escalate to the {DEPT_HEAD}.
     - Document the edge case AND the research outcome in {DEPT_DIR}/memory/[YYYY-MM-DD].md.
 
 Hard constraints:
   - NEVER reference Anthropic models. Use the selector chain heavy tier when invoking models.
   - Plain English. No corporate jargon.
   - Tools referenced must be from {DEPT_TOOLS}. If a useful tool is missing from that list, recommend it under a 'Suggested tool additions' section at the bottom - don't pretend it's available.
-  - Cite Perplexity research findings inline when a step is derived from research. e.g. 'Per industry benchmark (Perplexity 2026-05-13): companies in {INDUSTRY} typically...'
+  - Cite web research findings inline when a step is derived from research. e.g. 'Per industry benchmark (Perplexity 2026-05-13): companies in {INDUSTRY} typically...'
 
 For each role folder in this department, you'll find:
   - 00-START-HERE.md (DO NOT rewrite - already contains role context)
@@ -7140,12 +7180,15 @@ def determine_specialists(dept_id, dept_info, interview_answers):
                 'name': role_name,
                 'type': role_type,
                 # Route specialists through the SAME model selector the department
-                # director uses (resolves to kimi-k2.6+/deepseek), floored at the
-                # July 23 fleet-standard default via the canonical chain.
-                # Never a hardcoded model id -- that caused fleet-wide "Unknown model"
-                # on routed dept-agent calls (directors were already fixed;
-                # specialists were missed).
-                'model': _resolve_director_model(dept_id) or 'ollama/kimi-k2.6:cloud',
+                # director uses, via the canonical chain. Never a hardcoded model
+                # id -- that caused fleet-wide "Unknown model" on routed dept-agent
+                # calls (directors were already fixed; specialists were missed).
+                # When the selector resolves nothing, _require_resolved_model
+                # uses the client's configured default or stops with an
+                # ask-the-client error.
+                'model': _require_resolved_model(
+                    _resolve_director_model(dept_id),
+                    f"specialist roles in department '{dept_id}'"),
                 'reason': f'From suggested roles for {dept_id}, type={role_type} based on activity signals'
             })
     else:
@@ -8170,7 +8213,27 @@ def add_agent_to_config(config, dept_id, dept_info):
         try:
             _producer_primary = resolve_dept_agent_model("presentations")[0]
             if _primary == _producer_primary:
-                _primary = "ollama/qwen3-vl:235b-cloud"
+                # Resolve an INDEPENDENT model through the class cascade
+                # (JUDGMENT + vision), never a named pin: the client's own
+                # selector chain picks it from their inventory.
+                _alt = _resolve_model_for_class(
+                    {"capability_class": "JUDGMENT", "vision_flag": True,
+                     "purpose_tier": "heavy", "required_modality": "vision"},
+                    dept_id).get("model_id")
+                if _alt and _alt != _producer_primary:
+                    _primary = _alt
+                elif _client_configured_default_model() not in ("", _producer_primary):
+                    _primary = _client_configured_default_model()
+                else:
+                    # No self-grading and no silent pin: stop and ask.
+                    raise RuntimeError(
+                        "quality-control resolved to the same model as the "
+                        "presentations producer, and no independent model "
+                        "is configured. Ask the client to choose a different "
+                        "QC model (no self-grading), or configure a default "
+                        "model, then re-run.")
+        except RuntimeError:
+            raise
         except Exception:  # noqa: BLE001
             pass  # never break the build if the selector is unreachable
     # Record the dept default so the CC seeding step can write the
@@ -8428,6 +8491,43 @@ def _select_model_script_path():
     return None
 
 
+def _client_configured_default_model() -> str:
+    """The client's configured default model from the target openclaw.json
+    (agents.defaults.model), or "". This build never writes agents.defaults,
+    so whatever is configured there is the client's own standing choice."""
+    try:
+        if OPENCLAW_CONFIG and os.path.isfile(OPENCLAW_CONFIG):
+            with open(OPENCLAW_CONFIG) as _fh:
+                _cfg = json.load(_fh)
+            _model = ((_cfg.get("agents") or {}).get("defaults") or {}).get("model")
+            if isinstance(_model, dict):
+                _model = _model.get("primary")
+            if isinstance(_model, str) and _model.strip():
+                return _model.strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def _require_resolved_model(model_id, where: str) -> str:
+    """Terminal step of model resolution in this build: a resolved model
+    wins; the client's configured default model is next; NEITHER means STOP
+    with a clear ask-the-client error. Never substitute a named model the
+    client did not choose: a silent pin is how stale doctrine ships, and a
+    wrong model in openclaw.json spends the client's money."""
+    if model_id:
+        return model_id
+    _default = _client_configured_default_model()
+    if _default:
+        return _default
+    raise RuntimeError(
+        f"No model resolved for {where}, and the client has no configured "
+        f"default model (agents.defaults.model in openclaw.json). Ask the "
+        f"client which model they want to use, or configure a default "
+        f"model, then re-run. Refusing to substitute a named model the "
+        f"client did not choose.")
+
+
 def _resolve_dept_default_model(dept_id):
     """Layer-1 build-time dept default (PLAN.md §3.2).
 
@@ -8594,7 +8694,7 @@ def resolve_role_model(
             # select_model.py --mode task drives its chain off --difficulty
             # (hard/medium/simple), NOT --purpose-tier. Map the class tier to the
             # matching difficulty so a HEAVY class actually resolves the HEAVY
-            # chain (deepseek-pro/kimi) instead of defaulting to medium/mid. This
+            # chain instead of defaulting to medium/mid. This
             # is what makes the capability class genuinely DRIVE model strength.
             _tier_to_difficulty = {"heavy": "hard", "mid": "medium", "fast": "simple"}
             _difficulty = _tier_to_difficulty.get(cls_info["purpose_tier"], "medium")
@@ -8640,15 +8740,32 @@ def resolve_role_model(
             "source": "msf_dept_fallback",
         }
 
-    # Terminal fallback — safe known good
+    # Terminal step: the client's configured default model, or a loud
+    # needs-owner-input stop. NEVER a named substitute: the old terminal pin
+    # silently shipped a model the client did not choose, and a pinned name
+    # goes stale the day its provider retires it.
+    _default_model = _client_configured_default_model()
+    if _default_model:
+        return {
+            "model_id": _default_model,
+            "capability_class": cls_info.get("capability_class"),
+            "vision_flag": cls_info.get("vision_flag", False),
+            "purpose_tier": cls_info.get("purpose_tier"),
+            "needs_owner_input": False,
+            "prompt_to_owner": "",
+            "source": "msf_client_default_fallback",
+        }
     return {
-        "model_id": "ollama/kimi-k2.6:cloud",
+        "model_id": "",
         "capability_class": cls_info.get("capability_class"),
         "vision_flag": cls_info.get("vision_flag", False),
         "purpose_tier": cls_info.get("purpose_tier"),
-        "needs_owner_input": False,
-        "prompt_to_owner": "",
-        "source": "msf_terminal_fallback",
+        "needs_owner_input": True,
+        "prompt_to_owner": (
+            "Ask the client which model they want to use for this role, or "
+            "have them configure a default model (agents.defaults.model). "
+            "No model was selected for them."),
+        "source": "msf_no_model_configured",
     }
 
 
@@ -8799,9 +8916,14 @@ def resolve_dept_agent_model(dept_id, existing_entry=None):
             print(f"[MSF WARN] dept-head class resolution failed for "
                   f"'{dept_id}': {exc}", file=sys.stderr)
 
-    # Layer 2 — legacy dept-default cascade (unchanged, never crashes a build).
+    # Layer 2: legacy dept-default cascade. When it resolves nothing, the
+    # client's configured default applies; when that does not exist either,
+    # _require_resolved_model stops the build with an ask-the-client error
+    # rather than writing a named model the client did not choose.
     _dept_default = _resolve_dept_default_model(dept_id)
-    _primary = (_dept_default or {}).get("model_id") or "ollama/kimi-k2.6:cloud"
+    _primary = _require_resolved_model(
+        (_dept_default or {}).get("model_id"),
+        f"the department head for '{dept_id}'")
     return _primary, _dept_default
 
 
@@ -8999,7 +9121,7 @@ def main():
     - Flush after every answered question
     - Update handoff file after every answer
     - Progress indicators at milestones
-    - Use Perplexity sonar-pro-search for best practices research
+    - Use the client's chosen research model for best practices research
 
     CONTEXT INGESTION (v12.3.4):
     Step 2.5 runs scripts/context-ingest.py BEFORE Phase 1 to assemble a

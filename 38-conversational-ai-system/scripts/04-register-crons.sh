@@ -61,13 +61,24 @@ else
 fi
 
 # Resolve the batch model the Model Wizard (15-configure-hooks-mappings.sh) saved to
-# the secrets env file, falling back to env, then to a sane default. (Crons run on the
-# batch tier; the tier choice lives in secrets.env — never in an invalid config key.)
+# the secrets env file, falling back to env, then to the client's configured default
+# model (agents.defaults.model in openclaw.json). (Crons run on the batch tier; the
+# tier choice lives in secrets.env, never in an invalid config key.) If none resolve,
+# STOP and ask the client: a named model is never substituted silently.
 SECRETS_ENV_FILE="${SECRETS_ENV_FILE:-$HOME/.openclaw/secrets.env}"
 if [[ -z "${BATCH_MODEL:-}" && -f "$SECRETS_ENV_FILE" ]]; then
   BATCH_MODEL="$(grep -E '^BATCH_MODEL=' "$SECRETS_ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)"
 fi
-BATCH_MODEL="${BATCH_MODEL:-openrouter/free}"
+if [[ -z "${BATCH_MODEL:-}" ]]; then
+  OC_CFG="${OPENCLAW_CONFIG:-$HOME/.openclaw/openclaw.json}"
+  if [[ -f "$OC_CFG" ]] && command -v jq >/dev/null 2>&1; then
+    BATCH_MODEL="$(jq -r '(.agents.defaults.model? // empty) | if type=="object" then (.primary // empty) else . end' "$OC_CFG" 2>/dev/null || true)"
+  fi
+fi
+if [[ -z "${BATCH_MODEL:-}" ]]; then
+  echo "ERROR: no batch model resolved (no BATCH_MODEL env, no BATCH_MODEL in the secrets env file, no configured default model in openclaw.json). Ask the client which model to use for batch work, or which model to configure as their default, then re-run." >&2
+  exit 2
+fi
 
 command -v openclaw >/dev/null 2>&1 || {
   echo "openclaw CLI not on PATH — cannot register crons. DO NOT write cron.jobs JSON (invalid on 2026.5.27)." >&2
