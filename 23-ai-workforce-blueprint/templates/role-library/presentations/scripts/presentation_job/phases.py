@@ -513,6 +513,21 @@ class VerifierImportError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
+# FIX-PLAN Item 16: named error for an undeclared fanout width reaching plan
+# construction. A phase that declares a `fanout` field but no `workers` in
+# the manifest would run its fan-out at the Phase.workers fallback of 1
+# (serial). Item 11 (B23) made that condition loud (Manifest.fanout_width_warnings
+# at load, sync_check W2 at advisory level, the run record); Item 16 promotes
+# it: the drift gate fails on it (sync_check W2 as a drift class) and the
+# engine refuses to plan a run over it (Engine._refuse_undeclared_fanout_widths).
+# Manifest.load stays non-fatal and the fallback stays 1, so scratch and
+# legacy manifests still parse; the refusal lives here, at plan time.
+# ---------------------------------------------------------------------------
+class UndeclaredFanoutWidthError(RuntimeError):
+    """FIX-PLAN Item 16: a fanout phase in the run's plan declares no workers width."""
+
+
+# ---------------------------------------------------------------------------
 # B2b (fix/engine-client-report-unformatted -- MASTER-WORK-ORDER-20260818 Wave
 # B, unit B2b). This engine (presentation_job.py) is the path
 # presentation-canonical-entry.sh actually dispatches to production -- it
@@ -4578,6 +4593,36 @@ class Engine:
         return failed_rcs
 
     # -- the loop ---------------------------------------------------------
+    def _refuse_undeclared_fanout_widths(self, phases: List[Phase]) -> None:
+        """FIX-PLAN Item 16 (plan-time half): refuse to plan a run whose plan
+        carries a fanout phase with no declared workers width.
+
+        The condition is B23's substrate, Phase.workers_declared: the phase's
+        manifest entry carries a `fanout` dict but no usable `workers` key.
+        Its fan-out would run at the fallback width of 1, a serial pocket
+        inside a parallel pipeline, with the declaration nowhere on record.
+        Item 11 made the condition loud (Manifest.load warnings, sync_check
+        W2 advisory, the run record); Item 16 makes it a refusal here and a
+        drift failure at the gate (sync_check W2 as a drift class).
+
+        Only the phases THIS run will execute are judged: the caller passes
+        the selected, applicability-filtered, non-deferred plan set, so a
+        phase routed around or deferred out of this run is not planned and
+        cannot refuse it. Raises UndeclaredFanoutWidthError naming every
+        offending phase."""
+        undeclared = [p for p in phases
+                      if p.fanout is not None and not p.workers_declared]
+        if not undeclared:
+            return
+        names = ", ".join(p.id for p in undeclared)
+        raise UndeclaredFanoutWidthError(
+            f"undeclared fanout width: fanout phase(s) {names} declare no "
+            f"workers in PIPELINE-MANIFEST.json, so the fan-out width would "
+            f"fall back to 1 (serial). FIX-PLAN Item 16: declare workers on "
+            f"each fanout phase (the phase's own fanout batch_width, or an "
+            f"explicit 1 for a deliberately serial phase) before planning a "
+            f"run over it. Plan refused; no phase has run.")
+
     def run(self, only: Optional[str] = None, until: Optional[str] = None) -> int:
         # U024 — sacred-structure warn check, once at engine start-up.
         # DELIBERATELY NON-BLOCKING: a structure drift is a signal to a human,
@@ -4644,6 +4689,13 @@ class Engine:
                 print(f"DEFER {p.id}: defers_unless ({p.defers_unless or ''}) "
                       "not satisfied — skipped for this run.", flush=True)
             phases = [p for p in phases if p.id not in deferred_ids]
+
+        # FIX-PLAN Item 16: plan-time refusal. The plan set is final now
+        # (selected, applicability-filtered, non-deferred); a fanout phase in
+        # it with no declared workers width refuses the run here, before the
+        # client ack and before any phase executes, on both the wave path
+        # and the serial rollback path below.
+        self._refuse_undeclared_fanout_widths(phases)
 
         if not self.state.get("sent", {}).get("ack"):
             # B2b: use the SAME client-visible filtering the per-phase

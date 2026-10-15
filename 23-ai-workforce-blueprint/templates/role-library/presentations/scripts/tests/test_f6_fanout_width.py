@@ -36,6 +36,17 @@ object synthetically (dataclasses.replace), the exact object the pre-v71
 manifest handed this path. The declaration contract itself is pinned by
 tests/test_item11_fanout_width_declarations.py.
 
+ITEM 16 UPDATE (FIX-PLAN Item 16): the undeclared width is now refused,
+not just loud: sync_check W2 is a drift failure, and the engine refuses it
+at plan time (Engine._refuse_undeclared_fanout_widths, section 7 below).
+Tests 1 and 6 force the undeclared object itself (workers=1 with
+workers_declared cleared, per the CURE NOTE from the Item 15 branch
+update) and call the dispatcher directly: the only way that object
+reaches dispatch in a test, because Engine.run() refuses it first. A
+DECLARED width of 1 (the P9-SPEECH shape, workers_declared True) is a
+different input, honored by the dispatcher's width controller as a
+deliberate serial declaration.
+
 THE FIX. The width now comes from the SAME authority P4-PROMPT's wave uses:
 `_routing_stamp` (renamed from `_prompt_routing_stamp`, which was never
 P4-specific) -> client resource profile -> route -> capacity probe -> mode
@@ -199,6 +210,11 @@ def test_fanout_phase_runs_at_the_routed_width_not_at_one(tmp_path, monkeypatch)
     # condition this test exercises is workers=1 with NO declaration, so
     # the forced object clears workers_declared as well. No assertion or
     # expected value changes.
+    # FIX-PLAN Item 16: this undeclared object reaches dispatch_one only
+    # because the test calls the dispatcher directly. On the engine path
+    # it never gets here: Engine.run() refuses it at plan time
+    # (UndeclaredFanoutWidthError, section 7 below). The F6 property (the
+    # dispatcher must not treat workers as the width cap) is unchanged.
     po = _phase_obj(run_dir)
     assert po.workers == 3, (
         "harness assumption broken: P-STYLE-SPEC no longer declares "
@@ -425,6 +441,9 @@ def test_phase_workers_is_not_a_cap_on_the_manifest_fanout_path(tmp_path, monkey
     # flag still set, workers=1 reads as a deliberate serial declaration
     # to the dispatcher's width controller and is honored, which is the
     # opposite of the absent condition this test exercises (see test 1).
+    # FIX-PLAN Item 16: as in test 1, the undeclared object is fed to the
+    # dispatcher directly here; Engine.run() refuses it at plan time
+    # (section 7).
     assert po.workers == 3
     forced = dataclasses.replace(po, workers=1, workers_declared=False)
 
@@ -433,3 +452,76 @@ def test_phase_workers_is_not_a_cap_on_the_manifest_fanout_path(tmp_path, monkey
         dept_root=SCRIPTS.parent, phase_obj=forced, worker_id="test-f6")
     assert result.status == "ok", result.reasons
     assert _pool_width(run_dir) == min(routed, 3)
+
+
+# ---------------------------------------------------------------------------
+# 7. FIX-PLAN Item 16 (plan-time half): the engine refuses to plan a run
+#    over a fanout phase with no declared workers width. The condition is
+#    the Item 11 substrate (fanout present, workers_declared False): such a
+#    phase's fan-out would run at the fallback width of 1 with the
+#    declaration nowhere on record. The drift-gate half (sync_check W2 as
+#    drift) is pinned in test_manifest_workers_field.py. The harness
+#    mirrors tests/test_engine_client_report.py's run-dir shape, over a
+#    synthetic one-phase manifest written to disk.
+# ---------------------------------------------------------------------------
+def _synthetic_engine(base, phase_entry):
+    from presentation_job.manifest import Manifest
+    from presentation_job.phases import Engine
+    from presentation_job.state import StateStore
+
+    rd = base / "run"
+    (rd / "working" / "copy").mkdir(parents=True)
+    (rd / "working" / "copy" / "intake.json").write_text(
+        "{}", encoding="utf-8")
+    manifest_path = rd / "PIPELINE-MANIFEST.json"
+    manifest_path.write_text(json.dumps({
+        "manifest_version": 71, "phases": [phase_entry],
+        "autofails": [], "roles": [],
+    }), encoding="utf-8")
+    manifest = Manifest(manifest_path)
+    state = {
+        "schema_version": 1, "job_id": "i16", "run_dir": str(rd),
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "manifest_path": str(manifest.path),
+        "manifest_version": manifest.version,
+        "manifest_sha256": manifest.sha256,
+        "presentation_type": "from_scratch", "requester": {"chat_id": "i16"},
+        "phases": [], "gates": {}, "waivers": [], "events": [], "sent": {},
+        "undeliverable": [], "heartbeat": {}, "terminal": None,
+    }
+    return Engine(rd, manifest, StateStore(rd), state, dry_run=True)
+
+
+_FANOUT_ENTRY = {
+    "id": "PX-FAN", "order": 1.0, "owning_role": "test-role",
+    "produces_artifact": "working/out.txt",
+    "executor": {"kind": "agent"}, "verifier": "phase_verifiers.verify",
+    "fanout": {"by": "slide", "batch_width": 4},
+}
+
+
+def test_undeclared_fanout_width_refused_at_plan_time(tmp_path):
+    import pytest
+
+    from presentation_job.phases import UndeclaredFanoutWidthError
+
+    engine = _synthetic_engine(tmp_path, dict(_FANOUT_ENTRY))
+    phase = engine.manifest.phase("PX-FAN")
+    assert phase.fanout is not None and phase.workers_declared is False, (
+        "harness assumption broken: the synthetic phase must be an "
+        "undeclared fanout phase")
+    with pytest.raises(UndeclaredFanoutWidthError) as excinfo:
+        engine.run()
+    assert "PX-FAN" in str(excinfo.value), (
+        f"the refusal must name the undeclared phase; got: {excinfo.value}")
+
+
+def test_declared_fanout_widths_pass_the_plan_time_check(tmp_path):
+    for workers in (4, 1):
+        engine = _synthetic_engine(tmp_path / f"w{workers}",
+                                   dict(_FANOUT_ENTRY, workers=workers))
+        phase = engine.manifest.phase("PX-FAN")
+        assert phase.workers_declared and phase.workers == workers
+        # No raise for either declared shape: the phase's own batch_width,
+        # or the deliberately serial explicit 1 (the P9-SPEECH shape).
+        engine._refuse_undeclared_fanout_widths([phase])
