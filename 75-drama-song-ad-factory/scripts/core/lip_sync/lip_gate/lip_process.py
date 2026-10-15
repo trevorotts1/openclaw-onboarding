@@ -35,6 +35,13 @@ if _gcore not in _gsys.path:
     _gsys.path.insert(0, _gcore)
 import load_governor as _LG  # noqa: E402
 import lipsync_clips as _LC  # noqa: E402
+try:                                   # package import
+    from . import sync_check as SC
+except ImportError:                    # script import (tests run from here)
+    _gdir = _gos.path.dirname(_gos.path.abspath(__file__))
+    if _gdir not in _gsys.path:
+        _gsys.path.insert(0, _gdir)
+    import sync_check as SC  # noqa: E402
 
 TOOL_NAME = "lip_process"
 MAX_JOBS = _LC.MAX_TRIES           # 2 paid jobs per segment, every name variant counted (lipsync_clips.count_jobs)
@@ -66,12 +73,17 @@ def _rank(t):
     return (_TIER.get(t.get("verdict"), 3), -(corr if isinstance(corr, (int, float)) else -2.0))
 
 
-def pick_kept(takes, measure, sung):
+def pick_kept(takes, measure, sung, look=None):
     """Re-measure every take on disk and keep the best.
 
     takes: [{"path", "defect": bool/str optional}]; measure(path) -> dict with
     verdict (SYNCED/WEAK/NOT_SYNCED), corr, and optional lag/margin; a measure
     error leaves the take unmeasured (ranked last, never dropped).
+    look: the run's look. The take's own numbers are re-graded with
+        sync_check.grade(m, look), so a cartoon look ranks the take against
+        CARTOON_CORR_FLOOR (0.35) and reuse-first keeps the take the run would
+        accept. A stub measurement without corr/pct/margin keeps its own
+        verdict (never re-graded, never a crash).
     Returns None when no usable take exists, else the receipt-ready choice
     {take, measured, tag, flag, needs_strip, usable_takes}.
     """
@@ -83,6 +95,8 @@ def pick_kept(takes, measure, sung):
             m = dict(measure(t["path"]))
         except Exception:                             # unmeasured, not rejected
             m = {"verdict": None, "corr": None}
+        if look and all(k in m for k in ("corr", "pct", "margin")):
+            m["verdict"] = SC.grade(m, look)          # the run's look: cartoon floor
         usable.append((_rank(m), t["path"], t, m))
     if not usable:
         return None
