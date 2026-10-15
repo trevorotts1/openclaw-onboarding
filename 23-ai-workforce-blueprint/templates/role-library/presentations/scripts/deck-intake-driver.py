@@ -1582,6 +1582,66 @@ def _record_plan_tier(qdef: Dict[str, Any], text: str,
     return 0
 
 
+def _variant_match_from_client_inventory(variant: str):
+    """Resolve a DeepSeek variant word against the CLIENT'S wired inventory.
+
+    The variant word ("flash" / "pro") is the client's shorthand for a tier
+    of THEIR OWN DeepSeek inventory, never a pinned model id: the recorded
+    workhorse is the client's own selected model, the exact id their box
+    wires on deepseek-direct. Returns (model_id, wired_models) with
+    model_id None when the inventory holds no unique match, so the caller
+    refuses at intake with the inventory named instead of recording a
+    model nobody chose.
+    """
+    rp = _import_resource_profile()
+    if rp is None:
+        return None, []
+    try:
+        profile = rp.load_profile()
+    except Exception:  # noqa: BLE001 -- an unreadable store is no inventory
+        return None, []
+    providers = (profile or {}).get("providers") or {}
+    entry = providers.get("deepseek-direct") or providers.get("deepseek") or {}
+    wired = [str(m) for m in (entry.get("wired_models") or []) if str(m).strip()]
+
+    def _norm(model_id: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "-", model_id.lower())
+
+    def _version_token(model_id: str) -> float:
+        m = re.search(r"(\d+(?:\.\d+)*)", model_id)
+        if not m:
+            return 0.0
+        parts = m.group(1).split(".")
+        try:
+            return float(parts[0]) + (float(parts[1]) / 100.0
+                                      if len(parts) > 1 else 0.0)
+        except ValueError:
+            return 0.0
+
+    # The two words name the two ends of the client's OWN wired DeepSeek
+    # inventory: "flash" is the lighter tier, "pro" the stronger one. A
+    # pro-named id wins outright; otherwise the tiers split the wired
+    # flash family by version (the stronger sibling carries the higher
+    # version token). One wired model total: both words name it -- there
+    # is no tier choice to make on a one-model box.
+    flash_family = [m for m in wired if "flash" in _norm(m)]
+    pro_named = [m for m in wired
+                 if "pro" in _norm(m) and "flash" not in _norm(m)]
+    if variant == "flash":
+        if len(flash_family) == 1:
+            return flash_family[0], wired
+        if len(flash_family) >= 2:
+            return min(flash_family, key=_version_token), wired
+        return None, wired
+    if len(pro_named) == 1:
+        return pro_named[0], wired
+    if len(flash_family) >= 2:
+        return max(flash_family, key=_version_token), wired
+    if len(flash_family) == 1 and len(wired) == 1:
+        return flash_family[0], wired
+    return None, wired
+
+
 def _record_client_model_plan(derived: Dict[str, Any],
                               entries: Dict[str, Any]) -> int:
     """Persist the resource_plan turn's model subfields as a client model plan.
@@ -1604,10 +1664,23 @@ def _record_client_model_plan(derived: Dict[str, Any],
     # FIX 61.2: client picks the DeepSeek variant (flash|pro) and OpenRouter model.
     deepseek_variant = _clean(derived.get("deepseek_variant")).lower()
     openrouter_model = _clean(derived.get("openrouter_model"))
-    if deepseek_variant == "flash":
-        picks["workhorse"] = "deepseek-flash@deepseek-direct"
-    elif deepseek_variant == "pro":
-        picks["workhorse"] = "deepseek-v4.1-flash@deepseek-direct"
+    if deepseek_variant in ("flash", "pro"):
+        # The variant word records the CLIENT'S OWN selected model, resolved
+        # against the client's wired deepseek-direct inventory -- never a
+        # pinned id translated from the word. No unique wired match: refuse
+        # AT INTAKE with the inventory named (the standing doctrine for a
+        # declaration this box cannot serve), so the client names the exact
+        # model (model@provider) instead.
+        match, wired = _variant_match_from_client_inventory(deepseek_variant)
+        if match is None:
+            print(json.dumps({"error": (
+                f"deepseek_variant {deepseek_variant!r} names no unique model "
+                f"in the client's wired deepseek-direct inventory "
+                f"({', '.join(wired) if wired else 'none probed'}): name the "
+                f"exact model as model@provider, or run the capacity probe "
+                f"so the inventory names it")}))
+            return 1
+        picks["workhorse"] = f"{match}@deepseek-direct"
     if not any(picks.values()) and not thinking and not openrouter_model:
         return 0  # every slot omitted: the department defaults stand
 

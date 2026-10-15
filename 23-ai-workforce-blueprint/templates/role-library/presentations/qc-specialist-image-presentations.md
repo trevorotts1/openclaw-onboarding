@@ -93,7 +93,7 @@ Review the image QC trend data for the past month. If the same auto-fail codes r
 
 ## 6. Quarterly Operations
 
-Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md) and the image QC auto-fail battery (AF-I codes and the render auto-fails AF-I8 through AF-I16 in the density-floor overhaul). Verify the rubric is still current. Confirm the vision-pass toolchain (qwen3-vl:235b-cloud primary — independent from the producer; no self-grading, DeepSeek v4 Flash fallback) is still available and graded correctly. Update this document if anything has shifted.
+Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md) and the image QC auto-fail battery (AF-I codes and the render auto-fails AF-I8 through AF-I16 in the density-floor overhaul). Verify the rubric is still current. Confirm the vision-pass toolchain (the client's chosen vision model as primary — independent from the producer; no self-grading, DeepSeek v4 Flash fallback) is still available and graded correctly. Update this document if anything has shifted.
 
 ---
 
@@ -131,8 +131,8 @@ Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md) and the image
 - `working/copy/intake.json` (read: LOGO_URL, DARK_OK, brand color hex values)
 - `working/typography/design_system.json` (read: per-slide archetype and expected type treatment)
 - `working/qc/image_qc_report.json` (write: the QC report gating Phase Image-QC)
-- qwen3-vl:235b-cloud (primary vision scoring model, independent from the producer — no self-grading)
-- DeepSeek v4 Flash (fallback scoring model)
+- The client's chosen vision model (primary vision scoring model, independent from the producer, no self-grading)
+- The catalog-resolved fallback model (fallback scoring model)
 - universal-sops/CLIENT-WEBINAR-DECK-SOP.md (master authority)
 - presentation-design-system/05-SOP-logo-consistency.md (logo identity reference)
 
@@ -437,7 +437,7 @@ Cross-slide logo drift check: if the logo renders differently on any two slides 
 - `working/copy/intake.json` (brand colors, LOGO_URL, DARK_OK, representation intent)
 
 **Tier 3:**
-- qwen3-vl:235b-cloud vision capabilities (primary model for the vision pass, independent from the producer — no self-grading)
+- The client's chosen vision model's vision capabilities (primary model for the vision pass, independent from the producer, no self-grading)
 - QC Specialist -- Presentations (ROLE master QC) for the full auto-fail battery reference
 
 ---
@@ -461,7 +461,7 @@ If LOGO_ON_SLIDES = false for a specific slide (per the design system), the abse
 ## 18. Update Triggers (When to Revise This Document)
 
 1. The image QC auto-fail battery (AF-I codes) is extended or modified in the master SOP.
-2. The vision-pass toolchain (qwen3-vl:235b-cloud, DeepSeek v4 Flash) changes.
+2. The vision-pass toolchain (the client's chosen vision model, the catalog-resolved fallback model) changes.
 3. The brand color or logo reference for a deck changes (LOGO_URL updated in intake.json).
 4. The KIE.ai render API or output format changes, or the renderer's receipts change (`pending_tasks.json`, `.ocr.json`, `process_manifest.json`).
 5. The archetype specification (A1-A5) changes in presentation-design-system/04-SOP-variable-layout-anti-template.md.

@@ -1010,12 +1010,12 @@ Not all AI models are equal. Some are better at writing. Some are better at anal
 
 | Task Type | Recommended Model | Why |
 |-----------|------------------|-----|
-| Quick lookups and simple responses | GPT-5 Nano or DeepSeek-flash | Cheapest, fastest |
-| Writing client-facing content | GLM 5.2 (Ollama Cloud) | Quality matters |
-| Data processing and CRM updates | MiniMax 3 | Good with tools, cheap |
-| Research and web search | Perplexity Sonar Pro | Built for search |
-| Image creation | MiniMax 3 (calls KIE.ai) | Just calls the tool |
-| Complex analysis or strategy | DeepSeek V4.1 Flash (Ollama Cloud) | Best reasoning |
+| Quick lookups and simple responses | The client's choice, or their configured default model (fast tier) | Cheapest, fastest |
+| Writing client-facing content | The client's choice, or their configured default model (mid tier) | Quality matters |
+| Data processing and CRM updates | The client's choice, or their configured default model (mid tier) | Good with tools, cheap |
+| Research and web search | The client's chosen research model, or their configured default model | Recommendation: a search-grounded model, built for search |
+| Image creation | The client's chosen model (calls KIE.ai) | Just calls the tool |
+| Complex analysis or strategy | The client's choice, or their configured default model (heavy tier) | Best reasoning |
 
 ## Cost Awareness
 - Track which models are being used
