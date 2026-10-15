@@ -107,10 +107,12 @@ Reply IGNORE to dismiss.
 
 ## Recommended model
 
-This is an analytical task requiring deep reasoning. Use the highest-
-reasoning model available — typically DeepSeek V4.1 Flash with thinking:max,
-or Kimi 2.6+ via Ollama Cloud, or the latest top-reasoning model at
-execution time. Configure in openclaw.json under `tuneup.model`.
+Model: the client's choice, or the client's configured default model
+(configured in openclaw.json under `tuneup.model`). This is an analytical
+task requiring deep reasoning. Recommendation: the highest-reasoning model
+available to the client at execution time, with thinking set to max,
+because shallow reasoning produces shallow tune-ups. Guidance only, never
+a prescription.
 
 ## Implementation
 

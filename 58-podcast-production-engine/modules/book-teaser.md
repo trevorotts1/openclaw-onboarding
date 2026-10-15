@@ -68,17 +68,19 @@ pinned print stylesheet lives inside the renderer so the floor cannot drift.
 
 ## 4. THE WRITING MODEL (RUNTIME CONTENT TIER)
 
-The teaser prose is written on the runtime content tier, thinking set to high,
-consistent with the skill's `models.content` routing policy in
-`config/models.yaml`:
+The teaser prose is written on the runtime content tier, resolved by the
+selection policy in `config/models.json`:
 
-  1. Kimi 2.6 on Ollama Cloud (thinking high)
-  2. GLM 5.2 on Ollama Cloud (thinking high)
-  3. the OpenRouter equivalents of the two, in the same order
-  4. Gemini 3.1 Flash Lite as the final fallback (default thinking)
+  1. The client's choice for the task (a per-call model choice, or the
+     PODCAST_MODEL_CHOICE / PODCAST_CONTENT_MODEL env labels).
+  2. The client's configured default model (client_defaults in the client's own
+     models config).
+  3. If neither exists, STOP and ask the client which model to use. Never
+     substitute a named model silently.
 
-Fall back through that priority order when a tier is unavailable, and record any
-substitution in the delivery report. The router refuses any model id on the
+Recommendation, offered as guidance the client can override: a high-reasoning
+model with thinking set to high, because the teaser is long-form writing in the
+person's own voice. Record any substitution in the delivery report. The router refuses any model id on the
 `deny_patterns` list; a substitution that would match the deny list is a hard
 error, never a fallback. Nothing from the build-time provider ever writes a
 client teaser; that boundary is enforced at the merge gate by
@@ -220,7 +222,7 @@ relaxes the episode standards.
 
 - [ ] Teaser written (at most three pages) from answers, improved answers, and
       verified research, in the person's own first-person voice, ending on a
-      cliffhanger, on the content tier (Kimi 2.6 then GLM 5.2, thinking high).
+      cliffhanger, on the content tier (the client's chosen model, or their configured default model).
 - [ ] No fabricated biography, achievement, institution, date, or life story.
 - [ ] Rendered as a book-typeset PDF, no font below 14 point, three pages or fewer,
       verified from the rendered PDF by scripts/render_book_teaser.py.

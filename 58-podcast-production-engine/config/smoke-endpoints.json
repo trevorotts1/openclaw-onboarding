@@ -20,7 +20,7 @@
           "url": "https://ollama.com/v1/chat/completions",
           "http_method": "POST",
           "auth": {"header": "Authorization", "scheme": "Bearer", "key_env": "OLLAMA_API_KEY", "key_env_aliases": ["OLLAMA_CLOUD_API_KEY"]},
-          "body": {"model": "<cheapest funded content model, e.g. glm-5.2:cloud>", "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1, "num_predict": 1, "stream": false},
+          "body": {"model": "<the client's chosen content model, or their configured default content model; recommendation: the cheapest funded one, because this probe only pings>", "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1, "num_predict": 1, "stream": false},
           "timeout_seconds": 15,
           "expected_max_cost_usd": 0.0002
         },
