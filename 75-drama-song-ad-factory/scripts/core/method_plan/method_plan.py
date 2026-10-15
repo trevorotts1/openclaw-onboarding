@@ -386,6 +386,12 @@ def pace_order(blueprint):
         "return_anchor": "hero_shift",
         "boundary_s": erm_s,
         "return_boundary_s": hero_s,
+        # The two blueprint seconds both seams must sit on. The blueprint itself
+        # lives in creative/blueprint.json, which music_qc.pace_change cannot
+        # read, so this is where those seconds are copied onto the order
+        # (check_pace_plan's METHOD_SEAM_ANCHORS contract).
+        "erm_apex_s": erm_s,
+        "hero_shift_s": hero_s,
         "true_at_beat": true_at_beat(blueprint),
         "reason": "ERM Drop at %s s (%s); Hero Shift at %s s (%s)"
                   % (erm_s, str(erm.get("trigger") or "the emotional apex").strip(),

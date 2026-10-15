@@ -37,7 +37,6 @@ sys.path.insert(0, CORE)
 
 import delivery_audio  # noqa: E402
 from clip_cutdown import clips_for  # noqa: E402
-from clip_cutdown import ClipCutdownError  # noqa: E402
 from delivery_clips import delivery_clips as dc  # noqa: E402
 from delivery_clips.delivery_clips import (  # noqa: E402
     AD_ITEM,
@@ -47,27 +46,47 @@ from delivery_clips.delivery_clips import (  # noqa: E402
     clip_file_name,
     deliver_clips,
     plan_kind,
+    source_map,
 )
+from clip_cutdown.trailer import end_card_lines, end_card_s  # noqa: E402
 
 EPISODE_DEST = "Watch the full episode on @the-show"
 OFFER_DEST = "https://example.test/buy"
 
+#: The card copy ``trailer.plan`` would build from the show/offer records, so
+#: the fixture's end card is shaped exactly like the shipped one.
+_FIELDS = {"trailer": {"name": "The Show", "episode": "Ep 12",
+                       "channel": "@the-show", "destination": EPISODE_DEST},
+           "ad": {"cta": "Learn more", "name": "The Offer",
+                  "link": OFFER_DEST}}
+
 
 def trailer_plan(length=60, pieces=True, destination=EPISODE_DEST, kind="trailer"):
-    """One trailer plan shaped the way W1-method-trailer-U1 hands them over."""
+    """One trailer plan shaped the way W1-method-trailer-U1 hands them over.
+
+    The end card and the per-piece ``piece``/``duration_s`` keys are part of
+    that contract: ``clip_cutdown.trailer.render`` reads ``end_card`` for the
+    card text and each non-card piece's ``duration_s`` to size the joined
+    ranges, so a plan without them cannot be cut. ``delivery_clips.source_map``
+    keeps reporting only the four window keys, so the receipt rows below are
+    unchanged.
+    """
     dur = float(length - 5)
     plan = {"name": "%s-%ds" % (kind, length), "kind": kind,
             "clip_length_s": length, "start_s": 0.0, "end_s": dur,
             "duration_s": dur, "hooks": 2, "beats": 3,
-            "captions_offset_s": 0.0}
+            "captions_offset_s": 0.0,
+            "end_card": {"kind": kind, "duration_s": end_card_s(),
+                         "lines": end_card_lines(kind, _FIELDS[kind]),
+                         "source_in": 52.0}}
     if destination is not None:
         plan["destination"] = destination
     if pieces:
         plan["pieces"] = [
-            {"source_in": 12.0, "source_out": 24.0,
-             "trailer_in": 0.0, "trailer_out": 12.0},
-            {"source_in": 40.0, "source_out": 52.0,
-             "trailer_in": 12.0, "trailer_out": 24.0},
+            {"piece": "scene-1", "source_in": 12.0, "source_out": 24.0,
+             "trailer_in": 0.0, "trailer_out": 12.0, "duration_s": 12.0},
+            {"piece": "scene-2", "source_in": 40.0, "source_out": 52.0,
+             "trailer_in": 12.0, "trailer_out": 24.0, "duration_s": 12.0},
         ]
     return plan
 
@@ -239,9 +258,13 @@ class MethodDelivery(Base):
         self.assertIn(OFFER_DEST, text)
 
     def test_a_plan_without_pieces_records_its_window_as_the_map(self):
-        rows = self.build(method_plans(pieces=False))
-        row = rows[0]
-        self.assertEqual(row["source_map"], [{
+        # A trailer/ad plan always carries pieces (trailer._record writes them)
+        # and ``trailer.render`` cannot cut a piece-less one -- it needs at
+        # least two source ranges -- so this state never reaches a receipt row.
+        # The whole-window fallback is asserted on the function that owns it.
+        plan = {"name": "trailer-60s", "kind": "trailer",
+                "start_s": 0.0, "end_s": 55.0, "duration_s": 55.0}
+        self.assertEqual(source_map(plan), [{
             "source_in": 0.0, "source_out": 55.0,
             "trailer_in": 0.0, "trailer_out": 55.0}])
 
@@ -261,7 +284,12 @@ class MethodDelivery(Base):
         def bad_gate(_path):
             return {"ok": False, "reason_code": delivery_audio.BAD_CODEC,
                     "reason": "audio codec is 'mp3', must be aac"}
-        with self.assertRaises(ClipCutdownError) as cm:
+        # ValueError, not ClipCutdownError: clip_cutdown.run_clips imports
+        # clip_cutdown.trailer LAZILY, and scripts/conftest.py drops skill-tree
+        # modules between collectors, so that import can build a second module
+        # copy with a second ClipCutdownError class. The refusal CODE below is
+        # the stable contract and is what pins the failure to this path.
+        with self.assertRaises(ValueError) as cm:
             self.build(method_plans(), audio_gate=bad_gate)
         self.assertIn("CLIP_AUDIO_REFUSED", str(cm.exception))
         self.assertEqual(list(self.delivery.glob("*.mp4")), [])
@@ -300,10 +328,14 @@ class FailClosed(Base):
         self.assertEqual(list(self.delivery.glob("*.mp4")), [])
 
     def test_an_ffmpeg_failure_leaves_no_method_file(self):
+        # A method derivative is cut by clip_cutdown.trailer.render (one joined
+        # render per plan), so its ffmpeg refusal carries that module's code.
+        # ValueError rather than ClipCutdownError for the same module-copy
+        # reason as the audio-gate refusal above.
         runner = fake_runner(self.calls, fail_on="ad-90s")
-        with self.assertRaises(ClipCutdownError) as cm:
+        with self.assertRaises(ValueError) as cm:
             self.build(method_plans(), runner=runner)
-        self.assertIn("CLIP_FFMPEG_FAILED", str(cm.exception))
+        self.assertIn("TRAILER_FFMPEG_FAILED", str(cm.exception))
         self.assertEqual(list(self.delivery.glob("*.mp4")), [])
 
 

@@ -16,7 +16,22 @@ import sys
 import tempfile
 import time
 
-import pytest
+try:
+    import pytest
+except ModuleNotFoundError:
+    # CI's "Skill 75 empty-home test suite" runs `python3 <this file>` with a
+    # fresh empty HOME BEFORE the pytest step installs pytest, so a bare
+    # module-level `import pytest` is a red build there (skill 75 rule: no
+    # module-level pytest import under scripts/core -- the same guard
+    # agnes_quota/test_agnes_quota.py carries). This suite's tests use
+    # pytest.raises / pytest.approx / pytest.mark, so a direct run is only
+    # meaningful under pytest; the required "Skill 75 pytest collection +
+    # run" step installs pytest and runs every test below for real.
+    if __name__ != "__main__":
+        raise
+    print("note: pytest not installed - agnes_transitions suite runs under "
+          "python3 -m pytest (Skill 75 pytest collection + run step)")
+    sys.exit(0)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -249,6 +264,8 @@ def test_submit_order_two_chains_in_parallel_segments_in_order():
     import threading
     plan = T.chain_plan(SEGMENTS, BLUEPRINT)
     lock = threading.Lock()
+    gate = threading.Barrier(len(plan["chains"]))
+    first_of_chain = {c["segments"][0]["segment_id"] for c in plan["chains"]}
     live, peak, calls = [0], [0], []
 
     def runner(seg):
@@ -256,6 +273,12 @@ def test_submit_order_two_chains_in_parallel_segments_in_order():
             live[0] += 1
             peak[0] = max(peak[0], live[0])
             calls.append(seg["segment_id"])
+        if seg["segment_id"] in first_of_chain:
+            # Each chain parks here on its FIRST segment, so the barrier only
+            # releases once both are inside submit_order at the same time.
+            # That is the parallelism, proven deterministically: a sleep race
+            # reports a busy box as a serial run.
+            gate.wait(timeout=10)
         time.sleep(0.02)
         with lock:
             live[0] -= 1

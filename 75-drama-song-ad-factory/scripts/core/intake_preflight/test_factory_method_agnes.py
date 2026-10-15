@@ -114,6 +114,14 @@ def make_run(tmp, stage, method=None, agnes=None, progress=None,
 
 def next_env(run, extra_env=None):
     env = dict(os.environ)
+    # Whole-run admission (agnes_quota.fits_today) reads os.environ, so the
+    # quota answer must never depend on the box this test happens to run on:
+    # a private ledger and a generous daily limit. A caller that wants the
+    # refusal path overrides AGNES_DAILY_VIDEO_SECONDS through extra_env.
+    env["DSAF_AGNES_QUOTA_DB"] = str(Path(tempfile.gettempdir()) /
+                                     ("w75-agnes-quota-%d.sqlite3"
+                                      % os.getpid()))
+    env["AGNES_DAILY_VIDEO_SECONDS"] = "500"
     if extra_env:
         env.update(extra_env)
     p = subprocess.run([sys.executable, str(FACTORY), "next",
@@ -337,20 +345,16 @@ def main():
               "kie_dispatch.py" in ROWS["music"]["command"], True)
 
         # -- 6b: quota admission that will not fit -> waiting ----------------
+        # The refusal is forced through the quota's OWN public knobs, not a
+        # shadow module on PYTHONPATH: factory._core_mod resolves
+        # `<core>/agnes_quota/agnes_quota.py` first, so once the real module
+        # ships in core the fake can never be reached. A 1-second day cannot
+        # hold 6 clips (60 s x 1.2 = 72 s needed), which is exactly the
+        # SPEC A5.3 "wait whole for the reset" branch.
         print("[6b] whole-run quota admission failure waits for the reset")
-        fake = tmp / "fake-modules"
-        fake.mkdir()
-        (fake / "agnes_quota.py").write_text(
-            "NEXT_DAY_REASON = 'agnes-quota-next-day'\n"
-            "def fits_today(clips, now=None, allowance=1.2, env=None):\n"
-            "    return {'fits': False, 'clips': int(clips),\n"
-            "            'waiting_reason': NEXT_DAY_REASON,\n"
-            "            'next_continue_utc': '2026-10-16T00:00:00Z'}\n"
-            "def next_reset_utc(now=None):\n"
-            "    return None\n", "utf-8")
         run = make_run(tmp, "video-generation", agnes="yes", method=method(),
                        storyboard="approved")
-        p, doc = next_env(run, {"PYTHONPATH": str(fake)})
+        p, doc = next_env(run, {"AGNES_DAILY_VIDEO_SECONDS": "1"})
         d = doc.get("data", {})
         ag = d.get("agnes") or {}
         quota = ag.get("quota")
