@@ -117,3 +117,21 @@ These codes are additive to the existing AF-R1 / AF-R2 / AF-R3 system. AF-CAST f
 ## 7. INTEGRATION NOTE
 
 This SOP extends (does not replace) the existing representation system (AF-R1, AF-R2, AF-R3, the brand-steward NO-PEOPLE default, the STYLE BLOCK representation_ratio). It adds: (a) the build-HALT precondition on a missing field, (b) the Casting Ledger as the per-slide allocation tool replacing per-slide locks, (c) AF-CAST and AF-FACE-MOOD as two new auto-fail codes in the QC gate, and (d) the explicit propagation path from intake into every people-prompt.
+
+---
+
+## 8. GIP v2.0 LIBRARY VOCABULARY FOR THE LEDGER (Item 26 weave)
+
+**Adopted from SOP-GIP-01 v2.0 Element 7 (BlackCEO Representation Intelligence), under the Item 26 doctrine weave (slide-image-creator SOP 9.12).** For every ledger entry assigned to a Black / African-descended group, the entry's person spec draws its descriptive vocabulary from the GIP libraries, by reference to SOP-GIP-01 v2.0 (the libraries' single source; do not copy their entries into the brief):
+
+- **Skin tone:** one label from the 25-entry skin-tone library (for example: espresso brown, mahogany wood, honey wheat, cafe au lait). The label is a depth/undertone cue and is recorded verbatim in the ledger entry.
+- **Hairstyle:** one entry from the Black women's 40-style library or the Black men's library, as applicable. A hairstyle is always a named library selection, never a free description.
+- **Facial hair (men):** one entry from the 8-entry facial-hair library; clean-shaven counts as a deliberate selection and is recorded as such.
+
+**Ledger columns extended.** For Black groups the ledger entry records, alongside Slide / People / Assigned Demographic / Notes: Skin-tone label, Hairstyle, Facial hair. These fields are the ledger's half of GIP's set-diversity register (SOP-GIP-01 v2.0's register also tracks age band, face shape, undertone, body type, wardrobe, pose, expression, camera angle, shot distance, and dominant color at render review; the ledger owns the three casting fields).
+
+**Set-diversity rule (GIP-01 v2.0).** Across the deck, do not repeat the same skin-tone + hairstyle + facial-hair combination unless deliberate recurring-character continuity is recorded in the entry's Notes (a STORY_CHARACTER run is that recording). Distinctness for a recurring character then comes from posture, light, environment, camera, styling evolution, and emotion, not from changing the person's recorded features. Never randomize a real person's complexion, hair, or facial hair away from their supplied reference.
+
+**Scope guard.** The libraries supply VOCABULARY, never proportions: the client-captured `audience_composition` (Sections 1 to 3) still governs who is cast and in what mix. A library label in a prompt is also the mechanical signal that the prompt casts a melanated subject (build_deck / prompt_gate BLACK_SUBJECT_TOKENS), which is what binds the five BlackCEO negative classes (AF-P24) to that prompt.
+
+**Conflict rule:** where this SOP and SOP-GIP-01 v2.0 conflict on slide imagery, the BlackCEO image style (GIP v2.0) wins; on anything else (intake, allocation, gates), this SOP wins.

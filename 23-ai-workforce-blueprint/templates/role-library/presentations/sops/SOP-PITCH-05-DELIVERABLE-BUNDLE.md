@@ -119,7 +119,7 @@ AF-DELIVER is a closeout auto-fail in the QC gate (qc-specialist-presentations-s
 - The word-for-word script PDF does not exist or is empty on disk.
 - The audio file does not exist, is empty (< 100KB for a full script), or is the stub silence file.
 
-AF-DELIVER is checked independently of `final_deck_qc.json`. Both must pass (AF-F5 for the deck quality gate, AF-DELIVER for the bundle completeness gate) before any delivery action may proceed.
+AF-DELIVER is checked independently of the deck quality gate. Both must pass (AF-F5, judged on the aggregate report at `working/qc/final_qc_report.json`, for the deck quality gate; AF-DELIVER for the bundle completeness gate) before any delivery action may proceed. (The retired `working/qc/final_deck_qc.json` pass-artifact no longer exists in code and gates nothing.)
 
 ---
 
@@ -131,17 +131,17 @@ This SOP is owned jointly by the Presenters Guide Specialist (ROLE-19, SOP 9.2) 
 
 ## 8. THE CLIENT PACKAGE -- EXACT ALLOWED FILE SET (v2.0 -- Deliverable Hygiene)
 
-**Two file sets, two counts (deliberate).** `build_deck.py` writes a NINE-file OPERATOR BUILD
+**Two file sets, two counts (deliberate).** `build_deck.py` writes a TEN-file OPERATOR BUILD
 bundle to `~/Downloads/<client-slug>-<deck-slug>/` (`<deck-slug>-FINAL.pptx`, `<deck-slug>-FINAL.pdf`,
 `PRESENTER-GUIDE.pdf`, `PRESENTERS-SPEECH.md`, `PRESENTERS-SPEECH.pdf`, `PRESENTERS-SPEECH-FISH-TAGGED.md`,
-`PRESENTER-AUDIO.mp3`, `infographic.png`, `presenter-teleprompter.html` -- the `build_bundle_files`
-set). The Delivery Concierge SOP 9.0 then CURATES the SIX-file CLIENT package (the
-`client_package_files` set) from that build bundle. Nine build, six client -- the difference is
+`PRESENTER-AUDIO.mp3`, `infographic.png`, `presenter-teleprompter.html`, `<deck-slug>-WEBINAR.mp4` -- the
+`build_bundle_files` set; the webinar file is produced later, at P9.6, and joins the bundle at closeout). The Delivery Concierge SOP 9.0 then CURATES the SEVEN-file CLIENT package (the
+`client_package_files` set) from that build bundle. Ten build, seven client -- the difference is
 intentional (the `.md` sources, the fish-tagged script, and the infographic are operator-side
-artifacts, not part of the clean client hand-off; the teleprompter HTML, by contrast, is now one
-of the six client files handed to the client -- D02, ratified 2026-07-26).
+artifacts, not part of the clean client hand-off; the teleprompter HTML and the webinar mp4, by
+contrast, are client files handed to the client -- D02, ratified 2026-07-26, and Feature L2-G).
 
-The client-deliverable package must contain EXACTLY these six files and NOTHING ELSE:
+The client-deliverable package must contain EXACTLY these seven files and NOTHING ELSE:
 
 ```
 [DECK_SLUG]-FINAL/
@@ -151,11 +151,12 @@ The client-deliverable package must contain EXACTLY these six files and NOTHING 
   PRESENTERS-SPEECH.pdf            # rendered from working/presenter-speech/PRESENTERS-SPEECH.md (locked plural name; matches build_deck.py)
   PRESENTER-AUDIO.mp3              # Fish Audio S2 render (from working/presenter-speech/audio/PRESENTER-AUDIO.mp3)
   presenter-teleprompter.html      # standalone scrolling teleprompter app (from working/deliverables/presenter-teleprompter.html; produced by build_teleprompter.py -- D02, ratified 2026-07-26)
+  <deck-slug>-WEBINAR.mp4          # the webinar video (produced by P9.6-WEBINAR-VIDEO and hosted in GHL; the package carries the reference copy -- Feature L2-G)
 ```
 
-**Six files. Nothing else.** No scripts, logs, prompts, loose PNGs, JSON manifests, QC reports, or `.md` source files. `PRESENTER-GUIDE` and `PRESENTERS-SPEECH` ship as **PDF only** -- clients do not open markdown. (The `*-FINAL.pptx` / `*-FINAL.pdf` AF-DH1 whitelist patterns are unchanged.)
+**Seven files. Nothing else.** No scripts, logs, prompts, loose PNGs, JSON manifests, QC reports, or `.md` source files. `PRESENTER-GUIDE` and `PRESENTERS-SPEECH` ship as **PDF only** -- clients do not open markdown. (The `*-FINAL.pptx` / `*-FINAL.pdf` AF-DH1 whitelist patterns are unchanged.)
 
-**Hygiene gate (AF-DH1):** Before any delivery action, the Delivery Concierge runs SOP 9.0 (Package Assembly and Hygiene Sweep) which creates a clean `delivery/[DECK_SLUG]-FINAL/` directory, copies only the six allowed files into it, and runs AF-DH1. Hard-stop on any AF-DH1 failure -- delivery cannot proceed.
+**Hygiene gate (AF-DH1):** Before any delivery action, the Delivery Concierge runs SOP 9.0 (Package Assembly and Hygiene Sweep) which creates a clean `delivery/[DECK_SLUG]-FINAL/` directory, copies only the seven allowed files into it, and runs AF-DH1. Hard-stop on any AF-DH1 failure -- delivery cannot proceed.
 
 ---
 
@@ -186,6 +187,8 @@ The operator-side build workspace that the client NEVER receives:
       PRESENTER-GUIDE.pdf
       PRESENTERS-SPEECH.pdf
       PRESENTER-AUDIO.mp3
+      presenter-teleprompter.html
+      [Deck-Title]-WEBINAR.mp4
 ```
 
 **Hard rule for the PPTX Assembly Specialist:** The assembly script MUST write the PPTX to `output/[DECK_SLUG].pptx` and ALL intermediates under `working/`. The canonical assembler (`build_deck.assemble_pptx`) must NEVER hard-code the client delivery folder as `BUNDLE_DIR` or write to `~/Downloads/<DECK>` as its working directory. The delivery folder root (`~/Downloads/<DECK>`) as a build directory is the documented root cause of the forensic reference deck's dev-artifact leak. Dev artifacts must NEVER appear in `output/` or `delivery/` under any circumstance.

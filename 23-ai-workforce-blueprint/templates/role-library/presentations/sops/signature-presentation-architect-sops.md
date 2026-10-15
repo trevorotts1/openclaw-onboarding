@@ -31,7 +31,7 @@ Master authority: `51-signature-presentation/MASTERDOC.md` (Prime Directives 1-1
 1. Confirm intake completeness: strongest-promise candidates, proof assets, offer and PRICE_MODE, audience composition, hook seed. If any field is missing, return to the Director with the specific missing fields before designing. Never invent a promise, proof, or offer.
 2. Design backward from the finished signature deck (DR-20): state the end-state the client will reproduce on demand, then work backward to the opening.
 3. Extract the PROMISE spine (DR-2): identify what the product is promising, not what it is. Every persuasive beat will pitch the promise.
-4. Select the strongest promise as the HOOK SEED (DR-3) and hand it to the Hook Strategist; place the hook from the first content slide and mark it to recur about ten times through the deck (sing the chorus from the first verse).
+4. Select the strongest promise as the HOOK SEED (DR-3) and hand it to the Hook Strategist; place the hook on 3 to 4 dedicated pure-typography slides only (the AF-HOOK ceiling), the first at the open inside the first 15 percent and the reprise at the close, and nowhere else in the deck.
 5. Map the seven-section proven flow against the slide-math ceiling using the SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE + director-of-presentations SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) 17-row allocation. Place the cost-of-inaction beat AND the value-of-action beat (DR-7, cost versus value); place third-party proof beats answering "who says so other than you?" (DR-6); place the light-pitch lines on teaching slides from the front (DR-10).
 6. Mark the value-anchor placements that feed the slow-drop ladder (DR-4, DR-5) and hand them to the Offer Price Strategist: ANCHOR is a gradual value plant, not a drop; every drop adds value.
 7. Apply the appetizer-not-dinner guardrail (DR-9): mark any beat that over-teaches and trim it so the deck proves value and creates desire without fully solving the problem for free.
@@ -54,7 +54,7 @@ Master authority: `51-signature-presentation/MASTERDOC.md` (Prime Directives 1-1
 
 **Steps:**
 1. Confirm the PROMISE is pitched, not the product, on every persuasive beat (DR-2). Flag any beat that lists features instead of the promise.
-2. Confirm the hook is present from the first content slide and recurs throughout, not back-loaded (DR-3, DR-10). Flag any deck that waits until the end to pitch.
+2. Confirm the hook stands on its dedicated pure-typography slides per the AF-HOOK ceiling (the first inside the first 15 percent, the reprise at the close, and nowhere else), not back-loaded (DR-3, DR-10). Flag any deck that waits until the end to pitch.
 3. Confirm every price drop ADDS value and never subtracts (DR-4). Flag any drop that removes a bonus.
 4. Confirm value is anchored gradually before any price reveal, with the frame matched to the offer type: money-math when the outcome is financial, the priceless frame when it is not (DR-5).
 5. Confirm both the cost-of-inaction beat and the value-of-action beat are present (DR-7). This was the number-one substantive gap on a prior client deck; its absence is a structural fail.
@@ -125,7 +125,7 @@ Master authority: `51-signature-presentation/MASTERDOC.md` (Prime Directives 1-1
 
 **When to run:** first, before any authoring. Routed from the Brainstorming Buddy "signature presentation" trigger.
 
-**Inputs:** the client conversation; `51-signature-presentation/intake/sp-8-questions.json` (the spec); the REQUIRED turn-gate `deck-intake-driver.py --signature --next` / `--answer <ID> "<TEXT>"`.
+**Inputs:** the client conversation; `51-signature-presentation/intake/sp-8-questions.json` (the spec); the REQUIRED turn-gate `deck-intake-driver.py --run-dir <RUN_DIR> --signature --sig-next` / `--signature --sig-answer <ID> "<TEXT>"`.
 
 **Steps:** interview the owner choice-first (QUICK vs IN-DEPTH), then ask q1..q8 + the frame-selection question ONE AT A TIME through the turn-gate — never free-form and never a wall of questions (dumping two or more questions in one turn, or opening with no quick-vs-in-depth choice, is the `AF-INTAKE-BATCH` conversation autofail, gated by the required preflight `P-SP-INTAKE-TRACE`, `build_deck._chk_sp_intake_trace`, phase order 0.16, fail-closed; the QC/Healer scan runs the same scanner out-of-band as an additional post-hoc pass); the driver auto-assembles the answers into ONE atomic RECORD at `working/copy/sp_intake.json` on the final validated answer (that assembled record is what `prove_sp_intake.py` validates as `AF-SP-8Q-SPLIT` — a record-layer gate only, it says nothing about conversation pacing); set `deck_type: signature_presentation` in `working/copy/intake.json`; seed `offer_token_ledger` from q7 (the offer question).
 
