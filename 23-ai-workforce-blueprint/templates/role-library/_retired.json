@@ -1,7 +1,7 @@
 {
   "schema": "openclaw/retired-artifacts@2",
-  "generated_at": "2026-10-15T13:27:38.239530+00:00",
-  "source_ref": "2aa39793a63d5ad4638e97081df0fc94a6ce87b4",
+  "generated_at": "2026-10-15T15:06:57.834257+00:00",
+  "source_ref": "0fcf7ca25171dca14d7fa302895c9f5b92f994c0",
   "tracked_trees": [
     "23-ai-workforce-blueprint/templates/role-library"
   ],
@@ -640,7 +640,7 @@
         "sha256:68182f3a516298b36810a08807da2c6b6eebd05f8080053920e2b7eec7aaac59"
       ],
       "retired_in": "2aa39793a63d5ad4638e97081df0fc94a6ce87b4",
-      "retired_at": "2026-10-15T16:05:00+00:00"
+      "retired_at": "2026-10-15T16:05:00Z"
     },
     {
       "lib_path": "templates/role-library/presentations/intake-miniapp/README.md",
@@ -657,7 +657,7 @@
         "sha256:6d765560f1dd2e2ec75662d2d1055a22c62863370c76fc7c7e7f1979a1c46a49"
       ],
       "retired_in": "2aa39793a63d5ad4638e97081df0fc94a6ce87b4",
-      "retired_at": "2026-10-15T16:05:00+00:00"
+      "retired_at": "2026-10-15T16:05:00Z"
     },
     {
       "lib_path": "templates/role-library/presentations/sops/deck-discovery-strategist-sops.md",
