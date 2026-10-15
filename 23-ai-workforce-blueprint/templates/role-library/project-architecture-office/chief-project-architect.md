@@ -199,7 +199,7 @@ PAO converts vague requests into completed, quality-gated deliverables — the c
 2. **Measure** — Score the deliverable per the `QC.md` rubrics (0–10 per category, weighted average). Computed score is the QC score.
 3. **Analyze** — Gate: ≥8.5 = PASS → commit/advance. <8.5 = FAIL → defect-loop. Identify the lowest-scoring category.
 4. **Improve** — On FAIL: issue a surgical fix directive (category + specific issue). Send to the writer sub-agent. Max defect-loop depth: 3. After 3 loops at <8.5: flag to owner + set loop_state item to `failed`.
-5. **Control** — **Model rule (Rule 6):** QC sub-agent must run on a DIFFERENT model than the writer. Writer: `ollama/deepseek-v4.1-flash:cloud` → QC: `ollama/kimi-k2.6:cloud` or `openrouter/deepseek/deepseek-v3.2`. Same-model QC is a system failure.
+5. **Control** — **Model rule (Rule 6):** QC sub-agent must run on a DIFFERENT model than the writer. Writer: the client's chosen model, or their configured default → QC: a different model the client has chosen or configured. Same-model QC is a system failure.
 **Outputs:** QC score + PASS/FAIL verdict + fix directive (if fail).
 **Hands to:** `code-editor` (fix) or SOP-02/03 (commit/deploy on pass).
 
@@ -212,13 +212,13 @@ PAO converts vague requests into completed, quality-gated deliverables — the c
 **Steps (DMAIC):**
 1. **Define** — Identify the sub-agent type required: `research-agent` (requirements/docs), `code-editor` (implement), `code-monitor` (CI/build watch), `qc-agent` (score deliverable), `sop-writer` (document new patterns).
 2. **Measure** — Check current concurrent sub-agent count. Hard ceiling: 5 concurrent. If at ceiling: wait for a running sub-agent to complete before spawning a new one.
-3. **Analyze** — Select model per policy (Ollama Cloud → OpenRouter open-source → frontier last). Assign reasoning level: `code-editor` and `qc-agent` get elevated reasoning (`xhigh` for DeepSeek, `high` for Kimi); `research-agent` and `code-monitor` get normal reasoning.
+3. **Analyze** — Select model per policy: the client's choice, or their configured default model, for each sub-agent. Assign reasoning level: `code-editor` and `qc-agent` get elevated reasoning (the highest reasoning setting the chosen model supports); `research-agent` and `code-monitor` get normal reasoning.
 4. **Improve** — Spawn sub-agent: `openclaw_subagent.spawn({role, task, output_path, model, timeout_seconds: 1800, birth_prompt: "you are a short-lived specialist — write output to {output_path}, return a one-line status"})`. Sub-agents are short-lived: one deliverable, write to disk, return one-line status, die.
 5. **Control** — Track spawned sub-agents in `loop-state.json.active_agents[]`. Mark `timeout_seconds: 1800` (30 min) for all subs. If a sub exceeds timeout without returning status: kill it (`openclaw_subagent.kill(id)`), log the kill in CHANGELOG.md, re-queue the work item. Update `loop-state.json.active_agents` on kill.
 **Model selection (Tier 1 → 2 → 3):**
-- Tier 1 (default): `ollama/deepseek-v4.1-flash:cloud` (orchestrator, QC, code-editor), `ollama/deepseek-v4.1-flash:cloud` (research, monitor), `ollama/kimi-k2.6:cloud` (long-context QC).
-- Tier 2 (failover when Ollama Cloud down): `openrouter/deepseek/deepseek-v3.2`, `openrouter/moonshotai/kimi-k2.6`, `openrouter/z-ai/glm-5`, `openrouter/qwen/qwen3.5-plus-02-15`.
-- Tier 3 (LAST RESORT — ask owner first): per-token frontier models. Never use without owner approval.
+- Tier 1 (default): the client's choice, or their configured default model (orchestrator, QC, code-editor, research, monitor, and long-context QC). Recommendation: a heavy-reasoning model with a large context window, because this office holds whole-project context.
+- Tier 2 (failover when the primary route is down): the client's chosen failover model, or another model the client has configured.
+- Tier 3 (LAST RESORT, ask owner first): per-token frontier models. Never use without owner approval.
 **Outputs:** Sub-agent spawned + tracked in `loop-state.json`.
 **Failure mode:** Sub-agent killed after timeout → re-queue work item → re-spawn fresh sub-agent (do NOT re-spawn the same timed-out agent). Max 2 re-spawns per work item before flagging to owner.
 

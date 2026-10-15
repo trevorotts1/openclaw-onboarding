@@ -31,7 +31,11 @@ Design notes:
     - a stale duplicate shadowing this package earlier on sys.path
       (AF-ENGINE-STALE-DUPLICATE);
     - a schema/contract drift vs the CC API surface this engine must satisfy
-      (AF-ENGINE-CONTRACT-DRIFT).
+      (AF-ENGINE-CONTRACT-DRIFT);
+    - a generated copy whose files disagree with its own
+      PARITY-MANIFEST.json (AF-ENGINE-PARITY-DIVERGED). The canonical tree
+      carries no manifest, so this check is inert there; it binds the
+      generated copies the Item 7 sync produces.
   It never warns-and-continues: silently importing a stale copy is the exact
   failure PRES-039 exists to close.
 * Diagnostics (`--diagnose-only`, `diagnose.describe_park`, launcher refusal
@@ -70,37 +74,22 @@ ENGINE_CONTRACT_VERSION = 1
 EXPECTED_STATE_SCHEMA_VERSION = 1
 EXPECTED_METADATA_KEY = "phase_id"
 
-# Structured-compat floor, recorded from the PRES-039 survey of the CC
-# vendored copy: at survey time the CC copy predated modules this canonical
-# engine had already grown (governor/fanout/lease/env_store/supervisor/
-# autospawn/... -- 17 files). Dispatch compatibility is judged against the
-# CC API contract above, NOT against module-set parity: the missing 17 are
-# a recorded capability gap on the CC side (closed by the Item 7 generated
-# sync, which replaces this list with PARITY-MANIFEST.json), not a dispatch
-# refusal. Refusing every run until parity would be its own outage. The
-# list is documentary only; the preflight never refuses on it.
-KNOWN_MISSING_VS_CANONICAL = [
-    "approvals.py",
-    "auto_resume.py",
-    "autospawn.py",
-    "citation_validator.py",
-    "defers.py",
-    "deliverable_floors.py",
-    "deliverable_paths.py",
-    "env_store.py",
-    "fanout.py",
-    "governor.py",
-    "launch_plan.py",
-    "lease.py",
-    "oc_paths.py",
-    "scan_roots.py",
-    "scanners.py",
-    "supervisor.py",
-    "wave_contract.py",
-]
+# RETIRED (Item 7 design Step 6): KNOWN_MISSING_VS_CANONICAL, the PRES-039
+# survey's hardcoded list of 17 modules the pre-sync CC copy lacked. The
+# generated sync closed that gap by construction (the CC copy is now the
+# canonical tree at a pinned commit), so a hand-maintained list of what a
+# copy is missing is the wrong record: it goes stale the day it is written,
+# and it did (the true pre-sync gap was 159 files, not 17). The list is
+# replaced by parity_problems() below, which asserts a generated copy
+# against the PARITY-MANIFEST.json the generator wrote into it, the same
+# record the CI parity gate verifies. Dispatch compatibility is still
+# judged against the CC API contract above, never against module-set
+# parity in the abstract.
+PARITY_MANIFEST_NAME = "PARITY-MANIFEST.json"
 
 AF_STALE_DUPLICATE = "AF-ENGINE-STALE-DUPLICATE"
 AF_CONTRACT_DRIFT = "AF-ENGINE-CONTRACT-DRIFT"
+AF_PARITY_DIVERGED = "AF-ENGINE-PARITY-DIVERGED"
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 
@@ -118,10 +107,21 @@ def package_digest(package_dir: Optional[Path] = None) -> Dict[str, Any]:
 
     Covers *.py + *.json directly inside the package dir (no recursion: the
     package is flat). Deterministic across hosts: same bytes -> same digest.
+
+    PARITY-MANIFEST.json is EXCLUDED from the census (Item 7 design Step 6):
+    a generated copy carries the manifest inside the package, and a manifest
+    cannot coherently record a digest that covers itself. The generator
+    (scripts/sync-presentation-engine.py on the CC side) already computes
+    the recorded package_digest over this same manifest-excluded census;
+    with the exclusion here too, the digest this module reports at runtime
+    equals the recorded digest on both sides of the sync. The canonical
+    tree carries no manifest, so its digest is unchanged by the exclusion.
     """
     root = Path(package_dir) if package_dir else PACKAGE_DIR
     files: List[Dict[str, Any]] = []
     for name in sorted(os.listdir(root)):
+        if name == PARITY_MANIFEST_NAME:
+            continue
         if not (name.endswith(".py") or name.endswith(".json")):
             continue
         p = root / name
@@ -362,17 +362,86 @@ def _check_contract(package_dir: Optional[Path] = None) -> Tuple[bool, List[str]
     return (len(problems) == 0, problems)
 
 
+def parity_problems(package_dir: Optional[Path] = None) -> List[str]:
+    """Assert a generated copy against its own PARITY-MANIFEST.json.
+
+    This is the runtime half of the Item 7 parity gate (the CI half is the
+    sync verifier on the CC side): CI proves the committed copy matches the
+    pinned canonical commit; this check proves the copy on disk at dispatch
+    time is still that content. It replaces the retired
+    KNOWN_MISSING_VS_CANONICAL survey list (design Step 6): instead of a
+    hardcoded record of what a copy once lacked, the copy is checked
+    against the manifest the generator actually wrote into it.
+
+    Returns a list of problems; empty means parity holds. A tree with no
+    PARITY-MANIFEST.json (the canonical tree itself) has nothing to assert
+    against and returns an empty list: parity is a property of a generated
+    copy, not of the source. Content is asserted by sha256 + byte counts
+    and the recomputed package_digest; the CI gate additionally asserts
+    git blob SHAs, which a spawn-free runtime check does not need (equal
+    bytes are equal blobs by construction of the blob hash).
+    """
+    root = Path(package_dir) if package_dir else PACKAGE_DIR
+    manifest_path = root / PARITY_MANIFEST_NAME
+    if not manifest_path.is_file():
+        return []
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return [f"{PARITY_MANIFEST_NAME} unparseable: "
+                f"{exc.__class__.__name__}: {exc}"]
+    entries = manifest.get("files")
+    if not isinstance(entries, list):
+        return [f"{PARITY_MANIFEST_NAME} carries no files list"]
+    problems: List[str] = []
+    listed: Dict[str, Dict[str, Any]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or "path" not in entry:
+            problems.append(f"{PARITY_MANIFEST_NAME} entry without a path")
+            continue
+        rel = entry["path"]
+        listed[rel] = entry
+        target = root / rel
+        if not target.is_file():
+            problems.append(f"parity: listed file missing: {rel}")
+            continue
+        if entry.get("bytes") is not None \
+                and target.stat().st_size != entry["bytes"]:
+            problems.append(f"parity: size differs: {rel}")
+        if entry.get("sha256") \
+                and _sha256_file(target) != entry["sha256"]:
+            problems.append(f"parity: sha256 differs: {rel}")
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        if "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue  # interpreter residue, per the sync verifier's rule
+        rel = path.relative_to(root).as_posix()
+        if rel == PARITY_MANIFEST_NAME:
+            continue
+        if rel not in listed:
+            problems.append(f"parity: unlisted file present: {rel}")
+    recorded = manifest.get("package_digest")
+    if recorded and package_digest(root)["digest"] != recorded:
+        problems.append(
+            "parity: recomputed package_digest != "
+            f"{PARITY_MANIFEST_NAME} package_digest")
+    return problems
+
+
 def preflight(package_dir: Optional[Path] = None) -> Tuple[int, Dict[str, Any]]:
     """Fail-closed compatibility preflight. Returns (exit_code, report).
 
-    exit 0: origin recorded, no shadow, contract holds.
+    exit 0: origin recorded, no shadow, contract holds, parity holds.
     exit 3 (EXIT_GATE_BLOCKED family): stale shadow duplicate on sys.path.
-    exit 7 (EXIT_MANIFEST_MISMATCH family): contract drift vs CC API surface.
+    exit 7 (EXIT_MANIFEST_MISMATCH family): contract drift vs CC API
+    surface, or a generated copy diverged from its PARITY-MANIFEST.json.
     """
     root = Path(package_dir) if package_dir else PACKAGE_DIR
     origin = engine_origin(root)
     report: Dict[str, Any] = {"origin": origin, "ok": True,
-                              "shadows": [], "contract_problems": []}
+                              "shadows": [], "contract_problems": [],
+                              "parity_problems": []}
 
     shadows = find_shadow_copies()
     report["shadows"] = shadows
@@ -425,5 +494,18 @@ def preflight(package_dir: Optional[Path] = None) -> Tuple[int, Dict[str, Any]]:
         report["autofail"] = AF_CONTRACT_DRIFT
         report["detail"] = ("engine copy fails CC API contract: "
                             + "; ".join(problems))
+        return 7, report
+
+    parity = parity_problems(root)
+    report["parity_problems"] = parity
+    if parity:
+        report["ok"] = False
+        report["autofail"] = AF_PARITY_DIVERGED
+        report["detail"] = ("generated copy diverges from its "
+                            f"{PARITY_MANIFEST_NAME}: "
+                            + "; ".join(parity)
+                            + ". Regenerate it with "
+                              "scripts/sync-presentation-engine.sh; never "
+                              "edit a generated copy by hand.")
         return 7, report
     return 0, report
