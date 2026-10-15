@@ -43,8 +43,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-# The two optional-branch questions, their pre_presentation_capture storeTarget
-# keys, their waiver rules, and their intake-question defaults.
+# The optional-branch election questions, their pre_presentation_capture
+# storeTarget keys, their waiver rules, and their intake-question defaults.
 # (Mirrors deck-intake-questions.json + upsell-questions.json.)
 _WANT_KEYS: Dict[str, Dict[str, Any]] = {
     "want_sales_checkout": {
@@ -55,6 +55,11 @@ _WANT_KEYS: Dict[str, Dict[str, Any]] = {
     "want_vsl_page": {
         "capture_key": "WANT_VSL_PAGE",
         "waiver_rule": "vsl_page",
+        "default": "no",
+    },
+    "want_email_sequences": {
+        "capture_key": "WANT_EMAIL_SEQUENCES",
+        "waiver_rule": "email_sequences",
         "default": "no",
     },
 }

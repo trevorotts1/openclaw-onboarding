@@ -8,7 +8,7 @@ invents offer/pricing/research facts.
 
 BASELINE (fixture-designed, mirrored from the bank's
 session_budget.ux_targets -- the bank is the single source: 23 merged turns,
-48 physical rows, 20 required fields among the merged turns):
+50 physical rows, 20 required fields among the merged turns):
   * new client: valid brief in at most 11 interactions
   * repeat client: at most 6
   * preference reuse: 100% (every locked creative pref a repeat client
@@ -48,7 +48,7 @@ from typing import Any, Dict, List, Optional, Tuple
 METRICS_VERSION = 1
 
 BASELINE_TURNS = 23
-BANK_PHYSICAL_ROWS = 48
+BANK_PHYSICAL_ROWS = 50
 BANK_REQUIRED_FIELDS = 20
 NEW_CLIENT_TARGET = 11
 REPEAT_CLIENT_TARGET = 6
@@ -125,7 +125,7 @@ def read_bank_targets(bank_file: Optional[Path] = None) -> Dict[str, Any]:
 
 def verify_bank_shape(bank_file: Optional[Path] = None) -> Dict[str, Any]:
     """Confirm the bank the targets were designed against is still the bank:
-    23 merged turns, 48 physical rows, 20 required, ceiling 23. Reports
+    23 merged turns, 50 physical rows, 20 required, ceiling 23. Reports
     mismatches -- never raises, never gates (callers decide)."""
     got = read_bank_targets(bank_file)
     expect = {"merged_turns": BASELINE_TURNS,
