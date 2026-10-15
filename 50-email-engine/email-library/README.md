@@ -1,6 +1,6 @@
 # Email Superlibrary — `email-library/`
 
-The reusable Email IP as a tagged, retrievable catalog. **36 entries**, each shipped
+The reusable Email IP as a tagged, retrievable catalog. **37 entries**, each shipped
 as a paired `<id>.json` (machine spec) + `<id>.md` (how-to / purpose / use-cases /
 detailed example / keyword tags), grouped by type:
 
@@ -10,7 +10,7 @@ detailed example / keyword tags), grouped by type:
 | `buyer-types/` | `buyer-type` | 4 |
 | `objectives/` | `objective` | 4 |
 | `persona-styles/` | `persona-style` | 12 |
-| `sequences/` | `sequence` | 3 |
+| `sequences/` | `sequence` | 4 |
 
 Retrieval is **tags-first + optional semantic**:
 - **Lexical (wired, proven):** `catalog-index.json` (list-shaped: `id/type/name/tags/length/best_for/file`) is normalised into `catalog-built-index.json` and scored by `tools/email_matcher.py` (`email_matcher_cli.py --match "<text>"`). Deterministic, stdlib-only, never blocks the user's explicit desire.
@@ -39,6 +39,6 @@ Retrieval is **tags-first + optional semantic**:
 ## Rebuild / verify
 - Rebuild the lexical built index: `python3 ../tools/email_matcher_cli.py --build-index`
 - Route corpus examples: `python3 ../tools/email_matcher_cli.py --selftest`
-- Register / coverage check: `python3 register.py --check` (every catalog entry has paired on-disk files + valid `rules{}`; the set fully covers the prover's 13 frameworks / 12 personas / 4 objectives / 4 buyer-types / 3 sequences).
+- Register / coverage check: `python3 register.py --check` (every catalog entry has paired on-disk files + valid `rules{}`; the set fully covers the prover's 13 frameworks / 12 personas / 4 objectives / 4 buyer-types / 4 sequences).
 
 The structures, counts, names and rules are **SACRED** (see `../MASTERDOC.md`). Ports may sharpen the how-to and examples; they never floor, reorder, rename or reinterpret the IP.
