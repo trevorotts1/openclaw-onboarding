@@ -375,7 +375,7 @@ def _plan_tier_rps(provider: str) -> Optional[float]:
         # the operator ruling sets both.  So admit a recorded ceiling here
         # only when it IS one of the tier rates -- which now includes the
         # reserved 8 that the old `in (3.0, 10.0)` whitelist discarded (see
-        # PLAN_TIER_RPS).  Anything else (DeepSeek's 2500, a measured 47)
+        # PLAN_TIER_RPS).  Anything else (a recorded 2500, a measured 47)
         # falls through to providers.yaml rather than becoming an rps.
         ceiling = entry.get("concurrency_ceiling")
         if isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool):

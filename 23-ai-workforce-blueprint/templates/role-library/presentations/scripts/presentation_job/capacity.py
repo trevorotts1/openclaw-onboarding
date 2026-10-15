@@ -45,8 +45,7 @@ module is not the place to invent a ceiling on it.
     ollama-cloud    + $20/month    ->     3 concurrent agents  (structural:
     ollama-cloud    + $100/month   ->    8 concurrent agents   the account
                                           itself enforces this, not us)
-    deepseek-direct + Flash         ->  2500 concurrent agents (structural)
-    deepseek-direct + Pro           ->   500 concurrent agents (structural)
+    deepseek-direct                 ->  NO CAP (UNBOUNDED)
     openrouter                      ->  NO CAP (UNBOUNDED)
     any other declared BYOK-direct
       provider added to NO_CAP_PROVIDERS -> NO CAP (UNBOUNDED)
@@ -72,11 +71,14 @@ one signal separating a new provider from a typo. See
 declared_plan_providers() / is_no_cap_provider(); rollback env
 PRESENTATION_DECLARED_PROVIDER_UNCAP=0.
 
-ollama-cloud and deepseek-direct both have real, plan-dependent ceilings the
-account itself enforces (ollama $20 -> 3, $100 -> 8; deepseek Flash -> 2500,
-Pro -> 500), so both live in CAP_TABLE and both PARK behind the one-time plan
-interview when the plan is unknown. OpenRouter has no such observable
-structural ceiling, so this module stops pretending one exists: `available` for those providers is the UNBOUNDED
+ollama-cloud has a real, plan-dependent ceiling the account itself enforces
+($20 -> 3, $100 -> 8), so it lives in CAP_TABLE and PARKs behind the one-time
+plan interview when the plan is unknown. DeepSeek Direct was carried the
+same way under the 2026-09-04 ruling (Flash -> 2500, Pro -> 500); the owner
+ruling of 2026-10-15 settled the doctrine tension the other way: DeepSeek
+Direct has NO provider cap, so it stands in NO_CAP_PROVIDERS with OpenRouter.
+Neither of those two has an observable structural ceiling, so this module
+stops pretending one exists: `available` for those providers is the UNBOUNDED
 sentinel (see below) unless the operator/client DECLARES a lower number for
 this run via capacity_override.json's `max_concurrent` (self-throttling is
 always honoured; inventing an upward ceiling never is). UNBOUNDED is never
@@ -115,8 +117,9 @@ account" -- for the launch gate, the wave scheduler and the work-order pool.
 
   STAGE 2 -- which plan is THAT provider on? First hit wins:
     1. the model id, when the model IMPLIES the plan (DeepSeek Direct's
-       v4-pro / v4-flash slugs; Ollama Cloud's tiers run the same models, so
-       no slug can ever reveal them);
+       v4-pro / v4-flash slugs name its tier label, which is metadata only
+       since the 2026-10-15 no-cap ruling; Ollama Cloud's tiers run the
+       same models, so no slug can ever reveal them);
     2. the resource profile's LOCKED entry for that provider -- the one
        per-provider store of interview answers, and the ask-once gate;
     3. the capacity_override.json sub-record FOR THAT PROVIDER (v2
@@ -158,9 +161,10 @@ STATUSES
                           structural cap table (ollama-cloud): `available` is
                           the cap-table number, and a declared max_concurrent
                           may lower it, never raise it; or (b) the provider is
-                          a NO_CAP_PROVIDERS BYOK provider (openrouter, or
-                          a client-declared provider with no CAP_TABLE row --
-                          F17): `available` is UNBOUNDED, or the
+                          a NO_CAP_PROVIDERS BYOK provider (openrouter,
+                          deepseek-direct, or a client-declared provider
+                          with no CAP_TABLE row -- F17): `available` is
+                          UNBOUNDED, or the
                           declared max_concurrent verbatim when the
                           operator/client chose to self-throttle this run --
                           there is no table ceiling to reconcile it against.
@@ -261,10 +265,15 @@ PROVIDER_OPENROUTER = "openrouter"
 
 PLAN_OLLAMA_20 = "$20/month"
 PLAN_OLLAMA_100 = "$100/month"
-#: DeepSeek Direct's plan DOES change the ceiling (operator ruling
-#: 2026-09-04): Flash allows 2500 concurrent, Pro 500. Both are
-#: CAP_TABLE rows, so an over-declaration is clamped DOWN and an unknown
-#: plan PARKs behind the one-time interview, same as ollama-cloud.
+#: DeepSeek Direct's model tier labels. Under the 2026-09-04 ruling these
+#: were CAP_TABLE plans (Flash 2500 concurrent, Pro 500): an
+#: over-declaration was clamped DOWN and an unknown tier PARKed behind the
+#: one-time interview, same as ollama-cloud. The owner ruling of
+#: 2026-10-15 (doctrine wins: DeepSeek Direct has NO provider cap)
+#: reversed that: deepseek-direct is a NO_CAP_PROVIDERS entry now, and
+#: these ids survive only as the tier LABELS a declaration or profile may
+#: carry as metadata. No tier changes any ceiling, and no tier is ever
+#: interviewed for.
 PLAN_DEEPSEEK_PRO = "v4-pro"
 PLAN_DEEPSEEK_FLASH = "v4-flash"
 
@@ -280,8 +289,6 @@ CAP_TABLE = {
     # leaves the client 2 free agent slots so a presentation build never
     # starves whatever else they are running on the same seat.
     (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_100): 8,
-    (PROVIDER_DEEPSEEK_DIRECT, PLAN_DEEPSEEK_FLASH): 2500,
-    (PROVIDER_DEEPSEEK_DIRECT, PLAN_DEEPSEEK_PRO): 500,
 }
 
 #: Providers on CAP_TABLE, derived rather than hand-duplicated: the set for
@@ -294,7 +301,6 @@ CAP_TABLE_PROVIDERS = frozenset(provider for provider, _plan in CAP_TABLE)
 #: plan-dependent ceiling to interview the operator about.
 PLANS_BY_PROVIDER = {
     PROVIDER_OLLAMA_CLOUD: (PLAN_OLLAMA_20, PLAN_OLLAMA_100),
-    PROVIDER_DEEPSEEK_DIRECT: (PLAN_DEEPSEEK_FLASH, PLAN_DEEPSEEK_PRO),
 }
 
 #: OPERATOR RULING (fix/capacity-uncap-byok): "Do not limit someone who
@@ -303,9 +309,12 @@ PLANS_BY_PROVIDER = {
 #: dispatch never invents a ceiling on it. `available` for a NO_CAP_PROVIDERS
 #: hit is UNBOUNDED (see below) unless the operator/client declares a lower
 #: max_concurrent for THIS run, which is always honoured as a self-throttle.
+#: deepseek-direct stands in this set by the owner ruling of 2026-10-15
+#: (doctrine wins: there is NO provider cap on DeepSeek Direct), reversing
+#: its 2026-09-04 move onto CAP_TABLE.
 #: Extend this set (never CAP_TABLE) for any other BYOK-direct provider --
 #: adding a real per-account ceiling belongs in CAP_TABLE instead, never here.
-NO_CAP_PROVIDERS = frozenset({PROVIDER_OPENROUTER})
+NO_CAP_PROVIDERS = frozenset({PROVIDER_OPENROUTER, PROVIDER_DEEPSEEK_DIRECT})
 
 #: Tokens the cap table deliberately REFUSES -- "not a cap-table row" here
 #: means a decision, not ignorance: a local Ollama buys no plan, so it can
@@ -569,9 +578,9 @@ class CapacityUnmeasured(RuntimeError):
 # The UNBOUNDED sentinel -- "no cap", genuinely, never a large magic number
 # ---------------------------------------------------------------------------
 class _Unbounded:
-    """`available`'s value for a NO_CAP_PROVIDERS hit (openrouter, or a
-    client-declared provider with no CAP_TABLE row -- F17; NOT
-    deepseek-direct, which became a cap-table provider on 2026-09-04):
+    """`available`'s value for a NO_CAP_PROVIDERS hit (openrouter,
+    deepseek-direct, or a client-declared provider with no CAP_TABLE
+    row -- F17):
     a real measurement ("this account has no structural
     ceiling"), not an absence of one and not a stand-in integer like 999999
     that would eventually be wrong. A single module-level instance (UNBOUNDED,
@@ -1484,13 +1493,15 @@ def normalize_plan(raw, provider: Optional[str]) -> Optional[str]:
 
 
 def _plan_from_model_slug(provider: Optional[str], slug: str) -> Optional[str]:
-    """Derive the plan from a model identifier, where the model IMPLIES the plan.
+    """Derive the plan label from a model identifier, where the model IMPLIES it.
 
-    DeepSeek Direct is the only provider where it does: v4-pro and v4-flash are
-    different products with different parallel ceilings, and the model id names
-    which one. Ollama Cloud's $20 and $100 plans run the SAME models, so no model
-    id can ever reveal the plan -- that is why Ollama Cloud always reaches the
-    interview question."""
+    DeepSeek Direct is the only provider where a model id names a tier label:
+    v4-pro and v4-flash are different products, and the model id names which
+    one. Since the owner ruling of 2026-10-15 the label is metadata only:
+    DeepSeek Direct has no provider cap, so no tier changes a ceiling and no
+    tier is interviewed for. Ollama Cloud's $20 and $100 plans run the SAME
+    models, so no model id can ever reveal the plan -- that is why Ollama
+    Cloud always reaches the interview question."""
     if provider != PROVIDER_DEEPSEEK_DIRECT:
         return None
     text = slug.lower()
@@ -1503,9 +1514,9 @@ def _plan_from_model_slug(provider: Optional[str], slug: str) -> Optional[str]:
 
 def interview_question(provider: str) -> str:
     """The ONE question that resolves a STRUCTURAL cap-table provider with an
-    unknown plan -- today ollama-cloud and deepseek-direct. NO_CAP_PROVIDERS
-    entries (openrouter, ...) never reach PARK, so this is never called for
-    them: there is no plan that would change their ceiling.
+    unknown plan -- today ollama-cloud only. NO_CAP_PROVIDERS entries
+    (openrouter, deepseek-direct, ...) never reach PARK, so this is never
+    called for them: there is no plan that would change their ceiling.
 
     The numbers are rendered FROM CAP_TABLE, never hardcoded. A hardcoded
     per-provider sentence drifted once already (it still advertised
@@ -1812,8 +1823,11 @@ def declare_capacity(provider: str, *, plan: Optional[str] = None,
     about one account was never a statement about another and writing the
     file as if it were is the defect F1 removes.
 
-    `plan` is validated against CAP_TABLE (an unknown tier is never persisted
-    as though it had been measured); `max_concurrent` is a positive int that
+    `plan` is validated against CAP_TABLE for a structural provider (an
+    unknown tier is never persisted as though it had been measured); for a
+    NO_CAP_PROVIDERS entry a resolved tier label is persisted as metadata
+    only, since no tier changes a ceiling that does not exist.
+    `max_concurrent` is a positive int that
     can only LOWER what the tables resolve, never raise it -- the clamp lives
     in `_resolve_override()` and is unchanged.
 
@@ -1843,7 +1857,8 @@ def declare_capacity(provider: str, *, plan: Optional[str] = None,
     if plan is not None:
         norm_plan = normalize_plan(plan, norm_provider)
         if (not norm_provider or not norm_plan
-                or (norm_provider, norm_plan) not in CAP_TABLE):
+                or ((norm_provider, norm_plan) not in CAP_TABLE
+                    and norm_provider not in NO_CAP_PROVIDERS)):
             raise ValueError(
                 f"refusing to persist an unknown pair (provider={provider!r}, "
                 f"plan={plan!r}); known pairs: {sorted(CAP_TABLE)}"
@@ -2247,7 +2262,8 @@ def detect(config_dir: Optional[Path] = None, *,
     the question stays "what is the PRIMARY route's account?", answered by
     the 9Router/OpenClaw detectors exactly as before. `model` is the model id
     the caller is about to route to, for the providers whose model id implies
-    the plan (DeepSeek Direct).
+    a plan tier label (DeepSeek Direct's v4 slugs; metadata only since the
+    2026-10-15 no-cap ruling).
 
     See the module docstring's DETECTION ORDER for the two stages and why
     they are two: before F1 a `capacity_override.json` naming ONE provider
@@ -2621,8 +2637,8 @@ def provider_probes_surface(transport: Optional[callable] = None) -> dict:
 #
 # ADMISSION FACTORS (H-P5's "separate the numbers"):
 #   account_limit      -- the raw structural ceiling (what the account
-#                         enforces: ollama $100 -> 10, deepseek flash -> 2500)
-#                         when the table knows one; None otherwise.
+#                         enforces: ollama $100 -> 10) when the table
+#                         knows one; None otherwise.
 #   account_ceiling    -- what THIS JOB may use: account_limit minus the
 #                         reserve (>=1 never fabricated: reserve can exhaust
 #                         it only to 1, not below).
@@ -2644,8 +2660,6 @@ def provider_probes_surface(transport: Optional[callable] = None) -> dict:
 ACCOUNT_LIMITS = {
     (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_20): (3, 0),
     (PROVIDER_OLLAMA_CLOUD, PLAN_OLLAMA_100): (10, 2),
-    (PROVIDER_DEEPSEEK_DIRECT, PLAN_DEEPSEEK_FLASH): (2500, 0),
-    (PROVIDER_DEEPSEEK_DIRECT, PLAN_DEEPSEEK_PRO): (500, 0),
 }
 
 #: Default reserve when a client declares a max_concurrent of their own
@@ -3192,8 +3206,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--answer-plan", metavar="PLAN",
-        help="Record the capacity-interview answer (e.g. '$20', '$100', 'v4 Pro', "
-             "'v4 Flash') for ONE provider so it is asked ONCE. The store is the "
+        help="Record the capacity-interview answer (e.g. '$20', '$100') "
+             "for ONE provider so it is asked ONCE. The store is the "
              "resource profile; a capacity_override.json declaration is written "
              "only when the profile is switched off "
              "(PRESENTATION_RESOURCE_PROFILE=0).",

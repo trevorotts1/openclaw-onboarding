@@ -88,9 +88,11 @@ from presentation_job import dispatcher  # noqa: E402
 from presentation_job import model_router  # noqa: E402
 from presentation_job import resource_profile  # noqa: E402
 
-#: The one provider still in NO_CAP_PROVIDERS -- the only id that can produce
-#: the UNBOUNDED sentinel after the 2026-09-04 ruling moved deepseek-direct onto
-#: the structural cap table. test_the_premise_holds proves it by name.
+#: A provider in NO_CAP_PROVIDERS -- an id that produces the UNBOUNDED
+#: sentinel. Through the 2026-09-04 interval it was the only one (that
+#: ruling had moved deepseek-direct onto the structural cap table); the
+#: owner ruling of 2026-10-15 returned deepseek-direct to the set.
+#: test_the_premise_holds proves it by name.
 BYOK = capacity.PROVIDER_OPENROUTER
 BYOK_MODEL = "z-ai/glm-5.3-flash"          # the catalog's served id for openrouter
 
@@ -245,7 +247,14 @@ def test_the_mode_ceiling_can_no_longer_be_pinned_below_itself(
 # 2. THE SECOND CASE. No profile + a REAL measurement -> the measurement,
 #    capped by the mode ceiling. On pristine main this is 8.
 # ---------------------------------------------------------------------------
-def test_a_client_with_no_profile_keeps_the_measured_2500(monkeypatch, tmp_path):
+def test_a_client_with_no_profile_keeps_the_measured_unbounded(
+        monkeypatch, tmp_path):
+    """Renamed from test_a_client_with_no_profile_keeps_the_measured_2500:
+    through the 2026-09-04 interval the deepseek reading here was the
+    Flash table row (2500); the owner ruling of 2026-10-15 made
+    deepseek-direct a no-cap provider, so the measurement this case guards
+    is now the UNBOUNDED sentinel. The stamp assertions are unchanged: the
+    reading must reach the stamp and resolve to the mode ceiling."""
     _isolate(monkeypatch, tmp_path)
     _cfg(monkeypatch, tmp_path,
          profile={".schema_version": 1, "providers": {}, "creative_prefs": {},
@@ -255,20 +264,24 @@ def test_a_client_with_no_profile_keeps_the_measured_2500(monkeypatch, tmp_path)
 
     probe = capacity.probe()
     assert probe["status"] == capacity.STATUS_MEASURED, probe
-    assert probe["available"] == 2500, probe
+    assert capacity.is_unbounded(probe["available"]), probe
 
     decision = model_router.resolve_route("P4-PROMPT", mode="ultra")
     assert decision["profile_state"] == "absent", decision
     assert decision["route"] is None, decision
 
     stamp = _stamp(monkeypatch, "ultra")
-    # The dispatcher default provider IS deepseek-direct, so the 2500 is a
-    # measurement ABOUT THE PROVIDER THIS STAMP WILL USE.
+    # The dispatcher default provider IS deepseek-direct, so the UNBOUNDED
+    # reading is a measurement ABOUT THE PROVIDER THIS STAMP WILL USE.
     assert stamp["provider"] == capacity.PROVIDER_DEEPSEEK_DIRECT, stamp
-    assert stamp["capacity_status"].startswith("measured"), (
-        "U1 second case: the probe MEASURED 2500 for the very provider the "
-        "dispatcher was about to use, and the stamp discarded it because the "
-        "client had declared no providers: " + repr(stamp))
+    # Through the cap-table interval the int reading landed here as a
+    # "measured*" status; an UNBOUNDED reading takes the stamp's BYOK arm
+    # and is labelled "unbounded-byok" -- still a measurement that reached
+    # the stamp, not a discard.
+    assert stamp["capacity_status"] == "unbounded-byok", (
+        "U1 second case: the probe MEASURED UNBOUNDED for the very provider "
+        "the dispatcher was about to use, and the stamp discarded it because "
+        "the client had declared no providers: " + repr(stamp))
     assert stamp["measured_capacity"] == model_router.ULTRA_OPERATOR_CEILING, stamp
     assert stamp["measured_capacity"] != dispatcher.DEFAULT_MAX_WORKERS, stamp
 

@@ -1557,6 +1557,28 @@ def _record_plan_tier(qdef: Dict[str, Any], text: str,
         if plan and plan in (cap.PLANS_BY_PROVIDER.get(provider) or ()):
             matched.append((provider, plan))
     if not matched:
+        # Owner ruling 2026-10-15: a NO_CAP provider (deepseek-direct,
+        # openrouter) never OWES a plan answer, so it is never in `pending`
+        # -- but a tier label the client states for one it OWNS is still
+        # their answer to record, as metadata through record_plan_answer's
+        # BYOK branch (it changes no ceiling; there is none). Without this
+        # arm, a merged turn naming a DeepSeek tier ("plan: v4-flash") is
+        # refused whole and the model plan riding in the same answer is
+        # dropped with it -- the refusal below exists to prevent exactly
+        # that accept-and-drop shape.
+        try:
+            prof = rp.load_profile()
+            owned_nocap = [cap.normalize_provider(pid)
+                           for pid in (prof.get("providers") or {})]
+        except Exception:  # noqa: BLE001 -- metadata matching is best-effort
+            owned_nocap = []
+        for provider in owned_nocap:
+            if provider and provider in cap.NO_CAP_PROVIDERS \
+                    and provider not in pending:
+                plan = cap.normalize_plan(raw, provider)
+                if plan:
+                    matched.append((provider, plan))
+    if not matched:
         offers = "; ".join(
             f"{p}: {', '.join(cap.PLANS_BY_PROVIDER.get(p) or ()) or '(none)'}"
             for p in pending)

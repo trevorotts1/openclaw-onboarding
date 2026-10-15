@@ -858,6 +858,25 @@ def _route_resource_plan(run_dir: Path, value: str,
         if plan and plan in (cap.PLANS_BY_PROVIDER.get(provider) or ()):
             matched.append((provider, plan))
     if not matched:
+        # Owner ruling 2026-10-15: a NO_CAP provider (deepseek-direct,
+        # openrouter) never owes a plan answer, but a tier label the client
+        # states for one it owns is recorded as metadata through the same
+        # writer's BYOK branch -- the deck-intake-driver's matcher carries
+        # the identical arm, so a DeepSeek tier named in a reply is
+        # recorded, never refused whole.
+        try:
+            prof = rp.load_profile(config_dir)
+            owned_nocap = [cap.normalize_provider(pid)
+                           for pid in (prof.get("providers") or {})]
+        except Exception:  # noqa: BLE001 -- metadata matching is best-effort
+            owned_nocap = []
+        for provider in owned_nocap:
+            if provider and provider in cap.NO_CAP_PROVIDERS \
+                    and provider not in owed:
+                plan = cap.normalize_plan(text, provider)
+                if plan:
+                    matched.append((provider, plan))
+    if not matched:
         offers = "; ".join(
             f"{p}: {', '.join(cap.PLANS_BY_PROVIDER.get(p) or ()) or '(none)'}"
             for p in owed)

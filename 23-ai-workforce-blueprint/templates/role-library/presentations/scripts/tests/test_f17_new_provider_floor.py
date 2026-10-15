@@ -272,7 +272,10 @@ def test_a_declaration_never_uncaps_a_cap_table_provider(monkeypatch, tmp_path):
     # runs everywhere.
     if hasattr(capacity, "is_no_cap_provider"):
         assert not capacity.is_no_cap_provider("ollama-cloud")
-        assert not capacity.is_no_cap_provider("deepseek-direct")
+        # Owner ruling 2026-10-15: deepseek-direct IS a no-cap provider
+        # again (it stood on the cap table only for the 2026-09-04
+        # interval). ollama-cloud above is this test's cap-table control.
+        assert capacity.is_no_cap_provider("deepseek-direct")
 
 
 def test_a_declared_local_ollama_is_still_refused(monkeypatch, tmp_path):
