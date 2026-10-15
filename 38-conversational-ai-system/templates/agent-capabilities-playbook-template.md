@@ -204,9 +204,11 @@ Goal: respond in seconds. Customers expect SMS replies fast — a 30-second
 delay feels slow, a 90-second delay feels broken. Pick a model that
 returns in 2–5 seconds reliably.
 
-Recommended: `google/gemini-3.1-flashlight` via OpenRouter. Fast,
-near-free, quality holds up for short conversational replies.
-Fallback: `openrouter/free`.
+Model: the client's choice, or the client's configured default model.
+Recommendation: a fast, near-free model, because quality holds up for
+short conversational replies and speed is the goal here.
+Fallback: a second model the client configured, on a different provider
+where possible.
 
 ### 5.2 — Async channel model
 
@@ -215,8 +217,10 @@ For: Email, LinkedIn.
 Goal: customer doesn't expect instant. A 30-second delay on email is
 fine. Slower-but-cheaper models work here.
 
-Recommended: `openrouter/free` OR same as real-time if simplicity is
-preferred.
+Model: the client's choice, or the client's configured default model.
+Recommendation: the cheapest capable model the client has access to, or
+the same model as real-time if simplicity is preferred, because slower
+replies are fine on async channels.
 
 ### 5.3 — Batch (summarization) model
 
@@ -225,8 +229,10 @@ For: nightly conversation log summarization (runs 11:30 PM via cron).
 Goal: cheap. No real-time pressure. The agent has hours to process. Use
 the cheapest model that produces decent summaries.
 
-Recommended: `openrouter/free`. The model summarizes already-summarizable
-material; quality threshold is moderate.
+Model: the client's choice, or the client's configured default model.
+Recommendation: the cheapest model the client has access to, because the
+model summarizes already-summarizable material and the quality threshold
+is moderate.
 
 ### 5.4 — Fallback chain
 

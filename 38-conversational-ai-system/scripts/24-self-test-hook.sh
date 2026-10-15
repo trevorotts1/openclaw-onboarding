@@ -209,6 +209,47 @@ ENDPOINT="https://${PUBLIC_HOSTNAME}/hooks/${HOOK_NAME}"
 TEST_CONTACT_ID="${TEST_CONTACT_ID:-selftest-$(date +%s)}"
 TEST_PHONE="+15555550100"   # reserved test range; never a real subscriber
 
+# ---- resolve the self-test model (selection doctrine) ----
+# The operator's explicit choice (SELF_TEST_MODEL) first, else the routing
+# agent's configured model, else the client's configured default model
+# (agents.defaults.model). Never a hardcoded named model: if none resolve,
+# STOP and ask the client.
+if [ -z "${SELF_TEST_MODEL:-}" ] && [ -n "${OC_CONFIG:-}" ] && command -v python3 >/dev/null 2>&1; then
+  SELF_TEST_MODEL="$(S38_AGENT="$S38_AGENT" python3 - "$OC_CONFIG" <<'PYEOF2'
+import json, os, sys
+try:
+    cfg = json.load(open(sys.argv[1]))
+except Exception:
+    print("")
+    sys.exit(0)
+agents = cfg.get("agents") or {}
+aid = os.environ.get("S38_AGENT", "")
+
+def prim(m):
+    if isinstance(m, dict):
+        return m.get("primary") or ""
+    return m if isinstance(m, str) else ""
+
+model = ""
+entries = agents.get("entries") or {}
+if isinstance(entries.get(aid), dict):
+    model = prim(entries[aid].get("model"))
+if not model:
+    for a in agents.get("list") or []:
+        if isinstance(a, dict) and a.get("id") == aid:
+            model = prim(a.get("model"))
+            break
+if not model:
+    model = prim((agents.get("defaults") or {}).get("model"))
+print(model)
+PYEOF2
+)"
+fi
+if [ -z "${SELF_TEST_MODEL:-}" ]; then
+  echo "ERROR: no self-test model resolved (SELF_TEST_MODEL unset; the routing agent has no configured model; no agents.defaults.model). Ask the client which model to use, or which model to configure as their default, then re-run." >&2
+  exit 2
+fi
+
 # Build the SYNTHETIC FLAT 23-key body at RUNTIME (field-by-field, not a fenced
 # block) so the qc-23-key linter never scans it and the live values are used.
 BODY_FILE="$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/.skill38-selftest-body.$$")"
@@ -219,7 +260,7 @@ trap 'rm -f "$BODY_FILE" 2>/dev/null || true' EXIT
   printf '"match":"%s",'           "$HOOK_NAME"
   printf '"action":"agent",'
   printf '"agent_id":"%s",'        "${ROUTING_AGENT_ID:-${AGENT_ID:-$S38_AGENT}}"
-  printf '"model":"%s",'           "${SELF_TEST_MODEL:-ollama/deepseek-v4.1-flash:cloud}"
+  printf '"model":"%s",'           "${SELF_TEST_MODEL}"
   printf '"wakeMode":"now",'
   printf '"name":"Skill38 Self-Test Inbound",'
   printf '"session_key":"hook:ghl:sms:%s",' "$TEST_CONTACT_ID"

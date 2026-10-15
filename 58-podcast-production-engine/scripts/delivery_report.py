@@ -150,7 +150,7 @@ CHECKLIST_PART_A: list[tuple[str, list[tuple[str, str]]]] = [
     (
         "BOOK TEASER (Interview mode only; skipped entirely for Personal mode)",
         [
-            ("teaser_written", "Teaser written (at most three pages) from answers, improved answers, and verified research, in the person's voice, ending on a cliffhanger, on Kimi 2.6 or GLM 5.2."),
+            ("teaser_written", "Teaser written (at most three pages) from answers, improved answers, and verified research, in the person's voice, ending on a cliffhanger, on the client's chosen model, or their configured default model."),
             ("teaser_pdf", "Rendered as a book-typeset PDF, no font below 14 point, uploaded to Convert and Flow media storage, URL captured."),
             ("teaser_field", "Link written to the book_teaser field, or the founder reminder surfaced if the field is absent (never silently created, never fails the episode)."),
         ],

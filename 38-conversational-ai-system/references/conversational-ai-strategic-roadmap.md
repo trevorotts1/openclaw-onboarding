@@ -127,7 +127,7 @@ Sixteen features remain unimplemented. Build order reflects revenue impact and s
 
 ## ✅ Feature 39 — Web Scraper for Knowledge Base Building (shipped in v5.8)
 
-**Status:** Implemented in Step 9.24. Default extraction model: minimax/minimax-2.7. Cost-estimated; hard cap $5 double-confirm, $25 refused.
+**Status:** Implemented in Step 9.24. Extraction model: the client's choice, or their configured default model (SCRAPER_MODEL). Cost-estimated; hard cap $5 double-confirm, $25 refused.
 
 ---
 
