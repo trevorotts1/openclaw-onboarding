@@ -332,10 +332,14 @@ export async function runCli(
           });
         }
         let routes: string[] = [];
+        let uncomposed: string[] = [];
         let storeOk = false;
         if (dir) {
-          const { host } = hostFor();
-          routes = host.transportRegistry.listRoutes();
+          const local = hostFor();
+          routes = local.host.transportRegistry.listRoutes();
+          uncomposed = (local.routeDiscovery ?? [])
+            .filter((r) => !r.composed)
+            .map((r) => r.route_id);
           storeOk = true;
         }
         checks.push({
@@ -349,7 +353,9 @@ export async function runCli(
           detail:
             routes.length > 0
               ? `routes: ${routes.join(', ')}`
-              : 'no live transport is composed in this foundation build (CWE-009/CWE-010); runs on uncomposed routes refuse with COUNCIL_ROUTE_UNAVAILABLE',
+              : uncomposed.length > 0
+                ? `configured routes were discovered but none could be composed (${uncomposed.join(', ')}); see models for the per-route reason. Runs on uncomposed routes refuse with COUNCIL_ROUTE_UNAVAILABLE`
+                : 'no configured route was discovered on this machine, so no live transport is composed; runs on uncomposed routes refuse with COUNCIL_ROUTE_UNAVAILABLE',
         });
         checks.push({
           name: 'run_authorization_service',
@@ -383,18 +389,32 @@ export async function runCli(
       }
 
       case 'models': {
-        const { host } = hostFor();
-        const routes = host.transportRegistry.listRoutes();
+        const local = hostFor();
+        const routes = local.host.transportRegistry.listRoutes();
+        const discovered = local.routeDiscovery ?? [];
         const data = {
           routes,
+          discovered,
           note: 'The client selects the model, or the client configured default applies. This core never prescribes a specific named model and never falls back silently.',
         };
+        const discoveredLines = discovered.map(
+          (r) =>
+            `  ${r.route_id} (${r.provider_slug}, ${r.kind}, identity level ${r.identity_level}): ${
+              r.composed ? 'transport composed' : `not composed: ${r.not_composed_reason ?? 'reason not recorded'}`
+            }`,
+        );
         printResult(
           io,
           json,
-          routes.length > 0
-            ? `Composed routes: ${routes.join(', ')}\n${data.note}`
-            : `No live routes are composed in this foundation build.\n${data.note}`,
+          [
+            routes.length > 0
+              ? `Composed routes: ${routes.join(', ')}`
+              : 'No live routes are composed on this machine.',
+            ...(discoveredLines.length > 0
+              ? ['Discovered configured routes:', ...discoveredLines]
+              : []),
+            data.note,
+          ].join('\n'),
           data,
         );
         return 0;
