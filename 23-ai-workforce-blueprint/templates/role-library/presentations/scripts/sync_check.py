@@ -475,6 +475,11 @@ WARN_STEP = {
     "W1": "step (i) — declare executor and verifier on the phase in PIPELINE-MANIFEST.json "
           "(the step contract). ADVISORY until every phase carries both; then this class "
           "is promoted to fail-closed in a separate unit.",
+    "W2": "step (i): declare workers on the fanout phase in PIPELINE-MANIFEST.json "
+          "(FIX-PLAN Item 11: the declared width is the phase's own fanout batch_width, "
+          "a per-phase ceiling that measured capacity still binds below; P9-SPEECH "
+          "declares an explicit 1, deliberately serial). ADVISORY: the effective "
+          "fallback stays 1 until the phase declares its width.",
 }
 
 
@@ -763,6 +768,25 @@ def warn_checks(manifest, ruleset_codes):
                 "item": ph["id"],
                 "detail": (f"phase {ph['id']} declares no {' and no '.join(missing)}. "
                            f"{WARN_STEP['W1']}"),
+            })
+    # W2 (FIX-PLAN Item 11, B23): a phase that declares a `fanout` field but
+    # no `workers` key runs at the Phase.workers fallback of 1: a serial
+    # pocket inside a parallel pipeline, silent until now. This is the same
+    # condition manifest.py computes as Manifest.fanout_width_warnings
+    # (printed by Manifest.load and stamped into the run record); the raw
+    # dict test here mirrors manifest.py's own parse (fanout carried only
+    # when it is a dict; workers declared only when present and not null).
+    # WARNING only, for the same reason W1 is: the fallback stays 1, so no
+    # run changes behavior; FIX-PLAN Item 16 promotes the undeclared width
+    # to a hard failure in a later phase.
+    for ph in manifest["phases"]:
+        if isinstance(ph.get("fanout"), dict) and ph.get("workers") is None:
+            warns.append({
+                "check": "W2",
+                "item": ph["id"],
+                "detail": (f"phase {ph['id']} declares a fanout field but no workers; "
+                           f"fan-out width falls back to 1 (serial). "
+                           f"{WARN_STEP['W2']}"),
             })
     return warns
 
