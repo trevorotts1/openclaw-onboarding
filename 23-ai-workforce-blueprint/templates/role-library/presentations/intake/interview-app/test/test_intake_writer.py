@@ -58,7 +58,8 @@ class TestIntakeWriter(unittest.TestCase):
                            "time_to_result": "8w", "audience": "A",
                            "cta_action": "book a call", "tone": "Teacher",
                            "final_price": "$1", "speech_speed_preference": "default",
-                           "want_sales_checkout": "yes", "want_vsl_page": "no"}}
+                           "want_sales_checkout": "yes", "want_vsl_page": "no",
+                           "want_email_sequences": "no"}}
         intake = iw.assemble_intake(raw, run_id="R2")
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R2"
@@ -195,7 +196,8 @@ class TestIntakeWriter(unittest.TestCase):
                         "time_to_result": "8w", "audience": "A",
                         "cta_action": "book a call", "tone": "Teacher",
                         "final_price": "$1", "speech_speed_preference": "default",
-                        "want_sales_checkout": "yes", "want_vsl_page": "no"},
+                        "want_sales_checkout": "yes", "want_vsl_page": "no",
+                        "want_email_sequences": "no"},
             # PRES-006: the completeness gate reads the canonical paths, so the
             # record itself must be a COMPLETE production-shape intake (the
             # browser always sends deck_brief + pre_presentation_capture). The
@@ -206,7 +208,8 @@ class TestIntakeWriter(unittest.TestCase):
                            "TONE": "Teacher", "FINAL_PRICE": "$1"},
             "pre_presentation_capture": {"PRESENTATION_TYPE": "signature",
                                          "WANT_SALES_CHECKOUT": "yes",
-                                         "WANT_VSL_PAGE": "no"},
+                                         "WANT_VSL_PAGE": "no",
+                                         "WANT_EMAIL_SEQUENCES": "no"},
         }
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = pathlib.Path(tmp) / "runs" / "R7"
