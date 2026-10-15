@@ -1,5 +1,30 @@
 # Council of Wise Elders (77): Changelog
 
+## Unreleased: final packaging (CWE-039)
+
+No version change: versions are taken at merge time only. This entry
+records the final packaging of the complete package whose runtime and
+nine advisor packs landed in their own units after the v1.0.0
+scaffold.
+
+- Runtime and packs: the deliberation runtime, the standalone CLI,
+  and all nine advisor packs ship in this package. Every pack's
+  qualification is bibliographic_only (CWE-042); config/advisors.json
+  pack_status now reads built_bibliographic_only for all nine seats.
+- Distributable archive: scripts/build-bundles.mjs now generates
+  council-of-wise-elders.skill at packaging. The archived Brunson
+  pack copy has the private_scope items removed and prose references
+  to them scrubbed (CWE-012 acceptance condition 3); the source tree
+  retains the private-scope record.
+- Install path: scripts/install-runtime.mjs performs the real
+  isolated pinned install plus build (INSTALL.md Step 4), and
+  INSTALL.md Step 9 states the live-acceptance terms for the built
+  package, including the INSTALLED_NOT_LIVE_VERIFIED record when no
+  live run is authorized.
+- Housekeeping: the Wave 6 roster comment in lib-onboarding-state.sh
+  and the structural test banner no longer describe the package as a
+  scaffold with an unbuilt runtime.
+
 ## v1.0.0: Initial canonical scaffold
 
 - Adds the agentskills.io-conformant SKILL.md with the fixed nine-seat

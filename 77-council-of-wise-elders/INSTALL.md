@@ -96,15 +96,23 @@ restore never resurrects stale council state.
 
 ## Step 4: Isolated dependency install
 
-At this scaffold stage the council runtime has NO installable
-dependencies: runtime/ is a scaffold owned by the runtime unit, and no
-npm install is run against it. Do not invent one.
+The complete runtime declares exact pinned dependencies in
+runtime/package.json: zod for the contracts, and TypeScript, tsx,
+esbuild, and @types/node for the build. Install them in isolation
+inside runtime/ only and build the runtime:
 
-When the runtime lands, this step installs its dependencies in isolation
-inside runtime/ only (`node scripts/install-runtime.mjs`), never globally,
-never into another skill's tree, and never by copying a native binary
-built for a different OS or architecture. A native SQLite ABI mismatch
-fails the installation precisely, with no data reset.
+    node scripts/install-runtime.mjs
+
+The script derives the pinned package set from runtime/package.json
+(every version must be an exact pin), runs the pinned install
+(`npm install --no-save` with those exact versions, so neither
+package.json nor the lockfile is rewritten), then runs the runtime
+build (`npm run build`: tsc plus the esbuild CLI bundle) and verifies
+that runtime/dist/ exists. Never install globally, never into another
+skill's tree, and never copy a native binary built for a different OS
+or architecture. A native module ABI mismatch fails the installation
+precisely, with no data reset. The source repository tree itself is
+never built in place; the build happens in the installed copy.
 
 ## Step 5: Registry and core update
 
@@ -175,14 +183,22 @@ From the INSTALLED folder (not only the source tree):
 Only with explicit authorization, a real client-selected route, and a
 recorded budget:
 
-- At this scaffold stage the correct live-acceptance result is the
-  not-ready report: the front door resolves the council capability,
-  states plainly that deliberation is not yet built, and spends ZERO
-  provider requests. Anything else (a simulated session, an invented
-  verdict) is a failed acceptance.
-- Once the runtime and packs land, live acceptance convenes one bounded
-  council on a synthetic, unmistakably labeled fixture decision and
-  verifies the full report order in references/report-template.md.
+- The runtime and all nine advisor packs are built and ship in this
+  package. Live acceptance convenes one bounded council on a
+  synthetic, unmistakably labeled fixture decision through the
+  installed runtime, under the run-authorization lifecycle (preview,
+  approve, start), and verifies the full report order in
+  references/report-template.md, the saved session readback, and the
+  provider usage against the recorded budget.
+- Without that authorization, record the installation as
+  INSTALLED_NOT_LIVE_VERIFIED: installed and offline-verified, live
+  unverified. Never simulate a session or invent a verdict to fill
+  the gap.
+- The not-ready report is still the correct result wherever a named
+  prerequisite is actually missing (no client-selected route, no
+  compatible Command Center release for managed mode, no run grant);
+  it names the missing prerequisite precisely rather than claiming
+  the council itself is unbuilt.
 
 ## Step 10: Release receipt
 

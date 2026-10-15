@@ -78,6 +78,13 @@ else fail(`state files present: ${stateHits.join(", ")}`);
 if (manifest.archive?.status === "deferred_to_final_integration") {
   console.log("INFO archive council-of-wise-elders.skill deferred to final integration, as recorded in the manifest");
 }
+if (manifest.archive?.status === "generated") {
+  if (existsSync(join(root, manifest.archive.file ?? "council-of-wise-elders.skill"))) {
+    pass("distributable archive present, as recorded in the manifest");
+  } else {
+    fail("manifest records the archive as generated but the .skill file is missing");
+  }
+}
 
 console.log(failures === 0 ? "VERIFY: PASS" : `VERIFY: FAIL (${failures})`);
 process.exit(failures === 0 ? 0 : 1);

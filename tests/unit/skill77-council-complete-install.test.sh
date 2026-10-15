@@ -473,8 +473,16 @@ for seat in os.listdir(os.path.join(src, "advisors")):
 expect(not embedded, "no private-set evidence unit is embedded in any pack sources.json")
 
 manifest = json.load(open(os.path.join(src, "manifest.json")))
-expect(manifest["archive"]["status"] == "deferred_to_final_integration",
-       "no distributable archive exists yet: manifest records the archive deferred to final integration")
+archive_path = os.path.join(src, "council-of-wise-elders.skill")
+archive_ok = (manifest["archive"]["status"] == "generated"
+              and os.path.isfile(archive_path))
+if archive_ok:
+    import zipfile
+    names = zipfile.ZipFile(archive_path).namelist()
+    archive_ok = ("council-of-wise-elders/manifest.json" in names
+                  and "council-of-wise-elders/SKILL.md" in names)
+expect(archive_ok,
+       "distributable archive generated at CWE-039 final packaging: manifest records it and council-of-wise-elders.skill is present with the portable root")
 
 # Demonstration of the strip mechanism on a scratch copy (the committed
 # tree is never modified). The mechanism has TWO parts, both proven:

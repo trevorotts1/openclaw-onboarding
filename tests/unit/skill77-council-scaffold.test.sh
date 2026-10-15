@@ -1,6 +1,6 @@
 #!/bin/bash
 # tests/unit/skill77-council-scaffold.test.sh: STRUCTURAL-ONLY regression
-# test for Skill 77 (Council of Wise Elders) at scaffold stage.
+# test for Skill 77 (Council of Wise Elders), complete package.
 #
 # WHAT THIS TESTS: the canonical package exists with its layout, the
 # SKILL.md frontmatter name and version agreement, the fixed nine-seat
@@ -10,9 +10,11 @@
 # safety rule that no state or database files live inside the skill
 # folder.
 #
-# WHAT THIS DOES NOT TEST: deliberation. The runtime and advisor packs
-# are not yet built (owned by their own units); nothing here simulates
-# a council, and a green run certifies package structure only.
+# WHAT THIS DOES NOT TEST: deliberation. The runtime and the nine
+# advisor packs are built and ship in this package; their behavior is
+# covered by the runtime suites and the complete-install fixtures, not
+# here. Nothing here simulates a council, and a green run certifies
+# package structure only.
 #
 # Usage: bash tests/unit/skill77-council-scaffold.test.sh
 # Exit:  0 = all structural assertions passed, 1 = a failure.
@@ -26,7 +28,7 @@ ok()   { echo "  ok   $1"; }
 bad()  { echo "  FAIL $1"; FAILS=$((FAILS + 1)); }
 check(){ if [ "$1" -eq 0 ]; then ok "$2"; else bad "$2"; fi }
 
-echo "Skill 77 council scaffold: structural assertions"
+echo "Skill 77 council package: structural assertions"
 
 # --- Package and layout ---
 [ -d "$SKILL" ]; check $? "skill folder 77-council-of-wise-elders exists"
@@ -67,7 +69,7 @@ for s in cfg["seats"]:
     want = (f"AI perspective inspired by the published work of {s['name']}. "
             "Not the individual and not an endorsement.")
     assert s["profile_label"] == want, f"label mismatch: {s['seat_id']}"
-    assert s["pack_status"] == "not_yet_built", f"pack status drift: {s['seat_id']}"
+    assert s["pack_status"] == "built_bibliographic_only", f"pack status drift: {s['seat_id']}"
 jakes = cfg["seats"][1]
 assert len(jakes["lenses"]) == 3, "td-jakes must carry exactly three lenses in one seat"
 print("roster + labels ok")
@@ -101,7 +103,7 @@ fi
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then
-  echo "skill77-council-scaffold: ALL PASS (structure only; runtime not yet built)"
+  echo "skill77-council-scaffold: ALL PASS (structure only; deliberation behavior is covered by the runtime suites and fixtures)"
 else
   echo "skill77-council-scaffold: $FAILS FAILURE(S)"
 fi

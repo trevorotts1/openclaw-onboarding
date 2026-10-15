@@ -869,11 +869,14 @@ OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-b
 # CORE_UPDATES.md ships one mergeable AGENTS.md section, which the generic
 # update-skills.sh merger applies and stamps on every roll; it ships no
 # wire.sh, so no box-side installer behavior can wedge the wave. Stated
-# plainly so the gate is never misread: this skill is at scaffold stage.
-# The deliberation runtime and the nine advisor packs are built by their
-# own units and are not yet built; the skill's front door reports the
-# council as not ready rather than simulating a session, and the gate
-# certifies the installed package, not a working council.
+# plainly so the gate is never misread: the gate certifies the installed
+# package, not a live council run. The deliberation runtime and the nine
+# advisor packs are built and ship in this package (CWE-039 final
+# packaging; all nine packs qualified bibliographic_only at CWE-042, and
+# the Brunson private-scope material is stripped from the distributable
+# archive at packaging). A live session still requires the
+# client-selected route and a run grant, which the gate does not
+# exercise.
 OC_WAVE6_SKILLS="44-convert-and-flow-operator 45-design-intelligence-library 47-movie-producer 48-facebook-ad-generator 49-signature-funnel 50-email-engine 51-signature-presentation 52-avatar-alchemist 53-book-writer 54-anthology-writer 55-product-bio 56-sales-page-assets 57-social-media-in-a-box 69-archify 70-lean-core-file-system 71-blackceo-signature-page 77-council-of-wise-elders"
 
 # ------------------------------------------------------------
