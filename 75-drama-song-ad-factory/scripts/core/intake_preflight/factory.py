@@ -756,7 +756,12 @@ def _agnes_admission(remaining):
     if aq is None or remaining is None:
         return None
     try:
-        return dict(aq.fits_today(int(remaining))) or None
+        # fits_today(clips, now): `now` is a required positional, and the
+        # ledger reads os.environ by default. Calling it with one argument
+        # raised TypeError, which this bare except swallowed -- so whole-run
+        # admission silently reported None on every box and SPEC A5.3 never
+        # fired.
+        return dict(aq.fits_today(int(remaining), None)) or None
     except Exception:                             # noqa: BLE001
         return None
 

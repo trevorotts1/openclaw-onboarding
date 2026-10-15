@@ -154,6 +154,24 @@
       "satisfy": "The picture gate looks for assets/face_landmarker.task (or the path in LIPSYNC_FACE_MODEL) and refuses every lip-sync job without the pinned file. From the skill folder run: python3 scripts/core/lip_sync/lip_gate/install_face_model.py (downloads Google's official float16 model from storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task, verifies the pinned sha256, places it). Re-running with a good file is a no-op. Re-run after every skill update."
     },
     {
+      "id": "agnes-key",
+      "type": "credential",
+      "label": "Agnes AI key (optional Agnes path)",
+      "check": { "envVar": "AGNES_AI_API_KEY" },
+      "severity": "optional",
+      "when": "agnes-path",
+      "satisfy": "Only for the optional Agnes path (references/agnes-path.md): a client answered Yes to the AGNES card question. Presence check only - the value is never printed, logged or written to a receipt. Confirm the NAME is set without printing the value: AGNES_AI_API_KEY in the gateway env (OpenClaw boxes), else AGNES_API_KEY, else the AGNES_API_KEY= line of <Documents>/API docs.md. If absent, ask the operator to add it to ~/.openclaw/secrets/.env (chmod 600) and openclaw.json env.vars, then run: openclaw config set env.vars.AGNES_AI_API_KEY \"$AGNES_AI_API_KEY\". Do NOT mint a new key. An unmet optional entry never blocks install; a run whose client said Yes with no key found falls back with AGNES_KEY_MISSING."
+    },
+    {
+      "id": "tool-tesseract",
+      "type": "binary",
+      "label": "tesseract OCR (optional Agnes path words-in-pictures check)",
+      "check": { "binary": "tesseract" },
+      "severity": "optional",
+      "when": "agnes-path",
+      "satisfy": "Only for the optional Agnes path: tesseract is the OCR the words-in-pictures check uses to verify a word baked into an Agnes still. Verify: tesseract --version. If missing, the check reports OCR_UNAVAILABLE (never a PASS) and words are overlaid at assembly instead - nothing else degrades. Install only if the operator wants baked words: Mac brew install tesseract; VPS apt-get update && apt-get install -y tesseract-ocr. Installing it on client boxes is a Trevor decision (Needs Trevor #15), so never install it as part of a run."
+    },
+    {
       "id": "numpy-optional",
       "type": "manual",
       "label": "numpy for the singing detector (measured vocal share)",

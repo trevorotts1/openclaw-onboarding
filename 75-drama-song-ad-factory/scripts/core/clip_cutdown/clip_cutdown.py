@@ -19,6 +19,12 @@ Picking the clip (pure, no media, no network):
   * tie-break: more story beats (line ``beat`` tags), then the earlier start.
 No window that meets those rules raises ClipCutdownError (fail closed).
 
+Method runs (SPEC C5, F10/F19): a timeline that carries ``method`` and the
+campaign purpose plans the two trailers (``trailer.plan_trailers``) and the
+two offer ad cuts (``ad_clip.plan_ad_clips``) instead of this window -- same
+lengths, same L-2 budget, same fail-closed style, new destinations. Every
+other timeline, method runs included, still gets exactly today's plan.
+
 stdlib only.
 """
 from __future__ import annotations
@@ -86,7 +92,17 @@ def _best_window(lines, budget):
 
 
 def plan_clips(tl, chosen_length_s):
-    """Clip plan for a timeline: [] for 60/90 s, else one entry per clip length."""
+    """Clip plan for a timeline: [] for 60/90 s, else one entry per clip length.
+
+    A method campaign timeline plans trailers + ad cuts here (the blueprint,
+    show and offer ride the timeline); everything else keeps the hook window.
+    """
+    if tl.get("method"):
+        from clip_cutdown import ad_clip as _ad, trailer as _tr   # lazy: this module is their package
+        bp = _tr.blueprint_of(tl)
+        if _tr.purpose(tl, bp) == "campaign":
+            return (_tr.plan_trailers(tl, bp, chosen_length_s, tl.get("show"))
+                    + _ad.plan_ad_clips(tl, bp, chosen_length_s, tl.get("offer")))
     plans = []
     for L in clips_for(chosen_length_s):
         budget = master_max_s(L)
@@ -122,6 +138,13 @@ def run_clips(master, plans, out_dir, runner=subprocess.run, ffmpeg="ffmpeg",
     Each clip must pass the delivery audio gate (AAC-LC 48 kHz, faststart)
     or it is deleted and the run fails closed (audio_gate: tests only).
     """
+    if plans and plans[0].get("kind") in ("trailer", "ad"):
+        # method derivatives: one joined render per plan, end card included,
+        # through load_governor (trailer.render owns the temp card text file).
+        from clip_cutdown import trailer as _tr
+        return _tr.render(master, plans, out_dir,
+                          runner=None if runner is subprocess.run else runner,
+                          audio_gate=audio_gate, ffmpeg=ffmpeg)
     os.makedirs(out_dir, exist_ok=True)
     paths = []
     for p in plans:
