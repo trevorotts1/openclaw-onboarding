@@ -1,8 +1,9 @@
 ---
 name: agnes-image
 description: >
-  Setup and API reference for Agnes Image 2.1 Flash, a synchronous
-  text-to-image and image-to-image generation endpoint on the Agnes AI
+  Setup and API reference for the Agnes image models — agnes-image-2.5-flash
+  (the Token Plan image model) and agnes-image-2.1-flash — synchronous
+  text-to-image and image-to-image generation endpoints on the Agnes AI
   platform (apihub.agnes-ai.com). One API key, one POST, one JSON response
   with an image URL or Base64 — no task polling.
 metadata:
@@ -10,16 +11,28 @@ metadata:
   priority: HIGH
 ---
 
-# Agnes Image 2.1 Flash — Setup and API Reference
+# Agnes Image 2.5 Flash & 2.1 Flash — Setup and API Reference
 
-Agnes Image 2.1 Flash is a single image-generation model on the Agnes AI
+The Agnes image models are image-generation models on the Agnes AI
 platform (Sapiens AI). You send ONE POST request with a prompt and a size, and
 the response comes back in the same call with a finished image — as a URL or as
 Base64. There is no "create a task, then poll" step: the image endpoint is
 SYNCHRONOUS.
 
-Model name: `agnes-image-2.1-flash`. Endpoint:
+Model names: `agnes-image-2.5-flash` and `agnes-image-2.1-flash`. Endpoint:
 `POST https://apihub.agnes-ai.com/v1/images/generations`.
+
+## Which Model
+
+| Model | Role | Token Plan quota | Rate limit (Token Plan, allowed/effective) | Source read |
+|---|---|---|---|---|
+| `agnes-image-2.5-flash` | The **Token Plan image model** — the only image id tokenplan.md names today | **4,000 images/day**, identical on Starter/Plus/Pro, reset 00:00 UTC | RPM 1K 120/100, **2K 120/80**, 3K 2/1, 4K 2/1 — treat 2K as ~80 requests/minute and HTTP 429 as the live authority | [agnes-image-25-flash.md](https://wiki.agnes-ai.com/en/docs/agnes-image-25-flash.md), 2026-10-15 |
+| `agnes-image-2.1-flash` | Retained — still documented and still callable | 4,000 images/day | same tiers; 3K/4K effective 1/minute | [agnes-image-21-flash.md](https://wiki.agnes-ai.com/en/docs/agnes-image-21-flash.md), 2026-08-26 |
+
+Both models share the endpoint, the `1K`/`2K`/`3K`/`4K` × ratio dimension table,
+the house prompt bands below and the reference-image field (`extra_body.image[]`).
+`models.json` carries one registry entry per model. Request `agnes-image-2.5-flash`
+unless an upstream skill or the caller pins `agnes-image-2.1-flash` explicitly.
 
 ## When to Use This Skill
 
@@ -133,7 +146,8 @@ prompt MUST carry the style-reference-only directive verbatim:
 ## Files in This Folder (Reading Order)
 
 1. **SKILL.md** — you are here. Start with this file.
-2. **models.json** — machine-readable capability registry for `agnes-image-2.1-flash`.
+2. **models.json** — machine-readable capability registry for `agnes-image-2.5-flash`
+   and `agnes-image-2.1-flash`.
 3. **references/prompt-policy.md** — prompt policy, house bands, and expansion guide.
 4. **references/api-patterns.md** — request patterns, payload gotchas, and error handling.
 5. **references/qc.md** — visual quality control checklist and retry ladder.
@@ -167,7 +181,8 @@ prompt MUST carry the style-reference-only directive verbatim:
   echo, cat, or log the value.
 - **Rate limits are per account tier — read them live.** Do not bake a numeric
   request/day cap into any logic. If the account is on a paid Token Plan the
-  daily quotas apply; on the free/default tier only requests-per-minute apply.
+  daily quotas apply (**4,000 images/day**, see the table above); on the
+  free/default tier only requests-per-minute apply.
   Treat a 429 as the authority and back off. Full details in `references/api-patterns.md`.
 - **Vendor prompt cap is NOT_PUBLISHED.** Do not invent a vendor cap.
   House operating policy targets 5,000–19,000 characters (~9,000 target). Short user

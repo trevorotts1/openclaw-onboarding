@@ -414,7 +414,15 @@ _NON_ROLE_DOCS = {"BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS",
                   # ships flat at the department root like the other _NON_ROLE_DOCS
                   # entries above, so without this exclusion A5 false-flags it as an
                   # undeclared role (Unit A10, RUN 2).
-                  "DEPARTMENT-COUNTS-CANONICAL"}
+                  "DEPARTMENT-COUNTS-CANONICAL",
+                  # DECISION-2026-10-14-KIE-COMPLETION-POLLING.md is a dated
+                  # department decision record (FIX-PLAN Item 33d: KIE completion
+                  # for Presentations decks is learned by polling, never by
+                  # Skill 46 callbacks): a department record, not a role. It
+                  # ships flat at the department root like the counts page
+                  # above, so without this exclusion A5 false-flags it as an
+                  # undeclared role.
+                  "DECISION-2026-10-14-KIE-COMPLETION-POLLING"}
 
 
 def scan_roles_and_sops():
