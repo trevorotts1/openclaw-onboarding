@@ -365,9 +365,21 @@ with tempfile.TemporaryDirectory() as H:
           argv[1] == entry and argv[2] == "intake" and argv[3] == "--brief-file")
     check("brief file is written before dispatch",
           "drama-song-brief.json" in files and argv[4].endswith("drama-song-brief.json"))
+    # The scan runs over every argument, but the machine's scratch root is
+    # scrubbed first: tmpdir names are chosen by whoever made them (a CI
+    # mktemp can land under a directory reading "...kie..."), never by the
+    # dispatcher. A key, host or mode override anywhere the dispatcher put it
+    # still trips this.
+    _tmp = tempfile.gettempdir()
+
+    def _scrub(a):
+        s = str(a).replace(_tmp, "")
+        return s.replace(os.path.realpath(_tmp), "")
+
     check("argv carries no key, no host, no mode override",
-          not any("KEY" in a.upper() or "kie" in a.lower() or "http" in a.lower()
-                  for a in argv[1:]))
+          not any(any(k in _scrub(a).lower() for k in ("key", "kie", "http"))
+                  for a in argv[1:]),
+          "argv=%r" % (argv,))
     check("result file written with the video contract fields",
           "drama-song-result.json" in files
           and all(k in res for k in ("video_path", "stories_teaser_path",

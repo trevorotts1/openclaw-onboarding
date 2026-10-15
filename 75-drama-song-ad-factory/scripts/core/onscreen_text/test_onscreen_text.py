@@ -41,13 +41,22 @@ FONT = {                              # 5x7 uppercase, one word, no more
 
 # ------------------------------------------------- the stdlib fixture PNG ---
 
-def _png_gray(path, word, scale=12, pad=8):
+def _png_gray(path, word, scale=12, pad=None):
     """Draw `word` in black on white and write it as a grayscale PNG (stdlib).
 
     Big blocky glyphs: the one real tesseract read below must be a fair test
     of the OCR path, not a test of tesseract's patience with antialiasing.
+
+    pad is a fraction of the glyph height, not a token border. The old fixed
+    8px margin left the raster hard against the frame, where tesseract read
+    "SHALE" for "SALE" (and returned nothing at all under --psm 3) — the same
+    read that failed this suite in CI. A third of the glyph height clears the
+    cliff: below roughly a quarter the read flips, at and above it the word
+    reads clean under --psm 3, 6, 7, 11 and 12 on every tesseract build tested.
     """
     step, gh = 6 * scale, 7 * scale
+    if pad is None:
+        pad = gh // 3
     w = pad * 2 + len(word) * step - scale
     h = pad * 2 + gh
     rows = [[255] * w for _ in range(h)]
