@@ -25,6 +25,28 @@ serially -- 20-25 sequential language-model calls per QC phase, twice per
 deck, plus copy by section -- while the run's measured capacity said 8, 100 or
 2,500.
 
+ITEM 11 UPDATE (manifest v71, FIX-PLAN Item 11 / B23). The eight phases
+listed above now DECLARE `workers` in the shipped manifest (each its own
+fanout batch_width; P9-SPEECH declares an explicit 1, deliberately serial),
+and an undeclared fanout width is loud at load (manifest.py
+fanout_width_warnings, sync_check W2, run record). The F6 property proven
+here is unchanged: on the generic manifest fan-out path, `phase.workers` is
+not the width authority. Tests 1 and 6 therefore force a workers=1 phase
+object synthetically (dataclasses.replace), the exact object the pre-v71
+manifest handed this path. The declaration contract itself is pinned by
+tests/test_item11_fanout_width_declarations.py.
+
+ITEM 16 UPDATE (FIX-PLAN Item 16): the undeclared width is now refused,
+not just loud: sync_check W2 is a drift failure, and the engine refuses it
+at plan time (Engine._refuse_undeclared_fanout_widths, section 7 below).
+Tests 1 and 6 force the undeclared object itself (workers=1 with
+workers_declared cleared, per the CURE NOTE from the Item 15 branch
+update) and call the dispatcher directly: the only way that object
+reaches dispatch in a test, because Engine.run() refuses it first. A
+DECLARED width of 1 (the P9-SPEECH shape, workers_declared True) is a
+different input, honored by the dispatcher's width controller as a
+deliberate serial declaration.
+
 THE FIX. The width now comes from the SAME authority P4-PROMPT's wave uses:
 `_routing_stamp` (renamed from `_prompt_routing_stamp`, which was never
 P4-specific) -> client resource profile -> route -> capacity probe -> mode
@@ -76,7 +98,9 @@ CLUSTER_MANIFEST = (
     / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
 )
 
-PHASE = "P-STYLE-SPEC"          # manifest: fanout by slide, NO `workers` key
+PHASE = "P-STYLE-SPEC"          # manifest: fanout by slide (workers: 3 since
+                                # FIX-PLAN Item 11 / manifest v71; tests 1 and 6
+                                # force workers=1 synthetically, see below)
 OWNING_ROLE = "brand-steward"
 
 
@@ -168,18 +192,38 @@ def _dispatch(d, run_dir: Path):
 # 1. The width is the routed capacity min'd with the unit count -- never 1.
 # ---------------------------------------------------------------------------
 def test_fanout_phase_runs_at_the_routed_width_not_at_one(tmp_path, monkeypatch):
+    import dataclasses
     import presentation_job.dispatcher as d
     routed = _router_absent(monkeypatch)
     run_dir = _seed_run(tmp_path, n_slides=3)
     calls = _stub_units(monkeypatch, _variant)
 
-    # The manifest genuinely declares NO `workers` for this phase: the pre-F6
-    # code path had literally nothing but the default 1 to work with.
-    assert _phase_obj(run_dir).workers == 1, (
-        "harness assumption broken: P-STYLE-SPEC now declares `workers` in the "
-        "manifest, so this test no longer exercises the absent-workers default")
+    # FIX-PLAN Item 11 (manifest v71): P-STYLE-SPEC now DECLARES workers (3,
+    # its own fanout batch_width), so the absent-workers condition this test
+    # exercises is constructed synthetically: the same phase object with the
+    # declaration forced back to the default 1 the pre-F6 code path faced.
+    # CURE NOTE (branch update onto the main that landed Item 15): the
+    # dispatcher's width controller now reads workers_declared (the field
+    # Item 11 itself stamps) -- a phase object carrying workers=1 WITH
+    # workers_declared=True is a deliberate serial declaration (the
+    # P9-SPEECH shape) and is honored at width 1 by design. The absent
+    # condition this test exercises is workers=1 with NO declaration, so
+    # the forced object clears workers_declared as well. No assertion or
+    # expected value changes.
+    # FIX-PLAN Item 16: this undeclared object reaches dispatch_one only
+    # because the test calls the dispatcher directly. On the engine path
+    # it never gets here: Engine.run() refuses it at plan time
+    # (UndeclaredFanoutWidthError, section 7 below). The F6 property (the
+    # dispatcher must not treat workers as the width cap) is unchanged.
+    po = _phase_obj(run_dir)
+    assert po.workers == 3, (
+        "harness assumption broken: P-STYLE-SPEC no longer declares "
+        "workers=3 (its fanout batch_width) in the manifest")
+    forced = dataclasses.replace(po, workers=1, workers_declared=False)
 
-    result = _dispatch(d, run_dir)
+    result = d.dispatch_one(
+        run_dir, PHASE, {"phase_id": PHASE, "owning_role": OWNING_ROLE},
+        dept_root=SCRIPTS.parent, phase_obj=forced, worker_id="test-f6")
     assert result.status == "ok", f"fanout dispatch failed: {result.reasons}"
     assert len(calls) == 3, calls
 
@@ -378,9 +422,10 @@ def test_routing_stamp_is_not_p4_specific_and_keeps_its_old_name(tmp_path, monke
 # 6. phase.workers is no longer a cap on this path.
 # ---------------------------------------------------------------------------
 def test_phase_workers_is_not_a_cap_on_the_manifest_fanout_path(tmp_path, monkeypatch):
-    """A `workers: 1` phase object -- what the manifest hands every fan-out
-    phase except P4-PROMPT -- must not clamp the pool. The `fanout` field is
-    the opt-in flag; `workers` is not the ceiling here."""
+    """A `workers: 1` phase object -- what the manifest handed every fan-out
+    phase except P4-PROMPT before manifest v71 (FIX-PLAN Item 11) -- must
+    not clamp the pool. The `fanout` field is the opt-in flag; `workers` is
+    not the ceiling here."""
     import dataclasses
     import presentation_job.dispatcher as d
     routed = _router_absent(monkeypatch)
@@ -388,11 +433,95 @@ def test_phase_workers_is_not_a_cap_on_the_manifest_fanout_path(tmp_path, monkey
     _stub_units(monkeypatch, _variant)
 
     po = _phase_obj(run_dir)
-    assert po.workers == 1
-    forced = dataclasses.replace(po, workers=1)
+    # FIX-PLAN Item 11 (manifest v71): the manifest declares workers=3 for
+    # this phase now; the workers=1 phase object the F6 defect fed on is
+    # forced synthetically, exactly what the pre-v71 manifest handed over.
+    # CURE NOTE (branch update onto the main that landed Item 15): the
+    # forced object also clears workers_declared -- with the declaration
+    # flag still set, workers=1 reads as a deliberate serial declaration
+    # to the dispatcher's width controller and is honored, which is the
+    # opposite of the absent condition this test exercises (see test 1).
+    # FIX-PLAN Item 16: as in test 1, the undeclared object is fed to the
+    # dispatcher directly here; Engine.run() refuses it at plan time
+    # (section 7).
+    assert po.workers == 3
+    forced = dataclasses.replace(po, workers=1, workers_declared=False)
 
     result = d.dispatch_one(
         run_dir, PHASE, {"phase_id": PHASE, "owning_role": OWNING_ROLE},
         dept_root=SCRIPTS.parent, phase_obj=forced, worker_id="test-f6")
     assert result.status == "ok", result.reasons
     assert _pool_width(run_dir) == min(routed, 3)
+
+
+# ---------------------------------------------------------------------------
+# 7. FIX-PLAN Item 16 (plan-time half): the engine refuses to plan a run
+#    over a fanout phase with no declared workers width. The condition is
+#    the Item 11 substrate (fanout present, workers_declared False): such a
+#    phase's fan-out would run at the fallback width of 1 with the
+#    declaration nowhere on record. The drift-gate half (sync_check W2 as
+#    drift) is pinned in test_manifest_workers_field.py. The harness
+#    mirrors tests/test_engine_client_report.py's run-dir shape, over a
+#    synthetic one-phase manifest written to disk.
+# ---------------------------------------------------------------------------
+def _synthetic_engine(base, phase_entry):
+    from presentation_job.manifest import Manifest
+    from presentation_job.phases import Engine
+    from presentation_job.state import StateStore
+
+    rd = base / "run"
+    (rd / "working" / "copy").mkdir(parents=True)
+    (rd / "working" / "copy" / "intake.json").write_text(
+        "{}", encoding="utf-8")
+    manifest_path = rd / "PIPELINE-MANIFEST.json"
+    manifest_path.write_text(json.dumps({
+        "manifest_version": 71, "phases": [phase_entry],
+        "autofails": [], "roles": [],
+    }), encoding="utf-8")
+    manifest = Manifest(manifest_path)
+    state = {
+        "schema_version": 1, "job_id": "i16", "run_dir": str(rd),
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "manifest_path": str(manifest.path),
+        "manifest_version": manifest.version,
+        "manifest_sha256": manifest.sha256,
+        "presentation_type": "from_scratch", "requester": {"chat_id": "i16"},
+        "phases": [], "gates": {}, "waivers": [], "events": [], "sent": {},
+        "undeliverable": [], "heartbeat": {}, "terminal": None,
+    }
+    return Engine(rd, manifest, StateStore(rd), state, dry_run=True)
+
+
+_FANOUT_ENTRY = {
+    "id": "PX-FAN", "order": 1.0, "owning_role": "test-role",
+    "produces_artifact": "working/out.txt",
+    "executor": {"kind": "agent"}, "verifier": "phase_verifiers.verify",
+    "fanout": {"by": "slide", "batch_width": 4},
+}
+
+
+def test_undeclared_fanout_width_refused_at_plan_time(tmp_path):
+    import pytest
+
+    from presentation_job.phases import UndeclaredFanoutWidthError
+
+    engine = _synthetic_engine(tmp_path, dict(_FANOUT_ENTRY))
+    phase = engine.manifest.phase("PX-FAN")
+    assert phase.fanout is not None and phase.workers_declared is False, (
+        "harness assumption broken: the synthetic phase must be an "
+        "undeclared fanout phase")
+    with pytest.raises(UndeclaredFanoutWidthError) as excinfo:
+        engine.run()
+    assert "PX-FAN" in str(excinfo.value), (
+        f"the refusal must name the undeclared phase; got: {excinfo.value}")
+
+
+def test_declared_fanout_widths_pass_the_plan_time_check(tmp_path):
+    for workers in (4, 1):
+        engine = _synthetic_engine(tmp_path / f"w{workers}",
+                                   dict(_FANOUT_ENTRY, workers=workers))
+        phase = engine.manifest.phase("PX-FAN")
+        assert phase.workers_declared and phase.workers == workers
+        # No raise for either declared shape: the phase's own batch_width,
+        # or the deliberately serial explicit 1 (the P9-SPEECH shape).
+        engine._refuse_undeclared_fanout_widths([phase])

@@ -1726,6 +1726,149 @@ def _record_client_model_plan(derived: Dict[str, Any],
     return 0
 
 
+#: The fleet-shape question's identity on the configuration_pending event
+#: stream: the missing field a fleet_shape event names. The question is not
+#: a bank turn (see _record_system_gauge_and_fleet_question), so the bank
+#: carries no literal for it; the name is the event vocabulary's own.
+_FLEET_SHAPE_FIELD = "fleet_shape"
+
+
+def _emit_fleet_shape_question(run_dir: Path, question: Dict[str, Any],
+                               session_hint: str = "") -> List[dict]:
+    """Append the ONE owed fleet-shape question to the run's
+    configuration_pending event stream.
+
+    WHY AN EVENT AND NOT A BANK TURN. The fleet-shape question is asked
+    ONCE, at the gauge moment (the resource_plan turn), and its answer is a
+    profile-level fact recorded through resource_profile's own channels
+    (record_fleet_shape: the client's answer, the install-time
+    $PRESENTATION_FLEET_SHAPE declaration, certain detection). The bank is
+    the ceiling of 23 conversational turns (Trevor ruling) and carries
+    deck-content and per-deck axes; a 24th bank turn for an install-level
+    question would break that ceiling for a question most installs never
+    owe (detection settles fleet-mac outright, and a recorded shape is
+    never re-asked). The configuration_pending stream is this driver's
+    durable channel for exactly this shape of debt -- a question the client
+    owes, named with its next action, that never blocks the run (PRES-006)
+    -- so the fleet question is asked there, in the same vocabulary
+    (park_class client_action, waiting_on client: FIX-PLAN Item 10's park
+    classes). There is no per-provider row: the shape is one install-level
+    fact, owed once.
+
+    Never raises into the intake flow: the event is VISIBILITY, never a
+    gate; a failed append is reported on stderr and the turn proceeds."""
+    base = (os.environ.get("PRESENTATION_INTAKE_BASE_URL") or "").rstrip("/")
+    session_id = session_hint or ""
+    resume = f"{base}/s/{session_id}" if base else f"/s/{session_id}"
+    candidates = [str(c) for c in (question.get("candidates") or [])]
+    event = {
+        "event": CONFIGURATION_PENDING_EVENT,
+        "at": datetime.now(timezone.utc).isoformat(),
+        "session_id": session_id,
+        "run_dir": str(run_dir),
+        "field": _FLEET_SHAPE_FIELD,
+        "missing_field": _FLEET_SHAPE_FIELD,
+        "question": question.get("question"),
+        "candidates": candidates,
+        "resume_url": resume,
+        "next_action": (
+            "answer the fleet-shape question for this install (one of: "
+            + ", ".join(candidates)
+            + "); the run is NOT blocked -- the gauge already recorded "
+              "what detection could measure and the shape stays honestly "
+              "unrecorded until the answer lands"),
+        "state": CONFIGURATION_PENDING_EVENT,
+        "owner": "presentation-intake",
+        # FIX-PLAN Item 10 park-class vocabulary, as on the PRES-006
+        # events: the answer is owed by the client and never auto-resumes.
+        "park_class": "client_action",
+        "waiting_on": "client",
+        "source": "deck-intake-driver",
+    }
+    try:
+        out = run_dir / _CONFIG_EVENTS_RELPATH
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        print(f"  WARN  [FLEET-SHAPE] could not append the fleet-shape "
+              f"question event ({exc.__class__.__name__}: {exc}) -- the "
+              f"question is still owed, only its durable record is "
+              f"missing.", file=sys.stderr)
+    return [event]
+
+
+def _record_system_gauge_and_fleet_question(run_dir: Path,
+                                              session_hint: str = "") -> None:
+    """FIX-PLAN Item 17 (B27 driver-wiring follow-up): THE SYSTEM GAUGE at
+    the resource_plan moment, plus the ONE fleet-shape question when one is
+    still owed.
+
+    B27 built record_system_gauge() / fleet_shape_question() at the profile
+    layer and named this turn as their production hook in so many words:
+    the resource_plan moment is the gauge moment, and the wiring is "one
+    call to record_system_gauge() at that moment, plus asking
+    fleet_shape_question() when it returns a question". Before this wire,
+    nothing in production called either function: the gauge was never taken
+    at intake (a later run started from unmeasured assertion instead of the
+    remembered measurement), and the fleet-shape question was never asked
+    (a Linux container's shape stayed unrecorded forever, so the gauge's
+    per-shape budget derivation -- the container budget and the host
+    ceiling it was sliced from -- never had its input).
+
+    ORDER, and why. The gauge FIRST: record_system_gauge() resolves the
+    shape itself (a shape already recorded wins; a valid
+    $PRESENTATION_FLEET_SHAPE declaration is recorded as declared and
+    locked; a certain detection is recorded as detected), so asking after
+    gauging never puts a question the gauge just settled.
+    fleet_shape_question() then returns a question exactly when one is
+    still owed (an ambiguous Linux container) and None otherwise. The
+    inputs are the functions' own defaults BY DESIGN: the manifest names
+    no driver-supplied readings, record_system_gauge() measures the box
+    itself (the hardware snapshot, detection, and the capacity refresh's
+    pure resolve_capacity() reading -- zero discovery, per PRES-015),
+    and fleet_shape_question() reads the same profile and detection.
+
+    PLACEMENT. At the END of the resource_plan block, after the plan tier,
+    the run mode and the model plan have all landed: a REFUSED answer (any
+    of those returning rc=1) never half-lands a gauge either -- the same
+    never-half-land rule this block already keeps. Re-answering the turn
+    re-gauges (record_system_gauge's own contract: a stale or superseded
+    gauge is overwritten, never trusted) and re-states a still-owed
+    question on the event stream, append-only like every
+    configuration_pending event.
+
+    FAILURE POSTURE. record_system_gauge() never raises for a measurement
+    (its readers degrade to notes); a store failure here is reported
+    LOUDLY on stderr and the turn still completes -- the gauge is a
+    measurement, not a client declaration, so it must not refuse the
+    client's resource_plan answer the way an unrecordable plan tier is
+    refused. Silence is the only unacceptable outcome."""
+    rp = _import_resource_profile()
+    if rp is None:
+        return  # already announced loudly on stderr by the importer
+    try:
+        rp.record_system_gauge()
+    except Exception as exc:  # noqa: BLE001 -- a gauge failure is loud, never fatal
+        print(f"  WARN  [SYSTEM-GAUGE] record_system_gauge() failed "
+              f"({exc.__class__.__name__}: {exc}) -- this run starts from "
+              f"unmeasured truth and the fleet shape may stay unrecorded. "
+              f"The resource_plan answer itself was recorded.",
+              file=sys.stderr)
+        return
+    try:
+        question = rp.fleet_shape_question()
+    except Exception as exc:  # noqa: BLE001 -- same posture as the gauge
+        print(f"  WARN  [FLEET-SHAPE] fleet_shape_question() failed "
+              f"({exc.__class__.__name__}: {exc}) -- the gauge was "
+              f"recorded; whether a fleet-shape question is owed is "
+              f"unknown for this run.", file=sys.stderr)
+        return
+    if question is not None:
+        _emit_fleet_shape_question(run_dir, question,
+                                   session_hint=session_hint)
+
+
 #: The client's RUN-MODE declaration (FIX 11: ultra|standard|economy). It
 #: rides the SAME resource_plan turn as the model plan above and is therefore
 #: NOT a 24th turn -- session_budget.max_turns stays 23 (Trevor ruling, pinned
@@ -2062,6 +2205,13 @@ def cmd_answer(args) -> int:
             # turn's response (attached to `extra` below). Fail-soft:
             # a freshness failure never un-records the answer.
             _freshness_offer = _record_model_freshness(text)
+            # FIX-PLAN Item 17 (B27 follow-up): THE GAUGE MOMENT. With the
+            # turn's declarations landed, take the remembered system gauge
+            # and ask the one fleet-shape question if it is still owed --
+            # the production hook B27 named for record_system_gauge() /
+            # fleet_shape_question(). See that function for the contract.
+            _record_system_gauge_and_fleet_question(
+                run_dir, session_hint=str(run_dir.name))
 
         # STYLE-PICK AUTO OPT-IN (F5) rides the style turn -- the one turn that
         # is required + block_gate and therefore asked on EVERY deck (unlike
