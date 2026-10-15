@@ -15,16 +15,18 @@ Proves, in order:
 No network, no spend: the price callable is a fixture backed by the shipped
 Skill 74 answers (extensions/fixtures/skill74-responses.json).
 
-Run: python3 -m pytest -q 75-drama-song-ad-factory/scripts/core/catalog_calculator/test_agnes_price.py
+Run: python3 75-drama-song-ad-factory/scripts/core/catalog_calculator/test_agnes_price.py
+stdlib only, no pytest: the repo's empty-home QC sweep runs every test file
+under a bare ``python3`` with an empty HOME, where pytest is not installed.
 """
 from __future__ import annotations
 
+import contextlib
 import math
 import os
 import sys
 import types
-
-import pytest
+import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -44,6 +46,12 @@ from catalog_calculator import agnes_price, card_render     # noqa: E402
 from catalog_calculator.extensions import _fixtures         # noqa: E402
 
 SCALING = ("per-second", "per-1k-chars", "per-image", "per-1m-tokens")
+
+
+def approx(a, b, abs_tol=0.01):
+    """pytest.approx(a, abs=0.01), stdlib edition."""
+    return abs(a - b) <= abs_tol
+
 
 #: What card_render printed for card {} with this fixture on origin/main
 #: f825bbff2, captured before this unit existed: a non-Agnes card must not
@@ -91,7 +99,7 @@ class FakePrice:
             "price_source": spec.get("source", "test")}}
 
 
-@pytest.fixture
+@contextlib.contextmanager
 def plan():
     """``agnes_plan`` (unit W1-agnes-core-U4: 10 s windows x shapes).
 
@@ -101,7 +109,8 @@ def plan():
     """
     try:
         import agnes_plan
-        return agnes_plan
+        yield agnes_plan
+        return
     except ImportError:
         pass
     stub = types.ModuleType("agnes_plan")
@@ -118,11 +127,24 @@ def plan():
     stub.need = need
     monkeypatched = sys.modules.get("agnes_plan")
     sys.modules["agnes_plan"] = stub
-    yield stub
-    if monkeypatched is None:
-        del sys.modules["agnes_plan"]
-    else:
-        sys.modules["agnes_plan"] = monkeypatched
+    try:
+        yield stub
+    finally:
+        if monkeypatched is None:
+            del sys.modules["agnes_plan"]
+        else:
+            sys.modules["agnes_plan"] = monkeypatched
+
+
+@contextlib.contextmanager
+def swapped(obj, name, value):
+    """pytest's monkeypatch.setattr, stdlib edition."""
+    original = getattr(obj, name)
+    setattr(obj, name, value)
+    try:
+        yield
+    finally:
+        setattr(obj, name, original)
 
 
 def _row(text, label):
@@ -130,117 +152,125 @@ def _row(text, label):
     return next(ln for ln in text.splitlines() if ln.strip().startswith(label + ":"))
 
 
-# ------------------------------------------------------- 1. non-Agnes card
-def test_non_aggnes_card_is_byte_identical_to_main(monkeypatch):
-    fake = FakePrice()
-    text, priced = card_render.render({}, fake)
-    assert text == GOLDEN_PLAIN_CARD
-    assert priced is True
-    # the Skill 74 questions the card asked on the base, unchanged
-    assert fake.calls == [("ai-music-api/generate", 1),
-                          ("google/imagen4-fast", 11)]
+class AgnesPriceTests(unittest.TestCase):
 
-    def never(card, price_fn):          # the Agnes path must not be entered
-        raise AssertionError("agnes_price.envelope used on a non-Agnes card")
-    monkeypatch.setattr(agnes_price, "envelope", never)
-    again, priced_again = card_render.render({}, fake)
-    assert (again, priced_again) == (GOLDEN_PLAIN_CARD, True)
-    assert card_render.quote(1, "90 seconds") == GOLDEN_QUOTE_90
+    # --------------------------------------------------- 1. non-Agnes card
+    def test_non_aggnes_card_is_byte_identical_to_main(self):
+        fake = FakePrice()
+        text, priced = card_render.render({}, fake)
+        self.assertEqual(text, GOLDEN_PLAIN_CARD)
+        self.assertIs(priced, True)
+        # the Skill 74 questions the card asked on the base, unchanged
+        self.assertEqual(fake.calls, [("ai-music-api/generate", 1),
+                                      ("google/imagen4-fast", 11)])
+
+        def never(card, price_fn):          # the Agnes path must not be entered
+            raise AssertionError("agnes_price.envelope used on a non-Agnes card")
+        with swapped(agnes_price, "envelope", never):
+            again, priced_again = card_render.render({}, fake)
+            self.assertEqual((again, priced_again), (GOLDEN_PLAIN_CARD, True))
+        self.assertEqual(card_render.quote(1, "90 seconds"), GOLDEN_QUOTE_90)
+
+    # ------------------------------------------------------- 2. Agnes card
+    def test_aggnes_90_prices_music_and_lipsync_only(self):
+        fake = FakePrice()
+        card = {"length": "90 seconds", "shape": "9:16", "agnes": "yes"}
+        with plan():
+            text, priced = card_render.render(card, fake)
+            self.assertIs(priced, True)
+
+            asked = [m for m, _ in fake.calls]
+            self.assertEqual(sorted(set(asked)),
+                             ["ai-music-api/generate", "kling/ai-avatar-standard"],
+                             asked)
+            self.assertNotIn("google/imagen4-fast", asked)      # pictures are Agnes work
+            self.assertNotIn("minimax-h3/image-to-video", asked)  # video is Agnes work
+
+            self.assertIn("Agnes video time: about 90 of your 500 seconds today", text)
+            for label in ("Length", "Shape", "Video model"):
+                row = _row(text, label)
+                self.assertIn("included in your Agnes plan", row, row)
+                self.assertNotIn("$", row, row)
+            for label in ("Music", "Voice", "Style"):
+                self.assertIn("$", _row(text, label), _row(text, label))
+
+            env = agnes_price.envelope(card, fake)
+            self.assertEqual(env["state"], "ok")
+            priced_card = env["card"]
+            self.assertEqual(priced_card["agnes_seconds"], 90)
+            by_component = {li["component"]: li for li in priced_card["line_items"]}
+            self.assertEqual(by_component["video"]["included"], agnes_price.INCLUDED)
+            self.assertIsNone(by_component["video"]["usd"])
+            self.assertEqual(by_component["video"]["agnes_seconds"], 90)
+            self.assertEqual(by_component["image"]["included"], agnes_price.INCLUDED)
+            self.assertIsNone(by_component["image"]["usd"])
+            self.assertEqual(by_component["image"]["agnes_seconds"], 90)
+            self.assertGreater(by_component["music"]["usd"], 0)
+            self.assertGreater(by_component["lip_sync"]["usd"], 0)
+            # 90 s ad -> 12 clips of the planned 60 s ceiling (lipsync_clips.budget)
+            self.assertEqual(priced_card["lip_sync"], {
+                "model_id": "kling/ai-avatar-standard", "seconds": 60, "lines": 12,
+                "seconds_per_shape": 60, "lines_per_shape": 12, "shape_count": 1})
+            # the total is the song plus the close-ups, nothing else
+            self.assertTrue(approx(
+                priced_card["price_usd"],
+                by_component["music"]["usd"] + by_component["lip_sync"]["usd"]))
+            self.assertTrue(approx(
+                priced_card["spending_limit_usd"],
+                priced_card["price_usd"] + priced_card["retake_allowance_usd"]))
+
+    def test_aggnes_both_shapes_doubles_video_time(self):
+        fake = FakePrice()
+        card = {"length": "90 seconds", "shape": "both", "agnes": "yes"}
+        with plan():
+            text, priced = card_render.render(card, fake)
+            self.assertIs(priced, True)
+            self.assertIn("Agnes video time: about 180 of your 500 seconds today", text)
+            env = agnes_price.envelope(card, fake)
+            self.assertEqual(env["card"]["agnes_seconds"], 180)
+            # both shapes run lip-sync
+            self.assertEqual(env["card"]["lip_sync"]["seconds"], 120)
+
+    # ----------------------------------------------- 3. price fails closed
+    def test_failing_price_fn_says_price_unavailable(self):
+        card = {"length": "90 seconds", "shape": "9:16", "agnes": "yes"}
+
+        def boom(model, units):
+            raise RuntimeError("skill74 runner is down")
+        with plan():
+            text, priced = card_render.render(card, boom)
+            self.assertIs(priced, False)
+            self.assertIn("Price unavailable", text)
+
+            def refuses(model, units):
+                return {"state": "fail",
+                        "error": {"code": "price_unavailable", "msg": model}}
+            text2, priced2 = card_render.render(card, refuses)
+            self.assertIs(priced2, False)
+            self.assertIn("Price unavailable", text2)
+            # the plan lines are still shown: they are not a price
+            self.assertIn("included in your Agnes plan", text2)
+            self.assertIn("Agnes video time: about 90 of your 500 seconds today", text2)
+
+    # ------------------------------------------------------------- 4. quote
+    def test_quote_returns_the_aggnes_total(self):
+        fake = FakePrice()
+        with plan():
+            total = card_render.quote(1, "90 seconds", agnes=True, price_fn=fake)
+            env = agnes_price.envelope({"length": "90 seconds", "agnes": "yes"}, fake)
+            self.assertEqual(total, env["card"]["spending_limit_usd"])
+            self.assertGreater(total, 0)
+            # no Skill 74, no total: never a made-up number
+            self.assertIsNone(card_render.quote(1, "90 seconds", agnes=True))
+            self.assertEqual(card_render.quote(1, "90 seconds"), GOLDEN_QUOTE_90)
+
+    # --------------------------------- 5. the door only takes Agnes cards
+    def test_envelope_refuses_a_card_without_agnes_yes(self):
+        env = agnes_price.envelope({"length": "90 seconds"}, FakePrice())
+        self.assertEqual(env["state"], "error")
+        self.assertIsNone(env["card"])
+        self.assertEqual(env["reasons"], ["AGNES_NOT_CHOSEN"])
 
 
-# ----------------------------------------------------------- 2. Agnes card
-def test_aggnes_90_prices_music_and_lipsync_only(plan):
-    fake = FakePrice()
-    card = {"length": "90 seconds", "shape": "9:16", "agnes": "yes"}
-    text, priced = card_render.render(card, fake)
-    assert priced is True
-
-    asked = [m for m, _ in fake.calls]
-    assert sorted(set(asked)) == ["ai-music-api/generate",
-                                  "kling/ai-avatar-standard"], asked
-    assert "google/imagen4-fast" not in asked      # pictures are Agnes work
-    assert "minimax-h3/image-to-video" not in asked  # video is Agnes work
-
-    assert "Agnes video time: about 90 of your 500 seconds today" in text
-    for label in ("Length", "Shape", "Video model"):
-        row = _row(text, label)
-        assert "included in your Agnes plan" in row, row
-        assert "$" not in row, row
-    for label in ("Music", "Voice", "Style"):
-        assert "$" in _row(text, label), _row(text, label)
-
-    env = agnes_price.envelope(card, fake)
-    assert env["state"] == "ok"
-    priced_card = env["card"]
-    assert priced_card["agnes_seconds"] == 90
-    by_component = {li["component"]: li for li in priced_card["line_items"]}
-    assert by_component["video"]["included"] == agnes_price.INCLUDED
-    assert by_component["video"]["usd"] is None
-    assert by_component["video"]["agnes_seconds"] == 90
-    assert by_component["image"]["included"] == agnes_price.INCLUDED
-    assert by_component["image"]["usd"] is None
-    assert by_component["image"]["agnes_seconds"] == 90
-    assert by_component["music"]["usd"] > 0
-    assert by_component["lip_sync"]["usd"] > 0
-    # 90 s ad -> 12 clips of the planned 60 s ceiling (lipsync_clips.budget)
-    assert priced_card["lip_sync"] == {
-        "model_id": "kling/ai-avatar-standard", "seconds": 60, "lines": 12,
-        "seconds_per_shape": 60, "lines_per_shape": 12, "shape_count": 1}
-    # the total is the song plus the close-ups, nothing else
-    assert priced_card["price_usd"] == pytest.approx(
-        by_component["music"]["usd"] + by_component["lip_sync"]["usd"],
-        abs=0.01)
-    assert priced_card["spending_limit_usd"] == pytest.approx(
-        priced_card["price_usd"] + priced_card["retake_allowance_usd"], abs=0.01)
-
-
-def test_aggnes_both_shapes_doubles_video_time(plan):
-    fake = FakePrice()
-    card = {"length": "90 seconds", "shape": "both", "agnes": "yes"}
-    text, priced = card_render.render(card, fake)
-    assert priced is True
-    assert "Agnes video time: about 180 of your 500 seconds today" in text
-    env = agnes_price.envelope(card, fake)
-    assert env["card"]["agnes_seconds"] == 180
-    assert env["card"]["lip_sync"]["seconds"] == 120   # both shapes run lip-sync
-
-
-# ------------------------------------------------------- 3. price fails closed
-def test_failing_price_fn_says_price_unavailable(plan):
-    card = {"length": "90 seconds", "shape": "9:16", "agnes": "yes"}
-
-    def boom(model, units):
-        raise RuntimeError("skill74 runner is down")
-    text, priced = card_render.render(card, boom)
-    assert priced is False
-    assert "Price unavailable" in text
-
-    def refuses(model, units):
-        return {"state": "fail",
-                "error": {"code": "price_unavailable", "msg": model}}
-    text2, priced2 = card_render.render(card, refuses)
-    assert priced2 is False
-    assert "Price unavailable" in text2
-    # the plan lines are still shown: they are not a price
-    assert "included in your Agnes plan" in text2
-    assert "Agnes video time: about 90 of your 500 seconds today" in text2
-
-
-# ------------------------------------------------------------- 4. quote
-def test_quote_returns_the_aggnes_total(plan):
-    fake = FakePrice()
-    total = card_render.quote(1, "90 seconds", agnes=True, price_fn=fake)
-    env = agnes_price.envelope({"length": "90 seconds", "agnes": "yes"}, fake)
-    assert total == env["card"]["spending_limit_usd"]
-    assert total > 0
-    # no Skill 74, no total: never a made-up number
-    assert card_render.quote(1, "90 seconds", agnes=True) is None
-    assert card_render.quote(1, "90 seconds") == GOLDEN_QUOTE_90
-
-
-# ------------------------------------------- 5. the door only takes Agnes cards
-def test_envelope_refuses_a_card_without_agnes_yes():
-    env = agnes_price.envelope({"length": "90 seconds"}, FakePrice())
-    assert env["state"] == "error"
-    assert env["card"] is None
-    assert env["reasons"] == ["AGNES_NOT_CHOSEN"]
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
