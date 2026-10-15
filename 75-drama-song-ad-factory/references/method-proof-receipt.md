@@ -10,7 +10,7 @@ and retains the CHECKLIST "Hybrid + transitions" block in this same receipt (BUI
 | | |
 |---|---|
 | Date | 2026-10-15 (operator Mac Mini; times local) |
-| Repo / branch | `trevorotts1/openclaw-onboarding`, worktree `/Users/blackceomacmini/agnes-wt/W4-proof-U3`, branch `unit/AGN-W4-proof-U3`, base `origin/main` = `1e1c12dcc` |
+| Repo / branch | `trevorotts1/openclaw-onboarding`, worktree `<PATH>/agnes-wt/W4-proof-U3`, branch `unit/AGN-W4-proof-U3`, base `origin/main` = `1e1c12dcc` |
 | What runs | fixture records only. **No Suno, no KIE, no Agnes, no image or video job, no spend.** The only network-ish call in the whole proof is one local `ffprobe` read of a file already on this disk (§9) |
 | Gates under test | the eight open **O-method / O-card** candidate branches (§2), because none of the method code is on `main` yet — Wave 4 is pinned to candidate heads for exactly this reason (BUILD-PLAN, *Wave release and hygiene*) |
 | Lane (drivers, fixture runs, raw output) | `run/lanes/W4-proof-U3-lane/` — `prove.py`, `hybrid.py`, `out/step1..8.json`, `out/hybrid.json`, `out/card/` |
@@ -35,7 +35,7 @@ Eight steps, eight driver processes (one process per step, because each step imp
 candidate unit's `scripts/core` and two steps must never see each other's modules):
 
 ```
-$ cd /Users/blackceomacmini/Downloads/Agnes Drama Ad Factory/run/lanes/W4-proof-U3-lane
+$ cd <PATH>/Downloads/Agnes Drama Ad Factory/run/lanes/W4-proof-U3-lane
 $ python3 prove.py 1     # card replies -> method.json (5 purposes + 2 length-cap controls)
 $ python3 prove.py 2     # Story Beat Blueprint validated, anchors ordered, plants refused
 $ python3 prove.py 3     # length_formula.plan(180, method=True)
@@ -448,7 +448,7 @@ W1-method-lipsync-U2   9 passed
 
 1. **The hard cut landing on a musical change** — trial F records it as UNDETERMINED
    (`trial-f/RESULTS.md:53`); the cut was placed on a breath gap between two sung lines, which is
-   not a verified pace change. Needs a measured pace change in a live run → Trevor's canary (SPEC
+   not a verified pace change. Needs a measured pace change in a live run → Trevor's operator box (SPEC
    acceptance 5), not this unit.
 2. **Lip-sync accuracy on either side of test F's cut** — trial F records UNDETERMINED; that is
    `W4-proof-U4`'s subject, not this unit's.
@@ -470,12 +470,12 @@ Both are parked in this receipt, exactly as BUILD-PLAN tells this unit to park t
 ## 13. Reproduce
 
 ```
-cd /Users/blackceomacmini/Downloads/Agnes Drama Ad Factory/run/lanes/W4-proof-U3-lane
+cd <PATH>/Downloads/Agnes Drama Ad Factory/run/lanes/W4-proof-U3-lane
 python3 prove.py 1 2 3 4 5 6 7 8      # one process per step; writes out/step<N>.json
 python3 hybrid.py                     # writes out/hybrid.json
 
 # owning units' own Prove files (each from its own worktree, path from the repo root)
-cd /Users/blackceomacmini/agnes-wt/<unit> && python3 -m pytest -q 75-drama-song-ad-factory/scripts/core/<area>
+cd <PATH>/agnes-wt/<unit> && python3 -m pytest -q 75-drama-song-ad-factory/scripts/core/<area>
 ```
 
 The area **Regression** commands at the top of BUILD-PLAN were run on this branch's tree and are
