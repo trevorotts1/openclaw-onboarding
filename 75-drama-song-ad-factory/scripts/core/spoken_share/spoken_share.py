@@ -961,6 +961,91 @@ def check_first_sung_story(story_line_start_s, length_s,
     return out
 
 
+#: METHOD C3 (SPEC, BUILD-PLAN W1-method-song-U1): on a METHOD run the first
+#: sung word lands on the ERM apex, inside this window either side of it.
+#: The 15 percent of runtime target above is untouched for every other run.
+METHOD_FIRST_SUNG_TOL_S = 1.5
+
+
+def judge_first_vocal_at_erm(first_sung_s, sung_starts, erm_apex_s,
+                             tol_s=METHOD_FIRST_SUNG_TOL_S):
+    """METHOD C3 (Trevor 2026-10-13) -- THE one copy of the rule, called by
+    song_dispatch's ``first_sung`` gate.
+
+    A method run is judged against the ERM apex, never against 15 percent of
+    the runtime: **no sung word may start before ``erm_apex_s - tol_s`` and
+    the first sung word must start by ``erm_apex_s + tol_s``**. Early and
+    late are both FAIL (a redo), because the ERM Drop is where the song turns
+    and a take that sings before it, or long after it, tells a different
+    story. ``erm_apex_s`` is read off the run's plan (its pacing profile:
+    the method's ERM window on ``story``, 15 percent of runtime on ``feed``);
+    nothing here keeps a table.
+
+    ``first_sung_s`` is the measured start of the first sung word (the take's
+    ``first_sung_s``); ``sung_starts`` is any wider list of sung word start
+    seconds the take carries, so a sung word earlier than the detector's own
+    first figure still fails the early bound. Either may be None; with
+    neither, or with no apex, the result is ``UNMEASURED`` -- missing
+    evidence is never PASS.
+
+    Returns {"verdict": PASS|FAIL|UNMEASURED, "band": ACCEPT|REDO,
+             "erm_apex_s", "first_sung_start_s", "tol_s", "window_s": [lo, hi],
+             "gap_s" (signed, first sung minus apex), "direction":
+             "early"|"late"|None, "detail", "reasons": [...], "flags": [...]}.
+    """
+    out = {"verdict": VERDICT_FAIL, "band": BAND_REDO, "erm_apex_s": None,
+           "first_sung_start_s": None, "tol_s": float(tol_s),
+           "window_s": None, "gap_s": None, "direction": None,
+           "detail": "", "reasons": [], "flags": []}
+
+    def _num(v):
+        return (isinstance(v, (int, float)) and not isinstance(v, bool)
+                and isfinite(float(v)))
+
+    if not _num(erm_apex_s):
+        out.update({"verdict": "UNMEASURED"})
+        out["detail"] = ("UNMEASURED: erm_apex_s is %r: a method run is judged "
+                         "against the ERM apex and this plan carries none, so "
+                         "the first vocal cannot be certified" % (erm_apex_s,))
+        out["reasons"].append(out["detail"])
+        return out
+    apex = float(erm_apex_s)
+    starts = [float(v) for v in (sung_starts or []) if _num(v)]
+    if _num(first_sung_s):
+        starts.append(float(first_sung_s))
+    if not starts:
+        out.update({"verdict": "UNMEASURED", "erm_apex_s": apex})
+        out["detail"] = ("UNMEASURED: no measured sung word start: a method run "
+                         "is judged against the ERM apex and this take carries "
+                         "no first sung word time")
+        out["reasons"].append(out["detail"])
+        return out
+    first = min(starts)          # the FIRST sung word, never the closest one
+    lo, hi = apex - float(tol_s), apex + float(tol_s)
+    gap = round(first - apex, 6)
+    out.update({"erm_apex_s": round(apex, 6),
+                "first_sung_start_s": round(first, 6),
+                "window_s": [round(lo, 6), round(hi, 6)], "gap_s": gap})
+    if first < lo - 1e-9:
+        out["direction"] = "early"
+        out["detail"] = ("first sung word at %.1f s is %.1f s BEFORE the ERM "
+                         "apex %.1f s (window %.1f-%.1f s): early, redo"
+                         % (first, apex - first, apex, lo, hi))
+    elif first > hi + 1e-9:
+        out["direction"] = "late"
+        out["detail"] = ("first sung word at %.1f s is %.1f s AFTER the ERM "
+                         "apex %.1f s (window %.1f-%.1f s): late, redo"
+                         % (first, first - apex, apex, lo, hi))
+    else:
+        out.update({"verdict": VERDICT_PASS, "band": BAND_ACCEPT})
+        out["detail"] = ("first sung word at %.1f s is inside the ERM apex "
+                         "window %.1f-%.1f s (%+.1f s): pass"
+                         % (first, lo, hi, gap))
+    if out["verdict"] == VERDICT_FAIL:
+        out["reasons"].append(out["detail"])
+    return out
+
+
 def steer_first_sung(segments, basis="planned"):
     """What the lyric-sheet builder does with a first-sung result: the check
     plus which way to move the sung hook and by how many seconds to land on
@@ -1082,6 +1167,8 @@ __all__ = [
     "segments_from_sung_stretches",
     "steer_first_sung",
     "check_first_sung_story",
+    "judge_first_vocal_at_erm",
+    "METHOD_FIRST_SUNG_TOL_S",
     "CAP",
     "FLAG_PTS",
     "NO_REAL_SINGING_STRETCH_S",
