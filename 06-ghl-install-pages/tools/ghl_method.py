@@ -67,6 +67,14 @@ AUDIT TRAIL
 ``decide_and_record(...)`` writes a JSON audit record per page to
 ``<run_dir>/routing/method-decision-<page>.json`` with:
   score, threshold, signals, widgets, reason, method, decided_at.
+It ALSO refreshes the ONE unified per-run record at
+``<run_dir>/routing/method-decision.json`` (the exact name SKILL.md's
+Phase-5 table promises) via ``ghl_method_decision.refresh_from_page_records``
+— the S06-02 aggregator that unifies this module's per-page decisions with
+the object-router rail outcomes and fallback-ladder outcomes in a single
+spec-05-section-4 record. The per-page files remain the source of truth;
+the unified record is re-derived from them on disk, never tallied in
+memory.
 
 GLUE BOUNDARY (same as ghl_verify — no network, no browser)
 ------------------------------------------------------------
@@ -566,7 +574,10 @@ def decide_and_record(page_spec: Any, page_name: str, run_dir: str, *,
       2. Writes ``<run_dir>/routing/method-decision-<page_name>.json`` with
          the full audit trail (score, threshold, signals, widgets, reason,
          method, decided_at).
-      3. Returns the ``MethodDecision``.
+      3. Refreshes the unified per-run record
+         ``<run_dir>/routing/method-decision.json`` via
+         ``ghl_method_decision.refresh_from_page_records`` (S06-02).
+      4. Returns the ``MethodDecision``.
 
     The decision only changes ``new_value`` (fragment vs iframe-snippet vs
     widget-snippet) and which verify assertion fires.
@@ -626,6 +637,15 @@ def decide_and_record(page_spec: Any, page_name: str, run_dir: str, *,
     }
     with open(record_path, "w", encoding="utf-8") as f:
         json.dump(record, f, indent=2)
+
+    # S06-02 (spec 05 section 4): refresh the ONE unified per-run routing
+    # record at <run_dir>/routing/method-decision.json — the exact name
+    # SKILL.md's Phase-5 table promises. The aggregator re-reads every
+    # per-page record on disk (never an in-memory tally), so the unified
+    # record cannot claim a page the per-page files do not prove. Imported
+    # lazily so this module stays importable exactly as before.
+    import ghl_method_decision as _gmd
+    _gmd.refresh_from_page_records(str(run_dir))
 
     return decision
 
