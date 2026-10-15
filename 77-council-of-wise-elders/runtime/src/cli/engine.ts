@@ -68,6 +68,7 @@ import {
   type VerdictLabel,
 } from '../contracts/index.js';
 import { DEFAULT_COUNCIL_SETTINGS } from '../contracts/index.js';
+import { deriveHardConstraintFindings } from '../scoring/decision.js';
 import { CouncilError, invalidInput } from './errors.js';
 import type {
   BudgetReservation,
@@ -99,7 +100,13 @@ export const SEAT_FOCUS: Record<SeatId, string> = {
     'Is the obstacle a real constraint, a skill gap, or a limiting belief, and what meaningful action comes next?',
 };
 
-const OPENING_SYSTEM = [
+/**
+ * The Section 14.2 opening-round system text. CWE-050 consolidation:
+ * this is the SINGLE source for the round system texts; the protocol
+ * executors (opening, challenge, ratification, consult) import these
+ * constants instead of carrying their own copies.
+ */
+export const OPENING_SYSTEM = [
   'You are an AI advisory perspective inspired by the approved published-work pack.',
   'You are not the individual. Apply the seat\'s specific responsibility.',
   'Use only supplied facts and authorized evidence. Label assumptions and unknowns.',
@@ -110,7 +117,7 @@ const OPENING_SYSTEM = [
   'strongest objection, necessary conditions, and what would change your position.',
 ].join('\n');
 
-const CHALLENGE_SYSTEM = [
+export const CHALLENGE_SYSTEM = [
   'You are an AI advisory perspective inspired by the approved published-work pack.',
   'You are not the individual. This is the focused challenge round.',
   'Answer the cruxes assigned to your seat using the supplied evidence.',
@@ -119,7 +126,7 @@ const CHALLENGE_SYSTEM = [
   'Do not fabricate facts, quotations, or source IDs. Do not execute actions.',
 ].join('\n');
 
-const RATIFICATION_SYSTEM = [
+export const RATIFICATION_SYSTEM = [
   'You are an AI advisory perspective inspired by the approved published-work pack.',
   'You are not the individual. This is the ratification round.',
   'Judge the exact draft resolution identified by its semantic hash.',
@@ -128,7 +135,7 @@ const RATIFICATION_SYSTEM = [
   'unresolved objections. Support never transfers to a changed resolution.',
 ].join('\n');
 
-const CONSULT_SYSTEM = [
+export const CONSULT_SYSTEM = [
   'You are an AI advisory perspective inspired by the approved published-work pack.',
   'You are not the individual. This is a one-seat consult, not a council vote.',
   'Answer the question from your seat\'s responsibility using supplied evidence.',
@@ -1188,8 +1195,19 @@ export class CouncilEngine {
         spread: result.spread,
       };
     });
+    // CWE-050 reconciliation (CWE-026 divergences (a), (b), (c);
+    // CWE-026's analysis is canonical): hard-constraint findings are
+    // derived and applied, never an empty list; a confirmed FAIL
+    // disqualifies its option before labels; coverage below the 80
+    // percent gate is INSUFFICIENT_EVIDENCE with no recommendation,
+    // regardless of unresolved domains; WAIT is for adequate coverage
+    // blocked by an unresolved domain or an unchecked hard constraint.
+    const findings = deriveHardConstraintFindings(session.brief);
+    const disqualified = new Set(
+      findings.filter((f) => f.result === 'fail').map((f) => f.option_id),
+    );
     const ranked = [...summaries]
-      .filter((s) => s.score !== null)
+      .filter((s) => s.score !== null && !disqualified.has(s.option_id))
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     const top = ranked[0] ?? null;
     const unresolvedDomains = session.brief.critical_domains.filter(
@@ -1201,8 +1219,12 @@ export class CouncilEngine {
       label = 'INSUFFICIENT_EVIDENCE';
       recommended = null;
     } else if ((top.coverage ?? 0) < 0.8) {
-      label = unresolvedDomains.length > 0 ? 'WAIT' : 'INSUFFICIENT_EVIDENCE';
-    } else if (unresolvedDomains.length > 0) {
+      label = 'INSUFFICIENT_EVIDENCE';
+      recommended = null;
+    } else if (
+      unresolvedDomains.length > 0 ||
+      findings.some((f) => f.option_id === top.option_id && f.result === 'unknown')
+    ) {
       label = 'WAIT';
     } else {
       label = labelForScore(top.score ?? 0);
@@ -1247,6 +1269,16 @@ export class CouncilEngine {
     const prerequisites = [
       ...new Set([
         ...unresolvedDomains.flatMap((d) => d.unresolved_questions),
+        // An unchecked hard constraint on the recommended option is a
+        // named prerequisite, as in CWE-026's analysis (Section 12.3).
+        ...(recommended
+          ? findings
+              .filter((f) => f.option_id === recommended && f.result === 'unknown')
+              .map(
+                (f) =>
+                  `Hard constraint ${f.constraint_id} has not been checked for option ${f.option_id}.`,
+              )
+          : []),
         ...round2.flatMap((c) =>
           c.conditions.filter((cond) => cond.blocking).map((cond) => cond.description),
         ),
@@ -1330,7 +1362,7 @@ export class CouncilEngine {
         ]),
       ),
       evidence_strength: strength as 'low' | 'medium' | 'high',
-      hard_constraint_findings: [] as never[],
+      hard_constraint_findings: findings,
       main_reasons: reasons,
       strongest_dissent: dissent,
       accepted_amendments: acceptedAmendments,

@@ -594,10 +594,21 @@ export class CouncilRepositories {
         ? current.cancel_generation + 1
         : current.cancel_generation,
       resume_phase:
-        to === 'PAUSED' || to === 'BLOCKED'
-          ? current.state
-          : to === 'RESUMING'
+        // CWE-050 reconciliation (CWE-027 carried item): the resume
+        // target is recorded when the pause is REQUESTED, from the
+        // pre-pause phase, and the PAUSED/BLOCKED landing keeps it.
+        // Previously the landing overwrote resume_phase with
+        // PAUSE_REQUESTED, a state the RESUMING legality rule can
+        // never target. A pause requested while RESUMING keeps the
+        // already-recorded resume target.
+        to === 'PAUSE_REQUESTED'
+          ? current.state === 'RESUMING'
             ? current.resume_phase
+            : current.state
+          : to === 'PAUSED' || to === 'BLOCKED'
+            ? current.state === 'PAUSE_REQUESTED'
+              ? current.resume_phase
+              : current.state
             : current.resume_phase,
       updated_at: now,
     };

@@ -60,7 +60,10 @@ test('cli: doctor is offline, JSON clean, and reports honest not-ready items', a
   assert.equal(byName.get('node_sqlite'), true);
   assert.equal(byName.get('local_store'), true);
   assert.equal(byName.get('live_routes_composed'), false);
-  assert.equal(byName.get('run_authorization_service'), false);
+  // CWE-050 disclosure: CWE-049's standalone composition list item 1
+  // composed the authorization service into this CLI, so the doctor
+  // check now reports it ready (it was an honest not-ready before).
+  assert.equal(byName.get('run_authorization_service'), true);
 });
 
 test('cli: data directory inside the skill tree is rejected', async () => {
@@ -104,14 +107,18 @@ test('cli: create, status, verdict-not-ready, and authorization honesty', async 
   const startEnvelope = JSON.parse(c.err()) as { error: { code: string } };
   assert.equal(startEnvelope.error.code, 'RUN_AUTHORIZATION_REQUIRED');
 
+  // CWE-050 disclosure: the authorization commands are composed now
+  // (CWE-049 standalone list item 1): preview without a session ID is
+  // a usage error from the real handler, not the retired
+  // COUNCIL_FEATURE_NOT_READY placeholder.
   c = capture();
   assert.equal(
     await runCli(['authorization', 'preview', '--json', '--data-dir', dir], c.io),
-    3,
+    2,
   );
   assert.equal(
     (JSON.parse(c.err()) as { error: { code: string } }).error.code,
-    'COUNCIL_FEATURE_NOT_READY',
+    'COUNCIL_USAGE',
   );
 
   c = capture();
@@ -143,8 +150,13 @@ test('cli: sample run completes, exports markdown and json, refuses pdf, replays
     await runCli(['export', 'sess-fixture-1', '--format', 'md', '--data-dir', dir], c.io),
     0,
   );
-  assert.ok(c.out().includes('# Council verdict: sess-fixture-1'));
-  assert.ok(c.out().includes('SAMPLE'));
+  // CWE-050 disclosure: exports run through CWE-038's
+  // ReportExportService (B15 portable half), so the markdown is the
+  // CWE-038 decision report naming the session and the exact verdict
+  // hash, replacing CWE-004's local verdictMarkdown rendering.
+  assert.ok(c.out().includes('# Council of Wise Elders: Decision Report'));
+  assert.ok(c.out().includes('Session: sess-fixture-1'));
+  assert.ok(c.out().includes('Verdict content SHA-256:'));
 
   c = capture();
   assert.equal(

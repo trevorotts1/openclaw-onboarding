@@ -13,3 +13,6 @@ export * from './coverage';
 export * from './packs';
 export * from './audit';
 export * from './export-package';
+// CWE-050: the Skill 22 export (v1) to strict-schema adapter and its
+// material catalog (sources/export-v2.ts).
+export * from './export-v2';

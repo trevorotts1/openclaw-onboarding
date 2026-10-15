@@ -254,7 +254,22 @@ test('engine: quick mode skips Round 3 only when the Section 10 predicate holds'
   if (!verdict || verdict.result_kind !== 'scored') return;
   assert.equal(verdict.ratification_status, 'not_run_by_quick_mode_policy');
   assert.equal(verdict.resolution_support, null);
-  assert.equal(verdict.label, 'GO');
+  // CWE-050 reconciliation disclosure: this assertion previously
+  // expected 'GO' under the CWE-004 engine's retired behavior of
+  // emitting an empty hard-constraint findings list (CWE-026
+  // divergence (a)). Under the canonical CWE-026 semantics the sample
+  // brief's hard constraint con-1 (applies to B and C) has no recorded
+  // check, so it is an `unknown` finding and blocks an unconditional
+  // GO: the label is WAIT, still recommending B, with the unchecked
+  // constraint named as a prerequisite. The quick-skip assertions above
+  // (the subject of this test) are unchanged.
+  assert.equal(verdict.label, 'WAIT');
+  assert.equal(verdict.recommended_option_id, 'B');
+  assert.ok(
+    verdict.hard_constraint_findings.some(
+      (f) => f.constraint_id === 'con-1' && f.option_id === 'B' && f.result === 'unknown',
+    ),
+  );
   const cards = await host.store.listCards('sess-quick-1');
   assert.equal(cards.filter((c) => c.card_kind === 'ratification').length, 0);
 });

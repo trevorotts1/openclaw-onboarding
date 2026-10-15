@@ -52,6 +52,7 @@ import {
   type ConstraintResult,
   type CriticalDomain,
   type CriticalDomainRequirement,
+  type DecisionBrief,
   type DecisionOption,
   type HardConstraintFinding,
   type SeatId,
@@ -173,6 +174,54 @@ function domainAppliesTo(
   const pairs = applicability.filter((p) => p.domain === domain);
   if (pairs.length === 0) return true;
   return pairs.some((p) => p.option_id === optionId);
+}
+
+/**
+ * Derive the hard-constraint findings a verdict is evaluated against
+ * (Section 12.3; CWE-050 reconciliation of CWE-026 divergence (a)).
+ *
+ * The canonical rule, owned by CWE-026's analysis: findings are
+ * APPLIED, never assumed away. A recorded checker result (supplied by
+ * the composition from a deterministic check, a seat, or a qualified
+ * professional) wins for its constraint and option. Where no checker
+ * has recorded a result, the honest deterministic state is `unknown`
+ * from `deterministic_code` with no evidence: an unchecked hard
+ * constraint is not a passed one, and under the analysis an unknown
+ * blocks an unconditional recommendation until it is checked. The
+ * pre-reconciliation CWE-004 engine emitted an empty findings list,
+ * which silently treated every hard constraint as satisfied; that
+ * behavior is retired everywhere by this shared derivation.
+ */
+export function deriveHardConstraintFindings(
+  brief: DecisionBrief,
+  recorded: readonly HardConstraintFinding[] = [],
+): HardConstraintFinding[] {
+  const recordedByKey = new Map<string, HardConstraintFinding>(
+    recorded.map((f) => [`${f.constraint_id}::${f.option_id}`, f]),
+  );
+  const findings: HardConstraintFinding[] = [];
+  for (const constraint of brief.constraints) {
+    if (!constraint.hard) continue;
+    const optionIds =
+      constraint.applies_to_option_ids.length > 0
+        ? constraint.applies_to_option_ids
+        : brief.options.map((o) => o.id);
+    for (const optionId of optionIds) {
+      const existing = recordedByKey.get(`${constraint.id}::${optionId}`);
+      if (existing) {
+        findings.push(existing);
+      } else {
+        findings.push({
+          constraint_id: constraint.id,
+          option_id: optionId,
+          result: 'unknown',
+          checker: 'deterministic_code',
+          evidence_ids: [],
+        });
+      }
+    }
+  }
+  return findings;
 }
 
 /**

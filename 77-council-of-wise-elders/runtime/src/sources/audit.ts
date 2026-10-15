@@ -5,10 +5,17 @@
  * The audit binds the pack's canonical content hash to the validator
  * version, the pack version, the computed qualification, and the full
  * diagnostic set. The audit hash is a self-excluding canonical hash over
- * the audit record, so any later edit to the record is detectable, and
- * two audits of the same pack content under the same validator version
- * produce the same hashes. `audited_at` is host-supplied (the trusted
- * clock stamps audits; validators never invent a time).
+ * the audit record, so any later edit to the record is detectable.
+ * Hash stability, stated precisely (CWE-042 Defect 1, corrected by
+ * CWE-050; hash semantics unchanged): `pack_sha256` covers pack content
+ * only and is identical for the same content under the same validator
+ * version. `audit_sha256` covers the audit record INCLUDING `audited_at`,
+ * so two audits of the same pack differ in `audit_sha256` whenever
+ * their `audited_at` values differ; audits are reproducible only with
+ * the same `audited_at`, and runners therefore always pass an explicit
+ * `audited_at` rather than relying on a clock default. `audited_at` is
+ * host-supplied (the trusted clock stamps audits; validators never
+ * invent a time).
  */
 
 import { canonicalHash } from '../contracts/canonical-json';

@@ -79,7 +79,7 @@ import type {
   StoredSession,
   TransportResponse,
 } from '../cli/host-ports.js';
-import { SEAT_FOCUS } from '../cli/engine.js';
+import { OPENING_SYSTEM, SEAT_FOCUS } from '../cli/engine.js';
 import {
   SimulatedCrashError,
   TransportDispatchError,
@@ -91,22 +91,12 @@ import { isTransportError } from '../providers/errors.js';
 import { validateCardSourceUse } from '../sources/packs.js';
 
 /**
- * The Section 14.2 logical prompt contract, verbatim. CWE-004's
- * in-process engine carries the same text as a module-private constant
- * quoted from the same section; the two copies share one source (the
- * directive) and consolidating them is CWE-050's integration work, not
- * a reason to edit an accepted file from this unit.
+ * The Section 14.2 logical prompt contract, verbatim. CWE-050
+ * consolidation: the single source is OPENING_SYSTEM in cli/engine.ts
+ * (the module this file already imports SEAT_FOCUS from); this name is
+ * kept as the protocol surface for the same text.
  */
-export const OPENING_ROUND_SYSTEM = [
-  'You are an AI advisory perspective inspired by the approved published-work pack.',
-  'You are not the individual. Apply the seat\'s specific responsibility.',
-  'Use only supplied facts and authorized evidence. Label assumptions and unknowns.',
-  'Evaluate every listed option and generate justified evaluative scores.',
-  'Do not fabricate external facts, quotations, measured results, or source IDs.',
-  'Do not assume any other seat agrees. Do not execute actions.',
-  'Return one AdvisorCard matching the supplied schema, with concrete application,',
-  'strongest objection, necessary conditions, and what would change your position.',
-].join('\n');
+export const OPENING_ROUND_SYSTEM = OPENING_SYSTEM;
 
 /** Identity kind tag for a Round 1 opening input manifest. */
 export const OPENING_INPUT_KIND = 'wise-elders.opening-input/v1';

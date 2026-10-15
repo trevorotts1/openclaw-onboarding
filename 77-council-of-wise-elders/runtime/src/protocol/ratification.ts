@@ -104,7 +104,11 @@ import type {
   StoredSession,
   TransportResponse,
 } from '../cli/host-ports.js';
-import { SEAT_FOCUS } from '../cli/engine.js';
+import {
+  CONSULT_SYSTEM as ENGINE_CONSULT_SYSTEM,
+  RATIFICATION_SYSTEM,
+  SEAT_FOCUS,
+} from '../cli/engine.js';
 import {
   SimulatedCrashError,
   type OperationDispatchContext,
@@ -119,7 +123,15 @@ import {
   type DecisionInput,
   type ProfessionalReviewOutcome,
 } from '../scoring/index.js';
-import type { CriticalDomainApplicability } from '../scoring/critical-domains.js';
+import {
+  deriveCriticalDomainApplicability,
+  type CriticalDomainApplicability,
+} from '../scoring/critical-domains.js';
+
+// CWE-050 consolidation: the applicability derivation lives once, in
+// scoring/critical-domains.ts; re-exported here for compatibility with
+// this module's earlier surface.
+export { deriveCriticalDomainApplicability };
 import {
   aggregateEvidenceStrength,
   assessAmendment,
@@ -201,39 +213,6 @@ export function decisionInputForCards(args: {
     critical_domain_applicability: deriveCriticalDomainApplicability(args.brief),
     professional_reviews: args.professional_reviews ?? [],
   };
-}
-
-/**
- * Per-option critical-domain applicability derived from the frozen
- * brief: a requirement whose trigger paths name brief constraints
- * applies to the options those constraints apply to; a requirement
- * with no such restriction is global. This reproduces, on the
- * completion side, the derivation CWE-026's publication validator
- * performs, so a verdict this service assembles recomputes identically
- * at publication (the two copies are CWE-050 consolidation work).
- */
-export function deriveCriticalDomainApplicability(
-  brief: DecisionBrief,
-): CriticalDomainApplicability[] {
-  const pairs: CriticalDomainApplicability[] = [];
-  const constraintOptions = new Map<string, string[]>(
-    brief.constraints.map((c) => [c.id, c.applies_to_option_ids]),
-  );
-  for (const requirement of brief.critical_domains) {
-    const restricted = new Set<string>();
-    for (const path of requirement.trigger_field_paths) {
-      const match = /^constraints\.([A-Za-z0-9-]+)$/.exec(path);
-      if (!match) continue;
-      const optionIds = constraintOptions.get(match[1]);
-      if (optionIds && optionIds.length > 0) {
-        for (const id of optionIds) restricted.add(id);
-      }
-    }
-    for (const optionId of restricted) {
-      pairs.push({ domain: requirement.domain, option_id: optionId });
-    }
-  }
-  return pairs;
 }
 
 /**
@@ -588,17 +567,11 @@ export function evaluateQuickModeSkip(input: QuickSkipInput): QuickSkipEvaluatio
 // ------------------------------------------------------- ratification round
 
 /**
- * The Section 14.5 logical prompt contract for ratification, verbatim
- * from CWE-004's in-process engine (which quotes the same section).
+ * The Section 14.5 logical prompt contract for ratification. CWE-050
+ * consolidation: the single source is RATIFICATION_SYSTEM in
+ * cli/engine.ts; this name is kept as the protocol surface.
  */
-export const RATIFICATION_ROUND_SYSTEM = [
-  'You are an AI advisory perspective inspired by the approved published-work pack.',
-  'You are not the individual. This is the ratification round.',
-  'Judge the exact draft resolution identified by its semantic hash.',
-  'Return one RatificationCard: support, conditional support, opposition, or',
-  'abstention for that resolution, final option scores, amendments, and any',
-  'unresolved objections. Support never transfers to a changed resolution.',
-].join('\n');
+export const RATIFICATION_ROUND_SYSTEM = RATIFICATION_SYSTEM;
 
 /** Identity kind tag for a Round 3 ratification input manifest. */
 export const RATIFICATION_INPUT_KIND = 'wise-elders.ratification-input/v1';
@@ -1011,15 +984,11 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
 // ------------------------------------------------------------------- consult
 
 /**
- * The Section 14 consult prompt contract, verbatim from CWE-004's
- * in-process engine.
+ * The Section 14 consult prompt contract. CWE-050 consolidation: the
+ * single source is CONSULT_SYSTEM in cli/engine.ts; re-exported under
+ * the same name for this module's existing surface.
  */
-export const CONSULT_SYSTEM = [
-  'You are an AI advisory perspective inspired by the approved published-work pack.',
-  'You are not the individual. This is a one-seat consult, not a council vote.',
-  'Answer the question from your seat\'s responsibility using supplied evidence.',
-  'Return one ConsultCard. Do not invent options, scores, or consensus.',
-].join('\n');
+export const CONSULT_SYSTEM = ENGINE_CONSULT_SYSTEM;
 
 /** Identity kind tag for a consult input manifest. */
 export const CONSULT_INPUT_KIND = 'wise-elders.consult-input/v1';

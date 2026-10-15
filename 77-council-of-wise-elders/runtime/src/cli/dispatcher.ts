@@ -1,19 +1,22 @@
 /**
- * blackceo-council CLI dispatcher (CWE-004; directive Section 25.3).
+ * blackceo-council CLI dispatcher (CWE-004; CWE-050 composition).
  *
- * Argument arrays only: no shell strings, no interactive prompts. Every
- * command prints either clean JSON (--json) or a short human summary,
- * and failures are stable typed envelopes (Section 17.3) with nonzero
- * exit codes. The dispatcher is a thin shell over the engine and the
- * injected host; importing it has no side effects.
+ * Argument arrays only: no shell strings. Every command prints either
+ * clean JSON (--json) or a short human summary, and failures are
+ * stable typed envelopes (Section 17.3) with nonzero exit codes. The
+ * dispatcher is a thin shell over the engine and the injected host;
+ * importing it has no side effects.
  *
- * Honest surface: commands whose behavior belongs to a downstream unit
- * return FEATURE_NOT_READY naming that unit instead of simulating
- * success. Authorization commands belong to CWE-049, live route probes
- * to CWE-009/CWE-010 with CWE-049, and PDF export to CWE-038.
+ * Composed surface (CWE-050): the authorization commands delegate to
+ * CWE-049's handleAuthorizationCommand (preview, approve, status,
+ * revoke) with controlling-terminal confirmation wired here; export
+ * runs through CWE-038's validated ReportExportService (PDF stays
+ * registered not ready by that service, naming CWE-044's renderer).
+ * Live route probes remain FEATURE_NOT_READY naming CWE-009/CWE-010
+ * with CWE-049: no live transport is composed in the standalone host.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, readSync, writeFileSync, writeSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +40,12 @@ import {
 import { buildSampleSession, DeterministicFixtureTransport } from './fixture-transport.js';
 import type { CouncilHost } from './host-ports.js';
 import { createLocalHost, localScope, type LocalHost } from './local-host.js';
+import {
+  createStandaloneRunAuthorization,
+  handleAuthorizationCommand,
+  mirrorSession,
+} from './authorization.js';
+import { exportVerdictReport } from './report-export.js';
 import { resolveDataDir } from './paths.js';
 
 export interface CliIo {
@@ -91,6 +100,50 @@ function flagString(flags: Map<string, string | true>, name: string): string | n
   return typeof value === 'string' ? value : null;
 }
 
+/**
+ * Controlling-terminal confirmation for interactive approval
+ * (Section 25.6): the preview text and the owner's answer travel over
+ * /dev/tty, NEVER stdin, so piped input and --json stdout stay clean.
+ * Returns undefined when no controlling terminal exists (headless):
+ * approval then requires a standing grant, exactly as CWE-049's
+ * handler prescribes.
+ */
+function terminalConfirmPreview():
+  | ((previewText: string) => Promise<boolean>)
+  | undefined {
+  let inFd: number;
+  let outFd: number;
+  try {
+    outFd = openSync('/dev/tty', 'w');
+    inFd = openSync('/dev/tty', 'r');
+  } catch {
+    return undefined;
+  }
+  return async (previewText: string) => {
+    try {
+      writeSync(outFd, `${previewText}\nType "yes" to approve this exact envelope: `);
+      const buffer = Buffer.alloc(256);
+      let line = '';
+      for (;;) {
+        const read = readSync(inFd, buffer, 0, buffer.length, null);
+        if (read === 0) break;
+        line += buffer.subarray(0, read).toString('utf8');
+        if (line.includes('\n')) break;
+      }
+      return /^y(es)?$/i.test(line.trim());
+    } catch {
+      return false;
+    } finally {
+      try {
+        closeSync(inFd);
+        closeSync(outFd);
+      } catch {
+        // The CLI process is exiting anyway; a close failure is moot.
+      }
+    }
+  };
+}
+
 function printResult(io: CliIo, json: boolean, human: string, data: unknown): void {
   io.out(json ? `${JSON.stringify(data, null, 2)}\n` : `${human}\n`);
 }
@@ -126,56 +179,6 @@ function verdictHuman(verdict: Verdict, sample: boolean): string {
   }
   lines.push(`Ratification: ${verdict.ratification_status}`);
   return lines.join('\n');
-}
-
-function verdictMarkdown(verdict: Verdict, sample: boolean): string {
-  const lines: string[] = [];
-  lines.push(`# Council verdict: ${verdict.session_id}`);
-  if (sample) {
-    lines.push('');
-    lines.push('> SAMPLE: synthetic fixture data. Not a real council run.');
-  }
-  if (verdict.result_kind === 'consult') {
-    lines.push('');
-    lines.push(`**Result kind:** consult`);
-    lines.push('');
-    lines.push(`**Answer:** ${verdict.consult_card.answer}`);
-    lines.push('');
-    lines.push(`**Next step:** ${verdict.next_step}`);
-    return `${lines.join('\n')}\n`;
-  }
-  lines.push('');
-  lines.push(`**Label:** ${verdict.label}`);
-  lines.push(`**Recommended option:** ${verdict.recommended_option_id ?? 'none'}`);
-  lines.push('');
-  lines.push('| Option | Score | Coverage | Spread |');
-  lines.push('| --- | --- | --- | --- |');
-  for (const score of verdict.option_scores) {
-    lines.push(
-      `| ${score.option_id} | ${score.display_score === null ? 'n/a' : score.display_score.toFixed(1)} | ${score.coverage.toFixed(2)} | ${score.spread ?? 'n/a'} |`,
-    );
-  }
-  if (verdict.main_reasons.length > 0) {
-    lines.push('');
-    lines.push('## Main reasons');
-    for (const reason of verdict.main_reasons) lines.push(`- ${reason}`);
-  }
-  if (verdict.strongest_dissent) {
-    lines.push('');
-    lines.push('## Strongest dissent');
-    lines.push(verdict.strongest_dissent);
-  }
-  if (verdict.prerequisites.length > 0) {
-    lines.push('');
-    lines.push('## Prerequisites');
-    for (const item of verdict.prerequisites) lines.push(`- ${item}`);
-  }
-  lines.push('');
-  lines.push(`Ratification: ${verdict.ratification_status}. Validation: ${verdict.validation_status}.`);
-  lines.push(
-    'Action proposals in this verdict require separate action-plan approval; a council verdict is not an execution credential.',
-  );
-  return `${lines.join('\n')}\n`;
 }
 
 /** A grant that exists only for the labeled sample path. */
@@ -317,9 +320,9 @@ export async function runCli(
         });
         checks.push({
           name: 'run_authorization_service',
-          ok: false,
+          ok: true,
           detail:
-            'grant service not composed (CWE-049); session starts refuse with RUN_AUTHORIZATION_REQUIRED',
+            'grant service composed (CWE-049, composed by CWE-050): authorization preview/approve/status/revoke are live and session starts resolve grants through the authorization store',
         });
         const data = {
           ok: checks.every((c) => c.ok || c.name === 'live_routes_composed' || c.name === 'run_authorization_service'),
@@ -372,10 +375,20 @@ export async function runCli(
       }
 
       case 'authorization': {
-        throw featureNotReady(
-          'The run authorization service (preview, approve, status, revoke)',
-          'CWE-049',
-        );
+        // CWE-050 composition (CWE-049 build report, standalone list
+        // item 1): delegate to CWE-049's handler over the standalone
+        // authorization store in the resolved data directory.
+        // Confirmation is wired to the controlling terminal, never
+        // stdin; in --json mode results stay on stdout and the
+        // confirmation still uses the terminal.
+        const dir = resolveDataDir({ override: dataDir ?? null, skillRoot });
+        await handleAuthorizationCommand(sub, positionals.slice(2), flags, {
+          dataDir: dir,
+          json,
+          io,
+          confirmPreview: terminalConfirmPreview(),
+        });
+        return 0;
       }
 
       case 'create': {
@@ -413,7 +426,24 @@ export async function runCli(
             `Could not read session input files: ${err instanceof Error ? err.message : String(err)}`,
           );
         }
-        const created = await engine.createSession({ spec, brief, scope: localScope() });
+        const dir = resolveDataDir({ override: dataDir ?? null, skillRoot });
+        const created = await engine.createSession({
+          spec,
+          brief,
+          scope: localScope(dir),
+        });
+        // CWE-050 composition (CWE-049 standalone list item 2): mirror
+        // the session into the authorization store at creation time,
+        // in the same provisioned installation namespace, so
+        // `authorization preview` freezes exactly what was created.
+        // (Sample sessions are labeled fixtures on their own scope and
+        // are not mirrored; their grant path is the sample fixture's.)
+        const authorization = createStandaloneRunAuthorization({ dataDir: dir });
+        try {
+          mirrorSession(authorization, created);
+        } finally {
+          authorization.close();
+        }
         printResult(
           io,
           json,
@@ -616,10 +646,7 @@ export async function runCli(
         const sessionId = sub;
         if (!sessionId) throw usageError('export requires a session ID.');
         const format = flagString(flags, 'format') ?? 'md';
-        if (format === 'pdf') {
-          throw featureNotReady('PDF report export', 'CWE-038');
-        }
-        if (format !== 'md' && format !== 'json') {
+        if (format !== 'md' && format !== 'json' && format !== 'pdf') {
           throw usageError('export --format must be md, json, or pdf.');
         }
         const { host } = hostFor();
@@ -633,20 +660,47 @@ export async function runCli(
             { retryable: false, exitCode: 3 },
           );
         }
-        const body =
-          format === 'json'
-            ? `${JSON.stringify(verdict, null, 2)}\n`
-            : verdictMarkdown(verdict, session.sample);
+        // CWE-050 composition (B15 portable half): exports run through
+        // CWE-038's validated ReportExportService: publication
+        // validation, journaling, and deliverable registration on the
+        // exact verdict hash. PDF is registered not ready by that
+        // service and refuses with EXPORT_FORMAT_NOT_READY (CWE-044).
+        const artifact = await exportVerdictReport({
+          store: host.store,
+          session,
+          verdict,
+          format,
+          requestId: host.ids.newId(),
+          exportedAt: host.clock.nowUtc(),
+        });
         const outPath = flagString(flags, 'out');
         if (outPath) {
-          writeFileSync(outPath, body, 'utf8');
-          printResult(io, json, `Exported ${format} verdict for ${sessionId} to ${outPath}.`, {
+          writeFileSync(outPath, artifact.bytes, 'utf8');
+          printResult(
+            io,
+            json,
+            `Exported ${format} report for ${sessionId} to ${outPath} (deliverable ${artifact.deliverable_id}, sha256 ${artifact.sha256}).`,
+            {
+              ok: true,
+              written: outPath,
+              format,
+              deliverable_id: artifact.deliverable_id,
+              sha256: artifact.sha256,
+              verdict_content_sha256: artifact.verdict_content_sha256,
+            },
+          );
+        } else if (json && format !== 'json') {
+          printResult(io, json, '', {
             ok: true,
-            written: outPath,
             format,
+            deliverable_id: artifact.deliverable_id,
+            filename: artifact.filename,
+            sha256: artifact.sha256,
+            verdict_content_sha256: artifact.verdict_content_sha256,
+            content: artifact.bytes,
           });
         } else {
-          io.out(body);
+          io.out(artifact.bytes);
         }
         return 0;
       }

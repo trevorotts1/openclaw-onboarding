@@ -31,6 +31,7 @@ import {
   criticalDomainRequirementSchema,
   type CriticalDomain,
   type CriticalDomainRequirement,
+  type DecisionBrief,
   type SeatId,
 } from '../contracts/index.js';
 
@@ -240,4 +241,38 @@ export function classifyCriticalDomains(
     rejected_removals: rejectedRemovals,
     classification_sha256: canonicalHash(requirements),
   };
+}
+
+/**
+ * Per-option critical-domain applicability derived from a frozen brief
+ * (CWE-050 consolidation: this is the ONE implementation; the copies
+ * that lived in protocol/verdict.ts and protocol/ratification.ts were
+ * byte-identical and now import this). A requirement whose trigger
+ * paths name brief constraints (the canonical `constraints.<id>`
+ * dialect) applies to the options those constraints apply to; a
+ * requirement with no such restriction contributes no pairs and is
+ * global (absence of pairs means global).
+ */
+export function deriveCriticalDomainApplicability(
+  brief: DecisionBrief,
+): CriticalDomainApplicability[] {
+  const pairs: CriticalDomainApplicability[] = [];
+  const constraintOptions = new Map<string, string[]>(
+    brief.constraints.map((c) => [c.id, c.applies_to_option_ids]),
+  );
+  for (const requirement of brief.critical_domains) {
+    const restricted = new Set<string>();
+    for (const path of requirement.trigger_field_paths) {
+      const match = /^constraints\.([A-Za-z0-9-]+)$/.exec(path);
+      if (!match) continue;
+      const optionIds = constraintOptions.get(match[1]);
+      if (optionIds && optionIds.length > 0) {
+        for (const id of optionIds) restricted.add(id);
+      }
+    }
+    for (const optionId of restricted) {
+      pairs.push({ domain: requirement.domain, option_id: optionId });
+    }
+  }
+  return pairs;
 }

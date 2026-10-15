@@ -1,5 +1,6 @@
 /**
- * Standalone host composition (CWE-004).
+ * Standalone host composition (CWE-004; authorization composed by
+ * CWE-050 from CWE-049's service).
  *
  * Assembles the real local host for the portable core: SQLite store in
  * the per-user data directory (never inside the skill tree), in-process
@@ -8,10 +9,16 @@
  * CWE-009 and CWE-010, and the registry never invents one), an evidence
  * provider that serves the frozen brief manifest and reports "no pack
  * installed" honestly, a secrets probe that never accepts or returns
- * values, and an authorization provider that resolves nothing until
- * CWE-049's service is composed. The result is a core that runs fully
- * offline and fails closed with typed errors wherever a production
- * dependency is not yet present.
+ * values, and the run authorization provider composed from CWE-049's
+ * standalone service (withRunAuthorization over
+ * createStandaloneRunAuthorization): grants approved through the
+ * `authorization` CLI commands resolve here, in the SAME provisioned
+ * installation namespace the sessions are created under (localScope
+ * with a data directory). Unapproved or unknown grant references still
+ * resolve to null, so runs refuse with RUN_AUTHORIZATION_REQUIRED
+ * rather than spending on a flag or a file. The result is a core that
+ * runs fully offline and fails closed with typed errors wherever a
+ * production dependency is not yet present.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -28,6 +35,12 @@ import type {
   ModelTransport,
   TransportRegistry,
 } from './host-ports.js';
+import {
+  createStandaloneRunAuthorization,
+  resolveStandaloneInstallation,
+  standaloneScope,
+  withRunAuthorization,
+} from './authorization.js';
 import { InProcessBudgetLedger } from './budget.js';
 import { InProcessLeaseProvider } from './leases.js';
 import { LocalSqliteStore } from './local-store.js';
@@ -107,9 +120,9 @@ export function createLocalHost(options: LocalHostOptions = {}): LocalHost {
       newId: () => randomUUID(),
     },
     authorize: {
-      // CWE-049 owns the grant store. Until it is composed, no grant
-      // resolves, so runs refuse with RUN_AUTHORIZATION_REQUIRED rather
-      // than spending on a flag or a file.
+      // Placeholder replaced below by CWE-049's composed provider
+      // (withRunAuthorization); kept as the fail-closed default if the
+      // composition is ever bypassed.
       async resolveRunGrant(
         _grantRef: string,
         _sessionId: string,
@@ -118,11 +131,29 @@ export function createLocalHost(options: LocalHostOptions = {}): LocalHost {
       },
     },
   };
-  return { host, dataDir, store };
+  // CWE-050 composition (CWE-049 build report, standalone composition
+  // list item 2): the host's grant resolution IS the standalone run
+  // authorization service over the authorization store in the same
+  // data directory, under the provisioned installation namespace.
+  const authorization = createStandaloneRunAuthorization({ dataDir });
+  const composedHost = withRunAuthorization(host, authorization);
+  return { host: composedHost, dataDir, store };
 }
 
-/** Fixed scope for standalone single-user runs (Section 5.4). */
-export function localScope(): ScopeFields {
+/**
+ * Scope for standalone single-user runs (Section 5.4). CWE-050
+ * alignment: with a data directory, the scope IS the provisioned
+ * standalone installation (resolveStandaloneInstallation +
+ * standaloneScope), so sessions, envelopes, and grants share ONE
+ * namespace: the authorization profile's UUID installation. The
+ * no-argument form keeps the fixed foundation strings for callers
+ * that compose no data directory (for example bridge defaults in
+ * tests); production CLI paths always pass the data directory.
+ */
+export function localScope(dataDir?: string): ScopeFields {
+  if (dataDir) {
+    return standaloneScope(resolveStandaloneInstallation(dataDir));
+  }
   return {
     installation_id: 'local-installation',
     tenant_id: 'local-tenant',

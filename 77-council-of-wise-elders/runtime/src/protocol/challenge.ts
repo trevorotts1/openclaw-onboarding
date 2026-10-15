@@ -103,7 +103,7 @@ import type {
   StoredSession,
   TransportResponse,
 } from '../cli/host-ports.js';
-import { SEAT_FOCUS } from '../cli/engine.js';
+import { CHALLENGE_SYSTEM, SEAT_FOCUS } from '../cli/engine.js';
 import {
   SimulatedCrashError,
   TransportDispatchError,
@@ -719,19 +719,11 @@ export function cruxSetSha256(cruxes: readonly Crux[]): string {
 // ------------------------------------------------------- challenge executor
 
 /**
- * The Section 14.3 logical prompt contract for the challenge round,
- * verbatim from CWE-004's in-process engine (which quotes the same
- * section); consolidating the copies is CWE-050's work, as with
- * CWE-024's opening text.
+ * The Section 14.3 logical prompt contract for the challenge round.
+ * CWE-050 consolidation: the single source is CHALLENGE_SYSTEM in
+ * cli/engine.ts; this name is kept as the protocol surface.
  */
-export const CHALLENGE_ROUND_SYSTEM = [
-  'You are an AI advisory perspective inspired by the approved published-work pack.',
-  'You are not the individual. This is the focused challenge round.',
-  'Answer the cruxes assigned to your seat using the supplied evidence.',
-  'Return a Round 2 AdvisorCard: confirm or update your position, and explain',
-  'every changed score. A changed score without an explanation is invalid.',
-  'Do not fabricate facts, quotations, or source IDs. Do not execute actions.',
-].join('\n');
+export const CHALLENGE_ROUND_SYSTEM = CHALLENGE_SYSTEM;
 
 /** Identity kind tag for a Round 2 challenge input manifest. */
 export const CHALLENGE_INPUT_KIND = 'wise-elders.challenge-input/v1';

@@ -52,7 +52,10 @@ import {
   type DecisionAnalysis,
   type DecisionInput,
 } from '../scoring/decision.js';
-import type { CriticalDomainApplicability } from '../scoring/critical-domains.js';
+import {
+  deriveCriticalDomainApplicability,
+  type CriticalDomainApplicability,
+} from '../scoring/critical-domains.js';
 
 // ---------------------------------------------------------------------------
 // Exact-hash helpers
@@ -319,29 +322,9 @@ export interface PublicationValidationInput {
   require_final_cards?: boolean;
 }
 
-function deriveApplicability(
-  brief: DecisionBrief,
-): CriticalDomainApplicability[] {
-  const pairs: CriticalDomainApplicability[] = [];
-  const constraintOptions = new Map<string, string[]>(
-    brief.constraints.map((c) => [c.id, c.applies_to_option_ids]),
-  );
-  for (const requirement of brief.critical_domains) {
-    const restricted = new Set<string>();
-    for (const path of requirement.trigger_field_paths) {
-      const match = /^constraints\.([A-Za-z0-9-]+)$/.exec(path);
-      if (!match) continue;
-      const optionIds = constraintOptions.get(match[1]);
-      if (optionIds && optionIds.length > 0) {
-        for (const id of optionIds) restricted.add(id);
-      }
-    }
-    for (const optionId of restricted) {
-      pairs.push({ domain: requirement.domain, option_id: optionId });
-    }
-  }
-  return pairs;
-}
+// CWE-050 consolidation: the per-option applicability derivation lives
+// once in scoring/critical-domains.ts (deriveCriticalDomainApplicability);
+// this module previously carried a byte-identical private copy.
 
 function scoringCardsOf(
   cards: readonly CouncilCard[],
@@ -486,7 +469,7 @@ export function validateVerdictForPublication(
       missing_seat_ids: activeSeats.filter((s) => !cardSeats.has(s)),
       hard_constraints: verdict.hard_constraint_findings,
       critical_domains: brief.critical_domains,
-      critical_domain_applicability: deriveApplicability(brief),
+      critical_domain_applicability: deriveCriticalDomainApplicability(brief),
     };
     let recomputeDetail = '';
     let recomputeOk = true;
