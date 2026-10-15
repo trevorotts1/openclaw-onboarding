@@ -53,22 +53,22 @@ Use a subagent in nearly all cases. The exceptions are narrow:
 
 ### Subagent model selection
 
-The install subagent does NOT use the conversational reply model (e.g., Gemini 3.1 Flashlight). It uses a heavy-reasoning, large-context-window model because:
+The install subagent does NOT use the conversational reply model. It uses the model the client selects for the install, or their configured default model. Recommendation: a heavy-reasoning, large-context-window model, because:
 
 - The playbook is ~3,000 lines — needs a high context window to ingest fully
 - Setup involves long sequential reasoning across 11 steps + 7 phases + 7 checkpoints
 - One-shot quality matters more than per-token latency
 - Failure cost is high (broken setup is hours of debugging)
 
-**Recommended install subagent models (in priority order):**
+**Recommended install subagent model profile (in priority order):**
 
-1. **`deepseek/deepseek-v4.1-flash`** via OpenRouter or Ollama Cloud, with thinking set to `max`. ~1M context, deep reasoning, best long-instruction following.
-2. **`google/gemini-3.5-flash`** via OpenRouter. ~2M context, very fast, good reasoning. Best if budget is a concern.
-3. **`ollama/deepseek-v4.1-flash:cloud`** with `thinking: max`. Free if Ollama Cloud is configured. Slightly less capable than Pro but workable.
+1. A model with roughly 1M context, deep reasoning with thinking set to `max`, and the strongest long-instruction following available to the client, because the playbook is thousands of lines and setup is long sequential reasoning.
+2. A faster model with a very large context (roughly 2M) and good reasoning, if budget is a concern.
+3. A model on a lane the client already pays for, with `thinking: max`, at no extra per-token cost if a subscription lane is configured. Slightly less capable but workable.
 
-Anthropic models are NOT recommended for client install subagents (operator-only tooling, cost-prohibitive). Use the client's own Ollama Cloud / OpenRouter models above.
+The client selects the model; these profiles are recommendations with reasons, never prescriptions. Anthropic models are NOT recommended for client install subagents (operator-only tooling, cost-prohibitive). Use the client's own models.
 
-Verify model availability against `openrouter.ai/models` and `ollama.com/library` at run-time (per Self-Orientation O.3) — newer models may have superseded these.
+Verify model availability against the client's providers' current model catalogs (for example `openrouter.ai/models` and `ollama.com/library`) at run-time (per Self-Orientation O.3): newer models may have superseded the ones the client picked.
 
 ### Question-routing protocol
 
@@ -185,7 +185,7 @@ The main agent inspects the current conversation context and decides whether the
 # Pseudocode for the main agent's reasoning:
 playbook_token_estimate = 120_000  # ~4,800+ lines markdown as of v5.4 — this number grows with each version; agent should check current line count and re-estimate
 current_context_used = <main agent estimates from session>
-context_window_max = <known per model: gemini-3.1-flashlight=1M, gemini-3.5-flash=2M, etc.>
+context_window_max = <the chosen model's documented context window, from the provider's current model listing>
 headroom_needed = playbook_token_estimate + 50_000  # buffer for execution
 
 if EXECUTION_MODE == "main-agent":
@@ -213,14 +213,15 @@ If `EXECUTION_MODE = subagent`, this check still happens BUT the recommendation 
 **Step 4 — Verify subagent model availability (subagent path only)**
 
 ```
-"I'll spawn the install subagent. My default recommendation is
-deepseek/deepseek-v4.1-flash with thinking set to 'max' (deep reasoning,
-large context). Alternatives:
-   - gemini-3.5-flash via OpenRouter (faster, slightly less deep)
-   - ollama/deepseek-v4.1-flash:cloud with thinking:max (free if Ollama
-     Cloud is configured)
+"I'll spawn the install subagent. The model is your choice, or your
+configured default model. My recommendation is a high-reasoning model
+with thinking set to 'max' and a large context window (deep reasoning,
+long playbook). Alternatives worth considering:
+   - a faster model with a very large context (slightly less deep)
+   - a model on a lane you already pay for, with thinking set to max
+     (no extra per-token cost if a subscription lane is configured)
 
-Stick with the default, or pick another?"
+Stick with the recommendation, or pick another?"
 ```
 
 Verify the chosen model exists in the OpenClaw config and has an API key available. If not, prompt for the missing credential before spawning.

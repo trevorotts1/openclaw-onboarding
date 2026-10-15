@@ -140,6 +140,12 @@ def _pro_first_table(monkeypatch):
     for cls in model_router.ECONOMY_FLASH_REPOINT:
         monkeypatch.setitem(model_router.CAPABILITY_CANDIDATES, cls,
                             copy.deepcopy(_PRO_FIRST))
+    # Client-choice doctrine: the pro-first table's lead candidate rides
+    # the catalog's text.strong alias, which resolves ONLY from client
+    # configuration. These tests model a client who configured that model,
+    # so the alias resolves and the candidate rows carry real ids.
+    monkeypatch.setenv("PRESENTATION_MODEL_TEXT_STRONG",
+                       "deepseek/deepseek-v4.1-flash")
 
 
 # ===========================================================================

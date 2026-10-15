@@ -1,7 +1,7 @@
 {
-  "$schema_note": "Podcast Production Engine (Skill 58) STATIC unit price table (furnace-design Guardrail 3). Call sites meter UNITS (LLM input/output tokens, web-research calls, Kie.ai images, Fish Audio UTF-8 bytes); podcast-cost-ledger.py reads THIS file to convert those units to dollars and enforce the ceilings in furnace.json. Prices drifting NEVER requires a code change: the operator restamps this table. All prices are current-as-of pinned_at best estimates for the shipped routing set and are per-client overridable. LLM token prices are per 1,000,000 tokens. Fish Audio is priced per UTF-8 byte (15 dollars per 1,000,000 bytes, roughly 60 cents per 30-minute episode). Zero em dashes.",
-  "version": "1.0.0",
-  "pinned_at": "2026-07-06",
+  "$schema_note": "Podcast Production Engine (Skill 58) STATIC unit price table (furnace-design Guardrail 3). Call sites meter UNITS (LLM input/output tokens, web-research calls, Kie.ai images, Fish Audio UTF-8 bytes); podcast-cost-ledger.py reads THIS file to convert those units to dollars and enforce the ceilings in furnace.json. Prices drifting NEVER requires a code change: the operator restamps this table. This is a per-model REFERENCE price registry keyed by model id: pricing data, not a model prescription (models are selected by the client per config/models.json). Prices are current-as-of pinned_at best estimates and are per-client overridable. When a client configures a model with no row here, the operator adds a row for that model id; without one, podcast-cost-ledger.py falls back to its default prices and the ceilings are enforced against those defaults. LLM token prices are per 1,000,000 tokens. Fish Audio is priced per UTF-8 byte (15 dollars per 1,000,000 bytes, roughly 60 cents per 30-minute episode). Zero em dashes.",
+  "version": "1.0.1",
+  "pinned_at": "2026-10-13",
   "currency": "USD",
   "podcast_engine": {
     "cost_model": {
@@ -10,7 +10,7 @@
         "ollama/glm-5.2:cloud": {"input": 0.60, "output": 2.00, "note": "Ollama Cloud amortized-nominal for GLM 5.2."},
         "openrouter/moonshotai/kimi-k2.6": {"input": 0.55, "output": 2.30, "note": "OpenRouter list price for Kimi 2.6; restamp from openrouter.ai/moonshotai/kimi-k2.6."},
         "openrouter/z-ai/glm-5.2": {"input": 0.60, "output": 2.00, "note": "OpenRouter list price for GLM 5.2; restamp from openrouter.ai/z-ai/glm-5.2."},
-        "gemini-3.1-flash-lite": {"input": 0.10, "output": 0.40, "note": "Final fallback and qc_judge tier; cheapest content model."}
+        "gemini-3.1-flash-lite": {"input": 0.10, "output": 0.40, "note": "Reference price row for this model id."}
       },
       "image_per_task": {
         "kie.ai/gpt-image-2": {"per_1k_square": 0.04, "note": "LEGACY id (AGENTS.md N43 keeps it only for ratios 3:1, 1:3, 9:21; the cover step never uses it). Runtime fallback constant only. Price authority: python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>."},

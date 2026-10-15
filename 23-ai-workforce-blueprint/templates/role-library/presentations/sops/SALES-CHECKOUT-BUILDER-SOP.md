@@ -6,15 +6,20 @@ deliverable tier; for the exact count arithmetic (10 -> 12 -> 15) link
 **Status as of this SOP (RUN 2, 2026-08-19):** **PARTIALLY LANDED, mid-build.** While this SOP was
 being written, Unit C1 landed all three phases into `PIPELINE-MANIFEST.json` (manifest_version 51)
 and Unit C2 landed `sales_checkout_builder.py` on disk -- both confirmed present in this worktree at
-the time of this revision. Still PENDING: `phase_verifiers.py` entries, `AF-U-*` autofail-registry
-rows (the manifest's `gate_codes` cite them; `PIPELINE-MANIFEST.autofails[]` does not yet declare
-them), `MASTER-QC-AUTOFAIL-RULESET.md` Section-5 rows, and tests. This SOP does **not** audit
-`sales_checkout_builder.py`'s internal implementation (that is C2's/C4's job) -- "landed" here means
-"the file exists," not "verified correct." See
+the time of this revision. See
 [STATUS -- LIVE vs PENDING](#7-status-live-vs-pending-verified-2026-08-19) for the itemized,
-re-verified breakdown. Nothing in this document should be read as "a client can get this today" --
-the branch is not yet QC'd, tested, or wired for real dispatch.
-**Phase ids (LANDED, `PIPELINE-MANIFEST.json` manifest_version 51):** `P-U-SALES-BUILD` (order 8.75),
+re-verified breakdown.
+**STATUS UPDATE (department SOP repair pass, at HEAD, manifest_version 70):** the items this SOP
+listed as PENDING have landed. `phase_verifiers.py` entries exist for all three phases (registry
+parity 62/62 closed at v70, per `DEPT/DEPARTMENT-COUNTS-CANONICAL.md`), the `AF-U-*` autofail rows
+are declared in `PIPELINE-MANIFEST.autofails[]` with in_ruleset: true and matching MASTER ruleset
+rows, and the manifest/executor mismatch in §3 (the `--mode` wiring) is FIXED: the manifest now
+wires the phases exactly as §3's corrected text states, with `produces_artifact` paths under
+`working/sales-checkout/`. What remains genuinely incomplete is live execution, not wiring: the GHL
+push is a delegated plan plus receipt (§3 step 4), and live payment is out of scope by design (§4).
+This SOP does **not** audit `sales_checkout_builder.py`'s internal implementation -- "landed" here
+means the file exists and the wiring agrees with it, not "verified correct end to end."
+**Phase ids (LANDED, `PIPELINE-MANIFEST.json` manifest_version 70):** `P-U-SALES-BUILD` (order 8.75),
 `P-U-CHECKOUT-BUILD` (order 8.76), `P-U-FORM-CHECKOUT` (order 8.77) -- matching the `P-U-SALES-*` /
 `P-U-CHECKOUT-*` / `P-U-FORM-CHECKOUT` id families that `DEPT/intake/upsell-questions.json` already
 promises by name (its `want_sales_checkout` `resolverHint`, quoted verbatim in
@@ -24,11 +29,13 @@ promises by name (its `want_sales_checkout` `resolverHint`, quoted verbatim in
 role that already owns the department's only other GHL-push deliverable, `P9.6-WEBINAR-VIDEO`
 (`WEBINAR-BUILDER-SOP.md`). `sop_refs` on all three phases point at `media-librarian-ghl-updater-sops.md`
 SOP 9.9, which in turn points here and to `VSL-BUILDER-SOP.md`.
-**Executor (LANDED on disk, PENDING verification):** `DEPT/scripts/sales_checkout_builder.py`
--- confirmed present in this worktree; the manifest wires it as
-`python3 scripts/sales_checkout_builder.py --mode sales|checkout|form-checkout --run-dir {run_dir}`
-(one script, three `--mode` invocations, one per phase). This SOP's author did not create, edit, or
-audit this file -- it is Unit C2's exclusively, per the work order's file-ownership rule.
+**Executor (LANDED on disk):** `DEPT/scripts/sales_checkout_builder.py`
+-- confirmed present in this worktree. At HEAD (manifest_version 70) the manifest wires
+`P-U-SALES-BUILD` as `python3 scripts/sales_checkout_builder.py --run-dir {run_dir}` and
+`P-U-CHECKOUT-BUILD` as the same script with `--skip-design`; there is NO `--mode` flag anywhere
+(the RUN 2 wiring carried `--mode` and would have crashed on dispatch; that defect is fixed, see
+§3). `P-U-FORM-CHECKOUT` runs a different executor, `DEPT/scripts/checkout_form_builder.py` (§4).
+This SOP's author did not create, edit, or audit these files.
 **Push mechanism:** `06-ghl-install-pages/tools/ghl_rest_canvas.py` (Skill 6; net-new funnel/page
 create + autosave, token-id-authenticated REST -- see §3.4 for an operating caveat on HOW its
 network calls actually execute that C2 must resolve, if it has not already, inside the executor).
@@ -157,23 +164,27 @@ against the real, on-disk `sales_checkout_builder.py` (read in full for this rev
 - **`sales_checkout_builder.py` takes NO `--mode` argument.** Its only flags are `--run-dir`,
   `--skip-design`, `--no-push`, `--selftest`. A single invocation builds copy, design, and HTML for
   **BOTH** the sales AND checkout pages together, writing everything under
-  `working/sales-checkout/{copy,renders,html}/` (not `working/upsell/`, which is what the manifest's
-  `produces_artifact` fields currently say -- see the CRITICAL GAP callout below) and recording the
+  `working/sales-checkout/{copy,renders,html}/` (the manifest's `produces_artifact` fields said
+  `working/upsell/` in the RUN 2 wiring; at HEAD they read `working/sales-checkout/...` -- see the
+  CRITICAL GAP callout below) and recording the
   run in `working/checkpoints/sales_checkout.json`.
-- **⚠️ CRITICAL, VERIFIED GAP (Wave C manifest/executor mismatch, found while writing this SOP):** the
-  landed `PIPELINE-MANIFEST.json` wires all three phases to
+- **⚠️ CRITICAL GAP (Wave C manifest/executor mismatch, found while writing this SOP) -- RESOLVED
+  at HEAD (manifest_version 70).** As originally landed, `PIPELINE-MANIFEST.json` wired all three
+  phases to
   `python3 scripts/sales_checkout_builder.py --mode sales|checkout|form-checkout --run-dir {run_dir}`.
   Confirmed by direct test against the script's actual `argparse` parser: `--mode sales` raises
   `error: unrecognized arguments: --mode sales` and exits 2 -- **every one of the three manifest
-  executor commands as currently written would crash on dispatch.** This is a real defect between
+  executor commands as then written would have crashed on dispatch.** That was a real defect between
   Unit C1's manifest and Unit C2's script (each landed independently, concurrently, while this SOP was
-  being written -- neither could see the other's exact interface). This SOP does not fix it (both
-  files are outside this unit's scope); it is reported to the orchestrator alongside this SOP (see this
-  unit's final report) so C1/C2 reconcile the CLI before Wave E's live test. **Do not dispatch these
-  phases as currently wired.**
-- **`P-U-FORM-CHECKOUT` has no implementation anywhere yet.** `sales_checkout_builder.py` contains zero
-  form/payment-field logic (verified: no match for "form" or "checkout_form" anywhere in the file).
-  §4 remains a design proposal, not a status report of existing code.
+  being written -- neither could see the other's exact interface). It is FIXED at HEAD: the manifest
+  now wires `P-U-SALES-BUILD` to `python3 scripts/sales_checkout_builder.py --run-dir {run_dir}`,
+  `P-U-CHECKOUT-BUILD` to the same script with `--skip-design`, and `P-U-FORM-CHECKOUT` to
+  `checkout_form_builder.py` (§4), and the `produces_artifact` paths read `working/sales-checkout/...`
+  (§8). The phases are dispatchable as wired.
+- **`P-U-FORM-CHECKOUT` is implemented by a separate script.** At RUN 2, `sales_checkout_builder.py`
+  contained zero form/payment-field logic and §4 was a design proposal. PRES-025 (§4) landed the real
+  producer, `DEPT/scripts/checkout_form_builder.py`, wired at order 8.77; §4 is now a status report
+  of that code.
 
 The four steps, as the landed script actually implements them (single invocation, both pages):
 
@@ -185,9 +196,10 @@ The four steps, as the landed script actually implements them (single invocation
    `run_kie_generate` helper).** The script enforces its OWN rich-prompt band via
    `_assert_prompt_band()` and a content-in-prompt assertion (`assert_content_in_prompt`) before any
    image call -- confirm the exact floor/ceiling constants inside `sales_checkout_builder.py` match the
-   department's **9,000-18,000 stripped-char** band (`PROMPT_CHAR_FLOOR`/`PROMPT_CHAR_CEILING` in
-   `DEPT/scripts/build_deck.py` / `DEPT/scripts/prompt_gate.py`, the same band `WORKBOOK-BUILDER-
-   SOP.md` §2 step 3 uses) rather than Loop 2C's looser 5,000-19,000 research band -- this SOP's author
+   department's rule 12 rich-prompt band (the ONE shared enforcer
+   shared-utils/kie_prompt_enforcer.py; `build_deck.py` / `prompt_gate.py` import it and define no
+   band constants of their own, and the old 9,000-18,000 band is retired; the same band
+   `WORKBOOK-BUILDER-SOP.md` §2 step 3 uses) rather than Loop 2C's looser 5,000-19,000 research band -- this SOP's author
    did not re-derive the script's own constant values for this revision. The hero renders are hosted
    via `ghl_media.upload_media()` (the SAME bare-REST media path `WEBINAR-BUILDER-SOP.md` uses, NOT
    `ghl_rest_canvas.py`) so the page HTML embeds a real GHL media URL, never a local file path.
@@ -302,8 +314,8 @@ cd DEPT/scripts && python3 sales_checkout_builder.py --selftest
 This SOP's author did not run this command as part of this unit (out of scope -- verifying C2's script
 is C4's/QC's job, not this SOP-writing unit's); it is named here because it exists in the file
 (`ap.add_argument("--selftest", ...)`, `_selftest()`), not because this SOP confirms it passes. For an
-end-to-end operator smoke build against a real sample run directory (once the manifest/executor
-mismatch in §3 is reconciled and the phase can actually dispatch):
+end-to-end operator smoke build against a real sample run directory (the manifest/executor
+mismatch in §3 is reconciled at HEAD, so the phase can dispatch):
 
 ```bash
 python3 scripts/sales_checkout_builder.py --run-dir <sample-run-dir> --no-push
@@ -322,20 +334,20 @@ and `working/checkpoints/sales_checkout.json` recording a `built` (not `deferred
 |---|---|---|
 | The client is asked "sales page + checkout page?" | **LIVE** (deployed interview app / repo question bank) | `DEPT/intake/upsell-questions.json` v1.0.0; `DEPT/intake/deck-intake-questions.json` v1.5.0 orders 7.6/7.61. NOT live on the operator Mac Mini department (Wave D, separate unit) -- the live box's question bank is v1.2.0/50q with no upsell questions (`CONTROL/FABLE-TRUTH.md` §6). |
 | The answer is captured and stored | **LIVE** in the repo interview-app bridge | `DEPT/intake/interview-app/bridge/intake_writer.py` maps `want_sales_checkout` -> `WANT_SALES_CHECKOUT`; see §1's KNOWN GAP for the declined-reason section caveat. |
-| A phase (`P-U-SALES-BUILD` / `P-U-CHECKOUT-BUILD` / `P-U-FORM-CHECKOUT`) exists in the manifest | **LIVE** (landed mid-unit by C1) | `PIPELINE-MANIFEST.json` manifest_version 51, orders 8.75/8.76/8.77, confirmed present and read in full for this revision. |
+| A phase (`P-U-SALES-BUILD` / `P-U-CHECKOUT-BUILD` / `P-U-FORM-CHECKOUT`) exists in the manifest | **LIVE** (landed mid-unit by C1) | `PIPELINE-MANIFEST.json` manifest_version 70, orders 8.75/8.76/8.77, confirmed present and read in full for this revision. |
 | An executor script exists on disk | **LIVE** (landed mid-unit by C2) | `DEPT/scripts/sales_checkout_builder.py`, 1,377 lines, confirmed present and read in full for this revision. |
-| The manifest's executor command actually runs the script | **FAILS -- verified defect, not yet reconciled** | The manifest calls `--mode sales\|checkout\|form-checkout`; the script's argparse has no `--mode` flag at all -- direct test: `--mode sales` raises `unrecognized arguments` and exits 2. See §3's CRITICAL GAP callout. |
-| `P-U-FORM-CHECKOUT` has any real implementation | **PENDING** | Zero form/payment logic anywhere in `sales_checkout_builder.py` (verified, full-file search); no other script implements it. §4 is a design proposal only. |
-| A verifier / test exists | **PENDING** | No `P-U-` entries in `DEPT/scripts/phase_verifiers.py`; no `test_sales*`/`test_checkout*` file under `DEPT/scripts/tests/`; no `AF-U-*` rows in `PIPELINE-MANIFEST.autofails[]` (the phases' own `gate_codes` cite `AF-U-SALES-BUILD` etc., but the registry does not yet declare them) or in `MASTER-QC-AUTOFAIL-RULESET.md`. |
+| The manifest's executor command actually runs the script | **LIVE (defect fixed at HEAD)** | At RUN 2 the manifest called `--mode sales\|checkout\|form-checkout` and the script's argparse had no `--mode` flag at all (direct test: `--mode sales` raises `unrecognized arguments` and exits 2). At HEAD (manifest_version 70) the manifest wires `--run-dir` (plus `--skip-design` for checkout) and `checkout_form_builder.py` for the form phase. See §3's CRITICAL GAP callout. |
+| `P-U-FORM-CHECKOUT` has any real implementation | **LIVE** (PRES-025) | `DEPT/scripts/checkout_form_builder.py`, wired at order 8.77, produces `working/sales-checkout/checkout_form.json`. §4 is a status report of that code. (At RUN 2 this was PENDING: zero form/payment logic existed anywhere.) |
+| A verifier / test exists | **LIVE** | `P-U-` entries exist in `DEPT/scripts/phase_verifiers.py`, and the `AF-U-*` rows are declared in `PIPELINE-MANIFEST.autofails[]` with in_ruleset: true and matching MASTER ruleset rows; phase-verifier registry parity is 62/62 at manifest_version 70 (`DEPARTMENT-COUNTS-CANONICAL.md`). (At RUN 2 this was PENDING on all three counts.) |
 | `ghl_rest_canvas.py` (the push mechanism) exists and is merged | **LIVE** | `06-ghl-install-pages/tools/ghl_rest_canvas.py`, present in this worktree, 2,369 lines. |
 | The flow has been proven end-to-end, by hand, once | **LIVE (historical), not repeatable from this repo alone** | Loop 2C, COMPLETE 2026-08-07, render-verified. Client-specific artifacts correctly excluded from this repo. |
 
-**Plain statement:** the manifest and the executor both exist now, but they do not currently agree
-with each other on the calling convention -- as wired right now, dispatching any of the three phases
-crashes before it does any work. This is closer to done than "nothing built" (this SOP's RUN 1
-assessment), but it is not yet a working branch, and `P-U-FORM-CHECKOUT` specifically has no
-implementation to crash into -- it simply doesn't exist yet. Flagged to the orchestrator alongside
-this SOP's delivery so C1/C2 can reconcile before Wave E's live test.
+**Plain statement (updated at HEAD):** the RUN 2 assessment stands as history: at that time the
+manifest and the executor disagreed on the calling convention and dispatch would have crashed
+before doing any work. At HEAD (manifest_version 70) they agree, all three phases are implemented
+and wired, and the branch is dispatchable. What is not yet true is live completion: the GHL push
+executes through a delegated plan and receipt (§3 step 4), and live payment is out of scope by
+design (§4).
 
 ## 8. HANDBACK
 
@@ -346,8 +358,10 @@ Verified from the landed script (not a proposal): `working/checkpoints/sales_che
 paths. The GHL push side is recorded separately: `working/sales-checkout/ghl_push_plan.json` (the
 ordered REST steps awaiting delegated execution) and `working/sales-checkout/build_receipt.json` (the
 delegated agent's proof the push actually happened -- absence is "not yet executed," not a failure).
-**Discrepancy to flag, not silently resolve:** the manifest's `produces_artifact` fields for these
-three phases currently say `working/upsell/sales.html` / `working/upsell/checkout.html` /
+**Discrepancy flagged at RUN 2, resolved at HEAD:** the manifest's `produces_artifact` fields for
+these three phases then said `working/upsell/sales.html` / `working/upsell/checkout.html` /
 `working/upsell/checkout_form.json` -- a different directory than the script's real
-`working/sales-checkout/` output. This is the same class of drift as the `--mode` mismatch above (§3,
-§7) and should be reconciled by the same C1/C2 pass, not patched here.
+`working/sales-checkout/` output. At HEAD (manifest_version 70) the fields read
+`working/sales-checkout/html/sales.html`, `working/sales-checkout/html/checkout.html`, and
+`working/sales-checkout/checkout_form.json`, matching the scripts. Same class of drift as the
+`--mode` mismatch above (§3, §7); reconciled by the same pass.

@@ -243,12 +243,22 @@ else
       echo "$prompt"
       local i=1
       for opt in "${opts[@]}"; do echo "  $i) $opt"; ((i++)); done
-      echo "  (Enter = $default)"
+      if [[ -n "$default" ]]; then
+        echo "  (Enter = $default)"
+      else
+        echo "  (Enter = stop: no configured default model exists for this tier)"
+      fi
       printf "Choice: "
     } >&2
     local choice
     read -r choice </dev/tty || choice=""
-    if [[ -z "$choice" ]]; then echo "$default"; return; fi
+    if [[ -z "$choice" ]]; then
+      if [[ -n "$default" ]]; then echo "$default"; return; fi
+      # No client choice and no configured default: STOP and ask the client.
+      # A named model is never substituted silently (selection doctrine).
+      echo "ERROR: no model chosen for the $tier tier and no configured default model exists. Ask the client which model they want to use for this tier, or which model to configure as their default, then re-run." >&2
+      exit 1
+    fi
     if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#opts[@]} )); then
       # Strip trailing " — comment" if present
       echo "${opts[choice-1]%% — *}"
@@ -257,39 +267,24 @@ else
     fi
   }
 
-  RT_OPTS=(
-    "deepseek/deepseek-v4.1-flash:thinking-max — highest-reasoning real-time"
-    "google/gemini-3.1-flashlight — fast + near-free (RECOMMENDED for high volume)"
-    "kimi/kimi-2.6 — strong long-context reasoning"
-    "openai/gpt-5.5 — balanced"
-    "openrouter/free — cheapest, slower"
-  )
-  ASYNC_OPTS=(
-    "deepseek/deepseek-v4.1-flash:thinking-max — highest-reasoning"
-    "google/gemini-3.1-flashlight — balanced"
-    "openrouter/free — free + perfect for email"
-    "ollama/deepseek-v4.1-flash:cloud — premium quality (Ollama Cloud)"
-    "same-as-realtime"
-  )
-  BATCH_OPTS=(
-    "openrouter/free — free, batch-only (RECOMMENDED)"
-    "deepseek/deepseek-v4-flash — small cost, better quality"
-    "google/gemini-3.1-flashlight — balanced"
-    "same-as-realtime"
-  )
-
+  # Model selection doctrine: this wizard prescribes NO model by name. The
+  # client (operator) selects each tier's model, or their configured default
+  # is used. The prompts carry the recommendation and its reason as guidance
+  # the client can override; a recommendation is never wired as a default.
+  # The operator types the model id the client chose, from the client's own
+  # providers' current catalogs.
   if [[ -z "$RT_SET" ]]; then
-    RT_SET="$(pick_model "REAL-TIME" "SMS / Messenger / IG / Live Chat — speed matters" \
-      "google/gemini-3.1-flashlight" "${RT_OPTS[@]}")"
+    RT_SET="$(pick_model "REAL-TIME" "SMS / Messenger / IG / Live Chat: speed matters. Recommendation: a fast, low-cost model, because customers expect replies in seconds. Type the model id the client chose." \
+      "")"
   fi
   if [[ -z "$ASYNC_SET" ]]; then
-    ASYNC_SET="$(pick_model "ASYNC" "Email / LinkedIn — minutes are fine" \
-      "openrouter/free" "${ASYNC_OPTS[@]}")"
+    ASYNC_SET="$(pick_model "ASYNC" "Email / LinkedIn: minutes are fine. Recommendation: a low-cost model, because async replies do not need real-time speed. Enter accepts the real-time model the client chose." \
+      "$RT_SET" "same-as-realtime")"
     [[ "$ASYNC_SET" == "same-as-realtime" ]] && ASYNC_SET="$RT_SET"
   fi
   if [[ -z "$BATCH_SET" ]]; then
-    BATCH_SET="$(pick_model "BATCH" "Nightly summarization — no real-time pressure" \
-      "openrouter/free" "${BATCH_OPTS[@]}")"
+    BATCH_SET="$(pick_model "BATCH" "Nightly summarization: no real-time pressure. Recommendation: the cheapest capable model the client has access to, because batch work does not need speed. Enter accepts the real-time model the client chose." \
+      "$RT_SET" "same-as-realtime")"
     [[ "$BATCH_SET" == "same-as-realtime" ]] && BATCH_SET="$RT_SET"
   fi
 

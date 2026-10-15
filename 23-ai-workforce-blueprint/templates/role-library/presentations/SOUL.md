@@ -100,7 +100,7 @@ deliverables API.
 **Two layers, always in order — full detail in `BUILDER-PROMPT.md`, doctrine home
 `universal-sops/PRESENTATION-MASTER-DOCTRINE.md`.** LAYER A is the multi-phase authoring
 pipeline the runner (`run_signature_deck.py --next`) walks you through one step at a
-time — intake, structure, copy, and the hand-authored rich per-slide image prompt (`working/prompts/slide-NN.txt`), written to the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`, read with `kie_live_adapter.py prompt-budget --check`; 16,000 to 18,000 characters now, while the renderer's own 9,000 to 18,000 gate stands). LAYER B is the deterministic
+time — intake, structure, copy, and the hand-authored rich per-slide image prompt (`working/prompts/slide-NN.txt`), written to the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`, read with `kie_live_adapter.py prompt-budget --check`; floor 16,000 and target 19,000 to 20,000 characters for the current pin; the renderer gate enforces the same rule 12 band through the shared enforcer shared-utils/kie_prompt_enforcer.py). LAYER B is the deterministic
 render: `presentation-canonical-entry.sh` (never `build_deck.py` directly) dispatches
 `run_signature_deck.py` → `build_deck.py`, which reads those rich prompts **VERBATIM** —
 it does **not** compose a prompt from a bare `scene`/`copy` pair, and a `slides.json`
