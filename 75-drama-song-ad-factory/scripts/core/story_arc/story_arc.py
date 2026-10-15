@@ -61,11 +61,21 @@ def _res(outcome, reason_code, errors, story, ids, reveal):
     }
 
 
-def validate_story(story):
+def validate_story(story, purpose=None):
     """Validate a twelve-beat story record.
 
     Story record: {"story_id": ..., "beats": [beat_id x12], "product_reveal": int}
     Returns outcome/reason_code/errors/beat_count/beats/product_reveal/next_action.
+
+    ``purpose`` (optional, a method run's SPEC B1 purpose) adds two rules and
+    nothing else; with no purpose, or any value outside ``METHOD_PURPOSES``,
+    the record is judged exactly as before:
+
+    * ``lesson`` -- beat 8 may be ``lesson_intro`` instead of ``product_intro``
+      (accepted in place of it, at beat 8, never elsewhere).
+    * ``testimonial`` -- every product beat present carries a non-blank
+      ``claim_source`` in the record's ``story_beats`` rows; a claim with no
+      source is refused as CLAIM_UNSOURCED.
     """
     if not isinstance(story, dict):
         return _res("error", "story-not-an-object",
@@ -87,13 +97,23 @@ def validate_story(story):
         else:
             ids.append(b.strip())
 
+    # A method run passes its purpose. A lesson may name beat 8
+    # ``lesson_intro``; ``check`` is that purpose's canonical view of the ids
+    # (a lesson_intro misplaced off beat 8 lands on beat-order/beat-duplicate),
+    # while ``ids`` -- what the result reports -- never changes.
+    purp = str(purpose or "").strip().lower()
+    if purp not in METHOD_PURPOSES:
+        purp = ""              # no purpose, or none of the five: judged as before
+    check = ([b if b != LESSON_INTRO else BEATS[PRODUCT_REVEAL_MIN - 1] for b in ids]
+             if purp == "lesson" else list(ids))
+
     known = set(BEATS)
-    unknown = sorted({b for b in ids if b not in known})
+    unknown = sorted({b for b in check if b not in known})
     if unknown:
         errors.append({"error": "beat-unknown", "detail": unknown})
 
     seen, dups = set(), []
-    for b in ids:
+    for b in check:
         if b in seen and b not in dups:
             dups.append(b)
         seen.add(b)
@@ -104,14 +124,27 @@ def validate_story(story):
     if missing:
         errors.append({"error": "beat-missing", "detail": missing})
 
-    if len(ids) != len(BEATS):
+    if len(check) != len(BEATS):
         errors.append({"error": "beat-count",
-                       "detail": "got %d, want %d" % (len(ids), len(BEATS))})
+                       "detail": "got %d, want %d" % (len(check), len(BEATS))})
 
     if not unknown:  # order: every known beat must advance in canonical order
-        order = [BEATS.index(b) for b in ids if b in known]
+        order = [BEATS.index(b) for b in check if b in known]
         if any(order[i] > order[i + 1] for i in range(len(order) - 1)):
             errors.append({"error": "beat-order", "detail": list(ids)})
+
+    # Testimonial: every product beat carries the client's own words behind it.
+    if purp == "testimonial":
+        rows = story.get("story_beats")
+        by_beat = {str(r.get("story_beat_id") or r.get("beat") or ""): r
+                   for r in (rows if isinstance(rows, list) else [])
+                   if isinstance(r, dict)}
+        for beat in PRODUCT_BEATS:
+            if beat in seen and _blank((by_beat.get(beat) or {}).get("claim_source")):
+                errors.append({
+                    "error": "claim-source-missing",
+                    "detail": "CLAIM_UNSOURCED: testimonial beat %r carries no claim_source "
+                              "traced to a phrase in the client's own words" % beat})
 
     reveal = story.get("product_reveal")
     if "product_reveal" not in story:
@@ -259,6 +292,64 @@ BEAT_TO_TIMING = {
     "vindication": "the_rise",
     "return_cta": "call_to_action",
 }
+
+# =====================================================================
+# Drama-to-Demand METHOD anchors (conflict C6/C10; METHOD-INTEGRATION F6).
+# Inert until wired: they are read on a method run, the run that carries
+# ``control/method.json``; a run without one is judged exactly as before.
+# =====================================================================
+
+#: Canonical beat -> the music cue that anchors it on a method run, beside
+#: ``BEAT_TO_TIMING`` (which stays the non-method mapping, unchanged). The ERM
+#: apex is not a beat of its own -- it lands at the END of ``wound_deepens``
+#: (``METHOD_ERM_APEX``), where the first sung line enters -- so no beat maps
+#: to ``ERM_DROP``.
+METHOD_ANCHORS = {
+    "ordinary_world": "BASELINE",
+    "humiliation": "PAIN_BUILD",
+    "wound_deepens": "PAIN_BUILD",
+    "frozen": "PAIN_DEEPEN",
+    "seeing_it_too": "PAIN_DEEPEN",
+    "failed_solutions": "PAIN_DEEPEN",
+    "mentor": "HERO_SHIFT",
+    "product_intro": "HERO_SHIFT",
+    "doubt": "BREAKTHROUGH",
+    "climb": "BREAKTHROUGH",
+    "vindication": "SOLUTION_HOOK",
+    "return_cta": "COMMERCIAL_CONTINUATION",
+}
+
+#: The ERM apex anchor: the end of ``wound_deepens``, where singing begins.
+METHOD_ERM_APEX = {"beat": "wound_deepens", "position": "end"}
+
+#: Method purposes (SPEC B1). ``validate_story`` applies its two method rules
+#: only to one of these, so a caller that passes no purpose behaves as before.
+METHOD_PURPOSES = ("campaign", "testimonial", "lesson", "paid_ad", "short_post")
+
+#: A lesson names the point instead of a product at beat 8. Accepted IN PLACE
+#: of ``product_intro``; no existing beat is renamed and ``BEATS`` is untouched.
+LESSON_INTRO = "lesson_intro"
+
+#: The product beats: the ones a testimonial claim must be sourced from.
+PRODUCT_BEATS = ("product_intro", LESSON_INTRO)
+
+#: Hook-from for a method run, Trevor 2026-10-13: the hook exists to make
+#: viewers remember the solution, so the build toward it may start once the
+#: solution has at least been introduced (Hero Shift = ``the_turn``), never
+#: before it. The 60 s golden sheet's ``lowest_point`` hook moves to
+#: ``the_turn`` too -- one value at every length, never ``lowest_point``.
+METHOD_TRUE_AT_BEAT = "the_turn"
+
+
+def method_true_at_beat(length_s=None):
+    """``hook_plan.true_at_beat`` for a METHOD run (``hook_placement`` reads it,
+    unchanged): the solution-introduction beat, at every length including 60 s.
+
+    ``length_s`` is accepted so a caller can ask per length and get the same
+    answer; the method has one hook-from beat, never the older ``lowest_point``.
+    """
+    return METHOD_TRUE_AT_BEAT
+
 
 #: Canonical beat -> its position (1..15) in the fifteen-stage source method,
 #: monotonic. product_intro (the reveal) is authored at source position 9 of 15.
