@@ -297,6 +297,12 @@ def cmd_new(args, scripts_dir: Path) -> int:
         "manifest_sha256": manifest.sha256,
         # PRES-039: engine commit/package origin recorded in each run.
         "engine_origin": _origin,
+        # FIX-PLAN Item 11 (B23): the run record carries the manifest's
+        # undeclared-fanout-width warnings (empty list when every fanout
+        # phase declares workers). A run created under a manifest with an
+        # undeclared fanout width says so in its own record, instead of the
+        # width silently falling back to 1 (serial) for that phase.
+        "fanout_width_warnings": list(manifest.fanout_width_warnings),
         "presentation_type": ptype,
         "requester": intake.get("requester") or {},
         "intake": intake,
@@ -319,6 +325,10 @@ def cmd_new(args, scripts_dir: Path) -> int:
     print(f"  manifest v{manifest.version} ({len(manifest.phases)} phases) "
           f"pinned at {manifest.sha256[:12]}")
     print(f"  {_engine_origin.format_origin_line(_origin)}")
+    # FIX-PLAN Item 11 (B23): the same warnings stamped into the run record
+    # above are printed at creation, in verify_source's WARN style.
+    for warning in manifest.fanout_width_warnings:
+        print(f"WARN: {warning}", file=sys.stderr)
     return EXIT_OK
 
 

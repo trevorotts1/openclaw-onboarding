@@ -9,6 +9,15 @@ Also proves the shipped PIPELINE-MANIFEST.json parses unchanged and every
 phase reports workers == 1 (Ticket 3's stated exit condition: "field exists,
 validates, and changes nothing").
 
+ITEM 11 UPDATE (FIX-PLAN Item 11 / B23, manifest v71): Ticket 3's exit
+condition is superseded for fanout phases. The shipped manifest now declares
+`workers` on every fanout phase (P4-PROMPT declared 12 first, which already
+broke the all-ones assertion on pristine HEAD; v71 declares the rest), and
+the shipped-manifest test below pins the new contract: non-fanout phases
+still report the default 1, fanout phases report their declared width. The
+declaration rule and the loud undeclared-width warning are pinned by
+tests/test_item11_fanout_width_declarations.py.
+
 Flat file inside tests/, manages its own import path -- matching every
 sibling in this directory.
 """
@@ -95,12 +104,24 @@ def test_null_workers_treated_as_absent(tmp_path):
     assert m.phase("P-TEST").workers == 1
 
 
-def test_shipped_manifest_parses_unchanged_workers_all_one():
-    """Ticket 3's exit condition: the shipped PIPELINE-MANIFEST.json parses
-    unchanged and every phase reports workers == 1 -- the feature ships OFF
-    for all 40 phases in v22.0.81."""
+def test_shipped_manifest_workers_contract_after_item11():
+    """The shipped manifest under the post-Item-11 contract (manifest v71):
+    phases WITHOUT a fanout declaration still report workers == 1 (the
+    feature stays off by default, Ticket 3's parse contract intact), and
+    every phase WITH a fanout declaration declares its width explicitly.
+    (Ticket 3's original all-ones form of this test went stale when
+    P4-PROMPT declared workers: 12; it failed on pristine HEAD.)"""
     path = _canonical_manifest()
     m = Manifest(path)
     assert len(m.phases) > 0
     for phase in m.phases:
-        assert phase.workers == 1, f"{phase.id} unexpectedly has workers={phase.workers}"
+        if phase.fanout is None:
+            assert phase.workers == 1, (
+                f"{phase.id} has no fanout declaration but reports "
+                f"workers={phase.workers}")
+            assert phase.workers_declared is False
+        else:
+            assert phase.workers_declared, (
+                f"{phase.id} declares a fanout field but no workers "
+                f"(Item 11: declare the width, or an explicit 1)")
+    assert m.phase("P4-PROMPT").workers == 12
