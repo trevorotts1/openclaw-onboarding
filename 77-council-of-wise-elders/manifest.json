@@ -2,9 +2,9 @@
   "skill": "council-of-wise-elders",
   "skill_version": "v1.0.0",
   "generated_by": "scripts/build-bundles.mjs",
-  "source_commit": "ac00d050385c9c8fe494bc3d81b0733e13b6db6b",
+  "source_commit": "c0bd4987a44443988a6faa652e7d0c98aa22a0cb",
   "file_count": 290,
-  "aggregate_sha256": "a34393e6ae7587161ebbf4a57bdc302204faf32479d4eb6556a00cc5037a808e",
+  "aggregate_sha256": "9f48d444cce45ed1b8e2fa2827124dc4e4372a59b190b1b566319640e1c99c5f",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -1409,8 +1409,8 @@
     },
     {
       "path": "scripts/build-bundles.mjs",
-      "sha256": "49f884caa67195ef463daa11431853b3d3d2f1b8a8134d3cd9c36f7054c6162c",
-      "bytes": 13944
+      "sha256": "b656fccbf1c23c46e1f1c3124ebee3fda0721b868163fe9c6e8dea2767acd2c4",
+      "bytes": 14137
     },
     {
       "path": "scripts/doctor.mjs",
