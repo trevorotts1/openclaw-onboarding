@@ -78,7 +78,7 @@
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.json && npm run bundle",
-    "bundle": "esbuild src/cli/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/blackceo-council.mjs",
+    "bundle": "esbuild src/cli/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/blackceo-council.mjs && node scripts/copy-runtime-assets.mjs",
     "council:build": "npm run build",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:contracts": "node --import tsx --test src/contracts/contracts.test.ts",
