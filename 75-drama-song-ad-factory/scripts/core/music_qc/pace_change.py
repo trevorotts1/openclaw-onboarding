@@ -268,7 +268,7 @@ def octave_fold_bpm(bpm_a, bpm_b, tol_oct=OCTAVE_TOL_OCT):
 
 def confirm_pace_change(before, problem, after, boundary_s=None, envelope=None,
                         hop_s=None, bpm_before=None, bpm_after=None, reason=None,
-                        return_boundary_s=None):
+                        return_boundary_s=None, method=False):
     """Judge one ordered gear change: before -> problem -> after.
 
     PASS needs ALL of: >= 30% onset-rate reduction, >= 3 dB energy drop, the
@@ -278,7 +278,15 @@ def confirm_pace_change(before, problem, after, boundary_s=None, envelope=None,
     that overshoots the baseline by 24 dB FAILS; and when the order carries a
     SECOND, distinct return boundary, both seams are checked independently.
     Anything less is FAIL. Missing onset or energy evidence is UNMEASURED,
-    never PASS; bpm is reported and folded but never grants a PASS."""
+    never PASS; bpm is reported and folded but never grants a PASS.
+
+    ``method=True`` (W1-method-song-U2, decision #5): the SECOND seam is the
+    Hero Shift, and it passes on any CLEAR measured change of pace or energy at
+    that moment -- onset rate moved at least PACE_RETURN_TOL from the opening
+    window, OR energy moved at least PACE_ENERGY_DROP_DB -- in EITHER
+    direction. It no longer has to return to the opening groove. The FIRST seam
+    (the ERM Drop) keeps its 30% onset reduction and 3 dB drop unchanged, and a
+    smooth seam is still required at both."""
     try:
         b = _window(before, "before")
         p = _window(problem, "problem")
@@ -286,12 +294,13 @@ def confirm_pace_change(before, problem, after, boundary_s=None, envelope=None,
     except PaceError as e:
         return {"schema": SCHEMA, "verdict": "UNMEASURED", "reason_code":
                 "PACE_EVIDENCE_UNMEASURED", "detail": str(e),
-                "grants_pass": False, "reason": reason,
+                "grants_pass": False, "reason": reason, "method": bool(method),
                 "source": "WWFIX D1/F2 (X3): onset + energy, never bpm alone"}
     onset_reduction = (1.0 - p["onset_rate"] / b["onset_rate"]) if b["onset_rate"] > 0 else None
     energy_drop = round(b["rms_dbfs"] - p["rms_dbfs"], 3)
     # RETURN TO BASELINE: the closing window is measured against the window
-    # BEFORE the problem, not against the problem window itself.
+    # BEFORE the problem, not against the problem window itself. It is the SAME
+    # measurement a method run reads as "did the Hero Shift change anything".
     return_gap = (abs(a["onset_rate"] - b["onset_rate"]) / b["onset_rate"]
                   if b["onset_rate"] > 0 else None)
     # WW-23 SYMMETRIC return energy: an absolute distance, not a one-sided floor.
@@ -301,9 +310,19 @@ def confirm_pace_change(before, problem, after, boundary_s=None, envelope=None,
         "onset_reduction": onset_reduction is not None
                             and onset_reduction >= PACE_ONSET_REDUCTION,
         "energy_drop": energy_drop >= PACE_ENERGY_DROP_DB,
-        "onset_return": return_gap is not None and return_gap <= PACE_RETURN_TOL,
-        "energy_return": energy_gap <= PACE_RETURN_DB,
     }
+    if method:
+        # W1-method-song-U2 (decision #5): the Hero Shift is ANY clear change of
+        # pace or energy, in either direction -- faster, slower, heavier, bigger,
+        # dramatic. Returning to the opening groove is ONE way, not the only way,
+        # so neither side of the old return bound can refuse it. Both thresholds
+        # are the approved numbers above; no new acceptance number is set here.
+        checks["hero_shift_change"] = bool(
+            (return_gap is not None and return_gap >= PACE_RETURN_TOL)
+            or energy_gap >= PACE_ENERGY_DROP_DB)
+    else:
+        checks["onset_return"] = return_gap is not None and return_gap <= PACE_RETURN_TOL
+        checks["energy_return"] = energy_gap <= PACE_RETURN_DB
     seam, return_seam = None, None
     if envelope is not None and hop_s:
         if boundary_s is not None:
@@ -343,16 +362,26 @@ def confirm_pace_change(before, problem, after, boundary_s=None, envelope=None,
         "smooth_transition_return": return_seam,
         "octave_fold": fold,
         "bpm_grants_pass": False,
+        #: W1-method-song-U2: which second-seam rule judged this take.
+        "method": bool(method),
+        "second_seam_rule": ("hero_shift_any_clear_change" if method
+                             else "return_to_opening_groove"),
         "floor": {"onset_reduction": PACE_ONSET_REDUCTION,
                   "energy_drop_db": PACE_ENERGY_DROP_DB,
                   "return_tol": PACE_RETURN_TOL, "return_db": PACE_RETURN_DB,
                   "return_energy_is_symmetric": True,
                   "mandatory_seams": PACE_SEAM_COUNT,
                   "peak_min_spacing_s": PEAK_MIN_SPACING_S},
-        "detail": ("gear change confirmed: onsets %.3f -> %.3f/s (%.0f%% down), "
-                   "%+.2f dB, back to %.3f/s and %+.2f dB"
-                   % (b["onset_rate"], p["onset_rate"], (onset_reduction or 0) * 100,
-                      -energy_drop, a["onset_rate"], -energy_gap))
+        "detail": (("gear change confirmed: onsets %.3f -> %.3f/s (%.0f%% down), "
+                    "%+.2f dB; the Hero Shift moves to %.3f/s and %+.2f dB vs the "
+                    "opening (any clear change, either direction)"
+                    % (b["onset_rate"], p["onset_rate"], (onset_reduction or 0) * 100,
+                       -energy_drop, a["onset_rate"], -energy_gap))
+                   if method else
+                   ("gear change confirmed: onsets %.3f -> %.3f/s (%.0f%% down), "
+                    "%+.2f dB, back to %.3f/s and %+.2f dB"
+                    % (b["onset_rate"], p["onset_rate"], (onset_reduction or 0) * 100,
+                       -energy_drop, a["onset_rate"], -energy_gap)))
                   if verdict == "PASS" else
                   ("no gear change: %s (onsets %.3f -> %.3f/s, %+.2f dB)"
                    % (", ".join(failed), b["onset_rate"], p["onset_rate"], -energy_drop)),
@@ -380,6 +409,9 @@ def judge_plan_pace(plan, before, problem, after, **kw):
         # WW-23: the SECOND mandatory seam (the return) rides the order too.
         if order.get("return_boundary_s") is not None:
             kw.setdefault("return_boundary_s", order["return_boundary_s"])
+        # W1-method-song-U2: a METHOD order judges the second seam as the Hero
+        # Shift -- any clear change, either direction -- not as a return.
+        kw.setdefault("method", bool(order.get("method")))
     out = confirm_pace_change(before, problem, after, reason=reason, **kw)
     out["applicable"] = True
     return out
@@ -404,8 +436,30 @@ FINGERPRINT_SCHEMA = "blackceo.pace-cue/v1"
 #: ACCEPTANCE RULE (see core/acceptance-profile.json ww_wave.pace_change).
 PACE_ANCHOR_DROP = "drop"
 PACE_ANCHOR_RETURN = "return"
+#: W1-method-song-U2 (BUILD-PLAN; METHOD-INTEGRATION F5, conflicts C3/C4): a
+#: METHOD run names the two seams after the blueprint's own cues -- the ERM Drop
+#: and the Hero Shift -- instead of the generic drop/return. Both pairs are
+#: approved; a method order carrying either pair is accepted.
+PACE_ANCHOR_ERM_DROP = "erm_drop"
+PACE_ANCHOR_HERO_SHIFT = "hero_shift"
+APPROVED_DROP_ANCHORS = (PACE_ANCHOR_DROP, PACE_ANCHOR_ERM_DROP)
+APPROVED_RETURN_ANCHORS = (PACE_ANCHOR_RETURN, PACE_ANCHOR_HERO_SHIFT)
+#: The blueprint seconds a METHOD order must bind its two seams to. They are the
+#: SAME names ``length_formula.plan(..., method=True)["method"]`` emits (F2) and
+#: ``method_plan.pace_order(blueprint)`` must copy onto the order, because this
+#: gate sees the order alone and can never read the blueprint itself.
+METHOD_SEAM_ANCHORS = (("boundary_s", "erm_apex_s", "drop_s", "the blueprint ERM apex"),
+                       ("return_boundary_s", "hero_shift_s", "return_s", "the Hero Shift"))
 PACE_SEAM_KEYS = ("boundary_s", "return_boundary_s")
 
+
+def _anchor_defaults(order):
+    """The approved anchor NAME pair for one order: the method's own two seams
+    (``erm_drop`` / ``hero_shift``) on a method order, the generic pair
+    (``drop`` / ``return``) on any other. NEW ACCEPTANCE RULE (W1-method-song-U2)."""
+    if isinstance(order, dict) and order.get("method"):
+        return PACE_ANCHOR_ERM_DROP, PACE_ANCHOR_HERO_SHIFT
+    return PACE_ANCHOR_DROP, PACE_ANCHOR_RETURN
 
 def canonical_pace(order):
     """The ordered gear-shift cue a plan carries, as ONE stable dict -- or None
@@ -422,10 +476,11 @@ def canonical_pace(order):
         order = {"reason": str(order)}
     boundary = order.get("boundary_s")
     ret_boundary = order.get("return_boundary_s")
+    drop_default, return_default = _anchor_defaults(order)
     return {
         "schema": FINGERPRINT_SCHEMA,
-        "drop_anchor": order.get("drop_anchor") or PACE_ANCHOR_DROP,
-        "return_anchor": order.get("return_anchor") or PACE_ANCHOR_RETURN,
+        "drop_anchor": order.get("drop_anchor") or drop_default,
+        "return_anchor": order.get("return_anchor") or return_default,
         "boundary_s": None if boundary is None else round(float(boundary), 6),
         "return_boundary_s": (None if ret_boundary is None
                               else round(float(ret_boundary), 6)),
@@ -455,12 +510,14 @@ def pace_fingerprint_component(order):
 
 def pace_anchors(order):
     """The TWO approved semantic anchors a pace order names, resolved with the
-    specification's own cue words as the fallback."""
+    specification's own cue words as the fallback. A METHOD order names its own
+    two seams (erm_drop / hero_shift) when it names none."""
     o = order if isinstance(order, dict) else {"reason": str(order)}
+    drop_default, return_default = _anchor_defaults(o)
     return {"drop": o.get("drop") or PACE_CUE_DROP,
             "return": o.get("return") or PACE_CUE_RETURN,
-            "drop_anchor": o.get("drop_anchor") or PACE_ANCHOR_DROP,
-            "return_anchor": o.get("return_anchor") or PACE_ANCHOR_RETURN}
+            "drop_anchor": o.get("drop_anchor") or drop_default,
+            "return_anchor": o.get("return_anchor") or return_default}
 
 def pace_seams(order):
     """The TWO mandatory seam timestamps of one pace order.
@@ -486,18 +543,40 @@ def pace_seams(order):
             "reused": not missing and drop == ret,
             "distinct": not missing and drop != ret}
 
+def _at_anchor(seam_s, anchor_s):
+    """True when the seam sits exactly on the blueprint anchor (same number,
+    either numeric type). A non-numeric anchor never matches -- fail closed."""
+    try:
+        return round(float(seam_s), 6) == round(float(anchor_s), 6)
+    except (TypeError, ValueError):
+        return False
+
 def check_pace_plan(order):
     """BEFORE generation: the ordered pace change must carry TWO approved
     semantic anchors and TWO DISTINCT seam timestamps. A missing seam, a reused
     boundary (both seams the same moment) or a non-numeric seam is refused HERE,
-    with the reason string. No order -> no reasons (nothing to enforce)."""
+    with the reason string. No order -> no reasons (nothing to enforce).
+
+    W1-method-song-U2 (METHOD-INTEGRATION F5): on a METHOD order the approved
+    anchor names are ``erm_drop`` / ``hero_shift`` and BOTH seams must sit on
+    the blueprint seconds the order carries (``erm_apex_s``, ``hero_shift_s``);
+    any other binding is refused with ``PACE_SEAM_NOT_AT_ANCHOR``. The blueprint
+    itself lives in ``creative/blueprint.json``, which this gate cannot read --
+    ``method_plan.pace_order(blueprint)`` copies those two seconds onto the order."""
     if not order:
         return []
     reasons = []
+    o = order if isinstance(order, dict) else {}
     anchors = pace_anchors(order)
     if not str(anchors["drop"]).strip() or not str(anchors["return"]).strip():
         reasons.append("PACE_ANCHOR_MISSING: the ordered pace change must name "
                        "both approved anchors (the drop and the return)")
+    if o.get("drop_anchor") and o["drop_anchor"] not in APPROVED_DROP_ANCHORS:
+        reasons.append("PACE_ANCHOR_UNKNOWN: %r is not an approved drop anchor (%s)"
+                       % (o["drop_anchor"], ", ".join(APPROVED_DROP_ANCHORS)))
+    if o.get("return_anchor") and o["return_anchor"] not in APPROVED_RETURN_ANCHORS:
+        reasons.append("PACE_ANCHOR_UNKNOWN: %r is not an approved return anchor (%s)"
+                       % (o["return_anchor"], ", ".join(APPROVED_RETURN_ANCHORS)))
     seams = pace_seams(order)
     if seams["missing"]:
         reasons.append("PACE_SEAM_MISSING: the ordered pace change carries %s; "
@@ -507,6 +586,22 @@ def check_pace_plan(order):
         reasons.append("PACE_SEAM_REUSED_BOUNDARY: the drop and the return share "
                        "the timestamp %r; the two musical transitions are distinct "
                        "moments, never one reused boundary" % (seams["drop_s"],))
+    if o.get("method"):
+        missing = ["%s (%s)" % (key, label) for _seam, key, _rep, label
+                   in METHOD_SEAM_ANCHORS if o.get(key) is None]
+        if missing:
+            reasons.append("PACE_SEAM_NOT_AT_ANCHOR: a method order must carry the "
+                           "blueprint seconds %s so both seams can be bound to them"
+                           % ", ".join(missing))
+        else:
+            for seam_key, anchor_key, rep_key, label in METHOD_SEAM_ANCHORS:
+                seam_s = seams[rep_key]
+                if seam_s is None:
+                    continue            # PACE_SEAM_MISSING already said it
+                if not _at_anchor(seam_s, o.get(anchor_key)):
+                    reasons.append("PACE_SEAM_NOT_AT_ANCHOR: %s is %r, not the "
+                                   "blueprint %s %r (W1-method-song-U2)"
+                                   % (seam_key, seam_s, label, o.get(anchor_key)))
     return reasons
 
 def pace_provider_leak(payload):

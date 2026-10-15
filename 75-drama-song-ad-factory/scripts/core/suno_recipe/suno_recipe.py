@@ -86,6 +86,16 @@ _VOCALISE_SECONDS_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|secon
 #: return, written from the approved pace plan into the FINAL provider style.
 PACE_DROP_CLAUSE = "at the lowest point the groove drops to half-time with thin, sparse drums"
 PACE_RETURN_CLAUSE = "then it turns and rises back to the full groove"
+#: W1-method-song-U2 (METHOD-INTEGRATION F5, conflicts C3/C4): a METHOD run
+#: replaces both generic clauses with the method's own two seams, written only
+#: when ``pace_plan["method"]`` is true. C3: the drop is AT THE ERM, not "at the
+#: lowest point". C4 + Trevor 2026-10-13 (decision #5): the Hero Shift is any
+#: clear change of pace in the direction this story calls for -- faster, slower,
+#: heavier, bigger, dramatic -- never only a return to the opening groove.
+METHOD_ERM_DROP_CLAUSE = ("the first sung line enters exactly as the groove drops "
+                          "to a heavier, sparser half-time feel")
+METHOD_HERO_SHIFT_CLAUSE = ("when help arrives the music changes pace again, clearly and "
+                            "dramatically, in the direction this story calls for")
 #: U15d (design 4.2): the style lead, the cue strings and the gender words are
 #: DATA now (references/prompt-templates/music/*.json and models/suno-v6.json),
 #: never constants here. STYLE_LEAD was `female lead, ... slow tempo` for every
@@ -280,14 +290,38 @@ def cue_for(delivery, tag, style_id=None):
             or over.get("%s:verse" % delivery) or vocab.get("verse") or "")
 
 
+def method_pace_clauses(pace_plan):
+    """The method's OWN two seam clauses for one method order: ``(drop, return)``.
+
+    The drop is the ERM Drop verbatim; the Hero Shift takes the direction the
+    Blueprint's HERO_SHIFT cue carries (``hero_direction``, else the cue's own
+    ``emotional_direction``) after the colon, and stands without one when the
+    order names no direction. Explicit ``drop`` / ``return`` on the order always
+    win, so one order drives ``pace_clause`` and the final-style check alike.
+    """
+    o = pace_plan if isinstance(pace_plan, dict) else {}
+    direction = str(o.get("hero_direction") or o.get("emotional_direction") or "").strip()
+    direction = direction.rstrip(".")
+    hero = METHOD_HERO_SHIFT_CLAUSE + (": %s" % direction if direction else "")
+    return (o.get("drop") or METHOD_ERM_DROP_CLAUSE,
+            o.get("return") or hero)
+
 def pace_clause(pace_plan):
     """WW-07: the approved lowest-point direction (half-time, thin drums) and the
     return, written from the approved pace plan into the FINAL provider style.
-    No pace plan = no clause (never invented, never a provider tempo field)."""
+    No pace plan = no clause (never invented, never a provider tempo field).
+
+    W1-method-song-U2: a method order (``pace_plan["method"]`` true) writes the
+    method's OWN two seams instead -- the ERM Drop and the Hero Shift -- and
+    nothing about the generic "lowest point" / "rise back to the groove" wording
+    reaches a method run. Every other request is byte-identical to today."""
     if not pace_plan:
         return ""
-    drop = pace_plan.get("drop") or PACE_DROP_CLAUSE
-    ret = pace_plan.get("return") or PACE_RETURN_CLAUSE
+    if pace_plan.get("method"):
+        drop, ret = method_pace_clauses(pace_plan)
+    else:
+        drop = pace_plan.get("drop") or PACE_DROP_CLAUSE
+        ret = pace_plan.get("return") or PACE_RETURN_CLAUSE
     return "%s, %s." % (str(drop).strip().rstrip("."), str(ret).strip().rstrip("."))
 
 
