@@ -119,6 +119,50 @@ test('url policy: configured loopback and private endpoints are allowed and clas
   assert.equal(remote.url, 'https://openrouter.ai/api/v1/chat/completions');
 });
 
+test('url policy: a trailing dot does not change classification (RP-043-1)', () => {
+  // A rooted FQDN ("host.") resolves to the same host as "host"; the
+  // URL parser preserves the dot on hostnames, so classification
+  // compares the normalized name in both directions: a metadata
+  // hostname stays blocked, a public hostname stays admitted, and a
+  // dotted localhost stays loopback.
+  assert.throws(
+    () => assessEndpoint('https://metadata.google.internal./v1'),
+    (err: unknown) => isTransportError(err) && err.code === 'TRANSPORT_ENDPOINT_BLOCKED',
+  );
+  assert.throws(
+    () => assessEndpoint('https://metadata.google./v1'),
+    (err: unknown) => isTransportError(err) && err.code === 'TRANSPORT_ENDPOINT_BLOCKED',
+  );
+  const pub = assessEndpoint('https://api.example.com./v1');
+  assert.equal(pub.locality, 'public');
+  const local = assessEndpoint('http://localhost.:11434/v1');
+  assert.equal(local.locality, 'loopback');
+});
+
+test('url policy: IPv4-mapped IPv6 literals classify by the embedded IPv4 (RP-043-1)', () => {
+  // Both mapped spellings of the metadata address are blocked: the
+  // hex-group form and the dotted form, which a dual-stack connect
+  // would reach as 169.254.169.254.
+  for (const url of [
+    'https://[::ffff:a9fe:a9fe]/v1',
+    'https://[::ffff:169.254.169.254]/v1',
+  ]) {
+    assert.throws(
+      () => assessEndpoint(url),
+      (err: unknown) => isTransportError(err) && err.code === 'TRANSPORT_ENDPOINT_BLOCKED',
+      url,
+    );
+  }
+  // Mapped forms of ordinary addresses keep their embedded locality:
+  // no overblocking of deliberate local routes or public endpoints.
+  const lan = assessEndpoint('http://[::ffff:192.168.1.50]/v1');
+  assert.equal(lan.locality, 'private_network');
+  const pub = assessEndpoint('https://[::ffff:808:808]/v1');
+  assert.equal(pub.locality, 'public');
+  const v6 = assessEndpoint('https://[2606:4700:4700::1111]/v1');
+  assert.equal(v6.locality, 'public');
+});
+
 // ---------------------------------------------------------------------------
 // Reasoning mapping table (Section 13.5)
 // ---------------------------------------------------------------------------
