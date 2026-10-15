@@ -114,11 +114,13 @@ Re-read the master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md), the rule 12 
 | Prompts that merely graze the floor with boilerplate and stop (fail the EXCELLENCE quality gate) | 0 |
 | All 15 structural elements present in every prompt | 100% |
 | NEGATIVE BLOCK covering all 8 defect classes | 100% |
+| NEGATIVE BLOCK covering all 5 BlackCEO classes on Black-subject prompts (AF-P24) | 100% |
 | Spelling-lock instruction on every verbatim on-slide string | 100% |
 | Hardcoded demographic splits (60/30/10 or any fixed percentage) | 0 |
 | Prompts self-graded or self-certified by the Prompt Author | 0 |
 | AF-P1 (char under floor) detected at Prompt QC | 0 |
 | AF-P8 / AF-P13 (missing or incomplete NEGATIVE BLOCK) | 0 |
+| AF-P24 (BlackCEO class missing on a Black-subject prompt) | 0 |
 | AF-P14 (missing spelling-lock) | 0 |
 | AF-P15 (logo directive does not match the logo mechanism) | 0 |
 | Em dashes in any prompt file | 0 |
@@ -168,7 +170,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Steps:**
 
 1. For each slide ordinal N, open the slide's archetype (from design_system.json), type treatment, and verbatim copy (from slides_copy.md).
-2. Write `working/prompts/slide-NN.txt` carrying ALL 15 elements in the order defined in Section 1: archetype declaration on line 1, scene, zone layout, every copy line with per-line weight and point size, placement, logo treatment (if LOGO_ON_SLIDES = true: on the canonical command: the real logo is placed after generation by `assemble_pptx` (top-right, about 13 percent of the slide width, 0.25 inch margin, no chip), the prompt draws no logo and keeps that corner clear and carries the "do not draw any logo" negative twin (AF-P15); in URL image-to-image mode only: image-to-image with LOGO_URL as first reference and the anti-mutation sentence), color/style reference from the locked STYLE BLOCK, human subject casting (hair, clothing, expression -- required when people appear), lighting, composition, price typography (for price slides), and the full 8-class NEGATIVE BLOCK.
+2. Write `working/prompts/slide-NN.txt` carrying ALL 15 elements in the order defined in Section 1: archetype declaration on line 1, scene, zone layout, every copy line with per-line weight and point size, placement, logo treatment (if LOGO_ON_SLIDES = true: on the canonical command: the real logo is placed after generation by `assemble_pptx` (top-right, about 13 percent of the slide width, 0.25 inch margin, no chip), the prompt draws no logo and keeps that corner clear and carries the "do not draw any logo" negative twin (AF-P15); in URL image-to-image mode only: image-to-image with LOGO_URL as first reference and the anti-mutation sentence), color/style reference from the locked STYLE BLOCK, human subject casting (hair, clothing, expression -- required when people appear), lighting, composition, price typography (for price slides), and the full 8-class NEGATIVE BLOCK (plus the five BlackCEO classes 9-13 on any prompt casting a Black / African-descended subject; SOP 9.2 step 2b, AF-P24).
 3. TARGET the prompt budget of the pinned model with genuine, defect-preventing specificity per prompt (matching slide-image-creator.md SOP 9.4 strengthening). Length authority is the prompt budget of the pinned model (rule 12 of `07-kie-setup/references/kie-common-rules.md`): target 95 to 100 percent of the model's prompt maxLength, hard floor 80 percent, hard ceiling 100 percent. Read the number with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py prompt-budget --model <the image.t2i id in model_catalog.json> --check --prompt-file working/prompts/slide-NN.txt` (run it from the Skill 74 folder; never copy the adapter into a run directory). For the current pin (maximum 20,000 characters) the floor is 16,000 and the target is 19,000 to 20,000. The renderer gate enforces this same rule 12 band through the ONE shared enforcer, shared-utils/kie_prompt_enforcer.py: `build_deck.py` and `prompt_gate.py` import it and define no band constants of their own (the old 9,000 to 18,000 renderer band is retired). A prompt below the rule 12 floor is NOT run and NOT rendered (AF-P1 / AF-PROMPT-FLOOR), and clearing any floor is necessary, not sufficient: a floor-grazing, boilerplate-padded prompt still fails the EXCELLENCE quality gate and is remediated UP with real specificity (SOP 9.4). Re-author until every slide is inside the budget with defect-preventing specificity.
 4. The prompt MUST be <= the model maximum (the rule 12 hard ceiling; 20,000 characters for the current pin) (AF-P2). Over-long prompts are refused before any paid call.
 5. Every verbatim on-slide string must carry a per-string spelling-lock instruction ("Render this exact string, letter-for-letter, correctly spelled ... Do not alter, misspell, duplicate, or drop any character"). Missing a spelling-lock triggers AF-P14.
@@ -206,9 +208,10 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - Class 6: background competing with text ("Do not render a busy or high-contrast background element behind any text block that reduces legibility.")
    - Class 7: demographic or skin-tone fidelity failure ("Do not default to a mono-cast, lightened deep skin, or ashy complexion; render the casting as specified in this prompt.")
    - Class 8: universal baseline ("Do not render watermarks, em dashes, dark backgrounds (unless DARK_OK is true), clipart, emoji, text within 5% of any edge, text over a face, or a basic platform-default font.")
+2b. **The BlackCEO classes 9-13 (CONDITIONAL; Item 26 GIP weave; slide-image-creator SOP 9.8 / 9.12).** For every prompt that casts a Black / African-descended subject, verify FIVE further imperative sentences are present in the same block (the SOP-GIP-01 v2.0 Element 10 BlackCEO classes): Class 9 skin chromatic depth ("Do not render melanated skin as gray, ashy, muddy, dull, or desaturated."), Class 10 hair strand integrity ("Do not crush Black hair to featureless black; preserve individual strands and shape."), Class 11 skin microtexture ("Do not smooth skin to plastic/wax/CGI; preserve fine microtexture."), Class 12 hairstyle fidelity ("Do not replace a specified hairstyle with a generic one or fuse braids into clothing."), Class 13 skin-tone direction lock ("Do not lighten deep skin in aspirational scenes or darken it for dramatic effect."). A Black-subject prompt missing any of the five fails this audit (AF-P24, also enforced mechanically by build_deck._blackceo_negative_class_problems). Prompts with no Black subject are audited on the 8 base classes alone.
 3. Verify each critical negative has a corresponding positive instruction stated earlier in the same prompt (the positive-twin requirement). A negative with no upstream positive twin is a paired-negative failure (AF-P13).
 4. Verify no negative instruction contradicts a positive instruction in the same prompt (no-contradiction audit per NEGATIVE-PROMPTING-SOP Section 4).
-5. For any prompt where the NEGATIVE BLOCK is missing, incomplete (fewer than 8 classes), has a missing positive twin, or contains a contradiction -- flag the prompt and queue it for SOP 9.4 (remediation).
+5. For any prompt where the NEGATIVE BLOCK is missing, incomplete (fewer than 8 classes, or missing any BlackCEO class 9-13 on a Black-subject prompt), has a missing positive twin, or contains a contradiction -- flag the prompt and queue it for SOP 9.4 (remediation).
 
 **Outputs:**
 - A per-prompt NEGATIVE BLOCK audit result (PASS / FAIL with specific missing class codes)
@@ -270,7 +273,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    - All prompts inside the prompt budget (and above the rule 12 floor)
    - All prompts <= the model maximum (20,000 characters for the current pin)
    - All prompts have archetype on line 1
-   - All prompts have a NEGATIVE BLOCK covering 8 classes
+   - All prompts have a NEGATIVE BLOCK covering 8 classes (plus the five BlackCEO classes 9-13 on every Black-subject prompt; AF-P24)
    - All verbatim strings have spelling-locks
    - No bracket placeholders in any prompt
    - No hardcoded demographic splits
@@ -311,6 +314,28 @@ Length never buys a pass; engines never buy a pass; the renderer re-measures BOT
 
 ---
 
+### SOP 9.6 -- GIP v2.0 Representation Authoring (Item 26 weave)
+
+**When to run:** On every people/scene prompt, inside SOP 9.1 authoring. The full woven doctrine lives in slide-image-creator SOP 9.12; this SOP is the Prompt Author's scoped half. Do not fork the 9.12 text here.
+
+**Steps:**
+
+1. **Representation order.** For every Black / African-descended person, write the people spec in SOP-GIP-01 v2.0's fixed order -- Black woman: role, skin tone, hairstyle, attire, expression/posture; Black man: role, skin tone, hairstyle, facial hair, attire, expression/posture. Take the skin-tone label, hairstyle, and facial hair from the casting ledger's GIP library vocabulary (SOP-CAST-01 Section 8); never invent a label.
+2. **Chromatic depth as positive direction.** State melanated skin's chromatic depth positively (warm brown, golden, subtle red undertones; fine microtexture preserved; hair with individual strands and true shape) so the BlackCEO negatives in the block have their positive twins (SOP 9.2 step 2b audits the pairing).
+3. **Physical-cue expressions.** Describe expressions as physical cues (gaze, eyelids, brow tension, mouth/jaw, shoulder position, hand behavior, head angle), never a generic emotion label alone and never a default broad camera smile. The slide's beat still decides which expression is needed (the Facial engine in SOP 9.5).
+4. **Camera direction.** On every people or scene prompt, state shot distance, camera angle, the subject's 3x3 anchor (separate from the text-safe area), and a non-contradictory lens/aperture pair, per slide-image-creator SOP 9.12 part 5.
+5. **Lighting intelligence.** Direct dimensional beauty lighting with sculptural separation and texture-preserving shadows per slide-image-creator SOP 9.12 part 3, inside the SOP 9.5 Lighting engine tokens (key/fill/rim + rim/hair separation stay mandatory).
+6. **Style direction.** Author element 14 to the deck's ONE locked Creative Direction recorded in the STYLE BLOCK (style ID or Secret Sauce only, slide-image-creator SOP 9.12 part 4). Never name a source photographer, artist, or director in a prompt; translate the style to visual grammar.
+
+**Conflict rule:** where this SOP and SOP-GIP-01 v2.0 conflict on slide imagery, the BlackCEO image style (GIP v2.0) wins; on anything else, presentation doctrine wins (slide-image-creator SOP 9.12).
+
+**Outputs:**
+- People/scene prompts whose representation, lighting, camera, and style direction conform to the woven doctrine
+
+**Hand to:** SOP 9.2 audit (the BlackCEO pairing check), then Prompt QC Specialist (ROLE-25).
+
+---
+
 ## 10. Quality Gates
 
 ### Gate 1 -- Input Readiness
@@ -323,7 +348,7 @@ Every prompt is inside the prompt budget (rule 12): at or above the rule 12 floo
 All 15 structural elements present in every prompt. Archetype on line 1. Every copy line has per-line weight and point size.
 
 ### Gate 4 -- NEGATIVE BLOCK Integrity
-8-class NEGATIVE BLOCK present in every prompt, each class as an imperative "Do not ..." with a positive twin earlier in the prompt. No contradictions.
+8-class NEGATIVE BLOCK present in every prompt, each class as an imperative "Do not ..." with a positive twin earlier in the prompt. No contradictions. On every prompt casting a Black / African-descended subject, the five BlackCEO classes 9-13 are also present (the 13-class block; AF-P24).
 
 ### Gate 5 -- Spelling-Lock Coverage
 Every verbatim on-slide string has an explicit per-string spelling-lock instruction. No bracket placeholders as renderable copy.
@@ -381,6 +406,8 @@ HEADLINE: "The Gap Is Not Skill" -- render in Montserrat Black, 74pt, white, lef
 NEGATIVE BLOCK -- Do not render any garbled, misspelled, or fragmented letter in any text element. Do not invent, redesign, recolor, or restyle any logo or brand mark; place the provided logo exactly as supplied. Do not render any bracketed token, placeholder text, [INSERT ...], [TBD], or unresolved build variable as visible slide copy. Do not render any image-narration caption, presenter stage direction, build note, or the word "webinar" as on-slide copy. Do not render extra fingers, warped hands, fused limbs, distorted faces, or any anatomical anomaly. Do not render a busy or high-contrast background element behind any text block that reduces legibility. Do not default to a mono-cast, lightened deep skin, or ashy complexion; render the casting exactly as specified in this prompt. Do not render watermarks, em dashes, dark backgrounds, clipart, emoji, text within 5% of any edge, text over a face, or a basic platform-default font.
 ```
 
+On a prompt casting a Black / African-descended subject, the block continues with the five BlackCEO sentences (classes 9-13; SOP 9.2 step 2b): "Do not render melanated skin as gray, ashy, muddy, dull, or desaturated. Do not crush Black hair to featureless black; preserve individual strands and shape. Do not smooth skin to plastic/wax/CGI; preserve fine microtexture. Do not replace a specified hairstyle with a generic one or fuse braids into clothing. Do not lighten deep skin in aspirational scenes or darken it for dramatic effect."
+
 ---
 
 ## 14. Bad Output Examples (Anti-Patterns)
@@ -388,6 +415,7 @@ NEGATIVE BLOCK -- Do not render any garbled, misspelled, or fragmented letter in
 - A prompt under the rule 12 floor (16,000 characters for the current pin) (AF-P1).
 - A headline written as paraphrase of the slide copy rather than verbatim (AF-P3).
 - A prompt with no NEGATIVE BLOCK or a NEGATIVE BLOCK covering fewer than 8 classes (AF-P8 / AF-P13).
+- A Black-subject prompt missing any of the five BlackCEO negative classes (AF-P24), or a people spec that ignores the GIP representation order and casting-ledger library vocabulary (SOP 9.6).
 - A verbatim string with no spelling-lock instruction (AF-P14).
 - A logo slide whose prompt draws or describes the logo in words, or carries the directive of the wrong mechanism, instead of the logo directive of the deck's logo mechanism (canonical command: no drawn logo, a clear top-right zone and the "do not draw any logo" negative twin; URL image-to-image mode: image-to-image with LOGO_URL as first reference, "place, do not redraw" and the "do not invent any mark" twin) (AF-P15).
 - A people prompt that specifies "60% Black, 30% Hispanic, 10% white" demographic split (AF-R3 / hardcoded demographic landmine).
