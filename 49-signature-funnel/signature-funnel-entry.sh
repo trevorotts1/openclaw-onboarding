@@ -25,10 +25,18 @@
 #
 # Usage:
 #   bash signature-funnel-entry.sh --run-dir <RUN_DIR>
+#   bash signature-funnel-entry.sh --mode signature_launch --run-dir <RUN_DIR>
 #   bash signature-funnel-entry.sh --self-test
 #   bash signature-funnel-entry.sh --check-version   (version gate only)
 #   bash signature-funnel-entry.sh --scan-only --run-dir <RUN_DIR>   (deps + bypass-scan only)
 # Exit: 0 = certified / self-test green; nonzero = a fail-closed guard tripped.
+#
+# MODES (additive; spec 06): the default mode is legacy_signature_funnel — the
+# pipeline below, byte-for-byte the historical behavior. `--mode
+# signature_launch` dispatches an APPROVED launch plan to the specialist page
+# skills via scripts/dispatch_launch.py. New launch requests must name their
+# mode explicitly: a run dir carrying a signature_launch launch-request.json
+# is REFUSED by the legacy path, never silently run through the old pipeline.
 # ==============================================================================
 set -euo pipefail
 
@@ -171,11 +179,37 @@ PYEOF
     || die "MODEL-TIER" "content-authoring model receipt failed the execution-tier / no-Anthropic gate — set SF_CONTENT_MODEL + SF_CONTENT_PROVIDER (+ SF_CONTENT_TIER) to the CLIENT's own strongest model"
 }
 
+# Launch mode: same front-door integrity guards (deps / version / hash-pin /
+# bypass-scan), then the launch dispatcher — which re-checks the plan
+# approval gate itself before emitting or executing anything. The legacy
+# model-tier receipt and certificate nonce belong to the legacy pipeline and
+# are not part of launch mode.
+run_launch_pipeline() {
+  local rd="$1"
+  [ -n "$rd" ] || die "USAGE" "--mode signature_launch needs --run-dir"
+  rd="$(cd "$rd" 2>/dev/null && pwd || true)"
+  [ -n "$rd" ] && [ -d "$rd" ] || die "USAGE" "run-dir does not exist"
+  [ -f "$rd/launch.json" ] || die "MODE" "launch run dir has no launch.json"
+  [ -f "$rd/approval.json" ] || die "MODE" "launch run dir has no approval.json"
+  [ -f "$rd/launch-request.json" ] || die "MODE" "launch run dir has no launch-request.json (mode + identities)"
+  step_deps
+  step_version
+  step_hashpin
+  step_bypass_scan "$rd"
+  echo "== signature-funnel-entry :: launch mode front door cleared (deps/version/hash-pin/bypass) =="
+  "$PY" "$SCRIPTS_DIR/dispatch_launch.py" --run-dir "$rd"
+}
+
 run_pipeline() {
   local rd="$1"
   [ -n "$rd" ] || die "USAGE" "--run-dir is required"
   rd="$(cd "$rd" 2>/dev/null && pwd || true)"
   [ -n "$rd" ] && [ -d "$rd" ] || die "USAGE" "run-dir does not exist"
+  # Explicit mode required for new launch requests: never run a launch-mode
+  # run dir through the legacy pipeline by accident.
+  if [ -f "$rd/launch-request.json" ] && grep -q '"signature_launch"' "$rd/launch-request.json" 2>/dev/null; then
+    die "MODE" "this run dir declares mode signature_launch; re-run with --mode signature_launch"
+  fi
   step_deps
   step_version
   step_hashpin
@@ -219,6 +253,20 @@ self_test() {
   else
     echo "  [FAIL] gate_integrity_check.py"; sed 's/^/         /' /tmp/sf_cov.log /tmp/sf_gic.log; fails=$((fails+1))
   fi
+  # Signature Launch mode (additive): the launch toolchain self-tests ride the
+  # same front-door self-test so a broken launch script fails the door loudly.
+  for p in compile_launch_route validate_launch_plan launch_intake dispatch_launch collect_launch_receipts; do
+    if "$PY" "$SCRIPTS_DIR/$p.py" --self-test >/tmp/sf_$p.log 2>&1; then
+      echo "  [PASS] $p.py --self-test (signature_launch mode)"
+    else
+      echo "  [FAIL] $p.py --self-test (signature_launch mode)"; sed 's/^/         /' "/tmp/sf_$p.log"; fails=$((fails+1))
+    fi
+  done
+  if "$PY" "$SCRIPTS_DIR/test_launch_route.py" >/tmp/sf_launch_tests.log 2>&1; then
+    echo "  [PASS] test_launch_route.py (signature_launch unit tests)"
+  else
+    echo "  [FAIL] test_launch_route.py"; sed 's/^/         /' /tmp/sf_launch_tests.log; fails=$((fails+1))
+  fi
   [ "$fails" -eq 0 ] || die "SELF-TEST" "$fails check(s) failed"
   echo "RESULT: PASS — entry self-test green."
 }
@@ -230,10 +278,11 @@ write_pin() {
 }
 
 main() {
-  local mode="" rd=""
+  local mode="" rd="" req_mode=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --run-dir) rd="${2:-}"; shift 2 ;;
+      --mode) req_mode="${2:-}"; shift 2 ;;
       --self-test) mode="selftest"; shift ;;
       --check-version) mode="checkversion"; shift ;;
       --write-pin) mode="writepin"; shift ;;
@@ -243,6 +292,13 @@ main() {
       *) die "USAGE" "unknown arg: $1" ;;
     esac
   done
+  if [ -n "$req_mode" ]; then
+    case "$req_mode" in
+      signature_launch) run_launch_pipeline "$rd"; return 0 ;;
+      legacy_signature_funnel) : ;;  # explicit legacy: fall through unchanged
+      *) die "USAGE" "unknown --mode '$req_mode' (signature_launch | legacy_signature_funnel)" ;;
+    esac
+  fi
   case "$mode" in
     checkversion) step_deps; step_version; echo "VERSION OK" ;;
     selftest) self_test ;;
