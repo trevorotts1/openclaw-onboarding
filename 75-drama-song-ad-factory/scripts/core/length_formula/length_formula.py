@@ -34,6 +34,7 @@ stdlib only; no network, no spend.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -585,7 +586,175 @@ def _rap_style(style_id):
         return False
 
 
-def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True):
+# ---------------------------------------------------------------------------
+# W1-method-song-U3 (Trevor 2026-10-13): THE METHOD'S RUNTIME TARGETS, in the
+# ONE length function. Method sections 7.1-7.2 of the Drama-to-Demand method:
+# the editorial starting targets and the illustrative time allocation. The
+# numbers live in method_runtime.json beside this module, so a method run and a
+# non-method run are planned by the same plan() and can never drift apart.
+#
+# INERT UNTIL WIRED: nothing below runs unless plan(..., method=True) is asked
+# for, so every existing caller keeps its byte-identical plan (the golden pins).
+# Conflict C2 is answered here -- the opener may carry the backstory NARRATION
+# the method allows (section 6), instead of the 3-word cap alone.
+
+METHOD_RUNTIME_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "method_runtime.json")
+METHOD_PROFILE_DEFAULT = "story"
+_METHOD_RUNTIME = None
+
+
+class MethodProfileError(LengthError):
+    """A pacing profile the method does not define (SPEC B4: story, feed)."""
+
+
+def method_runtime():
+    """The parsed method_runtime.json -- THE method runtime table, read once."""
+    global _METHOD_RUNTIME
+    if _METHOD_RUNTIME is None:
+        with open(METHOD_RUNTIME_PATH, "r", encoding="utf-8") as fh:
+            _METHOD_RUNTIME = json.load(fh)
+    return _METHOD_RUNTIME
+
+
+def method_profiles():
+    """The pacing profiles (SPEC B4): which clock a purpose runs on."""
+    return dict(method_runtime()["profiles"])
+
+
+def method_profile_rules(profile=METHOD_PROFILE_DEFAULT):
+    """One profile's rules. Raises MethodProfileError for anything else."""
+    prof = method_profiles()
+    if profile not in prof:
+        raise MethodProfileError("profile must be one of %s, got %r"
+                                 % (sorted(prof), profile))
+    return prof[profile]
+
+
+def method_row(chosen_length_s):
+    """The section 7.1 targets and section 7.2 blocks for one chosen length.
+
+    An exact row is copied out as the data file states it. Any other length is
+    the linear interpolation between the two nearest rows and is returned marked
+    ``origin == "interpolated"`` with the two rows it came from, so a number the
+    data file never states is never read as one it did. Below the smallest row
+    (30 s) is a LengthError; above the largest (600 s) returns that row marked
+    ``origin == "clamped"`` -- the 10-minute targets are the method's longest
+    and must not be presented as targets for a longer run.
+    """
+    doc = method_runtime()
+    rows = doc["lengths"]
+    L = float(chosen_length_s)
+    hit = [r for r in rows if float(r["length_s"]) == L]
+    if hit:
+        return dict(hit[0])
+    below = [r for r in rows if r["length_s"] < L]
+    if not below:
+        raise LengthError("no method runtime target at or below %s s "
+                          "(method_runtime.json starts at %s s)"
+                          % (L, rows[0]["length_s"]))
+    lo = below[-1]
+    above = [r for r in rows if r["length_s"] > L]
+    if not above:
+        out = dict(lo)
+        out["origin"] = "clamped"
+        out["note"] = ("%s s is longer than the method's longest row; these are "
+                       "the 600 s targets, offered as the closest shape and not "
+                       "as the method's targets for this length" % (L,))
+        out["length_s"] = L
+        return out
+    hi = above[0]
+    t = (L - lo["length_s"]) / float(hi["length_s"] - lo["length_s"])
+
+    def _mix(key):
+        return [lo[key][0] + t * (hi[key][0] - lo[key][0]),
+                lo[key][1] + t * (hi[key][1] - lo[key][1])]
+
+    return {"length_s": L, "origin": "interpolated",
+            "interpolated_between_s": [lo["length_s"], hi["length_s"]],
+            "backstory_s": _mix("backstory_s"),
+            "erm_window_s": _mix("erm_window_s"),
+            "cta_reserve_s": _mix("cta_reserve_s"),
+            "blocks": {k: lo["blocks"][k] + t * (hi["blocks"][k] - lo["blocks"][k])
+                       for k in doc["block_order"]}}
+
+
+def method_anchors(row):
+    """The section 7.2 block column turned into ARRIVAL timestamps.
+
+    Each anchor is the end of its block, so it is also the first second of the
+    next one: ``hero_shift_s`` is where the solution enters, ``hook_from_s``
+    where the earned Solution Signature Hook may start -- the method's own
+    "the first hook begins at 0:40, 1:00, 1:20, 1:35, 2:00, and 2:45" -- and
+    ``commercial_from_s`` where the closing commercial begins. The ERM apex is
+    the midpoint of the section 7.1 window: the method says the apex is placed
+    at an explicitly chosen point inside the ERM/pain block, so the block is
+    never assumed to be the ERM itself.
+    """
+    doc = method_runtime()
+    ends = {}
+    end = 0.0
+    for name in doc["block_order"]:
+        end += float(row["blocks"][name])
+        ends[name] = round(end, 2)
+    erm = row["erm_window_s"]
+    return {"block_anchors_s": ends,
+            "backstory_end_s": ends["backstory_instrumental"],
+            "erm_apex_s": round((float(erm[0]) + float(erm[1])) / 2.0, 2),
+            "hero_shift_s": ends["solution_introduction_and_hero_shift"],
+            "hook_from_s": ends["solution_use_and_first_breakthrough"],
+            "commercial_from_s": ends["further_story_and_reprises"],
+            "total_s": round(end, 2)}
+
+
+def method_plan(chosen_length_s, delivered_s, profile=METHOD_PROFILE_DEFAULT):
+    """The ``out["method"]`` targets for one run: section 7.1 windows plus the
+    section 7.2 arrival anchors (SPEC B4 pacing profiles).
+
+    ``story`` (default) is the method's own table. ``feed`` keeps the method's
+    ORDER and compresses only the clock: a 0-3 s attention opener and the first
+    sung line by 15 % of the delivered seconds -- the measured BSW timing SPEC
+    B4 pins at about 4-5 s at 30 s, 8-9 s at 60 s, 12-13 s at 90 s. Both music
+    turns stay required and measured; only the clock differs.
+    """
+    rules = method_profile_rules(profile)
+    row = method_row(chosen_length_s)
+    a = method_anchors(row)
+    if profile == "feed":
+        opener = [float(v) for v in rules["attention_opener_s"]]
+        by = round(float(rules["first_sung_pct_of_delivered"]) * float(delivered_s), 2)
+        backstory, erm, apex = list(opener), [0.0, by], by
+    else:
+        backstory = [float(v) for v in row["backstory_s"]]
+        erm = [float(v) for v in row["erm_window_s"]]
+        apex = a["erm_apex_s"]
+    out = {
+        "profile": profile,
+        "backstory_s": backstory,
+        "erm_window_s": erm,
+        "cta_reserve_s": [float(v) for v in row["cta_reserve_s"]],
+        "erm_apex_s": apex,
+        "first_sung_by_s": apex,
+        "hero_shift_s": a["hero_shift_s"],
+        "hook_from_s": a["hook_from_s"],
+        "commercial_from_s": a["commercial_from_s"],
+        "block_anchors_s": a["block_anchors_s"],
+        "total_s": a["total_s"],
+        "origin": row["origin"],
+        "note": ("planning targets, not timing laws: the ERM target is an arrival "
+                 "timestamp and the closing commercial reserve is already inside "
+                 "the runtime"),
+        "source": method_runtime()["source"],
+    }
+    if row.get("interpolated_between_s"):
+        out["interpolated_between_s"] = row["interpolated_between_s"]
+    if row.get("note"):
+        out["row_note"] = row["note"]
+    return out
+
+
+def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True,
+         method=False, profile=METHOD_PROFILE_DEFAULT):
     """The full plan for one ad. ``spoken_share_pct`` is the ad's own setting
     (default 20-25 -> 22.5; BSW passes (15, 20)).
 
@@ -609,6 +778,16 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True):
     returns words {spoken, rap, sung} and a top-level ``rap_s``. No style, an
     unknown style, Soul Ballad and Soul Rise keep the previous output
     BYTE-IDENTICAL -- no rap key is added for them.
+
+    ``method`` (default False) adds the Drama-to-Demand runtime targets (method
+    sections 7.1-7.2) as ``out["method"]``: the backstory, ERM and closing
+    commercial windows, the ERM apex and the Hero Shift / hook / commercial
+    arrival anchors, on the pacing profile's clock (``profile``, SPEC B4 --
+    ``story`` is the method's own table, ``feed`` compresses the ERM onto the
+    measured 15 % of the delivered seconds). A method run's OPENER may carry the
+    backstory narration the method allows, up to the backstory window spoken at
+    SPOKEN_WPS words; the spoken share band and the rap reservation are
+    untouched. Without ``method`` the output is byte-identical to before.
     """
     L = chosen_length_s
     if isinstance(L, bool) or not isinstance(L, (int, float)) or L < 20 or L > 3600:
@@ -617,7 +796,17 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True):
     b = _bracket(D)
     break_s = b["breaks"] * b["break_s"]
     wb = word_budget(D, spoken_share_pct, break_s)
+    # W1-method-song-U3: the method's targets are computed FIRST, because they
+    # raise the OPENER cap -- and the opener is what carries the backstory
+    # narration. Everything below is the same arithmetic it always was.
+    method_block = method_plan(L, D, profile) if method else None
     opener_cap = OPENER_MAX_WORDS_SHORT if D <= 105 else OPENER_MAX_WORDS_LONG
+    if method_block is not None:
+        # Conflict C2: narration over light instrumental music is allowed
+        # (method section 6), so the whole backstory window may be spoken at the
+        # measured rate. The spoken share band still binds (spoken_words is
+        # still min(wb, opener + cta_cap)) and the rap reservation is untouched.
+        opener_cap = int(math.floor(method_block["backstory_s"][1] * SPOKEN_WPS))
     opener = min(opener_cap, max(wb["spoken_words"] // 4, 1))
     cta_cap = max(OUTRO_MAX_WORDS, wb["spoken_words"] - opener)
     if _rap_style(style_id):
@@ -718,6 +907,9 @@ def plan(chosen_length_s, spoken_share_pct=None, style_id=None, rap_floor=True):
     }
     # FU-U13: the plan carries its product-connection target seconds too.
     out["product_connection"] = plan_product_connection(out)
+    # W1-method-song-U3: only a method run carries the method's runtime targets.
+    if method_block is not None:
+        out["method"] = method_block
     if _rap_style(style_id):
         # WWFIX D1: rap_s is ALWAYS emitted for a rap style, and the plan carries
         # its own rap verdict, so a rap style that planned zero rap words is
