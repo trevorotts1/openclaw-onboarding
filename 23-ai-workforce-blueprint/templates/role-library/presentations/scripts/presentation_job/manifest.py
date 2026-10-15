@@ -105,6 +105,11 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     "P-U-DESIGN-RENDER-SALES": 30,
     "P-U-DESIGN-RENDER-CHECKOUT": 30,
     "P-U-DESIGN-RENDER-VSL": 30,
+    # Item 20 page-brief seam (B30 registration): the brief emit is a mechanical
+    # gather + validate + write over artifacts the run already holds; budget 20
+    # matches the copy phases' emit class (the DEFAULT floor).
+    "P-U-BRIEF-SALES": 20,
+    "P-U-BRIEF-VSL": 20,
     "P-U-HTML-SALES": 30,
     "P-U-HTML-CHECKOUT": 30,
     "P-U-HTML-VSL": 30,

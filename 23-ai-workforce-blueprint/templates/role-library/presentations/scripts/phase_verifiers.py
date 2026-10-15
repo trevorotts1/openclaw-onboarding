@@ -3422,6 +3422,11 @@ try:
 except ImportError:
     _gx = None  # type: ignore[assignment]
 
+try:
+    import page_brief as _pb
+except ImportError:
+    _pb = None  # type: ignore[assignment]
+
 
 def _verify_pres011_gate(phase_id: str, run_dir: Path) -> Optional[Tuple[bool, List[str]]]:
     """Resolve the elect/decline gate for a PRES-011 phase. Returns None when
@@ -3466,12 +3471,15 @@ def _verify_ghl_sales_install(run_dir: Path) -> Tuple[bool, List[str]]:
     if _gx is None:
         return False, ["AF-U-GHL-SALES: ghl_external_installer unavailable"]
     try:
-        ok, detail, _data = _gx.validate_receipt(run_dir, "P-U-GHL-SALES")
+        ok, detail, receipt = _gx.validate_receipt(run_dir, "P-U-GHL-SALES")
     except Exception as exc:  # noqa: BLE001
         return False, [f"AF-U-GHL-SALES: receipt validation raised {exc!r}"]
-    if ok:
-        return True, []
-    return False, [f"AF-U-GHL-SALES: {detail}"]
+    if not ok:
+        return False, [f"AF-U-GHL-SALES: {detail}"]
+    binding_errs = _brief_binding_reasons(run_dir, "P-U-GHL-SALES", receipt)
+    if binding_errs:
+        return False, binding_errs
+    return True, []
 
 
 def _verify_ghl_vsl_install(run_dir: Path) -> Tuple[bool, List[str]]:
@@ -3487,12 +3495,15 @@ def _verify_ghl_vsl_install(run_dir: Path) -> Tuple[bool, List[str]]:
     if _gx is None:
         return False, ["AF-U-GHL-VSL: ghl_external_installer unavailable"]
     try:
-        ok, detail, _data = _gx.validate_receipt(run_dir, "P-U-GHL-VSL")
+        ok, detail, receipt = _gx.validate_receipt(run_dir, "P-U-GHL-VSL")
     except Exception as exc:  # noqa: BLE001
         return False, [f"AF-U-GHL-VSL: receipt validation raised {exc!r}"]
-    if ok:
-        return True, []
-    return False, [f"AF-U-GHL-VSL: {detail}"]
+    if not ok:
+        return False, [f"AF-U-GHL-VSL: {detail}"]
+    binding_errs = _brief_binding_reasons(run_dir, "P-U-GHL-VSL", receipt)
+    if binding_errs:
+        return False, binding_errs
+    return True, []
 
 
 def _verify_form_gate_install(run_dir: Path) -> Tuple[bool, List[str]]:
@@ -3510,12 +3521,130 @@ def _verify_form_gate_install(run_dir: Path) -> Tuple[bool, List[str]]:
     if _gx is None:
         return False, ["AF-U-FORM-GATE: ghl_external_installer unavailable"]
     try:
-        ok, detail, _data = _gx.validate_receipt(run_dir, "P-U-FORM-GATE")
+        ok, detail, receipt = _gx.validate_receipt(run_dir, "P-U-FORM-GATE")
     except Exception as exc:  # noqa: BLE001
         return False, [f"AF-U-FORM-GATE: receipt validation raised {exc!r}"]
-    if ok:
-        return True, []
-    return False, [f"AF-U-FORM-GATE: {detail}"]
+    if not ok:
+        return False, [f"AF-U-FORM-GATE: {detail}"]
+    binding_errs = _brief_binding_reasons(run_dir, "P-U-FORM-GATE", receipt)
+    if binding_errs:
+        return False, binding_errs
+    return True, []
+
+
+# ---------------------------------------------------------------------------
+# Item 20 page-brief seam (B30 registration) -- the brief phases' own
+# verifiers, plus the brief-binding extension of the three PRES-011
+# verifiers above.
+#
+# P-U-BRIEF-SALES / P-U-BRIEF-VSL run page_brief.py, which emits the
+# versioned page-brief JSON for the elected pages (or records the
+# defer/waived outcome in the seam ledger when a page is not elected).
+# Their verifiers judge with the seam's OWN machinery
+# (page_brief.resolve_elections for the per-page election,
+# page_brief.validate_brief for a written brief, the seam ledger for a
+# non-build outcome) -- never a re-derivation that could drift from the
+# executor.
+#
+# The binding extension: once the installer's own validate_receipt has
+# passed, a receipt for a run that EMITTED briefs for the phase's pages
+# must name those briefs (page_brief.check_brief_binding -- the same
+# judgment page_brief.py --verify-receipts runs). A run that emitted no
+# brief for the phase's pages took the legacy path the seam preserves;
+# the binding does not apply there and the installer's verdict stands
+# alone, exactly as before the seam.
+# ---------------------------------------------------------------------------
+def _brief_binding_reasons(run_dir: Path, phase_id: str,
+                           receipt) -> List[str]:
+    """Brief-binding errors for one PRES-011 phase, or [] when the binding
+    does not apply (legacy run: no brief emitted for the phase's pages) or
+    the receipt binds the current briefs correctly."""
+    if _pb is None:
+        return [f"{phase_id}: page_brief module unavailable -- cannot run "
+                "the brief-binding check; fail-closed, not a pass"]
+    pages = _pb.PHASE_TO_PAGES.get(phase_id, ())
+    if not any(_pb.latest_brief(run_dir, page)[0] is not None
+               for page in pages):
+        return []
+    if not isinstance(receipt, dict):
+        return [f"{phase_id}: installer receipt unreadable -- cannot check "
+                "the brief binding"]
+    return _pb.check_brief_binding(run_dir, phase_id, receipt)
+
+
+def _verify_page_brief_phase(run_dir: Path, phase_id: str,
+                             pages: Tuple[str, ...]) -> Tuple[bool, List[str]]:
+    if _pb is None:
+        return False, [f"{phase_id}: page_brief module unavailable -- "
+                       "fail-closed, not a pass"]
+    intake: dict = {}
+    try:
+        intake = json.loads((run_dir / "working" / "copy" / "intake.json")
+                            .read_text(encoding="utf-8"))
+        if not isinstance(intake, dict):
+            intake = {}
+    except (OSError, json.JSONDecodeError):
+        intake = {}
+    if not intake:
+        return False, [f"{phase_id}: working/copy/intake.json missing or "
+                       "unreadable -- the seam cannot resolve its elections"]
+    try:
+        gates = _pb.resolve_elections(intake, _pb._load_siblings())
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"{phase_id}: election resolution raised {exc!r}"]
+    ledger: dict = {}
+    try:
+        ledger = json.loads((run_dir / _pb.LEDGER_REL)
+                            .read_text(encoding="utf-8"))
+        if not isinstance(ledger, dict):
+            ledger = {}
+    except (OSError, json.JSONDecodeError):
+        ledger = {}
+    reasons: List[str] = []
+    for page in pages:
+        gate = gates.get(page) or {}
+        decision = gate.get("decision")
+        if decision == "build":
+            _path, brief = _pb.latest_brief(run_dir, page)
+            if brief is None:
+                reasons.append(f"{phase_id}: page {page} elected build but "
+                               "no page brief was emitted")
+                continue
+            for err in _pb.validate_brief(brief):
+                reasons.append(f"{phase_id}: page {page} brief invalid: "
+                               f"{err}")
+        elif decision in ("defer", "waived"):
+            last = ((ledger.get("pages") or {}).get(page) or {}).get("last")
+            if not isinstance(last, dict) or last.get("outcome") != decision:
+                got = last.get("outcome") if isinstance(last, dict) else None
+                reasons.append(f"{phase_id}: page {page} election is "
+                               f"{decision} but the seam ledger records "
+                               f"{got!r}, not that outcome")
+        elif decision == "fail_closed":
+            reasons.append(f"{phase_id}: page {page} election fail_closed "
+                           f"-- {gate.get('detail', '')}")
+        else:
+            reasons.append(f"{phase_id}: page {page} unrecognized election "
+                           f"decision {decision!r}")
+    if reasons:
+        return False, reasons
+    return True, []
+
+
+def _verify_brief_sales(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-U-BRIEF-SALES (order 4.32): elected sales + checkout page briefs.
+
+    produces_artifact (manifest): working/pages/page-brief-sales.v*.json +
+    working/pages/page-brief-checkout.v*.json."""
+    return _verify_page_brief_phase(run_dir, "P-U-BRIEF-SALES",
+                                    ("sales", "checkout"))
+
+
+def _verify_brief_vsl(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P-U-BRIEF-VSL (order 4.42): elected VSL page brief.
+
+    produces_artifact (manifest): working/pages/page-brief-vsl.v*.json."""
+    return _verify_page_brief_phase(run_dir, "P-U-BRIEF-VSL", ("vsl",))
 
 
 # ---------------------------------------------------------------------------
@@ -3864,6 +3993,9 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P-U-GHL-SALES":      _verify_ghl_sales_install,
     "P-U-GHL-VSL":        _verify_ghl_vsl_install,
     "P-U-FORM-GATE":      _verify_form_gate_install,
+    # --- Item 20 page-brief seam (B30 registration) ---
+    "P-U-BRIEF-SALES":    _verify_brief_sales,
+    "P-U-BRIEF-VSL":      _verify_brief_vsl,
     # --- FIX 112: the two remaining missing producers ---
     "P-STYLE-SPEC":       _verify_style_spec,
     "P-STYLE-PICK":       _verify_style_pick,
