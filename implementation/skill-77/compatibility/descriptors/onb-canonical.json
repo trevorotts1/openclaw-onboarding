@@ -1,0 +1,53 @@
+{
+  "descriptor": "skill77.component-descriptor/v1",
+  "component": "onb-skill",
+  "role": "skill",
+  "repository": "trevorotts1/openclaw-onboarding",
+  "commit": "4c5c690cc1615ebd2837f353238d4bb040b356e6",
+  "skill_version": "v1.0.0",
+  "runtime_package": {
+    "name": "@blackceo/wise-elders-core",
+    "version": "0.1.0"
+  },
+  "contract_package_version": "wise-elders.core/1.0.0",
+  "schema_versions": {
+    "session": "wise-elders.session/v1",
+    "brief": "wise-elders.brief/v1",
+    "card": "wise-elders.card/v1",
+    "verdict": "wise-elders.verdict/v1",
+    "grant": "wise-elders.run-grant/v1",
+    "preview": "wise-elders.run-preview/v1",
+    "event": "wise-elders.event/v1",
+    "diagnostic_policy": "wise-elders.diagnostic-retention-policy/v1",
+    "endpoint": "wise-elders.endpoint-contract/v1",
+    "session_state": "wise-elders.session-state/v1",
+    "job_checkpoint": "wise-elders.job-checkpoint/v1",
+    "settings": "wise-elders.settings/v1",
+    "approval": "wise-elders.approval/v1",
+    "operation_receipt": "wise-elders.operation-receipt/v1"
+  },
+  "endpoint_registry_contract": "wise-elders.endpoint-contract/v1",
+  "persistence": {
+    "config_schema_version": "wise-elders.persistence-config/v1",
+    "profile_schema_version": "wise-elders.installation-profile/v1",
+    "store_migration_id": "council-0001",
+    "store_migration_name": "council_scoped_storage_schema",
+    "local_store_schema_version": "wise-elders.local-store/v1"
+  },
+  "authority_modes": [
+    "standalone",
+    "managed"
+  ],
+  "tree_identity": {
+    "kind": "canonical",
+    "recorded_aggregate_sha256": "f1c8fca3a3cf6c42990c645de1a5efc23e1a80d1ba0ad0039b1b1e35669d20aa",
+    "recorded_file_count": 291,
+    "computed_aggregate_sha256": "f1c8fca3a3cf6c42990c645de1a5efc23e1a80d1ba0ad0039b1b1e35669d20aa",
+    "computed_file_count": 291,
+    "archive": {
+      "file": "council-of-wise-elders.skill",
+      "sha256": "f5129545037faac149ba72cb6d0640b163f04afe4ffea66d1f1047752388db3e",
+      "bytes": 917960
+    }
+  }
+}
