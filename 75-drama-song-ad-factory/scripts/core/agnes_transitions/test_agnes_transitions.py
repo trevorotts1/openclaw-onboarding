@@ -9,6 +9,7 @@ round-trip test builds its own clips with lavfi in a temp folder and is skipped
 where ffmpeg is absent; every other test injects a fake runner/probe.
 """
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -16,7 +17,59 @@ import sys
 import tempfile
 import time
 
-import pytest
+try:
+    import pytest                                        # noqa: F401
+except ImportError:
+    #: The QC empty-home gate runs every test file as bare `python3 <file>`
+    #: with no third-party packages, so pytest is optional here. These shims
+    #: cover the three pytest features this file uses.
+    class _Raises(object):
+        def __init__(self, exc, match=None):
+            self.exc, self.match = exc, match
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, kind, value, tb):
+            if kind is None:
+                raise AssertionError("%s was not raised" % self.exc.__name__)
+            if not issubclass(kind, self.exc):
+                return False
+            if self.match is not None and not re.search(self.match, str(value)):
+                raise AssertionError("%r does not match %r" % (str(value), self.match))
+            return True
+
+    class _Approx(object):
+        def __init__(self, expected, rel=None, abs=None):
+            self.expected = expected
+            self.tolerance = 1e-12 if abs is None and rel is None else (
+                abs if abs is not None else rel * abs(expected))
+
+        def __eq__(self, other):
+            return abs(other - self.expected) <= self.tolerance
+
+        def __ne__(self, other):
+            return not self.__eq__(other)
+
+    class _Mark(object):
+        @staticmethod
+        def skipif(condition, reason=""):
+            def deco(fn):
+                if not condition:
+                    return fn
+
+                def skipped(*args, **kwargs):
+                    print("  skip %s: %s" % (fn.__name__, reason))
+                skipped.__name__ = fn.__name__
+                return skipped
+            return deco
+
+    class _Pytest(object):
+        raises = staticmethod(_Raises)
+        approx = staticmethod(_Approx)
+        mark = _Mark()
+
+    pytest = _Pytest()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE = os.path.dirname(HERE)
@@ -249,6 +302,12 @@ def test_submit_order_two_chains_in_parallel_segments_in_order():
     import threading
     plan = T.chain_plan(SEGMENTS, BLUEPRINT)
     lock = threading.Lock()
+    # A two-party rendezvous proves the overlap without wall-clock timing:
+    # another suite in the same pytest process stubs `time.sleep` at module
+    # scope (load_governor), so a sleep-based overlap never happens. Both
+    # chains must reach this barrier or neither returns — peak == 2 is then
+    # concurrency, not a lucky sleep. The timeout fails loudly, never hangs.
+    gate = threading.Barrier(2, timeout=10.0)
     live, peak, calls = [0], [0], []
 
     def runner(seg):
@@ -256,7 +315,8 @@ def test_submit_order_two_chains_in_parallel_segments_in_order():
             live[0] += 1
             peak[0] = max(peak[0], live[0])
             calls.append(seg["segment_id"])
-        time.sleep(0.02)
+        if seg["segment_id"] in ("S1", "S4"):        # each chain's first segment
+            gate.wait()
         with lock:
             live[0] -= 1
         return seg["segment_id"] + ".mp4"
