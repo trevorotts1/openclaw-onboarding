@@ -316,6 +316,9 @@ def test_no_secret_values_in_output_json():
 EXPECTED_TOP_KEYS = {
     "probedAt", "platform", "openclaw", "lanes", "secrets", "selectedLane",
     "fallbackChain", "optimizations", "iframeDrag", "blockers", "warnings",
+    # S06-02 (spec 05 section 3): the environment-capabilities record is an
+    # additive top-level key; every plan 2.1 key above is unchanged.
+    "environmentCapabilities",
 }
 
 
