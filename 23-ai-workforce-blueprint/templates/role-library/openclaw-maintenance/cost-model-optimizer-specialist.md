@@ -52,7 +52,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ### Morning Model Cost Snapshot (First 30 Minutes)
 
-1. **Model inventory pull (5 min):** `openclaw config get agents` — extract the model assignment for every agent, cron, heartbeat, and subagent fallback chain. Note any model in the `deepseek-v4.1-flash:cloud`, `kimi-k2.6:cloud`, `xiaomi/mimo-v2.5-pro`, or equivalent heavy-tier on a recurring/cron task.
+1. **Model inventory pull (5 min):** `openclaw config get agents` — extract the model assignment for every agent, cron, heartbeat, and subagent fallback chain. Note any model that is a pro-tier or heavy-reasoning model, or equivalent heavy-tier on a recurring/cron task.
 2. **Failover chain check (5 min):** `openclaw config get models.providers.ollama` — confirm `baseUrl` is `https://ollama.com` (not `127.0.0.1`) if any `:cloud` model is provisioned. Check `env.vars.OLLAMA_API_KEY` exists. If either is wrong, this is an active F8; flag immediately.
 3. **Cron-model cross-reference (10 min):** Cross-reference `openclaw cron list` against the model inventory. For each cron: what model does it use? What does it actually do? Is the model matched to the task complexity?
 4. **Log the daily cost snapshot** to `working/cost-optimizer/daily-model-snapshot.md`.
@@ -140,7 +140,7 @@ Full procedure is in `sops/sop-model-overkill-daily.md`; the canonical steps are
 **Steps:**
 1. **Back up config.** Copy `openclaw.json` to `working/cost-optimizer/backup/openclaw.json.$(date +%Y%m%d%H%M%S).bak`.
 2. **Build the cron-model matrix.** From `openclaw cron list` and `openclaw config get agents`: for each recurring task, record: task name, schedule, model used, task description (what does it actually do?), last-run token count if available.
-3. **Apply the right-size rule.** A cron is F9 (model overkill) if: (a) the task is structural/mechanical (health check, delivery ping, log rotation, status poll) AND the model is pro-tier (deepseek-v4.1-flash:cloud, kimi-k2.6, mimo-v2.5-pro, or equivalent), OR (b) the task is flash-adequate (< 500 token expected output, no complex reasoning required) AND the model is not flash-class. Reference model tiers from the box's provisioned model list — only use models already provisioned.
+3. **Apply the right-size rule.** A cron is F9 (model overkill) if: (a) the task is structural/mechanical (health check, delivery ping, log rotation, status poll) AND the model is pro-tier (a heavy-reasoning or flagship-class model, or equivalent), OR (b) the task is flash-adequate (< 500 token expected output, no complex reasoning required) AND the model is not flash-class. Reference model tiers from the box's provisioned model list — only use models already provisioned.
 4. **Build right-size recommendations.** For each F9 finding: identify the cheapest adequately-capable model on this box. If the task is a health check or delivery ping with zero reasoning, `command` type (no model at all) is the best option. If the task needs minimal reasoning, flash-class is the target. Log the recommendation in right-size-ledger.md.
 5. **Apply auto-right-sizeable cases.** A model swap is auto-applicable when: (a) the task is a health/status/cron with zero customer-facing impact, (b) the replacement model is already provisioned, (c) the cron is not in the `do-not-right-size` list (by-design primary or owner-explicitly-set). Apply via JSON deep-merge. Run `openclaw config validate`. Restore backup if fail.
 6. **Escalate revenue-task swaps.** Any model swap on a task that is: (a) revenue-generating (client conversation, GHL workflow reply, lead-handling), (b) the owner's explicit primary model choice, or (c) a model where the by-design free-tier primary would be affected — write a Tier 3 proposal and route to the owner via the Director. Never auto-swap these.
@@ -260,11 +260,11 @@ See full procedure in `sops/sop-proactive-fix-guardrail.md`. Summary: back up `o
 
 "RIGHT-SIZE REPORT 2026-06-13 — 3 actions.
 
-APPLIED F9-001: Cron `gateway-health-monitor` (`*/30`, agentTurn) was using `xiaomi/mimo-v2.5-pro`. Task: emit a Telegram ping if gateway is not responding. No reasoning required. Right-sized to `type: command` (bash health check + `openclaw message send` on fail — zero model cost). Config validated clean. Estimated burn reduction: ~48 agentTurns/day eliminated. Owner notified.
+APPLIED F9-001: Cron `gateway-health-monitor` (`*/30`, agentTurn) was using a pro-tier model. Task: emit a Telegram ping if gateway is not responding. No reasoning required. Right-sized to `type: command` (bash health check + `openclaw message send` on fail — zero model cost). Config validated clean. Estimated burn reduction: ~48 agentTurns/day eliminated. Owner notified.
 
-APPLIED F8-002: `models.providers.ollama.baseUrl` was `127.0.0.1`. Box has `deepseek-v4.1-flash:cloud` in fallback chain. Fixed to `https://ollama.com` via deep-merge. Validated. Live-turn verified — model route succeeded first hop. Owner notified.
+APPLIED F8-002: `models.providers.ollama.baseUrl` was `127.0.0.1`. Box has a pro-tier model in fallback chain. Fixed to `https://ollama.com` via deep-merge. Validated. Live-turn verified — model route succeeded first hop. Owner notified.
 
-PROPOSED F9-003: Cron `social-post-weekly-review` (`0 9 * * 1`, agentTurn, deepseek-v4.1-flash:cloud). Task: summarize the week's social posts for the owner's review. This IS a reasoning task — summary quality matters. However, `deepseek-v4.1-flash:cloud` at 1M context is excessive for a 500-word summary task. PROPOSED: right-size to `deepseek-flash:cloud`. Awaiting owner approval. Not applied. Right-size ledger updated."
+PROPOSED F9-003: Cron `social-post-weekly-review` (`0 9 * * 1`, agentTurn, pro-tier model). Task: summarize the week's social posts for the owner's review. This IS a reasoning task — summary quality matters. However, the pro-tier model at 1M context is excessive for a 500-word summary task. PROPOSED: right-size to `deepseek-flash:cloud`. Awaiting owner approval. Not applied. Right-size ledger updated."
 
 ---
 

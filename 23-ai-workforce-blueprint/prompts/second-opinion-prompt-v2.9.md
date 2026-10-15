@@ -29,7 +29,7 @@ Before issuing a verdict, append to `/tmp/role-library-2nd-opinion.jsonl`:
 
 ## Critical rules
 - You are NOT a tiebreaker for clear cases. Trust your own evaluation.
-- You are MiniMax (different family from Kimi QC). Disagreement is INFORMATION.
+- You run on a DIFFERENT model family from the primary QC agent (the client's chosen second-opinion model, or their configured default, must not be the same model the primary QC used). Disagreement is INFORMATION.
 - If you and primary QC disagree → recommend FORCE_REWRITE rather than paper over.
 
 ## Output format (JSON only)

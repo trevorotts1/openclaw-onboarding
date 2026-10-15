@@ -32,7 +32,7 @@ completely unrelated to the deliverable-FILE counts below. Don't conflate the tw
 | **7** | Client package folder `delivery/[DECK_SLUG]-FINAL/` | Enforced today (all 7 hard-required) — unchanged by Wave C |
 | **12** | What actually ships every run (10 + 2 workbook PDFs) | Ships today, but not in any deliverable list — unchanged by Wave C |
 | **15** | 12 + 3 client-elected upsells (sales, checkout, VSL pages) | Asked today; **buildable as of Wave C, one named gap** (`P-U-FORM-CHECKOUT`'s real form-wiring is a placeholder) — see §1.15 |
-| **62** | Declared and machine-enforced phase count | **Changed by Wave C: 36 -> 40** (manifest_version 50 -> 51), then by later waves to **62** (manifest_version 70; count is read from `len(manifest.phases)`, never hardcoded) |
+| **62** | Declared and machine-enforced phase count | **Changed by Wave C: 36 -> 40** (manifest_version 50 -> 51), then by later waves to **62** (manifest_version 73; count is read from `len(manifest.phases)`, never hardcoded) |
 | **39 / 50 / 48 / 57** (standard) | Executed phases on a standard deck, by upsell election (both declined / sales-only / VSL-only / both elected) | Regenerated against the live manifest — see the full matrix in §2 |
 | **43 / 54 / 52 / 61** (signature) | Same, on a signature deck | Regenerated against the live manifest — see §2 |
 | **40 / 51 / 49 / 58** (content-conversion) | Same, on a content-conversion deck | Regenerated against the live manifest — see §2 |
@@ -63,7 +63,7 @@ KEYS = ['deck_pptx', 'deck_pdf', 'guide_pdf', 'speech_md', 'speech_pdf', 'speech
 ```
 
 The manifest's `build_bundle_files` array (`SOPS/presentation-slide-craft/PIPELINE-MANIFEST.json`,
-top-level key, manifest_version 51) is still **byte-identical** to those 10 keys, in the same order —
+top-level key; read mechanically from the manifest at HEAD, manifest_version 70) is still **byte-identical** to those 10 keys, in the same order --
 re-confirmed by reading the JSON directly in this run: `len(build_bundle_files) == 10`, same 10 keys.
 Wave C's 4 new phases did not touch this array. `scripts/ci/presentations-drift-gates.sh` GATE 3
 (deliverable whitelist parity) re-ran clean in this session: all 4 consumers
@@ -95,8 +95,8 @@ The ten real filenames (from `filename_template` in the spec, `{deck_slug}` = th
 CLIENT_PACKAGE_WARN_ONLY = frozenset()   # stage 3 — nothing is warn-only; all 7 are HARD-required
 ```
 
-The manifest's `client_package_files` array (top-level key in `PIPELINE-MANIFEST.json`, manifest_version
-51) confirms the same 7 keys, unchanged by Wave C:
+The manifest's `client_package_files` array (top-level key in `PIPELINE-MANIFEST.json`; read
+mechanically from the manifest at HEAD, manifest_version 70) confirms the same 7 keys:
 
 ```
 client_package_files = [deck_pptx, deck_pdf, guide_pdf, speech_pdf, audio_mp3,
@@ -248,7 +248,7 @@ The numbers that expression prints are the live manifest's, whatever they are at
 `scripts/ci/presentations-drift-gates.sh` fails CI if any doc that restates this count goes stale
 against the manifest). Do not copy a number from this document into another document — link here, or
 read the manifest the same way this document does. At the 2026-09-02 re-check the live read was
-manifest_version 70, declared count 62.
+manifest_version 73, declared count 62.
 
 All declared phase ids, sorted mechanically by the true `order` field
 (`sorted(phases, key=lambda p: p["order"])`, executed directly against the live manifest in this

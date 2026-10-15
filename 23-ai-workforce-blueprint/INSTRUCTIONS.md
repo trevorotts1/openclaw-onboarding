@@ -21,7 +21,7 @@ This interview builds people into running a Fortune 500-scale company with $0 in
 
 The system uses Lean Six Sigma methodology INTERNALLY (standard work templates, quality gates, value-stream handoffs, continuous improvement) - but the owner never hears those words.
 
-**Research model:** When the client is unsure, use `openrouter/perplexity/sonar-pro-search` to research industry best practices and suggest answers for their approval.
+**Research model:** When the client is unsure, use the client's chosen research model, or their configured default model, to research industry best practices and suggest answers for their approval. Recommendation: a search-grounded research model, because this step needs live web results.
 
 ---
 
@@ -121,8 +121,8 @@ Before any question, ask the owner:
 > If you have nothing, no problem - we'll build it together."
 
 **AI actions during Phase 0:**
-1. Fetch every URL (Perplexity Sonar Pro for website crawl, LinkedIn parsing, YouTube transcript extraction)
-2. Parse uploaded files (heavy model - DeepSeek/Kimi/Minimax)
+1. Fetch every URL (the client's chosen research model, or their configured default model, for website crawl, LinkedIn parsing, YouTube transcript extraction; recommendation: a search-grounded research model, because this step needs live web results)
+2. Parse uploaded files (the client's chosen heavy-tier model, or their configured default model)
 3. Write findings to `[ZHC]/[slug]/pre-interview-research.md` with sections:
    - Mission & Vision
    - Industry vertical (auto-detected)
@@ -1100,7 +1100,7 @@ All steps are idempotent. The resume cron (this same `resume-workforce-build.sh`
 
 ### "I Don't Know" Flow (6 steps - USE THIS EXACT PROCESS)
 1. **Acknowledge:** "That is completely fine. Let me help you figure this out."
-2. **Research:** Use Perplexity Sonar Pro for industry best practices.
+2. **Research:** Use the client's chosen research model, or their configured default model, for industry best practices. Recommendation: a search-grounded research model, because this step needs live web results.
 3. **Provide 2-3 Options:** "Based on what works for businesses like yours, here are 3 common approaches..."
 4. **Recommend One:** "My recommendation is [X] because [specific reasoning]. But you know your business best."
 5. **Let Client Choose:** "Which one feels right for you? Or want me to suggest something else?"

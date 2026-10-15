@@ -140,7 +140,11 @@ class EntriesRoster(unittest.TestCase):
 
     def test_pixel_hook_registers_into_entries_never_list(self):
         self.stub_openclaw(0)  # its trailing `openclaw config validate`
-        self.write_cfg({"agents": {"entries": {"main": {"model": "ollama-cloud/x"}}}})
+        # Fixture models a configured client box: a configured default model
+        # (agents.defaults.model) is what 28-configure-pixel-hook.sh resolves
+        # when no pixel-specific choice exists.
+        self.write_cfg({"agents": {"defaults": {"model": "ollama-cloud/x"},
+                                   "entries": {"main": {"model": "ollama-cloud/x"}}}})
         env = dict(self.env, CONFIG_FILE=str(self.cfg), HOOKS_TOKEN="fixture-hooks-token",
                    SECRETS_ENV_FILE=str(self.tmp / "secrets.env"))
         r = subprocess.run(["bash", str(REPO / "38-conversational-ai-system/scripts/28-configure-pixel-hook.sh")],
@@ -154,7 +158,9 @@ class EntriesRoster(unittest.TestCase):
 
     def test_legacy_list_shape_still_written_as_list(self):
         self.stub_openclaw(0)
-        self.write_cfg({"agents": {"list": [{"id": "main", "model": "ollama-cloud/x"}]}})
+        # Same configured-default fixture as the entries case above.
+        self.write_cfg({"agents": {"defaults": {"model": "ollama-cloud/x"},
+                                   "list": [{"id": "main", "model": "ollama-cloud/x"}]}})
         env = dict(self.env, CONFIG_FILE=str(self.cfg), HOOKS_TOKEN="fixture-hooks-token",
                    SECRETS_ENV_FILE=str(self.tmp / "secrets.env"))
         r = subprocess.run(["bash", str(REPO / "38-conversational-ai-system/scripts/28-configure-pixel-hook.sh")],

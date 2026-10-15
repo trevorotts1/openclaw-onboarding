@@ -5,7 +5,7 @@ verify-persona-adherence.py — Post-task persona-adherence verification.
 Called by the dispatcher after a task completes. Reads:
   - The assigned persona's blueprint methodology
   - The actual task output
-And asks an LLM (DeepSeek V4.1 Flash via Ollama Cloud / OpenRouter fallback) to
+And asks an LLM (the client's chosen scoring model, or their configured default, via Ollama Cloud / OpenRouter) to
 score adherence on a 0.0-1.0 scale and surface the top 2-3 deviations.
 
 Result is written:
@@ -151,7 +151,7 @@ def read_task_output(output_file: str, output_text: str) -> str:
 
 
 def call_llm_for_adherence(prompt: str) -> dict:
-    """Try Ollama Cloud → OpenRouter DeepSeek → OpenRouter Gemini Flash Lite."""
+    """Try Ollama Cloud, then OpenRouter, both on the client-resolved scoring model."""
     if not LLM_AVAILABLE:
         return {
             "adherence_score": 0.6,
@@ -161,9 +161,8 @@ def call_llm_for_adherence(prompt: str) -> dict:
             "_fallback": True,
         }
     for name, fn in (
-        ("ollama-cloud-deepseek-flash", lambda: _attempt_ollama_cloud(prompt)),
-        ("openrouter-deepseek-flash", lambda: _attempt_openrouter(prompt, openrouter_model())),
-        ("openrouter-gemini-lite",    lambda: _attempt_openrouter(prompt, "google/gemini-3.1-flash-lite")),
+        ("ollama-cloud-scoring", lambda: _attempt_ollama_cloud(prompt)),
+        ("openrouter-scoring", lambda: _attempt_openrouter(prompt, openrouter_model())),
     ):
         result = fn()
         if not result.get("ok"):
@@ -227,15 +226,17 @@ def _manual_call(prompt: str) -> dict:
     # resort. The loop below already falls through on any failure, so a 401 on
     # the first key simply advances to the second.
     for ocld_key in ollama_cloud_api_keys():
+        if not ollama_cloud_model():
+            continue  # no scoring model resolved: never call a model nobody chose
         attempts.append((
-            "ollama-cloud-deepseek-flash",
+            "ollama-cloud-scoring",
             ollama_cloud_chat_url(),
             {"Authorization": f"Bearer {ocld_key}", "Content-Type": "application/json"},
             ollama_cloud_model(),
         ))
     or_key = _env("OPENROUTER_API_KEY")
     if or_key:
-        for model in (openrouter_model(), "google/gemini-3.1-flash-lite"):
+        for model in (m for m in (openrouter_model(),) if m):
             attempts.append((
                 f"openrouter/{model}",
                 "https://openrouter.ai/api/v1/chat/completions",

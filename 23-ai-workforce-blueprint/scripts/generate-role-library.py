@@ -24,7 +24,7 @@ itself. It only:
 All sub-agent spawn configs use:
   - Ollama :cloud variants (per N14)
   - timeout_seconds: 5400 (90 min, per N15)
-  - max reasoning per model family (xhigh for DeepSeek, high for Kimi/MiniMax)
+  - the highest reasoning setting the client's chosen model supports
   - no Anthropic, no GPT (N2, N5)
   - no silent downgrade (N10)
 """
@@ -138,9 +138,9 @@ def write_orchestrator_rcb():
         "Heartbeat sleep interval (seconds)": 60,
         "Queue lock TTL (seconds)": 900,
         "Sub-agent timeout per call (seconds)": 5400,
-        "2nd-opinion model family": "MiniMax (minimax-m2.7:cloud)",
-        "QC model family": "Kimi (kimi-k2.6:cloud)",
-        "Writer model family": "DeepSeek (deepseek-v4.1-flash:cloud)",
+        "2nd-opinion model": "the client's chosen second-opinion model (a different family from the QC model)",
+        "QC model": "the client's chosen QC model",
+        "Writer model": "the client's chosen writer model",
     }
     content = f"# Orchestrator Reading Compliance Block (RCB)\n\n"
     content += f"Generated: {now_iso()}\n\n"
@@ -157,6 +157,70 @@ def write_orchestrator_rcb():
     content += "- [x] I will never escalate to owner — QC + 2nd-opinion are terminal (N8)\n"
     ORCHESTRATOR_RCB.write_text(content)
     log("orchestrator_rcb_written", path=str(ORCHESTRATOR_RCB))
+
+
+# =============================================================================
+# Model resolution (the client's choice, or their configured default)
+# =============================================================================
+# Spawn models are NEVER prescribed by name in this script. Resolution per
+# role: (1) the client's explicit choice (ROLE_LIBRARY_QC_MODEL /
+# ROLE_LIBRARY_WRITER_MODEL / ROLE_LIBRARY_SECOND_OPINION_MODEL, as
+# "provider/model"), (2) the client's configured default model
+# (agents.defaults.model in ~/.openclaw/openclaw.json, whose fallbacks list
+# supplies fallback_1), (3) neither: STOP with an ask-the-client error.
+# A named substitute would silently spend the client's money on a model
+# they did not choose, and the name would go stale with its provider.
+
+def _configured_model_chain():
+    """(primary_id, [fallback_ids]) from the client's openclaw.json, or
+    (None, []) when the client has configured no default model."""
+    try:
+        cfg = json.loads((Path.home() / ".openclaw" / "openclaw.json").read_text(encoding="utf-8"))
+        model = ((cfg.get("agents") or {}).get("defaults") or {}).get("model")
+        if isinstance(model, str) and model.strip():
+            return model.strip(), []
+        if isinstance(model, dict):
+            primary = model.get("primary")
+            fallbacks = [f for f in (model.get("fallbacks") or [])
+                         if isinstance(f, str) and f.strip()]
+            return (primary.strip() if isinstance(primary, str) and primary.strip() else None), fallbacks
+    except Exception:  # noqa: BLE001
+        pass
+    return None, []
+
+
+def _split_provider_model(model_id):
+    provider, _, model = str(model_id).partition("/")
+    if not model:
+        return "ollama", provider
+    return provider, model
+
+
+def _role_model_spec(role_env, role_label, max_tokens, temperature):
+    """The spawn model spec for one role, resolved from the client's own
+    configuration. Raises SystemExit (a loud stop) when nothing resolves."""
+    choice = (os.environ.get(role_env) or "").strip()
+    primary_id, fallbacks = _configured_model_chain()
+    if choice:
+        primary_id = choice
+    if not primary_id:
+        raise SystemExit(
+            f"[generate-role-library] NO MODEL CONFIGURED for {role_label}: "
+            f"ask the client which model to use (set {role_env}), or "
+            f"configure a default model (agents.defaults.model in "
+            f"openclaw.json). Refusing to substitute a named model the "
+            f"client did not choose.")
+    provider, model = _split_provider_model(primary_id)
+    spec = {"primary": {"provider": provider, "model": model,
+                        "reasoning": "high", "max_tokens": max_tokens,
+                        "temperature": temperature, "timeout_seconds": 5400}}
+    if fallbacks:
+        fb_provider, fb_model = _split_provider_model(fallbacks[0])
+        spec["fallback_1"] = {"provider": fb_provider, "model": fb_model,
+                              "reasoning": "high", "max_tokens": max_tokens,
+                              "temperature": temperature, "timeout_seconds": 5400}
+    spec.update({"no_silent_downgrade": True, "no_anthropic": True, "no_gpt": True})
+    return spec
 
 
 # =============================================================================
@@ -177,29 +241,33 @@ def preflight_validate():
     ws = PATHS.get("workspace")
     checks.append(("workspace_exists", ws and Path(ws).exists(), str(ws)))
 
-    # 3-7. Required Ollama :cloud variants (lookup via Ollama API)
+    # 3-7. The client's configured models are available (lookup via Ollama API)
     try:
         import urllib.request
         with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=5) as r:
             ollama_models = [m["name"] for m in json.loads(r.read()).get("models", [])]
         checks.append(("ollama_reachable", True, f"{len(ollama_models)} models"))
-        for variant in ["deepseek-v4.1-flash:cloud", "deepseek-v4.1-flash:cloud",
-                        "kimi-k2.6:cloud", "minimax-m2.7:cloud", "gemma-31b:cloud"]:
-            found = any(variant in m for m in ollama_models)
-            checks.append((f"ollama_cloud_{variant}", found, "found" if found else "MISSING"))
+        _primary_id, _fallback_ids = _configured_model_chain()
+        _configured = ([_primary_id] if _primary_id else []) + _fallback_ids
+        checks.append(("client_models_configured", bool(_configured),
+                       ", ".join(_configured) if _configured else
+                       "NONE: ask the client which models to use, or configure agents.defaults.model"))
+        for _mid in _configured:
+            if _mid.startswith("ollama/") or "/" not in _mid:
+                _tag = _mid.removeprefix("ollama/")
+                found = any(_tag in m for m in ollama_models)
+                checks.append((f"ollama_cloud_{_tag}", found, "found" if found else "MISSING"))
     except Exception as e:
         checks.append(("ollama_reachable", False, str(e)))
-        for v in ["deepseek-v4.1-flash:cloud", "deepseek-v4.1-flash:cloud",
-                  "kimi-k2.6:cloud", "minimax-m2.7:cloud", "gemma-31b:cloud"]:
-            checks.append((f"ollama_cloud_{v}", False, "ollama unreachable"))
+        checks.append(("client_models_configured", False, "ollama unreachable; configured models unverified"))
 
     # 8. OpenRouter API key
     has_or = bool(os.environ.get("OPENROUTER_API_KEY"))
     checks.append(("openrouter_api_key", has_or, "set" if has_or else "MISSING"))
 
-    # 9. Perplexity Sonar Pro (direct key or via OpenRouter)
+    # 9. Web research tool (direct Perplexity key or via OpenRouter)
     has_pp = bool(os.environ.get("PERPLEXITY_API_KEY")) or has_or
-    checks.append(("perplexity_sonar_pro", has_pp, "available"))
+    checks.append(("research_tool", has_pp, "available"))
 
     # 10-17. Required reference files in repo
     required_files = [
@@ -258,10 +326,10 @@ def preflight_validate():
 
 
 # =============================================================================
-# Phase 2: Meta-QC (N16) — Kimi K2.6:cloud verifies PRD internal consistency
+# Phase 2: Meta-QC (N16). The client's chosen QC model verifies PRD internal consistency
 # =============================================================================
 def run_meta_qc():
-    """Per N16. Single Kimi call to verify PRD is internally consistent
+    """Per N16. Single QC call (the client's chosen QC model: ROLE_LIBRARY_QC_MODEL or their configured default) to verify PRD is internally consistent
     before spawning any production sub-agent.
     Implementation note: this checks ARTIFACTS we can verify (file counts, etc).
     The actual model call would be made via OpenClaw's spawn_subagent infrastructure.
@@ -430,15 +498,7 @@ def spawn_qc_agents(state):
         qc_specs.append({
             "agent_id": f"qc-{qc_id:02d}",
             "prompt_file": str(SKILL_ROOT / "prompts" / "qc-prompt-v2.9.md"),
-            "model": {
-                "primary": {"provider": "ollama", "model": "kimi-k2.6:cloud",
-                             "reasoning": "high", "max_tokens": 4000,
-                             "temperature": 0.4, "timeout_seconds": 5400},
-                "fallback_1": {"provider": "openrouter", "model": "moonshotai/kimi-k2.6",
-                                "reasoning": "high", "max_tokens": 4000,
-                                "temperature": 0.4, "timeout_seconds": 5400},
-                "no_silent_downgrade": True, "no_anthropic": True, "no_gpt": True,
-            },
+            "model": _role_model_spec("ROLE_LIBRARY_QC_MODEL", "QC agents", 4000, 0.4),
             "qc_queue": QC_QUEUE,
             "regen_queue": REGEN_QUEUE,
             "scores_path": QC_SCORES,
@@ -457,15 +517,7 @@ def spawn_second_opinion(state):
     spawn_manifest.write_text(json.dumps({
         "agent_id": "qc-second-opinion",
         "prompt_file": str(SKILL_ROOT / "prompts" / "second-opinion-prompt-v2.9.md"),
-        "model": {
-            "primary": {"provider": "ollama", "model": "minimax-m2.7:cloud",
-                         "reasoning": "high", "max_tokens": 2000,
-                         "temperature": 0.4, "timeout_seconds": 5400},
-            "fallback_1": {"provider": "openrouter", "model": "minimax/minimax-m2.7",
-                            "reasoning": "high", "max_tokens": 2000,
-                            "temperature": 0.4, "timeout_seconds": 5400},
-            "no_silent_downgrade": True, "no_anthropic": True, "no_gpt": True,
-        },
+        "model": _role_model_spec("ROLE_LIBRARY_SECOND_OPINION_MODEL", "the second-opinion agent", 2000, 0.4),
         "opinion_log": SECOND_OPINION_LOG,
         "max_agent_runtime_seconds": 81000,
     }, indent=2))
@@ -482,15 +534,7 @@ def spawn_writers(state):
             "agent_id": f"role-library-writer-{seg:02d}",
             "prompt_file": str(SKILL_ROOT / "prompts" / "writer-prompt-v2.9.md"),
             "manifest_path": str(MANIFESTS_DIR / f"segment-{seg:02d}.json"),
-            "model": {
-                "primary": {"provider": "ollama", "model": "deepseek-v4.1-flash:cloud",
-                             "reasoning": "xhigh", "max_tokens": 8000,
-                             "temperature": 0.6, "timeout_seconds": 5400},
-                "fallback_1": {"provider": "openrouter", "model": "deepseek/deepseek-v4.1-flash",
-                                "reasoning": "xhigh", "max_tokens": 8000,
-                                "temperature": 0.6, "timeout_seconds": 5400},
-                "no_silent_downgrade": True, "no_anthropic": True, "no_gpt": True,
-            },
+            "model": _role_model_spec("ROLE_LIBRARY_WRITER_MODEL", "writer agents", 8000, 0.6),
             "qc_queue": QC_QUEUE,
             "progress_log": PROGRESS_LOG,
             "max_agent_runtime_seconds": 81000,
