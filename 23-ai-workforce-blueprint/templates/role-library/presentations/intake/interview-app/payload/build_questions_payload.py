@@ -7,14 +7,23 @@ exact prompt/help/kind/allowed_values/value_labels from:
   standard  -> 23-ai-workforce-blueprint/templates/role-library/presentations/
                intake/deck-intake-questions.json
                + intake/upsell-questions.json (the sales/checkout + VSL yes-no)
+  signature -> 51-signature-presentation/intake/sp-8-questions.json
+               (Skill 51's SACRED 8, q1..q8 + the frame-selection question)
 
 The curated 7-9 core question set for the app is selected by `--questions`
 (comma-separated ids) or defaults to the id list in this script. Edit the JSONs,
 not this script, to change what a client is asked. The app's questions.json is
 generated from this so the shipped UI is a snapshot of the canonical source.
 
+The signature set is not curated: it is the whole sp-8 spec, asked as Skill 51
+defines it. Its path here is the port of the miniapp builder's `--set signature`
+(FIX-PLAN Item 13, step S8): the miniapp builder was the only signature payload
+builder, and the capability now lives in the live app's builder too, so the
+deprecated tree is no longer the sole holder of it.
+
 Usage:
   build_questions_payload.py --run-id RUN123 [--out payload.json]
+  build_questions_payload.py --set signature --run-id RUN123 [--out payload.json]
   build_questions_payload.py --selftest
 """
 from __future__ import annotations
@@ -305,6 +314,62 @@ def load_specs(root: pathlib.Path) -> tuple[dict, dict, dict | None]:
     return merged, {"questions": merged["questions"]}, store_target
 
 
+def default_signature_path(root: pathlib.Path) -> pathlib.Path:
+    """Skill 51's sp-8-questions.json: the signature set's canonical home."""
+    return root / "51-signature-presentation" / "intake" / "sp-8-questions.json"
+
+
+def load_signature_spec(root: pathlib.Path,
+                        sp_file: str | None = None) -> dict | None:
+    """Load Skill 51's sp-8-questions.json, or None when it is unreachable.
+
+    The signature set has no curated-id selection and no snapshot fallback:
+    it is the whole spec (q1..q8 in the spec's order, plus the
+    frame-selection question). None (not an empty spec) signals
+    "unreachable", so a signature request against a tree without Skill 51
+    fails loudly instead of minting an empty payload, exactly as the
+    miniapp builder behaved.
+    """
+    path = pathlib.Path(sp_file) if sp_file else default_signature_path(root)
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def build_signature_payload(run_id: str, signature_spec: dict | None) -> dict:
+    """Build the signature payload from Skill 51's sp-8-questions.json.
+
+    Ported from the miniapp builder (FIX-PLAN Item 13, step S8), with that
+    builder's behavior as the reference: the eight questions ride in the
+    spec's own order and the frame-selection question is appended last.
+
+    The projection is THIS builder's (_project_question), not the
+    miniapp's: the fields this app routes on ride through, so each
+    question keeps the spec's own storeOn key (q1_title ..
+    q8_anything_else, and signature_frame for the frame question). Those
+    keys are sp_intake record keys, not deck-intake field keys, so the
+    storeTarget table does not qualify them and they are never rewritten;
+    spec internals outside the passthrough set (for example q7's note)
+    are dropped, as with every other question this builder projects.
+    """
+    if signature_spec is None:
+        raise ValueError("signature set requested but sp-8-questions.json not loaded")
+    qs = sorted(signature_spec.get("questions", []),
+                key=lambda q: q.get("order", 0))
+    questions = [_project_question(q) for q in qs]
+    frame = signature_spec.get("frame_selection_question")
+    if frame:
+        questions.append(_project_question(frame))
+    if not questions:
+        raise ValueError("no questions produced — check the source JSON")
+    return {
+        "run_id": run_id,
+        "question_set": "signature",
+        "source": "sp-8-questions.json",
+        "questions": questions,
+    }
+
+
 def build_curated_payload(run_id: str, specs: dict, curated_ids: list[str],
                           store_target: dict | None = None) -> dict:
     by_id = {q.get("id"): q for q in specs.get("questions", [])}
@@ -388,6 +453,20 @@ def selftest() -> int:
         print(f"[selftest] curated OK: {len(ids)} questions ({ids})")
     else:
         print("[selftest] SKIP curated (canonical JSONs not found)", file=sys.stderr)
+    sig_spec = load_signature_spec(root)
+    if sig_spec is not None:
+        sig_payload = build_signature_payload("RUNTEST", sig_spec)
+        sids = [q["id"] for q in sig_payload["questions"]]
+        assert sids[:8] == [f"q{i}" for i in range(1, 9)], sids
+        assert sids[-1] == "frame_selection", sids
+        assert len(sids) == 9, f"signature payload should have 9 questions, got {len(sids)}"
+        assert all("prompt" in q and q["prompt"] for q in sig_payload["questions"]), "every signature question needs a prompt"
+        frame_q = sig_payload["questions"][-1]
+        assert frame_q.get("allowed_values") == ["rulebook", "vault", "quest", "original"], frame_q
+        assert frame_q.get("storeOn") == "signature_frame", frame_q
+        print(f"[selftest] signature OK: {len(sids)} questions ({sids})")
+    else:
+        print("[selftest] SKIP signature (sp-8-questions.json not found)", file=sys.stderr)
     print("[selftest] PASS" if ok else "[selftest] FAIL")
     return 0 if ok else 1
 
@@ -403,7 +482,13 @@ def _project_root(start: pathlib.Path) -> pathlib.Path:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--run-id", default="")
-    ap.add_argument("--questions", default=",".join(DEFAULT_CURATED), help="comma-separated curated ids")
+    ap.add_argument("--set", dest="qset", choices=["standard", "signature"],
+                    default="standard",
+                    help="question set to build (default standard, the curated "
+                         "set; signature is Skill 51's SACRED 8 from "
+                         "sp-8-questions.json, ported in FIX-PLAN Item 13 S8)")
+    ap.add_argument("--questions", default=",".join(DEFAULT_CURATED), help="comma-separated curated ids (standard set only)")
+    ap.add_argument("--sp-file", default=None, help="override path to sp-8-questions.json (signature set only)")
     ap.add_argument("--out", default=None, help="write payload here (default stdout)")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
@@ -415,9 +500,17 @@ def main(argv=None) -> int:
         print("error: --run-id is required", file=sys.stderr)
         return 2
     root = _project_root(pathlib.Path(__file__).parent)
-    specs, _, store_target = load_specs(root)
-    curated = [x.strip() for x in args.questions.split(",") if x.strip()]
-    payload = build_curated_payload(args.run_id, specs, curated, store_target)
+    if args.qset == "signature":
+        sig_spec = load_signature_spec(root, args.sp_file)
+        if sig_spec is None:
+            where = args.sp_file or default_signature_path(root)
+            print(f"error: cannot find sp-8-questions.json at {where}", file=sys.stderr)
+            return 3
+        payload = build_signature_payload(args.run_id, sig_spec)
+    else:
+        specs, _, store_target = load_specs(root)
+        curated = [x.strip() for x in args.questions.split(",") if x.strip()]
+        payload = build_curated_payload(args.run_id, specs, curated, store_target)
     text = json.dumps(payload, indent=2, ensure_ascii=False)
     if args.out:
         pathlib.Path(args.out).write_text(text + "\n", encoding="utf-8")
