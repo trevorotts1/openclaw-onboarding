@@ -33,7 +33,7 @@ in this receipt.** Two independent facts block the simulation:
 
 ## 2. Instrument probe — docker availability
 
-Raw capture: `/tmp/blackceomacmini-W4-proof-U2-docker-probe.txt` (63 lines / 1832 bytes at capture),
+Raw capture: `/tmp/blackceomacmini-W4-proof-U2-docker-probe.txt` (73 lines / 2049 bytes),
 reproduced here line by line with its exit codes.
 
 ```
