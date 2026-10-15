@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "tenant_id": "TEST-TENANT",
+  "location_id": "TEST-LOCATION",
+  "launch_id": "TEST-LAUNCH",
+  "revision": 1,
+  "source": "verified_normalized_purchase_snapshot",
+  "verified": true,
+  "provider": "TEST-ONLY",
+  "native_order_ref": "TEST-ORDER-0001",
+  "native_transaction_ref": "TEST-TXN-0001",
+  "journey_id": "TEST-JOURNEY-0001",
+  "event_ids": [
+    "TEST-EVT-001",
+    "TEST-EVT-002",
+    "TEST-EVT-003"
+  ],
+  "line_items": [
+    {
+      "native_line_ref": "TEST-LINE-MAIN-A",
+      "event_id": "TEST-EVT-001",
+      "offer_id": "MAIN-A",
+      "slot": "main",
+      "display_name": "TEST ONLY MAIN-A",
+      "currency": "USD",
+      "amount_minor": 9700,
+      "entitlement_ids": [
+        "base-a"
+      ],
+      "payment_status": "succeeded",
+      "billing": {
+        "billing_type": "one_time",
+        "recurring_interval": null,
+        "schedule": [],
+        "terms_source": null
+      }
+    },
+    {
+      "native_line_ref": "TEST-LINE-BUMP",
+      "event_id": "TEST-EVT-002",
+      "offer_id": "BUMP",
+      "slot": "bump",
+      "display_name": "TEST ONLY BUMP",
+      "currency": "USD",
+      "amount_minor": 2700,
+      "entitlement_ids": [
+        "workbook"
+      ],
+      "payment_status": "succeeded",
+      "billing": {
+        "billing_type": "one_time",
+        "recurring_interval": null,
+        "schedule": [],
+        "terms_source": null
+      }
+    },
+    {
+      "native_line_ref": "TEST-LINE-U1",
+      "event_id": "TEST-EVT-003",
+      "offer_id": "U1",
+      "slot": "upsell_1",
+      "display_name": "TEST ONLY U1",
+      "currency": "USD",
+      "amount_minor": 6700,
+      "entitlement_ids": [
+        "extra-full"
+      ],
+      "payment_status": "succeeded",
+      "billing": {
+        "billing_type": "one_time",
+        "recurring_interval": null,
+        "schedule": [],
+        "terms_source": null
+      }
+    }
+  ],
+  "evidence_ref": "TEST-ONLY fixture snapshot",
+  "test_only": true
+}
