@@ -55,6 +55,11 @@ DEFAULT_VIDEO_MODEL = "minimax-h3/*"
 # one model through F14 and then holds it to the picture gate.
 LOCKED_LIPSYNC_MODEL = "kling/ai-avatar-standard"
 
+# Agnes flash is the Agnes door's own video model (SPEC A10). Not a KIE menu
+# model: it never enters ALLOWED_VIDEO_MODELS, and the delivery gate accepts it
+# only for a run that chose Agnes.
+AGNES_FLASH_MODEL = "agnes-video-2.5-flash"
+
 # Walk up from this file for references/price-menu.md (kie_dispatch pattern).
 _PRICE_MENU_RELS = (("references", "price-menu.md"),)
 PRICE_MENU_ENV = "PRICE_MENU_MD"
@@ -270,10 +275,15 @@ def _clip_model(clip):
     return None
 
 
-def check_video_model_delivery(receipt, locked_model):
+def check_video_model_delivery(receipt, locked_model, agnes_chosen=False):
     """[] when every clip's model equals the locked one, else mismatch list.
 
     Manual F14: any mismatch fails the ad.
+
+    SPEC A10: for a run that chose Agnes (agnes_chosen=True) the Agnes flash
+    clips and the locked backup model pass, nothing else - the paid
+    agnes-video-2.5 and the retired agnes-video-v2.0 still fail. Default keeps
+    the plain-F14 verdict byte for byte.
     """
     locked = locked_model or DEFAULT_VIDEO_MODEL
     out = []
@@ -283,7 +293,10 @@ def check_video_model_delivery(receipt, locked_model):
             out.append(
                 "VIDEO_MODEL_MISMATCH: clip %s records no model; locked "
                 "model is %s" % (i, locked))
-        elif not matches_family(m, locked):
+            continue
+        ok = matches_family(m, locked) or \
+            (agnes_chosen and m == AGNES_FLASH_MODEL)
+        if not ok:
             out.append(
                 "VIDEO_MODEL_MISMATCH: clip %s used %r but the locked video "
                 "model is %r" % (i, m, locked))
