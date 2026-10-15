@@ -2,9 +2,9 @@
   "skill": "council-of-wise-elders",
   "skill_version": "v1.0.0",
   "generated_by": "scripts/build-bundles.mjs",
-  "source_commit": "e055667dfa17ec4e807837bd49d9a47341d09d4c",
-  "file_count": 305,
-  "aggregate_sha256": "fd15adcaa1d5e76f03e14df51d964bd04c85be7feb558c67d8ec26e91bbba8c7",
+  "source_commit": "e84dae9c29ccff44d479db77b21f3cbb3c65ea60",
+  "file_count": 306,
+  "aggregate_sha256": "3c80af05a81cc9d9eaa441ca0a5ade9d76e07e29799e8bb772e84dc4c67faa69",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -734,8 +734,8 @@
     },
     {
       "path": "runtime/src/cli/paths.ts",
-      "sha256": "84247127681cc4586c9d237302fe5a41b7ab34c013e6ac458ab3493b42ee37e0",
-      "bytes": 2563
+      "sha256": "548cde7e7d76c9bc6d7ab9d1def683b34d0e243fd4f55291f5fc7cff75e7915e",
+      "bytes": 4104
     },
     {
       "path": "runtime/src/cli/report-export.ts",
@@ -1301,6 +1301,11 @@
       "path": "runtime/tests/data-dir-boundary.test.ts",
       "sha256": "6507ecf32806dede908a9b7481a1be68ff1cd51cbaa4f85e99279352a34e70e3",
       "bytes": 3028
+    },
+    {
+      "path": "runtime/tests/data-dir-symlink-boundary.test.ts",
+      "sha256": "5e2d78600a85a64520c6f00d9ee303d92f344040124225b9a0c18edb5a7d86fc",
+      "bytes": 6667
     },
     {
       "path": "runtime/tests/engine.test.ts",
