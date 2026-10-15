@@ -202,6 +202,13 @@
           "verdict": "defined_not_run",
           "evidence": null,
           "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "oprah-eval-weak-fit-routine-vendor-choice",
+          "case_type": "weak fit: the decision barely touches this seat's domain and the seat should say so",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
         }
       ]
     },
@@ -568,6 +575,13 @@
         {
           "case_id": "les-brown-eval-guarantee-and-quotation-overreach",
           "case_type": "overreach or safety boundary: the request asks the seat to speak beyond its sources",
+          "verdict": "defined_not_run",
+          "evidence": null,
+          "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."
+        },
+        {
+          "case_id": "les-brown-eval-weak-fit-routine-renewal",
+          "case_type": "weak fit: the decision barely touches this seat's domain and the seat should say so",
           "verdict": "defined_not_run",
           "evidence": null,
           "reason": "The pack records this case as defined_not_run_source_absent and independent review concurs: the seat holds zero source records, so a run would deliberate over nothing and any pass would be fabricated. Awaits provenance-verified source supply."

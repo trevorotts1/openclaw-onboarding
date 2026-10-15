@@ -2,9 +2,9 @@
   "skill": "council-of-wise-elders",
   "skill_version": "v1.0.0",
   "generated_by": "scripts/build-bundles.mjs",
-  "source_commit": "b2bc56aa25c66703134f4b4cf3807c4da515a8d9",
-  "file_count": 291,
-  "aggregate_sha256": "f1c8fca3a3cf6c42990c645de1a5efc23e1a80d1ba0ad0039b1b1e35669d20aa",
+  "source_commit": "afc65f3fa3e57405acf3fa91cd1ddb74e5e94990",
+  "file_count": 301,
+  "aggregate_sha256": "d05db21d35e371036c1c4e6be3fd20bda70bc5342565609424b9faa044627325",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -174,8 +174,8 @@
     },
     {
       "path": "advisors/les-brown/evals.json",
-      "sha256": "9d7e96cd4373d00141088c86d789504e6a9bd973e8f181caf4c02f27b9057ee9",
-      "bytes": 6607
+      "sha256": "b773aa3ea247022819f3540cb380fc382d458f2fc788e6f4e7b3bb945cf8c453",
+      "bytes": 7790
     },
     {
       "path": "advisors/les-brown/failure-patterns.json",
@@ -274,8 +274,8 @@
     },
     {
       "path": "advisors/oprah-winfrey/evals.json",
-      "sha256": "88b8507d16d9c2934207fe87a737e709863dc1b89227fb7dabd84127b93e9a8e",
-      "bytes": 5817
+      "sha256": "b9f6d2e1e1b1b6f1fc8bbab7cbfa5b504ae1ff49e53d705291237eb5735d7880",
+      "bytes": 6960
     },
     {
       "path": "advisors/oprah-winfrey/failure-patterns.json",
@@ -563,6 +563,11 @@
       "bytes": 1944
     },
     {
+      "path": "references/skill22-persona-registry-procedure.md",
+      "sha256": "828a1c647e6042804dd9e44a12c5e1df1b96681419a903988b83e608737e4bc3",
+      "bytes": 4532
+    },
+    {
       "path": "references/source-policy.md",
       "sha256": "36388e8f4292f77f8eb430e1e8394fc4d95e4b3dfb2c1c2ee20669f0ef80f24f",
       "bytes": 2860
@@ -589,8 +594,8 @@
     },
     {
       "path": "runtime/package.json",
-      "sha256": "6ed05ad0526b36b58130c08995a1cdcd59d95de0cd0909e8b454f3338223e07f",
-      "bytes": 3053
+      "sha256": "007b231e9a41d1c9e50117386323c963a0cba9358464863dc062c4eb75b0d41e",
+      "bytes": 3079
     },
     {
       "path": "runtime/scripts/copy-runtime-assets.mjs",
@@ -679,8 +684,8 @@
     },
     {
       "path": "runtime/src/cli/dispatcher.ts",
-      "sha256": "f17d3e6299d60e648579816c6b6f9431c1b38c086072ec9a0ce4b4c09ae519fa",
-      "bytes": 26572
+      "sha256": "777fcf1f72888c4726419e9cfbbcb0ba2e5479f8c534e317f561a00a141e4205",
+      "bytes": 27731
     },
     {
       "path": "runtime/src/cli/engine.ts",
@@ -1278,6 +1283,11 @@
       "bytes": 7939
     },
     {
+      "path": "runtime/tests/data-dir-boundary.test.ts",
+      "sha256": "6507ecf32806dede908a9b7481a1be68ff1cd51cbaa4f85e99279352a34e70e3",
+      "bytes": 3028
+    },
+    {
       "path": "runtime/tests/engine.test.ts",
       "sha256": "6d21b9823a6580f93b9ad007564eba54228b79a8949252f0446eeee63b1d1438",
       "bytes": 13478
@@ -1359,8 +1369,8 @@
     },
     {
       "path": "runtime/tests/scenarios/records/pack-evaluation-records.json",
-      "sha256": "32f0c25f67fd040113e6b498571e6f97bf30e8e2eb71371d5a40837664649a03",
-      "bytes": 37158
+      "sha256": "7e01ab80dd2131da48ea1973bd3ebc3c930bf407de8be6e742c3b8ba50486fc7",
+      "bytes": 38216
     },
     {
       "path": "runtime/tests/scenarios/records/qualification-ledger.json",
@@ -1376,6 +1386,16 @@
       "path": "runtime/tests/scenarios/rubric.ts",
       "sha256": "b2acb81c2efbd49d4e551d63e4013ef77e4c8cb634d146cebbe55327aede6903",
       "bytes": 9446
+    },
+    {
+      "path": "runtime/tests/scenarios/run-authorization-parity-scenarios.json",
+      "sha256": "1c92d43f6bddd5597244aa99fd4ed60581e78084d2d84e1466c89ef48a20ee56",
+      "bytes": 6657
+    },
+    {
+      "path": "runtime/tests/scenarios/run-authorization-parity.test.ts",
+      "sha256": "cec223e0c5fb72d25486f2e8c4ec78c7f5fcc7596be83da97ad593787fa669eb",
+      "bytes": 12041
     },
     {
       "path": "runtime/tests/scoring.test.ts",
@@ -1428,6 +1448,26 @@
       "bytes": 800
     },
     {
+      "path": "scripts/fixtures/skill22-registry/exports/export-manifest.json",
+      "sha256": "42af888162c9d34cf00dbfe87b4e4988fc04e854a75671685a91ec33ea5b814a",
+      "bytes": 1939
+    },
+    {
+      "path": "scripts/fixtures/skill22-registry/exports/les-brown/sources.json",
+      "sha256": "7b7f3841b25d0d569a9c0d7128133bda660bdb38d40a699021814099626c9f8e",
+      "bytes": 234
+    },
+    {
+      "path": "scripts/fixtures/skill22-registry/exports/simon-sinek/sources.json",
+      "sha256": "58b8f5c3f2b1d23ea55d831b5020a87d85d41301668981b255cf2df2e3ac2b5e",
+      "bytes": 236
+    },
+    {
+      "path": "scripts/fixtures/skill22-registry/seed.json",
+      "sha256": "434eb5fd6f9f15fd1addb317d134b52aaf2382c262d78d8ac2e5484c9b2daff1",
+      "bytes": 444
+    },
+    {
       "path": "scripts/install-runtime.mjs",
       "sha256": "3cddc9ff5ea4ef96f1b661e88ac5e6fa288c31fe51a36087f9801896b148c26b",
       "bytes": 4179
@@ -1441,6 +1481,16 @@
       "path": "scripts/qc-council-of-wise-elders.sh",
       "sha256": "8c7b7e90fd7299c518c2b08c1ab2666f609c36edbf7589b1161f735b186473cb",
       "bytes": 2872
+    },
+    {
+      "path": "scripts/register-skill22-personas.mjs",
+      "sha256": "4b7d41be2b4836949508d374d27f46e7d96574f5d10c0317f14c847166d5eded",
+      "bytes": 12887
+    },
+    {
+      "path": "scripts/register-skill22-personas.test.mjs",
+      "sha256": "70827be0a514f264914b0bbec1ba1b44d320a5f35e50e959a1319f13892e08bd",
+      "bytes": 4054
     },
     {
       "path": "scripts/verify-bundles.mjs",

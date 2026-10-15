@@ -16,9 +16,17 @@
  * with CWE-049: no live transport is composed in the standalone host.
  */
 
-import { closeSync, openSync, readFileSync, readSync, writeFileSync, writeSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CONTRACT_PACKAGE_VERSION,
@@ -62,9 +70,34 @@ export interface CliDeps {
   createHost?: (options: { dataDir?: string; skillRoot?: string }) => LocalHost;
 }
 
-/** The skill folder that contains this runtime (state must stay outside it). */
+/**
+ * The skill folder that contains this runtime (state must stay outside it).
+ *
+ * CWE-045 (finding F-4): the fixed three-level climb was written for
+ * the src/cli and dist/cli layouts, but the bundled CLI ships as ONE
+ * file at dist/blackceo-council.mjs, one level shallower, so the
+ * climb landed on the skill folder's PARENT and resolveDataDir's
+ * refusal became a fail-closed superset (it refused data directories
+ * anywhere in the parent folder, including siblings of the skill).
+ * The resolution now walks up from the module directory to the first
+ * ancestor carrying the skill folder's signature (a SKILL.md beside
+ * a runtime/ directory), which is exact in every shipped layout:
+ * runtime/src/cli, runtime/dist/cli, and the bundled
+ * runtime/dist/blackceo-council.mjs. When no signature is found
+ * (an exotic embedding), the historical three-level climb is kept
+ * as the fallback rather than guessing a different boundary.
+ */
 export function skillRootFromModule(): string {
   const here = dirname(fileURLToPath(import.meta.url));
+  let dir = here;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (existsSync(join(dir, 'SKILL.md')) && existsSync(join(dir, 'runtime'))) {
+      return dir;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
   // src/cli or dist/cli -> cli -> src|dist -> runtime -> skill folder.
   return resolve(here, '..', '..', '..');
 }
