@@ -57,3 +57,17 @@ def _default_capability_receipt_on_disk():
                                encoding="utf-8")
     except OSError:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _configured_client_model(monkeypatch):
+    """Simulate a configured client box for model resolution.
+
+    Skill 06 resolves every role's model from the client's own configuration
+    (tools/model_router.py): the client's explicit choice, else their
+    configured default model. Hermetic suites exercise plan building and
+    dispatch logic, not the unconfigured stop, so each test runs with a
+    neutral configured default, exactly as a real client box would have one.
+    The doctrine tests for the unconfigured stop pass explicit env dicts to
+    the router and are unaffected by the process environment."""
+    monkeypatch.setenv("MODEL_ROUTER_DEFAULT", "client-default:cloud")

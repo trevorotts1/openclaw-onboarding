@@ -216,19 +216,26 @@ browserbase`) for fully detached/offloaded runs — that is the cloud tier, not 
 different engine.
 
 ### 1.4 Model (client-provider doctrine — Ollama Cloud preferred, OpenRouter backup; thinking=HIGH; NEVER Anthropic)
-- **PRIMARY (browser control + tool calls + QC): MiniMax 3** — the
-  snapshot→pick-ref→act→verify build loop and every tool/REST call. Ollama Cloud
-  preferred (`…:cloud`, baseUrl `ollama.com`), OpenRouter as backup. The build
+- **PRIMARY (browser control + tool calls + QC):** Model: the client's choice,
+  or the client's configured default model, for the
+  snapshot→pick-ref→act→verify build loop and every tool/REST call. The build
+
   loop is deterministic Python (REST canvas + gates), so the model only has to
-  drive tool calls reliably — MiniMax 3 is the tool-calling primary, PROBE-GATED
-  by `tools/model_router.py` because MiniMax priors are flagged-suspect (probe =
-  a tiny task that REQUIRES a tool-call/JSON return).
-- **ESCALATION (reasoning over the raw snapshot): DeepSeek V4.1 Flash or GLM 5.2** —
-  only for a NEEDS-LIVE-SELECTOR ambiguity / unseen UI variant / recovery pause.
-  Ollama Cloud preferred (`ollama/deepseek-v4.1-flash:cloud`), OpenRouter backup
-  (`openrouter/deepseek/deepseek-v4.1-flash`). thinking/reasoning effort = HIGH.
-- **Page/HTML content writing or a broken-code fix: GLM 5.2** — Ollama Cloud
-  preferred, OpenRouter backup (matches the install-pages doc §10 STEP 3).
+  drive tool calls reliably. Recommendation: a model with reliable tool
+  calling, because every step of the loop is a tool call; PROBE-GATED by
+  `tools/model_router.py` because a model that answers with plausible text
+  instead of a real tool call silently wastes a build (probe = a tiny task
+  that REQUIRES a tool-call/JSON return). QC additionally requires a
+  vision-capable model, because QC reads screenshots.
+- **ESCALATION (reasoning over the raw snapshot):** Model: the client's choice,
+  or the client's configured default model; only for a NEEDS-LIVE-SELECTOR
+  ambiguity / unseen UI variant / recovery pause. Recommendation: a model with
+  strong reasoning and a large context window, because escalation reasons over
+  the full raw snapshot. thinking/reasoning effort = HIGH.
+- **Page/HTML content writing or a broken-code fix:** Model: the client's
+  choice, or the client's configured default model. Recommendation: strong
+  code generation and reliable tool calling, because the fix-loop edits code
+  in tight iterations (matches the install-pages doc §10 STEP 3).
 - **Mechanical only — model-agnostic (client's configured/default model):**
   `ghl_builder.py` ledger/manifest/verify, file reads, URL/string checks. NEVER
   live UI navigation.

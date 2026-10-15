@@ -234,18 +234,22 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 10. **Publishing** - NEVER publish without explicit user approval. Always send
     a deployment report with screenshots first.
 11. **Role-aware model_router** - `tools/model_router.py` assigns a model to
-    every subtask before execution via an Ollama-Cloud-first ladder (five
-    roles; aliases in parentheses). `content` = `ollama/kimi-k2.6:cloud` →
-    `openrouter/moonshotai/kimi-k2.6` → deepseek-v4.1-flash (universal backup) →
-    Gemini 3.5 Flash (last resort); `html`
-    (`code`) = `glm-5.2:cloud` → `z-ai/glm-5.2` → deepseek-v4.1-flash →
-    Gemini 3.5 Flash (last resort); `reasoning` (`funnel`) = GLM 5.2 then
-    DeepSeek V4.1 Flash (Ollama Cloud → OpenRouter) → Gemini 3.5 Flash;
-    `execution` = `minimax-m3:cloud` (probe-gated) → `deepseek-v4.1-flash:cloud`
-    → `openrouter/minimax/minimax-m3` (probe-gated) →
-    `openrouter/deepseek/deepseek-v4.1-flash` → `google/gemini-3.5-flash` (last
-    rung); `qc` (vision) = MiniMax M3 (probe-gated) → Gemini 3.5 Flash last
-    resort. MiniMax M2 is PURGED — it never appears in any rung. The
+    every subtask before execution. Model: the client's choice, or the
+    client's configured default model, for every role (five roles; aliases in
+    parentheses: `content`, `html` (`code`), `reasoning` (`funnel`),
+    `execution`, `qc`). The router prescribes no model by name: it resolves
+    the client's explicit choice for the task first, then the client's
+    configured default model, and stops with an ask-the-client message when
+    neither is configured. Recommendations (guidance only, the client can
+    override): content, a model with a large context window, because it
+    drafts full page and slide copy in one pass; html/code, strong code
+    generation and reliable tool calling, because the fix-loop edits code in
+    tight iterations; reasoning, strong reasoning and a large context window,
+    because funnel planning holds the whole structure at once; execution,
+    reliable tool calling, because the drive loop issues a tool call on every
+    step (probe-gated to prove it before the role runs); qc, a vision-capable
+    model, because QC reads screenshots and rendered DOM (probe-gated).
+    MiniMax M2 is PURGED, it never appears in any rung. The
     router is wired into `tools/v2_dispatcher.py` (role selection at every
     dispatch entry) and `ghl_verify` (`select_html_repair_model` /
     `select_qc_model` seam functions); no subtask runs without a model
@@ -397,14 +401,17 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
    - `intake_interview.py` - adaptive ≤7-question intake; "think for me" branch
      generates recommended answers on request, then confirms before proceeding;
      output written to the task manifest before build starts.
-   - `model_router.py` - role-aware model selector (Ollama-Cloud-first); called
+   - `model_router.py` - role-aware model selector; called
      by `v2_dispatcher.py` and `ghl_verify` to assign a model to every subtask
-     before execution. Role → ladder: `content` → `ollama/kimi-k2.6:cloud` →
-     `openrouter/moonshotai/kimi-k2.6` → DeepSeek V4.1 Flash (universal backup);
-     `html`/`code` → GLM 5.2 → DeepSeek V4.1 Flash (universal backup); `reasoning` →
-     GLM 5.2 / DeepSeek V4.1 Flash; `execution` → MiniMax M3 probe-gated →
-     DeepSeek V4.1 Flash; `qc` (vision) → MiniMax M3 probe-gated. All ladders end
-     at Gemini 3.5 Flash as last resort. MiniMax M2 is PURGED from every rung.
+     before execution. Model: the client's choice, or the client's configured
+     default model (per role: `MODEL_ROUTER_CHOICE_<ROLE>` /
+     `MODEL_ROUTER_DEFAULT`); no model is prescribed by name, and resolution
+     stops with an ask-the-client message when the client has configured
+     neither. Per-role recommendations (guidance only) live in the module
+     docstring: large context for content and reasoning, strong code
+     generation for html/code, reliable tool calling for execution
+     (probe-gated), a vision-capable model for qc (probe-gated). MiniMax M2 is BANNED
+     fleet-wide and is never used.
 6. **ghl-install-pages-full.md** - LEGACY v2.0 raw-Playwright reference, kept for
    historical click-path detail only. Superseded by ghl-browser-builder-full.md.
 7. **INSTRUCTIONS.md** - Operational quick-start.

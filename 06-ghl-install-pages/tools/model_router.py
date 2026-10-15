@@ -1,45 +1,61 @@
 #!/usr/bin/env python3
-"""model_router.py — role-aware, probe-gated, NON-ANTHROPIC model fallback ladder for Skill 06.
+"""model_router.py — role-aware, probe-gated, NON-ANTHROPIC model resolution for Skill 06.
 
-ROLES (aliases in parentheses)
--------------------------------
-  content          — copy writing: welcome slides, prompts; primary: Kimi 2.6
-  html  (code)     — code-block fix-loop; primary: GLM 5.2
-  reasoning (funnel) — structure and planning; primary: GLM 5.2 + DeepSeek V4.1 Flash
-  execution        — browser-click drive loop; primary: MiniMax M3 (probe-gated) + DeepSeek V4.1 Flash
-  qc               — vision QC on screenshots + DOM; primary: MiniMax M3 (probe-gated, vision)
+This router prescribes NO model by name. Every role resolves its model from
+the client's own configuration, in this order:
 
-FALLBACK ORDER — every role, no exceptions
-------------------------------------------
-  Tier 1  Ollama Cloud FIRST  (`:cloud` suffix, `baseUrl=ollama.com`, `id_ed25519` device key)
-  Tier 2  OpenRouter equivalent  (only if Ollama Cloud fails)
-  Tier 3  Universal backup: DeepSeek V4.1 Flash appended to every ladder EXCEPT `qc`
-           (DeepSeek has no confirmed vision; QC tasks must stay vision-capable)
-  Last    OpenRouter Gemini 3.5 Flash on every ladder (only if live + credits)
+  1. The client's explicit choice for the task/role:
+     MODEL_ROUTER_CHOICE_<ROLE>, then MODEL_ROUTER_CHOICE.
+  2. The client's configured default model:
+     MODEL_ROUTER_DEFAULT_<ROLE>, then MODEL_ROUTER_DEFAULT.
+     MODEL_ROUTER_DEFAULT mirrors the client's configured default (for example
+     agents.defaults.model.primary in the client's own openclaw.json),
+     exported into the environment by the install/runtime on the client's box.
+  3. Neither is set: resolution STOPS with ClientModelNotConfiguredError,
+     whose message asks the client to choose. A named model is never silently
+     substituted.
 
-  `thinking=high` on every rung.
+The resolved ladder is the client's chosen model first (when a choice is set),
+then the client's configured default (when set and different). That is the
+whole ladder; the router invents no further rungs.
+
+RECOMMENDATIONS (guidance only — the client can override; never a prescription
+and never wired as a fallback value in code):
+  content          — copy writing: welcome slides, prompts.
+                     Recommendation: a model with a large context window,
+                     because content work drafts full page and slide copy in
+                     one pass.
+  html  (code)     — code-block fix-loop.
+                     Recommendation: a model with strong code generation and
+                     reliable tool calling, because the fix-loop edits code
+                     blocks and verifies the result in tight iterations.
+  reasoning (funnel) — structure and planning.
+                     Recommendation: a model with strong reasoning and a
+                     large context window, because funnel planning holds the
+                     whole funnel structure in context at once.
+  execution        — browser-click drive loop (probe-gated).
+                     Recommendation: a model with reliable tool calling,
+                     because the drive loop issues a tool call on every step.
+                     The probe gate verifies this before the role runs.
+  qc               — vision QC on screenshots + DOM (probe-gated).
+                     Recommendation: a vision-capable model, because QC reads
+                     screenshots and rendered DOM; a text-only model cannot
+                     do this role. The client must configure a vision-capable
+                     model for qc.
+
+PROVIDERS are derived from the resolved slug, never prescribed:
+  slug ending in `:cloud`  → Ollama Cloud (baseUrl ollama.com, `:cloud` suffix,
+                             `id_ed25519` device key)
+  any other slug           → OpenRouter
+`thinking=high` on every rung.
 
 BANNED
 ------
   MiniMax M2   — PURGED. Never appears in any rung, table, or recommendation.
-                 Execution uses MiniMax M3 only, falling back to DeepSeek V4.1 Flash.
   Anthropic    — Hard-blocked by both `assert_no_anthropic` (internal, build-time)
                  AND `assert_model_sovereignty` (shared-utils, per-slug at select-time).
-  Kimi direct  — Kimi 2.6 is NEVER used "direct". Only via:
-                   Ollama Cloud  ollama/kimi-k2.6:cloud
-                   OpenRouter    openrouter/moonshotai/kimi-k2.6
-
-ENV OVERRIDES (per-rung MODEL_ROUTER_<KEY>)
--------------------------------------------
-  MODEL_ROUTER_OLLAMA_KIMI              default: kimi-k2.6:cloud
-  MODEL_ROUTER_OPENROUTER_KIMI          default: moonshotai/kimi-k2.6
-  MODEL_ROUTER_OLLAMA_GLM               default: glm-5.2:cloud
-  MODEL_ROUTER_OPENROUTER_GLM           default: z-ai/glm-5.2
-  MODEL_ROUTER_OLLAMA_DEEPSEEK          default: deepseek-v4.1-flash:cloud
-  MODEL_ROUTER_OPENROUTER_DEEPSEEK      default: deepseek/deepseek-v4.1-flash
-  MODEL_ROUTER_OLLAMA_MINIMAX_M3        default: minimax-m3:cloud
-  MODEL_ROUTER_OPENROUTER_MINIMAX_M3    default: minimax/minimax-m3
-  MODEL_ROUTER_OPENROUTER_GEMINI        default: google/gemini-3.5-flash
+                 The block applies to resolved slugs too: a client configuration
+                 naming an Anthropic model is rejected, not routed.
 
 USAGE
   python3 tools/model_router.py --selftest                    # offline, exits 0 on pass
@@ -109,6 +125,12 @@ class OllamaCloudConfigError(RuntimeError):
     baseUrl (the documented Ollama Cloud trap)."""
 
 
+class ClientModelNotConfiguredError(RuntimeError):
+    """Raised when the client has configured neither a model choice nor a
+    configured default model for a role. This is the ask-the-client stop: the
+    router never silently substitutes a named model of its own."""
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -119,9 +141,99 @@ def _looks_anthropic(*values: str) -> bool:
     return any(m in blob for m in _ANTHROPIC_MARKERS)
 
 
-def _slug(env: dict, key: str, default: str) -> str:
-    """Return MODEL_ROUTER_<KEY> from env, or default."""
-    return (env.get(f"MODEL_ROUTER_{key}") or default).strip() or default
+def _env_value(env: dict, key: str) -> str:
+    return (env.get(key) or "").strip()
+
+
+def _provider_for_slug(slug: str) -> str:
+    """Providers are derived from the client's slug, never prescribed:
+    a `:cloud` slug runs on Ollama Cloud; anything else runs on OpenRouter."""
+    return "ollama-cloud" if slug.endswith(":cloud") else "openrouter"
+
+
+def _family_of(slug: str) -> str:
+    """Derive a family label from a slug: last path component, version/cloud
+    suffix stripped (e.g. "vendor/some-model-2:cloud" → "some")."""
+    fam = slug.split("/")[-1].split(":")[0]
+    fam = re.sub(r"[-_].*$", "", fam).lower()
+    return fam or "client"
+
+
+# Per-role structural requirements the resolved rung inherits. probe_gated and
+# vision are properties of the ROLE, not of any named model.
+_ROLE_REQUIREMENTS: dict[str, dict] = {
+    "content": {"probe_gated": False, "vision": False},
+    "html": {"probe_gated": False, "vision": False},
+    "reasoning": {"probe_gated": False, "vision": False},
+    "execution": {"probe_gated": True, "vision": True},
+    "qc": {"probe_gated": True, "vision": True},
+}
+
+# Guidance only. Surfaced in the ask-the-client stop message and the module
+# docstring; never used as a value anywhere in resolution.
+_ROLE_RECOMMENDATIONS: dict[str, str] = {
+    "content": (
+        "a model with a large context window, because content work drafts "
+        "full page and slide copy in one pass"
+    ),
+    "html": (
+        "a model with strong code generation and reliable tool calling, "
+        "because the fix-loop edits code blocks and verifies the result in "
+        "tight iterations"
+    ),
+    "reasoning": (
+        "a model with strong reasoning and a large context window, because "
+        "funnel planning holds the whole funnel structure in context at once"
+    ),
+    "execution": (
+        "a model with reliable tool calling, because the drive loop issues "
+        "a tool call on every step"
+    ),
+    "qc": (
+        "a vision-capable model, because QC reads screenshots and rendered "
+        "DOM; a text-only model cannot do this role"
+    ),
+}
+
+
+def resolve_client_models(env: dict, role: str) -> list:
+    """Resolve the client's models for a role, in resolution order.
+
+    Returns a list of (slug, provider, source) tuples: the client's explicit
+    choice first (MODEL_ROUTER_CHOICE_<ROLE>, then MODEL_ROUTER_CHOICE), then
+    the client's configured default (MODEL_ROUTER_DEFAULT_<ROLE>, then
+    MODEL_ROUTER_DEFAULT), de-duplicated. Returns [] when the client has
+    configured neither; callers turn that into the ask-the-client stop."""
+    canonical = _ROLE_ALIASES.get(role, role)
+    suffix = canonical.upper()
+    choice = (
+        _env_value(env, f"MODEL_ROUTER_CHOICE_{suffix}")
+        or _env_value(env, "MODEL_ROUTER_CHOICE")
+    )
+    default = (
+        _env_value(env, f"MODEL_ROUTER_DEFAULT_{suffix}")
+        or _env_value(env, "MODEL_ROUTER_DEFAULT")
+    )
+    out: list = []
+    if choice:
+        out.append((choice, _provider_for_slug(choice), "client-choice"))
+    if default and default != choice:
+        out.append((default, _provider_for_slug(default), "client-default"))
+    return out
+
+
+def ask_client_message(role: str) -> str:
+    """The ask-the-client stop message for an unconfigured role, carrying the
+    per-role recommendation as guidance."""
+    canonical = _ROLE_ALIASES.get(role, role)
+    rec = _ROLE_RECOMMENDATIONS.get(canonical, "a model suited to this role")
+    return (
+        f"No model is configured for the {canonical!r} role. "
+        "Ask the client which model they want to use for this role, or use "
+        "the client's configured default model (set MODEL_ROUTER_CHOICE or "
+        f"MODEL_ROUTER_DEFAULT). Recommendation: {rec}. "
+        "This router does not prescribe a specific model by name."
+    )
 
 
 def _sovereignty_check(slug: str) -> None:
@@ -144,254 +256,52 @@ def _sovereignty_check(slug: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Role-specific ladder builders
+# Ladder builder — client resolution only; no model is prescribed by name.
 # ---------------------------------------------------------------------------
 
 
-def _build_content_ladder(env: dict) -> list:
-    """content: Kimi 2.6 (Ollama Cloud → OpenRouter) → DeepSeek backup → Gemini last resort.
-    Kimi is NEVER used direct — only via Ollama Cloud or OpenRouter."""
-    return [
-        {
-            "rung": 1, "role": "content", "provider": "ollama-cloud",
-            "base_url": OLLAMA_CLOUD_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "max_tokens": OLLAMA_CLOUD_MAX_TOKENS,
+def _build_role_ladder(env: dict, role: str) -> list:
+    """Build the ladder for a role from the client's own configuration.
+
+    Rung 1 is the client's explicit choice when one is set; the next rung is
+    the client's configured default when set and different. No other rungs
+    exist. Raises ClientModelNotConfiguredError when the client has configured
+    neither (the ask-the-client stop)."""
+    resolved = resolve_client_models(env, role)
+    if not resolved:
+        raise ClientModelNotConfiguredError(ask_client_message(role))
+    req = _ROLE_REQUIREMENTS[role]
+    ladder: list = []
+    for i, (slug, provider, source) in enumerate(resolved, start=1):
+        rung = {
+            "rung": i, "role": role, "provider": provider,
+            "base_url": (
+                OLLAMA_CLOUD_BASE_URL if provider == "ollama-cloud"
+                else OPENROUTER_BASE_URL
+            ),
+            "probe_gated": req["probe_gated"],
+            "thinking": THINKING_EFFORT, "vision": req["vision"],
+            "resolution": source,
             "models": [
-                {"slug": _slug(env, "OLLAMA_KIMI", "kimi-k2.6:cloud"),
-                 "family": "kimi", "slug_confidence": "confirm"},
+                {"slug": slug, "family": _family_of(slug),
+                 "slug_confidence": "client-configured"},
             ],
-        },
-        {
-            "rung": 2, "role": "content", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_KIMI", "moonshotai/kimi-k2.6"),
-                 "family": "kimi", "slug_confidence": "confirm"},
-            ],
-        },
-        {
-            "rung": 3, "role": "content", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "notes": "universal-backup",
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_DEEPSEEK", "deepseek/deepseek-v4.1-flash"),
-                 "family": "deepseek", "slug_confidence": "repo-documented"},
-            ],
-        },
-        {
-            "rung": 4, "role": "content", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "notes": "last-resort",
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_GEMINI", "google/gemini-3.5-flash"),
-                 "family": "gemini", "slug_confidence": "confirm"},
-            ],
-        },
-    ]
+        }
+        if provider == "ollama-cloud":
+            rung["max_tokens"] = OLLAMA_CLOUD_MAX_TOKENS
+        ladder.append(rung)
+    return ladder
 
 
-def _build_html_ladder(env: dict) -> list:
-    """html / code: GLM 5.2 (Ollama Cloud → OpenRouter) → DeepSeek backup → Gemini last resort."""
-    return [
-        {
-            "rung": 1, "role": "html", "provider": "ollama-cloud",
-            "base_url": OLLAMA_CLOUD_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "max_tokens": OLLAMA_CLOUD_MAX_TOKENS,
-            "models": [
-                {"slug": _slug(env, "OLLAMA_GLM", "glm-5.2:cloud"),
-                 "family": "glm", "slug_confidence": "confirm"},
-            ],
-        },
-        {
-            "rung": 2, "role": "html", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_GLM", "z-ai/glm-5.2"),
-                 "family": "glm", "slug_confidence": "confirm"},
-            ],
-        },
-        {
-            "rung": 3, "role": "html", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "notes": "universal-backup",
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_DEEPSEEK", "deepseek/deepseek-v4.1-flash"),
-                 "family": "deepseek", "slug_confidence": "repo-documented"},
-            ],
-        },
-        {
-            "rung": 4, "role": "html", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "notes": "last-resort",
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_GEMINI", "google/gemini-3.5-flash"),
-                 "family": "gemini", "slug_confidence": "confirm"},
-            ],
-        },
-    ]
-
-
-def _build_reasoning_ladder(env: dict) -> list:
-    """reasoning / funnel: GLM 5.2 + DeepSeek (Ollama Cloud first) →
-    OpenRouter equivalents → Gemini last resort."""
-    return [
-        {
-            "rung": 1, "role": "reasoning", "provider": "ollama-cloud",
-            "base_url": OLLAMA_CLOUD_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "max_tokens": OLLAMA_CLOUD_MAX_TOKENS,
-            "models": [
-                {"slug": _slug(env, "OLLAMA_GLM", "glm-5.2:cloud"),
-                 "family": "glm", "slug_confidence": "confirm"},
-            ],
-        },
-        {
-            "rung": 2, "role": "reasoning", "provider": "ollama-cloud",
-            "base_url": OLLAMA_CLOUD_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "max_tokens": OLLAMA_CLOUD_MAX_TOKENS,
-            "models": [
-                {"slug": _slug(env, "OLLAMA_DEEPSEEK", "deepseek-v4.1-flash:cloud"),
-                 "family": "deepseek", "slug_confidence": "repo-documented"},
-            ],
-        },
-        {
-            "rung": 3, "role": "reasoning", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_GLM", "z-ai/glm-5.2"),
-                 "family": "glm", "slug_confidence": "confirm"},
-            ],
-        },
-        {
-            "rung": 4, "role": "reasoning", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_DEEPSEEK", "deepseek/deepseek-v4.1-flash"),
-                 "family": "deepseek", "slug_confidence": "repo-documented"},
-            ],
-        },
-        {
-            "rung": 5, "role": "reasoning", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "notes": "last-resort",
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_GEMINI", "google/gemini-3.5-flash"),
-                 "family": "gemini", "slug_confidence": "confirm"},
-            ],
-        },
-    ]
-
-
-def _build_execution_ladder(env: dict) -> list:
-    """execution: MiniMax M3 (probe-gated) → DeepSeek (Ollama Cloud then OpenRouter) →
-    Gemini last resort.  MiniMax M2 is BANNED — it does not appear here."""
-    return [
-        {
-            "rung": 1, "role": "execution", "provider": "ollama-cloud",
-            "base_url": OLLAMA_CLOUD_BASE_URL, "probe_gated": True,
-            "thinking": THINKING_EFFORT, "vision": True,
-            "max_tokens": OLLAMA_CLOUD_MAX_TOKENS,
-            "models": [
-                {"slug": _slug(env, "OLLAMA_MINIMAX_M3", "minimax-m3:cloud"),
-                 "family": "minimax", "slug_confidence": "confirm"},
-            ],
-        },
-        {
-            "rung": 2, "role": "execution", "provider": "ollama-cloud",
-            "base_url": OLLAMA_CLOUD_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "max_tokens": OLLAMA_CLOUD_MAX_TOKENS,
-            "models": [
-                {"slug": _slug(env, "OLLAMA_DEEPSEEK", "deepseek-v4.1-flash:cloud"),
-                 "family": "deepseek", "slug_confidence": "repo-documented"},
-            ],
-        },
-        {
-            "rung": 3, "role": "execution", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": True,
-            "thinking": THINKING_EFFORT, "vision": True,
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_MINIMAX_M3", "minimax/minimax-m3"),
-                 "family": "minimax", "slug_confidence": "confirm"},
-            ],
-        },
-        {
-            "rung": 4, "role": "execution", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_DEEPSEEK", "deepseek/deepseek-v4.1-flash"),
-                 "family": "deepseek", "slug_confidence": "repo-documented"},
-            ],
-        },
-        {
-            "rung": 5, "role": "execution", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": False,
-            "notes": "last-resort",
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_GEMINI", "google/gemini-3.5-flash"),
-                 "family": "gemini", "slug_confidence": "confirm"},
-            ],
-        },
-    ]
-
-
-def _build_qc_ladder(env: dict) -> list:
-    """qc: MiniMax M3 (probe-gated, vision required) → Gemini 3.5 Flash last resort (vision).
-    DeepSeek and GLM are NOT on this ladder — no confirmed vision capability.
-    Vision must never route to a text-only model."""
-    return [
-        {
-            "rung": 1, "role": "qc", "provider": "ollama-cloud",
-            "base_url": OLLAMA_CLOUD_BASE_URL, "probe_gated": True,
-            "thinking": THINKING_EFFORT, "vision": True,
-            "max_tokens": OLLAMA_CLOUD_MAX_TOKENS,
-            "models": [
-                {"slug": _slug(env, "OLLAMA_MINIMAX_M3", "minimax-m3:cloud"),
-                 "family": "minimax", "slug_confidence": "confirm"},
-            ],
-        },
-        {
-            "rung": 2, "role": "qc", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": True,
-            "thinking": THINKING_EFFORT, "vision": True,
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_MINIMAX_M3", "minimax/minimax-m3"),
-                 "family": "minimax", "slug_confidence": "confirm"},
-            ],
-        },
-        {
-            "rung": 3, "role": "qc", "provider": "openrouter",
-            "base_url": OPENROUTER_BASE_URL, "probe_gated": False,
-            "thinking": THINKING_EFFORT, "vision": True,
-            "notes": "last-resort",
-            "models": [
-                {"slug": _slug(env, "OPENROUTER_GEMINI", "google/gemini-3.5-flash"),
-                 "family": "gemini", "slug_confidence": "confirm"},
-            ],
-        },
-    ]
+def _make_builder(role: str) -> Callable[[dict], list]:
+    def _build(env: dict) -> list:
+        return _build_role_ladder(env, role)
+    return _build
 
 
 _ROLE_BUILDERS: dict[str, Callable[[dict], list]] = {
-    "content": _build_content_ladder,
-    "html": _build_html_ladder,
-    "reasoning": _build_reasoning_ladder,
-    "execution": _build_execution_ladder,
-    "qc": _build_qc_ladder,
+    role: _make_builder(role)
+    for role in ("content", "html", "reasoning", "execution", "qc")
 }
 
 # ---------------------------------------------------------------------------
@@ -400,17 +310,20 @@ _ROLE_BUILDERS: dict[str, Callable[[dict], list]] = {
 
 
 def build_ladder(env: Optional[dict] = None, *, role: str = "execution") -> list:
-    """Build the role-keyed non-Anthropic fallback ladder.
+    """Build the role-keyed ladder from the client's own configuration.
 
     Parameters
     ----------
     env:
-        Environment dict for MODEL_ROUTER_* overrides. Defaults to ``os.environ``.
+        Environment dict for MODEL_ROUTER_CHOICE / MODEL_ROUTER_DEFAULT
+        resolution. Defaults to ``os.environ``.
     role:
         One of ``content``, ``html`` (alias ``code``), ``reasoning`` (alias ``funnel``),
         ``execution``, ``qc``. Default: ``execution``.
 
-    Returns a list of rung dicts. Raises AnthropicModelError if any resolved
+    Returns a list of rung dicts. Raises ClientModelNotConfiguredError when the
+    client has configured neither a choice nor a configured default for the
+    role (the ask-the-client stop), and AnthropicModelError if any resolved
     slug is Anthropic (build-time guard)."""
     env = env if env is not None else os.environ
     canonical = _ROLE_ALIASES.get(role, role)
@@ -462,8 +375,8 @@ def assert_ollama_cloud_ready(rung: dict, env: Optional[dict] = None) -> None:
 # ---------------------------------------------------------------------------
 
 # The fixed probe task. PASS only if the executor returns a dict that BOTH parses
-# AND reports the tool-call actually fired. Catches MiniMax's historical
-# "plausible-looking non-tool text" before a whole build is wasted.
+# AND reports the tool-call actually fired. Catches models that answer with
+# plausible-looking non-tool text before a whole build is wasted.
 PROBE_TASK = {
     "instruction": (
         "Call the tool `echo_tool` with exactly {\"ok\": true}. "
@@ -508,8 +421,8 @@ def make_stub_executor(
     def _exec(
         provider: str, slug: str, base_url: str, task: dict
     ) -> Optional[dict]:
-        fam = slug.split("/")[-1].split(":")[0]      # e.g. "kimi-k2.6:cloud" → "kimi-k2.6"
-        fam = re.sub(r"[-_].*$", "", fam)             # "kimi-k2.6" → "kimi"
+        fam = slug.split("/")[-1].split(":")[0]      # e.g. "acme-1:cloud" → "acme-1"
+        fam = re.sub(r"[-_].*$", "", fam)             # "acme-1" → "acme"
         if fam in advance_families:
             return {"advance": True}
         if fam in fail_families:
@@ -544,7 +457,11 @@ def select(
         One of ``content``, ``html`` / ``code``, ``reasoning`` / ``funnel``,
         ``execution``, ``qc``.  Default: ``execution``.
     env:
-        Env overrides for MODEL_ROUTER_* slugs.
+        Env dict for MODEL_ROUTER_CHOICE / MODEL_ROUTER_DEFAULT resolution.
+        When ``ladder`` is not given and the client has configured neither a
+        choice nor a default for the role, build_ladder raises
+        ClientModelNotConfiguredError (the ask-the-client stop); callers
+        surface it rather than routing to a prescribed model.
     ladder:
         Pre-built ladder (overrides ``role`` / ``env``).
     backoff:
@@ -599,7 +516,7 @@ def select(
                 "role": rung.get("role"),
             }
 
-            # Probe gate: only on probe_gated rungs (MiniMax M3).
+            # Probe gate: only on probe_gated rungs (execution and qc).
             if rung.get("probe_gated"):
                 try:
                     pr = executor(rung["provider"], slug, rung["base_url"], PROBE_TASK)
@@ -637,8 +554,9 @@ def select(
 
     receipt = {
         "policy": (
-            "client-provider; NEVER Anthropic; Ollama Cloud preferred, OpenRouter backup; "
-            "thinking=HIGH; MiniMax M2 BANNED; Kimi via Ollama/OpenRouter only"
+            "client-provider; NEVER Anthropic; model is the client's choice "
+            "or the client's configured default model; thinking=HIGH; "
+            "MiniMax M2 BANNED"
         ),
         "role": canonical_role,
         "chosen": chosen,
@@ -664,13 +582,21 @@ def _write_receipt(path: str, receipt: dict) -> None:
 
 
 def _selftest() -> int:
-    """Offline self-test: role-aware ladders, Anthropic guard, probe-gate, failover."""
+    """Offline self-test: client resolution, Anthropic guard, probe-gate, failover."""
     errors: list = []
 
-    # ── 1. All roles produce valid, non-Anthropic ladders ─────────────────
+    # Test configuration: a neutral client default on Ollama Cloud, and a
+    # choice-plus-default pair for precedence and failover checks.
+    TEST_ENV = {"MODEL_ROUTER_DEFAULT": "client-default:cloud"}
+    CHOICE_ENV = {
+        "MODEL_ROUTER_CHOICE": "client/choice-model",
+        "MODEL_ROUTER_DEFAULT": "client-default:cloud",
+    }
+
+    # ── 1. All roles resolve from the client's configured default ─────────
     for role in list(_VALID_ROLES) + list(_ROLE_ALIASES):
         try:
-            ladder = build_ladder({}, role=role)
+            ladder = build_ladder(TEST_ENV, role=role)
         except Exception as exc:
             errors.append(f"build_ladder failed for role={role!r}: {exc}")
             continue
@@ -681,137 +607,149 @@ def _selftest() -> int:
         blob = json.dumps(ladder).lower()
         if any(m in blob for m in _ANTHROPIC_MARKERS):
             errors.append(f"role={role!r}: Anthropic marker in ladder JSON")
-        # No M2 anywhere.
         if "minimax-m2" in blob or "minimax_m2" in blob:
             errors.append(f"role={role!r}: BANNED MiniMax M2 found in ladder JSON")
-
-    # ── 2. Ollama Cloud BEFORE OpenRouter on every role ───────────────────
-    for role in _VALID_ROLES:
-        ladder = build_ladder({}, role=role)
-        providers = [r["provider"] for r in ladder]
-        first_openrouter = next(
-            (i for i, p in enumerate(providers) if p == "openrouter"), len(providers)
-        )
-        last_ollama = max(
-            (i for i, p in enumerate(providers) if p == "ollama-cloud"), default=-1
-        )
-        if last_ollama != -1 and last_ollama > first_openrouter:
+        # The router prescribes nothing: the only slug is the client's default.
+        slugs = [m["slug"] for r in ladder for m in r["models"]]
+        if slugs != ["client-default:cloud"]:
             errors.append(
-                f"role={role!r}: Ollama Cloud rung appears AFTER OpenRouter rung "
-                f"(providers={providers})"
+                f"role={role!r}: ladder must be exactly the client's "
+                f"configured default, got {slugs}"
             )
 
-    # ── 3. Last rung on every role is Gemini 3.5 Flash (last-resort) ──────
+    # ── 2. Resolution order: choice rung first, then configured default ──
     for role in _VALID_ROLES:
-        ladder = build_ladder({}, role=role)
-        last_slug = ladder[-1]["models"][0]["slug"]
-        if "gemini" not in last_slug.lower():
+        ladder = build_ladder(CHOICE_ENV, role=role)
+        got = [(r["models"][0]["slug"], r.get("resolution")) for r in ladder]
+        want = [("client/choice-model", "client-choice"),
+                ("client-default:cloud", "client-default")]
+        if got != want:
             errors.append(
-                f"role={role!r}: last rung must be Gemini 3.5 Flash, got {last_slug!r}"
+                f"role={role!r}: resolution order must be choice then "
+                f"default, got {got}"
+            )
+        env = dict(CHOICE_ENV)
+        env[f"MODEL_ROUTER_CHOICE_{role.upper()}"] = "role-pick:cloud"
+        ladder = build_ladder(env, role=role)
+        if ladder[0]["models"][0]["slug"] != "role-pick:cloud":
+            errors.append(
+                f"role={role!r}: role-specific choice must win over the "
+                f"global choice"
             )
 
-    # ── 4. Per-role rung-1 model assertions ───────────────────────────────
-    checks = {
-        "content": ("kimi", False),        # family, probe_gated
-        "html": ("glm", False),
-        "reasoning": ("glm", False),
-        "execution": ("minimax", True),
-        "qc": ("minimax", True),
+    # ── 3. Unconfigured client: the ask-the-client stop ────────────────────
+    for role in _VALID_ROLES:
+        try:
+            build_ladder({}, role=role)
+            errors.append(
+                f"role={role!r}: unconfigured build_ladder must raise "
+                f"ClientModelNotConfiguredError"
+            )
+        except ClientModelNotConfiguredError as exc:
+            if "Ask the client" not in str(exc):
+                errors.append(
+                    f"role={role!r}: stop message must ask the client, "
+                    f"got {exc}"
+                )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(
+                f"role={role!r}: wrong exception for unconfigured client: "
+                f"{exc!r}"
+            )
+
+    # ── 4. Rung-1 structure follows the ROLE, not a named model ────────────
+    probe_checks = {
+        "content": False, "html": False, "reasoning": False,
+        "execution": True, "qc": True,
     }
-    for role, (expected_family, expected_probe) in checks.items():
-        ladder = build_ladder({}, role=role)
-        r1 = ladder[0]
-        fam = r1["models"][0]["family"]
-        if fam != expected_family:
-            errors.append(
-                f"role={role!r}: rung-1 family must be {expected_family!r}, got {fam!r}"
-            )
+    for role, expected_probe in probe_checks.items():
+        r1 = build_ladder(TEST_ENV, role=role)[0]
         if bool(r1.get("probe_gated")) != expected_probe:
             errors.append(
-                f"role={role!r}: rung-1 probe_gated must be {expected_probe}, "
-                f"got {r1.get('probe_gated')}"
+                f"role={role!r}: rung-1 probe_gated must be {expected_probe}"
             )
+        if r1["models"][0]["family"] != "client":
+            errors.append(
+                f"role={role!r}: rung-1 family must derive from the "
+                f"client's slug"
+            )
+    if not build_ladder(TEST_ENV, role="qc")[0].get("vision"):
+        errors.append("qc rung-1 must be vision (a role requirement)")
 
-    # ── 5. content rung-1 is Ollama Cloud Kimi ────────────────────────────
-    content_ladder = build_ladder({}, role="content")
-    r1_slug = content_ladder[0]["models"][0]["slug"]
-    if r1_slug != "kimi-k2.6:cloud":
-        errors.append(f"content rung-1 slug must be kimi-k2.6:cloud, got {r1_slug!r}")
-    if content_ladder[0]["provider"] != "ollama-cloud":
-        errors.append("content rung-1 must be ollama-cloud provider")
-
-    # ── 6. execution rung-2 is DeepSeek (the M3-probe-fail fallback) ──────
-    exec_ladder = build_ladder({}, role="execution")
-    exec_r2 = exec_ladder[1]
-    if exec_r2["models"][0]["family"] != "deepseek":
+    # ── 5. A configured Anthropic model is rejected, not routed ──────────
+    try:
+        build_ladder({"MODEL_ROUTER_DEFAULT": "anthropic/claude-x"}, role="content")
         errors.append(
-            f"execution rung-2 must be DeepSeek (probe-fail fallback), "
-            f"got {exec_r2['models'][0]['family']!r}"
+            "configured Anthropic default must raise AnthropicModelError"
         )
-    if exec_r2.get("probe_gated"):
-        errors.append("execution rung-2 (DeepSeek) must NOT be probe-gated")
+    except AnthropicModelError:
+        pass
+    except Exception as exc:  # noqa: BLE001
+        errors.append(
+            f"configured Anthropic default raised wrong exception: {exc!r}"
+        )
 
-    # ── 7. execution role: no MiniMax M2 at all ───────────────────────────
-    exec_blob = json.dumps(exec_ladder).lower()
-    if "minimax-m2" in exec_blob or "minimax_m2" in exec_blob:
-        errors.append("execution ladder: BANNED MiniMax M2 found")
-
-    # ── 8. Ollama Cloud invariants (:cloud + ollama.com) ──────────────────
+    # ── 6. Ollama Cloud invariants on resolved :cloud rungs ────────────────
     for role in _VALID_ROLES:
-        ladder = build_ladder({}, role=role)
-        for rung in ladder:
+        for rung in build_ladder(TEST_ENV, role=role):
             if rung.get("provider") == "ollama-cloud":
                 try:
                     assert_ollama_cloud_ready(rung, {})
                 except OllamaCloudConfigError as exc:
+                    errors.append(f"role={role!r} rung {rung.get('rung')}: {exc}")
+                if rung.get("max_tokens") != OLLAMA_CLOUD_MAX_TOKENS:
                     errors.append(
-                        f"role={role!r} rung {rung.get('rung')}: {exc}"
+                        f"role={role!r}: ollama-cloud rung must carry the "
+                        f"max_tokens cap"
                     )
 
-    # ── 9. thinking=high on every rung, every role ────────────────────────
+    # ── 7. thinking=high on every rung, every role ─────────────────────────
     for role in _VALID_ROLES:
-        for rung in build_ladder({}, role=role):
+        for rung in build_ladder(CHOICE_ENV, role=role):
             if rung.get("thinking") != "high":
                 errors.append(
-                    f"role={role!r} rung {rung.get('rung')}: thinking must be high"
+                    f"role={role!r} rung {rung.get('rung')}: thinking must "
+                    f"be high"
                 )
 
-    # ── 10. select() with role= works; probe-fail advances correctly ───────
-    # content: clean stub → rung 1 (Kimi Ollama Cloud)
-    out_c = select(make_stub_executor(), role="content", env={}, sleep=lambda *_: None)
-    if not out_c["chosen"] or out_c["chosen"]["rung"] != 1:
-        errors.append(f"content clean stub should choose rung 1, got {out_c['chosen']}")
-
-    # execution: probe-fail on MiniMax → rung 2 DeepSeek
-    out_e = select(
-        make_stub_executor(fail_families=("minimax",)),
-        role="execution", env={}, sleep=lambda *_: None,
-    )
-    if not out_e["chosen"] or out_e["chosen"]["rung"] != 2:
+    # ── 8. select(): a clean run chooses the client's model ────────────────
+    out_c = select(make_stub_executor(), role="content", env=TEST_ENV,
+                   sleep=lambda *_: None)
+    if not out_c["chosen"] or out_c["chosen"]["model"] != "client-default:cloud":
         errors.append(
-            f"execution minimax-fail should advance to rung 2 (DeepSeek), "
-            f"got {out_e['chosen']}"
+            f"content clean stub should choose the client's configured "
+            f"default, got {out_c['chosen']}"
         )
-    if out_e["chosen"] and "deepseek" not in out_e["chosen"]["model"]:
-        errors.append(f"execution rung-2 model must be DeepSeek, got {out_e['chosen']['model']}")
-
-    # qc: probe-fail on MiniMax → rung 3 Gemini (the only non-probe-gated qc rung)
-    out_q = select(
-        make_stub_executor(fail_families=("minimax",)),
-        role="qc", env={}, sleep=lambda *_: None,
-    )
-    if not out_q["chosen"] or "gemini" not in out_q["chosen"]["model"]:
+    if out_c["chosen"] and out_c["chosen"].get("max_tokens") != OLLAMA_CLOUD_MAX_TOKENS:
         errors.append(
-            f"qc minimax-fail should advance to Gemini rung, got {out_q['chosen']}"
+            "select() must carry max_tokens onto an ollama-cloud chosen entry"
         )
-
-    # ── 11. thinking=high carried onto the chosen entry ───────────────────
-    out = select(make_stub_executor(), role="execution", env={}, sleep=lambda *_: None)
-    if out["chosen"] and out["chosen"].get("thinking") != "high":
+    if out_c["chosen"] and out_c["chosen"].get("thinking") != "high":
         errors.append("chosen entry must carry thinking=high")
 
-    # ── 12. Anthropic injection is caught by assert_no_anthropic ──────────
-    bad = build_ladder({}, role="execution")
+    # ── 9. select(): choice probe-fail advances to the configured default ──
+    out_e = select(make_stub_executor(fail_families=("choice",)),
+                   role="execution", env=CHOICE_ENV, sleep=lambda *_: None)
+    if (not out_e["chosen"] or out_e["chosen"]["model"] != "client-default:cloud"
+            or out_e["chosen"]["rung"] != 2):
+        errors.append(
+            f"execution choice-fail should advance to the configured "
+            f"default rung, got {out_e['chosen']}"
+        )
+
+    # ── 10. select(): qc with a failing client model chooses NOTHING ───────
+    # There is no named fallback anymore; a failed probe leaves chosen=None
+    # rather than silently substituting a prescribed model.
+    out_q = select(make_stub_executor(fail_families=("client",)),
+                   role="qc", env=TEST_ENV, sleep=lambda *_: None)
+    if out_q["chosen"] is not None:
+        errors.append(
+            f"qc with a failing client model must choose nothing, "
+            f"got {out_q['chosen']}"
+        )
+
+    # ── 11. Anthropic injection is caught by assert_no_anthropic ───────────
+    bad = build_ladder(TEST_ENV, role="execution")
     bad[0]["models"][0]["slug"] = "BANNED-claude-sentinel-must-be-rejected"
     try:
         assert_no_anthropic(bad)
@@ -819,60 +757,25 @@ def _selftest() -> int:
     except AnthropicModelError:
         pass
 
-    # ── 13. Aliases resolve correctly ─────────────────────────────────────
-    code_ladder = build_ladder({}, role="code")
-    html_ladder = build_ladder({}, role="html")
-    if code_ladder != html_ladder:
+    # ── 12. Aliases resolve identically ────────────────────────────────────
+    if build_ladder(TEST_ENV, role="code") != build_ladder(TEST_ENV, role="html"):
         errors.append("role alias 'code' must produce same ladder as 'html'")
-    funnel_ladder = build_ladder({}, role="funnel")
-    reasoning_ladder = build_ladder({}, role="reasoning")
-    if funnel_ladder != reasoning_ladder:
+    if build_ladder(TEST_ENV, role="funnel") != build_ladder(TEST_ENV, role="reasoning"):
         errors.append("role alias 'funnel' must produce same ladder as 'reasoning'")
 
-    # ── 14. kimi slug is kimi-k2.6, not kimi-2.6 ─────────────────────────
-    for rung in build_ladder({}, role="content"):
-        for m in rung["models"]:
-            if "kimi" in m["slug"] and "kimi-k2.6" not in m["slug"] and "kimi" in m["slug"]:
-                errors.append(
-                    f"Kimi slug must be kimi-k2.6 (not kimi-2.6), got {m['slug']!r}"
-                )
-
-    # ── 15. Ollama Cloud max_tokens == 65536 on every ollama-cloud rung ───
-    for role in _VALID_ROLES:
-        ladder = build_ladder({}, role=role)
-        for rung in ladder:
-            if rung.get("provider") == "ollama-cloud":
-                mt = rung.get("max_tokens")
-                if mt != OLLAMA_CLOUD_MAX_TOKENS:
-                    errors.append(
-                        f"role={role!r} rung {rung.get('rung')}: "
-                        f"ollama-cloud max_tokens must be {OLLAMA_CLOUD_MAX_TOKENS}, got {mt!r}"
-                    )
-
-    # ── 15b. select() carries max_tokens onto chosen when ollama-cloud ────
-    out_mt = select(make_stub_executor(), role="content", env={}, sleep=lambda *_: None)
-    if out_mt["chosen"] and out_mt["chosen"].get("provider") == "ollama-cloud":
-        if out_mt["chosen"].get("max_tokens") != OLLAMA_CLOUD_MAX_TOKENS:
-            errors.append(
-                f"select() must carry max_tokens={OLLAMA_CLOUD_MAX_TOKENS} onto "
-                f"chosen ollama-cloud entry, got {out_mt['chosen'].get('max_tokens')!r}"
-            )
-
-    # ── 15c. OpenRouter chosen entry must NOT have max_tokens ─────────────
-    # Force to openrouter by making Ollama Cloud content rung fail.
-    # content rung-2 is openrouter/kimi — stub never fails non-probe-gated rungs,
-    # so we use a ladder with no ollama-cloud entries to guarantee openrouter is chosen.
-    or_ladder = [r for r in build_ladder({}, role="content") if r["provider"] == "openrouter"]
-    if or_ladder:
-        out_or = select(
-            make_stub_executor(), role="content", env={},
-            ladder=or_ladder, sleep=lambda *_: None,
+    # ── 13. An OpenRouter-resolved chosen entry carries NO max_tokens ──────
+    or_env = {"MODEL_ROUTER_DEFAULT": "client/default-model"}
+    out_or = select(make_stub_executor(), role="content", env=or_env,
+                    sleep=lambda *_: None)
+    if not out_or["chosen"] or out_or["chosen"].get("provider") != "openrouter":
+        errors.append(
+            f"an OpenRouter client default should be chosen on openrouter, "
+            f"got {out_or['chosen']}"
         )
-        if out_or["chosen"] and "max_tokens" in out_or["chosen"]:
-            errors.append(
-                f"select() must NOT add max_tokens to an openrouter chosen entry, "
-                f"got {out_or['chosen'].get('max_tokens')!r}"
-            )
+    elif "max_tokens" in out_or["chosen"]:
+        errors.append(
+            "select() must NOT add max_tokens to an openrouter chosen entry"
+        )
 
     if errors:
         for e in errors:
@@ -880,7 +783,7 @@ def _selftest() -> int:
         print(f"[model_router selftest] FAIL — {len(errors)} error(s)", file=sys.stderr)
         return 1
     print(
-        "[model_router selftest] PASS — role-aware ladder + guards + "
+        "[model_router selftest] PASS — client resolution + guards + "
         "probe-gate + failover OK (offline)"
     )
     return 0
@@ -893,7 +796,7 @@ def _selftest() -> int:
 
 def main(argv: list) -> int:
     p = argparse.ArgumentParser(
-        description="Skill-6 role-aware probe-gated non-Anthropic model ladder"
+        description="Skill-6 role-aware probe-gated non-Anthropic model resolution"
     )
     p.add_argument("--selftest", action="store_true", help="Run offline self-test (exits 0 on pass)")
     p.add_argument("--print-ladder", action="store_true", help="Print the ladder JSON for a role")
@@ -912,16 +815,21 @@ def main(argv: list) -> int:
 
     if args.selftest:
         return _selftest()
-    if args.print_ladder:
-        print(json.dumps(build_ladder(role=args.role), indent=2))
-        return 0
-    if args.emit:
-        out = select(
-            make_stub_executor(), role=args.role, receipt_path=args.emit,
-            sleep=lambda *_: None,
-        )
-        print(json.dumps({"role": args.role, "chosen": out["chosen"], "receipt": args.emit}, indent=2))
-        return 0
+    try:
+        if args.print_ladder:
+            print(json.dumps(build_ladder(role=args.role), indent=2))
+            return 0
+        if args.emit:
+            out = select(
+                make_stub_executor(), role=args.role, receipt_path=args.emit,
+                sleep=lambda *_: None,
+            )
+            print(json.dumps({"role": args.role, "chosen": out["chosen"], "receipt": args.emit}, indent=2))
+            return 0
+    except ClientModelNotConfiguredError as exc:
+        # The ask-the-client stop, printed plainly instead of a traceback.
+        print(str(exc), file=sys.stderr)
+        return 2
     p.print_help()
     return 1
 
