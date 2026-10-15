@@ -9,7 +9,7 @@ Receipt only: no code change, no version bump, no CHANGELOG edit, no provider ca
 | | |
 |---|---|
 | Date | 2026-10-15 (operator Mac Mini; times local) |
-| Repo / branch | `trevorotts1/openclaw-onboarding`, worktree `/Users/blackceomacmini/agnes-wt/W4-proof-U4`, branch `unit/AGN-W4-proof-U4`, base `origin/main` = `1e1c12dcc` |
+| Repo / branch | `trevorotts1/openclaw-onboarding`, worktree `/Users/<operator>/agnes-wt/W4-proof-U4`, branch `unit/AGN-W4-proof-U4`, base `origin/main` = `1e1c12dcc` |
 | Gate under test | the two open **O-method lipsync** candidate branches (see §3), because the recalibration is not on `main` yet |
 | Spend | **$0.** No Agnes call, no KIE call, no image or video job. The only network was the Google face-model download (sha-pinned) and the pip wheels for mediapipe/OpenCV/numpy |
 | Trial files | `trial-oct13/test-c-lipsync-same-character/` and `trial-oct13/test-b-cartoon-lipsync/` — **read only**, nothing written into them (proof in §7) |
