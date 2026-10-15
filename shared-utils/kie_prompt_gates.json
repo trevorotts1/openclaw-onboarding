@@ -231,6 +231,15 @@
       "status": "pending owner signature"
     },
     {
+      "path": "75-drama-song-ad-factory/scripts/core/agnes_dispatch/agnes_dispatch.py",
+      "names": [
+        "PROMPT_MIN_CHARS",
+        "PROMPT_MAX_CHARS"
+      ],
+      "reason": "Agnes is not a KIE model; the 5,000 to 20,000 character band is the Agnes video route's own dispatch band, enforced by the module itself (reject over band, flag under band). KIE rule 12 governs KIE routes; this follows the Skill 63 Agnes exemption precedent in this same list. The module landed undeclared with train #2132, which put main's fast-guards red; declared here by owner-ordered cure (Trevor, 2026-10-15).",
+      "status": "owner-ordered cure 2026-10-15"
+    },
+    {
       "path": "shared-utils/fleet_refresh_runner.py",
       "names": [
         "_ROLE_SCAN_MAX_ENTRIES"
