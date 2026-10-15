@@ -2,9 +2,9 @@
   "skill": "council-of-wise-elders",
   "skill_version": "v1.0.0",
   "generated_by": "scripts/build-bundles.mjs",
-  "source_commit": "c0bd4987a44443988a6faa652e7d0c98aa22a0cb",
-  "file_count": 290,
-  "aggregate_sha256": "9f48d444cce45ed1b8e2fa2827124dc4e4372a59b190b1b566319640e1c99c5f",
+  "source_commit": "b2bc56aa25c66703134f4b4cf3807c4da515a8d9",
+  "file_count": 291,
+  "aggregate_sha256": "f1c8fca3a3cf6c42990c645de1a5efc23e1a80d1ba0ad0039b1b1e35669d20aa",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -589,8 +589,13 @@
     },
     {
       "path": "runtime/package.json",
-      "sha256": "8a4f0f6a0428c863f5c5179ecab6c2f59d2c5d48ee9769e63cb92a9cefae17d6",
-      "bytes": 3013
+      "sha256": "6ed05ad0526b36b58130c08995a1cdcd59d95de0cd0909e8b454f3338223e07f",
+      "bytes": 3053
+    },
+    {
+      "path": "runtime/scripts/copy-runtime-assets.mjs",
+      "sha256": "c5babc2f4c29ca77fd1644bbadb022cb3223602bf8144e56054665496f066684",
+      "bytes": 2380
     },
     {
       "path": "runtime/src/README.md",
