@@ -116,8 +116,17 @@ LANDING_MAP = {
     4: "features-to-benefit", 5: "six-ws", 6: "before-after-bridge",
     7: "three-b-plan", 8: "million-dollar-sales", 9: "aida", 10: "pas",
 }
-SEQ_LENGTHS = {"landing_page_10": 10, "high_ticket_12": 12, "buyer_type_12": 12}
-PREVIEW_EXPECTED = {"landing_page_10": 2, "buyer_type_12": 1, "high_ticket_12": 2}
+SEQ_LENGTHS = {"landing_page_10": 10, "high_ticket_12": 12, "buyer_type_12": 12,
+               "signature_launch_landing_10": 10}
+PREVIEW_EXPECTED = {"landing_page_10": 2, "buyer_type_12": 1, "high_ticket_12": 2,
+                    "signature_launch_landing_10": 2}
+# The named Signature Launch profile (Signature Launch build, spec 13). It rides
+# the SAME ten-email LANDING_MAP, but its two-preview rule is a property of the
+# PROFILE, encoded here and in the profile's locked brief — the ordinary
+# Convert&Flow one-preview default (buyer_type_12) can never reach it, and a
+# per-email or locked-brief preview-count override can never lower it (see
+# evaluate_email). Other profiles are untouched.
+SIGNATURE_LAUNCH_TYPE = "signature_launch_landing_10"
 
 # ---- required brief fields — DERIVED FROM THE INTAKE CONTRACT (T2-38) --------
 # intake/email-intake-questions.json:6 describes itself as "the authoritative spec
@@ -330,6 +339,8 @@ def _sequence_type(obj):
     sid = (obj.get("sequence_id") or obj.get("sequence_position") or "").lower()
     if "high-ticket" in sid or "high_ticket" in sid:
         return "high_ticket_12"
+    if "signature-launch" in sid or "signature_launch" in sid:
+        return SIGNATURE_LAUNCH_TYPE
     if "landing" in sid:
         return "landing_page_10"
     if "buyer" in sid or "convert-and-flow" in sid or "convert_and_flow" in sid:
@@ -469,7 +480,20 @@ def evaluate_email(email, ctx):
         subjects = subjects if isinstance(subjects, list) else []
 
     # --- preview count (AF-EMAIL-PREVIEW-COUNT) ---
-    want_prev = prev_override if isinstance(prev_override, int) else _expected_previews(seq_type, mode)
+    if seq_type == SIGNATURE_LAUNCH_TYPE:
+        # The Signature Launch profile fixes exactly 2 preview lines. The count
+        # is a profile property, NOT a client-exact override surface: even a
+        # LOCKED-brief-logged expected_preview_count cannot lower it (spec 13
+        # section 1/3; doc 19 conflict register — the profile carries two, other
+        # profiles keep their own defaults).
+        if isinstance(prev_override, int) and prev_override != 2:
+            fails.append((AF_PREVIEW_COUNT,
+                          "%s: profile %s fixes exactly 2 preview lines; a preview-count "
+                          "override (%r) is not permitted on this profile"
+                          % (tag, SIGNATURE_LAUNCH_TYPE, prev_override)))
+        want_prev = 2
+    else:
+        want_prev = prev_override if isinstance(prev_override, int) else _expected_previews(seq_type, mode)
     if not (isinstance(previews, list) and len(previews) == want_prev and all(_nonempty_str(p) for p in previews)):
         fails.append((AF_PREVIEW_COUNT,
                       "%s: needs exactly %d non-empty preview line(s) for this sequence" % (tag, want_prev)))
@@ -593,7 +617,7 @@ def evaluate_sequence(ledger, brief=None):
                "founder_name": founder, "require_disruptive": require_disruptive,
                "cta_min": 1, "locked_overrides": locked}
         # framework map + CTA floor per map
-        if seq_type == "landing_page_10":
+        if seq_type in ("landing_page_10", SIGNATURE_LAUNCH_TYPE):
             want_fw = LANDING_MAP.get(slot)
             if want_fw and isinstance(e, dict) and e.get("framework") != want_fw:
                 fails.append((AF_SEQUENCE_MAP,
@@ -888,6 +912,14 @@ def _landing_ledger():
     }
 
 
+def _signature_ledger():
+    led = _landing_ledger()
+    led["sequence_type"] = SIGNATURE_LAUNCH_TYPE
+    led["sequence_id"] = "sequence-signature-launch-landing-10"
+    led["profile"] = SIGNATURE_LAUNCH_TYPE
+    return led
+
+
 def _buyer12_ledger():
     emails = []
     for slot in range(1, 13):
@@ -956,6 +988,7 @@ def self_test():
     print("== self-test: VALID fixtures (must PASS / exit 0) ==")
     check_pass("single-email", _valid_email())
     check_pass("landing-page-10", _landing_ledger())
+    check_pass("signature-launch-10", _signature_ledger())
     check_pass("buyer-type-12", _buyer12_ledger())
     check_pass("high-ticket-12", _ht12_ledger())
     check_pass("intake-brief", _valid_intake())
@@ -1037,6 +1070,16 @@ def self_test():
     lg = _landing_ledger(); lg["emails"][3]["framework"] = "pas"  # slot4 should be features-to-benefit
     check_fail("landing-map", lg, AF_SEQUENCE_MAP)
 
+    # Signature Launch profile: the two-preview rule belongs to the PROFILE.
+    sg = _signature_ledger(); sg["emails"][0]["previews"] = ["only one preview line"]
+    check_fail("signature-preview-one", sg, AF_PREVIEW_COUNT)
+
+    sg = _signature_ledger(); sg["emails"][4]["framework"] = "pas"  # slot5 must be six-ws
+    check_fail("signature-map", sg, AF_SEQUENCE_MAP)
+
+    sg = _signature_ledger(); sg["emails"][1]["ctas"] = ["only one CTA"]  # PASTOR floor is 3
+    check_fail("signature-pastor-cta", sg, AF_CTA_COUNT)
+
     hg = _ht12_ledger(); hg["emails"][0].pop("disruptive_elements", None)
     check_fail("disruptive-missing", hg, AF_DISRUPTIVE)
 
@@ -1092,6 +1135,17 @@ def self_test():
     wrong_brief = {"locked_overrides": {"word_band_override": [10, 20]}}
     check_brief("override-mismatch", e_ok, wrong_brief, expect_pass=False,
                 expect_code=AF_OVERRIDE_UNLOGGED)
+
+    # Signature Launch profile: even a LOCKED-brief-logged preview override
+    # cannot lower the profile's fixed two previews (the two-preview rule is
+    # the profile's, not an override surface). The C&F one-preview default
+    # arriving through the override channel is refused on this profile.
+    sg = _signature_ledger()
+    sg["emails"][0]["previews"] = ["only one preview line"]
+    sg["emails"][0]["expected_preview_count"] = 1
+    sig_brief = {"locked_overrides": {"expected_preview_count": 1}}
+    check_brief("signature-override", sg, sig_brief, expect_pass=False,
+                expect_code=AF_PREVIEW_COUNT)
 
     # FIX-S36-47 — an INDEPENDENT conversation-ledger export is authoritative.
     it = _valid_intake()
