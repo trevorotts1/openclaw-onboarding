@@ -370,6 +370,33 @@ card. The answers and the time answered go into the receipt
 (`core/style_defaults/card_gate.py`; intake and preflight refuse with
 `CARD_UNANSWERED` until the record exists).
 
+**PURPOSE flow and the AGNES question (Drama-to-Demand Method).**
+
+- **PURPOSE is question 1** and asks what the video is for: 1 Grow my business (the
+  full package - a full episode plus 60 s and 90 s trailers and 60 s and 90 s ad
+  clips), 2 tell a client's success story, 3 teach a lesson, 4 a social media video
+  (a paid ad or a free post). It replaces nothing; AI MODELS moves to question 2.
+  Each choice adds at most **one** follow-up: EPISODE LENGTH for 1 (it takes LENGTH's
+  own place, so it adds no screen), PERMISSION for 2 ("Do you have your client's
+  permission to use their testimonial?" - No pauses the order, nothing is generated or
+  charged), SHAPE for 1-3, WHERE for 4, and LENGTH for 2, 3 and 4 with the options
+  that fit that purpose (a social ad never sees 10 minutes; a campaign never sees
+  60 seconds). Choice 3 adds no screen and carries no offer link.
+- **AGNES is asked after VIDEO STYLE** whenever the remembered answer is not "no":
+  does the client have a paid Agnes plan, and should it make this video's pictures
+  and clips? Yes is RECOMMENDED only when they said yes before. Yes turns on the
+  optional Agnes path (`references/agnes-path.md`): Agnes makes the stills and the
+  10-second motion segments on the client's own plan, while the song and the
+  lip-sync close-ups stay on KIE, and the card's video and image lines then read
+  "included in your Agnes plan". A remembered "no" hides the question on later cards
+  (one recap line; reply `agnes` at the recap to change it). The question is not
+  shown for 7- and 10-minute episodes, which are KIE-only. Ask it exactly like every
+  other question - `factory.py card --step`, one question per message, never typed
+  free hand.
+- At recap confirmation the run records the purpose, platform, lengths, output types
+  and the permission answer in its `control/method.json`, alongside the card answers;
+  without that record a run behaves exactly as it did before the method existed.
+
 **The card, in order:**
 
 | Row | Values | Default |
