@@ -251,6 +251,7 @@ function stripBrunsonPack(staging) {
     const rel = `${BRUNSON_DIR}/${name}`;
     const p = join(staging, rel);
     const before = readFileSync(p, "utf8");
+    const canonical = JSON.stringify(JSON.parse(before));
     let data = JSON.parse(before);
     if (ITEM_FILES.includes(rel)) {
       const kept = (data.items ?? []).filter((i) => i.scope !== "private_scope");
@@ -273,8 +274,10 @@ function stripBrunsonPack(staging) {
           : entry);
       touched.push("profile.json:$.distribution (packaging record)");
     }
+    // Write back only when the strip changed the VALUE; a formatting
+    // difference alone must not rewrite a pack file's bytes.
     const after = JSON.stringify(data);
-    if (after !== before) writeFileSync(p, after);
+    if (after !== canonical) writeFileSync(p, after);
   }
 
   // Self-check: no residual reference anywhere in the staging tree.
