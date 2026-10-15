@@ -790,7 +790,7 @@
     {
       "id": "P-U-DESIGN-SALES",
       "order": 4.2,
-      "name": "Upsell Sales Page Design (5,000–19,000 prompt band)",
+      "name": "Upsell Sales Page Design (each design prompt inside the KIE rule 12 length band, 95 to 100 percent of the model max)",
       "owning_role": "slide-image-creator",
       "fanout": {
         "by": "slide",
