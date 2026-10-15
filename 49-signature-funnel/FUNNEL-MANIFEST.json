@@ -42,7 +42,7 @@
     {
       "id": "P2-PROMPTS",
       "order": 2,
-      "name": "Image prompts (5,000-19,000 chars)",
+      "name": "Image prompts (KIE rule 12)",
       "produces_artifact": "prompt_ledger.json",
       "chk_wrapper": "_chk_sf_prompt_floor",
       "gate": "prove_sf_prompt_floor.py",
@@ -382,12 +382,12 @@
       "py_symbol": "prove_sf_copy._verify_thank_you"
     },
     "AF-FUN-PROMPT-FLOOR": {
-      "trigger": "image prompt under 5,000 stripped chars",
+      "trigger": "image prompt under the KIE rule-12 floor (shared kie_prompt_enforcer)",
       "enforced_by": "P2-PROMPTS",
       "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"
     },
     "AF-FUN-PROMPT-CEILING": {
-      "trigger": "image prompt over 19,000 stripped chars",
+      "trigger": "image prompt over the KIE rule-12 ceiling (shared kie_prompt_enforcer)",
       "enforced_by": "P2-PROMPTS",
       "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"
     },

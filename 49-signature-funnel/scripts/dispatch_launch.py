@@ -229,6 +229,52 @@ def dispatch(launch: Dict[str, Any], approval: Dict[str, Any], *,
     return manifest
 
 
+def executor_from_config(config: Dict[str, Any], work_dir: Path):
+    """Build an executor from a consumer-adapter config (S49-08 seam).
+
+    Config shape: {"adapters": {"<page_role>": {"command": ["prog", "{request}",
+    "{result}"], "timeout_s": 600}}}. For each request the adapter command
+    runs with the request JSON path and the expected result JSON path; the
+    result is accepted ONLY when it parses and passes the receipt
+    validation (schema shape + exact request echo) from
+    collect_launch_receipts. A role with no configured adapter, a failing
+    command, or an invalid result is a DispatchError — dispatch never
+    papers over a consumer that did not really answer."""
+    import subprocess
+    import collect_launch_receipts as receipts
+
+    adapters = config.get("adapters") or {}
+
+    def run(req: Dict[str, Any]) -> Dict[str, Any]:
+        role = req["page_role"]
+        spec = adapters.get(role)
+        if not spec or not spec.get("command"):
+            raise DispatchError(f"no consumer adapter configured for role "
+                                f"{role} — dispatch cannot execute it")
+        req_path = work_dir / f"request-{role}.json"
+        res_path = work_dir / f"result-{role}.json"
+        cmd = [part.replace("{request}", str(req_path))
+                    .replace("{result}", str(res_path))
+                    .replace("{work_dir}", str(work_dir))
+               for part in spec["command"]]
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=float(spec.get("timeout_s", 600)))
+        if proc.returncode != 0:
+            raise DispatchError(f"consumer adapter for {role} exited "
+                                f"{proc.returncode}: {proc.stderr.strip()[:400]}")
+        if not res_path.is_file():
+            raise DispatchError(f"consumer adapter for {role} produced no "
+                                f"result file at {res_path}")
+        result = json.loads(res_path.read_text(encoding="utf-8"))
+        fails = receipts.validate_result(result, req)
+        if fails:
+            raise DispatchError(f"consumer result for {role} failed receipt "
+                                "validation: " + "; ".join(fails))
+        return result
+
+    return run
+
+
 def _simulated_executor(author: str):
     def run(req: Dict[str, Any]) -> Dict[str, Any]:
         return {"schema_version": "1.0", "tenant_id": req["tenant_id"],
@@ -335,6 +381,48 @@ def _self_test() -> int:
     say(len(m3["results"]) == 7 and m3["execution"] == "executed",
         "with the scoped approval + executor, dispatch executes and returns results")
 
+    # Consumer-adapter seam (S49-08): a real subprocess consumer whose
+    # result echoes the request is accepted; one that echoes wrongly is not.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        tdp = Path(td)
+        consumer = tdp / "consumer.py"
+        consumer.write_text(
+            "import json,sys\n"
+            "req=json.load(open(sys.argv[1]))\n"
+            "res={'schema_version':'1.0','tenant_id':req['tenant_id'],"
+            "'location_id':req['location_id'],'launch_id':req['launch_id'],"
+            "'revision':req['revision'],'request_id':req['request_id'],"
+            "'input_hash':req['input_hash'],'page_id':req['page_id'],"
+            "'status':'authored','artifacts':[],"
+            "'author_session':'consumer-test','reviewer_session':None,"
+            "'independent_review':False,'proof_class':'L0','blockers':[],"
+            "'native_bindings_ref':None,'test_only':req['test_only']}\n"
+            "json.dump(res,open(sys.argv[2],'w'))\n", encoding="utf-8")
+        cfg = {"adapters": {role: {"command": [sys.executable, str(consumer),
+                                              "{request}", "{result}"]}
+                            for role in ROLE_SKILL}}
+        out = tdp / "dispatch"
+        m4 = dispatch(launch, approval, client_identity_ref="client-1",
+                      worker_identity_ref="worker-9", out_dir=out,
+                      executor=executor_from_config(cfg, out))
+        say(len(m4["results"]) == 7,
+            "adapter-config executor runs real consumers and validates echoes")
+        bad = tdp / "bad_consumer.py"
+        bad.write_text("import json,sys\n"
+                       "json.dump({'bogus': True}, open(sys.argv[2],'w'))\n",
+                       encoding="utf-8")
+        cfg_bad = {"adapters": {role: {"command": [sys.executable, str(bad),
+                                                   "{request}", "{result}"]}
+                                for role in ROLE_SKILL}}
+        try:
+            dispatch(launch, approval, client_identity_ref="client-1",
+                     worker_identity_ref="worker-9", out_dir=out,
+                     executor=executor_from_config(cfg_bad, out))
+            say(False, "an invalid consumer result must be refused")
+        except DispatchError:
+            say(True, "a consumer result that fails receipt validation is refused")
+
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
 
@@ -351,6 +439,9 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--write-target", default="local_only")
     ap.add_argument("--scoped-approvals", help="JSON array of extra approvals")
     ap.add_argument("--out", help="directory for requests + manifest")
+    ap.add_argument("--adapters",
+                    help="consumer adapter config JSON (executes requests "
+                         "through the owning skills' entrypoints)")
     ap.add_argument("--simulate-executor", action="store_true",
                     help="TEST ONLY: fabricate L0 authored results")
     ap.add_argument("--self-test", action="store_true")
@@ -381,8 +472,16 @@ def main(argv: List[str]) -> int:
         approval = _load(args.approval)
         scoped = _load(args.scoped_approvals) if args.scoped_approvals \
             else cfg.get("scoped_approvals", [])
-        executor = _simulated_executor("dispatch-cli-simulated") \
-            if args.simulate_executor else None
+        executor = None
+        if args.adapters:
+            if not args.out:
+                print("FAIL: --adapters requires --out (or --run-dir) as the "
+                      "work dir for request/result files")
+                return EXIT_FAILCLOSED
+            executor = executor_from_config(_load(args.adapters),
+                                            Path(args.out))
+        elif args.simulate_executor:
+            executor = _simulated_executor("dispatch-cli-simulated")
         m = dispatch(launch, approval, client_identity_ref=args.client,
                      worker_identity_ref=args.worker,
                      copy_profile=args.copy_profile,

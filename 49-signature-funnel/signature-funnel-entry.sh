@@ -255,7 +255,7 @@ self_test() {
   fi
   # Signature Launch mode (additive): the launch toolchain self-tests ride the
   # same front-door self-test so a broken launch script fails the door loudly.
-  for p in compile_launch_route validate_launch_plan launch_intake dispatch_launch collect_launch_receipts; do
+  for p in compile_launch_route validate_launch_plan launch_intake dispatch_launch collect_launch_receipts legacy_adapter; do
     if "$PY" "$SCRIPTS_DIR/$p.py" --self-test >/tmp/sf_$p.log 2>&1; then
       echo "  [PASS] $p.py --self-test (signature_launch mode)"
     else
