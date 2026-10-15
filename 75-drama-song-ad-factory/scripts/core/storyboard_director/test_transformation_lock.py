@@ -4,7 +4,9 @@ Transformation Lock and the paid-platform safe zones (SPEC C4, F8).
 Run: python3 -m pytest -q 75-drama-song-ad-factory/scripts/core/storyboard_director/test_transformation_lock.py
 (no spend, stdlib only, no Agnes and no KIE call)
 """
+import atexit
 import os
+import shutil
 import sys
 import tempfile
 
@@ -21,6 +23,8 @@ ROW = {"placement": "instagram-reels-ad",
        "safe_zone": {"top": 0.12, "bottom": 0.18, "left": 0.05, "right": 0.05}}
 TODAY_CARD = ("Shot %d (%s)\nLine: \"%s\"\nViewer must understand: %s\n"
               "Place and action: %s\nFace: %s\nPicture: %s")
+_TMP = []
+atexit.register(lambda: [shutil.rmtree(d, ignore_errors=True) for d in _TMP])
 
 
 def _clock(s):
@@ -62,7 +66,8 @@ def _fixture(with_method_fields=True, safe_zone=None):
     if safe_zone:
         for sid in ("s1", "s2", "s3"):
             contracts[sid]["safe_zone"] = dict(safe_zone)
-    d = tempfile.mkdtemp(prefix="agn-u3-")
+    d = tempfile.mkdtemp(prefix="W1-method-story-U3-")
+    _TMP.append(d)
     stills = {}
     for sid in ("s1", "s2", "s3"):
         stills[sid] = os.path.join(d, sid + ".png")
