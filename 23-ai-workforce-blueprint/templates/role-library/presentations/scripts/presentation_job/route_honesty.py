@@ -67,12 +67,17 @@ answer still routes through Ollama -- they kept their pick, which is
 their right, and the run proceeds on it. The record NEVER mutates the
 model plan; it only reads it.
 
-B27 (the model-choice record stream) has not landed on this base. When it
-does, THIS record's payload (status + selection snapshot + signatures) is
-what folds into B27's unified model-choice record; the single writer is
-record_route_decision() below, so the convergence touches one function
-and no caller. Until then this field is additive: no existing reader is
-required to know it exists.
+B27's unified model-choice record (profile["model_choices"]: per-family
+rows written only through resource_profile's model-choice writers) has
+landed (PR #2035). record_route_decision() -- the single writer of this
+record's decision half -- now ALSO folds each decision into that record,
+in its shape: the recommendation this block showed is recorded on the
+family row of the Ollama route it was shown against, with the client's
+response ("accepted" / "declined") as the entry's response. The
+signatures and the slot snapshot have no home in the unified record's
+shape and stay here; this record remains the module's working record
+(ask-once, the launch restatement), and no caller changed when the fold
+landed.
 
 B11 SEAM (model freshness)
 --------------------------
@@ -421,6 +426,17 @@ CHOICE_NOTE = (
     "selection."
 )
 
+#: The standing recommendation as it is described inside B27's unified
+#: model-choice record (the `reason` on the recommendation entry a route
+#: decision folds there). No numbers: the capacity tables move, and a
+#: recorded reason must not go stale against them; the rendered block
+#: remains the only place numbers are quoted, read live at render time.
+MODEL_CHOICES_REASON = (
+    "Route honesty: for best results use OpenRouter or DeepSeek "
+    "Direct, because neither route holds a deck back with a provider "
+    "concurrency cap, so on those routes your machine is the only limit."
+)
+
 
 def render_block(profile: Optional[Dict[str, Any]],
                  deck_slides: Optional[int] = None) -> Optional[Dict[str, Any]]:
@@ -599,6 +615,114 @@ def note_block_shown(deck_slides: Optional[int] = None,
     return dict(written)
 
 
+def _selection_pairs(selection: Any) -> List:
+    """The distinct (provider, model) pairs of a selection snapshot, in
+    slot order."""
+    pairs: List = []
+    for _slot, spec in sorted((selection or {}).items()):
+        if isinstance(spec, dict) and spec.get("provider") \
+                and spec.get("model"):
+            pair = (spec["provider"], spec["model"])
+            if pair not in pairs:
+                pairs.append(pair)
+    return pairs
+
+
+def _ollama_selection_pairs(selection: Any, cap: Any) -> List:
+    """The pairs of a selection snapshot that route through Ollama."""
+    return [pair for pair in _selection_pairs(selection)
+            if _is_ollama_provider(pair[0], cap)]
+
+
+def _correct_fold_shown_at(prof: Dict[str, Any], provider: str,
+                           model: str, shown_at: str, cap: Any) -> None:
+    """Correct the recommendation entry the fold just appended so its
+    shown_at is the moment the block was actually shown (the offered
+    record's stamp), not the moment the decision folded it. The appended
+    entry is the latest offered one for its model in the family's row."""
+    token = None
+    if cap is not None:
+        try:
+            token = cap.canonical_provider_token(provider)
+        except Exception:  # noqa: BLE001 -- spelling fold only
+            token = None
+    if not token:
+        token = str(provider or "").strip().lower() \
+            .replace("_", "-").replace(" ", "-")
+    for row in prof.get("model_choices") or []:
+        if isinstance(row, dict) and row.get("provider_family") == token:
+            for entry in reversed(row.get("recommendations_shown") or []):
+                if isinstance(entry, dict) and entry.get("model") == model \
+                        and entry.get("response") == "offered":
+                    entry["shown_at"] = shown_at
+                    return
+
+
+def _fold_route_decision_into_model_choices(
+        prof: Dict[str, Any], rec: Dict[str, Any],
+        prior: Dict[str, Any]) -> None:
+    """Fold one recorded route decision into B27's unified model-choice
+    record (profile["model_choices"]), in that record's shape.
+
+    The recommendation this module shows is a ROUTE recommendation (use
+    OpenRouter or DeepSeek Direct instead of the Ollama route); it names
+    no model. The unified record's recommendation entries are keyed by
+    (provider family, model), so the entry is recorded on the family row
+    of the Ollama route the block was shown against -- one entry per
+    distinct Ollama model in the selection the block was shown for --
+    with MODEL_CHOICES_REASON as the reason and the decision's status as
+    the response. The shown selection is the offered record's snapshot
+    when it stands for this showing, else the decision's own snapshot.
+    An acceptance whose shown selection carried no Ollama model (the
+    offer rode the account arm) folds against the models the client
+    moved to. A decision with no model anywhere folds nothing: the
+    unified record keys recommendations by model, and no model is ever
+    invented to fill the gap.
+
+    Writes go ONLY through resource_profile's model-choice writers, on
+    this function's in-flight profile, so the fold lands in the same
+    profile write as the decision itself. No selection is ever written
+    here: accepting the recommendation reaches a selection only through
+    the client's own plan answer (the model-plan recorder), never
+    through this record (owner decision 4). A failure inside the fold is
+    announced on stderr and never un-records the decision."""
+    import sys
+    try:
+        rp = _resource_profile()
+        if rp is None:
+            return
+        status = rec.get("status")
+        if status not in ("accepted", "declined"):
+            return
+        cap = _capacity()
+        shown_sel = None
+        if prior.get("status") == "offered" and \
+                prior.get("shown_signature") == rec.get("shown_signature"):
+            shown_sel = prior.get("selection")
+        pairs = _ollama_selection_pairs(shown_sel, cap)
+        if not pairs:
+            pairs = _ollama_selection_pairs(rec.get("selection"), cap)
+        if not pairs and status == "accepted":
+            pairs = _selection_pairs(rec.get("selection"))
+        for provider, model in pairs:
+            row = rp.model_choice_row(provider, profile=prof) or {}
+            entries = row.get("recommendations_shown") or []
+            offered = any(
+                isinstance(e, dict) and e.get("model") == model
+                and e.get("response") == "offered" for e in entries)
+            if not offered:
+                rp.record_recommendation_shown(
+                    provider, model, MODEL_CHOICES_REASON, profile=prof)
+                if prior.get("shown_at"):
+                    _correct_fold_shown_at(
+                        prof, provider, model, prior["shown_at"], cap)
+            rp.record_recommendation_response(
+                provider, model, status, profile=prof)
+    except Exception as exc:  # noqa: BLE001 -- the fold never un-records
+        print(f"route_honesty: model-choice fold failed "
+              f"({exc.__class__.__name__}: {exc})", file=sys.stderr)
+
+
 def record_route_decision(pre_signature: Optional[str] = None,
                           pre_owed: Optional[bool] = None,
                           deck_slides: Optional[int] = None,
@@ -608,8 +732,10 @@ def record_route_decision(pre_signature: Optional[str] = None,
     """Record the client's decision after the resource_plan answer lands.
 
     THE CONVERGENCE POINT for B27's model-choice record: this is the one
-    writer of the decision half of the record; when B27 lands, this
-    function re-points at its unified record and no caller changes.
+    writer of the decision half of the record, and since B27 landed
+    (PR #2035) it also folds the decision into profile["model_choices"]
+    through _fold_route_decision_into_model_choices -- the re-point the
+    build record named, landed with no caller changed.
 
     `pre_signature` / `pre_owed` describe the selection the block was
     owed for BEFORE the answer was recorded (the intake driver captures
@@ -664,6 +790,7 @@ def record_route_decision(pre_signature: Optional[str] = None,
                     "shown_signature": shown_sig,
                     "decided_signature": rec["decided_signature"],
                     "at": rec["decided_at"], "source": rec["source"]})
+        _fold_route_decision_into_model_choices(prof, rec, prior)
         return rec
 
     if profile is not None:
