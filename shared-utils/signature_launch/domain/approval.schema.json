@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Scoped owner approval record",
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "approval_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subject_type": {
+      "enum": [
+        "launch_plan_build",
+        "paid_asset_budget",
+        "test_location_use",
+        "live_payment_test",
+        "customer_send_activation",
+        "page_publication",
+        "batch_merge",
+        "release_publication",
+        "fleet_rollout"
+      ]
+    },
+    "subject_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner_identity_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_message_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "revoked": {
+      "type": "boolean"
+    },
+    "verification_class": {
+      "enum": [
+        "authenticated_platform_record",
+        "recorded_consent_not_cryptographically_sealed"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "approval_id",
+    "subject_type",
+    "subject_hash",
+    "owner_identity_ref",
+    "source_message_ref",
+    "recorded_at",
+    "scope",
+    "revoked",
+    "verification_class"
+  ]
+}
