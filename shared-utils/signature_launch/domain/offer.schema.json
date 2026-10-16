@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Signature Launch offer",
+  "properties": {
+    "offer_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "slot": {
+      "enum": [
+        "main",
+        "bump",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2"
+      ]
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "deliverables": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "exclusions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "entitlement_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "excludes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "native_product_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "prices": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "title": "Approved price choice",
+        "properties": {
+          "price_choice_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "amount_minor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "billing_type": {
+            "enum": [
+              "one_time",
+              "recurring",
+              "installment",
+              "trial"
+            ]
+          },
+          "native_price_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schedule": {
+            "type": "array",
+            "items": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "additionalProperties": false,
+              "title": "Schedule row",
+              "properties": {
+                "amount_minor": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "due": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "amount_minor",
+                "due"
+              ]
+            }
+          },
+          "terms_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "approval_status": {
+            "enum": [
+              "provided",
+              "recommended_unapproved",
+              "approved",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "price_choice_id",
+          "currency",
+          "amount_minor",
+          "billing_type",
+          "native_price_id",
+          "schedule",
+          "approval_status"
+        ]
+      }
+    },
+    "source_kind": {
+      "enum": [
+        "owner",
+        "existing_verified_catalog",
+        "recommendation",
+        "test_fixture"
+      ]
+    },
+    "source_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "test_only": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "offer_id",
+    "slot",
+    "display_name",
+    "deliverables",
+    "exclusions",
+    "entitlement_ids",
+    "requires",
+    "excludes",
+    "native_product_id",
+    "prices",
+    "source_kind",
+    "source_ref",
+    "test_only"
+  ]
+}
