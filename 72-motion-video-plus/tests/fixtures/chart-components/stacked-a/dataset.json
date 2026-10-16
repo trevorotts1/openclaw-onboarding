@@ -1,0 +1,39 @@
+{
+  "schema_version": "2.0",
+  "id": "allocation-budget",
+  "kind": "illustrative",
+  "source_note": "Illustrative fixture data for engineering tests. Values are not client or business-performance evidence.",
+  "units": "percent",
+  "domain": [
+    0,
+    100
+  ],
+  "scale_type": "linear",
+  "missing_value_policy": "error",
+  "display_rounding": {
+    "decimals": 0
+  },
+  "rows": [
+    {
+      "id": "people",
+      "label": "People and coaching",
+      "value": 40
+    },
+    {
+      "id": "tools",
+      "label": "Tools and platforms",
+      "value": 30
+    },
+    {
+      "id": "media",
+      "label": "Media and outreach",
+      "value": 20
+    },
+    {
+      "id": "reserve",
+      "label": "Reserve",
+      "value": 10
+    }
+  ],
+  "declared_total": 100
+}

@@ -1,0 +1,1169 @@
+{
+ "schema_version": "1.0",
+ "item": "MG-034",
+ "tool": "qc.py",
+ "tool_version": "1.0.0",
+ "generatedAt": "2026-10-15T08:52:07.988543+00:00",
+ "mode": "package",
+ "job_id": "fixture-standalone-silent",
+ "artifact_path": "renders/final.mp4",
+ "artifact_sha256": "142d44a2d5afb5a56b5dd41d5f57f51a5053ab581747e987645200fe464b30f4",
+ "artifact_bytes": 437478,
+ "verdict": "pass",
+ "exit_code": 0,
+ "first_error_category": null,
+ "plan": {
+  "job_id": "fixture-standalone-silent",
+  "fps": 30,
+  "total_frames": 405,
+  "total_samples": 648000,
+  "canvas": [
+   1920,
+   1080
+  ],
+  "audio_mode": "none",
+  "video_profile": "h264_opaque"
+ },
+ "inputs": {
+  "manifest": {
+   "path": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/manifest.json",
+   "sha256": "bea7fb538a65cd9b78223fcfb536939d23ef36b361861f1cf4a8dd8da51d6ae1"
+  },
+  "plan": {
+   "path": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/timeline.json",
+   "sha256": "72818c8ac62847371ea5924296db7d43789d7c1bc457f4e0ae2b2b9cc2e2920f"
+  },
+  "sidecar": {
+   "path": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/timeline-sidecar.json",
+   "sha256": "b72b24e048092ff73c6243d24ca5593d059aaba32d90798e21c63c21d40d425b"
+  },
+  "media": {
+   "path": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/media.json",
+   "sha256": "26c4990caeadff751642c0a46625bb134c373f71fdd044a1837a53452c352364"
+  },
+  "coverage": {
+   "path": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/review/fixture-standalone-silent__coverage.json",
+   "sha256": "77b9a0121c479575578dd354556ebf439bc33b4111f9d10e645be2c352b63859"
+  },
+  "assets": {
+   "path": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/assets.json",
+   "sha256": "0f308f178d2536c9416d53cc7d8e070e04b3aac2c999996de75c9dba2fe1ca95"
+  }
+ },
+ "checks": [
+  {
+   "id": "tools.available",
+   "title": "ffmpeg and ffprobe are runnable",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "ffmpeg and ffprobe both answered -version with exit 0",
+   "command": "ffmpeg -version; ffprobe -version",
+   "exit_status": [
+    0,
+    0
+   ],
+   "observed": {
+    "ffmpeg": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers",
+    "ffprobe": "ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers",
+    "tool_paths": {
+     "ffmpeg": "/usr/bin/ffmpeg",
+     "ffprobe": "/usr/bin/ffprobe"
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/timeline.json"
+  },
+  {
+   "id": "inputs.plan",
+   "title": "planned truth loads and agrees",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "compiled timeline and sidecar agree on fps, totals, and job id; MG-023 resolved audio mode none",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "job_id": "fixture-standalone-silent",
+    "fps": 30,
+    "total_frames": 405,
+    "total_samples": 648000,
+    "duration_seconds": 13.5,
+    "audio_mode": "none",
+    "audio_owner": "none",
+    "loudness_target": null,
+    "job_ids": {
+     "timeline": "fixture-standalone-silent",
+     "sidecar": "fixture-standalone-silent",
+     "manifest": "fixture-standalone-silent",
+     "media": null
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/timeline.json"
+  },
+  {
+   "id": "artifact.exists",
+   "title": "final artifact exists",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "final artifact present at 437478 bytes",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "path": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4",
+    "bytes": 437478
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "artifact.hash",
+   "title": "artifact sha256 recorded",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "sha256 of the exact bytes under review is recorded in the report header and binds every other record",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "sha256": "142d44a2d5afb5a56b5dd41d5f57f51a5053ab581747e987645200fe464b30f4",
+    "bytes": 437478
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "artifact.probe",
+   "title": "artifact probes cleanly",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "ffprobe parsed the container and found a video stream",
+   "command": "ffprobe -v error -show_streams -show_format -of json /home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4",
+   "exit_status": 0,
+   "observed": {
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264"
+     }
+    ],
+    "format": "mov,mp4,m4a,3gp,3g2,mj2"
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "artifact.decode",
+   "title": "artifact decodes end to end",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "every stream decoded to the end with no error",
+   "command": "ffmpeg -v error -i /home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4 -f null -",
+   "exit_status": 0,
+   "observed": {
+    "error_lines": []
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "plan.dimensions",
+   "title": "final dimensions match the plan canvas",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "artifact dimensions equal the plan canvas 1920x1080",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "expected": {
+     "width": 1920,
+     "height": 1080,
+     "aspect": 1.7778,
+     "source": "manifest.canvas"
+    },
+    "observed": {
+     "width": 1920,
+     "height": 1080,
+     "aspect": 1.7778
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "plan.fps",
+   "title": "final fps matches the plan",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "artifact frame rate matches the compiled plan",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "expected_fps": 30.0,
+    "observed_fps": 30.0,
+    "avg_frame_rate": "30/1"
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "plan.frame_count",
+   "title": "decoded frame count matches the plan",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "decoded frame count equals the compiled total",
+   "command": "ffprobe -v error -show_streams -show_format -of json -count_frames /home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4",
+   "exit_status": 0,
+   "observed": {
+    "expected_frames": 405,
+    "decoded_frames": 405
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "plan.duration",
+   "title": "final duration matches the compiled duration",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "artifact duration is within 0.12s of the compiled duration",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "expected_seconds": 13.5,
+    "observed_seconds": 13.5,
+    "tolerance_seconds": 0.12
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "plan.streams",
+   "title": "stream inventory matches the plan",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "stream inventory matches the resolved plan",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "expected_audio": false,
+    "observed_audio": false,
+    "audio_mode": "none",
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264"
+     }
+    ]
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "audio.decode",
+   "title": "final audio decodes for measurement",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "the artifact has no audio stream; there is no audio to decode (plan.streams judges whether that absence is correct)",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_stream": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "audio.duration",
+   "title": "audio length matches the compiled total samples",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no audio stream to measure; plan.streams judges whether the plan expected one",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_stream": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/timeline.json"
+  },
+  {
+   "id": "audio.clipping",
+   "title": "encoded audio does not clip",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no audio stream; nothing can clip",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_stream": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/timeline.json"
+  },
+  {
+   "id": "audio.loudness",
+   "title": "loudness verified where the mode applies",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "loudness is verified only for an independent final mix (MG-023 mode own); this job's mode is none, so no loudness target exists to fail against. The mode's own promise is judged by audio.mode_promise",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_mode": "none",
+    "loudness_target": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/timeline.json"
+  },
+  {
+   "id": "audio.final_words",
+   "title": "final spoken content is present in the mix",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "the compiled plan places no narration; there is no spoken content to verify",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "placed_narration": []
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/timeline-sidecar.json"
+  },
+  {
+   "id": "audio.score_audible",
+   "title": "the chosen score is audible where nothing speaks",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no own-mode score to verify (mode none, music False)",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_mode": "none",
+    "music": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/timeline.json"
+  },
+  {
+   "id": "audio.mode_promise",
+   "title": "the artifact keeps its audio mode's promise",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "mode none: the deliverable is silent, as promised (no audio stream)",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_mode": "none",
+    "audio_stream_present": false,
+    "exclusions": []
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "video.black",
+   "title": "no unapproved black intervals",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "no black intervals detected",
+   "command": "ffmpeg -i /home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4 -vf blackdetect=d=0.50:pix_th=0.10 -an -f null -",
+   "exit_status": 0,
+   "observed": {
+    "detected_intervals_frames": [],
+    "approved_dark_intervals_frames": [],
+    "approval_sources": [
+     "timeline event cue-open-reveal-hold (hold_start at frame 60, scene open-reveal)",
+     "timeline event cue-detail-zoom-hold (hold_start at frame 123, scene detail-zoom)",
+     "timeline event cue-proof-chart-hold (hold_start at frame 225, scene proof-chart)",
+     "timeline event cue-final-state-hold (hold_start at frame 325, scene final-state)",
+     "scene spec final-state motion hold (source frames 40..120)",
+     "scene spec open-reveal motion hold (source frames 60..90)",
+     "scene spec proof-chart motion hold (source frames 75..150)"
+    ],
+    "uncovered_intervals_frames": [],
+    "threshold": {
+     "min_seconds": 0.5,
+     "pixel_threshold": 0.1
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "video.freeze",
+   "title": "no unapproved frozen intervals",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "no unapproved frozen intervals (3 detected, all covered by plan approvals)",
+   "command": "ffmpeg -i /home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4 -vf freezedetect=n=0.003:d=1.00 -an -f null -",
+   "exit_status": 0,
+   "observed": {
+    "detected_intervals_frames": [
+     [
+      117,
+      151
+     ],
+     [
+      225,
+      286
+     ],
+     [
+      324,
+      405
+     ]
+    ],
+    "approved_freeze_intervals_frames": [
+     [
+      60,
+      90
+     ],
+     [
+      60,
+      90
+     ],
+     [
+      123,
+      165
+     ],
+     [
+      225,
+      300
+     ],
+     [
+      225,
+      300
+     ],
+     [
+      325,
+      405
+     ],
+     [
+      325,
+      405
+     ]
+    ],
+    "approval_sources": [
+     "timeline event cue-open-reveal-hold (hold_start at frame 60, scene open-reveal)",
+     "timeline event cue-detail-zoom-hold (hold_start at frame 123, scene detail-zoom)",
+     "timeline event cue-proof-chart-hold (hold_start at frame 225, scene proof-chart)",
+     "timeline event cue-final-state-hold (hold_start at frame 325, scene final-state)",
+     "scene spec final-state motion hold (source frames 40..120)",
+     "scene spec open-reveal motion hold (source frames 60..90)",
+     "scene spec proof-chart motion hold (source frames 75..150)"
+    ],
+    "uncovered_intervals_frames": [],
+    "threshold": {
+     "min_seconds": 1.0,
+     "noise": 0.003
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "video.alpha",
+   "title": "alpha matches the declared export profile",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "artifact alpha agrees with profile h264_opaque",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "video_profile": "h264_opaque",
+    "profile_source": "manifest.delivery",
+    "pix_fmt": "yuv420p",
+    "alpha_pixel_format": false,
+    "alpha_varies": false
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4"
+  },
+  {
+   "id": "review.receipt",
+   "title": "review receipt (MG-031 coverage) binds this artifact",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "coverage record for job fixture-standalone-silent is complete and binds the artifact's exact sha256",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "coverage_path": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/review/fixture-standalone-silent__coverage.json",
+    "record_job_id": "fixture-standalone-silent",
+    "verdict": "complete",
+    "record_video": {
+     "bytes": 437478,
+     "duration_seconds": 13.5,
+     "fps": "30/1",
+     "height": 1080,
+     "path": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/renders/final.mp4",
+     "probed_frames": 405,
+     "sha256": "142d44a2d5afb5a56b5dd41d5f57f51a5053ab581747e987645200fe464b30f4",
+     "width": 1920
+    },
+    "review_record": {
+     "label": null,
+     "rough_layout_only": false,
+     "engine": null
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/review/fixture-standalone-silent__coverage.json"
+  },
+  {
+   "id": "package.assets",
+   "title": "declared assets are present and hash-true",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "all 1 declared assets are present and hash-true",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "assets": [
+     {
+      "id": "subject-crate",
+      "path": "assets/subject.svg",
+      "status": "verified",
+      "sha256": "b5dfb9fa7ed796a9a5e3d4f61fb95d706e089f8effa454770bce469727d6f134"
+     }
+    ],
+    "assets_path": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/assets.json"
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/assets.json"
+  },
+  {
+   "id": "package.fonts",
+   "title": "declared fonts resolve without substitution",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "every declared font requirement resolves to an installed family or a package font file",
+   "command": "fc-list : family",
+   "exit_status": 0,
+   "observed": {
+    "fonts": [
+     {
+      "id": "font-fixture-sans",
+      "family_alias": "Liberation Sans",
+      "source": "runtime_registry",
+      "status": "resolved",
+      "resolution": "installed_family",
+      "declared_family": "Liberation Sans",
+      "resolved_family": "Liberation Sans"
+     }
+    ],
+    "installed_family_count": 1535,
+    "font_registry": {
+     "source": "/home/hatch/workspace/skill72-v2/wt-mg044/72-motion-video-plus/runtime/src/remotion/fonts.ts",
+     "consulted": false,
+     "aliases_registered": null,
+     "problem": null
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/assets.json"
+  },
+  {
+   "id": "package.lint",
+   "title": "static lint record consumed (MG-030)",
+   "mandatory": false,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no MG-030 lint report was supplied (--lint-report); lint is produced by the runtime lint layer, and QC consumes its record when one exists",
+   "command": null,
+   "exit_status": null,
+   "observed": {},
+   "evidence": null
+  },
+  {
+   "id": "package.motion_proof",
+   "title": "motion-proof record consumed (MG-032)",
+   "mandatory": false,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "motion-proof record records a pass",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "motion_proof_path": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/motion-proof.json",
+    "verdict": "pass",
+    "pass": null,
+    "label": null,
+    "rough_layout_only": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/wt-mg044/.scratch/mg044-standalone/stage/job/motion-proof.json"
+  },
+  {
+   "id": "process.registry",
+   "title": "no live render processes remain registered to this job (MG-029)",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "no live processes remain registered to job fixture-standalone-silent (128 record(s): 128 finished, 0 stale)",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "registry_dir": "/home/hatch/.local/state/motion-render/processes",
+    "registry_file": "/home/hatch/.local/state/motion-render/processes/fixture-standalone-silent.json",
+    "job_id": "fixture-standalone-silent",
+    "registry_job_id": "fixture-standalone-silent",
+    "records_found": 128,
+    "registry_file_present": true,
+    "live_processes": [],
+    "stale_pids": [],
+    "finished_processes": [
+     {
+      "pid": 100686,
+      "state": "exited"
+     },
+     {
+      "pid": 100778,
+      "state": "exited"
+     },
+     {
+      "pid": 100818,
+      "state": "exited"
+     },
+     {
+      "pid": 101642,
+      "state": "exited"
+     },
+     {
+      "pid": 101931,
+      "state": "exited"
+     },
+     {
+      "pid": 102321,
+      "state": "exited"
+     },
+     {
+      "pid": 102516,
+      "state": "exited"
+     },
+     {
+      "pid": 102755,
+      "state": "exited"
+     },
+     {
+      "pid": 105285,
+      "state": "exited"
+     },
+     {
+      "pid": 105403,
+      "state": "exited"
+     },
+     {
+      "pid": 105435,
+      "state": "exited"
+     },
+     {
+      "pid": 105597,
+      "state": "exited"
+     },
+     {
+      "pid": 106107,
+      "state": "exited"
+     },
+     {
+      "pid": 106497,
+      "state": "exited"
+     },
+     {
+      "pid": 107000,
+      "state": "exited"
+     },
+     {
+      "pid": 108242,
+      "state": "exited"
+     },
+     {
+      "pid": 119005,
+      "state": "exited"
+     },
+     {
+      "pid": 119021,
+      "state": "exited"
+     },
+     {
+      "pid": 119031,
+      "state": "exited"
+     },
+     {
+      "pid": 119231,
+      "state": "exited"
+     },
+     {
+      "pid": 119364,
+      "state": "exited"
+     },
+     {
+      "pid": 119601,
+      "state": "exited"
+     },
+     {
+      "pid": 120106,
+      "state": "exited"
+     },
+     {
+      "pid": 120475,
+      "state": "exited"
+     },
+     {
+      "pid": 121859,
+      "state": "exited"
+     },
+     {
+      "pid": 121979,
+      "state": "exited"
+     },
+     {
+      "pid": 122006,
+      "state": "exited"
+     },
+     {
+      "pid": 122042,
+      "state": "exited"
+     },
+     {
+      "pid": 123497,
+      "state": "exited"
+     },
+     {
+      "pid": 123763,
+      "state": "exited"
+     },
+     {
+      "pid": 124169,
+      "state": "exited"
+     },
+     {
+      "pid": 124623,
+      "state": "exited"
+     },
+     {
+      "pid": 95152,
+      "state": "exited"
+     },
+     {
+      "pid": 95192,
+      "state": "exited"
+     },
+     {
+      "pid": 95206,
+      "state": "exited"
+     },
+     {
+      "pid": 95543,
+      "state": "exited"
+     },
+     {
+      "pid": 95782,
+      "state": "exited"
+     },
+     {
+      "pid": 95936,
+      "state": "exited"
+     },
+     {
+      "pid": 96059,
+      "state": "exited"
+     },
+     {
+      "pid": 96177,
+      "state": "exited"
+     },
+     {
+      "pid": 96398,
+      "state": "exited"
+     },
+     {
+      "pid": 96434,
+      "state": "exited"
+     },
+     {
+      "pid": 96472,
+      "state": "exited"
+     },
+     {
+      "pid": 96484,
+      "state": "exited"
+     },
+     {
+      "pid": 96785,
+      "state": "exited"
+     },
+     {
+      "pid": 96887,
+      "state": "exited"
+     },
+     {
+      "pid": 97027,
+      "state": "exited"
+     },
+     {
+      "pid": 97227,
+      "state": "exited"
+     },
+     {
+      "pid": 91501,
+      "state": "exited"
+     },
+     {
+      "pid": 91509,
+      "state": "exited"
+     },
+     {
+      "pid": 91516,
+      "state": "exited"
+     },
+     {
+      "pid": 91686,
+      "state": "exited"
+     },
+     {
+      "pid": 91797,
+      "state": "exited"
+     },
+     {
+      "pid": 91906,
+      "state": "exited"
+     },
+     {
+      "pid": 92011,
+      "state": "exited"
+     },
+     {
+      "pid": 92120,
+      "state": "exited"
+     },
+     {
+      "pid": 92288,
+      "state": "exited"
+     },
+     {
+      "pid": 92329,
+      "state": "exited"
+     },
+     {
+      "pid": 92338,
+      "state": "exited"
+     },
+     {
+      "pid": 92347,
+      "state": "exited"
+     },
+     {
+      "pid": 92517,
+      "state": "exited"
+     },
+     {
+      "pid": 92614,
+      "state": "exited"
+     },
+     {
+      "pid": 92737,
+      "state": "exited"
+     },
+     {
+      "pid": 92903,
+      "state": "exited"
+     },
+     {
+      "pid": 100589,
+      "state": "exited"
+     },
+     {
+      "pid": 100597,
+      "state": "exited"
+     },
+     {
+      "pid": 100604,
+      "state": "exited"
+     },
+     {
+      "pid": 100776,
+      "state": "exited"
+     },
+     {
+      "pid": 100887,
+      "state": "exited"
+     },
+     {
+      "pid": 100998,
+      "state": "exited"
+     },
+     {
+      "pid": 101105,
+      "state": "exited"
+     },
+     {
+      "pid": 101210,
+      "state": "exited"
+     },
+     {
+      "pid": 101382,
+      "state": "exited"
+     },
+     {
+      "pid": 101416,
+      "state": "exited"
+     },
+     {
+      "pid": 101425,
+      "state": "exited"
+     },
+     {
+      "pid": 101432,
+      "state": "exited"
+     },
+     {
+      "pid": 101600,
+      "state": "exited"
+     },
+     {
+      "pid": 101695,
+      "state": "exited"
+     },
+     {
+      "pid": 101816,
+      "state": "exited"
+     },
+     {
+      "pid": 101992,
+      "state": "exited"
+     },
+     {
+      "pid": 104046,
+      "state": "exited"
+     },
+     {
+      "pid": 104054,
+      "state": "exited"
+     },
+     {
+      "pid": 104061,
+      "state": "exited"
+     },
+     {
+      "pid": 104228,
+      "state": "exited"
+     },
+     {
+      "pid": 104338,
+      "state": "exited"
+     },
+     {
+      "pid": 104443,
+      "state": "exited"
+     },
+     {
+      "pid": 104550,
+      "state": "exited"
+     },
+     {
+      "pid": 104658,
+      "state": "exited"
+     },
+     {
+      "pid": 104824,
+      "state": "exited"
+     },
+     {
+      "pid": 104857,
+      "state": "exited"
+     },
+     {
+      "pid": 104865,
+      "state": "exited"
+     },
+     {
+      "pid": 104872,
+      "state": "exited"
+     },
+     {
+      "pid": 105049,
+      "state": "exited"
+     },
+     {
+      "pid": 105145,
+      "state": "exited"
+     },
+     {
+      "pid": 105269,
+      "state": "exited"
+     },
+     {
+      "pid": 105438,
+      "state": "exited"
+     },
+     {
+      "pid": 112619,
+      "state": "exited"
+     },
+     {
+      "pid": 112905,
+      "state": "exited"
+     },
+     {
+      "pid": 113051,
+      "state": "exited"
+     },
+     {
+      "pid": 113334,
+      "state": "exited"
+     },
+     {
+      "pid": 113447,
+      "state": "exited"
+     },
+     {
+      "pid": 113551,
+      "state": "exited"
+     },
+     {
+      "pid": 113665,
+      "state": "exited"
+     },
+     {
+      "pid": 113772,
+      "state": "exited"
+     },
+     {
+      "pid": 113979,
+      "state": "exited"
+     },
+     {
+      "pid": 114015,
+      "state": "exited"
+     },
+     {
+      "pid": 114023,
+      "state": "exited"
+     },
+     {
+      "pid": 114030,
+      "state": "exited"
+     },
+     {
+      "pid": 114203,
+      "state": "exited"
+     },
+     {
+      "pid": 114297,
+      "state": "exited"
+     },
+     {
+      "pid": 114422,
+      "state": "exited"
+     },
+     {
+      "pid": 114592,
+      "state": "exited"
+     },
+     {
+      "pid": 38762,
+      "state": "exited"
+     },
+     {
+      "pid": 38776,
+      "state": "exited"
+     },
+     {
+      "pid": 38783,
+      "state": "exited"
+     },
+     {
+      "pid": 38971,
+      "state": "exited"
+     },
+     {
+      "pid": 39096,
+      "state": "exited"
+     },
+     {
+      "pid": 39219,
+      "state": "exited"
+     },
+     {
+      "pid": 39412,
+      "state": "exited"
+     },
+     {
+      "pid": 39562,
+      "state": "exited"
+     },
+     {
+      "pid": 39779,
+      "state": "exited"
+     },
+     {
+      "pid": 39818,
+      "state": "exited"
+     },
+     {
+      "pid": 39829,
+      "state": "exited"
+     },
+     {
+      "pid": 39836,
+      "state": "exited"
+     },
+     {
+      "pid": 40021,
+      "state": "exited"
+     },
+     {
+      "pid": 40148,
+      "state": "exited"
+     },
+     {
+      "pid": 40282,
+      "state": "exited"
+     },
+     {
+      "pid": 40555,
+      "state": "exited"
+     }
+    ],
+    "identity_rule": "MG-029: a running record is live only when the pid is alive and its kernel start-time still equals the recorded ticks (or, when no ticks were recorded, its environment carries the job token)"
+   },
+   "evidence": "/home/hatch/.local/state/motion-render/processes/fixture-standalone-silent.json"
+  }
+ ],
+ "summary": {
+  "total": 27,
+  "pass": 20,
+  "fail": 0,
+  "skipped_with_reason": 7,
+  "not_run": 0,
+  "failed_checks": [],
+  "mandatory_not_run": []
+ }
+}

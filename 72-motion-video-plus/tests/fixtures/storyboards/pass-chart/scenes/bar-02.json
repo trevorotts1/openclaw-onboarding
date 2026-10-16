@@ -1,0 +1,26 @@
+{
+  "id": "bar-02",
+  "semantic_motion_assertions": [
+    {
+      "id": "portrait-final",
+      "kind": "bar_widths",
+      "subject_ids": [
+        "bar-a",
+        "bar-b",
+        "bar-c"
+      ],
+      "frame": 75,
+      "expected_values": [
+        296.0,
+        444.0,
+        740.0
+      ],
+      "tolerance": 1,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "negative": "incorrect_crop",
+  "gate": "MG-038 recomposition measurement (scripts/vsl_mobile.py measure_recomposition)",
+  "command": "python3 assets/examples/reference-suite/tools/run-negative-gates.py (incorrect_crop section)",
+  "artifact": "vertical-crop.mp4",
+  "expected": "fail",
+  "reason_it_fails": "The vertical artifact is a center crop of the landscape master scaled to 1080x1920, not a recomposition: the bar origins fall outside the crop window and the decoded geometry cannot match the portrait derivation, so the MG-038 measurement refuses it by name.",
+  "gate_pass": false,
+  "error": {
+    "code": "VSL_MOBILE_RECOMPOSITION_FAILED",
+    "mg_category": "MG_QC_FAILED",
+    "exit_code": 6,
+    "message": "decoded portrait frames do not carry the portrait geometry: widths at frame 45 measure [0, 0, 0] (portrait derivation [148.0, 222.0, 370.0]), at frame 75 measure [0, 0, 0] (derivation [296.0, 444.0, 740.0]), row centroids measure [680.49, 924.06, 1191.88] (portrait rows center at [570.0, 870.0, 1170.0])"
+  }
+}

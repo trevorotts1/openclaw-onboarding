@@ -275,6 +275,140 @@ def build_xfade_chain(clip_paths: list, durations: list, fade: float,
 
 
 # ----------------------------------------------------------------------------
+# MG-036 (P06) — governed motion clips on the slide-media manifest.
+#
+# A slide whose media choice is motion joins the webinar render as its
+# SAME authenticated Skill 72 component (never flattened to a PNG,
+# never given a second Ken Burns pass, never speed-stretched, never
+# faded twice). prepare_motion_clip conforms the clip to the output
+# geometry and the parent slot under the slide's declared fit:
+#   exact_slot    the clip IS the slot: its probed duration must equal
+#                 the slot within one frame, else refused by name (a
+#                 longer clip requires reauthoring or a parent
+#                 timeline revision, never silent truncation);
+#   hold_final    the clip plays once and its approved stable final
+#                 frame is held (cloned) to the slot end;
+#   approved_loop the loop-qualified clip loops to fill the slot.
+# The prepared clip then enters the SAME per-slide clip list as the
+# stills, so the xfade offsets are computed from ACTUAL probed
+# durations by build_xfade_chain exactly as before, and the parent
+# narration slice is untouched (no second TTS/music branch: motion
+# clips are silent and are encoded with -an).
+# ----------------------------------------------------------------------------
+def resolve_slide_media_sources(slide_media, segs: list) -> dict:
+    """Validate the slide-media map for this render.
+
+    slide_media: {slide_ordinal: {"clip_path": str, "fit": str}} as
+    resolved by build_webinar_video.resolve_slide_media (which
+    hash-verifies every clip against its governed record before the
+    map reaches this module). An entry naming a slide with no slot in
+    the timing track is refused: a motion clip without a parent slot
+    has no governed placement."""
+    if not slide_media:
+        return {}
+    known = {s["slide"] for s in segs}
+    out = {}
+    for slide, entry in slide_media.items():
+        try:
+            slide_no = int(slide)
+        except (TypeError, ValueError):
+            raise WebinarError(
+                f"MOTION_SLOT_INVALID: slide-media key {slide!r} is not "
+                f"a slide number")
+        if slide_no not in known:
+            raise WebinarError(
+                f"MOTION_SLOT_INVALID: slide-media entry for slide "
+                f"{slide_no} has no slot in the timing track")
+        if not isinstance(entry, dict) or not entry.get("clip_path"):
+            raise WebinarError(
+                f"MOTION_PACKAGE_MISSING: slide-media entry for slide "
+                f"{slide_no} carries no clip_path")
+        fit = entry.get("fit") or "hold_final"
+        if fit not in ("exact_slot", "hold_final", "approved_loop"):
+            raise WebinarError(
+                f"MOTION_WEBINAR_POLICY_INVALID: slide {slide_no} fit "
+                f"{fit!r} is not exact_slot, hold_final, or approved_loop")
+        out[slide_no] = {"clip_path": str(entry["clip_path"]), "fit": fit}
+    return out
+
+
+def prepare_motion_clip(entry: dict, slot_duration: float, clip_path: str,
+                        fps: float, crf: int, preset: str,
+                        verbose: bool) -> None:
+    """Conform ONE governed motion clip to its parent slot (see the
+    section banner above). The clip's own motion is preserved exactly:
+    no zoompan, no fade pair (the package's first and last frames are
+    contract states; the xfade join remains the chain's, shared with
+    every clip), no setpts speed change, no crop beyond the standard
+    output conform. Refuses by name when the clip cannot honestly
+    fill the slot."""
+    src = entry["clip_path"]
+    fit = entry["fit"]
+    if not os.path.isfile(src):
+        raise WebinarError(
+            f"MOTION_PACKAGE_MISSING: motion clip not on disk: {src!r}")
+    dur = probe_stream_duration(src)
+    frame = 1.0 / float(fps)
+    tolerance = frame + 0.02
+    conform = (
+        f"scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
+        f"crop={OUT_W}:{OUT_H},fps={fps},format=yuv420p"
+    )
+    stream_loop = []
+    if fit == "exact_slot":
+        if abs(dur - slot_duration) > tolerance:
+            raise WebinarError(
+                f"MOTION_CLIP_EXCEEDS_SLOT: slide clip {src!r} runs "
+                f"{dur:.3f}s but its parent slot is {slot_duration:.3f}s "
+                f"and the fit is exact_slot. A clip that does not fill "
+                f"its slot frame-exactly requires reauthoring or a "
+                f"parent timeline revision — never silent truncation "
+                f"or speed-stretch.")
+        vf = conform
+    elif fit == "hold_final":
+        if dur > slot_duration + tolerance:
+            raise WebinarError(
+                f"MOTION_CLIP_EXCEEDS_SLOT: slide clip {src!r} runs "
+                f"{dur:.3f}s, longer than its parent slot "
+                f"{slot_duration:.3f}s under hold_final. Reauthor the "
+                f"clip or revise the parent timeline — never silent "
+                f"truncation or speed-stretch.")
+        pad = max(0.0, slot_duration - dur)
+        vf = f"{conform},tpad=stop_mode=clone:stop_duration={pad:.3f}"
+    elif fit == "approved_loop":
+        if dur > slot_duration + tolerance:
+            raise WebinarError(
+                f"MOTION_CLIP_EXCEEDS_SLOT: slide clip {src!r} runs "
+                f"{dur:.3f}s, longer than its parent slot "
+                f"{slot_duration:.3f}s under approved_loop; a loop "
+                f"longer than its slot cannot complete one period. "
+                f"Reauthor or revise the parent timeline.")
+        stream_loop = ["-stream_loop", "-1"]
+        vf = conform
+    else:  # resolve_slide_media_sources already refuses this
+        raise WebinarError(
+            f"MOTION_WEBINAR_POLICY_INVALID: unknown fit {fit!r}")
+    cmd = [
+        "ffmpeg", "-y", "-v", "error",
+        *stream_loop,
+        "-i", src,
+        "-vf", vf,
+        "-an",
+        "-c:v", "libx264", "-preset", preset, "-crf", str(crf),
+        "-pix_fmt", "yuv420p",
+        "-t", f"{slot_duration:.3f}",
+        clip_path,
+    ]
+    if verbose:
+        print("    " + " ".join(cmd), file=sys.stderr)
+    proc = run(cmd)
+    if proc.returncode != 0:
+        raise WebinarError(
+            f"ffmpeg motion-clip preparation failed for {src!r}:\n"
+            f"{proc.stderr[-2000:]}")
+
+
+# ----------------------------------------------------------------------------
 # Main render
 # ----------------------------------------------------------------------------
 def render_webinar(slides_dir: str, timing_path: str, audio_path: str, out_path: str,
@@ -283,12 +417,17 @@ def render_webinar(slides_dir: str, timing_path: str, audio_path: str, out_path:
                    bitrate: str = AUDIO_BITRATE_DEFAULT,
                    motion_static: list = None, keep_clips: bool = False,
                    workdir: str = None, verbose: bool = False,
-                   audio_start: float = 0.0, audio_duration: float = None) -> dict:
+                   audio_start: float = 0.0, audio_duration: float = None,
+                   slide_media: dict = None) -> dict:
     """Render the webinar video. Returns the ffprobe verification dict.
 
     motion_static: optional list of slide numbers rendered static (no Ken Burns).
     audio_start: seek offset into the audio source (seconds).
     audio_duration: audio slice length (seconds); default = the video timeline.
+    slide_media: optional {slide: {"clip_path", "fit"}} map of governed
+    motion components (MG-036 P06); those slides join as their
+    preanimated clips instead of Ken Burns stills. None = the
+    unchanged still-only render.
     """
     if audio_start < 0:
         raise WebinarError(f"--audio-start must be >= 0, got {audio_start}")
@@ -314,12 +453,27 @@ def render_webinar(slides_dir: str, timing_path: str, audio_path: str, out_path:
     workdir = workdir or tempfile.mkdtemp(prefix="webinar_ffmpeg_", dir=out_dir)
     os.makedirs(workdir, exist_ok=True)
 
-    # 1) Render per-slide clips.
+    # 1) Render per-slide clips. A slide with a governed motion entry
+    # takes the motion branch (its preanimated component, conformed to
+    # the slot by prepare_motion_clip); every other slide takes the
+    # still path it always has. Both land in the SAME clip list, so
+    # step 2 probes ACTUAL durations for the xfade chain uniformly.
+    media_sources = resolve_slide_media_sources(slide_media, segs)
     clips = []
     for idx, seg in enumerate(segs):
+        clip_path = os.path.join(workdir, f"clip-{idx:02d}.mp4")
+        entry = media_sources.get(seg["slide"])
+        if entry is not None:
+            log(f"render clip {idx+1}/{n}: slide-{seg['slide']:02d} "
+                f"MOTION component fit={entry['fit']} "
+                f"slot={seg['duration']:.3f}s (preanimated: no Ken "
+                f"Burns, no fade pair, no speed change)")
+            prepare_motion_clip(entry, seg["duration"], clip_path,
+                                fps, crf, preset, verbose)
+            clips.append(clip_path)
+            continue
         motion = "static" if seg["slide"] in motion_static else "kenburns"
         filt = build_clip_filter(seg["duration"], fps, motion)
-        clip_path = os.path.join(workdir, f"clip-{idx:02d}.mp4")
         log(f"render clip {idx+1}/{n}: slide-{seg['slide']:02d} "
             f"hold={seg['duration']:.3f}s motion={motion}")
         render_slide_clip(slide_paths[idx], filt, clip_path, seg["duration"],
@@ -422,6 +576,11 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--bitrate", default=AUDIO_BITRATE_DEFAULT)
     ap.add_argument("--motion-static-comma", default="",
                     help="comma list of slide numbers rendered static (no Ken Burns)")
+    ap.add_argument("--slide-media-json", default=None,
+                    help="optional slide-media manifest JSON "
+                         "({'slides': [{slide, clip_path, fit}]}); listed "
+                         "slides join as their governed motion components "
+                         "(MG-036 P06) instead of Ken Burns stills")
     ap.add_argument("--audio-start", type=float, default=0.0,
                     help="seek offset into the audio source in seconds (default 0)")
     ap.add_argument("--audio-duration", type=float, default=None,
@@ -442,6 +601,27 @@ def main(argv=None) -> int:
             print(f"webinar_ffmpeg ERROR: --motion-static-comma must be ints, got {args.motion_static_comma!r}",
                   file=sys.stderr)
             return 1
+    slide_media = None
+    if args.slide_media_json:
+        try:
+            with open(args.slide_media_json, "r", encoding="utf-8") as fh:
+                doc = json.load(fh)
+            entries = doc.get("slides") if isinstance(doc, dict) else None
+            if not isinstance(entries, list):
+                raise ValueError("the manifest carries no 'slides' list")
+            slide_media = {}
+            for e in entries:
+                if isinstance(e, dict) \
+                        and isinstance(e.get("slide"), int) \
+                        and e.get("clip_path"):
+                    slide_media[e["slide"]] = {
+                        "clip_path": e["clip_path"],
+                        "fit": e.get("fit") or "hold_final"}
+        except (OSError, ValueError) as exc:
+            print(f"webinar_ffmpeg ERROR: --slide-media-json "
+                  f"{args.slide_media_json!r} unreadable: {exc}",
+                  file=sys.stderr)
+            return 1
     try:
         render_webinar(
             args.slides, args.timing, args.audio, args.out,
@@ -449,6 +629,7 @@ def main(argv=None) -> int:
             bitrate=args.bitrate, motion_static=motion_static,
             keep_clips=args.keep_clips, workdir=args.workdir, verbose=args.verbose,
             audio_start=args.audio_start, audio_duration=args.audio_duration,
+            slide_media=slide_media,
         )
         return 0
     except WebinarError as exc:

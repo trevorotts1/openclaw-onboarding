@@ -1,0 +1,27 @@
+{
+  "planner_version": "1.0",
+  "storyboard_id": "story-missing-proof",
+  "beats": [
+    {
+      "beat_id": "beat-bars",
+      "idea": "Grow three bars",
+      "viewer_takeaway": "takeaway",
+      "evidence_kind": "literal_evidence",
+      "component_id": "C05",
+      "engine": "remotion",
+      "selection_reason": "Parameterized chart; Remotion default",
+      "reading_order": [
+        "subject",
+        "headline"
+      ],
+      "readable_hold_frames": 45,
+      "transition_owner": "self",
+      "narrative_cue_ref": null,
+      "intentional_stillness": false,
+      "stillness_reason": null,
+      "assertion_ids": [
+        "final-ratios"
+      ]
+    }
+  ]
+}

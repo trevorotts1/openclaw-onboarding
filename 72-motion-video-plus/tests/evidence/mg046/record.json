@@ -1,0 +1,10 @@
+{
+  "item": "MG-046",
+  "recorded_at": "2026-10-15T06:40:59.461Z",
+  "settlement_a_resume": {
+    "killed_mid_render": true,
+    "bar01_artifact_sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+    "bar01_reused_on_resume": true,
+    "assembled_final_frames": 360
+  }
+}

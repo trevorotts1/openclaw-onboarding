@@ -1,0 +1,46 @@
+[
+  {
+    "schema_version": "2.0",
+    "approval_id": "appr-fixture-design",
+    "job_id": "mg025-fixture-job",
+    "company_id": "mg025-company",
+    "scope": "design",
+    "decision": "approved",
+    "subject_revision": "b7505d128e747e9f1227516050f007e29326ddea8f585fa46a077e8544dbc47e",
+    "artifact_refs": [
+      {
+        "path": "design.json",
+        "sha256": "f6f94e5710785b7ab893e0fd4d9cfe5a3921c5d04f13197be5a0b118d5a1ae00"
+      },
+      {
+        "path": "approvals/appr-fixture-design.event.json",
+        "sha256": "47dd32eec26a850cb23e47e1a38befed786e21908ed8b5781b32fefa5784d34b"
+      }
+    ],
+    "actor_id": "fixture-test-issuer",
+    "source_event_ref": "approvals/appr-fixture-design.event.json",
+    "authority_status": "verified"
+  },
+  {
+    "schema_version": "2.0",
+    "approval_id": "appr-fixture-preview",
+    "job_id": "mg025-fixture-job",
+    "company_id": "mg025-company",
+    "scope": "preview",
+    "decision": "approved",
+    "subject_revision": "11c71ea2478d9ea611dacbfc58938823a5ea56b5b9de6f5cca51c323ea324077",
+    "artifact_refs": [
+      {
+        "path": "timeline.json",
+        "sha256": "1f5382e6e6f98be5e69d0347f0462db77afd17bcdf92841af73e90ef1efdaa80"
+      },
+      {
+        "path": "approvals/appr-fixture-preview.event.json",
+        "sha256": "21f2f901fb6c66d2928021f9273ed35ac2c1004a146310c94a33cb171fc11f26"
+      }
+    ],
+    "actor_id": "fixture-test-issuer",
+    "source_event_ref": "approvals/appr-fixture-preview.event.json",
+    "authority_status": "verified"
+  }
+]

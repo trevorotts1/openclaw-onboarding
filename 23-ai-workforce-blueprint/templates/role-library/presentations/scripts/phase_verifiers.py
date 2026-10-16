@@ -3838,6 +3838,81 @@ def _verify_bundle_gate(run_dir: Path) -> Tuple[bool, List[str]]:
     return True, []
 
 
+def _verify_motion_phase(run_dir: Path) -> Tuple[bool, List[str]]:
+    """P8.15-MOTION (order 8.15, script motion_phase.py, Skill 72 MG-036):
+    the governed motion audit's substance check. motion.json must exist
+    with a phase_audit block recording no failures; every slide recorded
+    embedded is re-proven HERE against the delivered deck (its media
+    parts are hashed by this verifier, independently of the phase
+    script's own audit, so a record cannot attest an embed the deck does
+    not carry); every degraded slide must carry its reason code; the
+    slide-media manifest must exist and parse. A deck that elected no
+    motion passes: the phase always runs and non-election is a recorded
+    outcome, not a failure (the P-U deferred-gate PASS contract)."""
+    import hashlib as _hashlib
+    import zipfile as _zipfile
+    record = _read_json(run_dir / "working" / "checkpoints" / "motion.json")
+    if not isinstance(record, dict):
+        return False, ["working/checkpoints/motion.json: missing or not a "
+                       "JSON object — the motion phase has not recorded "
+                       "its audit"]
+    media_manifest = _read_json(
+        run_dir / "working" / "checkpoints" / "slide_media_manifest.json")
+    if not isinstance(media_manifest, dict):
+        return False, ["working/checkpoints/slide_media_manifest.json: "
+                       "missing or not a JSON object"]
+    audit = record.get("phase_audit")
+    if not isinstance(audit, dict):
+        return False, ["motion.json carries no phase_audit block — the "
+                       "P8.15-MOTION script has not run"]
+    failures = [f for f in (audit.get("failures") or [])
+                if isinstance(f, dict)]
+    if failures:
+        return False, [f"motion.json phase_audit records failure: "
+                       f"{f.get('code')}: {f.get('detail')}"
+                       for f in failures]
+    reasons: List[str] = []
+    slides = [e for e in (record.get("slides") or []) if isinstance(e, dict)]
+    for entry in slides:
+        if entry.get("status") == "degraded" \
+                and not entry.get("reason_code"):
+            reasons.append(
+                f"slide {entry.get('slide')}: degraded motion slide "
+                f"carries no reason code")
+    embedded = [e for e in slides if e.get("status") == "embedded"]
+    if embedded:
+        decks = [p for p in run_dir.rglob("*-FINAL.pptx") if p.is_file()]
+        if not decks and (run_dir / "out.pptx").is_file():
+            decks = [run_dir / "out.pptx"]
+        if not decks:
+            reasons.append(
+                "motion.json claims embedded motion but no assembled "
+                "deck (*-FINAL.pptx) exists under the run dir")
+        else:
+            deck = max(decks, key=lambda p: p.stat().st_mtime)
+            hashes = set()
+            try:
+                with _zipfile.ZipFile(deck) as zf:
+                    for name in zf.namelist():
+                        if name.startswith("ppt/media/") and name.lower() \
+                                .endswith((".mp4", ".mov", ".m4v", ".webm")):
+                            hashes.add(_hashlib.sha256(
+                                zf.read(name)).hexdigest())
+            except Exception as exc:  # noqa: BLE001
+                reasons.append(f"delivered deck {deck.name} is "
+                               f"unreadable: {exc!r}")
+            for entry in embedded:
+                if (entry.get("artifact_sha256") or "") not in hashes:
+                    reasons.append(
+                        f"slide {entry.get('slide')}: recorded embedded "
+                        f"but the delivered deck {deck.name} carries no "
+                        f"media part byte-identical to the authenticated "
+                        f"component")
+    if reasons:
+        return False, reasons
+    return True, []
+
+
 
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
@@ -3954,6 +4029,8 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf",
                                                 _MIN_BYTES["deck_pdf"],
                                                 scale_by_slides=True, floor_formula="pdf"),
+    # MG-036: governed motion audit (Skill 72) — record-vs-deck embed proof.
+    "P8.15-MOTION":       _verify_motion_phase,
     "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf",
                                                 _MIN_BYTES["guide_pdf"],
                                                 scale_by_slides=True, floor_formula="guide"),

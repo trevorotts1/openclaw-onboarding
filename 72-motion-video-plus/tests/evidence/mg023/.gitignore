@@ -1,0 +1,6 @@
+# MG-023 rendered outputs and scratch jobs are regenerable at any
+# time (tests/evidence/mg023/repro and the acceptance verifier);
+# only the records are committed.
+outputs/
+work/
+__pycache__/

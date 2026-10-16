@@ -1,0 +1,42 @@
+{
+  "schema_version": "2.0",
+  "id": "bar-01",
+  "component_id": "C05",
+  "component_version": "1.0.0",
+  "engine": "remotion",
+  "layout_variant": "portrait",
+  "duration_frames": 180,
+  "asset_ids": [],
+  "data_path": "data/bars.json",
+  "design_path": "design.json",
+  "copy": {"headline": "Compare the three groups", "disclosure": "Illustrative example"},
+  "motion": {
+    "kind": "linear_bar_reveal",
+    "start_frame": 15,
+    "end_frame_exclusive": 75,
+    "hold_to_frame_exclusive": 180,
+    "overshoot_data": false
+  },
+  "semantic_motion_assertions": [
+    {
+      "id": "half-reveal",
+      "kind": "bar_widths",
+      "subject_ids": ["bar-a", "bar-b", "bar-c"],
+      "frame": 45,
+      "expected_values": [148.0, 222.0, 370.0],
+      "tolerance": 1,
+      "unit": "source_px",
+      "evidence": ["geometry", "decoded_frame", "full_fps_clip"]
+    },
+    {
+      "id": "final-ratios",
+      "kind": "bar_widths",
+      "subject_ids": ["bar-a", "bar-b", "bar-c"],
+      "frame": 75,
+      "expected_values": [296.0, 444.0, 740],
+      "tolerance": 1,
+      "unit": "source_px",
+      "evidence": ["geometry", "decoded_frame"]
+    }
+  ]
+}

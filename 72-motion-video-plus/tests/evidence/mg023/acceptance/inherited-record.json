@@ -1,0 +1,22 @@
+{
+  "allOk": true,
+  "checks": [
+    {
+      "check": "no_audio_stream",
+      "ok": true,
+      "streams": [
+        "video"
+      ]
+    },
+    {
+      "check": "exclusion_recorded",
+      "ok": true
+    },
+    {
+      "bandAmplitude220HzOwn": 5056,
+      "check": "contrast_same_package_as_own_carries_the_bed",
+      "ok": true
+    }
+  ],
+  "example": "inherited"
+}

@@ -1,0 +1,174 @@
+{
+  "schema_version": "2.0",
+  "id": "c04-flow-retitled",
+  "component_id": "C04",
+  "component_version": "1.0.0",
+  "engine": "remotion",
+  "layout_variant": "landscape",
+  "duration_frames": 180,
+  "copy": {
+    "headline": "From first contact to finished delivery",
+    "disclosure": "Illustrative mechanism. The diagram shows the process; it does not prove a business outcome."
+  },
+  "diagram": {
+    "pattern": "flow_through",
+    "nodes": [
+      {
+        "id": "intake",
+        "label": "Intake",
+        "kind": "input"
+      },
+      {
+        "id": "qualify",
+        "label": "Qualify",
+        "kind": "stage"
+      },
+      {
+        "id": "proposal",
+        "label": "Proposal",
+        "kind": "stage"
+      },
+      {
+        "id": "delivery",
+        "label": "Delivery",
+        "kind": "stage"
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-intake-qualify",
+        "source": "intake",
+        "target": "qualify",
+        "kind": "flow"
+      },
+      {
+        "id": "edge-qualify-proposal",
+        "source": "qualify",
+        "target": "proposal",
+        "kind": "flow"
+      },
+      {
+        "id": "edge-proposal-delivery",
+        "source": "proposal",
+        "target": "delivery",
+        "kind": "flow"
+      }
+    ],
+    "subject": {
+      "id": "lead-001",
+      "label": "Lead",
+      "path_node_ids": [
+        "intake",
+        "qualify",
+        "proposal",
+        "delivery"
+      ]
+    },
+    "selected_branch_edge_id": null,
+    "relief": null,
+    "timing": {
+      "start_frame": 15,
+      "end_frame_exclusive": 135,
+      "hold_to_frame_exclusive": 180
+    },
+    "canvas": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 30
+    }
+  },
+  "semantic_motion_assertions": [
+    {
+      "id": "c04-timeline",
+      "kind": "timeline_bounds",
+      "subject_ids": [
+        "lead-001"
+      ],
+      "frame": 0,
+      "expected_values": [
+        15,
+        135,
+        180,
+        180
+      ],
+      "tolerance": 0,
+      "unit": "frames",
+      "evidence": [
+        "geometry"
+      ]
+    },
+    {
+      "id": "c04-labels-readable",
+      "kind": "text_readability",
+      "subject_ids": [
+        "intake",
+        "qualify",
+        "proposal",
+        "delivery"
+      ],
+      "frame": 179,
+      "expected_values": [
+        0
+      ],
+      "tolerance": 0,
+      "unit": "normalized",
+      "evidence": [
+        "geometry"
+      ]
+    },
+    {
+      "id": "subject-at-30",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "lead-001"
+      ],
+      "frame": 30,
+      "expected_values": [
+        581.31,
+        540
+      ],
+      "tolerance": 2,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    },
+    {
+      "id": "subject-at-75",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "lead-001"
+      ],
+      "frame": 75,
+      "expected_values": [
+        949.75,
+        540
+      ],
+      "tolerance": 2,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    },
+    {
+      "id": "subject-at-170",
+      "kind": "subject_identity",
+      "subject_ids": [
+        "lead-001"
+      ],
+      "frame": 170,
+      "expected_values": [
+        1441,
+        540
+      ],
+      "tolerance": 2,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    }
+  ]
+}

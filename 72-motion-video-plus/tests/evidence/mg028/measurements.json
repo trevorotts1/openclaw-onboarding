@@ -1,0 +1,160 @@
+{
+  "item": "MG-028",
+  "kind": "measured render capacity (feeds src/resources/profiles.ts)",
+  "generatedAt": "2026-10-14T23:55:36.047Z",
+  "machine": {
+    "totalMemMB": 7935,
+    "freeMemMB": 3596,
+    "cpuCount": 2,
+    "platform": "linux x64",
+    "nodeVersion": "v24.20.0",
+    "measuredAt": "2026-10-14T23:55:36.048Z"
+  },
+  "runtime": {
+    "lockId": "lock-314fc289b233ca9e",
+    "lockTimestamp": "2026-10-14T21:54:49.483Z",
+    "remotion": "4.0.535",
+    "hyperframes": "0.8.155"
+  },
+  "method": {
+    "sampling": "parent polls the child render process tree every 50 ms via /proc: peak RSS sum, peak browser main-process count (browser executable in cmdline, no --type= argument), peak process count, wall time per child-reported phase",
+    "scenes": "Remotion: C05 fixture job (tests/fixtures/modes/powerpoint_graphic, 180 frames, 1920x1080, 30 fps): first still (bundle build included), warm-bundle still, preview render. Hyperframes: the same fixture retargeted to the hyperframes engine: validate (compositions + lint + check), still (snapshot), preview render (CLI workers 1). Peaks are reported per phase from timestamp-aligned samples.",
+    "encode": "standalone ffmpeg libx264 crf 16 yuv420p re-encode of each produced preview, timed and sampled the same way, isolating the encode share of a render",
+    "disk": "artifact byte sizes from the child reports; hyperframes job work dir total after render"
+  },
+  "uncertainty": [
+    "RSS sums count shared pages once per process, so tree peaks overstate true unique memory; the overstatement is the safe direction for a budget and is why profiles add a stated margin rather than trimming to the number",
+    "50 ms sampling can miss spikes shorter than the interval; the 1.30 profile margin covers this",
+    "this box is shared with other build work: wall times are load-dependent and inflate under contention, while RSS peaks are comparatively stable; treat peaks as +/-10 percent and wall times as upper bounds",
+    "Remotion still timings depend on the bundle cache state, which the record states explicitly",
+    "Hyperframes peaked at multiple Chromium main processes inside one render: the CLI multiplies browsers internally, which is why profiles are sized from whole-tree peaks and the budget counts operations, not browser processes"
+  ],
+  "remotion": {
+    "child": {
+      "engine": "remotion",
+      "bundleCacheWarmBefore": true,
+      "phases": [
+        {
+          "name": "stillFirst",
+          "startedAt": 1792021858326,
+          "endedAt": 1792021875123
+        },
+        {
+          "name": "stillWarmBundle",
+          "startedAt": 1792021875123,
+          "endedAt": 1792021884624
+        },
+        {
+          "name": "previewRender",
+          "startedAt": 1792021884624,
+          "endedAt": 1792021943089
+        }
+      ],
+      "outputs": [
+        {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg028/.scratch/mg028-measure/remotion/remotion-out/renders/remotion/still-landscape-f75.png",
+          "bytes": 101204
+        },
+        {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg028/.scratch/mg028-measure/remotion/remotion-out/renders/remotion/preview.mp4",
+          "bytes": 62659
+        }
+      ]
+    },
+    "wallMs": 89712,
+    "peakRssMB": 1273,
+    "peakProcesses": 8,
+    "peakBrowserMains": 1,
+    "phasePeaks": {
+      "stillFirst": {
+        "peakRssMB": 623,
+        "peakBrowserMains": 1,
+        "peakProcesses": 6,
+        "wallMs": 16797
+      },
+      "stillWarmBundle": {
+        "peakRssMB": 624,
+        "peakBrowserMains": 1,
+        "peakProcesses": 6,
+        "wallMs": 9501
+      },
+      "previewRender": {
+        "peakRssMB": 1273,
+        "peakBrowserMains": 1,
+        "peakProcesses": 8,
+        "wallMs": 58465
+      }
+    }
+  },
+  "hyperframes": {
+    "child": {
+      "engine": "hyperframes",
+      "phases": [
+        {
+          "name": "validate",
+          "startedAt": 1792021945259,
+          "endedAt": 1792021984985
+        },
+        {
+          "name": "stillSnapshot",
+          "startedAt": 1792021984985,
+          "endedAt": 1792022007615
+        },
+        {
+          "name": "previewRender",
+          "startedAt": 1792022007615,
+          "endedAt": 1792022102288
+        }
+      ],
+      "outputs": [
+        {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg028/.scratch/mg028-measure/hyperframes/c05-hf-job/renders/hyperframes/bar-01/still-75.png",
+          "bytes": 65575
+        },
+        {
+          "path": "/home/hatch/workspace/skill72-v2/wt-mg028/.scratch/mg028-measure/hyperframes/c05-hf-job/renders/hyperframes/preview.mp4",
+          "bytes": 184408
+        }
+      ],
+      "jobWorkBytes": 1257784
+    },
+    "wallMs": 159083,
+    "peakRssMB": 991,
+    "peakProcesses": 10,
+    "peakBrowserMains": 4,
+    "phasePeaks": {
+      "validate": {
+        "peakRssMB": 900,
+        "peakBrowserMains": 1,
+        "peakProcesses": 10,
+        "wallMs": 39726
+      },
+      "stillSnapshot": {
+        "peakRssMB": 811,
+        "peakBrowserMains": 1,
+        "peakProcesses": 8,
+        "wallMs": 22630
+      },
+      "previewRender": {
+        "peakRssMB": 991,
+        "peakBrowserMains": 4,
+        "peakProcesses": 9,
+        "wallMs": 94673
+      }
+    }
+  },
+  "encode": {
+    "remotion": {
+      "sourceBytes": 62659,
+      "wallMs": 20391,
+      "peakRssMB": 517,
+      "outputBytes": 62826
+    },
+    "hyperframes": {
+      "sourceBytes": 184408,
+      "wallMs": 13330,
+      "peakRssMB": 511,
+      "outputBytes": 175966
+    }
+  }
+}

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MG-026 determinism fixture: wall clock drift scene</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #F7F4EE; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+           background: #F7F4EE; font-family: sans-serif; color: #192A38; }
+  #headline { position: absolute; left: 120px; top: 90px; font-size: 96px; font-weight: 700; }
+  #bar { position: absolute; top: 520px; width: 480px; height: 90px; background: #C04A26; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="headline">Wall clock drift scene</div>
+  <div id="bar"></div>
+</div>
+<script>
+  // MG-026 verifier fixture: a DELIBERATELY non-seek-safe scene. The
+  // bar position reads Date.now(), the wall clock, instead of the
+  // scene time t it was handed. Two renders of the same frame at
+  // different wall clock moments therefore disagree, which is exactly
+  // the timer-driven drift MG-026 exists to catch: the verifier must
+  // FAIL this scene. Fixture only: this pattern is forbidden in
+  // shipped scene code (references/animation-contract.md).
+  window.__sceneDuration = 6;
+  const bar = document.getElementById("bar");
+  window.__setTime = function (t) {
+    // The bug, on purpose: position comes from the wall clock, and t
+    // is ignored. The division makes the offset move about 143 px per
+    // second of wall time, so even a sub-second delay between two
+    // captures of the same frame moves the bar visibly.
+    const offset = Math.floor(Date.now() / 7) % 500;
+    bar.style.left = (420 + offset) + "px";
+  };
+  window.__setTime(0);
+</script>
+</body>
+</html>
