@@ -327,7 +327,7 @@ If the user does not specify which one, default to Funnels.
 > Tier-2 gated email-2FA via tools/ghl_auth.py — ONLY when Tier-1 fails AND
 > the policy gates allow; Tier-3 fail-loud — never a silent UI login.
 
-**Tier-1 — TOKEN-ONLY (default, unattended).** The builder seeds the session from `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (tools/seed-ghl-auth.py + tools/inject-ghl-auth.sh) and NEVER renders a login form and NEVER sees a 2FA prompt. If the token seed fails, the builder STOPS with a non-zero exit — it does NOT fall back to a login form.
+**Tier-1 — TOKEN-ONLY (default, unattended).** The builder seeds the session from `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` (tools/seed-ghl-auth.py + tools/inject-ghl-auth.sh) and NEVER renders a login form and NEVER sees a 2FA prompt. If the token seed fails, the builder STOPS with a non-zero exit — it does NOT fall back to a login form. Resolution is the shared resolver (`tools/ghl_secret_resolver.py`): `seed-ghl-auth.py --check` performs the FULL resolution (the `GHL_REFRESH_TOKEN_FILE` indirection, then the env alias chain GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN / CAF_FIREBASE_REFRESH_TOKEN / GHL_FIREBASE_REFRESH_TOKEN, then the canonical store), so a token that lives only in the store or only behind a `*_FILE` variable is found, not false-failed; the grep below is only a spot check of the canonical name in the canonical file.
 
 **ALWAYS check for an existing token before prompting the user. Presence-only checks — NEVER print the token value:**
 

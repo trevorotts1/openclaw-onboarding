@@ -17,7 +17,9 @@ This assumes your HTML code is already written and ready to paste. This guide is
 > **GHL-AUTH-DOCTRINE: TOKEN-ONLY (D7) — refresh-token seed is the only auth path; NO auto UI-login / password / 2FA.**
 > The Firebase refresh token ALONE seeds a
 > logged-in session. There is NO "refresh-token vs login" choice: the token-seed
-> is the SOLE auth path. On token failure the builder STOPS and reports — it
+> is the SOLE auth path for ordinary builds (the gated Tier-2 bootstrap
+> below is the orchestrator's alone: never a build's, never silent). On
+> token failure the builder STOPS and reports — it
 > NEVER auto-opens the Sign-in form or a two-factor prompt, and NEVER types a
 > login/password. Fix = re-grab a fresh refresh token via the Convert and Flow
 > Token Grabber Chrome extension, then retry the seed. GHL_AGENCY_EMAIL /

@@ -58,8 +58,10 @@ drives the browser, pastes the code, and handles all the clicks and navigation.
 > `tools/ghl_rest_canvas.py`; its per-gate results in `gates.json` stay
 > PENDING-LIVE-RUN), Skill 62's U26 live proof (deliberately HELD), and the
 > full-funnel publish E2E. The sole auth blocker for every owed run is a fresh
-> Firebase refresh token — the token-seed is the sole auth path; there is NO
-> login-form / two-factor run, attended or otherwise, per the TOKEN-ONLY doctrine
+> Firebase refresh token — the token-seed is the sole auth path for these
+> owed runs; there is NO login-form / two-factor run, attended or otherwise,
+> for them (the gated Tier-2 bootstrap exists in tools/ghl_auth.py but has
+> no live proof yet: LIVE_PROOF_PENDING), per the TOKEN-ONLY doctrine
 > in §2/D7. No live run is scheduled or approved; the operator steps that clear
 > ONLY the owed half are in `OPERATOR-LIVE-CHECKLIST.md`.
 
@@ -162,11 +164,14 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 - Vercel Setup (skill 08) - only for Mode 2 iframe-embed of rich payloads
 - Playwright installed - FALLBACK engine for known-hard flows
 - GoHighLevel auth in ~/.openclaw/secrets/.env: a Firebase refresh token
-  (GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN — the ONLY auth path; seeds a logged-in
-  session with NO login form, NO password, NO two-factor). CLIENT keys only.
-  GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD (or GHL_EMAIL / GHL_PASSWORD) are a
-  DOCUMENTED, MANUAL last resort for a human operator ONLY — they are NEVER
-  auto-invoked by this skill, and there is NO automatic UI-login / 2FA fallback.
+  (GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN: the only auth path for ordinary
+  builds; seeds a logged-in session with NO login form, NO password, NO
+  two-factor). CLIENT keys only.
+  GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD (or GHL_EMAIL / GHL_PASSWORD) are
+  used ONLY by the gated Tier-2 bootstrap inside tools/ghl_auth.py (see the
+  AUTH LADDER below), never by a build directly and never silently; outside
+  that bootstrap they remain a DOCUMENTED, MANUAL last resort for a human
+  operator ONLY.
   AUTH LADDER — 3 tiers, identical everywhere it is stated (Prerequisites
   auth bullet; Critical Things to Know; carried verbatim in INSTALL.md):
   Tier-1 TOKEN-ONLY (Firebase refresh) — the default, unattended path;
@@ -201,6 +206,18 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   resolver's RuntimeError already does). This is the fix for the six-month
   false-fail where the image step reported "GHL LOCATION PIT not found" on a token
   that was in the store the whole time. See v2-autonomous-build-sop.md §2.0.1.
+  **_FILE indirection + the one shared resolver (S06-04).** Every credential
+  in this skill (the Firebase refresh token, the LOCATION PIT, the location
+  id) resolves through ONE shared resolver, `tools/ghl_secret_resolver.py`,
+  with the same precedence everywhere: (1) a `*_FILE` variable
+  (`GHL_REFRESH_TOKEN_FILE` / `GHL_LOCATION_PIT_FILE` /
+  `GHL_LOCATION_ID_FILE`) naming a file whose CONTENTS are the value (the
+  Docker-secrets / mounted-file shape); (2) the live env across the alias
+  chain; (3) the canonical stores above. Placeholder-shaped values are
+  skipped at every layer. A `*_FILE` variable that is set but whose file is
+  missing, unreadable, empty, or group/world-accessible fails loudly,
+  naming the variable and the path (never the contents); the file must be
+  mode 0600. Resolved values are never printed or logged.
 
 ## What This Skill Covers
 
@@ -212,7 +229,10 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
    dashboard). NO login form is rendered, NO password is typed, two-factor is
    NEVER reached. On token failure the builder STOPS and reports — it NEVER
    auto-opens the Sign-in form or a two-factor prompt and NEVER falls back to a
-   login/password.
+   login/password. The sole exception is the orchestrator's gated Tier-2
+   bootstrap (`tools/ghl_auth.py`), which a build never invokes directly and
+   which is never silent: it runs only when its four gates pass and
+   self-heals back to token-only (see Critical Things to Know).
 3. **GHL's iframe architecture** - The page builder loads inside nested
    iframes. You cannot just click elements on the main page. The skill
    explains how to find and switch into the correct iframe context.
@@ -476,14 +496,23 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   non-zero exit, precise client instruction. ALL login/password/2FA code lives in
   EXACTLY ONE module (tools/ghl_auth_fallback.py + its browser helper
   tools/ghl_login_browser.py); CI guard `scripts/guard-ghl-auth-fallback.sh` locks
-  the invariants.
+  the invariants. Sanctioned Tier-1 delegates: `tools/browser_manager.sh`
+  (session-expired self-heal) and `tools/ghl_form_builder.py`
+  (seed-and-land) shell `tools/seed-ghl-auth.py` directly for one bounded
+  re-seed each; they are delegates of the orchestrator's Tier 1, not
+  separate auth paths, and they inherit the full shared resolution (env,
+  stores, `*_FILE`) through the seed process.
 - HARD RULE: NEVER ask for, type, or fall back to a GHL login/email/password or a
   two-factor (2FA) prompt. On token failure (no token / revoked / seed does not
   log in) the builder STOPS and reports (non-zero exit) — it MUST NOT auto-open
   the Sign-in form or a two-factor prompt. Fix = re-grab a fresh refresh token via
   the Convert and Flow Token Grabber Chrome extension, then retry the seed.
   GHL_AGENCY_EMAIL / GHL_AGENCY_PASSWORD = MANUAL operator-only last resort, never
-  auto-invoked.
+  auto-invoked. Scope: this rule binds the builder. The only login code in
+  the skill is the gated Tier-2 bootstrap in tools/ghl_auth_fallback.py,
+  entered solely through the orchestrator (tools/ghl_auth.py) when its four
+  gates pass; it is never invoked by a build directly and never runs
+  silently.
 
 ### Adaptive browser lanes
 
@@ -499,7 +528,13 @@ Lanes are selected per host by the capability probe — never assumed:
 | 5 | CUA | NOT in Skill 6 yet — future last resort only |
 
 Run the capability probe (`tools/capability_probe.py`) before a build; its JSON
-is the runtime source of truth. The probe selects Lane 1 only when the extension
+is the runtime source of truth. Probe secret booleans are env-presence
+checks against the chains declared in Prerequisites only: a credential
+provisioned solely under the CAF refresh alias, solely in a store, or
+solely via a `*_FILE` variable reads as not-present in the probe even
+though the orchestrator and the media resolver resolve it. Treat a false
+boolean as "not in the live env under a declared name", never as
+"absent from the box". The probe selects Lane 1 only when the extension
 is installed and current; otherwise it falls to Lane 2 and warns, naming the
 preflight script. Capability-class mapping and lane detail live in
 `ENV-MATRIX.md` ("Capability classes").
