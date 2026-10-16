@@ -9,7 +9,10 @@ by live snapshots and the gate registry (gates.json, D8). This module owns the
 deterministic, mechanical parts so they are never improvised:
 
   * the page MANIFEST (A0.4) — the ordered build plan + resume key
-  * the per-page LEDGER (D10/D12) — /tmp/<run-id>/<funnel>/<step>.json
+  * the per-page LEDGER (D10/D12) — <ledger-root>/<run-id>/<funnel>/<step>.json
+    (S06-05: the ledger root is the durable root — see ledger_root(); /tmp was
+    its pre-S06-05 home and survives only as a labelled ephemeral fallback +
+    a repair-in-place read fallback for runs started before the move)
   * the ZHC naming prefix enforcement (guardrail 2)
   * the hard sub-account match gate helper (A2.3)
   * the runtime-gate contract loader (gates.json) — captured vs runtime
@@ -281,10 +284,80 @@ def build_manifest(funnel_name: str, surface: str, pages: list[dict]) -> dict:
 
 # ── Ledger (D10 / D12 resume) ─────────────────────────────────────────────────
 
-def _ledger_path(run_id: str, funnel: str, step: str) -> str:
+LEDGER_ROOT_ENV = "GHL_LEDGER_ROOT"
+
+# Where per-page ledgers lived before S06-05: directly under /tmp — an
+# ephemeral root (tmpfs inside a container; wiped on recreate/reboot), which
+# is exactly how a resumable run used to vanish mid-build on a VPS. Kept
+# ONLY as (a) the labelled last-resort root when no durable root resolves
+# and (b) a read fallback (SK6002 repair-in-place): a run started before
+# the move stays resumable; nothing new is written there when a durable
+# root exists.
+_LEGACY_LEDGER_BASE = "/tmp"
+
+
+def _durable_root_for_ledger() -> str:
+    """``browser_manager.durable_root()`` via this module's usual lazy
+    import (ENV-MATRIX adaptation contract item 1: detect ONLY via that
+    primitive). "" on any failure — the caller then takes the labelled
+    ephemeral fallback rather than crashing a ledger call."""
+    try:
+        import browser_manager  # lazy: keeps ghl_builder importable standalone
+
+        return browser_manager.durable_root()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def ledger_root(env: dict | None = None) -> str:
+    """Where the per-page ledger lives (S06-05).
+
+    Resolution order:
+      1. ``GHL_LEDGER_ROOT`` env — explicit operator/test override (a
+         dispatcher that owns a run-evidence root points the ledger at it
+         through this).
+      2. ``<durable_root()>/skill6-ledgers`` — on a VPS that is
+         ``/data/.openclaw/skill6-ledgers`` (survives a container
+         recreate); on a Mac ``~/.openclaw/skill6-ledgers``.
+      3. ``/tmp`` — ONLY when no durable root resolves (a genuinely
+         ephemeral local run on a bare checkout). ``ledger_root_is_ephemeral``
+         labels this case wherever the root is reported; durable run state
+         must never silently live on tmpfs.
+    """
+    env = env if env is not None else os.environ
+    override = (env.get(LEDGER_ROOT_ENV) or "").strip()
+    if override:
+        return override
+    durable = _durable_root_for_ledger()
+    if durable:
+        return os.path.join(durable, "skill6-ledgers")
+    return _LEGACY_LEDGER_BASE
+
+
+def ledger_root_is_ephemeral(env: dict | None = None) -> bool:
+    """True iff the resolved ledger root is the /tmp fallback (or an explicit
+    override pointing into /tmp) — the RUN REPORT labels such a root
+    EPHEMERAL so a /tmp-resident ledger is never mistaken for durable run
+    state (the pre-S06-05 silent failure)."""
+    root = os.path.abspath(ledger_root(env))
+    return root == _LEGACY_LEDGER_BASE or root.startswith(
+        _LEGACY_LEDGER_BASE + os.sep
+    )
+
+
+def _ledger_relpath(run_id: str, funnel: str, step: str) -> str:
     safe_funnel = re.sub(r"[^A-Za-z0-9_-]+", "_", funnel)
     safe_step = re.sub(r"[^A-Za-z0-9_-]+", "_", step)
-    return os.path.join("/tmp", run_id, safe_funnel, f"{safe_step}.json")
+    return os.path.join(run_id, safe_funnel, f"{safe_step}.json")
+
+
+def _ledger_path(run_id: str, funnel: str, step: str) -> str:
+    return os.path.join(ledger_root(), _ledger_relpath(run_id, funnel, step))
+
+
+def _legacy_ledger_path(run_id: str, funnel: str, step: str) -> str:
+    """The pre-S06-05 location of the same ledger record (read fallback only)."""
+    return os.path.join(_LEGACY_LEDGER_BASE, _ledger_relpath(run_id, funnel, step))
 
 
 def ledger_write(run_id: str, funnel: str, step: str, state: str, extra: dict | None = None) -> str:
@@ -300,9 +373,15 @@ def ledger_write(run_id: str, funnel: str, step: str, state: str, extra: dict | 
     path = _ledger_path(run_id, funnel, step)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     prev = {}
-    if os.path.isfile(path):
+    # Repair-in-place merge base (S06-05): if this page's record exists only
+    # at the pre-move /tmp location, merge from THERE — otherwise the
+    # never-rewind guard below would compare against an empty prev and a
+    # post-move write could silently rewind a page the old run had already
+    # advanced. The write itself always lands at the new root.
+    prev_path = path if os.path.isfile(path) else _legacy_ledger_path(run_id, funnel, step)
+    if os.path.isfile(prev_path):
         try:
-            prev = json.load(open(path))
+            prev = json.load(open(prev_path))
         except Exception:
             prev = {}
     prev_state = prev.get("state")
@@ -321,6 +400,10 @@ def ledger_write(run_id: str, funnel: str, step: str, state: str, extra: dict | 
 
 def ledger_read(run_id: str, funnel: str, step: str) -> dict:
     path = _ledger_path(run_id, funnel, step)
+    if not os.path.isfile(path):
+        # Repair-in-place read fallback (S06-05): a run started before the
+        # ledger-root move left its records under /tmp — still resumable.
+        path = _legacy_ledger_path(run_id, funnel, step)
     if not os.path.isfile(path):
         return {"state": None}
     try:
@@ -1952,13 +2035,21 @@ def _emit_builder_run_report(rc: int) -> None:
         resume_cmd = " ".join(shlex.quote(x) for x in
                               [sys.executable, os.path.abspath(__file__), *argv])
 
+    # S06-05: the report's evidence_root row names this run's LEDGER dir —
+    # which used to be hardcoded as /tmp/<run_id>. It now follows
+    # ledger_root() (the durable root), and is LABELLED when the resolved
+    # root is the ephemeral /tmp fallback so nobody mistakes it for
+    # durable run state.
+    _ledger_dir = os.path.join(ledger_root(), run_id) if run_id else ""
+    if _ledger_dir and ledger_root_is_ephemeral():
+        _ledger_dir += " [EPHEMERAL ledger root: /tmp is wiped on recreate/reboot — not durable run state]"
     status = (ghl_run_state.STATUS_OK if rc == 0 else ghl_run_state.STATUS_FAILED)
     ghl_run_state.emit_run_report(
         builder="ghl_builder",
         run_id=run_id,
         status=status,
         dry_run=False,
-        evidence_root=(os.path.join("/tmp", run_id) if run_id else ""),
+        evidence_root=_ledger_dir,
         duration_s=time.monotonic() - _MAIN_STARTED[0],
         script_path=__file__,
         error="" if rc == 0 else f"exit code {rc}",

@@ -793,9 +793,14 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 >
 > **Run evidence lives OUTSIDE the skill dir.** Ledgers, routing receipts,
 > scorecards, and screenshots are written to a run-evidence root
-> (`skill6-fix/v2-<RUN_ID>/` or `/tmp`), never inside `06-ghl-install-pages/`,
+> (`skill6-fix/v2-<RUN_ID>/`), never inside `06-ghl-install-pages/`,
 > so a skill UPDATE (which overlays the whole skill dir) can never wipe a build's
 > history. Any new tool MUST keep durable run state out of the skill dir.
+> `/tmp` is NOT a run-evidence root: it is ephemeral scratch only, and on a
+> VPS/container it is tmpfs that a recreate wipes, so durable run state
+> (ledgers, run state, receipts) belongs under the durable root instead
+> (S06-05; see the provisioning contract in `ENV-MATRIX.md` and
+> `ghl_builder.ledger_root()` / `ghl_run_state.default_state_root()`).
 >
 > **Page inventory + staged lifecycle — nothing auto-deletes client content
 > (U31/B-U17).** `tools/ghl_inventory.py` closes the VERIFIED absence noted

@@ -259,6 +259,7 @@ with sync_playwright() as p:
 Configuration notes:
 - Always use launch_persistent_context (not regular launch). This saves login session so re-authentication is not required on every run.
 - The user_data_dir ("./ghl_session") is where the browser saves cookies and session data. This folder persists between runs.
+- VPS/container: the `~/.openclaw/playwright-data/ghl-install-pages` path above is the Mac form (on a Mac the durable root IS `~/.openclaw`). On a VPS the persistent-context dir MUST sit under the durable root (`tools/browser_manager.py` `durable_root()`): `/data/.openclaw/playwright-data/ghl-install-pages` on a /data-backed box. Never point it at a container-layer path: a recreate wipes it and the saved login with it (see the provisioning contract in `ENV-MATRIX.md`).
 - headless MUST stay True (D6 HEADLESS-ONLY). A visible window is forbidden, dev OR client. Authentication on this lane is still the Step 6 auth ladder (token-only primary, gated Tier-2, fail-loud Tier-3) — the fallback lane changes the driver, never the auth doctrine.
 - On the fallback lane only, an existing persistent session at `~/.openclaw/playwright-data/ghl-install-pages` may carry logged-in state while a token is unavailable — note it in MEMORY.md. Tier-1 token seeding remains the only unattended auth path.
 - Below 1280px width: GHL's left sidebar collapses into a hamburger menu, breaking automation.

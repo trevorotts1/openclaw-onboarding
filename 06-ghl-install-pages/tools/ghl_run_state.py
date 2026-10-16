@@ -111,6 +111,32 @@ class RunStateCorrupt(ValueError):
     """The state file exists but is not a readable v1 run-state document."""
 
 
+def _durable_root() -> str:
+    """The sanctioned durable root (ENV-MATRIX adaptation contract item 1:
+    detect ONLY via ``browser_manager.durable_root()`` — never a new
+    hand-rolled /data or ~/.openclaw check).
+
+    Lazy sibling import: this module deliberately stays import-light at load
+    time (the same reason the D6 refusal prefix above is duplicated rather
+    than imported), so the import happens per call, and ANY failure degrades
+    to "" (no durable root resolvable) rather than breaking the state store.
+    """
+    try:
+        import browser_manager
+
+        return browser_manager.durable_root()
+    except Exception:  # noqa: BLE001 - a state store must never die on detection
+        return ""
+
+
+def legacy_state_root() -> str:
+    """The pre-S06-05 default root: ``~/.openclaw/skill6-runs`` regardless of
+    the durable root. Kept ONLY as a load fallback (see ``RunState.load``) so
+    a run started before the durable-root fix stays resumable — SK6002
+    repair-in-place: never a silent move that orphans a resumable run."""
+    return os.path.join(os.path.expanduser("~"), ".openclaw", "skill6-runs")
+
+
 def default_state_root() -> str:
     """Where run state lives. Env-overridable so a box, a test, and a CI job can
     each point at their own store without touching argv.
@@ -118,11 +144,23 @@ def default_state_root() -> str:
     Deliberately NOT under ``evidence_root``: ``--resume <run_id>`` must be able
     to find a run knowing ONLY the run id, and the evidence root is itself one of
     the things the state file restores.
+
+    Resolution order (S06-05):
+      1. ``GHL_RUN_STATE_ROOT`` env (explicit override — always wins).
+      2. ``<durable_root()>/skill6-runs`` — on a VPS that is
+         ``/data/.openclaw/skill6-runs``, which survives a container
+         recreate; on a Mac ``durable_root()`` IS ``~/.openclaw``, so this
+         is the historical path, unchanged.
+      3. The legacy ``~/.openclaw/skill6-runs`` when no durable root
+         resolves (bare checkout / CI with no onboarded root).
     """
     env = os.environ.get("GHL_RUN_STATE_ROOT", "").strip()
     if env:
         return env
-    return os.path.join(os.path.expanduser("~"), ".openclaw", "skill6-runs")
+    durable = _durable_root()
+    if durable:
+        return os.path.join(durable, "skill6-runs")
+    return legacy_state_root()
 
 
 def new_run_id(builder: str = "") -> str:
@@ -269,6 +307,20 @@ class RunState:
     ) -> "RunState":
         root = state_root or default_state_root()
         probe = cls(run_id, builder, state_root=root, specs=specs)
+        loaded_from_legacy = False
+        if not os.path.isfile(probe.path):
+            # S06-05 / SK6002 repair-in-place: a run started BEFORE the
+            # durable-root fix wrote its state under the legacy root. Probe
+            # there before declaring the run lost, and — if found — keep
+            # THIS run writing to the legacy root (repair in place, recorded
+            # on the doc below). A silent move would orphan any other reader
+            # of the old path; new runs start at the resolved root above.
+            legacy = legacy_state_root()
+            if os.path.abspath(legacy) != os.path.abspath(root):
+                legacy_probe = cls(run_id, builder, state_root=legacy, specs=specs)
+                if os.path.isfile(legacy_probe.path):
+                    root, probe = legacy, legacy_probe
+                    loaded_from_legacy = True
         if not os.path.isfile(probe.path):
             raise RunStateNotFound(
                 f"no run state for run_id {run_id!r} under {root!r} — "
@@ -290,6 +342,8 @@ class RunState:
                 f"run {run_id!r} belongs to builder {doc['builder']!r}, "
                 f"not {builder!r} — refusing to resume it with the wrong builder"
             )
+        if loaded_from_legacy:
+            st.doc["state_root_legacy_fallback"] = True
         st.doc["attempts"] = int(doc.get("attempts", 1)) + 1
         st.doc["status"] = STATUS_RUNNING
         st.save()
@@ -918,9 +972,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not os.path.isdir(root):
             print(f"(no runs — {root} does not exist)")
             return 0
-        for fn in sorted(os.listdir(root)):
-            if fn.endswith(".json"):
-                print(fn[:-5])
+        names = {fn[:-5] for fn in os.listdir(root) if fn.endswith(".json")}
+        # S06-05: pre-fix runs may still live under the legacy root (the
+        # same repair-in-place fallback RunState.load applies) — list them
+        # too so an operator can find a run id to --resume.
+        legacy = legacy_state_root()
+        if os.path.abspath(legacy) != os.path.abspath(root) and os.path.isdir(legacy):
+            names |= {fn[:-5] for fn in os.listdir(legacy) if fn.endswith(".json")}
+        for name in sorted(names):
+            print(name)
         return 0
     p.print_help()
     return 0
