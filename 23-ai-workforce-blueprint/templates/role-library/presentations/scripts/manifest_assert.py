@@ -58,7 +58,8 @@ from typing import Dict, List, Optional, Tuple
 # 69 -> 70 (KIE rule 12): the 9,000-18,000 prompt band is retired from the manifest in favor of the shared enforcer.
 # 70 -> 71 (FIX-PLAN Item 11, B23): mirrors the presentation_job/manifest.py bump in the SAME commit: fanout phases declare workers; undeclared fanout widths warn at load.
 # 71 -> 73 (PR #2040 refresh, B32 FIX-PLAN Item 26): mirrors the presentation_job/manifest.py bump in the SAME commit: the GIP weave composed onto the landed v71 takes the next free version, 73 (v72 is carried by PR #2038's refresh).
-MIN_MANIFEST_VERSION = 73  # PRES-011: mirrors presentation_job/manifest.py, bumped together (U019 step 8)
+# 73 -> 74 (PR #2038 refresh, FIX-PLAN Item 23, VSL single-design resolution, 2026-10-15): mirrors the presentation_job/manifest.py bump in the SAME commit (see the full rationale there). This branch's claim ran 71, then 72 at its first refresh; PR #2040 (Item 26) landed v73 first, so the composed tree takes the next free number, 74, per the standing settlement.
+MIN_MANIFEST_VERSION = 74  # PRES-011: mirrors presentation_job/manifest.py, bumped together (U019 step 8)
 MIN_MANIFEST_PHASES = 59
 MIN_AF_SP_CODES = 16
 
