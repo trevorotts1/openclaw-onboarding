@@ -5,9 +5,12 @@ SINGLE ADJUSTMENT POINT. Every assumption the Email Engine makes about the
 shape S49 publishes for a Signature Launch (the launch record, the intake
 session answer ledger, the approval record, and the plan document hash
 canonicalization) lives in THIS module and nowhere else. The launch intake
-adapter (tools/launch_intake_adapter.py) imports from here; it never reads
-an S49 field name directly. When S49 changes its published shape, this file
-is the one place that changes with it.
+adapter (tools/launch_intake_adapter.py) imports the shape semantics from
+here: it traverses the launch record's own top-level keys directly, but
+every S49-specific meaning (which fields bind, how the plan hash
+canonicalizes, what the approval gate requires, the ledger keys and the
+field-state vocabulary) is defined here and nowhere else. When S49 changes
+its published shape, this file is the one place that changes with it.
 
 Sources of the shape (read in full during the S50-04 build, 2026-10-16):
   - S49 candidate a2bd2c5a95cf4a168ffab4818e67807de1d2aa3e (draft PR #2137),
