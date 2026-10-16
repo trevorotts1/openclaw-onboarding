@@ -18,13 +18,22 @@ result is advice. It is never, by itself, permission to act.
 
 ## Build status (read first)
 
-This package is the canonical onboarding scaffold for the council. The
+This package is the canonical onboarding package for the council. The
 deliberation runtime, the standalone CLI, and the nine advisor knowledge
-packs are built by their own units and are NOT yet built. Until they land,
-this skill's front door must report the council as not ready (a typed
-not-ready result), never simulate a council session, never invent a verdict,
-and never fabricate advisor output. Structure, registration, installation,
-and update safety are complete at this stage; deliberation is not.
+packs are built and ship in this package; their exact tree identity is
+recorded in manifest.json. Composition, admission, and dispatch of a
+live session are proven on the canary machine configuration; a
+completed live session is not yet established, so live completion is
+reported as unverified, never as proven. Every advisor pack stands at
+bibliographic_only coverage: no seat is quality_qualified, and seats
+abstain on claims their coverage does not support. Portable PDF export
+from the standalone runtime is not ready by design and refuses with a
+typed error; the Command Center side renders PDFs. Wherever a named
+prerequisite is genuinely missing (no client-selected route, no run
+grant, no compatible Command Center release for managed mode), this
+skill's front door must report that precise state (a typed not-ready
+result), never simulate a council session, never invent a verdict, and
+never fabricate advisor output.
 
 ## The nine seats
 

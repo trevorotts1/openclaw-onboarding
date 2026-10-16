@@ -50,8 +50,13 @@ claims rather than improvising them.
 - A source obtained from a copy whose rights status is unresolved is
   not ingested. Record the gap; do not work around it.
 - Per-seat source records live in advisors/<seat-id>/sources.json and
-  carry a verification_status. At this scaffold stage every record is
-  `not_ingested`, which is the honest state: no pack has been built.
+  carry their status per record. Records for works present in the
+  source library are ingested as derived material with quality
+  unverified and rights as recorded. Records for works absent from
+  the library carry verification_status `not_ingested`, which is the
+  honest state for a supply gap: no pack content is claimed for those
+  works, and every pack's qualification stays bibliographic_only
+  until provenance-verified material is ingested.
 
 ## Labels
 

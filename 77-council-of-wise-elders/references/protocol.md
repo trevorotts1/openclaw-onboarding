@@ -1,8 +1,7 @@
 # Council Protocol Reference
 
 The deliberation protocol the runtime implements. This reference states
-the binding rules; the runtime itself is built by its own unit and is
-not yet built.
+the binding rules the shipped runtime follows.
 
 ## Modes
 

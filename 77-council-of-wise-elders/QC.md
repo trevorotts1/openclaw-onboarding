@@ -65,13 +65,16 @@ honestly: a section that was not checked scores 0, not full marks.
 
 ## 6. Honest behavior
 
-- With the runtime not yet built, a council request produces the typed
-  not-ready report and spends zero provider requests. A simulated
-  session, an invented verdict, or a fabricated advisor card is an
-  automatic QC failure regardless of the numeric score.
+- A council request missing a named prerequisite (no run grant, no
+  client-selected route, no compatible Command Center release for
+  managed mode) produces the typed not-ready report and spends zero
+  provider requests. A simulated session, an invented verdict, or a
+  fabricated advisor card is an automatic QC failure regardless of the
+  numeric score.
 - INSTALL.md was followed in its literal step order, and the release
   receipt records the Command Center compatibility state precisely
-  (not-ready until a paired council release exists), never as ready.
+  (the negotiated state from the compatibility manifest), never as
+  readier than the manifest supports.
 
 ## Scoring
 

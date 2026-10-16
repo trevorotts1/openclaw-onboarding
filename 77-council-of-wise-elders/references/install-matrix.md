@@ -21,25 +21,31 @@ not-ready states when they do not.
 
 | Shape | Portable skill | Standalone mode | Managed visual mode |
 |---|---|---|---|
-| Mac (fleet-mac) | Installs and registers | Available when the runtime lands; state in the per-user council database outside the skills tree | Requires a compatible Command Center on the box; see not-ready state below |
+| Mac (fleet-mac) | Installs and registers | Available; state in the per-user council database outside the skills tree | Requires a compatible Command Center on the box; see not-ready state below |
 | Hostinger VPS (fleet-hostinger) | Installs and registers | Same as Mac | Same requirement |
 | Contabo container (fleet-contabo) | Installs and registers | Same as Mac | Same requirement |
 | Standalone, no Command Center | Installs and registers | The supported shape for this box | Not applicable; never promised |
 
 ## Precise not-ready states (use these words)
 
-- **Runtime not built:** "The council runtime is not yet built. The
-  skill is installed and registered; deliberation is not available."
-  Diagnostic state: FEATURE_NOT_READY.
+- **Runtime payload missing at the installed location:** "The council
+  runtime is not present at the installed location. The skill is
+  installed and registered; deliberation is not available."
+  Diagnostic state: FEATURE_NOT_READY. (The runtime ships in this
+  package; this state names an install whose payload is absent or
+  failed its doctor, never the package itself.)
 - **Managed mode:** the Command Center pinned for this onboarding
   release (see cc-compat.json, currently v7.6.112) carries no council
-  contract, migration, or UI. Managed mode is therefore not ready on
-  any box running the pinned release. The portable skill still
-  installs and registers; never tell a client the visual experience
-  is ready.
-- **Source packs not built:** seats whose packs are not built abstain
-  on source-grounded claims. A council with unbuilt packs does not
-  convene a partial fake roster.
+  contract, migration, or UI. A council-capable Command Center exists
+  in this release's own cohort and is negotiated through the
+  compatibility manifest, but managed mode is not ready on any box
+  until that Command Center release is actually installed there. The
+  portable skill still installs and registers; never tell a client
+  the visual experience is ready before then.
+- **Source coverage:** all nine packs ship in this package at
+  bibliographic_only coverage. A seat abstains on any source-grounded
+  claim its recorded coverage does not support. A council never
+  convenes a partial fake roster.
 
 ## State locations by mode
 

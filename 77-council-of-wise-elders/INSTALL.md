@@ -164,9 +164,11 @@ council tables are created by the Command Center's own migration path
 when the compatible Command Center release is installed; the onboarding
 installer must never migrate a managed Command Center database behind
 its back. In standalone mode the local council database is created by
-the runtime on first use, outside the skills tree. At this scaffold
-stage there is nothing to migrate, and reporting "no migration required
-or performed" is the correct receipt entry.
+the runtime on first use, outside the skills tree. The managed
+council migration number remains unallocated in this release (the
+compatibility negotiation surfaces it as the MIGRATION_ID_UNALLOCATED
+advisory); the correct receipt entry states exactly which migrations
+ran, or that none did, and never claims a number that does not exist.
 
 ## Step 8: Offline QC
 
@@ -205,7 +207,8 @@ recorded budget:
 Record, in the install work log or the box's onboarding state:
 
 - Discovery of slot 77 and the installed path.
-- Source, core, and pack hashes (pack hash: none yet, packs not built).
+- Source, core, and pack hashes (the tree aggregate and archive hash
+  recorded in manifest.json; all nine packs ship in this package).
 - The compatible Command Center version, or the precise not-ready state
   from references/install-matrix.md.
 - The registered capability identity (council-of-wise-elders), the SOP

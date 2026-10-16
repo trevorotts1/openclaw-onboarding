@@ -25,10 +25,10 @@ database, or the per-user council database outside the skills tree).
 If sessions are missing there, that is a data-store issue in the
 owning app, not a skill-folder issue.
 
-**A seat shows no sources.** Its pack is not built or its anchors are
-not yet obtained and verified. The honest states are recorded in
-advisors/<seat-id>/sources.json and coverage.json. Do not fill the gap
-with plausible-sounding material.
+**A seat shows no sources.** Its anchor works are absent from the
+source library, or not yet obtained and verified. The honest states
+are recorded in advisors/<seat-id>/sources.json and coverage.json.
+Do not fill the gap with plausible-sounding material.
 
 **The verdict has no GO-style label.** Coverage was below 80 percent
 or a critical-domain abstention is unresolved. The report states which;

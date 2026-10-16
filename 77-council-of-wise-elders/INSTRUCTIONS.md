@@ -6,13 +6,15 @@ front-door agent needs most often.
 
 ## Build status
 
-The deliberation runtime and advisor packs are not yet built (see
-SKILL.md, Build status). Until they land, every council request resolves
-the capability, explains plainly that the council cannot deliberate yet,
-and spends no provider requests. The instructions below describe the
-behavior the finished capability implements, so installers and reviewers
-can verify wiring against them; they are not a claim that deliberation
-works today.
+The deliberation runtime and the nine advisor packs are built and ship
+in this package (see SKILL.md, Build status). Every council request
+resolves the capability and runs through the real authorization
+lifecycle: no run grant, no client-selected route, or no compatible
+Command Center release for managed mode means the request refuses with
+the precise typed state and spends no provider requests. A completed
+live session is not yet established on any machine, so no instruction
+below is a claim that live completion is proven; composition, admission,
+and dispatch are the proven live legs.
 
 ## Starting a council
 
