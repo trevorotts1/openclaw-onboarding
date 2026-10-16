@@ -208,7 +208,7 @@ def invitation_expiry(receipt):
     return expiry
 
 
-def invitation_validity_sentence(expiry, reopenable=False):
+def invitation_validity_sentence(expiry, reopenable=False, completion_grace_seconds=0):
     """What the client is told about how long the private link lasts.
 
     Only ever states what the issuing Command Center actually does.
@@ -216,6 +216,9 @@ def invitation_validity_sentence(expiry, reopenable=False):
     first use would strand them at the moment they trusted the sentence.
     """
     if expiry is None:
+        if reopenable and type(completion_grace_seconds) is int and completion_grace_seconds == 86400:
+            return ('This private sign-in link stays valid until 24 hours after your interview is complete, '
+                    'and you can open it again on any device during that time.')
         if reopenable:
             return ('This private sign-in link stays valid until your interview is complete, '
                     'and you can open it again whenever you like, on any device.')
@@ -246,6 +249,18 @@ def invitation_error_code(body):
         return None
     code = payload.get('error')
     return code if isinstance(code, str) and code in INVITATION_APPLICATION_ERRORS else None
+
+
+def invitation_completion_grace(receipt):
+    """Only the exact supported, reusable completion-grace contract is promised."""
+    if 'completionGraceSeconds' not in receipt:
+        return 0
+    seconds = receipt['completionGraceSeconds']
+    if (type(seconds) is not int or seconds != 86400
+            or receipt.get('validUntil') != INVITATION_VALID_UNTIL_COMPLETE
+            or receipt.get('redeemable') != INVITATION_REDEEMABLE_UNTIL_COMPLETE):
+        raise Pending('invitation completion grace invalid')
+    return seconds
 
 
 def invitation_recovery_sentence(expiry, reopenable=False):
@@ -282,6 +297,7 @@ def issue_invitation(resolved, env, target, metadata=None):
             if receipt.get(key)!=resolved[key]: raise Pending('invitation identity mismatch')
         if receipt.get('protocol')!='interview-invitation.v1' or not redemption_declared(receipt): raise Pending('invitation protocol mismatch')
         expiry=invitation_expiry(receipt)
+        completion_grace=invitation_completion_grace(receipt)
         url=receipt.get('url')
         if not isinstance(url,str) or not url: raise Pending('invitation URL missing')
         parsed=urlsplit(url)
@@ -309,6 +325,8 @@ def issue_invitation(resolved, env, target, metadata=None):
         if metadata is not None:
             metadata['invitationExpiresAt']=expiry
             metadata['invitationReopenable']=receipt.get('redeemable')==INVITATION_REDEEMABLE_UNTIL_COMPLETE
+            if completion_grace:
+                metadata['invitationCompletionGraceSeconds']=completion_grace
         return url
     except Pending: raise
     except (OSError,ValueError,subprocess.TimeoutExpired): raise Pending('invitation issuance unverified') from None
@@ -495,7 +513,7 @@ def main():
                 raise Pending('completion changed or unavailable; invitation suppressed')
             metadata={}
             issue_invitation(resolved,env,args.target,metadata)
-            print(json.dumps({'status':'minted','invitation':'issued','delivery':'not-attempted','ticket':'discarded','host':resolved['host'],'origin':resolved['origin'],'companyId':resolved['companyId'],'tenantId':resolved['tenantId'],'installationId':resolved['installationId'],'invitationExpiresAt':metadata.get('invitationExpiresAt'),'invitationReopenable':metadata.get('invitationReopenable'),'recipientHash':hashlib.sha256(args.target.encode()).hexdigest()}))
+            print(json.dumps({'status':'minted','invitation':'issued','delivery':'not-attempted','ticket':'discarded','host':resolved['host'],'origin':resolved['origin'],'companyId':resolved['companyId'],'tenantId':resolved['tenantId'],'installationId':resolved['installationId'],'invitationExpiresAt':metadata.get('invitationExpiresAt'),'invitationReopenable':metadata.get('invitationReopenable'),'invitationCompletionGraceSeconds':metadata.get('invitationCompletionGraceSeconds'),'recipientHash':hashlib.sha256(args.target.encode()).hexdigest()}))
             return 0
         if not args.resolution_file: raise Pending('verified message origin snapshot missing')
         pinned=json.loads(Path(args.resolution_file).read_text())
@@ -513,7 +531,7 @@ def main():
             url=issue_invitation(resolved,env,args.target,delivery_context)
             # Replace only the primary sign-in link: the later authenticated
             # resume bookmark must remain stable and must never carry a ticket.
-            validity=invitation_validity_sentence(delivery_context['invitationExpiresAt'],delivery_context.get('invitationReopenable',False))
+            validity=invitation_validity_sentence(delivery_context['invitationExpiresAt'],delivery_context.get('invitationReopenable',False),delivery_context.get('invitationCompletionGraceSeconds',0))
             recovery=invitation_recovery_sentence(delivery_context['invitationExpiresAt'],delivery_context.get('invitationReopenable',False))
             return text.replace(private_entry,url,1).replace('{{INVITATION_VALIDITY}}',validity).replace('{{INVITATION_RECOVERY}}',recovery)
         code,receipt=send_gateway(message,args.target,args.ledger,delivery_context,os.environ.get('FORCE')=='1',prepare_message=enroll)

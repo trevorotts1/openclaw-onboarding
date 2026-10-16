@@ -507,7 +507,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
             with self.subTest(expiry=expiry),patch.object(m.time,'time',return_value=100000),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(dict(good,expiresAt=expiry))+'\n200','')):
                 with self.assertRaisesRegex(m.Pending,'expiry invalid'):m.issue_invitation(resolved,self.env,'123456789')
 
-    def prepare_shell_resume_fixture(self,ttl=86400,valid_until=None,redeemable=None):
+    def prepare_shell_resume_fixture(self,ttl=86400,valid_until=None,redeemable=None,completion_grace=None):
         runtime=self.root/"client's runtime"
         workspace=self.root/"client's workspace & records"
         runtime.mkdir();workspace.mkdir()
@@ -524,12 +524,13 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         mint_log=self.root/'issued.log'
         fake=self.bin/'curl'
         fake.write_text('#!'+sys.executable+'\nimport sys,json,time,os\nconfig=sys.stdin.read()\nassert "Authorization: Bearer fixture-secret" in config\n'+'data=json.loads('+repr(json.dumps(self.receipt))+')\n'+
-            'if sys.argv[-1].endswith("/api/auth/interview-invitation"):\n with open(os.environ["MINT_LOG"],"a") as out: out.write("issued\\n")\n data={"protocol":"interview-invitation.v1","tenantId":"tenant-a","companyId":"client-a","installationId":"install-a","host":"client.example.com","expiresAt":int(time.time())+int(os.environ["FIXTURE_TTL"]),"oneUse":True,"url":"https://client.example.com/interview?enroll=fixture.signature"}\n if os.environ.get("FIXTURE_VALID_UNTIL"): data["validUntil"]=os.environ["FIXTURE_VALID_UNTIL"]\n if os.environ.get("FIXTURE_REDEEMABLE"): data["redeemable"]=os.environ["FIXTURE_REDEEMABLE"]\nelse: assert sys.argv[-1]=="https://client.example.com/api/auth/interview-ready"\nprint(json.dumps(data))\nprint("200")\n')
+            'if sys.argv[-1].endswith("/api/auth/interview-invitation"):\n with open(os.environ["MINT_LOG"],"a") as out: out.write("issued\\n")\n data={"protocol":"interview-invitation.v1","tenantId":"tenant-a","companyId":"client-a","installationId":"install-a","host":"client.example.com","expiresAt":int(time.time())+int(os.environ["FIXTURE_TTL"]),"oneUse":True,"url":"https://client.example.com/interview?enroll=fixture.signature"}\n if os.environ.get("FIXTURE_VALID_UNTIL"): data["validUntil"]=os.environ["FIXTURE_VALID_UNTIL"]\n if os.environ.get("FIXTURE_REDEEMABLE"): data["redeemable"]=os.environ["FIXTURE_REDEEMABLE"]\n if os.environ.get("FIXTURE_COMPLETION_GRACE"): data["completionGraceSeconds"]=json.loads(os.environ["FIXTURE_COMPLETION_GRACE"])\nelse: assert sys.argv[-1]=="https://client.example.com/api/auth/interview-ready"\nprint(json.dumps(data))\nprint("200")\n')
         fake.chmod(0o755)
         env={key:value for key,value in os.environ.items() if not key.startswith(('OPENCLAW_','OC_','MC_')) and key not in ('FORCE','INTERVIEW_INVITATION_AUTOMATIC')}
         env.update(HOME=str(self.root),OPENCLAW_ROOT=str(runtime),OPENCLAW_OWNER_CHAT_ID='123456789',MINT_LOG=str(mint_log),FIXTURE_TTL=str(ttl))
         if valid_until is not None: env['FIXTURE_VALID_UNTIL']=valid_until
         if redeemable is not None: env['FIXTURE_REDEEMABLE']=redeemable
+        if completion_grace is not None: env['FIXTURE_COMPLETION_GRACE']=json.dumps(completion_grace)
         return state,foreign_state,mint_log,env
 
     def invoke_sender(self,env,*args):
@@ -707,6 +708,37 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         legacy=m.invitation_validity_sentence(1789000000,True)
         self.assertIn('expires on ',legacy)
         self.assertNotIn('open it again',legacy)
+
+    def test_declared_completion_grace_reaches_delivery_and_receipt_without_changing_state(self):
+        state,_,mints,env=self.prepare_shell_resume_fixture(valid_until='interview-complete',redeemable='until-interview-complete',completion_grace=86400)
+        before=state.read_bytes()
+        sent=self.invoke_sender(env)
+        self.assertEqual(sent.returncode,0,sent.stderr)
+        message=json.loads(self.capture.read_text())['message']
+        self.assertIn('stays valid until 24 hours after your interview is complete',message)
+        self.assertIn('open it again on any device during that time',message)
+        self.assertNotIn('expires on ',message)
+        self.assertNotIn('{{INVITATION_',message)
+        self.assertEqual(state.read_bytes(),before)
+        receipt=json.loads((state.parent/'company-discovery/.interview-link-sends.log.receipt.json').read_text())
+        self.assertEqual(receipt['invitationCompletionGraceSeconds'],86400)
+        self.assertIsNone(receipt['invitationExpiresAt'])
+        self.assertIs(receipt['invitationReopenable'],True)
+        self.assertNotIn('fixture.signature',sent.stdout+sent.stderr)
+
+    def test_completion_grace_requires_exact_seconds_and_matching_reusable_contract(self):
+        resolved=self.resolve()
+        good=dict(protocol='interview-invitation.v1',tenantId='tenant-a',companyId='client-a',installationId='install-a',host='client.example.com',validUntil='interview-complete',redeemable='until-interview-complete',oneUse=True,completionGraceSeconds=86400,url='https://client.example.com/interview?enroll=fixture.signature')
+        for value in (True,86400.0,'86400',0,86401,-1,None):
+            with self.subTest(value=value),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(dict(good,completionGraceSeconds=value))+'\n200','')):
+                with self.assertRaisesRegex(m.Pending,'completion grace invalid'):
+                    m.issue_invitation(resolved,self.env,'123456789')
+        for extra in ({'redeemable':'single-use'},{'validUntil':'other','expiresAt':int(m.time.time())+900}):
+            with self.subTest(extra=extra),patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(dict(good,**extra))+'\n200','')):
+                with self.assertRaisesRegex(m.Pending,'completion grace invalid'):
+                    m.issue_invitation(resolved,self.env,'123456789')
+        self.assertNotIn('24 hours after',m.invitation_validity_sentence(None,True))
+        self.assertNotIn('24 hours after',m.invitation_validity_sentence(int(m.time.time())+900,False))
 
     def test_reopenable_issuer_tells_the_client_the_link_can_be_opened_again(self):
         state,_,mints,env=self.prepare_shell_resume_fixture(valid_until='interview-complete',redeemable='until-interview-complete')

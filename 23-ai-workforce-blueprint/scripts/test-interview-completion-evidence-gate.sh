@@ -289,6 +289,50 @@ run_complete() {
   fi
 )
 
+# Completion timestamp is an access deadline anchor. Exercise the REAL
+# --complete entry point (also used by retryKick), with isolated data and CLI.
+(
+  SANDBOX="$(mktemp -d -t evidence-gate-timestamp.XXXXXX)"
+  trap 'rm -rf "$SANDBOX"' EXIT
+  make_sandbox "$SANDBOX" >/dev/null
+  TEST_STATE="$SANDBOX/.openclaw/workspace/.workforce-build-state.json"
+  TEST_ANSWERS="$SANDBOX/.openclaw/workspace/company-discovery/workforce-interview-answers.md"
+  make_full_transcript "$TEST_ANSWERS"
+  cp "$TEST_ANSWERS" "$SANDBOX/answers-before.md"
+  make_full_state "$TEST_STATE"
+  OUT=$(run_complete "$SANDBOX"); RC=$?
+  if [ "$RC" -eq 0 ] && python3 - "$TEST_STATE" <<'PYSTAMP'
+import datetime, json, sys
+s=json.load(open(sys.argv[1]))
+timestamp=datetime.datetime.fromisoformat(s['interviewCompletedAt'].replace('Z','+00:00'))
+assert s['interviewComplete'] is True
+assert abs((datetime.datetime.now(datetime.timezone.utc)-timestamp).total_seconds()) < 60
+PYSTAMP
+  then pass "timestamp: first evidence-gated completion records its timestamp"
+  else fail "timestamp: first completion must stamp a real timestamp" "rc=$RC $OUT"; fi
+
+  # An old completed fixture makes accidental restamping unmistakable even
+  # when both retries happen within the same wall-clock second.
+  ORIGINAL_STAMP="2026-01-02T03:04:05Z"
+  jq --arg stamp "$ORIGINAL_STAMP" '.interviewCompletedAt=$stamp' "$TEST_STATE" > "$SANDBOX/state-next.json"
+  mv "$SANDBOX/state-next.json" "$TEST_STATE"
+  for attempt in 1 2; do
+    OUT=$(run_complete "$SANDBOX"); RC=$?
+    if [ "$RC" -eq 0 ] && [ "$(jq -r '.interviewCompletedAt' "$TEST_STATE")" = "$ORIGINAL_STAMP" ] && cmp -s "$TEST_ANSWERS" "$SANDBOX/answers-before.md"; then
+      pass "timestamp: completion/build-kick retry $attempt preserves original timestamp and transcript"
+    else fail "timestamp: retry $attempt moved completion or changed answers" "rc=$RC $OUT"; fi
+  done
+
+  jq 'del(.interviewCompletedAt)' "$TEST_STATE" > "$SANDBOX/state-next.json"
+  mv "$SANDBOX/state-next.json" "$TEST_STATE"
+  for attempt in 1 2; do
+    OUT=$(run_complete "$SANDBOX"); RC=$?
+    if [ "$RC" -eq 0 ] && jq -e '.interviewComplete == true and (has("interviewCompletedAt") | not)' "$TEST_STATE" >/dev/null; then
+      pass "timestamp: legacy completed record stays timestamp-unknown on retry $attempt"
+    else fail "timestamp: retry $attempt invented a legacy grace period" "rc=$RC $OUT"; fi
+  done
+)
+
 # ── R4: disagreement-only fixture (full content, but frozen counter) REFUSES ─
 (
   SANDBOX="$(mktemp -d -t evidence-gate-r4.XXXXXX)"
