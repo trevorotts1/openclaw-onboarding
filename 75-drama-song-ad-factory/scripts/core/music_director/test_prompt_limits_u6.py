@@ -52,6 +52,12 @@ def check(name, cond, detail=""):
 CLIENT = "I am not small. I never was. One seed of truth made me strong. She Found Power in the Climb."
 HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
 HOOK_PLAN = {"true_at_beat": "the_world"}   # FU-HOOK-PLACEMENT: hooks measured from the sheet
+#: BUILD-PLAN W1-method-song-U1: a run missing the pace order is refused at
+#: dispatch with PACE_TURNS_REQUIRED on every run, so this dispatching plan
+#: carries a complete two-seam order and its style carries both directions.
+PACE_ORDER = {"drop": "half-time drop, thin drums",
+              "return": "turn and rise back to the groove",
+              "boundary_s": 15.0, "return_boundary_s": 38.0}
 SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
          {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
          {"tag": "Verse", "delivery": "sung", "lines": ["One seed of truth made me stro-o-ong,"]},
@@ -163,8 +169,10 @@ def test_clear_path_builds_and_is_measured():
 
 # ---- 4. the 999 dispatch seam: G9 headroom allowed, a patch still refused -
 def test_dispatch_allows_headroom_duration():
-    plan = dict(LF.plan(60, (15, 20)), style_id="soul-ballad", hook_plan=HOOK_PLAN)
-    req = R.build_request("soul-ballad", SHEET, CLIENT, "T", plan["delivered_s"], hook_plan=HOOK_PLAN)
+    plan = dict(LF.plan(60, (15, 20)), style_id="soul-ballad", hook_plan=HOOK_PLAN,
+                pace_change=PACE_ORDER)
+    req = R.build_request("soul-ballad", SHEET, CLIENT, "T", plan["delivered_s"], hook_plan=HOOK_PLAN,
+                          pace_plan=PACE_ORDER)
     req["input"]["duration"] = 67.0  # stub take, never real audio
     GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 2, "source": "measured"},
                          {"delivery": "sung", "start": 2.5, "end": 45, "source": "measured"},
