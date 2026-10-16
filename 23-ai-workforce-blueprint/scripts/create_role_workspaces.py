@@ -2805,8 +2805,11 @@ _ADDITIVE_SCRIPT_SUFFIXES = (".json",)
 #                                           read by model_catalog.SHIPPED_CATALOG
 #   presentation_job/ocr-deps.json        — read by ocr_verify._SHIPPED_DEPS
 #   presentation-deps.json, slides.schema.json, vsl-gate-form-spec.json,
-#   structure/checkout_structure.json, structure/vsl_structure.json,
+#   structure/checkout_structure.json,
 #   FIX{5,9,18,19,22}-*EVIDENCE.json
+#   (structure/vsl_structure.json shipped here until 2026-10-14, when the
+#   Gauntlet VSL design was retired, FIX-PLAN Item 23, and the file was
+#   archived out of the live tree to presentations/archive/vsl-gauntlet/.)
 # All of it is fleet-owned engine data. A stale model_catalog.json is exactly
 # the providers.yaml defect again: the engine runs on last year's aliases and
 # prices and nothing anywhere says so.
