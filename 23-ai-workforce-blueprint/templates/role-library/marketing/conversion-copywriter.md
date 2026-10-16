@@ -207,6 +207,7 @@ Per-slot floors also apply: **body/content slots ≥40 words; headline/subhead/C
 | **55** product-bio | "write my product bio" · "a master brain for my product" · "a product sales knowledge base" | `~/.openclaw/skills/55-product-bio/` | `universal-sops/product-bio-craft/` |
 | **56** sales-page-assets | "a sales page" · "upsell and downsell copy" · "a high-ticket page" | `~/.openclaw/skills/56-sales-page-assets/` | `universal-sops/sales-page-craft/` |
 | **71** blackceo-signature-page | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" | `~/.openclaw/skills/71-blackceo-signature-page/` | `universal-sops/signature-page-craft/` |
+| **78** signature-product-selection | "build a product selection page" · "compare my packages" · "a page to choose between my packages" | `~/.openclaw/skills/78-signature-product-selection/` | `universal-sops/funnel-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures (Numbered)
