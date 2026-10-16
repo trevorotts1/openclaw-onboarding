@@ -1,7 +1,7 @@
 {
   "schema": "openclaw/retired-artifacts@2",
-  "generated_at": "2026-10-16T04:21:19.125751+00:00",
-  "source_ref": "826272c96be35c702240f6f0787745f19f97afc9",
+  "generated_at": "2026-10-16T09:55:38.418477+00:00",
+  "source_ref": "8dc6c10d7e075c851d0a67474331b2caf84f039e",
   "tracked_trees": [
     "23-ai-workforce-blueprint/templates/role-library"
   ],
@@ -639,7 +639,7 @@
         "sha256:3ad6ab26166f5a243d7894f9cb714d06f3f0cfbe87a7b8a8bb70451300c21eb9",
         "sha256:68182f3a516298b36810a08807da2c6b6eebd05f8080053920e2b7eec7aaac59"
       ],
-      "retired_in": "a65651b320cbb87fab476078dc7d19cc78e31248",
+      "retired_in": "689404ca2ade24c0d9371625e13dd87516028ad0",
       "retired_at": "2026-10-15T16:05:00Z"
     },
     {
@@ -656,7 +656,7 @@
         "sha256:ad0776fd0e49aeda36a7eee6960e3da703807a4110c3ac6cbd99e2331318be9a",
         "sha256:6d765560f1dd2e2ec75662d2d1055a22c62863370c76fc7c7e7f1979a1c46a49"
       ],
-      "retired_in": "a65651b320cbb87fab476078dc7d19cc78e31248",
+      "retired_in": "689404ca2ade24c0d9371625e13dd87516028ad0",
       "retired_at": "2026-10-15T16:05:00Z"
     },
     {
