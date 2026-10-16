@@ -33,10 +33,13 @@ drives the browser, pastes the code, and handles all the clicks and navigation.
 > `--session <client>`, for when the extension channel is unavailable or a
 > flow defeats it. Playwright stays the scripted escape hatch for known-hard
 > flows and the CDP hybrid for cross-origin iframe drag. The full hardened
-> procedure is in `ghl-browser-builder-full.md`. **Standing preflight:**
-> `scripts/check-openclaw-extension-version.sh` must exit 0 before any
-> install run; an absent or out-of-date extension STOPs the run with the
-> update path named.
+> procedure is in `ghl-browser-builder-full.md`. **Standing preflight
+> (Lane 1 only):** `scripts/check-openclaw-extension-version.sh` reports
+> the extension lane's verdict before any install run. An absent or
+> out-of-date extension disables Lane 1 ONLY, with the reason and the
+> update path recorded; the run proceeds on the next lane the capability
+> probe verifies. The run STOPs only when the probe verifies zero lanes
+> (fail closed).
 
 > **STATUS — PENDING-LIVE-RUN (split claim — read each side, do not merge them).**
 > **PAID / OFFLINE EVIDENCE (captured — do not weaken):** the login-form DOM
@@ -151,7 +154,8 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 - Backup Protocol must be learned first (skill 02)
 - OpenClaw Chrome extension installed in the operator's Chrome and CURRENT
   (`bash scripts/check-openclaw-extension-version.sh` exits 0) - PRIMARY
-  browser engine (the OpenClaw browser extension driver)
+  browser engine (the OpenClaw browser extension driver). Required for
+  Lane 1 only: absent or behind disables Lane 1, never the fallback lanes.
 - agent-browser must be installed (skill 03) - FALLBACK browser engine
   (via the `tools/browser_manager.sh` gateway)
 - GHL Setup must be complete (skill 05) - the account must already exist

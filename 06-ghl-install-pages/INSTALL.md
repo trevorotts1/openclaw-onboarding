@@ -165,13 +165,13 @@ The agent must verify ALL of these are in place before proceeding:
 
 The OpenClaw Chrome extension is the PRIMARY engine (operator decision, 2026-10-13): the OpenClaw browser's extension driver on the operator's paired, already signed-in Chrome, driven via `openclaw browser`. agent-browser (Vercel Labs, Skill 03) is the FALLBACK lane; **Skill 03 (Wave 1) must be complete BEFORE Skill 06 starts** — 06 is not parallel-safe with 03.
 
-**1. Install / verify the OpenClaw Chrome extension (PRIMARY).** Install the OpenClaw extension from the Chrome Web Store into the Chrome profile OpenClaw is paired with, then run the standing version preflight. It compares the installed version against the newest the box can prove (the operator pin, else the extension source bundled with the local OpenClaw install) and STOPs with the update path when the extension is missing or behind:
+**1. Install / verify the OpenClaw Chrome extension (PRIMARY).** Install the OpenClaw extension from the Chrome Web Store into the Chrome profile OpenClaw is paired with, then run the standing version preflight. It compares the installed version against the newest the box can prove (the operator pin, else the extension source bundled with the local OpenClaw install) and reports the extension lane's (Lane 1) verdict, with the update path named, when the extension is missing or behind:
 
 ```bash
 bash scripts/check-openclaw-extension-version.sh
 ```
 
-Expected: `OK: OpenClaw Chrome extension vX.Y.Z is installed and current`. Any STOP output means no install run starts until the extension is installed or updated and the check passes.
+Expected: `OK: OpenClaw Chrome extension vX.Y.Z is installed and current (expected vA.B.C)`. A `LANE 1 UNAVAILABLE` result disables the extension lane only: record the reason, continue to the capability probe (item 3), and let it select the best verified lane; install or update the extension when convenient to restore Lane 1. An install run fails to start only when the probe verifies zero lanes (item 3, fail closed).
 
 **2. Install / verify the agent-browser CLI (FALLBACK lane).** Follow the 03-agent-browser skill, then verify the CLI resolves and matches the repo pin:
 
