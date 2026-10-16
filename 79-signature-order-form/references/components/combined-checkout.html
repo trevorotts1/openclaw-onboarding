@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TEST combined checkout (S79-03 draft)</title>
+<link rel="stylesheet" href="components.css">
+</head>
+<body>
+<main class="sig-checkout" data-mode="combined">
+  <h2>TEST Offer, explained</h2>
+  <p>TEST explanation copy for the single simple offer in combined mode.
+     Combined mode is used only when no Product Selection step exists.</p>
+  <!-- Doc 09 section 4 explanation slots: all four are required material.
+       An install is incomplete while any slot is empty. -->
+  <section aria-labelledby="expl-includes">
+    <h3 id="expl-includes">What is included</h3>
+    <p>TEST slot: the items this offer includes, from the approved offer record.</p>
+  </section>
+  <section aria-labelledby="expl-who">
+    <h3 id="expl-who">Who this is for</h3>
+    <p>TEST slot: who this offer is for, from the approved offer record.</p>
+  </section>
+  <section aria-labelledby="expl-access">
+    <h3 id="expl-access">Access and delivery</h3>
+    <p>TEST slot: how and when the buyer gets access, from the approved offer record.</p>
+  </section>
+  <section aria-labelledby="expl-exclusions">
+    <h3 id="expl-exclusions">Important exclusions</h3>
+    <p>TEST slot: what this offer does not include, from the approved offer record.</p>
+  </section>
+
+  <!-- INCLUDE: offer-details.html -->
+  <!-- INCLUDE: order-bump.html -->
+  <!-- INCLUDE: guarantee-terms.html -->
+
+  <!-- NATIVE CHECKOUT SLOT: Skill 06 installs the native Convert and Flow
+       order form here. This slot must NEVER contain homemade card, expiry
+       or CVC inputs. The bump checkbox above only modifies the pending
+       order; this native form's submission processes the purchase. -->
+  <div class="sig-native-slot" data-native-slot="checkout-form" role="group" aria-label="Secure checkout">
+    <p>Secure checkout loads here.</p>
+  </div>
+
+  <div class="sig-status-region" role="status" aria-live="polite"></div>
+</main>
+</body>
+</html>

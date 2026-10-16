@@ -198,6 +198,7 @@ This role contributes to the company revenue cascade by: **accelerating revenue 
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
 | **44** convert-and-flow-operator | "build a workflow" · "automate this" · "an order-bump" | `~/.openclaw/skills/44-convert-and-flow-operator/` | `universal-sops/funnel-automation-build-quality-rubric.md/` |
+| **79** signature-order-form | "build my checkout page" · "build an order form" · "add an order bump" | `~/.openclaw/skills/79-signature-order-form/` | `universal-sops/funnel-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures (Numbered)

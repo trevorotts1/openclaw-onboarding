@@ -163,7 +163,7 @@
         "sop-writer",
         "tag--segmentation-specialist"
       ],
-      "content_sha": "sha256:5b6ba77456904c87db8f6c9732a4ce12fba216cf01212e3df63760724601ef0e",
+      "content_sha": "sha256:28d9834f7a5a28954f1570ddcce46567cc8e7b7c6be4f52c0ed7bc85efbc7570",
       "content_hashed_at": "2026-10-16T02:01:24.992552+00:00"
     },
     "customer-support": {
@@ -223,7 +223,7 @@
         "funnel-qa-conversion-verification-specialist",
         "ghl-funnel-build-specialist"
       ],
-      "content_sha": "sha256:007ac76cfbddfef79314a4ff3be51e00755dc3ccf2dfb8f69c30c7aac5e3269d",
+      "content_sha": "sha256:a6e06f4f2dcbd44f3e218601af74f61e0e243b0b96ebc06a92b91471dcbdddff",
       "content_hashed_at": "2026-10-16T02:01:24.992552+00:00"
     },
     "general-task": {
@@ -746,7 +746,7 @@
         "web-security-specialist",
         "wordpress-specialist"
       ],
-      "content_sha": "sha256:47ca250fdd581997a9215e253ddf64420401cb5ca5f6c5c2fa31dbfdcd897fd5",
+      "content_sha": "sha256:904549af8de9f99283eb213017a085e6591e9ad436bc4f515d18fdedb00bbe9f",
       "content_hashed_at": "2026-10-16T02:01:24.992552+00:00"
     },
     "rescue-rangers": {
@@ -2375,7 +2375,7 @@
       "path": "templates/role-library/crm/automation-workflow-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:85cf875bc50f3159941c8e372fbb16bb0c4dc02590c105fed16bc355bd68ca58",
+      "content_sha": "sha256:a58fea54695cd160df2b51d9756829ac5e2ea28dabaee3cf0c4c001275e6d3ae",
       "render_sha": "sha256:3d89c2f6620d54c6cf8a605d74d2aa3241d71f335c6510fb5427b12c9125de2f",
       "content_version": "1.0.11",
       "content_hashed_at": "2026-10-16T02:01:24.992552+00:00"
@@ -7383,7 +7383,7 @@
       "path": "templates/role-library/web-development/funnel-builder-specialist.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:61ed704ace8e60ee87acbf2d92553e738f61a13803e72876957ddd42e8245827",
+      "content_sha": "sha256:ff003ed6e7bd80e917a33016aecda1f68a068d5d95e9b7b7cbc38d3474e6425b",
       "render_sha": "sha256:8210879db8564f5392bc5228f691fd5c9ed510f03f8eb30ad9336b328c895e92",
       "content_version": "1.0.19",
       "content_hashed_at": "2026-10-16T02:01:24.992552+00:00"
@@ -7975,7 +7975,7 @@
       "path": "templates/role-library/funnels/funnel-qa-conversion-verification-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:88f0a598600e8955441c49209bf0f8c6735b315ec41110f34faa1dbb8b26e859",
+      "content_sha": "sha256:84678f2ae81d8aea0db19404c0de2d1916940a606d3a6c335b8e529283871137",
       "render_sha": "sha256:e36594d1f527cf081c4cb395fb4e7638f506fbc4c3e19ad32810a690181f32dd",
       "content_version": "1.0.1",
       "content_hashed_at": "2026-10-16T02:01:24.992552+00:00"
@@ -7991,7 +7991,7 @@
       "path": "templates/role-library/funnels/ghl-funnel-build-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:9d61614dd065499cf6b465ccc921aa6fe7ae84eefaae125d34b08027e6521da5",
+      "content_sha": "sha256:2178c8593455009eaecfa353db2e95d20948717030607a42daf0e1e581e86d8b",
       "render_sha": "sha256:ae56e57e97f25ef19c694fd09f8e43487fa69d14223634eabb90ec074c154641",
       "content_version": "1.0.1",
       "content_hashed_at": "2026-10-16T02:01:24.992552+00:00"

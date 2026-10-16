@@ -206,7 +206,7 @@ This is the **unified repo** for both platforms (PRD 2.1). Platform-specific fil
 
 > Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
-This repo contains **77 numbered skill folders (01–82)**: 72 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
+This repo contains **78 numbered skill folders (01–82)**: 73 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
@@ -332,9 +332,10 @@ That file is the master instruction file. It contains:
 | 74-kie-live-adapter | **KIE Live Adapter (v1.0.0)** — infrastructure for skills 66, 67 and 68: a standard-library Python tool that reads KIE's live model catalog and schema, validates payloads, uploads files, submits to the schema-declared path, polls and saves results, and reads the credit balance. Shadow mode by default (records drift, never dispatches a paid job); never picks or changes a model. |
 | 75-drama-song-ad-factory | **Drama Song Ad Factory (v1.0.0)** — end-to-end drama-song advertisement factory: intake preflight, shared canonical core (state/ledger/qc/assembler), Command Center ad-campaigns integration, 999 Claude-Nine/Claude Code distribution, fault-boundary suite, operating docs. |
 | 76-local-embedder | **Local Embedder (v1.3.0)**: client Macs only. Free local embeddings for OpenClaw memory search: reuses a running Ollama 0.36.0 or newer untouched, upgrades an older one in place only when idle, or installs the checksum-verified headless Ollama CLI 0.40.0 under the LaunchAgent `com.blackceo.ollama-serve` (no GUI, no sudo). Pulls `embeddinggemma-2:740m`, pins `num_ctx 8192` on that same tag, then (after every guard passes) writes only `memory.search.*` with fallback `none` and re-indexes each agent once, time-bounded. Ollama Cloud sign-in, cloud tags, key files, `OLLAMA_*` env and chat-model config are verified unchanged (fail closed). VPS and Contabo boxes skip it. |
+| 79-signature-order-form | **Signature Order Form (v0.1.0)** — the Signature Launch order form / checkout skill: builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout for one simple offer, and post-selection checkout after Skill 78 Product Selection), owns the order bump on the original checkout (default unchecked, suppressed when its entitlement is already included or owned), the offer details and price display, and the guarantee/terms block. Native checkout controls only; purchase events emit only from verified paid attempts. |
 | 82-signature-thank-you | **Signature Thank-You (v0.1.0)** — the terminal Signature Launch thank-you / confirmation page skill: builds the post-purchase confirmation and access experience showing exactly what the customer actually purchased (verified against the normalized purchase snapshot and Skill 44 entitlement state), its actual charges and terms, and what happens next. No new pitch, no new offer, no new-charge CTA; fulfillment authority is Skill 44 — this skill consumes entitlement state, never grants it, and fulfillment never depends on the buyer reaching the page. |
 
-**Total: 77 numbered skill folders** (01–82): **72 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
+**Total: 78 numbered skill folders** (01–82): **73 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
 
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.

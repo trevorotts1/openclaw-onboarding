@@ -94,6 +94,7 @@ You never have to know these by name or type a command. Just say what you want i
 | If you say something like… | This department will… |
 |---|---|
 | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" · "create a signature landing page" | Builds BlackCEO Signature single-page conversion experiences with the Standard or Long-Form page system |
+| "build my checkout page" · "build an order form" · "add an order bump" · "checkout for my launch" | Builds the Signature order form / checkout experience around native Convert & Flow transaction elements, in combined single-offer mode or post-selection mode, including the reusable optional order bump (default unchecked) that modifies the pending order |
 | "build a thank you page" · "order confirmation page" · "page customers see after buying" | Builds the final Signature thank-you and fulfillment page |
 
 You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
