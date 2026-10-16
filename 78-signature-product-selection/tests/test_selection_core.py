@@ -110,13 +110,32 @@ class HandoffTests(unittest.TestCase):
     def test_packet_fixture_shape(self):
         # The packet launch-example has three mains but unapproved prices and
         # no native mappings: the plan builder must refuse, never publish.
-        # The path is asserted, not skipped: a silent skip hid this test
-        # being a no-op in the first checkpoint (S78-09 review finding).
-        packet = Path(__file__).resolve().parents[6] / "packet" / "reference" / "launch-example.json"
-        self.assertTrue(packet.exists(), f"packet fixture missing at {packet}")
+        # Location-independent resolution (CR-INT-S78-001): an explicit
+        # S78_PACKET_ROOT override wins; otherwise walk ancestors looking for
+        # the project packet; otherwise fall back to the vendored copy of the
+        # packet example inside this skill's fixtures. The test asserts in
+        # every layout - it never errors on a missing packet and never
+        # silently passes (the attempt-1 defect was a silent no-op).
+        import os
+        packet = None
+        override = os.environ.get("S78_PACKET_ROOT")
+        if override:
+            candidate = Path(override) / "reference" / "launch-example.json"
+            if candidate.exists():
+                packet = candidate
+        if packet is None:
+            for parent in Path(__file__).resolve().parents:
+                candidate = parent / "packet" / "reference" / "launch-example.json"
+                if candidate.exists():
+                    packet = candidate
+                    break
+        if packet is None:
+            packet = ROOT / "fixtures" / "packet-shape" / "launch.json"
+        self.assertTrue(packet.exists(), f"no packet fixture resolvable (last tried {packet})")
         launch = json.loads(packet.read_text())
-        with self.assertRaises(Violation):
+        with self.assertRaises(Violation) as ctx:
             build_plan(launch)
+        self.assertEqual(ctx.exception.code, "S78-UNAPPROVED-PRICE")
 
     def test_offer_with_no_prices_is_not_publishable(self):
         launch = clone(SELF_TEST_LAUNCH)
