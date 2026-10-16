@@ -332,6 +332,11 @@ def verify_order_render(plan: dict, rendered: dict) -> dict:
           "payment_tile_present": bool,
           "selected_product_ref": "<the product the placed element is "
                                    "actually bound to, as read back>",
+          "collect_payment_selected_product_ref": "<the product the "
+                                   "Collect Payment tile is bound to, as "
+                                   "read back; required when that element "
+                                   "carries a binding distinct from the "
+                                   "order form's>",
           "bump_present": bool,
           "bump_checked": bool | None,   # None = state not observed
         }
@@ -340,7 +345,12 @@ def verify_order_render(plan: dict, rendered: dict) -> dict:
     in the style of ``ghl_builder.assert_seo_populated``. ``ok`` is True
     only when every planned element's evidence matches: tiles present,
     selected product EXACTLY equal to the binding reference, bump present
-    and observed UNCHECKED."""
+    and observed UNCHECKED. A collect-payment element whose binding is
+    DISTINCT from the order form's is verified against its own read-back
+    key (``collect_payment_selected_product_ref``), which must be present
+    and exactly equal to that binding; when the collect-payment binding
+    equals the order form's, the shared ``selected_product_ref`` check
+    covers it and the separate key is not required."""
     checks: List[dict] = []
     reasons: List[str] = []
     rendered = rendered or {}
@@ -368,6 +378,24 @@ def verify_order_render(plan: dict, rendered: dict) -> dict:
               bool(rendered.get("payment_tile_present")),
               "the 'Collect Payment' native tile must be present in the "
               "rendered form")
+        cp_expected = by_kind[KIND_COLLECT_PAYMENT]["binding"]["product_ref"]
+        form_expected = (by_kind[KIND_ORDER_FORM]["binding"]["product_ref"]
+                         if KIND_ORDER_FORM in by_kind else None)
+        if cp_expected != form_expected:
+            # A DISTINCT collect-payment binding (D1 cure): the order-form
+            # check above compares the rendered selected product against
+            # the ORDER FORM's binding only, so this element's declared
+            # selected-product verification is performed here, against its
+            # own read-back key, mirroring the upsell / downsell branches
+            # below. A missing (unobserved) read-back fails. When the
+            # collect-payment binding equals the order form's, the shared
+            # check already covers it and no separate key is required.
+            cp_observed = rendered.get("collect_payment_selected_product_ref")
+            check("collect_payment_selected_product_matches_binding",
+                  cp_observed == cp_expected,
+                  f"collect-payment product read back as {cp_observed!r}; "
+                  f"the distinct collect-payment binding requires exactly "
+                  f"{cp_expected!r}")
     if KIND_ORDER_BUMP in by_kind:
         check("bump_present", bool(rendered.get("bump_present")),
               "the bump offer must be present on the rendered order form")

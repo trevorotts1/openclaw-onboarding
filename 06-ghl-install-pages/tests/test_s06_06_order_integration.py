@@ -305,6 +305,82 @@ class TestOrderRenderVerification:
         assert not verdict["ok"]
 
 
+# ── D1 cure: distinct collect-payment binding ────────────────────────────────
+#
+# At eeea7ce9, verify_order_render compared the rendered selected product
+# against the ORDER FORM's binding only; the collect-payment element's
+# declared verify (selected_product_matches_binding) was never performed
+# when that element carried a DISTINCT binding, so a wrong or unobserved
+# collect-payment product passed. These tests pin the cure.
+
+DISTINCT_CP_SPEC = {
+    "location_id": "LOC_TEST",
+    "form_name": "Signature Order Form",
+    "order_form": {"product": {"product_ref": "prod_main_offer",
+                               "source": "caller_supplied"}},
+    "collect_payment": {"product": {"product_ref": "prod_CP_DISTINCT",
+                                    "source": "caller_supplied"}},
+}
+
+DISTINCT_CP_RENDER = {
+    "order_tile_present": True, "payment_tile_present": True,
+    "selected_product_ref": "prod_main_offer",
+    "collect_payment_selected_product_ref": "prod_CP_DISTINCT",
+}
+
+
+class TestCollectPaymentDistinctBinding:
+    def test_plan_declares_the_verification(self):
+        plan = oe.build_order_plan(DISTINCT_CP_SPEC)
+        cp = next(e for e in plan["elements"]
+                  if e["kind"] == "collect_payment")
+        assert cp["binding"]["product_ref"] == "prod_CP_DISTINCT"
+        assert cp["verify"] == {"selected_product_matches_binding": True}
+
+    def test_distinct_binding_right_product_passes(self):
+        verdict = oe.verify_order_render(
+            oe.build_order_plan(DISTINCT_CP_SPEC), DISTINCT_CP_RENDER)
+        assert verdict["ok"], verdict["reasons"]
+        cp_check = next(
+            c for c in verdict["checks"]
+            if c["check"] ==
+            "collect_payment_selected_product_matches_binding")
+        assert cp_check["ok"]
+
+    def test_distinct_binding_wrong_product_fails(self):
+        rendered = dict(DISTINCT_CP_RENDER)
+        rendered["collect_payment_selected_product_ref"] = "prod_WRONG"
+        verdict = oe.verify_order_render(
+            oe.build_order_plan(DISTINCT_CP_SPEC), rendered)
+        assert not verdict["ok"]
+        assert any("collect_payment_selected_product_matches_binding" in r
+                   for r in verdict["reasons"])
+
+    def test_distinct_binding_unobserved_product_fails(self):
+        rendered = dict(DISTINCT_CP_RENDER)
+        del rendered["collect_payment_selected_product_ref"]
+        verdict = oe.verify_order_render(
+            oe.build_order_plan(DISTINCT_CP_SPEC), rendered)
+        assert not verdict["ok"]
+        assert any("collect_payment_selected_product_matches_binding" in r
+                   for r in verdict["reasons"])
+
+    def test_default_shape_needs_no_collect_payment_key(self):
+        # Regression guard: FULL_SPEC binds collect_payment to the order
+        # form's product (collect_payment: True) and GOOD_RENDER carries
+        # no collect-payment read-back key; the shared order-form check
+        # covers it, so the verdict passes and no distinct-binding check
+        # is emitted.
+        assert "collect_payment_selected_product_ref" not in GOOD_RENDER
+        verdict = oe.verify_order_render(oe.build_order_plan(FULL_SPEC),
+                                         GOOD_RENDER)
+        assert verdict["ok"], verdict["reasons"]
+        assert not any(
+            c["check"] ==
+            "collect_payment_selected_product_matches_binding"
+            for c in verdict["checks"])
+
+
 # ── ID-handoff record ────────────────────────────────────────────────────────
 
 class TestIdHandoff:
