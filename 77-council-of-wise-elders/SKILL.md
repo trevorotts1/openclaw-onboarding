@@ -22,7 +22,7 @@ This package is the canonical onboarding package for the council. The
 deliberation runtime, the standalone CLI, and the nine advisor knowledge
 packs are built and ship in this package; their exact tree identity is
 recorded in manifest.json. Composition, admission, and dispatch of a
-live session are proven on the reference machine configuration; a
+live session are proven on the canary machine configuration; a
 completed live session is not yet established, so live completion is
 reported as unverified, never as proven. Every advisor pack stands at
 bibliographic_only coverage: no seat is quality_qualified, and seats
