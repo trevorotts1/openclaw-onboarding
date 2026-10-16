@@ -318,6 +318,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         env=dict(os.environ,HOME=str(self.root),OPENCLAW_WORKSPACE_ROOT=str(self.root),OPENCLAW_OWNER_CHAT_ID='123456789',MC_API_TOKEN='fixture-secret')
         env.pop('MC_API_TOKEN',None)  # fresh installer writes a service token, not ambient shell export
         run=subprocess.run(['/bin/bash',str(ROOT/'23-ai-workforce-blueprint/scripts/send-interview-link.sh'),'--dry-run'],env=env,text=True,capture_output=True)
+        self.assertNotIn('{{INVITATION_RECOVERY}}',run.stdout)
         self.assertEqual(run.returncode,0,run.stderr);self.assertIn('https://client.example.com/interview',run.stdout);self.assertNotIn('fixture-secret',run.stdout+run.stderr);self.assertFalse(self.capture.exists())
         sent=subprocess.run(['/bin/bash',str(ROOT/'23-ai-workforce-blueprint/scripts/send-interview-link.sh')],env=env,text=True,capture_output=True)
         self.assertEqual(sent.returncode,0,sent.stderr);self.assertEqual(json.loads(sent.stdout)['status'],'accepted');self.assertEqual(json.loads(self.capture.read_text())['target'],'123456789');self.assertIn('?enroll=fixture.signature',json.loads(self.capture.read_text())['message']);self.assertNotIn('fixture.signature',sent.stdout+sent.stderr)
@@ -553,7 +554,11 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         self.assertIn('after signing in: https://client.example.com/interview\n',message)
         self.assertIn('resume my interview',message)
         self.assertIn('expires on ',message);self.assertIn(' UTC.',message)
+        self.assertNotIn('re-open this same link',message)
+        self.assertNotIn('no fresh link needed',message)
+        self.assertIn('expired or was already used',message)
         self.assertNotIn('{{INVITATION_VALIDITY}}',message)
+        self.assertNotIn('{{INVITATION_RECOVERY}}',message)
         self.assertEqual(state.read_bytes(),before);self.assertEqual(foreign.read_bytes(),foreign_before)
         self.assertEqual(len(mints.read_text().splitlines()),2)
         self.assertNotIn('fixture.signature',renewed.stdout+renewed.stderr)
@@ -648,6 +653,7 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         self.assertIn('stays valid until your interview is complete.',message)
         self.assertNotIn('expires on ',message)
         self.assertNotIn('{{INVITATION_VALIDITY}}',message)
+        self.assertNotIn('{{INVITATION_RECOVERY}}',message)
         self.assertEqual(message.count('?enroll='),1)
         self.assertNotIn('fixture.signature',sent.stdout+sent.stderr)
         receipt_path=state.parent/'company-discovery/.interview-link-sends.log.receipt.json'
@@ -709,8 +715,11 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         message=json.loads(self.capture.read_text())['message']
         self.assertIn('stays valid until your interview is complete',message)
         self.assertIn('open it again whenever you like, on any device.',message)
+        self.assertIn('re-open this same link on any device',message)
+        self.assertNotIn('expired or was already used',message)
         self.assertNotIn('expires on ',message)
         self.assertNotIn('{{INVITATION_VALIDITY}}',message)
+        self.assertNotIn('{{INVITATION_RECOVERY}}',message)
         self.assertEqual(message.count('?enroll='),1)
         self.assertNotIn('fixture.signature',sent.stdout+sent.stderr)
         receipt_path=state.parent/'company-discovery/.interview-link-sends.log.receipt.json'
@@ -726,6 +735,10 @@ print(json.dumps({'channel':'telegram','payload':{'ok':True,'messageId':'fixture
         message=json.loads(self.capture.read_text())['message']
         self.assertIn('stays valid until your interview is complete.',message)
         self.assertNotIn('open it again',message)
+        self.assertNotIn('re-open this same link',message)
+        self.assertNotIn('no fresh link needed',message)
+        self.assertNotIn('{{INVITATION_RECOVERY}}',message)
+        self.assertIn('expired or was already used',message)
 
     def test_origin_must_be_a_hostname_never_an_ip_address(self):
         """A public IP literal is not a weaker origin, it is a different tenant.

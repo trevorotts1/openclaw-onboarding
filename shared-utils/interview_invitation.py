@@ -247,6 +247,18 @@ def invitation_error_code(body):
     code = payload.get('error')
     return code if isinstance(code, str) and code in INVITATION_APPLICATION_ERRORS else None
 
+
+def invitation_recovery_sentence(expiry, reopenable=False):
+    """Describe recovery using the issuer's actual redemption contract."""
+    if expiry is None and reopenable:
+        recovery = ('If asked to sign in again, re-open this same link on any device. '
+                    'If you lost this link, ')
+    else:
+        recovery = ('If asked to sign in again and this link has expired or was already used, ')
+    return (recovery + 'tell your Telegram assistant “resume my interview” to get a fresh private link. '
+            'Your saved answers stay in place.')
+
+
 def issue_invitation(resolved, env, target, metadata=None):
     config=curl_auth_config(env)
     body=json.dumps({'recipientHash':hashlib.sha256(target.encode()).hexdigest()})
@@ -502,7 +514,8 @@ def main():
             # Replace only the primary sign-in link: the later authenticated
             # resume bookmark must remain stable and must never carry a ticket.
             validity=invitation_validity_sentence(delivery_context['invitationExpiresAt'],delivery_context.get('invitationReopenable',False))
-            return text.replace(private_entry,url,1).replace('{{INVITATION_VALIDITY}}',validity)
+            recovery=invitation_recovery_sentence(delivery_context['invitationExpiresAt'],delivery_context.get('invitationReopenable',False))
+            return text.replace(private_entry,url,1).replace('{{INVITATION_VALIDITY}}',validity).replace('{{INVITATION_RECOVERY}}',recovery)
         code,receipt=send_gateway(message,args.target,args.ledger,delivery_context,os.environ.get('FORCE')=='1',prepare_message=enroll)
         print(json.dumps(receipt));return code
     except (Pending,ValueError,OSError) as exc:
