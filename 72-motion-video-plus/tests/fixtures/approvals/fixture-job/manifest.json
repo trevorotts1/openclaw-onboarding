@@ -1,0 +1,61 @@
+{
+  "schema_version": "2.0",
+  "job_id": "mg025-fixture-job",
+  "company_id": "mg025-company",
+  "execution_context": "fixture",
+  "parent": null,
+  "mode": "powerpoint_graphic",
+  "content_scope": "insert",
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "duration_frames": 180,
+  "authoring": {
+    "selection": "inherit_config",
+    "provider": null,
+    "model": null,
+    "harness": null
+  },
+  "rendering": {
+    "default_engine": "remotion",
+    "allow_legacy_fallback": false,
+    "runtime_lock": "runtime-lock.json"
+  },
+  "storyboard": "storyboard.json",
+  "assets": "assets.json",
+  "design": "design.json",
+  "timeline": "timeline.json",
+  "audio": {
+    "mode": "none",
+    "parent_audio_ref": null,
+    "create_voiceover": false,
+    "create_music": false,
+    "source_assets": []
+  },
+  "approval_policy": "fixture_only",
+  "variants": [],
+  "scenes": [
+    {
+      "id": "bar-01",
+      "spec": "scenes/bar-01.json"
+    }
+  ],
+  "delivery": {
+    "video_profile": "h264_opaque",
+    "poster_frame": 150,
+    "placement": "full_frame",
+    "playback": {
+      "start": "on_click",
+      "repeat": "once",
+      "end": "hold_final"
+    },
+    "required": [
+      "mp4",
+      "poster",
+      "source_package",
+      "placement_metadata"
+    ]
+  }
+}

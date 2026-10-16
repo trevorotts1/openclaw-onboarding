@@ -1,0 +1,26 @@
+{
+  "id": "bar-01",
+  "semantic_motion_assertions": [
+    {
+      "id": "final-ratios",
+      "kind": "bar_widths",
+      "subject_ids": [
+        "bar-a",
+        "bar-b",
+        "bar-c"
+      ],
+      "frame": 75,
+      "expected_values": [
+        480.0,
+        720.0,
+        1200
+      ],
+      "tolerance": 1,
+      "unit": "source_px",
+      "evidence": [
+        "geometry",
+        "decoded_frame"
+      ]
+    }
+  ]
+}

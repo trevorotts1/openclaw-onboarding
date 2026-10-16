@@ -69,9 +69,9 @@ loop body simply never executes for it — a proven no-op, not a special case.
 OUT OF SCOPE (explicitly, not an oversight)
 ────────────────────────────────────────────────────────────────────────────
 Only role-library department directories that have a `scripts/` subdirectory
-are enumerated. `templates/role-library/presentations/intake/` (and
-`intake-miniapp/`) are SIBLINGS of `scripts/`, not inside it, and are left
-untouched by this script — delivering them is a separate, undesigned gap.
+are enumerated. `templates/role-library/presentations/intake/` is a SIBLING
+of `scripts/`, not inside it, and is left
+untouched by this script — delivering it is a separate, undesigned gap.
 `.artifact-refresh-queue.json` STALE/MISSING drains (refresh-stale-roles.py,
 floor-fill-driver.py) remain the only consumers of role/sop/dept kind rows;
 this script neither reads nor writes that queue.

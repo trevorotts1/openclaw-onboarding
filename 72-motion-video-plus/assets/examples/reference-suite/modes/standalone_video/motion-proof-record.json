@@ -1,0 +1,233 @@
+{
+  "schema_version": "1.0",
+  "kind": "motion_proof_record",
+  "item": "MG-032",
+  "job_id": "fixture-standalone-silent",
+  "verdict": "pass",
+  "scope": "standalone program: MG-032 evaluator per C05 scene; adapter motion assertions per C01 scene (the components' supported proof surfaces)",
+  "scenes": [
+    {
+      "scene_id": "open-reveal",
+      "component_id": "C01",
+      "mechanism": "adapter_inspect_motion",
+      "verdict": "pass",
+      "record": "render-receipt.json",
+      "detail": {
+        "mechanism": "adapter_inspect_motion",
+        "assertions_checked": 3,
+        "assertions_passed": 3,
+        "observations": [
+          "assertion reveal-initial at frame 0: subject \"work-crate\" revealed fraction 0.000 (raw color fraction 0.000, hold reference 0.160), expected within [0, 0.02]: PASS",
+          "assertion reveal-proof at frame 37: subject \"work-crate\" revealed fraction 0.597 (raw color fraction 0.096, hold reference 0.160), expected within [0.35, 0.75]: PASS",
+          "assertion reveal-final at frame 89: subject \"work-crate\" revealed fraction 1.000 (raw color fraction 0.160, hold reference 0.160), expected within [0.97, 1]: PASS"
+        ]
+      }
+    },
+    {
+      "scene_id": "detail-zoom",
+      "component_id": "C01",
+      "mechanism": "adapter_stills_measurement",
+      "verdict": "pass",
+      "record": "render-receipt.json",
+      "detail": {
+        "mechanism": "adapter_stills_measurement",
+        "method": "MG-005 nested-detail method: detail chip color fraction in decoded stills before and after its start frame, root subject fraction held constant",
+        "detail_chip_fraction_early": 0,
+        "detail_chip_fraction_late": 0.9379712643678161,
+        "subject_fraction_early": 0.14614032258064516,
+        "subject_fraction_late": 0.14614032258064516
+      }
+    },
+    {
+      "scene_id": "proof-chart",
+      "component_id": "C05",
+      "mechanism": "mg032_evaluator",
+      "verdict": "pass",
+      "category": null,
+      "record": "proof/proof-chart/proof-record.json",
+      "assertions": [
+        {
+          "role": "initial",
+          "frame": 0,
+          "expected": [
+            0,
+            0,
+            0
+          ],
+          "geometry_measured": [
+            0,
+            0,
+            0
+          ],
+          "raster_measured": [
+            0,
+            0,
+            0
+          ],
+          "verdict": "pass",
+          "detail": "bar widths agree three ways at frame 0: spec derivation, component geometry, and decoded raster all read [0, 0, 0]"
+        },
+        {
+          "role": "proof",
+          "frame": 45,
+          "expected": [
+            240,
+            360,
+            600
+          ],
+          "geometry_measured": [
+            240,
+            360,
+            600
+          ],
+          "raster_measured": [
+            240,
+            360,
+            600
+          ],
+          "verdict": "pass",
+          "detail": "bar widths agree three ways at frame 45: spec derivation, component geometry, and decoded raster all read [240, 360, 600]"
+        },
+        {
+          "role": "final",
+          "frame": 75,
+          "expected": [
+            480,
+            720,
+            1200
+          ],
+          "geometry_measured": [
+            480,
+            720,
+            1200
+          ],
+          "raster_measured": [
+            480,
+            720,
+            1200
+          ],
+          "verdict": "pass",
+          "detail": "bar widths agree three ways at frame 75: spec derivation, component geometry, and decoded raster all read [480, 720, 1200]"
+        },
+        {
+          "role": "hold",
+          "frame": 149,
+          "expected": [
+            480,
+            720,
+            1200
+          ],
+          "geometry_measured": [
+            480,
+            720,
+            1200
+          ],
+          "raster_measured": [
+            480,
+            720,
+            1200
+          ],
+          "verdict": "pass",
+          "detail": "bar widths agree three ways at frame 149: spec derivation, component geometry, and decoded raster all read [480, 720, 1200]"
+        }
+      ],
+      "clip_frames": 60
+    },
+    {
+      "scene_id": "final-state",
+      "component_id": "C05",
+      "mechanism": "mg032_evaluator",
+      "verdict": "pass",
+      "category": null,
+      "record": "proof/final-state/proof-record.json",
+      "assertions": [
+        {
+          "role": "initial",
+          "frame": 0,
+          "expected": [
+            0,
+            0,
+            0
+          ],
+          "geometry_measured": [
+            0,
+            0,
+            0
+          ],
+          "raster_measured": [
+            0,
+            0,
+            0
+          ],
+          "verdict": "pass",
+          "detail": "bar widths agree three ways at frame 0: spec derivation, component geometry, and decoded raster all read [0, 0, 0]"
+        },
+        {
+          "role": "proof",
+          "frame": 25,
+          "expected": [
+            600,
+            600,
+            600
+          ],
+          "geometry_measured": [
+            600,
+            600,
+            600
+          ],
+          "raster_measured": [
+            600,
+            600,
+            600
+          ],
+          "verdict": "pass",
+          "detail": "bar widths agree three ways at frame 25: spec derivation, component geometry, and decoded raster all read [600, 600, 600]"
+        },
+        {
+          "role": "final",
+          "frame": 40,
+          "expected": [
+            1200,
+            1200,
+            1200
+          ],
+          "geometry_measured": [
+            1200,
+            1200,
+            1200
+          ],
+          "raster_measured": [
+            1200,
+            1200,
+            1200
+          ],
+          "verdict": "pass",
+          "detail": "bar widths agree three ways at frame 40: spec derivation, component geometry, and decoded raster all read [1200, 1200, 1200]"
+        },
+        {
+          "role": "hold",
+          "frame": 119,
+          "expected": [
+            1200,
+            1200,
+            1200
+          ],
+          "geometry_measured": [
+            1200,
+            1200,
+            1200
+          ],
+          "raster_measured": [
+            1200,
+            1200,
+            1200
+          ],
+          "verdict": "pass",
+          "detail": "bar widths agree three ways at frame 119: spec derivation, component geometry, and decoded raster all read [1200, 1200, 1200]"
+        }
+      ],
+      "clip_frames": 30
+    }
+  ],
+  "generated_at": "2026-10-15T08:52:01.815Z"
+}

@@ -1,0 +1,419 @@
+{
+  "$defs": {
+    "defect": {
+      "additionalProperties": false,
+      "properties": {
+        "cause": {
+          "description": "The underlying cause, not the surface symptom. Remediation is ordered by cause severity.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "defect_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "first_seen_round": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "resolution_evidence": {
+          "description": "What proves the fix, cited when resolved is true: the frame, sample, or record that shows the defect gone.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolved": {
+          "type": "boolean"
+        },
+        "severity": {
+          "enum": [
+            "critical",
+            "major",
+            "minor"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "defect_id",
+        "severity",
+        "description",
+        "cause",
+        "first_seen_round",
+        "resolved"
+      ],
+      "type": "object"
+    },
+    "dimension_review": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "scored"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reference_comparison": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "score": {
+                "maximum": 10,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "score",
+              "reference_comparison",
+              "evidence"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "unscored",
+                  "not_applicable"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "score": {
+                "type": [
+                  "null"
+                ]
+              },
+              "unscored_reason": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "unscored_reason"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "audio_judgment": {
+          "default": false,
+          "description": "True when this score rests on hearing the artifact. A scored dimension with audio_judgment true must cite at least one audio_record evidence item carrying measured audio data; enforced by the tooling.",
+          "type": "boolean"
+        },
+        "defects": {
+          "items": {
+            "$ref": "#/$defs/defect"
+          },
+          "type": "array"
+        },
+        "dimension": {
+          "enum": [
+            "visual_storytelling",
+            "asset_relevance",
+            "typography_readability",
+            "composition",
+            "motion_clarity",
+            "data_proof_integrity",
+            "destination_fit",
+            "finishing"
+          ],
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/evidence_ref"
+          },
+          "type": "array"
+        },
+        "reference_comparison": {
+          "description": "Required when status is scored: the explicit comparison against the job's reference, naming what the artifact preserves and where it departs.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "score": {
+          "description": "Required when status is scored; must be null or absent otherwise. Enforced by the if/then below and by the tooling.",
+          "maximum": 10,
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "scored",
+            "unscored",
+            "not_applicable"
+          ],
+          "type": "string"
+        },
+        "unscored_reason": {
+          "description": "Required when status is unscored or not_applicable: the missing evidence or the reason the dimension does not apply. A dimension is never estimated.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "dimension",
+        "status"
+      ],
+      "type": "object"
+    },
+    "evidence_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "description": "What this evidence shows, in the reviewer's own words: the frame numbers, the measured values, the observed fact the score rests on.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "ref": {
+          "description": "Path to the evidence artifact, resolved relative to the review record's directory. File-backed evidence must exist; enforced by the tooling.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "frame",
+            "bundle_sample",
+            "sheet",
+            "proof_record",
+            "coverage_record",
+            "metrics_record",
+            "audio_record",
+            "document"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "ref",
+        "detail"
+      ],
+      "type": "object"
+    },
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "agent",
+            "human",
+            "system"
+          ],
+          "type": "string"
+        },
+        "vision_capable": {
+          "description": "Whether this identity can actually see frames. A vision-incapable reviewer may author but cannot sign the visual dimensions; enforced by the tooling.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "vision_capable"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:blackceo:motion:review-rubric:1.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One round of creative review under references/critique-protocol.md. This is the review layer's own versioned schema, registered by MG-033; the canonical contracts schema (references/contracts-v2.schema.json) is not edited by this item. A record names its author and its reviewer as distinct identities, scores the eight viewer-experience dimensions only from cited evidence compared against the job's reference, and carries the reference's calibration state so provisional scores are labeled as provisional. Structural rules that span records (trend caps across rounds, coverage binding, gate consistency) are enforced by scripts/review_rubric.py, not by this schema.",
+  "properties": {
+    "artifact": {
+      "additionalProperties": false,
+      "properties": {
+        "bundle_dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "coverage_record": {
+          "description": "Path to the MG-031 coverage record for this artifact, resolved relative to the review record's directory. Its verdict must be complete and its job id must match, enforced by the tooling.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "powerpoint_graphic",
+            "vsl_desktop",
+            "vsl_mobile",
+            "standalone_video",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "video": {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "coverage_record"
+      ],
+      "type": "object"
+    },
+    "author": {
+      "$ref": "#/$defs/identity"
+    },
+    "dimensions": {
+      "items": {
+        "$ref": "#/$defs/dimension_review"
+      },
+      "maxItems": 8,
+      "minItems": 8,
+      "type": "array"
+    },
+    "escalation_basis": {
+      "description": "Required in substance when verdict is escalate: the evidence summary the escalation hands upward. Enforced by the tooling.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "item": {
+      "const": "MG-033"
+    },
+    "job_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "kind": {
+      "const": "creative_review_record"
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "provisional": {
+      "description": "Must be true unless the reference calibration_state is OWNER_APPROVED. Enforced by the tooling.",
+      "type": "boolean"
+    },
+    "reference": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_record": {
+          "description": "Citation of the owner's recorded calibration decision. Required in substance when calibration_state is OWNER_APPROVED; the tooling refuses an OWNER_APPROVED claim with no citation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "calibration_state": {
+          "description": "The state recorded in the Section 17.3 reference registry. Only OWNER_APPROVED, set by the owner's own recorded decision, lifts the provisional label and the ban on a score of 10.",
+          "enum": [
+            "CALIBRATION_PENDING",
+            "ENGINEERING_FIXTURE_ONLY",
+            "BLOCKED_ASSET",
+            "OWNER_APPROVED"
+          ],
+          "type": "string"
+        },
+        "reference_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference_id",
+        "calibration_state"
+      ],
+      "type": "object"
+    },
+    "remediation": {
+      "description": "Defect ids in fix order, worst cause first (critical before major before minor, earliest first-seen first within a severity). Enforced by the tooling.",
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "reviewer": {
+      "$ref": "#/$defs/identity"
+    },
+    "round": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "verdict": {
+      "enum": [
+        "another_round",
+        "ship",
+        "escalate"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "item",
+    "job_id",
+    "round",
+    "artifact",
+    "author",
+    "reviewer",
+    "reference",
+    "provisional",
+    "dimensions",
+    "verdict"
+  ],
+  "title": "Skill 72 creative review record (MG-033 rubric)",
+  "type": "object"
+}

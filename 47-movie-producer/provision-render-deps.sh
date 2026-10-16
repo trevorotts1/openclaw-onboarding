@@ -1,79 +1,159 @@
 #!/usr/bin/env bash
-# Skill 47 — Movie Producer (Automated Video Production)
-# RENDER-RUNTIME PROVISIONER  —  arch/OS-aware, idempotent.
+# Skill 47 -- Movie Producer (Automated Video Production)
+# RENDER-RUNTIME PROVISIONER -- Skill 47 wrapper over the shared runtime.
 #
-# WHY THIS EXISTS
-#   `install.sh` clones the upstream OpenMontage engine and runs its `make setup`.
-#   That upstream Makefile installs Remotion's npm packages, cache-warms HyperFrames
-#   via npx, and does `pip install piper-tts || echo skip` — a SILENT SOFT-FAIL.
-#   It installs ZERO Chromium system libraries and pre-stages ZERO voice models, so a
-#   fresh Linux/VPS container FAILS every Remotion/HyperFrames (headless-Chromium) render
-#   and often ends up with NO offline Piper TTS. See OPENMONTAGE-VPS-READINESS audit.
+# WHAT CHANGED (MG-003 / integration target V03)
+#   Generic engine provisioning (OS/arch detection, Chromium system
+#   libraries, pinned Remotion + HyperFrames install, browser ensure,
+#   launch-and-render readiness probe) now lives in ONE shared
+#   implementation used by both Skill 47 and Skill 72:
 #
-#   This script closes those gaps AFTER `make setup`, for BOTH macOS and Linux/VPS:
-#     1. (Linux) apt-get the Chromium system libraries + ffmpeg that headless Chrome needs
-#        to LAUNCH (the Linux compositor npm binary alone is not enough).
-#     2. Install the pinned latest-stable Remotion + its arch/OS-specific compositor,
-#        then `npx remotion browser ensure` to fetch Chrome-Headless-Shell.
-#     3. Cache-warm the pinned latest-stable HyperFrames CLI + its bundled Chrome.
-#     4. (OPTIONAL, OPT-IN — OFF BY DEFAULT) Install the pinned latest-stable Piper
-#        (arch-aware wheel) and pre-stage a default voice ONNX model — ONLY when
-#        SKILL47_INSTALL_PIPER=1. Piper is an offline-only last-resort fallback: the
-#        PRIMARY narrator is Fish Audio 2.1 Pro (s2.1-pro), with Gemini TTS / OpenAI TTS /
-#        MiniMax (a.k.a. "Mimo") as the cloud fallbacks. With Piper absent, OpenMontage's
-#        TTS auto-discovery simply uses the cloud providers. Piper's absence/failure NEVER
-#        aborts the install.
+#       shared-utils/motion-render-runtime/provision.sh
 #
-#   The free ffmpeg documentary-montage path and the Kie.AI remote path need NO browser
-#   and are unaffected by this script.
+#   This script is the Skill 47 entrypoint its existing callers already
+#   use (install.sh Step 3.5, the skill Dockerfile). It (a) delegates the
+#   generic engines to the shared provisioner, then (b) does ONLY the
+#   Skill 47 / OpenMontage-specific work itself: the clone presence check,
+#   the pin of Remotion into the clone's remotion-composer/ directory
+#   (OpenMontage's pipelines consume that layout), and the optional opt-in
+#   Piper offline TTS fallback.
 #
-# INVOCATION
+# NEW FAILURE SEMANTICS -- READ THIS BEFORE TRUSTING AN OLD RUNBOOK
+#   The previous version of this script reported success when an engine
+#   install had actually failed: every failure after the clone check was
+#   WARN-only and the script exited 0. That is gone. A mandatory-engine
+#   failure in the shared provisioner now FAILS this script (its exit code
+#   is propagated): if Remotion or HyperFrames is not installed AND proven
+#   by a real launch-and-render probe, this script exits non-zero and
+#   install.sh Step 3.5 aborts, exactly as its error message always
+#   claimed. The clone check remains a hard failure too, but it runs AFTER
+#   and SEPARATELY FROM generic engine provisioning: engines are
+#   provisioned independently of the clone (Skill 72 needs no clone at
+#   all), and a missing clone is reported as a Skill 47 pipeline problem,
+#   not as an engine problem.
+#
+#   Docker note: the shared provisioner must be reachable at runtime.
+#   Resolution order: $MOTION_RUNTIME_DIR, then
+#   ../shared-utils/motion-render-runtime relative to this script
+#   (the normal in-repo layout). A Docker build that copies this script
+#   alone must also copy shared-utils/motion-render-runtime and set
+#   MOTION_RUNTIME_DIR to its location; without it this script fails
+#   loudly (by design -- no silent fallback to the old behavior).
+#
+# INVOCATION (unchanged)
 #   bash provision-render-deps.sh
 #   OPENCLAW_OPENMONTAGE_DIR=/path/to/OpenMontage bash provision-render-deps.sh
 #
 # ENV TOGGLES (all optional)
 #   OPENCLAW_OPENMONTAGE_DIR   OpenMontage clone dir (default: ~/.openclaw/openmontage-runtime/OpenMontage)
-#   REMOTION_VERSION           override the pinned Remotion version
-#   HYPERFRAMES_VERSION        override the pinned HyperFrames version
+#   MOTION_RUNTIME_DIR         shared runtime dir (default: ../shared-utils/motion-render-runtime from here)
+#   REMOTION_VERSION           override the pinned Remotion version (forwarded to the shared provisioner)
+#   HYPERFRAMES_VERSION        override the pinned HyperFrames version (forwarded)
 #   PIPER_VERSION              override the pinned piper-tts version
 #   PIPER_DEFAULT_VOICE        default voice model id (default: en_US-lessac-medium)
 #   PIPER_DATA_DIR             where to pre-stage voice models (default: ~/.piper/models)
 #   SKILL47_INSTALL_PIPER=1    OPT IN to the optional offline Piper TTS fallback (OFF by default)
-#   SKILL47_SKIP_APT=1         skip the Linux apt system-library step (already provisioned)
+#   SKILL47_SKIP_APT=1         skip the Linux apt system-library step (forwarded to the shared provisioner)
 #
 # EXIT CODE
-#   0 — provisioning complete (best-effort steps may have WARNed; see output)
-#   1 — a HARD failure: no OpenMontage clone. (Piper is optional and NEVER causes a hard failure.)
-#
-# ── PINNED LATEST-STABLE VERSIONS — bump these (each line cites its source) ─────────────
-#   Remotion 4.0.489      https://registry.npmjs.org/remotion/latest              (2026-07-13)
-#   HyperFrames 0.7.56    https://registry.npmjs.org/hyperframes/latest           (2026-07-13)
-#   piper-tts 1.4.2       https://github.com/OHF-voice/piper1-gpl/releases/latest (tag v1.4.2)  [OPTIONAL/opt-in only]
-#   Piper voice models    https://huggingface.co/rhasspy/piper-voices (pinned tag v1.0.0)       [OPTIONAL/opt-in only]
+#   0 -- shared engines installed AND probe-verified, clone present,
+#       remotion-composer pin attempted, Piper step done or skipped.
+#   1 -- a HARD failure: shared provisioner not found; shared engine
+#       provisioning or its readiness probe failed (exit code propagated);
+#       or no OpenMontage clone. (Piper is optional and NEVER causes a
+#       hard failure.)
 set -uo pipefail
 
-REMOTION_VERSION="${REMOTION_VERSION:-4.0.489}"
-HYPERFRAMES_VERSION="${HYPERFRAMES_VERSION:-0.7.56}"
 PIPER_VERSION="${PIPER_VERSION:-1.4.2}"
 PIPER_DEFAULT_VOICE="${PIPER_DEFAULT_VOICE:-en_US-lessac-medium}"
 PIPER_DATA_DIR="${PIPER_DATA_DIR:-$HOME/.piper/models}"
 PIPER_VOICES_TAG="v1.0.0"
 
 OPENMONTAGE_DIR="${OPENCLAW_OPENMONTAGE_DIR:-$HOME/.openclaw/openmontage-runtime/OpenMontage}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-FAIL=0
 red()    { printf "\033[31mFAIL\033[0m %s\n" "$1" >&2; }
 green()  { printf "\033[32m OK \033[0m %s\n" "$1"; }
 warn()   { printf "\033[33mWARN\033[0m %s\n" "$1" >&2; }
 info()   { printf "     %s\n" "$1"; }
 head_()  { printf "\n--- %s ---\n" "$1"; }
 
-echo "=== Skill 47 — Render-runtime provisioner (arch/OS-aware, idempotent) ==="
+echo "=== Skill 47 -- Render-runtime provisioner (shared runtime + clone extras) ==="
 echo "    OpenMontage clone: $OPENMONTAGE_DIR"
 
 # ---------------------------------------------------------------------------
-# 0 — Detect OS / arch / libc  (drives every downstream decision)
+# 1 -- Generic engines via the SHARED provisioner (MG-003).
+#     OS/arch/libc detection, apt system libraries, pinned installs from
+#     the committed lockfile, browser ensure, and the launch-and-render
+#     readiness probe all live there. Its exit code is propagated: a
+#     mandatory-engine failure is a real failure of this script.
 # ---------------------------------------------------------------------------
+head_ "Shared motion render runtime (Remotion + HyperFrames, probe-verified)"
+SHARED_RUNTIME_DIR=""
+if [ -n "${MOTION_RUNTIME_DIR:-}" ] && [ -f "${MOTION_RUNTIME_DIR}/provision.sh" ]; then
+  SHARED_RUNTIME_DIR="$MOTION_RUNTIME_DIR"
+elif [ -f "$SCRIPT_DIR/../shared-utils/motion-render-runtime/provision.sh" ]; then
+  SHARED_RUNTIME_DIR="$(cd "$SCRIPT_DIR/../shared-utils/motion-render-runtime" && pwd)"
+fi
+if [ -z "$SHARED_RUNTIME_DIR" ]; then
+  red "Shared motion render runtime not found (looked in \$MOTION_RUNTIME_DIR and"
+  red "../shared-utils/motion-render-runtime relative to this script)."
+  info "In a Docker build, copy shared-utils/motion-render-runtime alongside this"
+  info "script and set MOTION_RUNTIME_DIR to its location."
+  exit 1
+fi
+info "shared runtime: $SHARED_RUNTIME_DIR"
+# Pin the HyperFrames version for the shared provisioner: the caller's
+# override wins; otherwise the shared runtime's own package pin is the
+# authority (resolved here so the provisioner receives the pinned value
+# explicitly rather than floating). The literal fallback is the current
+# lock pin, used only if the runtime manifest cannot be read.
+HYPERFRAMES_VERSION="${HYPERFRAMES_VERSION:-$(node -p "require('$SHARED_RUNTIME_DIR/package.json').dependencies['hyperframes']" 2>/dev/null || echo 0.8.155)}"
+export HYPERFRAMES_VERSION
+if ! bash "$SHARED_RUNTIME_DIR/provision.sh"; then
+  SHARED_RC=$?
+  red "Shared engine provisioning FAILED (exit $SHARED_RC). Remotion/HyperFrames are"
+  red "NOT probe-verified on this box. Skill 47 clone extras were not attempted."
+  exit "$SHARED_RC"
+fi
+green "Shared engines provisioned and probe-verified (see runtime-lock.json in the shared runtime)."
+
+# Engine versions as resolved by the shared runtime (single source of
+# truth for the clone pin below). Falls back to the shared package pins.
+RESOLVED_REMOTION_VERSION="${REMOTION_VERSION:-}"
+if [ -z "$RESOLVED_REMOTION_VERSION" ]; then
+  RESOLVED_REMOTION_VERSION="$(node -p "require('$SHARED_RUNTIME_DIR/package.json').dependencies['remotion']" 2>/dev/null || echo '')"
+fi
+[ -n "$RESOLVED_REMOTION_VERSION" ] || RESOLVED_REMOTION_VERSION="4.0.535"
+
+# ---------------------------------------------------------------------------
+# 2 -- OpenMontage clone presence (Skill 47 pipelines only).
+#     AFTER and SEPARATE FROM generic engine provisioning: the engines
+#     above are provisioned independently, and Skill 72 does not need this
+#     clone at all. A missing clone is a hard failure for Skill 47 because
+#     its pipelines run from the clone, but it is reported as what it is.
+# ---------------------------------------------------------------------------
+head_ "OpenMontage clone (Skill 47 pipelines)"
+if [ ! -d "$OPENMONTAGE_DIR" ]; then
+  red "OpenMontage clone not found at $OPENMONTAGE_DIR."
+  info "The shared render engines ARE provisioned and probe-verified (step 1);"
+  info "only the Skill 47 pipeline clone is missing. Run install.sh (or clone +"
+  info "make setup) first, then re-run this provisioner."
+  exit 1
+fi
+green "OpenMontage clone present: $OPENMONTAGE_DIR"
+
+# ---------------------------------------------------------------------------
+# 3 -- Pin Remotion into the clone's remotion-composer/ directory.
+#     OpenMontage's pipelines consume Remotion from that layout, so the pin
+#     the old provisioner performed is preserved, now at the version the
+#     shared runtime resolved (one version authority for both copies).
+#     The arch/OS compositor package name follows the shared runtime's
+#     detection semantics. A failure here WARNS: the clone's own
+#     `make setup` also installs Remotion into this directory, and the
+#     shared runtime (step 1, probe-verified) is the readiness authority.
+# ---------------------------------------------------------------------------
+head_ "Remotion $RESOLVED_REMOTION_VERSION pin into the clone's remotion-composer/"
 UNAME_S="$(uname -s 2>/dev/null || echo unknown)"
 UNAME_M="$(uname -m 2>/dev/null || echo unknown)"
 case "$UNAME_S" in
@@ -88,128 +168,57 @@ case "$UNAME_M" in
 esac
 LIBC="gnu"
 if [ "$OS" = "linux" ]; then
-  # musl (Alpine) vs glibc — Remotion ships a separate compositor per libc.
   if [ -f /etc/alpine-release ] || (ldd --version 2>&1 | grep -qi musl); then
     LIBC="musl"
   fi
 fi
-info "detected: os=$OS arch=$ARCH libc=$LIBC (node $(node -v 2>/dev/null || echo '?'))"
-
-# sudo helper: run as root directly, else via sudo if present, else signal caller.
-SUDO=""
-if [ "$(id -u 2>/dev/null || echo 1)" != "0" ]; then
-  if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
-fi
-
-# ---------------------------------------------------------------------------
-# 1 — Clone must exist (make setup already ran). HARD fail otherwise.
-# ---------------------------------------------------------------------------
-if [ ! -d "$OPENMONTAGE_DIR" ]; then
-  red "OpenMontage clone not found at $OPENMONTAGE_DIR."
-  info "Run install.sh (or clone + make setup) first, then re-run this provisioner."
-  exit 1
-fi
-
-# ---------------------------------------------------------------------------
-# 2 — (Linux) Chromium SYSTEM LIBRARIES + ffmpeg
-#     Remotion's documented Linux prerequisite; the same libs HyperFrames' bundled
-#     Chrome needs to launch. Source: https://www.remotion.dev/docs/docker and
-#     https://www.remotion.dev/docs/miscellaneous/linux-dependencies
-# ---------------------------------------------------------------------------
-head_ "Chromium system libraries (Linux only)"
-if [ "$OS" != "linux" ]; then
-  green "macOS — native Chromium libraries already present; no apt step needed."
-elif [ "${SKILL47_SKIP_APT:-0}" = "1" ]; then
-  green "SKILL47_SKIP_APT=1 — skipping apt system-library install (assumed pre-provisioned)."
-elif ! command -v apt-get >/dev/null 2>&1; then
-  warn "Non-apt Linux (no apt-get). Install the Chromium libs + ffmpeg with your package manager."
-  info "Debian/Ubuntu equivalent set: libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0"
-  info "libgbm-dev libxrandr2 libxkbcommon-dev libxfixes3 libxcomposite1 libxdamage1"
-  info "libpango-1.0-0 libcairo2 libcups2 libasound2 fonts-liberation ffmpeg"
-else
-  # Idempotent: apt-get install -y is a no-op for already-present packages.
-  APT_LIBS="libnss3 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 libgbm-dev \
-libxrandr2 libxkbcommon-dev libxfixes3 libxcomposite1 libxdamage1 \
-libpango-1.0-0 libcairo2 libcups2 fonts-liberation ffmpeg"
-  info "apt-get update (best-effort) + install Chromium libs + ffmpeg ..."
-  $SUDO apt-get update -y >/dev/null 2>&1 || warn "apt-get update failed (offline?) — continuing."
-  if $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y $APT_LIBS >/dev/null 2>&1; then
-    green "Chromium system libs + ffmpeg installed (or already present)."
-  else
-    warn "apt-get install of the base libs returned non-zero — some may be missing."
-    info "Fix manually: $SUDO apt-get install -y $APT_LIBS"
-  fi
-  # libasound2 was renamed libasound2t64 on Ubuntu 24.04+; install whichever resolves.
-  $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y libasound2 >/dev/null 2>&1 \
-    || $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y libasound2t64 >/dev/null 2>&1 \
-    || warn "Could not install libasound2 / libasound2t64 — Chrome audio libs may be missing."
-fi
-
-# ---------------------------------------------------------------------------
-# 3 — Remotion: pin latest-stable + arch/OS-specific compositor + Chrome-Headless-Shell
-# ---------------------------------------------------------------------------
-head_ "Remotion $REMOTION_VERSION (composer + compositor-$OS-$ARCH + Chrome-Headless-Shell)"
 COMPOSER_DIR="$OPENMONTAGE_DIR/remotion-composer"
 if [ ! -d "$COMPOSER_DIR" ]; then
-  warn "remotion-composer/ not found in the clone — did 'make setup' run? Skipping Remotion pin."
+  warn "remotion-composer/ not found in the clone -- did 'make setup' run? Skipping the clone pin."
 else
-  # Compositor package name is @remotion/compositor-<os>-<arch>[-<libc> on linux].
   if [ "$OS" = "linux" ]; then
     COMPOSITOR_PKG="@remotion/compositor-linux-${ARCH}-${LIBC}"
   else
     COMPOSITOR_PKG="@remotion/compositor-${OS}-${ARCH}"
   fi
-  info "pinning remotion@$REMOTION_VERSION + @remotion/cli@$REMOTION_VERSION + ${COMPOSITOR_PKG}@$REMOTION_VERSION"
+  info "pinning remotion@$RESOLVED_REMOTION_VERSION + @remotion/cli@$RESOLVED_REMOTION_VERSION + ${COMPOSITOR_PKG}@$RESOLVED_REMOTION_VERSION"
   # --no-save: pin the RUNNING version into node_modules without churning the upstream
   # package.json/lockfile. Idempotent (already-satisfied installs are a no-op).
   if ( cd "$COMPOSER_DIR" && npm install --no-save --no-audit --no-fund \
-        "remotion@$REMOTION_VERSION" \
-        "@remotion/cli@$REMOTION_VERSION" \
-        "${COMPOSITOR_PKG}@$REMOTION_VERSION" >/dev/null 2>&1 ); then
-    green "Remotion $REMOTION_VERSION + $COMPOSITOR_PKG installed."
+        "remotion@$RESOLVED_REMOTION_VERSION" \
+        "@remotion/cli@$RESOLVED_REMOTION_VERSION" \
+        "${COMPOSITOR_PKG}@$RESOLVED_REMOTION_VERSION" >/dev/null 2>&1 ); then
+    green "Remotion $RESOLVED_REMOTION_VERSION + $COMPOSITOR_PKG installed into the clone."
   else
-    warn "npm install of the pinned Remotion + compositor failed (network?). First render will resolve on demand."
+    warn "npm install of the pinned Remotion + compositor into the clone failed (network?)."
+    info "The shared runtime (step 1) is probe-verified; the clone copy resolves on demand."
   fi
-  # Chrome-Headless-Shell — works on macOS AND Linux. Source: remotion.dev/docs/docker.
+  # Chrome-Headless-Shell for the clone's own copy -- works on macOS AND Linux.
   if ( cd "$COMPOSER_DIR" && npx --yes remotion browser ensure >/dev/null 2>&1 ); then
-    green "Chrome-Headless-Shell ensured (npx remotion browser ensure)."
+    green "Chrome-Headless-Shell ensured for the clone (npx remotion browser ensure)."
   else
-    warn "'npx remotion browser ensure' failed — Remotion will download Chrome-Headless-Shell on first render."
+    warn "'npx remotion browser ensure' in the clone failed -- its Remotion downloads Chrome-Headless-Shell on first render."
   fi
 fi
 
 # ---------------------------------------------------------------------------
-# 4 — HyperFrames: pin latest-stable CLI (cache-warm) + bundled Chrome
-#     HyperFrames is a PEER headless-Chrome renderer (HeyGen's `hyperframes` npm
-#     package, engines node>=22). Same Chromium system libs as Remotion (§2 above).
-# ---------------------------------------------------------------------------
-head_ "HyperFrames $HYPERFRAMES_VERSION (CLI cache-warm + bundled Chrome)"
-if npx --yes "hyperframes@$HYPERFRAMES_VERSION" --version >/dev/null 2>&1; then
-  green "HyperFrames $HYPERFRAMES_VERSION CLI cached (npx)."
-else
-  warn "HyperFrames cache-warm failed (offline/npm) — first render will fetch on demand."
-fi
-# Pre-provision HyperFrames' bundled Chrome so the first container render doesn't stall.
-npx --yes "hyperframes@$HYPERFRAMES_VERSION" browser >/dev/null 2>&1 \
-  && green "HyperFrames bundled Chrome provisioned." \
-  || warn "HyperFrames 'browser' provisioning skipped/failed — bundled Chrome fetches on first render."
-
-# ---------------------------------------------------------------------------
-# 5 — Piper TTS (OPTIONAL, OPT-IN, offline-only fallback) — OFF BY DEFAULT
+# 4 -- Piper TTS (OPTIONAL, OPT-IN, offline-only fallback) -- OFF BY DEFAULT
 #     Voice order: Fish Audio 2.1 Pro (s2.1-pro) is the PRIMARY narrator; Gemini TTS,
 #     OpenAI TTS, and MiniMax (a.k.a. "Mimo") are the cloud fallbacks; Piper is an OPTIONAL
 #     offline-only last-resort fallback that is NOT installed by default. With Piper absent,
 #     OpenMontage's TTS auto-discovery simply uses the cloud providers. Opt in with
 #     SKILL47_INSTALL_PIPER=1 to install the arch-aware wheel and pre-stage a default voice
 #     model. A Piper install/download failure NEVER aborts the Skill 47 install (WARN only).
+#     (Behavior unchanged from the previous provisioner; this step is Skill 47 specific
+#     and intentionally NOT part of the shared runtime.)
 # ---------------------------------------------------------------------------
-head_ "Piper TTS (OPTIONAL — opt-in offline fallback, OFF by default)"
+head_ "Piper TTS (OPTIONAL -- opt-in offline fallback, OFF by default)"
 if [ "${SKILL47_INSTALL_PIPER:-0}" != "1" ]; then
-  green "Piper not requested (SKILL47_INSTALL_PIPER unset) — skipping install + voice pre-stage."
+  green "Piper not requested (SKILL47_INSTALL_PIPER unset) -- skipping install + voice pre-stage."
   info "Primary narrator is Fish Audio 2.1 Pro (s2.1-pro); Gemini/OpenAI/MiniMax (Mimo) TTS are the cloud fallbacks."
   info "OpenMontage TTS auto-discovery will use the cloud providers. Opt in with SKILL47_INSTALL_PIPER=1."
 else
-  info "SKILL47_INSTALL_PIPER=1 — installing the OPTIONAL offline Piper fallback (never fatal)."
+  info "SKILL47_INSTALL_PIPER=1 -- installing the OPTIONAL offline Piper fallback (never fatal)."
   info "piper-tts==$PIPER_VERSION (arch-aware) + default voice '$PIPER_DEFAULT_VOICE'"
   # Prefer the OpenMontage clone's own venv so the `piper` module is importable by its tools.
   PY=""
@@ -218,7 +227,7 @@ else
   done
   [ -z "$PY" ] && PY="$(command -v python3 || command -v python || true)"
   if [ -z "$PY" ]; then
-    warn "No python interpreter found — skipping optional Piper install. Cloud TTS remains primary. Not fatal."
+    warn "No python interpreter found -- skipping optional Piper install. Cloud TTS remains primary. Not fatal."
   else
     info "using interpreter: $PY"
     PIPER_OK=0
@@ -226,15 +235,15 @@ else
       if "$PY" -m pip install --disable-pip-version-check "piper-tts==$PIPER_VERSION" >/dev/null 2>&1; then
         PIPER_OK=1; break
       fi
-      warn "piper-tts install attempt $attempt failed — retrying ..."
+      warn "piper-tts install attempt $attempt failed -- retrying ..."
     done
     if [ "$PIPER_OK" = "1" ] && "$PY" -c "import piper" >/dev/null 2>&1; then
       green "piper-tts $PIPER_VERSION installed and importable (optional offline fallback)."
     else
-      warn "Optional piper-tts install failed — cloud TTS (Fish 2.1 Pro / Gemini / OpenAI / MiniMax) remains primary. Not fatal."
+      warn "Optional piper-tts install failed -- cloud TTS (Fish 2.1 Pro / Gemini / OpenAI / MiniMax) remains primary. Not fatal."
     fi
 
-    # Pre-stage the default voice ONNX model (+ its .json) — CLI-agnostic direct download.
+    # Pre-stage the default voice ONNX model (+ its .json) -- CLI-agnostic direct download.
     # Only on the opt-in path. Idempotent (skips if already present). Never fatal.
     lang_country="${PIPER_DEFAULT_VOICE%%-*}"                 # en_US
     lang="${lang_country%%_*}"                                # en
@@ -259,7 +268,7 @@ else
          && [ "$(wc -c < "$ONNX_DEST" 2>/dev/null || echo 0)" -gt 1000000 ]; then
         green "Voice model staged: $ONNX_DEST"
       else
-        warn "Optional voice pre-stage failed (offline?) — Piper (if used) downloads it on first use. Not fatal."
+        warn "Optional voice pre-stage failed (offline?) -- Piper (if used) downloads it on first use. Not fatal."
         info "Manual: python3 -m piper.download_voices $PIPER_DEFAULT_VOICE --data-dir $PIPER_DATA_DIR"
         rm -f "$ONNX_DEST" "$JSON_DEST" 2>/dev/null || true
       fi
@@ -271,12 +280,10 @@ fi
 # Summary
 # ---------------------------------------------------------------------------
 echo ""
-if [ "$FAIL" -gt 0 ]; then
-  red "=== Render-runtime provisioning FAILED ($FAIL hard error[s]). See above. ==="
-  exit 1
-fi
-green "=== Render-runtime provisioning complete (os=$OS arch=$ARCH libc=$LIBC). ==="
-info "Remotion + HyperFrames headless-Chromium renders are provisioned. Piper (offline TTS) is"
-info "optional/opt-in; cloud TTS (Fish 2.1 Pro primary; Gemini/OpenAI/MiniMax fallback) is the default narrator path."
+green "=== Skill 47 render-runtime provisioning complete (shared engines probe-verified, clone extras done). ==="
+info "Generic engines (Remotion, HyperFrames) are provisioned by the shared runtime at"
+info "$SHARED_RUNTIME_DIR and proven by its launch-and-render probe (runtime-lock.json)."
+info "Piper (offline TTS) is optional/opt-in; cloud TTS (Fish 2.1 Pro primary;"
+info "Gemini/OpenAI/MiniMax fallback) is the default narrator path."
 info "The free ffmpeg documentary-montage path and the Kie.AI remote path need no browser."
 exit 0

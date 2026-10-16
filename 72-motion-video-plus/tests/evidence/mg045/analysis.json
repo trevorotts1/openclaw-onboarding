@@ -1,0 +1,1278 @@
+{
+  "item": "MG-045",
+  "generatedAt": "2026-10-15T05:59:22.079Z",
+  "machine": {
+    "totalMemMB": 7935,
+    "freeMemMB": 3026,
+    "cpuCount": 2,
+    "platform": "linux x64",
+    "nodeVersion": "v24.20.0",
+    "measuredAt": "2026-10-15T05:59:22.080Z",
+    "loadAvg": [
+      2.93,
+      6.33,
+      5.62
+    ]
+  },
+  "runtime": {
+    "lockId": "lock-314fc289b233ca9e",
+    "remotion": "4.0.535",
+    "hyperframes": "0.8.155",
+    "lockTimestamp": "2026-10-15T04:45:41.764Z"
+  },
+  "stageTable": [
+    {
+      "cellId": "chart-remotion",
+      "rep": 1,
+      "status": "passed",
+      "stageMs": {
+        "stageJob": 12,
+        "setup": 20,
+        "compile": 494,
+        "assetPrep": 50,
+        "still1": 11184,
+        "still2": 2125,
+        "preview": 20754,
+        "render": 32780,
+        "encode": 14585,
+        "qc": 9086
+      }
+    },
+    {
+      "cellId": "chart-hyperframes",
+      "rep": 1,
+      "status": "passed",
+      "stageMs": {
+        "stageJob": 14,
+        "setup": 588,
+        "compile": 28991,
+        "assetPrep": 36,
+        "still1": 13337,
+        "still2": 10207,
+        "preview": 45681,
+        "render": 60608,
+        "encode": 11021,
+        "qc": 6071
+      }
+    },
+    {
+      "cellId": "image-hyperframes",
+      "rep": 1,
+      "status": "passed",
+      "stageMs": {
+        "stageJob": 15,
+        "setup": 502,
+        "compile": 22023,
+        "assetPrep": 2,
+        "still1": 8563,
+        "still2": 8982,
+        "preview": 38482,
+        "render": 43041,
+        "encode": 8605,
+        "qc": 4402
+      }
+    },
+    {
+      "cellId": "mixed-hyperframes",
+      "rep": 1,
+      "status": "passed",
+      "stageMs": {
+        "stageJob": 21,
+        "setup": 233,
+        "compile": 31105,
+        "assetPrep": 10,
+        "still1": 8094,
+        "still2": 7500,
+        "preview": 62050,
+        "render": 59294,
+        "encode": 9943,
+        "qc": 5011
+      }
+    },
+    {
+      "cellId": "degraded-chart-remotion",
+      "rep": 1,
+      "status": "passed",
+      "stageMs": {
+        "stageJob": 6,
+        "setup": 17,
+        "compile": 1013,
+        "assetPrep": 21,
+        "still1": 4789,
+        "still2": 3650,
+        "preview": 10357
+      }
+    },
+    {
+      "cellId": "sabotage-chart-remotion",
+      "rep": 1,
+      "status": "failed",
+      "stageMs": {
+        "stageJob": 2,
+        "setup": 1
+      }
+    },
+    {
+      "cellId": "chart-remotion",
+      "rep": 2,
+      "status": "passed",
+      "stageMs": {
+        "stageJob": 4,
+        "setup": 3,
+        "compile": 823,
+        "assetPrep": 57,
+        "still1": 3002,
+        "still2": 2495,
+        "preview": 21387,
+        "render": 28693,
+        "encode": 6664,
+        "qc": 3309
+      }
+    },
+    {
+      "cellId": "chart-hyperframes",
+      "rep": 2,
+      "status": "passed",
+      "stageMs": {
+        "stageJob": 4,
+        "setup": 184,
+        "compile": 15905,
+        "assetPrep": 2,
+        "still1": 7371,
+        "still2": 7152,
+        "preview": 50726,
+        "render": 66798,
+        "encode": 12143,
+        "qc": 7430
+      }
+    },
+    {
+      "cellId": "image-hyperframes",
+      "rep": 2,
+      "status": "passed",
+      "stageMs": {
+        "stageJob": 42,
+        "setup": 461,
+        "compile": 21782,
+        "assetPrep": 3,
+        "still1": 11461,
+        "still2": 12052,
+        "preview": 65866,
+        "render": 71722,
+        "encode": 8418,
+        "qc": 5042
+      }
+    },
+    {
+      "cellId": "mixed-hyperframes",
+      "rep": 2,
+      "status": "passed",
+      "stageMs": {
+        "stageJob": 32,
+        "setup": 269,
+        "compile": 35149,
+        "assetPrep": 9,
+        "still1": 10517,
+        "still2": 8422,
+        "preview": 81966,
+        "render": 87919,
+        "encode": 9387,
+        "qc": 5122
+      }
+    },
+    {
+      "cellId": "degraded-chart-remotion",
+      "rep": 2,
+      "status": "passed",
+      "stageMs": {
+        "stageJob": 9,
+        "setup": 21,
+        "compile": 869,
+        "assetPrep": 16,
+        "still1": 7858,
+        "still2": 3671,
+        "preview": 9104
+      }
+    },
+    {
+      "cellId": "sabotage-chart-remotion",
+      "rep": 2,
+      "status": "failed",
+      "stageMs": {
+        "stageJob": 5,
+        "setup": 1
+      }
+    }
+  ],
+  "variance": [
+    {
+      "cellId": "chart-hyperframes",
+      "stage": "assetPrep",
+      "values": [
+        36,
+        2
+      ],
+      "min": 2,
+      "max": 36,
+      "mean": 19,
+      "spreadPct": 178.9
+    },
+    {
+      "cellId": "chart-hyperframes",
+      "stage": "compile",
+      "values": [
+        28991,
+        15905
+      ],
+      "min": 15905,
+      "max": 28991,
+      "mean": 22448,
+      "spreadPct": 58.3
+    },
+    {
+      "cellId": "chart-hyperframes",
+      "stage": "encode",
+      "values": [
+        11021,
+        12143
+      ],
+      "min": 11021,
+      "max": 12143,
+      "mean": 11582,
+      "spreadPct": 9.7
+    },
+    {
+      "cellId": "chart-hyperframes",
+      "stage": "preview",
+      "values": [
+        45681,
+        50726
+      ],
+      "min": 45681,
+      "max": 50726,
+      "mean": 48204,
+      "spreadPct": 10.5
+    },
+    {
+      "cellId": "chart-hyperframes",
+      "stage": "qc",
+      "values": [
+        6071,
+        7430
+      ],
+      "min": 6071,
+      "max": 7430,
+      "mean": 6751,
+      "spreadPct": 20.1
+    },
+    {
+      "cellId": "chart-hyperframes",
+      "stage": "render",
+      "values": [
+        60608,
+        66798
+      ],
+      "min": 60608,
+      "max": 66798,
+      "mean": 63703,
+      "spreadPct": 9.7
+    },
+    {
+      "cellId": "chart-hyperframes",
+      "stage": "setup",
+      "values": [
+        588,
+        184
+      ],
+      "min": 184,
+      "max": 588,
+      "mean": 386,
+      "spreadPct": 104.7
+    },
+    {
+      "cellId": "chart-hyperframes",
+      "stage": "stageJob",
+      "values": [
+        14,
+        4
+      ],
+      "min": 4,
+      "max": 14,
+      "mean": 9,
+      "spreadPct": 111.1
+    },
+    {
+      "cellId": "chart-hyperframes",
+      "stage": "still1",
+      "values": [
+        13337,
+        7371
+      ],
+      "min": 7371,
+      "max": 13337,
+      "mean": 10354,
+      "spreadPct": 57.6
+    },
+    {
+      "cellId": "chart-hyperframes",
+      "stage": "still2",
+      "values": [
+        10207,
+        7152
+      ],
+      "min": 7152,
+      "max": 10207,
+      "mean": 8680,
+      "spreadPct": 35.2
+    },
+    {
+      "cellId": "chart-remotion",
+      "stage": "assetPrep",
+      "values": [
+        50,
+        57
+      ],
+      "min": 50,
+      "max": 57,
+      "mean": 54,
+      "spreadPct": 13.1
+    },
+    {
+      "cellId": "chart-remotion",
+      "stage": "compile",
+      "values": [
+        494,
+        823
+      ],
+      "min": 494,
+      "max": 823,
+      "mean": 659,
+      "spreadPct": 50
+    },
+    {
+      "cellId": "chart-remotion",
+      "stage": "encode",
+      "values": [
+        14585,
+        6664
+      ],
+      "min": 6664,
+      "max": 14585,
+      "mean": 10625,
+      "spreadPct": 74.6
+    },
+    {
+      "cellId": "chart-remotion",
+      "stage": "preview",
+      "values": [
+        20754,
+        21387
+      ],
+      "min": 20754,
+      "max": 21387,
+      "mean": 21071,
+      "spreadPct": 3
+    },
+    {
+      "cellId": "chart-remotion",
+      "stage": "qc",
+      "values": [
+        9086,
+        3309
+      ],
+      "min": 3309,
+      "max": 9086,
+      "mean": 6198,
+      "spreadPct": 93.2
+    },
+    {
+      "cellId": "chart-remotion",
+      "stage": "render",
+      "values": [
+        32780,
+        28693
+      ],
+      "min": 28693,
+      "max": 32780,
+      "mean": 30737,
+      "spreadPct": 13.3
+    },
+    {
+      "cellId": "chart-remotion",
+      "stage": "setup",
+      "values": [
+        20,
+        3
+      ],
+      "min": 3,
+      "max": 20,
+      "mean": 12,
+      "spreadPct": 147.8
+    },
+    {
+      "cellId": "chart-remotion",
+      "stage": "stageJob",
+      "values": [
+        12,
+        4
+      ],
+      "min": 4,
+      "max": 12,
+      "mean": 8,
+      "spreadPct": 100
+    },
+    {
+      "cellId": "chart-remotion",
+      "stage": "still1",
+      "values": [
+        11184,
+        3002
+      ],
+      "min": 3002,
+      "max": 11184,
+      "mean": 7093,
+      "spreadPct": 115.4
+    },
+    {
+      "cellId": "chart-remotion",
+      "stage": "still2",
+      "values": [
+        2125,
+        2495
+      ],
+      "min": 2125,
+      "max": 2495,
+      "mean": 2310,
+      "spreadPct": 16
+    },
+    {
+      "cellId": "degraded-chart-remotion",
+      "stage": "assetPrep",
+      "values": [
+        21,
+        16
+      ],
+      "min": 16,
+      "max": 21,
+      "mean": 19,
+      "spreadPct": 27
+    },
+    {
+      "cellId": "degraded-chart-remotion",
+      "stage": "compile",
+      "values": [
+        1013,
+        869
+      ],
+      "min": 869,
+      "max": 1013,
+      "mean": 941,
+      "spreadPct": 15.3
+    },
+    {
+      "cellId": "degraded-chart-remotion",
+      "stage": "preview",
+      "values": [
+        10357,
+        9104
+      ],
+      "min": 9104,
+      "max": 10357,
+      "mean": 9731,
+      "spreadPct": 12.9
+    },
+    {
+      "cellId": "degraded-chart-remotion",
+      "stage": "setup",
+      "values": [
+        17,
+        21
+      ],
+      "min": 17,
+      "max": 21,
+      "mean": 19,
+      "spreadPct": 21.1
+    },
+    {
+      "cellId": "degraded-chart-remotion",
+      "stage": "stageJob",
+      "values": [
+        6,
+        9
+      ],
+      "min": 6,
+      "max": 9,
+      "mean": 8,
+      "spreadPct": 40
+    },
+    {
+      "cellId": "degraded-chart-remotion",
+      "stage": "still1",
+      "values": [
+        4789,
+        7858
+      ],
+      "min": 4789,
+      "max": 7858,
+      "mean": 6324,
+      "spreadPct": 48.5
+    },
+    {
+      "cellId": "degraded-chart-remotion",
+      "stage": "still2",
+      "values": [
+        3650,
+        3671
+      ],
+      "min": 3650,
+      "max": 3671,
+      "mean": 3661,
+      "spreadPct": 0.6
+    },
+    {
+      "cellId": "image-hyperframes",
+      "stage": "assetPrep",
+      "values": [
+        2,
+        3
+      ],
+      "min": 2,
+      "max": 3,
+      "mean": 3,
+      "spreadPct": 40
+    },
+    {
+      "cellId": "image-hyperframes",
+      "stage": "compile",
+      "values": [
+        22023,
+        21782
+      ],
+      "min": 21782,
+      "max": 22023,
+      "mean": 21903,
+      "spreadPct": 1.1
+    },
+    {
+      "cellId": "image-hyperframes",
+      "stage": "encode",
+      "values": [
+        8605,
+        8418
+      ],
+      "min": 8418,
+      "max": 8605,
+      "mean": 8512,
+      "spreadPct": 2.2
+    },
+    {
+      "cellId": "image-hyperframes",
+      "stage": "preview",
+      "values": [
+        38482,
+        65866
+      ],
+      "min": 38482,
+      "max": 65866,
+      "mean": 52174,
+      "spreadPct": 52.5
+    },
+    {
+      "cellId": "image-hyperframes",
+      "stage": "qc",
+      "values": [
+        4402,
+        5042
+      ],
+      "min": 4402,
+      "max": 5042,
+      "mean": 4722,
+      "spreadPct": 13.6
+    },
+    {
+      "cellId": "image-hyperframes",
+      "stage": "render",
+      "values": [
+        43041,
+        71722
+      ],
+      "min": 43041,
+      "max": 71722,
+      "mean": 57382,
+      "spreadPct": 50
+    },
+    {
+      "cellId": "image-hyperframes",
+      "stage": "setup",
+      "values": [
+        502,
+        461
+      ],
+      "min": 461,
+      "max": 502,
+      "mean": 482,
+      "spreadPct": 8.5
+    },
+    {
+      "cellId": "image-hyperframes",
+      "stage": "stageJob",
+      "values": [
+        15,
+        42
+      ],
+      "min": 15,
+      "max": 42,
+      "mean": 29,
+      "spreadPct": 94.7
+    },
+    {
+      "cellId": "image-hyperframes",
+      "stage": "still1",
+      "values": [
+        8563,
+        11461
+      ],
+      "min": 8563,
+      "max": 11461,
+      "mean": 10012,
+      "spreadPct": 28.9
+    },
+    {
+      "cellId": "image-hyperframes",
+      "stage": "still2",
+      "values": [
+        8982,
+        12052
+      ],
+      "min": 8982,
+      "max": 12052,
+      "mean": 10517,
+      "spreadPct": 29.2
+    },
+    {
+      "cellId": "mixed-hyperframes",
+      "stage": "assetPrep",
+      "values": [
+        10,
+        9
+      ],
+      "min": 9,
+      "max": 10,
+      "mean": 10,
+      "spreadPct": 10.5
+    },
+    {
+      "cellId": "mixed-hyperframes",
+      "stage": "compile",
+      "values": [
+        31105,
+        35149
+      ],
+      "min": 31105,
+      "max": 35149,
+      "mean": 33127,
+      "spreadPct": 12.2
+    },
+    {
+      "cellId": "mixed-hyperframes",
+      "stage": "encode",
+      "values": [
+        9943,
+        9387
+      ],
+      "min": 9387,
+      "max": 9943,
+      "mean": 9665,
+      "spreadPct": 5.8
+    },
+    {
+      "cellId": "mixed-hyperframes",
+      "stage": "preview",
+      "values": [
+        62050,
+        81966
+      ],
+      "min": 62050,
+      "max": 81966,
+      "mean": 72008,
+      "spreadPct": 27.7
+    },
+    {
+      "cellId": "mixed-hyperframes",
+      "stage": "qc",
+      "values": [
+        5011,
+        5122
+      ],
+      "min": 5011,
+      "max": 5122,
+      "mean": 5067,
+      "spreadPct": 2.2
+    },
+    {
+      "cellId": "mixed-hyperframes",
+      "stage": "render",
+      "values": [
+        59294,
+        87919
+      ],
+      "min": 59294,
+      "max": 87919,
+      "mean": 73607,
+      "spreadPct": 38.9
+    },
+    {
+      "cellId": "mixed-hyperframes",
+      "stage": "setup",
+      "values": [
+        233,
+        269
+      ],
+      "min": 233,
+      "max": 269,
+      "mean": 251,
+      "spreadPct": 14.3
+    },
+    {
+      "cellId": "mixed-hyperframes",
+      "stage": "stageJob",
+      "values": [
+        21,
+        32
+      ],
+      "min": 21,
+      "max": 32,
+      "mean": 27,
+      "spreadPct": 41.5
+    },
+    {
+      "cellId": "mixed-hyperframes",
+      "stage": "still1",
+      "values": [
+        8094,
+        10517
+      ],
+      "min": 8094,
+      "max": 10517,
+      "mean": 9306,
+      "spreadPct": 26
+    },
+    {
+      "cellId": "mixed-hyperframes",
+      "stage": "still2",
+      "values": [
+        7500,
+        8422
+      ],
+      "min": 7500,
+      "max": 8422,
+      "mean": 7961,
+      "spreadPct": 11.6
+    },
+    {
+      "cellId": "sabotage-chart-remotion",
+      "stage": "setup",
+      "values": [
+        1,
+        1
+      ],
+      "min": 1,
+      "max": 1,
+      "mean": 1,
+      "spreadPct": 0
+    },
+    {
+      "cellId": "sabotage-chart-remotion",
+      "stage": "stageJob",
+      "values": [
+        2,
+        5
+      ],
+      "min": 2,
+      "max": 5,
+      "mean": 4,
+      "spreadPct": 85.7
+    }
+  ],
+  "failures": {
+    "attempted": 12,
+    "failed": 2,
+    "deliberateFailed": 2,
+    "failureRate": 0.16666666666666666,
+    "failureRateExcludingDeliberate": 0
+  },
+  "fidelity": {
+    "chart-remotion": {
+      "rep2": {
+        "reference": "rep 1 final",
+        "frames": [
+          {
+            "frame": 0,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          },
+          {
+            "frame": 45,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          },
+          {
+            "frame": 75,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          },
+          {
+            "frame": 179,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          }
+        ],
+        "allIdentical": true
+      }
+    },
+    "chart-hyperframes": {
+      "rep2": {
+        "reference": "rep 1 final",
+        "frames": [
+          {
+            "frame": 0,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          },
+          {
+            "frame": 45,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          },
+          {
+            "frame": 75,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          },
+          {
+            "frame": 179,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          }
+        ],
+        "allIdentical": true
+      }
+    },
+    "image-hyperframes": {
+      "rep2": {
+        "reference": "rep 1 final",
+        "frames": [
+          {
+            "frame": 0,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          },
+          {
+            "frame": 60,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          },
+          {
+            "frame": 90,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          },
+          {
+            "frame": 149,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          }
+        ],
+        "allIdentical": true
+      }
+    },
+    "mixed-hyperframes": {
+      "rep2": {
+        "reference": "rep 1 final",
+        "frames": [
+          {
+            "frame": 0,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          },
+          {
+            "frame": 75,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          },
+          {
+            "frame": 240,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          },
+          {
+            "frame": 329,
+            "width": 1920,
+            "height": 1080,
+            "differingPixels": 0,
+            "differingFraction": 0,
+            "maxChannelDelta": 0,
+            "identical": true,
+            "verdict": "identical"
+          }
+        ],
+        "allIdentical": true
+      }
+    }
+  },
+  "degradedDemonstration": {
+    "rep1": {
+      "degradedPreviewMs": 10357,
+      "referencePreviewMs": 20754,
+      "degradedFasterByMs": 10397,
+      "referenceDims": {
+        "width": 1920,
+        "height": 1080
+      },
+      "degradedDims": {
+        "width": 960,
+        "height": 540
+      },
+      "dimensionsMatch": false,
+      "differingPixelsAfterBilinearUpscale": 208500,
+      "upscaleFilter": "ffmpeg scale=1920:1080:flags=bilinear",
+      "verdict": "DEGRADED",
+      "basis": "output dimensions differ from the full-scale chart-remotion preview of the same repetition",
+      "rankingTreatment": "excluded from every speed ranking by the rankStage rule; its preview time is reported only alongside this verdict"
+    },
+    "rep2": {
+      "degradedPreviewMs": 9104,
+      "referencePreviewMs": 21387,
+      "degradedFasterByMs": 12283,
+      "referenceDims": {
+        "width": 1920,
+        "height": 1080
+      },
+      "degradedDims": {
+        "width": 960,
+        "height": 540
+      },
+      "dimensionsMatch": false,
+      "differingPixelsAfterBilinearUpscale": 208500,
+      "upscaleFilter": "ffmpeg scale=1920:1080:flags=bilinear",
+      "verdict": "DEGRADED",
+      "basis": "output dimensions differ from the full-scale chart-remotion preview of the same repetition",
+      "rankingTreatment": "excluded from every speed ranking by the rankStage rule; its preview time is reported only alongside this verdict"
+    }
+  },
+  "rankings": {
+    "note": "rankings contain only passed runs whose output was not judged degraded; excluded runs are listed with their reason",
+    "chartPreview": {
+      "ranking": [
+        {
+          "cellId": "chart-remotion",
+          "rep": 1,
+          "ms": 20754
+        },
+        {
+          "cellId": "chart-remotion",
+          "rep": 2,
+          "ms": 21387
+        },
+        {
+          "cellId": "chart-hyperframes",
+          "rep": 1,
+          "ms": 45681
+        },
+        {
+          "cellId": "chart-hyperframes",
+          "rep": 2,
+          "ms": 50726
+        }
+      ],
+      "excluded": []
+    },
+    "chartRender": {
+      "ranking": [
+        {
+          "cellId": "chart-remotion",
+          "rep": 2,
+          "ms": 28693
+        },
+        {
+          "cellId": "chart-remotion",
+          "rep": 1,
+          "ms": 32780
+        },
+        {
+          "cellId": "chart-hyperframes",
+          "rep": 1,
+          "ms": 60608
+        },
+        {
+          "cellId": "chart-hyperframes",
+          "rep": 2,
+          "ms": 66798
+        }
+      ],
+      "excluded": []
+    },
+    "allPreviews": {
+      "ranking": [
+        {
+          "cellId": "chart-remotion",
+          "rep": 1,
+          "ms": 20754
+        },
+        {
+          "cellId": "chart-remotion",
+          "rep": 2,
+          "ms": 21387
+        },
+        {
+          "cellId": "image-hyperframes",
+          "rep": 1,
+          "ms": 38482
+        },
+        {
+          "cellId": "chart-hyperframes",
+          "rep": 1,
+          "ms": 45681
+        },
+        {
+          "cellId": "chart-hyperframes",
+          "rep": 2,
+          "ms": 50726
+        },
+        {
+          "cellId": "mixed-hyperframes",
+          "rep": 1,
+          "ms": 62050
+        },
+        {
+          "cellId": "image-hyperframes",
+          "rep": 2,
+          "ms": 65866
+        },
+        {
+          "cellId": "mixed-hyperframes",
+          "rep": 2,
+          "ms": 81966
+        }
+      ],
+      "excluded": [
+        {
+          "cellId": "degraded-chart-remotion",
+          "rep": 1,
+          "reason": "degraded output: output dimensions differ from the full-scale chart-remotion preview of the same repetition"
+        },
+        {
+          "cellId": "sabotage-chart-remotion",
+          "rep": 1,
+          "reason": "run status is failed"
+        },
+        {
+          "cellId": "degraded-chart-remotion",
+          "rep": 2,
+          "reason": "degraded output: output dimensions differ from the full-scale chart-remotion preview of the same repetition"
+        },
+        {
+          "cellId": "sabotage-chart-remotion",
+          "rep": 2,
+          "reason": "run status is failed"
+        }
+      ]
+    }
+  },
+  "cache": {
+    "executions": [
+      {
+        "name": "cold",
+        "wallMs": 40549,
+        "deriveMs": 124,
+        "sessionMs": 40424,
+        "scenes": [
+          {
+            "sceneId": "fixture-powerpoint-graphic:scene-a",
+            "key": "bb9a7cf49dc0138a6bea736685f2fdddac775993ecf28ac12d2dee4275a5a951",
+            "action": "rendered",
+            "renderMs": 16855
+          },
+          {
+            "sceneId": "mg045-cache-standalone:scene-b",
+            "key": "09f48a5b4dde8d6c4a5fb6da672944c393bfab4bf17fcb763a967448cdbf204e",
+            "action": "rendered",
+            "renderMs": 20995
+          }
+        ],
+        "rendererCalls": [
+          "fixture-powerpoint-graphic:scene-a",
+          "mg045-cache-standalone:scene-b"
+        ],
+        "error": null
+      },
+      {
+        "name": "warm",
+        "wallMs": 1314,
+        "deriveMs": 53,
+        "sessionMs": 1261,
+        "scenes": [
+          {
+            "sceneId": "fixture-powerpoint-graphic:scene-a",
+            "key": "bb9a7cf49dc0138a6bea736685f2fdddac775993ecf28ac12d2dee4275a5a951",
+            "action": "reused",
+            "renderMs": 0
+          },
+          {
+            "sceneId": "mg045-cache-standalone:scene-b",
+            "key": "09f48a5b4dde8d6c4a5fb6da672944c393bfab4bf17fcb763a967448cdbf204e",
+            "action": "reused",
+            "renderMs": 0
+          }
+        ],
+        "rendererCalls": [],
+        "error": null
+      },
+      {
+        "name": "partial",
+        "wallMs": 24351,
+        "deriveMs": 21,
+        "sessionMs": 24331,
+        "scenes": [
+          {
+            "sceneId": "fixture-powerpoint-graphic:scene-a",
+            "key": "bb9a7cf49dc0138a6bea736685f2fdddac775993ecf28ac12d2dee4275a5a951",
+            "action": "reused",
+            "renderMs": 0
+          },
+          {
+            "sceneId": "mg045-cache-standalone:scene-b",
+            "key": "38c46dcd7edd50a7c977c5aca4106d046ff67879f1a51ea07c11cb7b51d3f928",
+            "action": "rendered",
+            "renderMs": 22288
+          }
+        ],
+        "rendererCalls": [
+          "mg045-cache-standalone:scene-b"
+        ],
+        "error": null
+      }
+    ],
+    "savings": {
+      "coldRenderMs": 37850,
+      "warmRenderMs": 0,
+      "warmNetMs": 39235,
+      "coldSessionWallMs": 40549,
+      "warmSessionWallMs": 1314,
+      "partialReusedScene": "fixture-powerpoint-graphic:scene-a",
+      "partialSavedRenderMs": 16855,
+      "perStage": [
+        {
+          "stage": "render (includes the adapter's internal encode)",
+          "coldMs": 37850,
+          "warmMs": 0,
+          "savedMs": 37850,
+          "basis": "renderer wall time inside CachedRenderSession.run; on a warm hit the renderer is never invoked, so the whole render stage is saved"
+        },
+        {
+          "stage": "encode (standalone)",
+          "coldMs": null,
+          "warmMs": null,
+          "savedMs": 0,
+          "basis": "no standalone encode exists in the cache path; the adapter's encode is inside renderFinal and its saving is counted once, in the render stage, never twice"
+        },
+        {
+          "stage": "compile (timeline) and asset preparation (key input hashing)",
+          "coldMs": 124,
+          "warmMs": 53,
+          "savedMs": 0,
+          "basis": "unit derivation runs on every execution by design: the cache can only know a hit after the inputs are hashed. Measured cost repeats; savings are zero and are reported as zero"
+        },
+        {
+          "stage": "QC",
+          "coldMs": null,
+          "warmMs": null,
+          "savedMs": 0,
+          "basis": "the cache session performs no QC; there is nothing to save and nothing is claimed"
+        },
+        {
+          "stage": "stills and preview",
+          "coldMs": null,
+          "warmMs": null,
+          "savedMs": 0,
+          "basis": "the cache session renders finals only; stills and previews are not served by it and no savings are claimed for them"
+        }
+      ]
+    }
+  }
+}

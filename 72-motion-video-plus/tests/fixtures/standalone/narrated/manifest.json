@@ -1,0 +1,75 @@
+{
+  "schema_version": "2.0",
+  "job_id": "fixture-standalone-narrated",
+  "company_id": "fixture-company",
+  "execution_context": "fixture",
+  "parent": null,
+  "mode": "standalone_video",
+  "content_scope": "full_program",
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "duration_frames": 405,
+  "authoring": {
+    "selection": "inherit_config",
+    "provider": null,
+    "model": null,
+    "harness": null
+  },
+  "rendering": {
+    "default_engine": "hyperframes",
+    "allow_legacy_fallback": false,
+    "runtime_lock": "runtime-lock.json"
+  },
+  "storyboard": "storyboard.json",
+  "assets": "assets.json",
+  "design": "design.json",
+  "timeline": "timeline.json",
+  "audio": {
+    "mode": "own",
+    "parent_audio_ref": null,
+    "create_voiceover": true,
+    "create_music": true,
+    "source_assets": []
+  },
+  "approval_policy": "fixture_only",
+  "variants": [],
+  "scenes": [
+    {
+      "id": "open-reveal",
+      "spec": "scenes/open-reveal.json"
+    },
+    {
+      "id": "detail-zoom",
+      "spec": "scenes/detail-zoom.json"
+    },
+    {
+      "id": "proof-chart",
+      "spec": "scenes/proof-chart.json"
+    },
+    {
+      "id": "final-state",
+      "spec": "scenes/final-state.json"
+    }
+  ],
+  "delivery": {
+    "video_profile": "h264_opaque",
+    "poster_frame": 390,
+    "placement": "full_frame",
+    "playback": {
+      "start": "automatic",
+      "repeat": "once",
+      "end": "hold_final"
+    },
+    "required": [
+      "mp4",
+      "poster",
+      "source_package",
+      "placement_metadata",
+      "audio_stems",
+      "captions"
+    ]
+  }
+}

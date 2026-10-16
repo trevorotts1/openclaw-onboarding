@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Page build request",
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "location_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "launch_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "page_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "page_role": {
+      "enum": [
+        "landing",
+        "product_selection",
+        "checkout",
+        "upsell_1",
+        "downsell_1",
+        "upsell_2",
+        "thank_you"
+      ]
+    },
+    "assigned_skill": {
+      "type": "integer"
+    },
+    "approval_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "brand_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "brand_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "route_graph_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "route_graph_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "offer_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "copy_profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "allowed_write_target": {
+      "enum": [
+        "local_only",
+        "approved_test_location",
+        "approved_live_publication"
+      ]
+    },
+    "test_only": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "location_id",
+    "launch_id",
+    "revision",
+    "request_id",
+    "page_id",
+    "page_role",
+    "assigned_skill",
+    "approval_ref",
+    "input_hash",
+    "brand_ref",
+    "brand_hash",
+    "route_graph_ref",
+    "route_graph_hash",
+    "offer_refs",
+    "copy_profile",
+    "allowed_write_target",
+    "test_only"
+  ]
+}

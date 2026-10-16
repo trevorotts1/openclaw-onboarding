@@ -216,3 +216,40 @@ the only legitimate PPTX text part is the off-slide speaker-notes pane.
   Rule A). There is no Pillow composite.
 
 ---
+
+### SOP 9.5 -- Governed Motion Audit (P8.15-MOTION, Skill 72 MG-036)
+
+The ONE narrow exception to the single-composed-image rule: a complete,
+authenticated Skill 72 motion composition may be embedded in a slide as a
+media shape. It is not native text, not an overlay, and never a substitute
+for the composed still: the slide's composed image IS the component's
+poster (byte-identical), and the movie plays on top of it.
+
+- **Election first.** Motion exists only when the deck elected it (intake
+  `want_motion_graphics`, default NO). Hard cap: 2 pieces per deck.
+  Slot A is slide 1; Slot B is a section divider. No election, no embed.
+- **Authentication, never trust.** A component is embedded only after
+  `build_deck.py` validates its governed MG-035 package in the current
+  run: package record, MG-034 QC verdict pass, poster parity, render
+  receipt binding, artifact hashes, silent 1920x1080 30 fps H.264,
+  4.0 to 8.0 seconds, at most 20 MB. Any failure degrades the slide to
+  its static still with a `MOTION_*` reason code in
+  `working/checkpoints/motion.json`. Never embed an unvalidated MP4,
+  never rename an MP4 to a slide PNG, and never wave a package through
+  because its filename looks right.
+- **This role's phase.** P8.15-MOTION (script `scripts/motion_phase.py`)
+  runs after assembly: it re-proves every claimed embed against the
+  delivered deck's media parts by hash, records pieces that landed
+  after assembly as `produced_late_not_embedded`, and writes
+  `working/checkpoints/slide_media_manifest.json` for the webinar
+  build. A record claiming an embed the deck does not carry fails the
+  phase.
+- **Fallbacks stay separate.** The PDF/export fallback for a motion
+  slide is the labeled poster derivative, never the diagnostic deck
+  and never an obscured movie. Playback inside Microsoft PowerPoint
+  is UNVERIFIED on every platform; claim embed structure and hashes
+  only.
+
+Full contract: `72-motion-video-plus/references/integration-contracts.md`.
+
+---

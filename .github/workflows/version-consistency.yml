@@ -118,8 +118,11 @@ jobs:
           # -- Fix 9 (wrangler name collision) --------------------------------
           # The intake-miniapp worker wrangler.toml used to claim
           # name = "presentation-intake" too; a deploy from that quarantined
-          # template would hijack the live /api/* route owned by the
-          # deployed-r2 worker. This gate fails the build unless exactly one
+          # template would have hijacked the live /api/* route owned by the
+          # deployed-r2 worker. The intake-miniapp tree was deleted under
+          # the D5 deletion (FIX-PLAN Item 13, step S10, Trevor's explicit
+          # go, 2026-10-15). This gate remains as the standing check: it
+          # fails the build unless exactly one
           # wrangler.toml under .../presentations/ carries
           # name = "presentation-intake", and it is the deployed-r2 one.
           PRES_DIR="23-ai-workforce-blueprint/templates/role-library/presentations"

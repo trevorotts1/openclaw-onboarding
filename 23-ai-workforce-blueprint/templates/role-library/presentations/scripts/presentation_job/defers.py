@@ -57,6 +57,17 @@ _WANT_KEYS: Dict[str, Dict[str, Any]] = {
         "waiver_rule": "vsl_page",
         "default": "no",
     },
+    # MG-036 (Skill 72 Motion Graphics V2, directive Section 14 P08 +
+    # the B14 election seam): motion graphics are elected, never
+    # default. The capture field WANT_MOTION_GRAPHICS is the election;
+    # a recorded motion_graphics waiver is the decline; absent both,
+    # the answer is NO. Consumers: presentation_job.motion
+    # (election_for_run) and build_deck.py's motion plan.
+    "want_motion_graphics": {
+        "capture_key": "WANT_MOTION_GRAPHICS",
+        "waiver_rule": "motion_graphics",
+        "default": "no",
+    },
     "want_email_sequences": {
         "capture_key": "WANT_EMAIL_SEQUENCES",
         "waiver_rule": "email_sequences",

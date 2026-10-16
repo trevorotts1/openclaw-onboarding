@@ -1,0 +1,124 @@
+{
+  "item": "MG-015",
+  "generated_by": "one-off node script against the built charts module (not part of the test suite); the run-charts suite asserts the same numbers on every run",
+  "dataset": "tests/fixtures/datasets/valid-illustrative.json (identical values to the shipped C05 fixture dataset bars.json, plus the MG-015 declared fields)",
+  "section_17_2_anchor": {
+    "frame0": {
+      "plot1200": [
+        0,
+        0,
+        0
+      ],
+      "plot740": [
+        0,
+        0,
+        0
+      ],
+      "productionFrameMathPlot1200": [
+        0,
+        0,
+        0
+      ]
+    },
+    "frame15": {
+      "plot1200": [
+        0,
+        0,
+        0
+      ],
+      "plot740": [
+        0,
+        0,
+        0
+      ],
+      "productionFrameMathPlot1200": [
+        0,
+        0,
+        0
+      ]
+    },
+    "frame45": {
+      "plot1200": [
+        240,
+        360,
+        600
+      ],
+      "plot740": [
+        148,
+        222,
+        370
+      ],
+      "productionFrameMathPlot1200": [
+        240,
+        360,
+        600
+      ]
+    },
+    "frame75": {
+      "plot1200": [
+        480,
+        720,
+        1200
+      ],
+      "plot740": [
+        296,
+        444,
+        740
+      ],
+      "productionFrameMathPlot1200": [
+        480,
+        720,
+        1200
+      ]
+    },
+    "frame150": {
+      "plot1200": [
+        480,
+        720,
+        1200
+      ],
+      "plot740": [
+        296,
+        444,
+        740
+      ],
+      "productionFrameMathPlot1200": [
+        480,
+        720,
+        1200
+      ]
+    },
+    "frame179": {
+      "plot1200": [
+        480,
+        720,
+        1200
+      ],
+      "plot740": [
+        296,
+        444,
+        740
+      ],
+      "productionFrameMathPlot1200": [
+        480,
+        720,
+        1200
+      ]
+    }
+  },
+  "overshoot_sweep": {
+    "samples_per_row_per_plot": 601,
+    "plots": [
+      1200,
+      740
+    ],
+    "monotonic_non_decreasing": true,
+    "max_width_excess_over_final_px": 0
+  },
+  "container_easing": {
+    "at_0": 0,
+    "at_0_8": 1.04645056,
+    "at_1": 1,
+    "note": "container-only easing; never applied to data marks"
+  }
+}

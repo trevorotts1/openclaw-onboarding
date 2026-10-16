@@ -444,7 +444,7 @@ STUB_MARKERS=("FILL FROM LIBRARY" "how-to.md (stub)")
 #                      dirs, <dept>/scripts/../runs.
 #   fish-audio/        presentations' Fish Audio tag library, read at
 #                      <dept>/fish-audio by scripts/speech_fish_tag.py.
-#   intake-miniapp/ release-matrix/  presentations library siblings of scripts/.
+#   release-matrix/    presentations library sibling of scripts/.
 #   contract/          rescue-rangers library contract dir.
 #
 # WHY THIS IS A FIX AND NOT A LOOSENING: before this, the walker below treated
@@ -464,7 +464,7 @@ STUB_MARKERS=("FILL FROM LIBRARY" "how-to.md (stub)")
 NON_ROLE_DIR_NAMES=(
   "memory" "devils-advocate" "scripts" "sops" "_sops" "roles"
   "conversational-logs" "artifacts" "templates" "assets" "logs"
-  "intake" "runs" "fish-audio" "intake-miniapp" "release-matrix" "contract"
+  "intake" "runs" "fish-audio" "release-matrix" "contract"
 )
 
 # is_non_role_dir <path> — 0 (true) when the directory is NOT a role folder.
