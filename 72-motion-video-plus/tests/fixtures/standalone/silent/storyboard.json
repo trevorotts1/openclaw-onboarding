@@ -1,0 +1,130 @@
+{
+  "schema_version": "2.0",
+  "id": "story-fixture-standalone-silent",
+  "beats": [
+    {
+      "id": "beat-open",
+      "scene_id": "open-reveal",
+      "job": "Establish the subject of the piece at wide shot scale before any detail or data appears.",
+      "viewer_question": "What is this piece about?",
+      "intended_understanding": "The viewer understands the piece is about one delivered work crate, shown whole.",
+      "visual_verb": "reveal",
+      "subject_ids": [
+        "work-crate"
+      ],
+      "representation": "image",
+      "explanatory": true,
+      "initial_state": "The crate is fully masked; only the headline and the empty stage are visible.",
+      "transformation": "A mask sweeps across the stage and uncovers the crate in full.",
+      "proof_state": "The crate is uncovered in full at the midpoint of the reveal, mid-sweep.",
+      "final_state": "The whole crate sits uncovered and still, held as the opening statement.",
+      "asset_ids": [
+        "subject-crate"
+      ],
+      "data_ids": [],
+      "essential_text": [
+        "Inside every delivery: the work itself"
+      ],
+      "proof_frames": [
+        0,
+        37,
+        89
+      ],
+      "typography_only_exception": null
+    },
+    {
+      "id": "beat-detail",
+      "scene_id": "detail-zoom",
+      "job": "Move to a close shot scale and attach the one detail that matters to the subject.",
+      "viewer_question": "What should I notice about it?",
+      "intended_understanding": "The viewer understands the crate carries a counted detail, and the count is part of the object, not decoration.",
+      "visual_verb": "attach",
+      "subject_ids": [
+        "work-crate"
+      ],
+      "representation": "image",
+      "explanatory": true,
+      "initial_state": "The crate is shown closer, without its detail chip.",
+      "transformation": "The detail chip fades and scales in, attached to the crate, and settles.",
+      "proof_state": "The chip is fully present beside the crate, reading 128 crates delivered this week.",
+      "final_state": "Crate and chip hold together as one composed close shot.",
+      "asset_ids": [
+        "subject-crate"
+      ],
+      "data_ids": [],
+      "essential_text": [
+        "The work, with its detail attached"
+      ],
+      "proof_frames": [
+        99,
+        123,
+        164
+      ],
+      "typography_only_exception": null
+    },
+    {
+      "id": "beat-proof",
+      "scene_id": "proof-chart",
+      "job": "Present the proof peak: the counted claim, drawn on one shared scale.",
+      "viewer_question": "What proves the claim?",
+      "intended_understanding": "The viewer understands packed, shipped, and delivered counts on one shared scale, with delivered the largest and nothing rescaled.",
+      "visual_verb": "compare",
+      "subject_ids": [
+        "bar-a",
+        "bar-b",
+        "bar-c"
+      ],
+      "representation": "chart",
+      "explanatory": true,
+      "initial_state": "The stage is composed with title, labels, and scale, and no bars are drawn yet.",
+      "transformation": "The three bars grow together on the shared scale, preserving their ratios.",
+      "proof_state": "All three bars stand at full truthful widths: 480, 720, and 1200 source pixels in landscape orientation.",
+      "final_state": "The completed chart holds unchanged as the proof state of the piece.",
+      "asset_ids": [],
+      "data_ids": [
+        "proof-bars"
+      ],
+      "essential_text": [
+        "The count, on one shared scale"
+      ],
+      "proof_frames": [
+        195,
+        225,
+        299
+      ],
+      "typography_only_exception": null
+    },
+    {
+      "id": "beat-final",
+      "scene_id": "final-state",
+      "job": "End on a designed final state: the summary held still, not a fade to nothing.",
+      "viewer_question": "How does it end?",
+      "intended_understanding": "The viewer understands the piece ends deliberately: delivered, checked, and held, all at full value, held to the last frame.",
+      "visual_verb": "hold",
+      "subject_ids": [
+        "bar-a",
+        "bar-b",
+        "bar-c"
+      ],
+      "representation": "chart",
+      "explanatory": true,
+      "initial_state": "The summary stage is composed with its headline and no bars drawn yet.",
+      "transformation": "The three summary bars rise quickly to full value together.",
+      "proof_state": "Delivered, checked, and held all stand at full width, the designed final state.",
+      "final_state": "The final state holds unchanged through the last frame of the program.",
+      "asset_ids": [],
+      "data_ids": [
+        "final-bars"
+      ],
+      "essential_text": [
+        "Delivered, measured, and held"
+      ],
+      "proof_frames": [
+        325,
+        360,
+        404
+      ],
+      "typography_only_exception": null
+    }
+  ]
+}

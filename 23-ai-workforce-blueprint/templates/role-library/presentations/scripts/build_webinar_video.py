@@ -194,7 +194,79 @@ def resolve_deck_slug(run_dir: Path) -> str:
     return run_dir.name
 
 
-def resolve_required_inputs(run_dir: Path) -> Dict[str, Path]:
+def resolve_slide_media(run_dir: Path) -> Dict[int, Dict[str, str]]:
+    """MG-036 (P05): resolve the deck's governed motion components for
+    the webinar render from the slide-media manifest.
+
+    Primary source: working/checkpoints/slide_media_manifest.json
+    (written by phase P8.15-MOTION). Fallback: derive the same entries
+    from working/checkpoints/motion.json (slides recorded embedded or
+    validated). Every clip is hash-verified against its record BEFORE
+    use and resolved inside the run root (symlinks resolved first): a
+    clip that is missing, escaped, or hash-mismatched is a hard
+    WebinarBuildError naming the MOTION_* code — an unverified clip
+    never enters the client webinar. No motion records at all returns
+    {} and the build is the unchanged still-only path. The timing
+    track is NOT altered by motion: the parent narration keeps its
+    length and there is no second TTS/music branch."""
+    import hashlib
+
+    entries: List[dict] = []
+    manifest = _read_json(
+        run_dir / "working" / "checkpoints" / "slide_media_manifest.json")
+    if isinstance(manifest, dict) and isinstance(manifest.get("slides"), list) \
+            and manifest["slides"]:
+        entries = manifest["slides"]
+    else:
+        record = _read_json(
+            run_dir / "working" / "checkpoints" / "motion.json")
+        if isinstance(record, dict):
+            for e in record.get("slides") or []:
+                if isinstance(e, dict) \
+                        and e.get("status") in ("embedded", "validated"):
+                    entries.append({
+                        "slide": e.get("slide"),
+                        "clip_path": e.get("clip_path"),
+                        "clip_sha256": e.get("artifact_sha256"),
+                        "fit": (e.get("webinar_policy") or {}).get("fit"),
+                    })
+    out: Dict[int, Dict[str, str]] = {}
+    root = run_dir.resolve()
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        slide = e.get("slide")
+        rel = e.get("clip_path")
+        if not isinstance(slide, int) or not isinstance(rel, str) or not rel:
+            continue
+        clip = (root / rel).resolve()
+        try:
+            clip.relative_to(root)
+        except ValueError:
+            raise WebinarBuildError(
+                f"MOTION_PATH_ESCAPE: the slide-media clip for slide "
+                f"{slide} escapes the run root: {rel!r}")
+        if not clip.is_file():
+            raise WebinarBuildError(
+                f"MOTION_PACKAGE_MISSING: the slide-media clip for "
+                f"slide {slide} is not on disk: {rel!r}")
+        sha = e.get("clip_sha256")
+        if isinstance(sha, str) and sha:
+            h = hashlib.sha256()
+            with open(clip, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                    h.update(chunk)
+            if h.hexdigest() != sha:
+                raise WebinarBuildError(
+                    f"MOTION_HASH_MISMATCH: the slide-media clip for "
+                    f"slide {slide} does not hash to its governed "
+                    f"record ({rel!r})")
+        out[slide] = {"clip_path": str(clip),
+                      "fit": e.get("fit") or "hold_final"}
+    return out
+
+
+def resolve_required_inputs(run_dir: Path) -> Dict[str, Any]:
     """Resolve + validate the inputs the webinar build consumes (SOP §1). Raises
     WebinarBuildError on any missing input — fail-loud, never silently degrade."""
     slides_dir = run_dir / "renders"
@@ -223,6 +295,10 @@ def resolve_required_inputs(run_dir: Path) -> Dict[str, Path]:
         "audio": audio,
         "speech": speech,
         "chunks_dir": chunks_dir,
+        # MG-036 (P05): OPTIONAL slide-media manifest side. Absence is
+        # the still-only path, never an error; a present-but-broken
+        # motion record fails loud inside resolve_slide_media.
+        "slide_media": resolve_slide_media(run_dir),
     }
 
 
@@ -274,7 +350,8 @@ def render_webinar(inputs: Dict[str, Path], timing_path: Path, out_path: Path,
             str(out_path),
             fps=fps, fade=fade, crf=crf, preset=preset, bitrate=bitrate,
             motion_static=motion_static, keep_clips=keep_clips,
-            workdir=workdir, verbose=verbose)
+            workdir=workdir, verbose=verbose,
+            slide_media=inputs.get("slide_media") or None)
     except WebinarError as exc:
         raise WebinarBuildError(f"ffmpeg render failed: {exc}") from exc
     return probe
@@ -559,6 +636,10 @@ def build_webinar(run_dir: Path, *, out: Optional[str] = None, no_upload: bool =
         "status": "built+size-gated",
         "built_at": _now_iso(),
     }
+    if inputs.get("slide_media"):
+        # MG-036 (P05): provenance — which slides joined as governed
+        # motion components (the same components embedded in the deck).
+        record["motion_slides"] = sorted(inputs["slide_media"].keys())
 
     # Step 4 — GHL v3 upload (unless --no-upload).
     if not no_upload:

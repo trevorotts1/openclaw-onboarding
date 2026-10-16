@@ -1,0 +1,15 @@
+{
+  "schema_version": "2.0",
+  "command": "render",
+  "job_id": "fixture-powerpoint-graphic",
+  "status": "BLOCKED",
+  "exit_code": 4,
+  "state": "PREVIEW_READY",
+  "artifacts": [],
+  "error": {
+    "code": "MG_APPROVAL_REQUIRED",
+    "message": "No authenticated preview approval for this production revision.",
+    "retryable": false,
+    "next_action": "Import an authorized approval event for the matching revision."
+  }
+}

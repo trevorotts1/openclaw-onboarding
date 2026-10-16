@@ -1,0 +1,13 @@
+score: work/audio/score.wav (3.0s at 120 BPM, seed 7)
+beat grid: 7 beats at 120.0 BPM -> work/audio/beats.json
+sfx: /tmp/tmp.Zw9vjtQHTk/sfx/pop.wav
+sfx: /tmp/tmp.Zw9vjtQHTk/sfx/click.wav
+sfx: /tmp/tmp.Zw9vjtQHTk/sfx/whoosh.wav
+sfx: /tmp/tmp.Zw9vjtQHTk/sfx/thump.wav
+Traceback (most recent call last):
+  File "<stdin>", line 132, in <module>
+  File "<stdin>", line 132, in <genexpr>
+  File "/usr/lib/python3.12/shlex.py", line 327, in quote
+    if _find_unsafe(s) is None:
+       ^^^^^^^^^^^^^^^
+TypeError: expected string or bytes-like object, got 'tuple'

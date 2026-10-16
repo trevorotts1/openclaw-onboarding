@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """U5 — the shared studio bridge (one file for OpenClaw boxes and Claude Code).
 
-Reuses the mint/renew/sync shape of `intake-miniapp/bridge/intake_bridge.py`
+Reuses the mint/renew/sync shape of `intake/interview-app/bridge/intake_bridge.py`
 and the durable-outbox shape of `scripts/core/cc_sync.py`. It is NOT a new
 framework, scheduler, dashboard or management app.
 

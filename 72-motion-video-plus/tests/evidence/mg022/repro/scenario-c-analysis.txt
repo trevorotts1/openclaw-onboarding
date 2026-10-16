@@ -1,0 +1,10 @@
+decoded /tmp/mg022-repro-_u4clmu6/av/final.wav: 119808 samples at 48000 Hz (2.50s)
+t=0.00-0.25  440Hz amp=     0.0  880Hz amp=     0.0
+t=0.25-0.50  440Hz amp=     0.0  880Hz amp=     0.0
+t=0.50-0.75  440Hz amp=     0.0  880Hz amp=     0.0
+t=0.75-1.00  440Hz amp=     0.0  880Hz amp=     0.0
+t=1.00-1.25  440Hz amp=     0.0  880Hz amp=     0.0
+t=1.25-1.50  440Hz amp=     0.0  880Hz amp=     0.0
+t=1.50-1.75  440Hz amp=     0.0  880Hz amp=     0.0
+t=1.75-2.00  440Hz amp=     0.2  880Hz amp=     0.2
+t=2.00-2.25  440Hz amp=     1.4  880Hz amp=  4255.4

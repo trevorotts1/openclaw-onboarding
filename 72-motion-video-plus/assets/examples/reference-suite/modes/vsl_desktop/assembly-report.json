@@ -1,0 +1,164 @@
+{
+  "schema_version": "1.0",
+  "handoff_id": "handoff-vsl-desktop-fixture",
+  "parent_job_id": "fixture-parent-vsl",
+  "plan": {
+    "total_frames": 1440,
+    "total_samples": 2304000,
+    "fps": 30
+  },
+  "assembled": {
+    "path": "/home/hatch/workspace/skill72-v2/.scratch/mg044/vsl-desktop/final-vsl.mp4",
+    "sha256": "024ef6f53c71ac41fbf6e034f67a25c118f29efe14e2d4fe92916e48295bc3b8",
+    "bytes": 27653704,
+    "decoded_frames": 1440,
+    "duration_seconds": 48.0,
+    "audio_samples": 2304000
+  },
+  "cue": {
+    "id": "fixture-cue",
+    "resolved_frame": 900,
+    "slot_start_frame": 900,
+    "first_frame_delta": 0
+  },
+  "checks": {
+    "plan_totals": {
+      "verdict": "pass",
+      "observed": {
+        "plan_total_frames": 1440,
+        "decoded_frames": 1440,
+        "plan_total_samples": 2304000,
+        "decoded_audio_samples": 2304000,
+        "duration_seconds": 48.0
+      }
+    },
+    "cue_resolved": {
+      "verdict": "pass",
+      "observed": {
+        "cue_id": "fixture-cue",
+        "resolved_frame": 900,
+        "slot_start_frame": 900,
+        "handoff_cue_frame": 900
+      }
+    },
+    "insert_first_frame": {
+      "verdict": "pass",
+      "observed": {
+        "parent_frame": 900,
+        "bar_widths": [
+          0,
+          0,
+          0
+        ],
+        "expected": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "boundary_switch": {
+      "verdict": "pass",
+      "observed": {
+        "mean_abs_diff_frames_899_900": 126.261
+      }
+    },
+    "insert_motion_in_place": {
+      "verdict": "pass",
+      "observed": {
+        "mid_parent_frame": 945,
+        "mid_widths": [
+          240,
+          360,
+          600
+        ],
+        "mid_expected": [
+          240.0,
+          360.0,
+          600.0
+        ],
+        "final_parent_frame": 975,
+        "final_widths": [
+          480,
+          720,
+          1200
+        ],
+        "final_expected": [
+          480.0,
+          720.0,
+          1200.0
+        ],
+        "tolerance_px": 3
+      }
+    },
+    "audio_registry": {
+      "verdict": "pass",
+      "observed": {
+        "input_kinds": [
+          "scene",
+          "scene",
+          "scene",
+          "narration",
+          "narration",
+          "narration",
+          "music",
+          "canvas"
+        ],
+        "narration_inputs": 3,
+        "music_inputs": 1,
+        "insert_stream_types": [
+          "video"
+        ]
+      }
+    },
+    "narration_presence": {
+      "verdict": "pass",
+      "observed": {
+        "narr-intro": {
+          "present": true,
+          "bandRatio": 1.336,
+          "outputRmsDbfs": -16.04
+        },
+        "narr-cue": {
+          "present": true,
+          "bandRatio": 1.217,
+          "outputRmsDbfs": -15.58
+        },
+        "narr-outro": {
+          "present": true,
+          "bandRatio": 1.337,
+          "outputRmsDbfs": -16.14
+        }
+      }
+    },
+    "final_words": {
+      "verdict": "pass",
+      "observed": {
+        "segment": "narr-outro",
+        "presentAtPlannedEnd": true,
+        "bandRatio": 1.044,
+        "outputTailRmsDbfs": -19.29
+      }
+    },
+    "loudness": {
+      "verdict": "pass",
+      "observed": {
+        "integratedLufs": -14.03,
+        "truePeakDb": -1.2,
+        "target": {
+          "integratedLufs": -14.0,
+          "truePeakDb": -1.0
+        },
+        "integratedDeltaLufs": -0.03
+      }
+    },
+    "assembler_verification": {
+      "verdict": "pass",
+      "observed": {
+        "assemble_exit_code": 0,
+        "note": "the shipped assembler's own encoded-output verification (narration presence, final words, loudness finish) ran inside plan mode and the run succeeded"
+      }
+    }
+  },
+  "verdict": "pass"
+}

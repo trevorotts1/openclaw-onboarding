@@ -1,113 +1,363 @@
 ---
 name: motion-video-plus
-description: Produces finished motion-graphics videos through a proven deterministic pipeline: an LLM writes scene animation as HTML/JS exposing window.__setTime(t), headless Chromium renders it frame by frame at 30fps, FFmpeg stitches frames with a Fish Audio TTS voiceover into an MP4. Scene-based manifests scale from 30 seconds to 2 hours. Use for promo videos, explainers, brand films, and any motion-graphics video. Do not use for AI video-model generation (Skill 67 kie-video) or documentary montage (Skill 47 movie-producer).
-version: 1.0.0
+description: Produces motion graphics in four delivery modes (PowerPoint graphic, desktop VSL insert, mobile VSL insert, standalone video) through one canonical V2 pipeline: mode-first intake, a schema-validated job package, typed component scenes rendered through the production adapters, and gated review and QC. Use for animated charts, explainers, and product or brand motion graphics sized for a slide, a VSL slot, or a standalone video. Do not use for AI video-model generation (Skill 67 kie-video) or documentary montage and whole-VSL production (Skill 47 movie-producer).
+version: 2.0.0
 ---
 
 # Motion Video Plus: Skill 72
 
-This is the canonical motion-graphics video production skill. It turns a script and a brand bible into a finished MP4 through a pipeline that was proven on a real 30-second, 6-scene LiveConvo.chat promo: 909 frames rendered at about 0.5 seconds per frame, stitched with a Fish Audio voiceover.
+Skill 72 produces motion graphics: animated charts, explainers, and
+product or brand pieces built from code-driven animation. In V2 there is
+one canonical pipeline, and it starts with the destination, not with a
+renderer or a script.
 
-## The pipeline in one paragraph
+## Start every job with the mode
 
-A model writes deterministic HTML/JS animation for each scene. Every animation exposes `window.__setTime(t)`, a pure function of time t in seconds that sets every element's style, with no CSS transitions and no timer-driven motion. Headless Chromium opens the page, seeks to each frame time, calls `__setTime(t)`, and screenshots at 30 frames per second. FFmpeg encodes each scene's frames, joins scenes with crossfades, lays one continuous synthesized music bed over the final assembly with sidechain ducking under the voiceover, adds beat-synced synthesized UI sounds, finishes at -14 LUFS, and delivers the MP4. No AI video model is involved at any step.
+Before any job setup, resolve which of the four delivery modes the work is
+for. Resolve it from the current task or an existing manifest first; if it
+is still unknown, ask: "Is this for a PowerPoint slide, a desktop VSL, a
+mobile VSL, or a standalone video?" A plain "VSL" request defaults to
+desktop 16:9 and records that default. The full intake contract, including
+what each mode changes, the linked-variant rule for desktop plus mobile,
+and the parent handoff for VSL work, is `references/intake-and-modes.md`.
 
-Parallelize every stage, not just the frame render: scene animation files are built in parallel once the brief is locked, TTS chunks are fetched concurrently, spot-check stills render for all scenes at once, and the score and SFX synthesize while frames render. What stays sequential is the decision chain: script, voiceover durations, scene timing, animation. Measured on the reference box (12 CPU, 24GB RAM), a 5-minute video ran 85 minutes with only the frame render parallelized. With every stage parallelized the warm-pipeline target is about 30 minutes: script 5, TTS plus animation 7, render 10 to 11 at 8 workers (measured 0.56 seconds per frame per worker), assembly plus QC plus mux 5. Add about 4 minutes in a fresh environment.
+| Mode | Canvas | Audio | Delivered |
+|---|---|---|---|
+| `powerpoint_graphic` | 16:9, default 1920x1080 | Silent | MP4, poster, placement/playback metadata, source package |
+| `vsl_desktop` | 16:9, default 1920x1080 | Parent owns narration and music | Slot-length MP4, poster, timing/source metadata |
+| `vsl_mobile` | 9:16, default 1080x1920, recomposed, never a crop | Parent owns narration and music | Vertical MP4, poster, mobile safe-area metadata |
+| `standalone_video` | 16:9 default; 9:16 when explicitly requested | Its own, only when the brief requires it | Finished MP4, poster, source/timeline package |
 
-One honest note: the pipeline technique was proven on that 30-second promo. Treat your first full run through the 15 stages as this skill's shakedown run.
+Platform truth for the first row: playback inside Microsoft
+PowerPoint is UNVERIFIED on every platform. What the packaging layer
+proves is structural (the media embedded in the deck file itself,
+byte-identical after relocation, the poster as the slide image); no
+document in this skill may state or imply that PowerPoint playback
+has been tested. See `references/powerpoint-packaging.md` and
+`references/integration-contracts.md`.
+
+Mode, content scope, audio ownership, and approval policy are four
+separate decisions recorded in four separate manifest fields. Never mix
+them (directive Section 4.3).
 
 ## Route boundaries first
 
-Use this skill when the request is a motion-graphics video: kinetic typography, animated explainers, brand promos, product films built from code-driven animation.
+Use this skill when the request is motion graphics: kinetic typography,
+animated charts and explainers, brand and product pieces built from
+code-driven animation, sized for one of the four modes.
 
 Route elsewhere when the assignment is specifically:
 
-- **Skill 67 `kie-video`**: AI video-model generation (Kie.ai), for footage-style or generative clips.
-- **Skill 47 `movie-producer`**: OpenMontage documentary-montage or VSL/talking-head pipelines.
+- **Skill 67 `kie-video`**: AI video-model generation (Kie.ai), for
+  footage-style or generative clips.
+- **Skill 47 `movie-producer`**: documentary montage, talking-head
+  pipelines, and whole VSLs. Skill 72 makes the graphics a VSL needs; the
+  VSL itself, including its narration and music, stays owned by its
+  producer, and VSL inserts are handed back to that parent.
 - **Skill 27 / video-editor**: hands-on editing of existing footage.
 
-If the owner explicitly asks for this motion-graphics pipeline, use it even when the finished video later hands off to another rail for distribution.
+If the owner explicitly asks for this motion-graphics pipeline, use it even
+when the finished piece later hands off to another rail for distribution.
 
-## Proven stack only
+## The one canonical pipeline
 
-FFmpeg, headless Chromium, a Node frame driver (`playwright-core`), Fish Audio TTS. These four are proven. Diffusion Studio, Hyperframes, and Remotion are UNTESTED alternatives: they are documented in `references/untested-alternatives.md` and must never be presented as verified.
+`intake (mode first) -> brief and brand -> job package -> storyboard and
+design -> scene authoring -> compile -> validate -> preview -> approvals
+-> render -> QC -> package and deliver`
 
-## Model-agnostic by rule
+`INSTRUCTIONS.md` is the stage-by-stage runbook for this pipeline. The job
+package created at its stage 3 is the production contract: `manifest.json`,
+`storyboard.json`, `assets.json`, `design.json`, `timeline.json`, typed
+scene specs under `scenes/`, datasets under `data/`, and, for VSL modes,
+`parent-handoff.json`. JSON Schema is canonical
+(`references/contracts-v2.schema.json`); the same contracts validate in
+Python (`scripts/motion_contracts.py`) and TypeScript
+(`runtime/src/validation/`). One validated example job per mode ships in
+`assets/examples/`, derived from the normative fixtures in
+`tests/fixtures/modes/`.
 
-This skill never assumes which model writes the animation code. At the start of every run, ASK the operator which model to use for animation authoring (their current model, GLM 5.3, DeepSeek, whatever they name). Record the choice in the run manifest. Never hardcode Opus 5.5 or any other model.
+Everything else in this skill is a supporting script in service of that
+pipeline, not a peer workflow: the shared-runtime provisioner, the
+validators, the migrator, the TTS and sound-synthesis scripts, the assembly
+and QC scripts. No supporting script defines its own route to delivery.
+
+Status, recovery, and delivery are part of the same pipeline, not an
+afterthought: one task identity runs from intake through delivery, the
+structured status ledger lives in the job directory, and delivery is
+recorded in a receipt built from measured facts only. That layer,
+including its Skill 47 bridge (`47-movie-producer/scripts/motion_status.py`),
+is specified in `references/status-and-delivery.md`. A job is reported
+at the readiness level its evidence has actually reached, and
+`DELIVERED` is claimed only through that layer's delivery gate.
+
+## Production renderers and readiness
+
+Skill 72 V2 renders through two production adapters, Hyperframes and
+Remotion, provisioned by the shared rendering runtime
+(`shared-utils/motion-render-runtime/`). Which adapter a scene uses is
+decided by the routing authority, `references/renderer-routing.md`: routing
+is per scene, driven by what the scene needs, and the delivery mode never
+decides the engine by itself. What each adapter can do on a given machine
+is recorded in the capability matrix,
+`references/renderer-capabilities.json`. An adapter counts as ready on a
+machine only when the shared runtime holds a current capability record and
+a successful launch record for it; a classification in a document is not
+readiness, and no renderer is presented as ready without those records.
+Renderer status, including what is still untested and its specific gap,
+lives in `references/untested-alternatives.md`.
+
+Both adapters are implemented in `runtime/src/adapters/` and registered
+with the one dispatcher (`MotionDispatcher`); callers never invoke an
+engine directly. A request for an engine with no registered adapter, or
+for a capability no ready record confirms, fails explicitly
+(`MG_ENGINE_MISSING`, `MG_CAPABILITY_MISSING`) rather than substituting
+another renderer. See `references/renderer-routing.md` for the error
+behavior.
+
+## Authoring-model freedom
+
+This skill never prescribes which model writes the animation code, and no
+model vendor is banned or required. Resolve the authoring model for each
+job in this order: (a) an explicit choice made for this job; (b) a choice
+already recorded for the current task; (c) the client's configuration,
+meaning the model the client selected or their configured default; (d) if
+none of those resolves, ask one question and use the answer. Record the
+actual model, provider, and harness identifiers used in the job manifest.
+A recommendation may be offered with its reasons as guidance only; it
+never becomes the choice unless the client or the configuration makes it
+the choice, and it is never a hidden prescription or default. Rendering
+approved scene source is a local deterministic operation: it needs no LLM
+credential and must succeed when none is present.
+
+## Legacy V1 jobs: an explicit compatibility choice only
+
+The V1 pipeline (HTML scenes honoring `window.__setTime(t)`, rendered by
+`scripts/render.js` and assembled by `scripts/assemble.sh`) is the legacy
+compatibility path. It is reached only by explicit choice, through
+migration: `scripts/migrate_manifest.py` converts a V1 manifest into a V2
+job scaffold non-destructively, with the mode and company supplied by the
+operator, never guessed, and every unmapped value preserved in the
+migration receipt. Migrated scenes stay on the declared compatibility path
+until each is re-authored against a registered component. Legacy rendering
+is never a default, never a fallback for a failed V2 render, and never
+offered as a peer workflow. The V1 manifest shape is preserved as
+`references/legacy-manifest-schema.json` with its example at
+`assets/example-manifest.json`.
 
 ## Read only what the current stage needs
 
 Start with `references/authority-map.md`, then use:
 
-- Animation contract (what the model must write): `references/animation-contract.md`
-- Motion grammar (the design constitution: banned cliches, spring presets, beat-led hits, masked type, safe zones): `references/motion-grammar.md`
-- Critique protocol (fresh-critic scoring, 8 criteria, failure-mode checklist): `references/critique-protocol.md`
+- Intake and modes (the first decision of every job):
+  `references/intake-and-modes.md`
+- Canonical contracts: `references/contracts-v2.schema.json`, with the
+  per-artifact entrypoints `references/manifest-schema.json`,
+  `references/scene-schema.json`, `references/asset-schema.json`,
+  `references/timeline-schema.json`, `references/review-schema.json`
+- Example jobs, one per mode, validated: `assets/examples/`
+- Renderer routing authority: `references/renderer-routing.md`
+- Renderer capability matrix: `references/renderer-capabilities.json`
+- Renderer status reference: `references/untested-alternatives.md`
+- Component catalog: `references/component-catalog.md`
+- Approvals and gates: `references/approvals-and-gates.md`
+- Preview and review: `references/preview-and-review.md`
+- Review evidence bundles: `references/review-evidence.md`
+- Critique protocol: `references/critique-protocol.md`
+- Technical QC: `references/technical-qc.md`
+- Audio policy (mode ownership, resolved plan, measured narration):
+  `references/audio-policy.md`
+- Status, recovery, and delivery (the delivery receipt and the Skill 47
+  bridge): `references/status-and-delivery.md`
+- PowerPoint packaging: `references/powerpoint-packaging.md`
+- Presentation pipeline integration: `references/integration-contracts.md`
+- VSL handoffs: `references/vsl-desktop-handoff.md`,
+  `references/vsl-mobile-handoff.md`
+- Design Intelligence bridge: `references/design-intelligence-bridge.md`
+- Installation and migration: `references/install-and-migration.md`
+- Brand bible template: `references/brand-bible-template.md`
 - Director's brief template: `references/directors-brief-template.md`
-- Pre-production chapters (studio setup through the approved brief): `references/pre-production/`
-- Manifest schema (scene order, durations, fps, resolution): `references/manifest-schema.json`
-- Beat grid schema: `references/beats-schema.json`
-- Brand bible template (palette, type, logo, motion grammar, voice, sound): `references/brand-bible-template.md`
-- Fish Audio TTS rules, models, pricing: `references/fish-audio-tts.md`
-- Untested alternatives (read-only awareness): `references/untested-alternatives.md`
-- Example 30-second, 6-scene manifest: `assets/example-manifest.json`
+- Pre-production chapters (brief-writing craft):
+  `references/pre-production/`
+- Motion grammar (the design constitution): `references/motion-grammar.md`
+- Legacy compatibility path only: `references/animation-contract.md` (the
+  `__setTime` scene contract), `references/fish-audio-tts.md` (the Fish
+  Audio provider rules the narration tooling follows),
+  `assets/example-manifest.json` (the V1 example)
 
-## Governing production order
+## The gates
 
-`pre-production -> brand bible -> script -> model selection -> grammar-constrained scene animation -> preview gate -> critique gate -> determinism gate -> voiceover -> audio-first timing -> preflight -> full render -> synth sound and assembly -> QC gate -> delivery`
+1. **Package validation gate.** The job package validates with zero
+   findings (`scripts/motion_contracts.py validate <job-dir>`) before any
+   render is claimed or started. Schema-valid is the floor: it is not
+   asset-ready, approved, rendered, or delivered.
+2. **Preview and approval gate.** Previews render at the actual
+   composition's aspect and full fps (a reduced-fps artifact is labeled
+   `rough_layout_only` and can never satisfy the motion gate), and the
+   approvals the job's `approval_policy` requires are recorded against
+   exact content revisions before the final render. Nobody iterates on a
+   full render, and nobody writes their own approval. The gate contract
+   is `references/approvals-and-gates.md`; the preview model is
+   `references/preview-and-review.md`.
+3. **Determinism gate.** Scene state is a pure function of frame and fps:
+   seeking to a frame cold produces the same frame as seeking after any
+   other frame. Drift fails the gate.
+4. **Review gate.** Creative review runs on the complete-runtime
+   evidence bundle (`references/review-evidence.md`): covered plus
+   omitted runtime accounts for exactly 100 percent, the bundle tool
+   never prints PASS, and scoring follows the evidence-bound rubric in
+   `references/critique-protocol.md` (self-approval refused, no minimum
+   round count, five-round cap, a claimed 10 refused against an
+   uncalibrated reference).
+5. **QC gate.** Technical QC passes on real evidence before delivery:
+   decoded frame counts and dimensions match the plan, timing and audio
+   ownership match the mode contract, and review evidence covers the full
+   runtime. A check that did not run is reported as not run, never as
+   passed. The QC contract is `references/technical-qc.md`.
 
-Each stage's detail lives in `INSTRUCTIONS.md`. The four hard gates:
+Jobs on the legacy compatibility path additionally keep that path's own
+gates (preview, critique, determinism, and `scripts/qc.sh`), run through
+the same `INSTRUCTIONS.md` wrapper.
 
-1. **Preview gate.** Low-res previews (960x540 at 15fps) for every scene must be approved by the operator before any full-quality render starts. Nobody iterates on a full render.
-2. **Critique gate.** A fresh critic (an agent that did not write the animation) scores the 8 criteria in `references/critique-protocol.md` with evidence. Minimum 3 rounds; every score must reach 8+ before the full render.
-3. **Determinism gate.** `scripts/verify-determinism.js` must pass for every scene: probe frames rendered cold must match the same frames rendered after seeking elsewhere. No pixel drift.
-4. **QC gate.** `scripts/qc.sh` must pass before delivery: frame counts match the manifest, no missing or zero-byte frames, blackdetect and freezedetect sweeps clean, determinism re-check, audio duration equals video duration, contact sheet plus per-beat sheet for the human 30-second review.
+## Decisions and where they live
 
-## The 15 design decisions and where they live
-
-1. **Proven stack only.** This file and `references/untested-alternatives.md`.
-2. **Model-agnostic.** `INSTRUCTIONS.md` step 4 asks and records the model choice.
-3. **Scene-based architecture.** `references/manifest-schema.json`, `assets/example-manifest.json`; one HTML file per scene plus a manifest.
-4. **Parallel chunked rendering with auto-resume.** `scripts/render.js`: fresh headless browser every few hundred frames (Chromium died at frame 809 of 909 in testing from memory exhaustion), resumes from the last completed frame, never restarts a finished chunk.
-5. **Per-scene frame cleanup.** `scripts/render.js` and `scripts/assemble.sh` delete each scene's PNGs right after its segment encodes, in a finally/trap so cleanup runs even on failure. 30 seconds produced 359MB of PNGs; a 2-hour video would need about 86GB without cleanup.
-6. **Segments.** 5-minute segments are the standard; preflight upgrades to 15-minute segments on strong systems only. `scripts/assemble.sh` joins segments with crossfades and lays ONE continuous music bed over the final assembly, never per-segment music.
-7. **Chunked voiceover.** `scripts/tts.py`: one Fish Audio request per scene (2,000 to 4,000 chars, split at scene or paragraph boundaries, never mid-sentence), same reference voice on every request, temperature 0.3 to 0.5, requests fired CONCURRENTLY with bounded parallelism (default 5, the starter-tier concurrent limit, tunable with `--max-workers`), exponential backoff on 429 per request, results reassembled in scene order. Audio-first timing is unchanged: each chunk's measured duration still sets its scene's timeline. Default model `s2.1-pro`; `drama-3-preview` is opt-in with a served-model verification check (see `references/fish-audio-tts.md`).
-8. **Fast low-res previews.** `scripts/render.js --preview`; required gate in `INSTRUCTIONS.md`.
-9. **Three-layer sound design from the first draft.** `scripts/assemble.sh`: voiceover, music bed ducked via FFmpeg sidechain compression, beat-synced UI sounds. The music bed and UI sounds are synthesized in code by default (`scripts/synth-score.py`, `scripts/synth-sfx.py`); a supplied track is the only exception. Final mix lands at -14 LUFS integrated.
-10. **Automated QC plus contact sheet.** `scripts/qc.sh`.
-11. **Brand bible per brand.** `references/brand-bible-template.md`, loaded on every run.
-12. **Per-environment storage root.** Resolved in `scripts/render.js` and `INSTRUCTIONS.md`: Mac uses `~/Downloads/openclaw-master-files/motion-videos/`; Docker VPS uses a persistent volume such as `/data/motion-videos`, never ephemeral container storage. Layout `motion-videos/<video-name>/` keeps the final MP4, animation sources, voiceover audio, script text, and manifest. Frame PNGs are always deleted.
-13. **Headless only.** Every script launches Chromium headless; browsers close in finally blocks; `scripts/sweep-chromium.sh` kills orphans and reports memory freed at the end of every run.
-14. **Preflight.** `scripts/preflight.js`: cores, free RAM, free disk, 20-frame calibration render for the true per-frame rate (reference baseline 0.56s per frame per worker on the 12-CPU/24GB box, refined per machine), workers = min(cores minus 2, RAM budget at about 500MB per browser, scene count, load-proven cap). The calibration measures system load with one browser active and caps workers before projected load goes critical; a worker count is never recommended from core count alone. Wall-clock and peak-disk estimates; says plainly when the segment route is required instead of dying halfway.
-15. **Bright, human design defaults.** No dark-style designs, no generic AI-polished look. Real brand assets, real typography. Encoded here, in `INSTRUCTIONS.md`, and in the brand bible template.
+1. **Four modes, mode-first intake.** Directive Section 4;
+   `references/intake-and-modes.md`; enforced by the mode rules in
+   `scripts/motion_contracts.py` and the TypeScript validation layer.
+2. **One canonical pipeline, one job package.** `INSTRUCTIONS.md`;
+   contracts in `references/contracts-v2.schema.json`.
+3. **Two production render adapters, readiness by record.** Hyperframes
+   and Remotion, routed per `references/renderer-routing.md`; readiness
+   lives in the shared runtime's capability and launch records
+   (`references/renderer-capabilities.json`). Status reference:
+   `references/untested-alternatives.md`.
+4. **Authoring-model freedom.** No vendor banned, none prescribed.
+   `INSTRUCTIONS.md` stage 7 resolves the model in order (explicit job
+   choice, existing task choice, client configuration or configured
+   default, then one question) and records the actual model, provider, and
+   harness identifiers in the manifest.
+5. **Typed component scenes.** V2 scenes are typed specs against
+   registered components, never arbitrary unvalidated component names.
+   The shipped catalog (`references/component-catalog.md`) registers
+   C04 through C09 as available for production dispatch; C01, C02, C03,
+   C10, C11, and C12 are registered identities with explicit unavailable
+   reasons and are refused by name until their schema, proof contract,
+   and tests register together. The catalog grows only that way. One
+   shipped seam: the canonical job-package validators still admit
+   C05 scenes only, so a package naming another available component
+   fails package validation until the validators are wired to the
+   catalog; the catalog reference records this in full.
+6. **Audio ownership by mode.** PowerPoint silent; VSL inserts inherit the
+   parent's audio and never create voiceover or music; standalone owns its
+   audio only when the brief requires it. Audio follows the resolved
+   plan of `references/audio-policy.md`, resolved once at plan load:
+   narration is produced and measured at stage 6 of `INSTRUCTIONS.md`
+   (never assumed), silent jobs produce none and need no TTS credential,
+   and the Fish Audio provider rules for the narration tooling
+   (`scripts/tts.py`) live in `references/fish-audio-tts.md`.
+7. **Parent handoff for VSL work.** The manifest `parent` block plus
+   `parent-handoff.json`: parent job and task, slot, narration cue, and
+   the hard rules that the insert is never sped up or resized to fit.
+   The shipped producers are the desktop handoff
+   (`references/vsl-desktop-handoff.md`, `scripts/vsl_handoff.py` with
+   its Skill 47 bridge) and the mobile recomposition
+   (`references/vsl-mobile-handoff.md`, `scripts/vsl_mobile.py`).
+8. **Four shipped mode producers.** PowerPoint components are packaged
+   by the governed packager (`references/powerpoint-packaging.md`);
+   desktop and mobile VSL inserts return through the handoff producers
+   above; standalone videos are built by `scripts/build_standalone.py`.
+   Presentation decks consume motion components through the existing
+   presentation pipeline (`references/integration-contracts.md`), never
+   through a second deck builder.
+9. **Status and delivery evidence.** One task identity from intake to
+   delivery, the status ledger in the job directory, and a delivery
+   receipt built from measured facts (`references/status-and-delivery.md`).
+   The Skill 47 bridge (`47-movie-producer/scripts/motion_status.py`)
+   carries that identity onto the parent's board and attestation
+   manifest; an insert never creates a task of its own.
+10. **Migration, never guessing.** `scripts/migrate_manifest.py` converts
+   V1 jobs non-destructively; mode, company, and parent are operator
+   decisions the tool refuses to invent.
+11. **Per-environment storage root.** Job folders live under a resolved
+   storage root (Mac: `~/Downloads/openclaw-master-files/motion-videos/`;
+   Docker VPS: a persistent volume such as `/data/motion-videos`, never
+   ephemeral container storage), recorded per run.
+12. **Bright, human design defaults.** No dark-style designs, no generic
+    AI-polished look. Real brand assets, real typography. Encoded here, in
+    `INSTRUCTIONS.md`, and in the brand bible template.
+13. **Headless only.** Every renderer runs headless; on the legacy path,
+    `scripts/sweep-chromium.sh` clears orphaned browsers at the end of a
+    run.
 
 ## Adapted systems (borrowed concepts, original implementation)
 
-Six systems were adapted from an analysis of a third-party motion-reel kit. The concepts are standard practice; every file below is our own original implementation. Nothing from that kit was copied verbatim.
+Six systems were adapted from an analysis of a third-party motion-reel
+kit. The concepts are standard practice; every file below is our own
+original implementation. Nothing from that kit was copied verbatim. They
+serve the canonical pipeline as supporting craft and tooling, most of them
+on the legacy compatibility path today:
 
-1. **Motion grammar.** `references/motion-grammar.md` plus `scripts/lint-grammar.py`: banned-cliche list, springs-only motion with our named presets (`weighty`, `panel`, `snap`, `drift`), visual hits leading the beat by 2 frames, masked-word typography rules, 9:16 and 16:9 safe zones.
-2. **Critique system.** `references/critique-protocol.md` plus `scripts/critique-bundle.sh`: a fresh critic scores our 8 criteria with evidence, minimum 3 rounds until every score is 8+, plus our known-failure-modes checklist.
-3. **Synthesized sound as the default.** `scripts/synth-score.py` (original score in code), `scripts/beat-grid.py` (derived beat grid), `scripts/synth-sfx.py` (pops, clicks, whooshes, thumps), mixed in `scripts/assemble.sh` to -14 LUFS with sidechain ducking. No stock music, no licensing.
-4. **Determinism verification.** `scripts/verify-determinism.js`: probe frames rendered cold versus after seeking elsewhere; fails the gate on pixel drift.
-5. **Review tooling.** In `scripts/render.js`: `--still`, `--cliprange`, `--mux` (re-mux audio without re-rendering), `--beatsheet` (per-beat contact sheet). Bundled for critics by `scripts/critique-bundle.sh`.
-6. **Pre-production workflow.** `references/pre-production/` (six chapters: studio setup, house rules, brand assets, one-liner, steal-the-grammar, director's brief) plus `references/directors-brief-template.md`, wired as the first stages of `INSTRUCTIONS.md`.
+1. **Motion grammar.** `references/motion-grammar.md` plus
+   `scripts/lint-grammar.py`: banned-cliche list, named motion presets,
+   visual hits leading the beat, masked-word typography rules, 9:16 and
+   16:9 safe zones.
+2. **Critique system.** `references/critique-protocol.md` plus the
+   MG-031 bundle builder (`scripts/critique_bundle.py`, wrapped by
+   `scripts/critique-bundle.sh`) and the MG-033 rubric tool
+   (`scripts/review_rubric.py`): a fresh, independent critic scores the
+   eight dimensions from the complete-runtime bundle, with evidence
+   bound to every score, plus a known-failure-modes checklist.
+3. **Synthesized sound.** `scripts/synth-score.py`, `scripts/beat-grid.py`,
+   `scripts/synth-sfx.py`: original score and UI sounds in code, no stock
+   music, no licensing. Synthesis is one option inside the resolved
+   audio plan (`references/audio-policy.md`), never a requirement.
+4. **Determinism verification.** `scripts/verify-determinism.js` on the
+   legacy path; the V2 adapters prove seek determinism by construction and
+   by test.
+5. **Review tooling.** The MG-031 bundle (full-resolution and
+   destination-size frames, paginated sheets, the coverage record) is
+   the V2 review surface; on the legacy path, stills and clip ranges
+   live in `scripts/render.js`.
+6. **Pre-production workflow.** `references/pre-production/` (six chapters:
+   studio setup, house rules, brand assets, one-liner, steal-the-grammar,
+   director's brief) plus `references/directors-brief-template.md`, wired
+   into the brief stage of `INSTRUCTIONS.md`.
 
 ## Fleet rendering is frontier, not a promise
 
-Frame ranges are independent units, so splitting a render across multiple machines is architecturally free: 4 boxes at 8 workers each is roughly a 3-minute frame render, about 20 minutes total for a 5-minute video. This has never been tested. It is future work, not a capability the skill offers today. Never present it as one. See `references/untested-alternatives.md`.
+Frame ranges are independent units, so splitting a render across multiple
+machines is architecturally plausible. This has never been tested end to
+end. It is future work, not a capability the skill offers today. Never
+present it as one. See `references/untested-alternatives.md`.
 
 ## What the operator provides
 
-1. The video script (or a brief the script is written from).
-2. The brand bible file for the brand (or the facts to build one from the template).
-3. The animation-code model choice (step 4 of INSTRUCTIONS.md).
-4. A Fish Audio API key in `FISH_AUDIO_API_KEY` and a voice reference id.
-5. Preview approval before full render.
+1. The destination (the mode), when the task does not already make it
+   known.
+2. The brief facts: message, audience, intended change, assets and data
+   with their rights, brand specification, essential copy, and placement.
+3. For VSL work, the parent handoff facts: parent job and task, slot, and
+   narration cue. Skill 72 never invents a parent.
+4. The animation-code model choice, when the operator makes one explicitly
+   (stage 7 of `INSTRUCTIONS.md`); otherwise the stage 7 resolution order
+   applies.
+5. The approvals the job's approval policy requires, before the final
+   render.
+6. A Fish Audio API key and voice reference only when a job's resolved
+   audio plan calls for Fish Audio narration (a narrated standalone
+   piece, or a legacy-path job). Silent and inherited-audio jobs need
+   neither and never consult the credential.
 
 ## What the skill never does
 
+- Never starts job setup before the mode is resolved.
+- Never treats a mobile VSL as a crop, or invents a parent, an asset, a
+  dataset, or an approval.
+- Never presents legacy rendering as a default or a peer workflow.
 - Never opens a visible browser window.
 - Never renders full quality before preview approval.
 - Never stores API keys in the skill directory or in repo files.
-- Never claims an untested renderer is proven.
-- Never uses an Anthropic model in the pipeline.
+- Never presents a renderer as ready without a current capability record
+  and launch record in the shared runtime.
+- Never prescribes an authoring model or bans a model vendor; the resolved
+  choice and its model, provider, and harness identifiers are recorded per
+  job.
