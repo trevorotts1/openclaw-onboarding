@@ -80,6 +80,7 @@ AF_OVERRIDE_UNLOGGED = "AF-EMAIL-OVERRIDE-UNLOGGED"
 AF_CTA_PLACEMENT = "AF-EMAIL-CTA-PLACEMENT"
 AF_SLOT_TRACE = "AF-EMAIL-SLOT-TRACE"
 AF_LABEL_LEAK = "AF-EMAIL-LABEL-LEAK"
+AF_LAUNCH_PROVENANCE = "AF-EMAIL-LAUNCH-PROVENANCE"
 
 # ---- SACRED constants (preserved VERBATIM from the corpus) ------------------
 FRAMEWORKS = (
@@ -871,6 +872,118 @@ def evaluate_sequence(ledger, brief=None):
 
 
 # ---- intake / brief evaluation ----------------------------------------------
+# ---- Signature Launch intake path (S50-04) -----------------------------------
+# A brief with intake_mode "signature_launch" was produced by
+# tools/launch_intake_adapter.py from the approved S49 launch intake (contract:
+# intake/launch-intake-contract.json). It carries a launch_provenance block
+# instead of the legacy one-block attestation. The constants below mirror the
+# contract's vocabulary; the adapter is the producing authority and this prover
+# is the consuming gate.
+LAUNCH_INTAKE_MODE = "signature_launch"
+LAUNCH_FIELD_STATES = ("provided", "verified_existing", "recommended_unapproved",
+                       "approved_recommendation", "unknown", "not_applicable")
+LAUNCH_REQUIRED_FIELDS = ("sequence_position", "objective", "buyer_type", "offer",
+                          "founder_name", "brand_voice", "why_section_5",
+                          "pains_section_6", "sections_8_9_10", "round_timing",
+                          "testimonial_evidence")
+LAUNCH_VERIFICATION_CLASSES = ("authenticated_platform_record",
+                               "recorded_consent_not_cryptographically_sealed")
+_HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _launch_prov_errors(rec, answers):
+    """Verify a launch brief's launch_provenance block for presence, shape, and
+    internal consistency (AF-EMAIL-LAUNCH-PROVENANCE). This checks the brief's
+    INTERNAL binding: the approval record it carries must be of the plan-build
+    type, with a scope covering the build, not revoked, and bound by its
+    subject hash to the plan hash the brief carries; and every consumed field
+    must carry a provenance entry in a consumable state with a source
+    reference. Recomputing the plan hash from the launch record itself happens
+    at import time in the adapter; a brief that reaches this prover has
+    already crossed that gate."""
+    errs = []
+    if _sequence_type({"sequence_position": answers.get("sequence_position")}) \
+            != SIGNATURE_LAUNCH_TYPE:
+        errs.append("intake_mode %r is only valid for profile %s "
+                    "(sequence_position is %r)"
+                    % (LAUNCH_INTAKE_MODE, SIGNATURE_LAUNCH_TYPE,
+                       answers.get("sequence_position")))
+    prov = rec.get("launch_provenance")
+    if not isinstance(prov, dict):
+        return errs + ["intake_mode %r brief carries no launch_provenance "
+                       "object" % LAUNCH_INTAKE_MODE]
+    if _sequence_type({"sequence_position": prov.get("profile")}) \
+            != SIGNATURE_LAUNCH_TYPE:
+        errs.append("launch_provenance.profile is %r, expected the %s "
+                    "profile" % (prov.get("profile"), SIGNATURE_LAUNCH_TYPE))
+    if not _nonempty_str(prov.get("launch_id")):
+        errs.append("launch_provenance.launch_id is missing/empty")
+    plan_hash = prov.get("plan_hash")
+    if not (isinstance(plan_hash, str) and _HEX64_RE.match(plan_hash)):
+        errs.append("launch_provenance.plan_hash is not a sha256 hex digest")
+    offer = prov.get("offer")
+    if not isinstance(offer, dict) or not _nonempty_str(offer.get("display_name")):
+        errs.append("launch_provenance.offer carries no display_name")
+    elif offer.get("display_name") != answers.get("offer"):
+        errs.append("launch_provenance.offer.display_name %r does not match "
+                    "the brief offer answer %r"
+                    % (offer.get("display_name"), answers.get("offer")))
+    approval = prov.get("approval")
+    if not isinstance(approval, dict):
+        errs.append("launch_provenance carries no approval record")
+    else:
+        if approval.get("subject_type") != "launch_plan_build":
+            errs.append("approval subject_type is %r, expected "
+                        "'launch_plan_build'" % approval.get("subject_type"))
+        if approval.get("subject_hash") != plan_hash:
+            errs.append("approval subject_hash does not equal "
+                        "launch_provenance.plan_hash (the approval is not "
+                        "bound to this plan)")
+        scope = approval.get("scope")
+        if not (isinstance(scope, list) and "launch_plan_build" in scope):
+            errs.append("approval scope %r does not contain "
+                        "'launch_plan_build'" % (scope,))
+        if approval.get("revoked") is not False:
+            errs.append("approval is revoked (or its revocation state is "
+                        "not recorded as false)")
+        if not _nonempty_str(approval.get("approval_id")):
+            errs.append("approval record carries no approval_id")
+        if not _nonempty_str(approval.get("owner_identity_ref")):
+            errs.append("approval record names no owner identity")
+        if not _nonempty_str(approval.get("source_message_ref")):
+            errs.append("approval record carries no source message "
+                        "reference (the client's own response)")
+        if approval.get("verification_class") not in LAUNCH_VERIFICATION_CLASSES:
+            errs.append("approval verification_class %r is not recognized"
+                        % (approval.get("verification_class"),))
+    fields = prov.get("fields")
+    if not isinstance(fields, dict):
+        errs.append("launch_provenance carries no per-field provenance "
+                    "(fields)")
+    else:
+        for name in LAUNCH_REQUIRED_FIELDS:
+            entry = fields.get(name)
+            if not isinstance(entry, dict):
+                errs.append("field %r carries no provenance entry" % name)
+                continue
+            state = entry.get("state")
+            if state not in LAUNCH_FIELD_STATES:
+                errs.append("field %r provenance state %r is not a "
+                            "recognized field state" % (name, state))
+            elif state in ("unknown", "recommended_unapproved"):
+                errs.append("field %r provenance state is %r: an "
+                            "unconsumed fact cannot lock a brief"
+                            % (name, state))
+            elif state == "not_applicable" and name != "testimonial_evidence":
+                errs.append("field %r is not_applicable: only "
+                            "testimonial_evidence may be not_applicable"
+                            % name)
+            if not _nonempty_str(entry.get("source_ref")):
+                errs.append("field %r provenance carries no source_ref"
+                            % name)
+    return errs
+
+
 def _ledger_oneblock(ledger):
     """INDEPENDENT one-block verification (FIX-S36-47). Derives the one-block
     property from an EXPORTED conversation ledger — the actual transcript, not a
@@ -900,12 +1013,26 @@ def evaluate_intake(rec):
         if st not in SEQ_LENGTHS and st != "single":
             fails.append((AF_TYPE_MISMATCH, "sequence_position %r resolves to unknown type" % seq_pos))
 
+    # Signature Launch path (S50-04; intake/launch-intake-contract.json): a
+    # brief with intake_mode "signature_launch" came through the approved S49
+    # launch intake, NOT the legacy one-block questionnaire, so it carries NO
+    # one-block attestation (asked_all_at_once would be a fabricated flag on
+    # this path). Its launch_provenance block is verified instead, and the
+    # one-block checks below are skipped for it. Legacy briefs are untouched.
+    launch_mode = rec.get("intake_mode") == LAUNCH_INTAKE_MODE
+    if launch_mode:
+        _ans = rec.get("answers") if isinstance(rec.get("answers"), dict) else {}
+        for _lmsg in _launch_prov_errors(rec, _ans):
+            fails.append((AF_LAUNCH_PROVENANCE, _lmsg))
+
     # one-block delivery (FIX-S36-47) — when an INDEPENDENT conversation-ledger
     # export is supplied it is AUTHORITATIVE (derived from the transcript, not a
     # self-attested boolean); the self-attested flags are only a fallback and are
     # explicitly labeled attestation-based when no ledger is present.
     ledger = rec.get("conversation_ledger")
-    if isinstance(ledger, list) and ledger:
+    if launch_mode:
+        pass  # launch path: provenance verified above; no one-block checks
+    elif isinstance(ledger, list) and ledger:
         fails.extend(_ledger_oneblock(ledger))
     else:
         if rec.get("asked_all_at_once") is not True:
@@ -1234,6 +1361,67 @@ def _valid_intake():
     }
 
 
+def _valid_launch_brief():
+    """A launch brief as tools/launch_intake_adapter.py emits it: intake_mode
+    signature_launch, a complete launch_provenance block whose approval subject
+    hash equals its plan hash, and NO one-block attestation flags (they would
+    be fabricated statements on this path)."""
+
+    def _f(state):
+        return {"state": state, "source_kind": "owner",
+                "source_ref": "fixture provenance", "question_id": None,
+                "artifact": "fixture", "artifact_hash": "0" * 64}
+
+    plan_hash = "0123456789abcdef" * 4
+    return {
+        "kind": "brief", "skill": "email-engine",
+        "intake_mode": "signature_launch",
+        "launch_provenance": {
+            "profile": SIGNATURE_LAUNCH_TYPE,
+            "launch_id": "launch-fixture",
+            "launch_revision": 1,
+            "plan_hash": plan_hash,
+            "offer": {"offer_id": "offer-main",
+                      "display_name": "The Momentum Method",
+                      "source_kind": "owner", "source_ref": "fixture"},
+            "approval": {
+                "approval_id": "approval-fixture",
+                "subject_type": "launch_plan_build",
+                "subject_hash": plan_hash,
+                "owner_identity_ref": "client:fixture",
+                "source_message_ref": "msg-fixture",
+                "recorded_at": "2026-10-15T14:30:00+00:00",
+                "scope": ["launch_plan_build"], "revoked": False,
+                "verification_class":
+                    "recorded_consent_not_cryptographically_sealed",
+            },
+            "fields": {
+                "sequence_position": _f("verified_existing"),
+                "objective": _f("verified_existing"),
+                "buyer_type": _f("verified_existing"),
+                "offer": _f("provided"),
+                "founder_name": _f("provided"),
+                "brand_voice": _f("provided"),
+                "why_section_5": _f("provided"),
+                "pains_section_6": _f("provided"),
+                "sections_8_9_10": _f("provided"),
+                "round_timing": _f("provided"),
+                "testimonial_evidence": _f("not_applicable"),
+            },
+        },
+        "answers": {
+            "objective": "promotional", "buyer_type": "all",
+            "offer": "The Momentum Method",
+            "brand_voice": "Warm, direct, builder to builder.",
+            "sequence_position": "signature-launch-landing-10",
+            "founder_name": "Jordan Marsh",
+            "high_ticket": "no",
+            "offer_token_ledger": ["The Momentum Method"],
+            "client_overrode_word_band": False,
+        },
+    }
+
+
 def self_test():
     ok = True
 
@@ -1263,6 +1451,7 @@ def self_test():
     check_pass("buyer-type-12", _buyer12_ledger())
     check_pass("high-ticket-12", _ht12_ledger())
     check_pass("intake-brief", _valid_intake())
+    check_pass("launch-intake-brief", _valid_launch_brief())
 
     print("== self-test: VIOLATION fixtures (must FAIL / exit nonzero) ==")
 
@@ -1417,6 +1606,31 @@ def self_test():
 
     it = _valid_intake(); it["skill"] = "deck-engine"
     check_fail("type-mismatch", it, AF_TYPE_MISMATCH)
+
+    # S50-04 — the launch intake path: provenance replaces the one-block
+    # attestation. The valid launch brief above carries no asked_all_at_once
+    # and passes; each provenance defect below trips AF-EMAIL-LAUNCH-PROVENANCE.
+    lb = _valid_launch_brief(); del lb["launch_provenance"]
+    check_fail("launch-no-provenance", lb, AF_LAUNCH_PROVENANCE)
+
+    lb = _valid_launch_brief()
+    lb["launch_provenance"]["approval"]["subject_hash"] = "f" * 64
+    check_fail("launch-hash-mismatch", lb, AF_LAUNCH_PROVENANCE)
+
+    lb = _valid_launch_brief(); lb["launch_provenance"]["approval"]["revoked"] = True
+    check_fail("launch-revoked", lb, AF_LAUNCH_PROVENANCE)
+
+    lb = _valid_launch_brief()
+    lb["launch_provenance"]["approval"]["scope"] = ["paid_asset_budget"]
+    check_fail("launch-scope-narrowed", lb, AF_LAUNCH_PROVENANCE)
+
+    lb = _valid_launch_brief()
+    lb["launch_provenance"]["fields"]["pains_section_6"]["state"] = "unknown"
+    check_fail("launch-field-unknown", lb, AF_LAUNCH_PROVENANCE)
+
+    lb = _valid_launch_brief()
+    lb["launch_provenance"]["fields"]["founder_name"]["state"] = "not_applicable"
+    check_fail("launch-field-na", lb, AF_LAUNCH_PROVENANCE)
 
     # FIX-XC-12a — an override present on the email but NOT logged in the LOCKED
     # brief is REFUSED (AF-EMAIL-OVERRIDE-UNLOGGED) and the SACRED band re-applies.

@@ -27,7 +27,8 @@
       ],
       "gate_codes": [
         "AF-EMAIL-TYPE-MISMATCH", "AF-EMAIL-INTAKE-SPLIT", "AF-EMAIL-BRIEF-INCOMPLETE",
-        "AF-EMAIL-FRAMEWORK-UNKNOWN", "AF-EMAIL-OBJECTIVE-INVALID", "AF-EMAIL-PERSONA-INVALID"
+        "AF-EMAIL-FRAMEWORK-UNKNOWN", "AF-EMAIL-OBJECTIVE-INVALID", "AF-EMAIL-PERSONA-INVALID",
+        "AF-EMAIL-LAUNCH-PROVENANCE"
       ]
     },
     {
@@ -112,6 +113,7 @@
     {"code": "AF-EMAIL-TYPE-MISMATCH", "stage": "P1", "level": "brief", "trigger": "brief skill != email-engine, or an unknown sequence_position/type", "enforced_by": "prove-email", "py_symbol": "evaluate_intake"},
     {"code": "AF-EMAIL-INTAKE-SPLIT", "stage": "P1", "level": "brief", "trigger": "the intake questions were not delivered in ONE block — verified against an INDEPENDENT conversation-ledger export when present (authoritative), else from the self-attested one-block flags (asked_all_at_once not true / one_question_per_turn true / multiple block ids)", "enforced_by": "prove-email", "py_symbol": "evaluate_intake / _ledger_oneblock"},
     {"code": "AF-EMAIL-BRIEF-INCOMPLETE", "stage": "P1", "level": "brief", "trigger": "any of the six required brief fields missing/empty, or an invalid objective value", "enforced_by": "prove-email", "py_symbol": "REQUIRED_BRIEF"},
+    {"code": "AF-EMAIL-LAUNCH-PROVENANCE", "stage": "P1", "level": "brief", "trigger": "a brief declares intake_mode signature_launch (the shared Signature Launch intake path, intake/launch-intake-contract.json) but its launch_provenance block is missing, malformed, or internally inconsistent: the brief is not for the signature-launch-landing-10 profile, the plan hash is not a sha256 or differs from the approval subject hash, the approval is not of type launch_plan_build, its scope does not contain launch_plan_build, it is revoked, its verification class is unrecognized, the approver or the source message reference is missing, or a consumed field lacks a provenance entry, carries no source reference, or carries state unknown / recommended_unapproved (not_applicable is valid only for testimonial evidence). Launch briefs never carry the legacy one-block attestation flags; this gate replaces them on this path only.", "enforced_by": "prove-email", "py_symbol": "evaluate_intake"},
     {"code": "AF-EMAIL-DEPLOY-UNAPPROVED", "stage": "P4", "level": "sequence", "trigger": "deploy attempted without explicit logged human approval (the emitted GHL workflow is DRAFT-ONLY; nothing sends without approval)", "enforced_by": "run_email_engine", "py_symbol": "_chk_deploy_approval"},
     {"code": "AF-EMAIL-SEND-BYPASS", "stage": "entry", "level": "run-dir", "trigger": "a hand-rolled email sender is present in the run directory (a direct GHL/SMTP send outside the sanctioned draft-only handoff)", "enforced_by": "email-engine-entry", "py_symbol": "bypass_scan"}
   ]
