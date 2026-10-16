@@ -704,9 +704,12 @@ def test_probe_resolution_unchanged_after_transactions(monkeypatch, tmp_path):
                               max_concurrent=9999, config_dir=cfg)
     capacity.declare_capacity("openrouter", max_concurrent=7, config_dir=cfg)
     assert capacity.probe(cfg, provider="ollama-cloud")["available"] == 5
+    # Owner ruling 2026-10-15: deepseek-direct has NO provider cap, so its
+    # declared 9999 is a self-throttle honoured verbatim (through the
+    # 2026-09-04 interval this asserted the clamped table row, 2500).
     assert capacity.probe(
         cfg, provider="deepseek-direct",
-        model="deepseek-v4-flash")["available"] == 2500
+        model="deepseek-v4-flash")["available"] == 9999
     assert capacity.probe(cfg, provider="openrouter")["available"] == 7
 
 
