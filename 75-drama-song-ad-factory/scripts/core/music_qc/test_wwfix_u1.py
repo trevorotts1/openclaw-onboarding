@@ -616,9 +616,15 @@ def test_d1_the_two_audio_gates_are_wired_into_the_take_judge():
     check(plain["gates"]["rap_audio"]["verdict"] == "UNMEASURED"
           and "rap_audio" in plain["flagged"] and plain["verdict"] != "PASS",
           "D2: an unmeasured rap read is flagged and never reaches PASS")
-    check(plain["gates"]["pace_change"]["verdict"] == "PASS"
-          and plain["gates"]["pace_change"]["detail"].startswith("no ordered pace change"),
-          "D2: with no ordered gear change there is nothing to enforce")
+    # BUILD-PLAN W1-method-song-U1 (Trevor 2026-10-13): "nothing to enforce"
+    # used to be a PASS, which let a take with no measured gear change through.
+    # Both turns are mandatory on EVERY run, so the same input now records
+    # UNMEASURED (PACE_TURNS_REQUIRED) and blocks.
+    check(plain["gates"]["pace_change"]["verdict"] == "UNMEASURED"
+          and "PACE_TURNS_REQUIRED" in plain["gates"]["pace_change"]["detail"]
+          and "pace_change" in plain["flagged"] and plain["verdict"] != "PASS",
+          "D2: with no ordered gear change the turn is UNMEASURED and blocks "
+          "(PACE_TURNS_REQUIRED)")
     check(ordered["gates"]["pace_change"]["verdict"] == "UNMEASURED"
           and "pace_change" in ordered["flagged"] and ordered["verdict"] != "PASS",
           "D2: an ordered gear change with no evidence never reaches PASS")
