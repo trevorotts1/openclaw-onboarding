@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Evidence-derived progress sample",
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "room_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "build_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "batch_merge_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "batch_status": {
+      "enum": [
+        "awaiting_owner_approval",
+        "approved_not_started",
+        "merging",
+        "verified",
+        "blocked"
+      ]
+    },
+    "hourly_net_pp": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "rate_window_minutes": {
+      "type": "number",
+      "minimum": 0
+    },
+    "swarm_score": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100
+    },
+    "swarm_coverage": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "active_agents": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 500
+    },
+    "eligible_capacity": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 500
+    },
+    "verified_task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "blocked_task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "decision_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "next_task_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "project_id",
+    "room_id",
+    "scope_version",
+    "observed_at",
+    "build_percent",
+    "batch_merge_percent",
+    "batch_status",
+    "hourly_net_pp",
+    "rate_window_minutes",
+    "swarm_score",
+    "swarm_coverage",
+    "active_agents",
+    "eligible_capacity",
+    "verified_task_ids",
+    "blocked_task_ids",
+    "decision_ids",
+    "next_task_ids",
+    "evidence_refs"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "batch_status": {
+            "const": "awaiting_owner_approval"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "batch_merge_percent": {
+            "const": 0
+          }
+        }
+      }
+    }
+  ]
+}

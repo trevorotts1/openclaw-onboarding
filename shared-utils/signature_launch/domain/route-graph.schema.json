@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Signature Launch route graph",
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "location_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "launch_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "title": "Route node",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "enum": [
+              "landing",
+              "product_selection",
+              "checkout",
+              "upsell_1",
+              "downsell_1",
+              "upsell_2",
+              "thank_you"
+            ]
+          }
+        },
+        "required": [
+          "page_id",
+          "role"
+        ]
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "title": "Progression edge",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "event": {
+            "enum": [
+              "interest_submitted",
+              "selection_validated",
+              "payment_succeeded",
+              "explicit_decline"
+            ]
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1
+          },
+          "guard": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "from",
+          "event",
+          "to",
+          "guard"
+        ]
+      }
+    },
+    "pending_failed_payment_behavior": {
+      "const": "retain_current_purchase_state_until_resolved_or_explicit_decline"
+    },
+    "test_only": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "location_id",
+    "launch_id",
+    "revision",
+    "nodes",
+    "edges",
+    "pending_failed_payment_behavior",
+    "test_only"
+  ]
+}
