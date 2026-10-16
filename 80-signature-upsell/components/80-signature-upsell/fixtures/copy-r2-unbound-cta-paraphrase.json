@@ -1,0 +1,124 @@
+{
+ "schema_version": "1.0",
+ "test_only": true,
+ "copy_id": "TEST-ONLY-upsell1-public",
+ "instance": "upsell_1",
+ "visibility": "public",
+ "source_note": "TEST ONLY fixture. Invented test offer for validator proof only; never a client offer or price.",
+ "offer_name": "TEST ONLY Deep Work Library",
+ "inspiring_phrase": "Focused",
+ "accept_action_ref": "native-one-click:TEST-ONLY-U1",
+ "verified_scarcity_evidence": [],
+ "sections": [
+  {
+   "number": 1,
+   "key": "big_bold_claim",
+   "heading": "Go further with the TEST ONLY Deep Work Library",
+   "body": "Your core programme is confirmed. The TEST ONLY Deep Work Library adds the full on-demand lesson archive, printable workbooks and bonus sessions, so every idea from the core programme can be revisited and applied at your own pace.",
+   "cta": {
+    "text": "Yes, add the Deep Work Library to my order",
+    "action_ref": "native-one-click:TEST-ONLY-U1"
+   }
+  },
+  {
+   "number": 2,
+   "key": "big_bold_pain_1",
+   "heading": "When a lesson ends, the follow-up questions begin",
+   "body": "A live session moves quickly, and the questions usually arrive afterwards, when you sit down to apply the material alone and realise a key step was only covered once.",
+   "cta": {
+    "text": "Keep every lesson within reach - add the Library",
+    "action_ref": "native-one-click:TEST-ONLY-U1"
+   }
+  },
+  {
+   "number": 3,
+   "key": "big_bold_pain_2",
+   "heading": "Notes scattered across notebooks slow every review",
+   "body": "Handwritten notes, screenshots and half-remembered timestamps make revision slow. Without a structured workbook for each lesson, reviewing what matters takes longer than the work itself.",
+   "cta": {
+    "text": "Get the structured workbooks - add the Library",
+    "action_ref": "native-one-click:TEST-ONLY-U1"
+   }
+  },
+  {
+   "number": 4,
+   "key": "big_bold_pain_3",
+   "heading": "Momentum fades when replays are out of reach",
+   "body": "When you cannot rewatch a session, a busy week quietly becomes a missed week, and the thread of the programme is hard to pick back up without starting over.",
+   "cta": {
+    "text": "Protect your momentum - add the Library",
+    "action_ref": "native-one-click:TEST-ONLY-U1"
+   }
+  },
+  {
+   "number": 5,
+   "key": "big_bold_why",
+   "heading": "Why the Library exists",
+   "body": "We built the Library because the core programme was designed to be used, not just attended. On-demand access turns each live lesson into a permanent working reference you can return to whenever a real project demands it.",
+   "cta": {
+    "text": "Make the programme a permanent reference - add the Library",
+    "action_ref": "native-one-click:TEST-ONLY-U1"
+   }
+  },
+  {
+   "number": 6,
+   "key": "big_bold_who",
+   "heading": "Made for learners who apply as they go",
+   "body": "The Library suits members who implement between sessions, who revisit material before big decisions, and who want workbooks that turn watching into doing. If you prefer live sessions only, your core programme remains complete without it.",
+   "cta": {
+    "text": "If that sounds like you, add the Library",
+    "action_ref": "native-one-click:TEST-ONLY-U1"
+   },
+   "bullets": [
+    "You implement between sessions and want the material at hand",
+    "You revisit lessons before important decisions",
+    "You learn best with a workbook open beside you"
+   ]
+  },
+  {
+   "number": 7,
+   "key": "big_bold_what",
+   "heading": "Exactly what the Library adds",
+   "body": "The Library adds on-demand access to the recorded lesson archive, one printable workbook per lesson, and the bonus session recordings. It does not change your core programme, your live session access, or your existing materials, which you keep in full either way.",
+   "cta": {
+    "text": "Add the Library and get the full archive",
+    "action_ref": "native-one-click:TEST-ONLY-U1"
+   },
+   "bullets": [
+    "On-demand recorded lesson archive",
+    "One printable workbook per lesson",
+    "Bonus session recordings",
+    "Material limitation: recordings are for your own study use"
+   ]
+  },
+  {
+   "number": 8,
+   "key": "seven_reasons",
+   "heading": "7 Reasons To Commit To Your Focused Future",
+   "body": "Seven reasons the Library earns its place beside your core programme. To claim yours, visit the payment page and complete your purchase there before leaving this screen.",
+   "cta": {
+    "text": "Commit to your Focused Future - add the Library",
+    "action_ref": "native-one-click:TEST-ONLY-U1"
+   },
+   "reasons": [
+    "Your future self will thank you: every lesson stays available on the days when a real project needs that exact idea again.",
+    "Review at your own speed: pause, rewind and revisit difficult steps until the method is fully yours, not half remembered.",
+    "Workbooks turn watching into doing: each lesson ends with structured exercises that convert ideas into finished work.",
+    "A busy week stops being a lost week: the archive lets you catch up completely instead of returning to find gaps.",
+    "Bonus sessions deepen the core material: extra recordings explore the advanced applications the live schedule cannot fit.",
+    "One organised archive replaces scattered notes: everything lives in a single place you can search in seconds.",
+    "You already committed to the core programme: the Library makes sure that commitment keeps paying you back for years."
+   ]
+  }
+ ],
+ "action_binding": {
+  "expected_action_ref": "native-one-click:TEST-ONLY-U1",
+  "binding_kind": "native_one_click_guarded",
+  "source_ref": "fixtures/request-upsell1.testonly.json#action_binding"
+ },
+ "regression_fixture": {
+  "defect": "R2-02",
+  "source": "Independent re-review S80-01-03 (work/review-S80-01-03-rereview.md), re-reviewer adversarial fixture n4-unbound-cta-paraphrase.json from /tmp/s80rereview/; escaped validation (exit 0) at re-review time",
+  "test_only": true
+ }
+}
