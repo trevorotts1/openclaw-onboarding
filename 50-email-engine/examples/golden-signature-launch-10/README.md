@@ -22,8 +22,12 @@ never as named happy customers, per spec 13 section 4.
   `sequence_position` `signature-launch-landing-10`.
 - `landing-facts.json` — the fixture landing page facts the copy is built
   from: Section 5 Why, the three Section 6 pains (refs
-  `landing.section6.pain.1/.2/.3`, one per PASTOR email), and the Section
-  8/9/10 offer details Email 4 is built from (`source_sections: [8, 9, 10]`).
+  `landing.section6.pain.1/.2/.3`, one per PASTOR email), the Section
+  8/9/10 offer details Email 4 is built from (`source_sections: [8, 9, 10]`),
+  and the one approved round-timing fact (`landing.offer.round_timing`:
+  rolling thirty-day rounds; the next round begins on a Monday and
+  enrollment for it closes the Thursday before) that every deadline line
+  in the set traces to.
 
 ## Profile contract visible in this set
 - Exactly 2 subjects and 2 previews per email, as Pair A / Pair B (Pair B is
@@ -35,8 +39,12 @@ never as named happy customers, per spec 13 section 4.
 - PASTOR emails carry at least 3 CTAs, placed beginning / middle / end of the
   body (first within the first half of body words, last inside the final
   quarter), each owning a distinct `pain_ref`.
-- Email 5 carries `when_provenance: "none"`, no `deadline` field, and no
-  deadline language anywhere in its copy: the 6 W's When invents nothing.
+- Email 5 carries `when_provenance: "brief"` and a declared `deadline`
+  ("Thursday"), and its When states exactly the approved round-timing
+  fact: the rounds keep rolling, the next round begins Monday, and
+  enrollment for it closes the Thursday before. Every deadline line in
+  the other nine emails traces to that same single fact; nothing beyond
+  it (no reopening scarcity, no last-chance claims) appears anywhere.
 - Email 7 is the deliberate short exception (under 150 words). Email 8 carries
   exactly 3 CTAs and a humorous P.S.
 - Every body closes with the founder's actual fixture name. No placeholders.

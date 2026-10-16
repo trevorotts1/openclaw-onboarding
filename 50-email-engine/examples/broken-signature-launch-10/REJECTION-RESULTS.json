@@ -1,12 +1,15 @@
 {
   "set": "broken-signature-launch-10",
   "golden_source": "examples/golden-signature-launch-10/emails.json",
-  "prover": "tools/prove-email.py (branch s50/signature-launch-email-profile, commit b7974d2 base)",
+  "prover": "tools/prove-email.py (worktree branch s50-08-golden, base commit e9aab65; prover unmodified by the fix lane; the candidate branch's S50-06 review_label check is not present in this worktree's prover and the conductor re-proves against the final prover)",
   "golden_control": {
     "file": "examples/golden-signature-launch-10/emails.json",
-    "observed_exit_code": 0
+    "observed_exit_code": 0,
+    "brief_file": "examples/golden-signature-launch-10/brief.json",
+    "brief_observed_exit_code": 0
   },
   "all_cases_rejected_with_expected_code": true,
+  "all_cases_rejected_with_only_the_intended_code": true,
   "cases": [
     {
       "case": "one-preview",
@@ -18,6 +21,7 @@
         "AF-EMAIL-PREVIEW-COUNT"
       ],
       "expected_code_present": true,
+      "only_intended_code": true,
       "failures": [
         {
           "code": "AF-EMAIL-PREVIEW-COUNT",
@@ -35,6 +39,7 @@
         "AF-EMAIL-SUBJECT-COUNT"
       ],
       "expected_code_present": true,
+      "only_intended_code": true,
       "failures": [
         {
           "code": "AF-EMAIL-SUBJECT-COUNT",
@@ -52,6 +57,7 @@
         "AF-EMAIL-FRAMEWORK-INCOMPLETE"
       ],
       "expected_code_present": true,
+      "only_intended_code": true,
       "failures": [
         {
           "code": "AF-EMAIL-FRAMEWORK-INCOMPLETE",
@@ -69,6 +75,7 @@
         "AF-EMAIL-FRAMEWORK-INCOMPLETE"
       ],
       "expected_code_present": true,
+      "only_intended_code": true,
       "failures": [
         {
           "code": "AF-EMAIL-FRAMEWORK-INCOMPLETE",
@@ -86,6 +93,7 @@
         "AF-EMAIL-CTA-PLACEMENT"
       ],
       "expected_code_present": true,
+      "only_intended_code": true,
       "failures": [
         {
           "code": "AF-EMAIL-CTA-PLACEMENT",
@@ -103,6 +111,7 @@
         "AF-EMAIL-SLOT-TRACE"
       ],
       "expected_code_present": true,
+      "only_intended_code": true,
       "failures": [
         {
           "code": "AF-EMAIL-SLOT-TRACE",
@@ -113,13 +122,14 @@
     {
       "case": "deadline-invented",
       "file": "examples/broken-signature-launch-10/deadline-invented/emails.json",
-      "mutation": "Email 5 gains a deadline field (Thursday) while when_provenance stays 'none'.",
+      "mutation": "Email 5 keeps its approved deadline field (Thursday) but when_provenance is set to 'none', denying the deadline its brief source.",
       "expected_code": "AF-EMAIL-SLOT-TRACE",
       "observed_exit_code": 2,
       "observed_codes": [
         "AF-EMAIL-SLOT-TRACE"
       ],
       "expected_code_present": true,
+      "only_intended_code": true,
       "failures": [
         {
           "code": "AF-EMAIL-SLOT-TRACE",
@@ -137,6 +147,7 @@
         "AF-EMAIL-SIGNATURE-PLACEHOLDER"
       ],
       "expected_code_present": true,
+      "only_intended_code": true,
       "failures": [
         {
           "code": "AF-EMAIL-SIGNATURE-PLACEHOLDER",

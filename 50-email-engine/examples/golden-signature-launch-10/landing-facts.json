@@ -37,6 +37,10 @@
       "Your first personalized system map the same day you join",
       "Direct feedback on your plan inside the calls"
     ],
+    "round_timing": {
+      "ref": "landing.offer.round_timing",
+      "fact": "The Momentum Method runs in rolling thirty-day rounds. The next round begins on a Monday, and enrollment for that round closes the Thursday before it begins."
+    },
     "testimonial_evidence": null
   }
 }

@@ -16,6 +16,7 @@
     {
       "e_slot": 1,
       "framework": "pastor-solutions",
+      "review_label": "P.A.S.T.O.R. V1 (Solutions)",
       "objective": "promotional",
       "subjects": [
         "{{contact.first_name}}, your effort was never really the problem here",
@@ -23,7 +24,7 @@
       ],
       "previews": [
         "The real reason effort stopped moving the needle, and what will.",
-        "Somebody quietly profits from you staying stuck. It is not you."
+        "Your effort is already working hard. Here is how to make it pay you back."
       ],
       "ctas": [
         "[Start The Momentum Method ->]",
@@ -36,15 +37,16 @@
         "Story: a builder whose effort finally landed in one place",
         "Transformation: the same effort, pointed at one system",
         "Offer: The Momentum Method, the architecture the effort was missing",
-        "Response: reply READY or claim a spot in this cohort"
+        "Response: reply READY or claim a spot in this round"
       ],
       "pain_ref": "landing.section6.pain.1",
       "merge_fallback": "friend",
-      "body": "{{contact.first_name}},\n\nThere is a specific kind of tired that comes from doing everything right and still watching the needle refuse to move.\n\nMore hours, more posts, more effort, and the same flat number waiting at the end of every month.\n\nLeft alone, that gap does not sit still. It compounds, and another year of maximum effort quietly buys minimum traction.\n\nReady to close it now?\n\n[Start The Momentum Method ->]\n\nPicture a builder who tracked her hours for one month and found the work was never the issue. Her effort was real. Her architecture was missing.\n\nInside a system built for her, that same effort started landing in one place instead of scattering across a dozen open loops.\n\nWe built The Momentum Method on one conviction, that the people who work the hardest should never be the ones rewarded the least.\n\n[See how the system works ->]\n\nThat conviction is the whole reason this program exists, and it is why the plan starts with your effort instead of asking you to replace it.\n\nDoors close Thursday, so reply READY or claim your place while this cohort is open.\n\n[Claim your spot before Thursday ->]\n\nYour effort was never the problem, {{contact.first_name}}. Point it at the right system.\n\nJordan Marsh"
+      "body": "{{contact.first_name}},\n\nThere is a specific kind of tired that comes from doing everything right and still watching the needle refuse to move.\n\nMore hours, more posts, more effort, and the same flat number waiting at the end of every month.\n\nLeft alone, that gap does not sit still. It compounds, and another year of maximum effort quietly buys minimum traction.\n\nReady to close it now?\n\n[Start The Momentum Method ->]\n\nPicture a builder who tracked her hours for one month and found the work was never the issue. Her effort was real. Her architecture was missing.\n\nInside a system built for her, that same effort started landing in one place instead of scattering across a dozen open loops.\n\nWe built The Momentum Method on one conviction, that the people who work the hardest should never be the ones rewarded the least.\n\n[See how the system works ->]\n\nThat conviction is the whole reason this program exists, and it is why the plan starts with your effort instead of asking you to replace it.\n\nEnrollment for the next round closes Thursday, and the round begins Monday, so reply READY or claim your place in this round.\n\n[Claim your spot before Thursday ->]\n\nYour effort was never the problem, {{contact.first_name}}. Point it at the right system.\n\nJordan Marsh"
     },
     {
       "e_slot": 2,
       "framework": "pastor-solutions",
+      "review_label": "P.A.S.T.O.R. V1 (Solutions)",
       "objective": "promotional",
       "subjects": [
         "{{contact.first_name}}, the second reason your results keep stalling out",
@@ -65,15 +67,16 @@
         "Story: a founder who traded twelve half-built funnels for one path",
         "Transformation: guesswork gone, calendar and revenue finally agreeing",
         "Offer: The Momentum Method, one repeatable system",
-        "Response: reserve a place in this cohort"
+        "Response: reserve a place in this round"
       ],
       "pain_ref": "landing.section6.pain.2",
       "merge_fallback": "friend",
-      "body": "{{contact.first_name}},\n\nHere is the second reason the needle keeps sticking, and almost nobody names it out loud.\n\nYou are not short on effort or ideas. You are short on a system that turns them into predictable results.\n\nWithout one, every week starts from zero, every win is a scramble, and nothing you learn ever compounds into something you can rely on.\n\nWant the system instead of the scramble?\n\n[Get the system now ->]\n\nPicture a founder with twelve half-built funnels and zero peace of mind. The fix was not a thirteenth idea. It was one clear path, run on its own for thirty days.\n\nBy the third week the guesswork thins out, because the path makes the next step obvious before the week even starts.\n\nWe built The Momentum Method because talented people deserve a repeatable path, not another shelf of scattered tactics.\n\n[Read how it works ->]\n\nThat is the difference between collecting tactics and compounding results, and it is available to anyone willing to run one system honestly.\n\nThe window closes Thursday, so do not let another quarter run on guesswork.\n\n[Reserve your place today ->]\n\nTrade the scramble for a system, {{contact.first_name}}.\n\nJordan Marsh"
+      "body": "{{contact.first_name}},\n\nHere is the second reason the needle keeps sticking, and almost nobody names it out loud.\n\nYou are not short on effort or ideas. You are short on a system that turns them into predictable results.\n\nWithout one, every week starts from zero, every win is a scramble, and nothing you learn ever compounds into something you can rely on.\n\nWant the system instead of the scramble?\n\n[Get the system now ->]\n\nPicture a founder with twelve half-built funnels and zero peace of mind. The fix was not a thirteenth idea. It was one clear path, run on its own for thirty days.\n\nBy the third week the guesswork thins out, because the path makes the next step obvious before the week even starts.\n\nWe built The Momentum Method because the people who work the hardest should never be rewarded the least, and because talented people deserve a repeatable path, not another shelf of scattered tactics.\n\n[Read how it works ->]\n\nThat is the difference between collecting tactics and compounding results, and it is available to anyone willing to run one system honestly.\n\nEnrollment for the next round closes Thursday, so do not let another quarter run on guesswork.\n\n[Reserve your place today ->]\n\nTrade the scramble for a system, {{contact.first_name}}.\n\nJordan Marsh"
     },
     {
       "e_slot": 3,
       "framework": "pastor-solutions",
+      "review_label": "P.A.S.T.O.R. V1 (Solutions)",
       "objective": "promotional",
       "subjects": [
         "{{contact.first_name}}, doing it alone is quietly costing you the most",
@@ -91,18 +94,19 @@
       "sections": [
         "Problem: building alone, with no room and no one to check your thinking",
         "Amplify: isolation convinces you the wall is permanent",
-        "Story: a member who almost quit, then found her table",
+        "Story: a builder who almost quit, then found her table",
         "Transformation: backed instead of alone, the stalled offer finally launched",
         "Offer: The Momentum Method and the room that comes with it",
-        "Response: claim a seat in this cohort"
+        "Response: claim a seat in this round"
       ],
       "pain_ref": "landing.section6.pain.3",
       "merge_fallback": "friend",
-      "body": "{{contact.first_name}},\n\nThe third problem is the quietest one, and it is the one that wears people down the most.\n\nDoing this alone, with no room where someone gets it, no one to check your thinking, and no hand on your shoulder when a hard week hits.\n\nLeft unsolved, isolation does not just slow you down. It convinces you the wall you hit is permanent, when it is only unfamiliar.\n\nYou do not have to build in silence anymore.\n\n[Join the room now ->]\n\nPicture a builder who nearly closed her laptop for good one hard month. What changed was not a tactic. It was a table of people building the same thing beside her.\n\nNinety days of that kind of company is often the difference between an offer that sits in drafts and an offer that finally launches.\n\nWe built The Momentum Method because nobody should ever have to choose between ambition and belonging.\n\n[Meet the community ->]\n\nThat is why the room is not a bonus feature here. It is half the method, and it is the half most people say they needed first.\n\nDoors close Thursday, and the room only opens a few times a year.\n\n[Claim your seat before Thursday ->]\n\nYou were never meant to do this alone, {{contact.first_name}}.\n\nJordan Marsh"
+      "body": "{{contact.first_name}},\n\nThe third problem is the quietest one, and it is the one that wears people down the most.\n\nDoing this alone, with no room where someone gets it, no one to check your thinking, and no hand on your shoulder when a hard week hits.\n\nLeft unsolved, isolation does not just slow you down. It convinces you the wall you hit is permanent, when it is only unfamiliar.\n\nYou do not have to build in silence anymore.\n\n[Join the room now ->]\n\nPicture a builder who nearly closed her laptop for good one hard month. What changed was not a tactic. It was a table of people building the same thing beside her.\n\nNinety days of that kind of company is often the difference between an offer that sits in drafts and an offer that finally launches.\n\nWe built The Momentum Method on the conviction that the people who work the hardest should never be the ones rewarded the least. Your effort was never the problem. The missing architecture was, and a room of builders beside you is part of that architecture.\n\n[Meet the community ->]\n\nThat is why the room is not a bonus feature here. It is half the method, and it is the half most people say they needed first.\n\nEnrollment for the next round closes Thursday, and the round begins Monday.\n\n[Claim your seat before Thursday ->]\n\nYou were never meant to do this alone, {{contact.first_name}}.\n\nJordan Marsh"
     },
     {
       "e_slot": 4,
       "framework": "features-to-benefit",
+      "review_label": "Features-to-Benefit",
       "objective": "promotional",
       "subjects": [
         "{{contact.first_name}}, here is exactly what you get inside the method",
@@ -132,11 +136,12 @@
         10
       ],
       "merge_fallback": "friend",
-      "body": "{{contact.first_name}},\n\nLet me show you exactly what is inside The Momentum Method, and more importantly, what each piece actually does for you.\n\nThe weekly system map means you always know the one thing to work on, which allows you to stop burning mornings on a hundred open tabs.\n\nThe plug-and-play launch templates mean you skip the blank page entirely, which allows you to ship in days instead of stalling for months.\n\nThe live monthly strategy calls mean your plan gets pressure-tested by people ahead of you, which allows small mistakes to get caught before they grow into wasted quarters.\n\nPut those together and here is what you actually get, one clear priority, finished pages instead of drafts, and a plan that survives contact with a hard week.\n\nThat is not a feature list. That is a different working life.\n\n[See everything inside ->]\n\nIf that is the year you want, {{contact.first_name}}, this is the door.\n\nJordan Marsh"
+      "body": "{{contact.first_name}},\n\nLet me show you exactly what is inside The Momentum Method, and more importantly, what each piece actually does for you.\n\nThe weekly system map means you always know the one thing to work on, which allows you to stop burning mornings on a hundred open tabs.\n\nThe plug-and-play launch templates mean you skip the blank page entirely, which allows you to ship in days instead of stalling for months.\n\nThe live monthly strategy calls mean your plan gets pressure-tested by people ahead of you, which allows small mistakes to get caught before they grow into wasted quarters.\n\nPut those together and here is what you actually get, one clear priority, finished pages instead of drafts, and a plan that survives contact with a hard week, with your first personalized system map in hand the same day you join.\n\nThat is not a feature list. That is a different working life.\n\n[See everything inside ->]\n\nIf that is the year you want, {{contact.first_name}}, this is the door.\n\nJordan Marsh"
     },
     {
       "e_slot": 5,
       "framework": "six-ws",
+      "review_label": "The 6 W's",
       "objective": "promotional",
       "subjects": [
         "{{contact.first_name}}, who this is for and why it works",
@@ -153,17 +158,19 @@
         "Why: effort deserves a system, not more hustle",
         "What: a guided thirty-day path with map, templates, and tracking",
         "Who: builders with real effort and no system tying it together",
-        "When: rolling thirty-day rounds, starting the day you enroll",
+        "When: rolling thirty-day rounds; the next round begins Monday and enrollment closes the Thursday before",
         "Where: online, in a private member space",
-        "How: enroll, answer three questions, get your first system map"
+        "How: enroll and get your first personalized system map the same day"
       ],
-      "when_provenance": "none",
+      "when_provenance": "brief",
+      "deadline": "Thursday",
       "merge_fallback": "friend",
-      "body": "{{contact.first_name}},\n\nEverything you need to decide, in six quick answers.\n\nWhy this exists: because effort was never the problem. Hard-working builders kept being rewarded the least, and the missing piece was architecture, not hustle.\n\nWhat it is: The Momentum Method, a guided thirty-day path with a weekly system map, launch templates, a results tracker, live strategy calls, and a private builder community.\n\nWho it is for: founders and builders with a real offer and real effort, whose results do not match the work they put in.\n\nWhen it runs: in guided thirty-day rounds. You begin when you enroll, your first system map arrives the same day, and the thirty days run from there.\n\nWhere it happens: entirely online, in a private space you can reach from your phone between meetings.\n\nHow you start: you click the button below, answer three short questions about where you are stuck right now, and get your first personalized system map the very same day.\n\nThat is the whole picture, {{contact.first_name}}, with no fine print and no hidden catch anywhere.\n\n[Start The Momentum Method ->]\n\nJordan Marsh"
+      "body": "{{contact.first_name}},\n\nEverything you need to decide, in six quick answers.\n\nWhy this exists: because effort was never the problem. Hard-working builders kept being rewarded the least, and the missing piece was architecture, not hustle.\n\nWhat it is: The Momentum Method, a guided thirty-day path with a weekly system map, launch templates, a results tracker, live strategy calls, and a private builder community.\n\nWho it is for: founders and builders with a real offer and real effort, whose results do not match the work they put in.\n\nWhen it runs: in guided thirty-day rounds, and the rounds keep rolling. The next round begins on Monday, and enrollment for it closes the Thursday before. You start with the round, and your first system map arrives the same day you join.\n\nWhere it happens: entirely online, in a private space you can reach from your phone between meetings.\n\nHow you start: you click the button below, enroll, and get your first personalized system map the very same day.\n\nThat is the whole picture, {{contact.first_name}}, with no fine print and no hidden catch anywhere.\n\n[Start The Momentum Method ->]\n\nJordan Marsh"
     },
     {
       "e_slot": 6,
       "framework": "before-after-bridge",
+      "review_label": "Before-After-Bridge",
       "objective": "promotional",
       "subjects": [
         "{{contact.first_name}}, picture your business ninety days from right now",
@@ -187,9 +194,10 @@
     {
       "e_slot": 7,
       "framework": "three-b-plan",
+      "review_label": "The 3-B Plan",
       "objective": "promotional",
       "subjects": [
-        "{{contact.first_name}}, short one, doors close Thursday, decide now",
+        "{{contact.first_name}}, short one, enrollment closes Thursday, decide before then",
         "Read this in ten seconds then choose, no fluff"
       ],
       "previews": [
@@ -205,11 +213,12 @@
         "Basic: one clear next step, below"
       ],
       "merge_fallback": "friend",
-      "body": "{{contact.first_name}}, quick one.\n\nThe Momentum Method closes Thursday.\n\nIf you have been on the fence, here is the blunt version.\n\nYou have the effort, you are missing the system, and this fixes that in thirty days.\n\nNo fluff, no marathon sales page, just a clear path and a room of people building right beside you.\n\nIf that is what you want, move now, because the doors do not reopen for months.\n\n[Grab your spot before Thursday ->]\n\nTalk soon,\n\nJordan Marsh"
+      "body": "{{contact.first_name}}, quick one.\n\nEnrollment for the next round of The Momentum Method closes Thursday, and the round begins Monday.\n\nIf you have been on the fence, here is the blunt version.\n\nYou have the effort, you are missing the system, and the method gives you a guided thirty-day path to install it.\n\nNo fluff, no marathon sales page, just a clear path and a room of people building right beside you.\n\nIf that is what you want, enroll before Thursday and start with the round on Monday.\n\n[Grab your spot before Thursday ->]\n\nTalk soon,\n\nJordan Marsh"
     },
     {
       "e_slot": 8,
       "framework": "million-dollar-sales",
+      "review_label": "Million Dollar Sales",
       "objective": "promotional",
       "subjects": [
         "{{contact.first_name}}, this is not for everyone and that matters",
@@ -239,35 +248,37 @@
         "Humorous P.S."
       ],
       "merge_fallback": "friend",
-      "body": "{{contact.first_name}},\n\nStop for a second, because this one is honestly not for everyone.\n\nThis is for the builder who already works hard and is tired of watching that work scatter. If that is not you, no hard feelings either way.\n\nIf you are looking for a magic button that works without you, close this now. We will both be happier, and your inbox will be one email lighter.\n\nStill here? Good, that already tells me something about you.\n\nThree facts, stated flat. We have spent six years refining this method, it is built around one weekly system map, and every piece exists because a real bottleneck demanded it.\n\nWhy today? Because you have already read seven of these emails, and the question has quietly changed from whether the system works to whether you will run it.\n\n[Start The Momentum Method ->]\n\nHere is what changes when the system is in. You stop guessing what to work on, your launches stop starting from a blank page, and your weeks start compounding instead of resetting.\n\nBuilders tell us the pattern plainly, the difference was finally having a system instead of a to-do list. Picture your own next quarter run that way, one map, one focus, no scramble.\n\n[Read the full story ->]\n\nSo, you, the one carrying the whole engine. This was written for you, and by now you know whether it fits.\n\nDoors close Thursday, and the room reopens only a few times each year.\n\n[Claim your place before Thursday ->]\n\nP.S. My printer has seen more business plans than most investors, and yours would be the first one it refused to jam on.\n\nJordan Marsh"
+      "body": "{{contact.first_name}},\n\nStop for a second, because this one is honestly not for everyone.\n\nThis is for the builder who already works hard and is tired of watching that work scatter. If that is not you, no hard feelings either way.\n\nIf you are looking for a magic button that works without you, close this now. We will both be happier, and your inbox will be one email lighter.\n\nStill here? Good, that already tells me something about you.\n\nThree facts, stated flat. The method is built around one weekly system map, the templates skip the blank page entirely, and every piece exists because a real bottleneck demanded it.\n\nWhy today? Because you have already read seven of these emails, and the question has quietly changed from whether the system works to whether you will run it.\n\n[Start The Momentum Method ->]\n\nHere is what changes when the system is in. You stop guessing what to work on, your launches stop starting from a blank page, and your weeks start compounding instead of resetting.\n\nPicture the pattern in its plainest form. The same weekly map you opened on Monday, every box on it checked by Friday, because the system carried the follow-through instead of a to-do list. Run your next quarter that way, one map, one focus, no scramble.\n\n[Read the full story ->]\n\nSo, you, the one carrying the whole engine. This was written for you, and by now you know whether it fits.\n\nEnrollment for the next round closes Thursday, and the round begins Monday.\n\n[Claim your place before Thursday ->]\n\nJordan Marsh\n\nP.S. My printer has seen more business plans than most investors, and yours would be the first one it refused to jam on."
     },
     {
       "e_slot": 9,
       "framework": "aida",
+      "review_label": "AIDA",
       "objective": "promotional",
       "subjects": [
-        "{{contact.first_name}}, the window on this is about to close",
-        "Attention: the doors close tonight and will not reopen soon"
+        "{{contact.first_name}}, enrollment for this round closes on Thursday",
+        "Thursday is the deadline and Monday is the start line"
       ],
       "previews": [
-        "Quick and clear, because the window is closing.",
-        "A decision and a date. That is the only difference."
+        "Quick and clear, because enrollment closes Thursday.",
+        "Ninety days from now could look completely different."
       ],
       "ctas": [
-        "[Join before the doors close ->]"
+        "[Join this round before Thursday ->]"
       ],
       "sections": [
-        "Attention: the window is closing",
+        "Attention: enrollment for this round closes Thursday",
         "Interest: a guided system, not another course",
         "Desire: ninety days with a plan that held together",
-        "Action: join before the doors close"
+        "Action: join this round before enrollment closes"
       ],
       "merge_fallback": "friend",
-      "body": "{{contact.first_name}},\n\nThe window on this is about to close, so let me be quick and clear.\n\nAttention: the next cohort of The Momentum Method locks on Thursday, and the room does not reopen for months.\n\nHere is what has people leaning in. It is not another course to half-finish. It is a guided system with templates, tracking, and a room of builders moving right alongside you.\n\nImagine ending the next ninety days with a written plan that actually held together, a number that actually moved in the right direction, and momentum you did not have to force yourself into each morning.\n\nThat is what the members who started last season are living right now, and the only difference between them and you is a decision and a date.\n\nThe date is Thursday, the decision is yours, and the door is open for only a little longer.\n\n[Join before the doors close ->]\n\nMove now, {{contact.first_name}}, before the window shuts.\n\nJordan Marsh"
+      "body": "{{contact.first_name}},\n\nEnrollment for the next round closes Thursday, so let me be quick and clear.\n\nAttention: enrollment for the next round of The Momentum Method closes on Thursday, and the round begins on Monday.\n\nHere is what has people leaning in. It is not another course to half-finish. It is a guided system with templates, tracking, and a room of builders moving right alongside you.\n\nImagine ending the next ninety days with a written plan that actually held together, a number that actually moved in the right direction, and momentum you did not have to force yourself into each morning.\n\nPicture yourself living that version ninety days from now. It asks for no more talent and no more hours, just a system that holds together and a round that starts on Monday.\n\nEnrollment closes Thursday, the round begins Monday, and the decision is yours.\n\n[Join this round before Thursday ->]\n\nNinety days from now starts Monday, {{contact.first_name}}. Decide before Thursday and you are in the round.\n\nJordan Marsh"
     },
     {
       "e_slot": 10,
       "framework": "pas",
+      "review_label": "PAS",
       "objective": "promotional",
       "subjects": [
         "{{contact.first_name}}, the quiet cost of putting this off again",
