@@ -28,6 +28,26 @@ versions each keep their own label inside one folder. ``DEL-13`` owns the
 full numbered list; this module only states its own slot so two lanes never
 guess at each other's numbers (slot 7 belongs to the ready-to-post kit).
 
+Method runs (SPEC C5 / C5+ F19, method ``8.4``, inert until
+``control/method.json`` exists -- ``clip_cutdown.plan_clips`` returns
+trailer and ad plans only then) name their files as what they are, so a
+client never opens "Clip" and finds a trailer::
+
+    06 - Trailer 60s.mp4      episode / channel destination
+    06 - Trailer 90s.mp4      episode / channel destination
+    13 - Ad 60s.mp4           offer destination
+    13 - Ad 90s.mp4           offer destination
+
+The trailers keep the clip slot (06 -- they are the clipped promotion of
+the same package); the ad clip takes slot **13**, because slot 07 is the
+Ready-to-Post Kit and slots 08-12 belong to the rest of the contract. Each
+trailer/ad row also writes its own ``destination`` and ``source_map`` into
+``delivery-receipt.json`` (merged, never clobbered) so the trailer's "watch
+the episode" link never turns out to be the checkout link. A plan reaches
+this module as ``kind`` ``trailer``/``ad`` or a ``trailer-``/``ad-`` plan
+name; a trailer or ad plan without a destination or without a source map
+fails closed before anything is listed.
+
 Gate contract:
   * a delivered clip file that fails the audio gate FAILS the delivery
     (``CLIPS_AUDIO_REFUSED``) and is never listed as delivered;
@@ -73,20 +93,79 @@ _END = "<!-- delivery-clips:end -->"
 
 PASS, FAIL, UNAVAILABLE = "PASS", "FAIL", "UNAVAILABLE"
 
+#: method run: the slot and label of every plan kind (F11 / F19). Trailers
+#: share the clip slot; the ad clip takes 13 because slot 7 is the
+#: Ready-to-Post Kit and 8-12 are the rest of the DEL-13 contract.
+AD_ITEM = 13
+_KINDS = {"clip": (CLIP_ITEM, "Clip"),
+          "trailer": (CLIP_ITEM, "Trailer"),
+          "ad": (AD_ITEM, "Ad")}
+#: the plan keys every trailer/ad receipt row must carry, fail closed.
+_PIECE_KEYS = ("source_in", "source_out", "trailer_in", "trailer_out")
+
 
 class DeliveryClipsError(ValueError):
     pass
 
 
-def clip_file_name(seconds):
+def plan_kind(plan):
+    """What this plan is: ``clip`` (today), ``trailer`` or ``ad`` (method).
+
+    ``clip_cutdown.plan_clips`` marks a method plan with ``kind``; the plan
+    name (``trailer-60s`` / ``ad-90s``) is the fallback so a plan that only
+    carries its render name still lands in the right slot.
+    """
+    kind = plan.get("kind")
+    if kind in _KINDS:
+        return kind
+    name = str(plan.get("name") or "")
+    if name.startswith("trailer"):
+        return "trailer"
+    if name.startswith("ad"):
+        return "ad"
+    return "clip"
+
+
+def clip_file_name(seconds, kind="clip"):
     """One clear numbered delivery file name: ``06 - Clip 60s.mp4``.
 
-    The name is the contract's canonical file for that clip length; an
-    unknown length is a refusal, never a freshly invented name.
+    ``kind`` picks the slot and the label -- ``06 - Trailer 60s.mp4`` and
+    ``13 - Ad 90s.mp4`` on a method run; every other run is the contract's
+    canonical file name unchanged. An unknown kind or an unknown length is a
+    refusal, never a freshly invented name.
     """
+    if kind not in _KINDS:
+        raise DeliveryClipsError("CLIP_UNKNOWN_KIND: %r" % (kind,))
+    if kind != "clip":
+        if seconds not in (60, 90):
+            raise DeliveryClipsError("CLIP_UNKNOWN_LENGTH: %r" % (seconds,))
+        slot, label = _KINDS[kind]
+        return "%02d - %s %ds.mp4" % (slot, label, seconds)
     if seconds not in _CLIP_FILES:
         raise DeliveryClipsError("CLIP_UNKNOWN_LENGTH: %r" % (seconds,))
     return _CLIP_FILES[seconds]
+
+
+def source_map(plan):
+    """The receipt's ``source_map`` for a trailer/ad plan, fail closed.
+
+    Method ``10.5`` records ``{source_in, source_out, trailer_in,
+    trailer_out}`` per piece: the pieces the plan joined, or -- when the plan
+    carries one whole window instead -- that window as one piece.
+    """
+    pieces = plan.get("pieces")
+    if isinstance(pieces, list) and pieces:
+        out = [{k: p[k] for k in _PIECE_KEYS if k in p} for p in pieces]
+        return [p for p in out if p]
+    if plan.get("start_s") is not None and plan.get("end_s") is not None:
+        return [{"source_in": plan["start_s"], "source_out": plan["end_s"],
+                 "trailer_in": plan.get("trailer_in", 0.0),
+                 "trailer_out": plan.get(
+                     "trailer_out", plan.get("duration_s"))}]
+    raise DeliveryClipsError(
+        "TRAILER_NO_SOURCE_MAP: %r carries neither pieces[] nor "
+        "start_s/end_s, so no source map can be recorded"
+        % (plan.get("name"),))
 
 
 def deliver_clips(timeline, chosen_length_s, master, delivery_dir,
@@ -105,6 +184,12 @@ def deliver_clips(timeline, chosen_length_s, master, delivery_dir,
     if not plans:
         return []                      # 60/90 s ads carry no clips: nothing owed
 
+    # method plans fail closed BEFORE any ffmpeg work: a trailer that cannot
+    # say which episode it points at, or an ad with no offer link, is never
+    # cut, gated or listed (SPEC C5; method 8.4 "distinct destination
+    # records"). Ordinary clip plans are untouched by this loop.
+    source_maps = [_method_record(p) for p in plans]
+
     kwargs = {"audio_gate": audio_gate}
     if runner is not None:             # tests inject a fake ffmpeg runner
         kwargs["runner"] = runner
@@ -115,9 +200,10 @@ def deliver_clips(timeline, chosen_length_s, master, delivery_dir,
             raise DeliveryClipsError(
                 "CLIPS_INCOMPLETE: planned %d clip(s), cut %d"
                 % (len(plans), len(cut)))
-        for plan, path in zip(plans, cut):
+        for i, (plan, path) in enumerate(zip(plans, cut)):
+            kind = plan_kind(plan)
             seconds = int(plan["clip_length_s"])
-            target = out / clip_file_name(seconds)
+            target = out / clip_file_name(seconds, kind)
             if Path(path) != target:
                 if target.exists():
                     target.unlink()
@@ -128,30 +214,59 @@ def deliver_clips(timeline, chosen_length_s, master, delivery_dir,
                 delivery_audio.require_delivery_audio(path, audio_gate)
             except delivery_audio.DeliveryAudioRefused as exc:
                 raise DeliveryClipsError("CLIPS_AUDIO_REFUSED: %s" % exc)
-            rows.append({
-                "kind": "clip",
+            row = {
+                "kind": kind,
                 "clip_length_s": seconds,
                 "file": target.name,
-                "start_s": plan["start_s"],
-                "end_s": plan["end_s"],
                 "duration_s": plan["duration_s"],
-                "hooks": plan["hooks"],
-                "beats": plan["beats"],
                 "delivery_audio": "DELIVERY_AUDIO_OK",
-            })
+            }
+            if kind == "clip":
+                row.update({"start_s": plan["start_s"],
+                            "end_s": plan["end_s"],
+                            "hooks": plan["hooks"],
+                            "beats": plan["beats"]})
+            else:
+                # where this file sends the viewer, and the source map the
+                # method records per piece (10.5): trailers -> episode/channel,
+                # ads -> the offer.
+                row["destination"] = plan["destination"]
+                row["source_map"] = source_maps[i]
+            rows.append(row)
     except Exception:
         # fail closed: any failure leaves NO clip file in the folder
         for plan in plans:
             for name in (plan["name"] + ".mp4",
-                         clip_file_name(plan["clip_length_s"])):
+                         clip_file_name(plan["clip_length_s"],
+                                        plan_kind(plan))):
                 stale = out / name
                 if stale.exists():
                     stale.unlink()
         raise
 
-    rows.sort(key=lambda r: r["clip_length_s"])
+    rows.sort(key=lambda r: (_KINDS[r["kind"]][0], r["clip_length_s"]))
     _write_docs(out, rows)
     return rows
+
+
+def _method_record(plan):
+    """Fail-closed pre-cut check of a trailer/ad plan; ``None`` for a clip."""
+    kind = plan_kind(plan)
+    if kind == "clip":
+        return None
+    if not plan.get("destination"):
+        code = ("AD_NO_OFFER_DESTINATION" if kind == "ad"
+                else "TRAILER_NO_DESTINATION")
+        raise DeliveryClipsError("%s: plan %r carries no destination"
+                                 % (code, plan.get("name")))
+    return source_map(plan)
+
+
+def _destination_text(destination):
+    """A destination as the README prints it: a plain string, or JSON."""
+    if isinstance(destination, str):
+        return destination
+    return json.dumps(destination, sort_keys=True)
 
 
 def check_clips(delivery_dir, chosen_length_s, ffprobe="ffprobe",
@@ -169,10 +284,26 @@ def check_clips(delivery_dir, chosen_length_s, ffprobe="ffprobe",
     listed = {r.get("file") for r in receipt.get("delivery_clips") or []}
     readme = (d / README_NAME).read_text(encoding="utf-8") \
         if (d / README_NAME).is_file() else ""
-    for seconds in promised:
-        name = clip_file_name(seconds)
+    # a method run owes its trailer/ad files (named by this module and written
+    # only once every cut passed); every other run owes the contract's two
+    # clips. ponytail: the receipt rows ARE the promise -- deliver_clips writes
+    # them as one merge after all cuts, so a partial set never reaches here.
+    method_rows = [r for r in receipt.get("delivery_clips") or []
+                   if r.get("kind") in ("trailer", "ad")]
+    if method_rows:
+        wanted = [(r["file"], r["kind"], r.get("clip_length_s"))
+                  for r in method_rows]
+        done = ("%d trailer/ad file(s) present, listed and AAC-LC 48 kHz "
+                "faststart" % len(wanted))
+    else:
+        wanted = [(clip_file_name(s), "clip", s) for s in promised]
+        done = "both clips present, listed and AAC-LC 48 kHz faststart"
+    for name, kind, seconds in wanted:
         p = d / name
         if not p.is_file() or p.stat().st_size == 0:
+            if kind != "clip":
+                return (FAIL, "delivery missing the %d-second %s (%s)"
+                        % (seconds, kind, name))
             return (FAIL, "delivery missing the %d-second clip (%s)"
                     % (seconds, name))
         if name not in listed:
@@ -190,7 +321,7 @@ def check_clips(delivery_dir, chosen_length_s, ffprobe="ffprobe",
                         % (name, g["reason"]))
             return (FAIL, "%s failed the delivery audio gate (%s): %s"
                     % (name, g["reason_code"], g["reason"]))
-    return (PASS, "both clips present, listed and AAC-LC 48 kHz faststart")
+    return (PASS, done)
 
 
 def _write_docs(delivery_dir, rows):
@@ -206,6 +337,13 @@ def _write_docs(delivery_dir, rows):
              "Re-cut from your finished video on whole lines, so no clip "
              "starts or ends mid-sentence:", ""]
     for r in rows:
+        if r["kind"] != "clip":
+            # a trailer sends the viewer to the episode/channel, an ad to the
+            # offer (method 8.4): the README says which, per file.
+            lines.append("- `%s` - %d seconds - destination: %s"
+                         % (r["file"], r["clip_length_s"],
+                            _destination_text(r["destination"])))
+            continue
         lines.append("- `%s` - %d seconds (%.1f s cut, %d hook line(s))"
                      % (r["file"], r["clip_length_s"], r["duration_s"],
                         r["hooks"]))

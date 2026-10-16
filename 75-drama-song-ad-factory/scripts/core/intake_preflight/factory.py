@@ -31,6 +31,7 @@ approve -> `next` hands out music; anything else -> the edit is re-checked and r
 """
 import argparse
 import json
+import os
 import re
 import shlex
 import sqlite3
@@ -497,6 +498,273 @@ def _song_choices_next(run_dir, orchestrated=False):
     }
 
 
+# ── W2-wiring-U1: purpose routing, method gates, Agnes routing ──────────────
+#
+# Inert until the run carries control/method.json (purpose routing) or the
+# receipt's agnes.answer == "yes" (the Agnes path): a run with neither answers
+# exactly what it answered before this unit landed (SPEC "inert-until-wired").
+# The modules these routes read (length_formula, method_plan, agnes_plan,
+# agnes_quota, onscreen_text) belong to other units of this program, so every
+# import below is guarded the way factory.py already guards lane_size and the
+# approval runner: a module this box does not carry yet degrades that one line
+# of data, never the command.
+
+_PAID_STAGES = ("music", "image-keyframes", "video-generation")
+#: Method gate -> the stop whose completion records it (METHOD-INTEGRATION 5).
+_GATE_STAGE = (("A", "creative-strategy"), ("B", "script-lyrics"),
+               ("C", "music"), ("D", "storyboard"),
+               ("E", "final-qc"), ("F", "delivery"))
+#: Method 11.3's four levels, verbatim. This unit writes only the first three:
+#: an approval is a recorded human answer, which the factory never has (C6).
+_GATE_LEVELS = ("planned", "generated", "inspected", "approved")
+#: The social/paid purposes that run platform_fit.check before delivery (F13).
+_PLATFORM_PURPOSES = ("paid_ad", "short_post")
+
+def _core_mod(name):
+    """`<core>/<name>/<name>.py`, then a plain module of that name; None when
+    the box carries neither (the W1 units land on their own branches)."""
+    core = str(Path(__file__).resolve().parent.parent)
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    try:
+        return __import__("%s.%s" % (name, name), fromlist=[name])
+    except Exception:                               # noqa: BLE001
+        try:
+            return __import__(name)
+        except Exception:                           # noqa: BLE001
+            return None
+
+def _read_json(path, default=None):
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        return default
+    return doc if isinstance(doc, dict) else default
+
+def _write_json(path, doc):
+    """Atomic write beside the target (never a copy anywhere else)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name("%s.%d.tmp" % (path.name, os.getpid()))
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=2, ensure_ascii=False, sort_keys=True)
+        f.write("\n")
+    os.replace(tmp, path)
+
+def _method_record(run_dir):
+    """control/method.json (SPEC B1); None until the card's recap confirmed."""
+    return _read_json(Path(run_dir) / "control" / "method.json")
+
+def _agnes_answer(run_dir):
+    """The receipt's agnes.answer, or None when this run never answered."""
+    rec = _read_json(Path(run_dir) / "control" / "card-receipt.json", {}) or {}
+    block = rec.get("agnes")
+    if isinstance(block, dict) and block.get("answer") in ("yes", "no"):
+        return block["answer"]
+    return None
+
+def _agnes_progress(run_dir):
+    """control/agnes-progress.json (SPEC A11); None before the job starts."""
+    return _read_json(Path(run_dir) / "control" / "agnes-progress.json")
+
+def _sync_gates(run_dir, method, got):
+    """Record gates A-F in control/method.json (F17).
+
+    Every gate is present and ``planned`` (the card writes that), and is raised
+    to ``inspected`` once its own stop is COMPLETE in this run's own state
+    store: a stage that finished has been through its gate record, which is
+    inspection. ``approved`` is never written here -- it needs a recorded client
+    or Trevor answer (SPEC C6). Only a change is written, atomically, and no
+    level ever moves back.
+    """
+    if not isinstance(method, dict):
+        return method
+    gates = method.get("gates")
+    gates = dict(gates) if isinstance(gates, dict) else {}
+    changed = False
+    for key in "ABCDEF":
+        if gates.get(key) not in _GATE_LEVELS:
+            gates[key] = "planned"
+            changed = True
+    for key, stage in _GATE_STAGE:
+        if got.get(stage) == "COMPLETE" and gates.get(key) == "planned":
+            gates[key] = "inspected"
+            changed = True
+    if not changed:
+        return method
+    out = dict(method)
+    out["gates"] = gates
+    try:
+        _write_json(Path(run_dir) / "control" / "method.json", out)
+    except OSError:        # the envelope still reports the levels it would set
+        pass
+    return out
+
+def _method_block(method):
+    """What `next` says about this run's purpose routing (F17, F13, METHOD 4)."""
+    if not isinstance(method, dict) or not method.get("purpose"):
+        return None
+    purpose = method["purpose"]
+    out = {"purpose": purpose,
+           "platform": method.get("platform"),
+           "output_types": method.get("output_types"),
+           "gates": method.get("gates") or {},
+           #: METHOD-INTEGRATION 4: a lesson's product checks read as lesson
+           #: checks -- the connection target measures the point, no offer.
+           "product_checks": "lesson" if purpose == "lesson" else "product"}
+    if purpose == "testimonial":
+        out["testimonial_permission"] = method.get("testimonial_permission")
+    if purpose == "campaign":
+        out["derivatives"] = ["trailer-60", "trailer-90", "ad-60", "ad-90"]
+    if purpose in _PLATFORM_PURPOSES:
+        out["platform_fit"] = "required-before-delivery"
+    return out
+
+def _method_plan_block(run_dir, method):
+    """The method length plan and the blueprint check, built before script-lyrics.
+
+    `length_formula.plan` is the ONE length function; one that predates the
+    method row takes no flag and falls back to the same plan without it. The
+    blueprint is this run's own creative/blueprint.json: absent means not
+    written yet (nothing to refuse), rejected refuses before any script-lyrics
+    spend, and method_plan not being on this box reports UNDETERMINED -- never
+    a pass.
+    """
+    out = {"length_plan": None, "blueprint_check": None}
+    chosen = method.get("chosen_length_s") if isinstance(method, dict) else None
+    lf = _core_mod("length_formula")
+    if lf is not None and isinstance(chosen, int):
+        try:
+            try:
+                out["length_plan"] = lf.plan(chosen, method=True)
+            except TypeError:      # before the method row landed in that function
+                out["length_plan"] = lf.plan(chosen)
+        except Exception:                         # noqa: BLE001 - never blocks the stage
+            out["length_plan"] = None
+    blueprint = _read_json(Path(run_dir) / "creative" / "blueprint.json")
+    mp = _core_mod("method_plan")
+    if mp is None:
+        out["blueprint_check"] = {
+            "status": "UNDETERMINED",
+            "detail": "method_plan is not on this box; the blueprint was not checked"}
+    elif blueprint is None:
+        out["blueprint_check"] = {
+            "status": "pending",
+            "detail": "creative/blueprint.json is written at this stage"}
+    else:
+        try:
+            out["blueprint_check"] = mp.validate(blueprint, method)
+        except Exception as exc:                  # noqa: BLE001
+            out["blueprint_check"] = {"status": "UNDETERMINED",
+                                      "detail": str(exc)[:200]}
+    return out
+
+def _pace_into_music(run_dir, method):
+    """method_plan.pace_order + true_at_beat into the music request (F17).
+
+    The request builder reads both keys, so they are written into
+    $RUN/music/req.json when that file already exists and are always returned
+    for whoever builds it. No blueprint means no seam is ever invented (the
+    rule pace_order itself keeps), so the request is left alone.
+    """
+    blueprint = _read_json(Path(run_dir) / "creative" / "blueprint.json")
+    mp = _core_mod("method_plan")
+    if mp is None or not isinstance(method, dict) or not blueprint:
+        return {"available": False}
+    try:
+        order = mp.pace_order(blueprint) or {}
+    except Exception as exc:                      # noqa: BLE001
+        return {"available": False, "detail": str(exc)[:200]}
+    if not order:
+        return {"available": False}
+    out = {"available": True, "pace_order": order,
+           "true_at_beat": order.get("true_at_beat")}
+    req = Path(run_dir) / "music" / "req.json"
+    doc = _read_json(req)
+    if isinstance(doc, dict):
+        merged = dict(doc)
+        merged["pace_order"] = order
+        if out["true_at_beat"]:
+            merged["true_at_beat"] = out["true_at_beat"]
+        try:
+            _write_json(req, merged)
+            out["written_into_request"] = True
+        except OSError:
+            out["written_into_request"] = False
+    return out
+
+def _agnes_segment_total(run_dir, method, prog):
+    """How many fixed 10-second segments the delivered timeline is cut into."""
+    if isinstance(prog, dict):
+        try:
+            total = int(prog.get("clips_total"))
+        except (TypeError, ValueError):
+            total = 0
+        if total > 0:
+            return total
+    chosen = method.get("chosen_length_s") if isinstance(method, dict) else None
+    if not isinstance(chosen, int) or chosen <= 0:
+        return None
+    delivered = max(1, chosen - 2)   # delivered length = chosen - 2 (SKILL 613)
+    ap = _core_mod("agnes_plan")
+    if ap is not None:
+        try:
+            return int(len(ap.segments(delivered)))
+        except Exception:                         # noqa: BLE001
+            pass
+    return -(-delivered // 10)                    # ceil(delivered / 10), A5.1
+
+def _agnes_wait_reason(prog):
+    """Why `next` answers waiting instead of a segment job (SPEC A11)."""
+    if not isinstance(prog, dict):
+        return None
+    reason = str(prog.get("waiting_reason") or "").strip()
+    if reason:
+        return reason
+    try:
+        inflight = int(prog.get("in_flight") or 0)
+        done = int(prog.get("clips_done") or 0)
+        total = int(prog.get("clips_total") or 0)
+    except (TypeError, ValueError):
+        return None
+    if inflight > 0 and total > done:
+        return "agnes-video-running"
+    return None
+
+def _clips_cut(run_dir):
+    """True once $RUN/edit/clips holds a cut file.
+
+    That directory is where the `clips` runbook row writes, so it is what says
+    the campaign's trailer/ad step has run and `next` may move on to `delivery`.
+    """
+    d = Path(run_dir) / "edit" / "clips"
+    try:
+        return any(p.suffix == ".mp4" and p.stat().st_size > 0
+                   for p in d.iterdir())
+    except OSError:
+        return False
+
+def _agnes_admission(remaining):
+    """Whole-run quota admission: run now, or wait for the 00:00 UTC reset.
+
+    Never a partial start, never a run split across days (SPEC A5.3).
+    agnes_quota is another unit's module; without it there is no admission
+    number to read, so this reports None rather than guessing a pass.
+    """
+    aq = _core_mod("agnes_quota")
+    if aq is None or remaining is None:
+        return None
+    try:
+        # fits_today(clips, now): `now` is a required positional, and the
+        # ledger reads os.environ by default. Calling it with one argument
+        # raised TypeError, which this bare except swallowed -- so whole-run
+        # admission silently reported None on every box and SPEC A5.3 never
+        # fired.
+        return dict(aq.fits_today(int(remaining), None)) or None
+    except Exception:                             # noqa: BLE001
+        return None
+
 def cmd_next(a):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
     run_dir = Path(a.run_dir or ".").expanduser().resolve()
@@ -541,6 +809,26 @@ def cmd_next(a):
         return envelope("next", str(sid), "ok", "run-complete",
                         "Every stage is COMPLETE; the run is delivered. "
                         "Nothing left to run.")
+    # W2-wiring-U1: what this run is for, and whether Agnes makes its media.
+    method = _method_record(run_dir)
+    if isinstance(method, dict):
+        method = _sync_gates(run_dir, method, got)
+    else:
+        method = None
+    method_block = _method_block(method)
+    agnes_answer = _agnes_answer(run_dir)
+    if (method_block is not None
+            and method.get("purpose") == "testimonial"
+            and method.get("testimonial_permission") != "yes"
+            and next_stage in _PAID_STAGES):
+        # F17 / SPEC B2: PERMISSION = Yes comes before ANY paid job, so the
+        # refusal lands before the music stop even opens, not at generation.
+        return envelope(
+            "next", str(sid), "rejected", "TESTIMONIAL_PERMISSION_MISSING",
+            "This is a client success story and the card holds no recorded "
+            "PERMISSION = Yes, so stage %r never runs: get the permission and "
+            "confirm the card's recap again." % next_stage,
+            data={"stage": next_stage, "method": method_block})
     if next_stage == "video-generation":      # storyboard approval point
         ar = _approval_runner()
         if ar is not None and not ar.gate_open(str(run_dir)):
@@ -572,11 +860,140 @@ def cmd_next(a):
                     return _studio_apply("next", str(sid), run_dir, next_stage, "song", ans)
             return envelope("next", str(sid), "error", hold["reason_code"], hold["next_action"],
                             data={"stage": next_stage, "detail": hold.get("detail", "")})
-    row = rows.get(next_stage) or {"command": "", "produces": ""}
+    plan_block = None
+    if method is not None and next_stage == "script-lyrics":
+        # F17: the length plan and the blueprint check happen BEFORE the model
+        # call this stage makes, not after it has been paid for.
+        plan_block = _method_plan_block(run_dir, method)
+        bc = plan_block.get("blueprint_check") or {}
+        if bc.get("outcome") == "rejected":
+            codes = ", ".join(str(e.get("error"))
+                              for e in (bc.get("errors") or [])[:3])
+            return envelope(
+                "next", str(sid), "rejected",
+                str(bc.get("reason_code") or "BLUEPRINT_INVALID"),
+                "The Story Beat Blueprint does not pass method_plan.validate "
+                "(%s). Fix creative/blueprint.json before any script-lyrics "
+                "spend." % codes,
+                data={"stage": next_stage, "method_plan": plan_block,
+                      "method": method_block})
+    if agnes_answer == "yes" and next_stage == "image-keyframes":
+        arow = rows.get("agnes-keyframes") or {"command": "", "produces": ""}
+        if arow["command"]:
+            agnes = {"answer": "yes", "keyframes": arow["command"], "in_flight": 2}
+            ot = _core_mod("onscreen_text")
+            if ot is not None:
+                try:
+                    agnes["no_text_block"] = ot.no_text_block()
+                except Exception:                          # noqa: BLE001
+                    pass
+            return envelope(
+                "next", str(sid), "ok", "next-stage",
+                "Agnes path: these keyframes come from Agnes Image with no words "
+                "in the picture; onscreen_text decides bake or overlay per shot.",
+                data={"stage": next_stage, "command": arow["command"],
+                      "produces": arow["produces"], "lane_size": lane_size_payload(),
+                      "stages_source": stages_source, "agnes": agnes,
+                      "method": method_block},
+                evidence=["%s" % db, runbook_path])
+    if agnes_answer == "yes" and next_stage == "video-generation":
+        prog = _agnes_progress(run_dir)
+        total = _agnes_segment_total(run_dir, method, prog)
+        done = 0
+        if isinstance(prog, dict):
+            try:
+                done = max(0, int(prog.get("clips_done") or 0))
+            except (TypeError, ValueError):
+                done = 0
+        if total is None or total < done:
+            total = done
+        wait = _agnes_wait_reason(prog)
+        agnes = {"answer": "yes", "background": True, "in_flight_max": 2,
+                 "clips_total": total, "clips_done": done, "waiting_reason": wait}
+        if isinstance(prog, dict) and prog.get("next_continue_utc"):
+            agnes["next_continue_utc"] = prog["next_continue_utc"]
+        admission = _agnes_admission(max(0, total - done))
+        if admission is not None:         # whole-run admission, never partial
+            agnes["quota"] = admission
+            agnes["quota_source"] = "agnes_quota.fits_today"
+            if admission.get("fits") is False:
+                wait = admission.get("waiting_reason") or "agnes-quota-next-day"
+                agnes["next_continue_utc"] = admission.get("next_continue_utc")
+        if wait:
+            return envelope(
+                "next", str(sid), "waiting", str(wait),
+                ("Agnes video is running: %d of %d segments made, at most 2 in "
+                 "flight. `next` never resubmits a job the ledger already knows."
+                 % (done, total)) if wait == "agnes-video-running"
+                else ("The whole run will not fit today's Agnes quota, so it "
+                      "waits for the next 00:00 UTC reset (%s) and is never "
+                      "split across days."
+                      % (agnes.get("next_continue_utc") or "next UTC day")),
+                data={"stage": next_stage, "agnes": agnes, "method": method_block})
+        kie = (rows.get("video-generation") or {}).get("command", "")
+        vrow = rows.get("agnes-video-segment") or {"command": "", "produces": ""}
+        jobs = [{"segment": n,
+                 "command": vrow["command"].replace("<segment>", str(n))}
+                for n in range(done + 1, total + 1)] if vrow["command"] else []
+        agnes["segment_jobs"] = jobs
+        agnes["segment_produces"] = vrow.get("produces", "")
+        #: The lip-sync windows keep the KIE Kling row, verbatim and unchanged.
+        agnes["kie_lipsync_command"] = kie
+        if not jobs:
+            if total:
+                why = ("Agnes made all %d segments. The lip-sync windows keep "
+                       "the KIE Kling row exactly as it is." % total)
+            else:
+                why = ("No Agnes segment count is known yet (no method length "
+                       "and no progress record), so the lip-sync windows keep "
+                       "the KIE Kling row exactly as it is.")
+            return envelope(
+                "next", str(sid), "ok", "next-stage", why,
+                data={"stage": next_stage, "command": kie,
+                      "produces": (rows.get("video-generation") or {}).get("produces", ""),
+                      "lane_size": lane_size_payload(),
+                      "stages_source": stages_source, "agnes": agnes,
+                      "method": method_block},
+                evidence=["%s" % db, runbook_path])
+        return envelope(
+            "next", str(sid), "ok", "next-stage",
+            "Agnes path: run the segment jobs as a background job, 2 in flight, "
+            "polling no faster than every 15 seconds; `next` answers waiting "
+            "while they run.",
+            data={"stage": next_stage, "command": jobs[0]["command"],
+                  "produces": agnes["segment_produces"],
+                  "lane_size": lane_size_payload(),
+                  "stages_source": stages_source, "agnes": agnes,
+                  "method": method_block},
+            evidence=["%s" % db, runbook_path])
+    # W2-wiring-U1 (F17 / SPEC C5): a campaign run gets the trailer stage, and
+    # the two rows are one clip_cutdown command read two ways (F10 / F19).
+    # `clips` is a runbook stage, not a batch state row, so it is presented in
+    # front of `delivery` and lasts until it has cut its files.
+    row_id = next_stage
+    if (method is not None and method.get("purpose") == "campaign"
+            and next_stage == "delivery" and not _clips_cut(run_dir)
+            and (rows.get("trailers") or {}).get("command")):
+        row_id = "trailers"
+    present_id = "clips" if row_id == "trailers" else next_stage
+    row = rows.get(row_id) or rows.get(next_stage) or {"command": "", "produces": ""}
     if not row["command"]:
         return envelope("next", str(sid), "error", "runbook-row-missing",
                         "No runbook row for stage %r in %s"
                         % (next_stage, runbook_path))
+    platform_fit = None
+    if (method is not None and next_stage == "delivery"
+            and method.get("purpose") in _PLATFORM_PURPOSES
+            and (rows.get("platform-fit") or {}).get("command")):
+        pfrow = rows["platform-fit"]
+        platform_fit = {
+            "required": True,
+            "command": pfrow["command"],
+            "placement": method.get("platform") or (
+                "organic" if method.get("purpose") == "short_post" else "meta"),
+            "produces": pfrow["produces"]}
+    music_request = (_pace_into_music(run_dir, method)
+                     if method is not None and next_stage == "music" else None)
     sa = None
     if next_stage == "music":
         sa = _script_gate(run_dir, a, reply=None)
@@ -592,22 +1009,36 @@ def cmd_next(a):
         sc = _song_choices_next(run_dir, orchestrated=bool(getattr(a, "orchestrated", False)))
         if sc is not None:
             lane = lane_size_payload()
+            data = {"stage": next_stage, "command": sc["command"],
+                    "produces": row.get("produces", ""), "lane_size": lane,
+                    "stages_source": stages_source, "song_choices": sc}
+            if method_block is not None:
+                data["method"] = method_block
+            if music_request is not None:
+                data["music_request"] = music_request
             return envelope(
                 "next", str(sid), "ok", "next-stage",
                 "SONG APPROVAL = Yes: run the three-version music runner (%s mode); "
                 "one submission pass, overlap receipt, no paid redo for a missing overlap."
                 % sc["mode"],
-                data={"stage": next_stage, "command": sc["command"],
-                      "produces": row.get("produces", ""), "lane_size": lane,
-                      "stages_source": stages_source, "song_choices": sc},
-                evidence=["%s" % db, runbook_path])
+                data=data, evidence=["%s" % db, runbook_path])
     lane = lane_size_payload()
-    nxt = {"stage": next_stage, "command": row["command"],
+    nxt = {"stage": present_id, "command": row["command"],
            "produces": row.get("produces", ""), "lane_size": lane,
            "stages_source": stages_source}
+    if row_id != present_id:
+        nxt["method_stage"] = row_id
+    if method_block is not None:
+        nxt["method"] = method_block
+    if plan_block is not None:
+        nxt["method_plan"] = plan_block
+    if platform_fit is not None:
+        nxt["platform_fit"] = platform_fit
+    if music_request is not None:
+        nxt["music_request"] = music_request
     return envelope("next", str(sid), "ok", "next-stage",
                     "Run this command for stage %r; after it passes its QC "
-                    "gate, run `next` again." % next_stage,
+                    "gate, run `next` again." % present_id,
                     data=nxt, evidence=["%s" % db, runbook_path])
 
 

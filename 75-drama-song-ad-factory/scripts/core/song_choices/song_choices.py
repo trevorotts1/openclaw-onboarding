@@ -645,7 +645,13 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
     st = _state(run_dir) or {"required": True}
     st.update(required=True, offered=offered)
     _write(run_dir, "state.json", st)
-    msg = client_message(offered, [r["n"] for r in results if r["status"] == "FAILED"])
+    # Method Step 14 (inert until the run carries control/method.json): the
+    # message RECOMMENDS the strongest compliant version with a concrete reason.
+    # `recommend` ranks only the versions `good` above offers, so it can never
+    # name one the client was not sent.
+    rec = recommend(results) if method_run(run_dir) else None
+    msg = client_message(offered, [r["n"] for r in results if r["status"] == "FAILED"],
+                         recommend=rec)
     target = target or st.get("target")
     if target:
         send_choices(run_dir, target, send, msg)
@@ -674,7 +680,83 @@ def send_choices(run_dir, target, send=None, message=None):
     return argv
 
 
-def client_message(offered, failed=()):
+# ---- Step 14: the message RECOMMENDS the strongest compliant version ------
+#
+# The method (Step 14; METHOD-INTEGRATION F9) asks for a recommendation of the
+# strongest COMPLIANT candidate with a concrete explanation, "rather than making
+# the owner evaluate an unfiltered pile of options". The client still picks --
+# nothing here auto-picks, and the pick gate is untouched.
+
+#: The gates that carry the method's music turns (ERM Drop first vocal, and the
+#: two pace seams once U2's ``erm_drop``/``hero_shift`` anchors land). Names are
+#: looked up in the take's own gate set, so a gate the judge does not emit simply
+#: costs a candidate nothing -- no gate is invented here.
+ERM_HERO_GATES = ("pace_change", "erm_drop", "hero_shift", "first_sung")
+#: The earned-hook gates (Step 12): the third tiebreak.
+HOOK_GATES = ("hook", "hook_placement")
+#: Inert-until-wired (BUILD-PLAN): this runs only on a run that carries it.
+METHOD_RECORD = os.path.join("control", "method.json")
+
+
+def _verdicts(result):
+    """``{gate name: verdict}`` from ONE result's constituent receipt, or ``{}``
+    when it carries no gate results at all."""
+    rec = (result or {}).get("receipt")
+    gates = rec.get("gates") if isinstance(rec, dict) else None
+    if not isinstance(gates, dict):
+        return {}
+    return {k: (v.get("verdict") if isinstance(v, dict) else v) for k, v in gates.items()}
+
+
+def _passes(verdicts, names=()):
+    """How many of ``names`` (default: every gate present) are PASS."""
+    keys = names or tuple(verdicts)
+    return sum(1 for k in keys if str(verdicts.get(k) or "").strip().upper() == "PASS")
+
+
+def recommend(results):
+    """The version to RECOMMEND, with the concrete reason Step 14 asks for.
+
+    Ranking: the most PASS gates; then the measured ERM/Hero-Shift gates; then
+    the earned hook; then the lowest version number, so the same run always
+    recommends the same version. Only a version DELIVERY itself would offer is
+    ever considered (the same acceptance test), so the recommendation can never
+    name a version that is not in the client's hands.
+
+    Returns ``{"n": <version number>, "reason": "<one plain line>"}``, or ``None``
+    when no result carries gate results -- a run with no gate results says
+    nothing extra."""
+    ranked = []
+    for r in results or []:
+        if not isinstance(r, dict) or r.get("status") == "FAILED" or not r.get("take"):
+            continue
+        if not _accepted(r)[0]:                     # never recommend an unoffered take
+            continue
+        v = _verdicts(r)
+        if not v:
+            continue
+        score = (_passes(v), _passes(v, ERM_HERO_GATES), _passes(v, HOOK_GATES))
+        ranked.append((score, -int(r.get("n") or 0), r, v))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    _score, _neg_n, r, v = ranked[0]
+    bits = ["it passed %d of %d song checks" % (_score[0], len(v))]
+    if _score[1]:
+        bits.append("the ERM / Hero Shift turn gates pass")
+    if _score[2]:
+        bits.append("the hook lands")
+    return {"n": int(r["n"]), "reason": ", ".join(bits)}
+
+
+def method_run(run_dir):
+    """True when the run carries ``control/method.json`` (the intake card writes
+    it at recap confirmation). Inert-until-wired: a run without that record gets
+    today's message, byte for byte."""
+    return os.path.isfile(os.path.join(run_dir or "", METHOD_RECORD))
+
+
+def client_message(offered, failed=(), recommend=None):
     nums = sorted(int(n) for n in offered)
     rows = ["%d. %s - %s" % (n, offered[str(n)]["label"].split(" - ", 1)[1], offered[str(n)]["duration"])
             for n in nums]
@@ -683,6 +765,9 @@ def client_message(offered, failed=()):
     if failed:
         msg += ["", "Version %s did not pass my song checks after a second try, so I left it out."
                 % ", ".join(map(str, failed))]
+    if isinstance(recommend, dict) and recommend.get("n") is not None:
+        msg += ["", "I recommend version %d because %s."
+                % (int(recommend["n"]), recommend.get("reason") or "it passed every song check")]
     return "\n".join(msg + ["", "Reply %s to pick your song. Nothing else is made until you pick." % pick])
 
 

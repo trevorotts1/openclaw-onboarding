@@ -39,6 +39,7 @@ stdlib only, no network, no spend. Runs without ffmpeg in stub mode.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 
@@ -213,6 +214,7 @@ def sample_frames_for_text(clip_path, ffmpeg=None, frame_count=3,
             "entry per frame" % (name, type(texts).__name__, sampled))
     return {"clip": clip_path, "sampled": sampled,
             "text_frames": [i for i, t in enumerate(texts) if t],
+            "texts": list(texts),
             "extractor": name,
             "mode": STUB_NAME if ffmpeg is None else "extract"}
 
@@ -226,6 +228,98 @@ def clip_rows(segments, ffmpeg=None, frame_count=3, extractor=None,
                                            frame_count=frame_count,
                                            extractor=extractor,
                                            ffprobe=ffprobe))
+    return rows
+
+
+# ---------------------------------------------- Agnes read-back (SPEC A6) --
+#
+# Agnes clips are read back with the same 3-frame sample, but a stub can
+# never clear an Agnes segment: the default extractor opens no pixel, so
+# "found nothing" proves nothing. The row therefore carries one of these
+# named verdicts instead of a bare clean/flagged pair:
+#
+#   UNAVAILABLE          no pixel reader ran (the stub) or the sample
+#                        failed -- never a PASS.
+#   GARBLED_TEXT_FRAME   a no-text segment showing a readable word of 3+
+#                        letters (SPEC A6's exact fail -> regenerate <= 2).
+#   TEXT_CHANGED         the segment expected words and the frames no
+#                        longer show exactly those words.
+#   PASS                 a real extractor read every sampled frame and the
+#                        words match what the plan expects.
+UNAVAILABLE = "UNAVAILABLE"
+TEXT_CHANGED = "TEXT_CHANGED"
+PASS = "PASS"
+
+# SPEC A6's bar for "a readable word": 3 or more letters.
+_WORD_3_RE = re.compile(r"[A-Za-z]{3,}")
+
+
+def _has_word(text):
+    """True when text carries a readable word of 3+ letters (SPEC A6)."""
+    return bool(text) and bool(_WORD_3_RE.search(str(text)))
+
+
+def _word_set(entries):
+    """Distinct readable words (3+ letters), casefolded, across entries.
+
+    A set, not a string: the same sign may read across all 3 sampled
+    frames, and the check is WHICH words are there, not how many times.
+    """
+    if not isinstance(entries, (list, tuple)):
+        entries = [entries]
+    words = set()
+    for entry in entries:
+        for word in str(entry or "").split():
+            if _has_word(word):
+                words.add(word.casefold())
+    return words
+
+
+def _agnes_verdict(row, expected):
+    """One Agnes row's named verdict (never PASS on the stub)."""
+    if row["extractor"] == STUB_NAME:
+        return UNAVAILABLE
+    found = _word_set(row.get("texts") or [])
+    want = _word_set(expected)          # absent/None/"" -> the no-text default
+    if not want:
+        return GARBLED_TEXT_FRAME if found else PASS
+    return PASS if found == want else TEXT_CHANGED
+
+
+def agnes_clip_rows(segments, expected_by_segment=None, extractor=None,
+                    ffmpeg=None, frame_count=3, ffprobe="ffprobe"):
+    """Agnes read-back: one named row per Agnes clip (SPEC A6, A8).
+
+    ``expected_by_segment`` maps a segment index (position in ``segments``)
+    to the words that segment is meant to show; an absent key, ``None`` or
+    ``""`` means a no-text segment, which is the default everywhere in this
+    skill (SPEC A6).
+
+    One row per segment, in order: the ``clip_rows`` shape plus
+    ``segment``, ``expected`` and the named ``status`` above. Sampling and
+    extraction failures become an UNAVAILABLE row instead of raising, so a
+    caller never reads "no rows" as "no problems" and never reads a stub
+    run as a clean one.
+    """
+    exp = expected_by_segment or {}
+    name, _fn = _resolve_extractor(extractor)   # same fail-closed contract
+    rows = []
+    for i, s in enumerate(segments or []):
+        src = s.get("src") if isinstance(s, dict) else s
+        expected = exp.get(i)
+        try:
+            row = dict(sample_frames_for_text(src, ffmpeg=ffmpeg,
+                                              frame_count=frame_count,
+                                              extractor=extractor,
+                                              ffprobe=ffprobe))
+            status = _agnes_verdict(row, expected)
+        except FrameTextError:
+            row = {"clip": src, "sampled": 0, "text_frames": [],
+                   "texts": [], "extractor": name,
+                   "mode": STUB_NAME if ffmpeg is None else "extract"}
+            status = UNAVAILABLE
+        row.update({"segment": i, "expected": expected, "status": status})
+        rows.append(row)
     return rows
 
 

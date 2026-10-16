@@ -13,7 +13,8 @@
     "deck_brief.FINAL_PRICE",
     "pre_presentation_capture.PRESENTATION_TYPE",
     "pre_presentation_capture.WANT_SALES_CHECKOUT",
-    "pre_presentation_capture.WANT_VSL_PAGE"
+    "pre_presentation_capture.WANT_VSL_PAGE",
+    "pre_presentation_capture.WANT_EMAIL_SEQUENCES"
   ],
   "migration": {
     "from_version": 1,
@@ -212,6 +213,35 @@
       "legacy_aliases": [
         "deck_brief.VSL_PAGE_DECLINED_REASON",
         "VSL_PAGE_DECLINED_REASON"
+      ]
+    },
+    {
+      "id": "want_email_sequences",
+      "canonical_path": "pre_presentation_capture.WANT_EMAIL_SEQUENCES",
+      "section": "pre_presentation_capture",
+      "kind": "enum",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "legacy_aliases": [
+        "deck_brief.WANT_EMAIL_SEQUENCES",
+        "WANT_EMAIL_SEQUENCES"
+      ]
+    },
+    {
+      "id": "email_sequences_declined_reason",
+      "canonical_path": "pre_presentation_capture.EMAIL_SEQUENCES_DECLINED_REASON",
+      "section": "pre_presentation_capture",
+      "kind": "text",
+      "required": true,
+      "block_gate": true,
+      "allowed_values": null,
+      "legacy_aliases": [
+        "deck_brief.EMAIL_SEQUENCES_DECLINED_REASON",
+        "EMAIL_SEQUENCES_DECLINED_REASON"
       ]
     },
     {

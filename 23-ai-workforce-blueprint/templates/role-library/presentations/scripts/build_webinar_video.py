@@ -34,9 +34,12 @@ THE FOUR STEPS (per WEBINAR-BUILDER-SOP.md)
   4. UPLOAD — ghl_media.upload_video (v3 video tier, Version: v3 + video/mp4, 500MB
              ceiling, small-probe gated) hosts the mp4 into the same per-deck GHL media
              folder. The record is MERGED into working/checkpoints/media_library.json
-             under a `webinar_mp4` entry. The local delivery-path copy is moved out of
-             the delivery path ONLY after the upload is CONFIRMED (2xx + fileId + a
-             read-only list-back match).
+             under a `webinar_mp4` entry. The local delivery-path copy is NOT moved
+             or deleted, on confirmation or otherwise: it stays at
+             working/delivery/{deck_slug}-WEBINAR.mp4, where P-U-VSL-BUILD's video
+             dependency and the client package both read it. Confirmation (2xx +
+             fileId + a read-only list-back match) is recorded in the record's
+             status only.
 
 RULES
   * Deterministic render — no AI judgement in the render step; ffmpeg is the only
@@ -468,8 +471,10 @@ def _verify_entry_nonce(run_dir: Path) -> bool:
 def _confirm_upload(run_dir: Path, record: dict) -> bool:
     """READ-ONLY list-back confirming the webinar is genuinely in the GHL library.
 
-    Mirrors the SOP §4 "Never delete until confirmed" rule: HTTP 2xx AND fileId AND a
-    read-only list-back that finds the entry by fileId/name. Returns True on confirm.
+    Mirrors the SOP §4 confirmation rule: HTTP 2xx AND fileId AND a read-only
+    list-back that finds the entry by fileId/name. Returns True on confirm.
+    Confirmation is recorded in the build record's status only; the local copy
+    is never moved or deleted (WEBINAR-BUILDER-SOP.md §4).
     """
     try:
         import ghl_media
@@ -569,7 +574,8 @@ def build_webinar(run_dir: Path, *, out: Optional[str] = None, no_upload: bool =
             # crashed AFTER a successful build+upload, turning a completed webinar
             # into a phase failure. print to stderr directly.
             print("WARNING: GHL list-back did not confirm the webinar (upload record "
-                  "written, but the local copy is NOT deleted until confirmed).",
+                  "written; confirmation affects only the recorded status -- the local "
+                  "copy stays in the delivery path either way).",
                   file=sys.stderr)
 
     return record

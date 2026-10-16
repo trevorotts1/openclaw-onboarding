@@ -1,0 +1,36 @@
+{
+ "skill": "82",
+ "slug": "signature-thank-you",
+ "name": "signature-thank-you",
+ "client_facing": true,
+ "description": "Builds the final Signature thank-you and fulfillment page: purchase-aware confirmation showing exactly what was bought (names, amounts, terms), protected access/next steps, and no new pitch. Resolves the order from verified native state, never from URL parameters.",
+ "departments": [
+  "web-development",
+  "funnels"
+ ],
+ "roles": [
+  {
+   "dept": "web-development",
+   "primary": true,
+   "slug": "funnel-builder-specialist"
+  },
+  {
+   "dept": "funnels",
+   "primary": false,
+   "slug": "funnel-qa-conversion-verification-specialist"
+  },
+  {
+   "dept": "web-development",
+   "primary": false,
+   "slug": "landing-page-specialist"
+  }
+ ],
+ "intent_triggers": [
+  "build a thank you page",
+  "order confirmation page",
+  "page customers see after buying"
+ ],
+ "execution_sops": [
+  "funnel-craft"
+ ]
+}
