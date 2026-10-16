@@ -379,7 +379,7 @@ process.stdout.write(JSON.stringify(out));})();'''
             self.assertIn('python3 "$CEO_POLICY_HELPER"', src)
             self.assertNotIn('target["skills"] = []', src)
             self.assertNotIn("r'^# SOUL", src)
-        self.assertIn('cp -r "$EXTRACTED_DIR/shared-utils/."', (ROOT / 'update-skills.sh').read_text())
+        self.assertIn('cp -R "$EXTRACTED_DIR/shared-utils/."', (ROOT / 'update-skills.sh').read_text())
 
 if __name__ == '__main__':
     unittest.main()
