@@ -976,6 +976,225 @@ def assert_seo_populated(seo_meta: dict | None, *, brand: str | None = None,
     return {"ok": not reasons, "reasons": reasons}
 
 
+# ── Step-type SEO/privacy policy (S06-06, prep step 6 / gap 5) ───────────────
+# Packet section 8: required SEO/content fields on PUBLIC MARKETING pages,
+# privacy/no-index on PURCHASE and THANK-YOU steps, and never expose customer
+# receipt data to crawlers. Before S06-06 the tree had ONE SEO builder applied
+# uniformly: no code distinguished a marketing step from a purchase or
+# thank-you step (gap 5). This layer classifies the step and applies the
+# matching policy:
+#   * marketing      -> build_seo_meta UNCHANGED (full transcript gates:
+#                       researched keywords, founder author, canonical, ogImage).
+#   * purchase /
+#     thank_you      -> a PRIVACY meta (build_private_step_seo_meta): a title
+#                       (still capped), an optional description (still under the
+#                       155 save cap), NO researched-keyword floor, NO founder
+#                       author binding, NO canonical/ogImage requirement, and
+#                       an explicit robots noindex directive (NOINDEX_ROBOTS).
+# Q8 HONESTY NOTE: by what live GHL mechanism a robots directive carried in
+# seoMeta is honored (page SEO setting, robots handling, or funnel-step
+# property) is UNVERIFIED - no approved test location exists, so the live
+# mechanism stays LIVE_PROOF_PENDING under prep Q8. This layer guarantees the
+# BUILD side: a purchase/thank-you step is never built or scored as an
+# SEO-bearing marketing step, and the noindex intent is always recorded in
+# the meta this code controls. It does not claim the live panel honors it.
+
+STEP_TYPE_MARKETING = "marketing"
+STEP_TYPE_PURCHASE = "purchase"
+STEP_TYPE_THANK_YOU = "thank_you"
+STEP_TYPES = (STEP_TYPE_MARKETING, STEP_TYPE_PURCHASE, STEP_TYPE_THANK_YOU)
+
+#: The robots directive recorded on every purchase/thank-you step's meta.
+NOINDEX_ROBOTS = "noindex, nofollow"
+
+# Step-type vocabularies, matched against a step's declared type first, then
+# its normalized name/slug. Thank-you tokens are checked before purchase
+# tokens during name inference: a post-purchase page (an order confirmation,
+# a receipt page) is the privacy-critical one, and it commonly carries an
+# "order" token in its name.
+_STEP_TYPE_EXPLICIT = {
+    STEP_TYPE_MARKETING: frozenset({
+        "marketing", "sales", "sales_page", "optin", "opt_in", "landing",
+        "lead", "webinar", "registration", "content"}),
+    STEP_TYPE_PURCHASE: frozenset({
+        "purchase", "checkout", "order", "order_form", "payment", "cart",
+        "billing", "orderform", "upsell", "downsell"}),
+    STEP_TYPE_THANK_YOU: frozenset({
+        "thank_you", "thankyou", "thank", "thanks", "confirmation",
+        "receipt", "success", "complete", "thank_you_page"}),
+}
+_STEP_TOKEN_SPLIT = re.compile(r"[^a-z0-9]+")
+
+
+def _normalize_step_token(value: str) -> str:
+    return _STEP_TOKEN_SPLIT.sub("_", (value or "").strip().lower()).strip("_")
+
+
+def classify_step_type(step) -> dict:
+    """Classify a funnel step as marketing / purchase / thank_you.
+
+    ``step`` may be a step name/slug string, or a manifest step dict with a
+    declared ``step_type``/``type`` (which wins when recognized) and/or a
+    ``name``/``slug``/``path`` to infer from. Returns
+    ``{step_type, basis}`` where basis is "explicit" (declared type),
+    "name" (inferred from the step name), or "default" (nothing purchase or
+    thank-you-like was found, so the step is treated as a marketing step:
+    the historical uniform behavior, and the only default that cannot
+    silently strip SEO from a public page). Name inference checks
+    thank-you tokens before purchase tokens (see the policy note above);
+    an unrecognized DECLARED type is never silently trusted either way: it
+    falls through to name inference and, failing that, the default."""
+    declared = ""
+    name = ""
+    if isinstance(step, dict):
+        declared = _normalize_step_token(
+            str(step.get("step_type") or step.get("type") or ""))
+        name = _normalize_step_token(
+            str(step.get("name") or step.get("slug") or step.get("path") or ""))
+    else:
+        name = _normalize_step_token(str(step or ""))
+    if declared:
+        for step_type, vocab in _STEP_TYPE_EXPLICIT.items():
+            if declared in vocab:
+                return {"step_type": step_type, "basis": "explicit"}
+    probe = name or declared
+    if probe:
+        for step_type in (STEP_TYPE_THANK_YOU, STEP_TYPE_PURCHASE,
+                          STEP_TYPE_MARKETING):
+            if probe in _STEP_TYPE_EXPLICIT[step_type]:
+                return {"step_type": step_type, "basis": "name"}
+        tokens = [t for t in probe.split("_") if t]
+        if tokens and tokens[0] == "thank" or "thankyou" in tokens \
+                or "thanks" in tokens:
+            return {"step_type": STEP_TYPE_THANK_YOU, "basis": "name"}
+        for step_type in (STEP_TYPE_THANK_YOU, STEP_TYPE_PURCHASE,
+                          STEP_TYPE_MARKETING):
+            if any(t in _STEP_TYPE_EXPLICIT[step_type] for t in tokens):
+                return {"step_type": step_type, "basis": "name"}
+    return {"step_type": STEP_TYPE_MARKETING, "basis": "default"}
+
+
+def seo_policy_for_step(step_type: str) -> dict:
+    """The SEO/privacy policy for one step type. Raises ``SeoValidationError``
+    on an unknown step type (a policy question is never defaulted silently)."""
+    if step_type == STEP_TYPE_MARKETING:
+        return {"step_type": step_type, "seo_required": True,
+                "robots": None, "keyword_gate": True, "author_gate": True,
+                "canonical_required": True}
+    if step_type in (STEP_TYPE_PURCHASE, STEP_TYPE_THANK_YOU):
+        return {"step_type": step_type, "seo_required": False,
+                "robots": NOINDEX_ROBOTS, "keyword_gate": False,
+                "author_gate": False, "canonical_required": False}
+    raise SeoValidationError(
+        f"HALT: unknown step type {step_type!r}; expected one of {STEP_TYPES}.")
+
+
+def build_private_step_seo_meta(
+    *,
+    title: str,
+    description: str | None = None,
+    language: str = SEO_DEFAULT_LANGUAGE,
+) -> dict:
+    """Build the PRIVACY seoMeta for a purchase / thank-you step. The step
+    still gets a real title (capped at ``SEO_TITLE_MAX``) and may carry a
+    description (capped at the ``SEO_DESC_MAX`` 155 save cap), but the
+    marketing gates do NOT apply: no researched-keyword floor, no founder
+    author, no canonical, no ogImage. The meta carries the explicit robots
+    noindex directive (``NOINDEX_ROBOTS``) so the step's privacy intent is
+    recorded in the object the build controls (live honoring mechanism:
+    prep Q8, LIVE_PROOF_PENDING)."""
+    title = (title or "").strip()
+    if not title:
+        raise SeoValidationError(
+            "HALT: a purchase/thank-you step still needs a real page title.")
+    if _is_placeholder_token(title):
+        raise SeoValidationError(
+            f"HALT: private-step title {title!r} is a placeholder.")
+    if len(title) > SEO_TITLE_MAX:
+        raise SeoValidationError(
+            f"HALT: private-step title is {len(title)} chars (> {SEO_TITLE_MAX}).")
+    description = (description or "").strip()
+    if len(description) > SEO_DESC_MAX:
+        raise SeoValidationError(
+            f"HALT: private-step description is {len(description)} chars "
+            f"(> {SEO_DESC_MAX}, the save-time cap).")
+    lang = (language or "").strip() or SEO_DEFAULT_LANGUAGE
+    return {
+        "title": title,
+        "description": description,
+        "keywords": [],
+        "author": "",
+        "canonicalUrl": "",
+        "ogImage": "",
+        "language": lang,
+        "links": [],
+        "tags": [],
+        "robots": NOINDEX_ROBOTS,
+    }
+
+
+def build_step_seo_meta(step, **seo_kwargs) -> dict:
+    """Step-type-aware SEO entry point. A MARKETING step goes through
+    :func:`build_seo_meta` with every kwarg unchanged. A PURCHASE or
+    THANK-YOU step is built by :func:`build_private_step_seo_meta` from the
+    ``title`` / ``description`` / ``language`` kwargs only: marketing-only
+    inputs (keywords, founder_name, canonical_url, og_image) are
+    intentionally NOT required and NOT applied to a private step."""
+    step_type = classify_step_type(step)["step_type"]
+    if step_type == STEP_TYPE_MARKETING:
+        return build_seo_meta(**seo_kwargs)
+    return build_private_step_seo_meta(
+        title=seo_kwargs.get("title", ""),
+        description=seo_kwargs.get("description"),
+        language=seo_kwargs.get("language", SEO_DEFAULT_LANGUAGE),
+    )
+
+
+def assert_step_seo_populated(seo_meta: dict | None, step, *,
+                              brand: str | None = None,
+                              page_copy: str | None = None) -> dict:
+    """Step-type-aware end-state gate (the step-aware sibling of
+    :func:`assert_seo_populated`). PURE verdict: ``{ok, reasons, step_type,
+    basis}``, never raises.
+
+    A marketing step is scored by the full ``assert_seo_populated`` gates. A
+    purchase/thank-you step is scored against the PRIVACY policy instead:
+    the robots noindex directive must be present, a real title must be
+    present within the cap, and a description (when present) must respect
+    the 155 save cap - the marketing gates (researched keywords, founder
+    author, canonical, ogImage) are NOT misapplied to it."""
+    classification = classify_step_type(step)
+    step_type = classification["step_type"]
+    if step_type == STEP_TYPE_MARKETING:
+        verdict = assert_seo_populated(seo_meta, brand=brand,
+                                       page_copy=page_copy)
+        return {"ok": verdict["ok"], "reasons": verdict["reasons"],
+                "step_type": step_type, "basis": classification["basis"]}
+    reasons: list[str] = []
+    if not isinstance(seo_meta, dict) or not seo_meta:
+        return {"ok": False, "reasons": ["seoMeta is absent/empty"],
+                "step_type": step_type, "basis": classification["basis"]}
+    if (seo_meta.get("robots") or "").strip().lower() != NOINDEX_ROBOTS:
+        reasons.append(
+            f"privacy gate: a {step_type} step must carry robots "
+            f"{NOINDEX_ROBOTS!r} (got {seo_meta.get('robots')!r}) - the "
+            "noindex intent is not recorded")
+    title = (seo_meta.get("title") or "").strip()
+    if not title:
+        reasons.append("privacy gate: private-step title is empty")
+    elif len(title) > SEO_TITLE_MAX:
+        reasons.append(
+            f"privacy gate: private-step title is {len(title)} chars "
+            f"(> {SEO_TITLE_MAX})")
+    description = (seo_meta.get("description") or "")
+    if len(description) > SEO_DESC_MAX:
+        reasons.append(
+            f"privacy gate: private-step description is {len(description)} "
+            f"chars (> {SEO_DESC_MAX}, the save-time cap)")
+    return {"ok": not reasons, "reasons": reasons,
+            "step_type": step_type, "basis": classification["basis"]}
+
+
 # ── Marker-string verification (A12.2 / A13.3 / C3) ───────────────────────────
 
 def verify_url(url: str, marker: str, timeout: int = 20) -> dict:
