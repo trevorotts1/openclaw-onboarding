@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TEST post-selection checkout (S79-04 draft)</title>
+<link rel="stylesheet" href="components.css">
+</head>
+<body>
+<main class="sig-checkout" data-mode="post_selection">
+  <h2>Review and pay</h2>
+
+  <!-- Selection summary: rendered from the VALIDATED selection only
+       (work/selection/selection_flow.py). A missing or expired selection
+       never reaches this page render; it resolves to the recovery state
+       below instead. -->
+  <section class="sig-selection-summary" aria-labelledby="selection-heading">
+    <h3 id="selection-heading">Your selected package</h3>
+    <p class="sig-price-line"><span>TEST Main Offer B</span><span>USD 197.00</span></p>
+    <p>Billing schedule: TEST one payment today (rendered from the validated selection)</p>
+    <p>Quantity: 1</p>
+    <a class="sig-change-package" href="#product-selection">Change package</a>
+  </section>
+
+  <!-- Recovery state (missing/expired selection): a choice, never a default. -->
+  <section class="sig-selection-summary" data-state="recovery" hidden>
+    <h3>We could not find your selection</h3>
+    <p>Your earlier selection is no longer available to this checkout, and we have not substituted a different package.</p>
+    <a class="sig-change-package" href="#product-selection">Choose your package again</a>
+  </section>
+
+  <!-- Reconfirmation state (offer or price changed since selection). -->
+  <section class="sig-selection-summary" data-state="reconfirm" hidden>
+    <h3>This offer changed since you selected it</h3>
+    <p>Please review the updated details below before you pay. Nothing has been charged.</p>
+  </section>
+
+  <!-- INCLUDE: offer-details.html -->
+  <!-- INCLUDE: order-bump.html -->
+  <!-- INCLUDE: guarantee-terms.html -->
+
+  <!-- NATIVE CHECKOUT SLOT: see combined-checkout.html. No homemade payment fields. -->
+  <div class="sig-native-slot" data-native-slot="checkout-form" role="group" aria-label="Secure checkout">
+    <p>Secure checkout loads here.</p>
+  </div>
+
+  <div class="sig-status-region" role="status" aria-live="polite"></div>
+</main>
+</body>
+</html>

@@ -101,6 +101,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 |---|---|---|---|
 | **71** blackceo-signature-page | "build me a landing page" · "build my landing page" · "create a BlackCEO landing page" | `~/.openclaw/skills/71-blackceo-signature-page/` | `universal-sops/signature-page-craft/` |
 | **78** signature-product-selection | "build a product selection page" · "compare my packages" · "a page to choose between my packages" | `~/.openclaw/skills/78-signature-product-selection/` | `universal-sops/funnel-craft/` |
+| **79** signature-order-form | "build my checkout page" · "build an order form" · "add an order bump" | `~/.openclaw/skills/79-signature-order-form/` | `universal-sops/funnel-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures
