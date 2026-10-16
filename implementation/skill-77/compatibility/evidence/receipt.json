@@ -1,41 +1,41 @@
 {
   "receipt": "skill77.cwe-041.evidence-receipt/v1",
   "unit": "CWE-041",
-  "generated_at": "2026-10-15T13:42:51.575Z",
+  "generated_at": "2026-10-16T10:09:40.674Z",
   "verdict": "PASS",
   "inputs": {
-    "compatibility_manifest_sha256": "b2d8f38fc7b41633a07ccd5e30bc359a3009251aecad38773194882803445ed5",
+    "compatibility_manifest_sha256": "d353a327df2447b3e1e5d16d92c1521be3674474f1f022d5f0d7b067e6256847",
     "descriptor_sha256": {
-      "onb-canonical.json": "f4864902e396318762dc7558a7dc2bdb16117b98048f94a06678e907651cb823",
-      "cc-composed.json": "6a5ac30cc36904a515acdd97b4b66bf8a673b05b536868397f25da94f88b8c40",
-      "nine99-distribution.json": "38a9a014e9878e9171c9e883f4af0fbf7d4f7b07e4764c409cfb579ee020f19d"
+      "onb-canonical.json": "9a4b1f589205720df661b3da8c032059117a3bb9421a9055b00ffea5438d5bf5",
+      "cc-composed.json": "9bd2232a700bc46a8d02d0b79e6dfb95523cd3326261818d6634daf05178aa6b",
+      "nine99-distribution.json": "89a0564c4b1bd7ce9c7567099cf539540b2b63ec5eda24b2116e8bda941ea812"
     },
     "cohort": [
       {
         "component": "onb-skill",
-        "commit": "4c5c690cc1615ebd2837f353238d4bb040b356e6"
+        "commit": "b25d8419a2abb593262d19ffb513197c04ef843f"
       },
       {
         "component": "command-center",
-        "commit": "f84c0a00c1b85c5dca99604616dc61478aa48e3a"
+        "commit": "c1a1418bd1ea160efcb44f574f431c121b554409"
       },
       {
         "component": "nine99-distribution",
-        "commit": "7e973ad13263536fdb5c563a7b34aba8a20837ad"
+        "commit": "60efc20ec2a273b26c78d911394967f0390db120"
       }
     ],
-    "canonical_aggregate_sha256": "f1c8fca3a3cf6c42990c645de1a5efc23e1a80d1ba0ad0039b1b1e35669d20aa",
+    "canonical_aggregate_sha256": "6b523e97b3b27daeb529bf798e6525065e4967337d2182d0880afcc1690e8dbf",
     "node_version": "v24.20.0",
     "runtime_verified": false
   },
   "trees": {
     "a": {
-      "root": "/home/hatch/workspace/skill77/tmp-scratch/cwe041-xxzobH/tree-a/77-council-of-wise-elders",
+      "root": "/home/hatch/workspace/skill77/tmp-scratch/cwe041-bhmr4t/tree-a/77-council-of-wise-elders",
       "skill_version": "v1.0.0",
       "note": "isolated copy of the accepted canonical tree, product installer"
     },
     "b": {
-      "root": "/home/hatch/workspace/skill77/tmp-scratch/cwe041-xxzobH/tree-b/77-council-of-wise-elders",
+      "root": "/home/hatch/workspace/skill77/tmp-scratch/cwe041-bhmr4t/tree-b/77-council-of-wise-elders",
       "skill_version": "v1.0.1",
       "note": "upgrade simulation: version bumped in the copy only, manifest and archive regenerated with the product bundle script, product installer"
     }
@@ -43,65 +43,65 @@
   "batteries": [
     {
       "battery": "negotiation-matrix.test.mjs",
-      "started_at": "2026-10-15T13:40:22.021Z",
+      "started_at": "2026-10-16T10:06:19.651Z",
       "exit": 0,
       "tests": 19,
       "pass": 19,
       "fail": 0,
       "skipped": 0,
-      "log": "/home/hatch/workspace/skill77/cwe-041/evidence/run-2026-10-15T13-38-13-394Z/negotiation-matrix.test.mjs.log"
+      "log": "/home/hatch/workspace/skill77/cwe-048/compat-evidence/negotiation-matrix.test.mjs.log"
     },
     {
       "battery": "not-ready-t116.test.mjs",
-      "started_at": "2026-10-15T13:40:25.878Z",
+      "started_at": "2026-10-16T10:06:23.006Z",
       "exit": 0,
       "tests": 4,
       "pass": 4,
       "fail": 0,
       "skipped": 0,
-      "log": "/home/hatch/workspace/skill77/cwe-041/evidence/run-2026-10-15T13-38-13-394Z/not-ready-t116.test.mjs.log"
+      "log": "/home/hatch/workspace/skill77/cwe-048/compat-evidence/not-ready-t116.test.mjs.log"
     },
     {
       "battery": "stale-worker-t060.test.mjs",
-      "started_at": "2026-10-15T13:40:38.480Z",
+      "started_at": "2026-10-16T10:06:33.028Z",
       "exit": 0,
       "tests": 3,
       "pass": 3,
       "fail": 0,
       "skipped": 0,
-      "log": "/home/hatch/workspace/skill77/cwe-041/evidence/run-2026-10-15T13-38-13-394Z/stale-worker-t060.test.mjs.log"
+      "log": "/home/hatch/workspace/skill77/cwe-048/compat-evidence/stale-worker-t060.test.mjs.log"
     },
     {
       "battery": "clean-install-t115.test.mjs",
-      "started_at": "2026-10-15T13:40:47.968Z",
+      "started_at": "2026-10-16T10:06:47.474Z",
       "exit": 0,
       "tests": 3,
       "pass": 3,
       "fail": 0,
       "skipped": 0,
-      "log": "/home/hatch/workspace/skill77/cwe-041/evidence/run-2026-10-15T13-38-13-394Z/clean-install-t115.test.mjs.log"
+      "log": "/home/hatch/workspace/skill77/cwe-048/compat-evidence/clean-install-t115.test.mjs.log"
     },
     {
       "battery": "preservation.test.mjs",
-      "started_at": "2026-10-15T13:41:40.238Z",
+      "started_at": "2026-10-16T10:08:11.800Z",
       "exit": 0,
       "tests": 2,
       "pass": 2,
       "fail": 0,
       "skipped": 0,
-      "log": "/home/hatch/workspace/skill77/cwe-041/evidence/run-2026-10-15T13-38-13-394Z/preservation.test.mjs.log"
+      "log": "/home/hatch/workspace/skill77/cwe-048/compat-evidence/preservation.test.mjs.log"
     },
     {
       "battery": "rollback.test.mjs",
-      "started_at": "2026-10-15T13:42:09.875Z",
+      "started_at": "2026-10-16T10:08:56.238Z",
       "exit": 0,
       "tests": 1,
       "pass": 1,
       "fail": 0,
       "skipped": 0,
-      "log": "/home/hatch/workspace/skill77/cwe-041/evidence/run-2026-10-15T13-38-13-394Z/rollback.test.mjs.log"
+      "log": "/home/hatch/workspace/skill77/cwe-048/compat-evidence/rollback.test.mjs.log"
     }
   ],
-  "evidence_dir": "/home/hatch/workspace/skill77/cwe-041/evidence/run-2026-10-15T13-38-13-394Z",
-  "scratch": "/home/hatch/workspace/skill77/tmp-scratch/cwe041-xxzobH"
+  "evidence_dir": "/home/hatch/workspace/skill77/cwe-048/compat-evidence",
+  "scratch": "/home/hatch/workspace/skill77/tmp-scratch/cwe041-bhmr4t"
 }

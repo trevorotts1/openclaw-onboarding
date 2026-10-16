@@ -41,12 +41,12 @@ test("manifest self-check passes and binds the accepted cohort", () => {
 });
 
 test("snapshots agree with the manifest's recorded identities", () => {
-  assert.equal(onb.tree_identity.computed_aggregate_sha256, "f1c8fca3a3cf6c42990c645de1a5efc23e1a80d1ba0ad0039b1b1e35669d20aa");
-  assert.equal(onb.tree_identity.computed_file_count, 291);
-  assert.equal(onb.tree_identity.archive.sha256, "f5129545037faac149ba72cb6d0640b163f04afe4ffea66d1f1047752388db3e");
-  assert.equal(onb.tree_identity.archive.bytes, 917_960);
-  assert.equal(nine.tree_identity.computed_aggregate_sha256, "2a6f672514c23ac8660ede34bb2b30b25d93a62e9c143529a4736abd9068e7ff");
-  assert.equal(nine.tree_identity.computed_file_count, 292);
+  assert.equal(onb.tree_identity.computed_aggregate_sha256, "6b523e97b3b27daeb529bf798e6525065e4967337d2182d0880afcc1690e8dbf");
+  assert.equal(onb.tree_identity.computed_file_count, 309);
+  assert.equal(onb.tree_identity.archive.sha256, "cdfdb8a6d903f79f101a8950666bbfe412d1e6ae1bc91a75134c080e5814552c");
+  assert.equal(onb.tree_identity.archive.bytes, 979_759);
+  assert.equal(nine.tree_identity.computed_aggregate_sha256, "0c11a84dbaef9bcfeac3f804079a3c04d5c27e9b63be015eef955ac5d19edd71");
+  assert.equal(nine.tree_identity.computed_file_count, 310);
   assert.equal(nine.canonical_source.source_commit, onb.commit);
   assert.equal(cc.contract_package_version, onb.contract_package_version);
   assert.equal(cc.generated_contracts.package_version, onb.contract_package_version);

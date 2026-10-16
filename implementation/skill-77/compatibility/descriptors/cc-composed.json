@@ -3,7 +3,7 @@
   "component": "command-center",
   "role": "command-center",
   "repository": "blackceo-command-center",
-  "commit": "f84c0a00c1b85c5dca99604616dc61478aa48e3a",
+  "commit": "c1a1418bd1ea160efcb44f574f431c121b554409",
   "app_package": {
     "name": "mission-control",
     "version": "7.3.4"

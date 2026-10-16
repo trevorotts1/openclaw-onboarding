@@ -3,7 +3,7 @@
   "component": "nine99-distribution",
   "role": "skill",
   "repository": "999-setup",
-  "commit": "7e973ad13263536fdb5c563a7b34aba8a20837ad",
+  "commit": "60efc20ec2a273b26c78d911394967f0390db120",
   "skill_version": "v1.0.0",
   "contract_package_version": "wise-elders.core/1.0.0",
   "schema_versions": {
@@ -29,21 +29,21 @@
   ],
   "canonical_source": {
     "repository": "trevorotts1/openclaw-onboarding",
-    "source_commit": "4c5c690cc1615ebd2837f353238d4bb040b356e6",
-    "canonical_aggregate_sha256": "f1c8fca3a3cf6c42990c645de1a5efc23e1a80d1ba0ad0039b1b1e35669d20aa",
-    "canonical_file_count": 291
+    "source_commit": "b25d8419a2abb593262d19ffb513197c04ef843f",
+    "canonical_aggregate_sha256": "6b523e97b3b27daeb529bf798e6525065e4967337d2182d0880afcc1690e8dbf",
+    "canonical_file_count": 309
   },
   "canonical_archive": {
     "file": "council-of-wise-elders.skill",
-    "sha256": "f5129545037faac149ba72cb6d0640b163f04afe4ffea66d1f1047752388db3e",
-    "bytes": 917960
+    "sha256": "cdfdb8a6d903f79f101a8950666bbfe412d1e6ae1bc91a75134c080e5814552c",
+    "bytes": 979759
   },
   "tree_identity": {
     "kind": "distribution",
-    "recorded_aggregate_sha256": "2a6f672514c23ac8660ede34bb2b30b25d93a62e9c143529a4736abd9068e7ff",
-    "recorded_file_count": 292,
-    "computed_aggregate_sha256": "2a6f672514c23ac8660ede34bb2b30b25d93a62e9c143529a4736abd9068e7ff",
-    "computed_file_count": 292
+    "recorded_aggregate_sha256": "0c11a84dbaef9bcfeac3f804079a3c04d5c27e9b63be015eef955ac5d19edd71",
+    "recorded_file_count": 310,
+    "computed_aggregate_sha256": "0c11a84dbaef9bcfeac3f804079a3c04d5c27e9b63be015eef955ac5d19edd71",
+    "computed_file_count": 310
   },
   "intentional_distribution_differences": {
     "count": 5,

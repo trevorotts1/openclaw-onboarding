@@ -3,7 +3,7 @@
   "component": "onb-skill",
   "role": "skill",
   "repository": "trevorotts1/openclaw-onboarding",
-  "commit": "4c5c690cc1615ebd2837f353238d4bb040b356e6",
+  "commit": "b25d8419a2abb593262d19ffb513197c04ef843f",
   "skill_version": "v1.0.0",
   "runtime_package": {
     "name": "@blackceo/wise-elders-core",
@@ -40,14 +40,14 @@
   ],
   "tree_identity": {
     "kind": "canonical",
-    "recorded_aggregate_sha256": "f1c8fca3a3cf6c42990c645de1a5efc23e1a80d1ba0ad0039b1b1e35669d20aa",
-    "recorded_file_count": 291,
-    "computed_aggregate_sha256": "f1c8fca3a3cf6c42990c645de1a5efc23e1a80d1ba0ad0039b1b1e35669d20aa",
-    "computed_file_count": 291,
+    "recorded_aggregate_sha256": "6b523e97b3b27daeb529bf798e6525065e4967337d2182d0880afcc1690e8dbf",
+    "recorded_file_count": 309,
+    "computed_aggregate_sha256": "6b523e97b3b27daeb529bf798e6525065e4967337d2182d0880afcc1690e8dbf",
+    "computed_file_count": 309,
     "archive": {
       "file": "council-of-wise-elders.skill",
-      "sha256": "f5129545037faac149ba72cb6d0640b163f04afe4ffea66d1f1047752388db3e",
-      "bytes": 917960
+      "sha256": "cdfdb8a6d903f79f101a8950666bbfe412d1e6ae1bc91a75134c080e5814552c",
+      "bytes": 979759
     }
   }
 }

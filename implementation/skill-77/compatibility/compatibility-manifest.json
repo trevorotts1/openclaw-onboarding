@@ -106,15 +106,15 @@
   },
   "purpose": "Machine-readable compatibility manifest for Skill 77 (Council of Wise Elders) across its three repositories, per directive Section 27.1. It binds the accepted release cohort by exact commit and content hash, states the wire and persistence contracts the cohort shares, and defines the version-negotiation rules and typed refusal codes that release adapters apply before any paired session may start. No version number in this manifest is guessed: every value is derived from the accepted trees by fixtures/derive-descriptors.mjs and checked against this manifest by the negotiation battery.",
   "release_cohort": {
-    "cohort_id": "skill77-accepted-cohort-2026-10-15",
+    "cohort_id": "skill77-final-cohort-2026-10-16",
     "members": [
       {
         "archive": {
-          "bytes": 917960,
+          "bytes": 979759,
           "file": "council-of-wise-elders.skill",
-          "sha256": "f5129545037faac149ba72cb6d0640b163f04afe4ffea66d1f1047752388db3e"
+          "sha256": "cdfdb8a6d903f79f101a8950666bbfe412d1e6ae1bc91a75134c080e5814552c"
         },
-        "commit": "4c5c690cc1615ebd2837f353238d4bb040b356e6",
+        "commit": "b25d8419a2abb593262d19ffb513197c04ef843f",
         "component": "onb-skill",
         "repository": "trevorotts1/openclaw-onboarding",
         "role": "canonical skill tree and portable core",
@@ -125,14 +125,14 @@
         "skill_folder": "77-council-of-wise-elders",
         "skill_version": "v1.0.0",
         "tree_identity": {
-          "aggregate_sha256": "f1c8fca3a3cf6c42990c645de1a5efc23e1a80d1ba0ad0039b1b1e35669d20aa",
-          "file_count": 291
+          "aggregate_sha256": "6b523e97b3b27daeb529bf798e6525065e4967337d2182d0880afcc1690e8dbf",
+          "file_count": 309
         }
       },
       {
         "cc_migration_allocated": false,
         "cc_migration_id": "PENDING_INTEGRATION_ALLOCATION_CWE005",
-        "commit": "f84c0a00c1b85c5dca99604616dc61478aa48e3a",
+        "commit": "c1a1418bd1ea160efcb44f574f431c121b554409",
         "component": "command-center",
         "contract_package_version": "wise-elders.core/1.0.0",
         "council_route_groups": [
@@ -148,12 +148,12 @@
         "role": "managed state authority and visual experience host"
       },
       {
-        "canonical_source_commit": "4c5c690cc1615ebd2837f353238d4bb040b356e6",
-        "commit": "7e973ad13263536fdb5c563a7b34aba8a20837ad",
+        "canonical_source_commit": "b25d8419a2abb593262d19ffb513197c04ef843f",
+        "commit": "60efc20ec2a273b26c78d911394967f0390db120",
         "component": "nine99-distribution",
         "distribution_identity": {
-          "aggregate_sha256": "2a6f672514c23ac8660ede34bb2b30b25d93a62e9c143529a4736abd9068e7ff",
-          "file_count": 292
+          "aggregate_sha256": "0c11a84dbaef9bcfeac3f804079a3c04d5c27e9b63be015eef955ac5d19edd71",
+          "file_count": 310
         },
         "intentional_distribution_differences": "Recorded in installer-registration/council-vendoring.json (999-setup) and DISTRIBUTION-RECONCILIATION.json inside the vendored folder: private_scope items dropped and sentences scrubbed under CWE-012 acceptance condition 3. A distribution tree is a valid skill identity only with exactly its recorded aggregate; any other aggregate is an unrecorded tree and is refused.",
         "repository": "999-setup",
