@@ -4,6 +4,54 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.62 - 2026-10-16 - BATCH-DSF-12: signature launch wave, skill-72 motion v2, skill-78 product selection, miniapp deletion
+
+Batch `BATCH-DSF-12` — four members merged together into ONE batch branch off
+`main` @ `0575636fd`, with one version bump and one entry for the whole batch,
+per the swarm plan.
+
+**The single bump is `v2.9.61` -> `v2.9.62`, and it is carried by member `#2119`
+inside this batch** (`skill-version.txt` and the `SKILL.md` frontmatter
+`version:` field moved together in that member's own commit). No second bump was
+applied: a second bump would have taken `v2.9.63` and skipped a patch. The batch
+diff against `main` therefore shows exactly one version move.
+
+- `#2137` (`s49/signature-launch-wave1` @ `efe25c46b`) — S49 Wave 1: the Signature Launch domain schemas (`shared-utils/signature_launch/domain/*.schema.json`, incl. `purchase-event.v1.0.schema.json` and `route-graph.schema.json`), the route compiler, the launch-plan validator (`49-signature-funnel/scripts/validate_launch_plan.py`) and its `signature-funnel-entry.sh` wiring. 45 files, +6114/-390.
+- `#2128` (`skill72-motion-v2` @ `cae98da0a`) — Skill 72 Motion Graphics V2, the integrated release candidate, plus the `shared-utils/motion-render-runtime` provision/rollback/probe path and the `skill72-motion-graphics-tests` workflow.
+- `#2143` (`martin/s78-signature-product-selection` @ `9c163b679`) — Skill 78 Signature Product Selection (Signature Launch L1 checkpoint): the new skill folder, its registration in `23-ai-workforce-blueprint/skill-department-map.json`, the regenerated `role-library/_index.json`, and the Layer-B "Skills You Operate" / dept-guide restamps that make the repo-consistency gate pass.
+- `#2119` (`martin/pres-fix-d5-miniapp-deletion` @ `558e2f718`) — FIX-PLAN Item 13 / B10 S10-D5: the deprecated `templates/role-library/presentations/intake-miniapp/` tree and `deck-intake-turngate.py` are deleted (-7515 lines), with the `presentation-intake-guard` and `version-consistency` workflows, the refresh/repair scripts and `create_role_workspaces.py` updated to match. Also carries this batch's single version bump.
+
+**Conflict resolution on this batch head (real, not papered over).** Merging
+`#2143` produced content conflicts in the two generated manifests,
+`23-ai-workforce-blueprint/templates/role-library/_index.json` and
+`universal-sops/_content-manifest.json`. Both were resolved the only way they can
+be: the conflict sides were taken, then the files were **regenerated from the
+merged tree by their own generators** and verified clean —
+
+- `python3 scripts/hash-universal-sops-manifest.py` -> `--check` PASS (115 files, all sha256 match)
+- `python3 23-ai-workforce-blueprint/scripts/hash-content-manifest.py` -> `--check` PASS (538 roles + 148 sops + 19 personas)
+
+The same two files conflicted when `origin/main` was merged into `#2128` and were
+resolved and regenerated identically on that member branch.
+
+**Area regressions, run on this batch head (BUILD-PLAN.md "Regression commands per area"):**
+
+- Service: `node --test 75-drama-song-ad-factory/mini-app/service/test/*.test.mjs` -> 111/111 pass; `service/prove/prove_push_optional.mjs` and `prove_service_boundaries.mjs` -> ALL CASES PASSED.
+- Page: `bash 75-drama-song-ad-factory/mini-app/ui/checks/run-all.sh` -> all 6 present checks passed.
+- Approvals module: `node 75-drama-song-ad-factory/mini-app/approvals/prove/approvals.prove.mjs` -> C1-C5 ALL PASS.
+- Bridge: `python3 75-drama-song-ad-factory/shared-bridge/checks/run_checks.py` -> ALL PASS.
+- Timer: `install-timer.sh --platform mac --dry-run` -> rc=0. `--platform hostinger` and `--platform contabo` -> rc=1 "identity refused", **identical on `origin/main`** (control run in the same shell), so it is a pre-existing condition of the instrument, not a regression from this batch.
+- Skill 75 core: `python3 -m pytest -q 75-drama-song-ad-factory/scripts/core` -> 2272 passed, 4 skipped, 0 failed.
+- `retired-artifacts-ledger-guard` -> `OK: _retired.json in sync with git history (artifacts=54 sops=8 roles=46 departments=17)`, rc=0. `#2119`'s ledger entry records the **real** deleting commit `689404ca2` rather than a synthetic `refs/pull/N/merge` hash, which is why it is stable across merge refs.
+
+**Race recorded as fact:** the launchd merge train opened its own batch PR
+`#2155` (`batch/auto-merge`, head `d7881fd35`) carrying exactly one member,
+`#2137`. At the time this batch was built, `#2137` was still `OPEN` with
+`mergedAt=null`, so it is carried here too; if `#2155` lands `#2137` first, the
+two merges are of the same commit and the second is a no-op.
+
+No behaviour outside SPEC.md was added and no bridge file was touched.
+
 ## v2.9.61 - 2026-10-16 - BATCH-AGN-24H-O3: W4-proof-U2 accepted platform proof, privacy-repaired receipt
 
 Batch `BATCH-AGN-24H-O3` - the accepted `W4-proof-U2` platform proof lands on
