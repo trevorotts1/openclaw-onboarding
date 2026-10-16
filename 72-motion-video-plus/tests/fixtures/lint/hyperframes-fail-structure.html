@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Unregistered Hyperframes composition (MG-030 lint fixture)</title>
+<style>
+  html, body { margin: 0; background: #F7F4EE; }
+  .clip { position: absolute; }
+</style>
+</head>
+<body>
+<div id="root" data-start="0" data-duration="6" data-width="1920" data-height="1080">
+  <div id="headline" class="clip" data-start="0" data-duration="6" data-track-index="0">Fixture headline</div>
+</div>
+<script src="gsap.min.js"></script>
+<script>
+  const tl = gsap.timeline({ defaults: { ease: "none" } });
+  tl.fromTo("#headline", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 0);
+</script>
+</body>
+</html>

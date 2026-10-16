@@ -1,0 +1,357 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Signature Launch approved-domain record",
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "location_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "launch_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "journey_mode": {
+      "enum": [
+        "single_simple",
+        "multiple_options",
+        "free_entry"
+      ]
+    },
+    "status": {
+      "enum": [
+        "collecting",
+        "awaiting_plan_approval",
+        "approved",
+        "building",
+        "blocked"
+      ]
+    },
+    "brand_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "brand_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "route_graph_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "route_graph_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "plan_approval_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "offers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "title": "Signature Launch offer",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "slot": {
+            "enum": [
+              "main",
+              "bump",
+              "upsell_1",
+              "downsell_1",
+              "upsell_2"
+            ]
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deliverables": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "entitlement_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "requires": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "excludes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "native_product_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prices": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "additionalProperties": false,
+              "title": "Approved price choice",
+              "properties": {
+                "price_choice_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "currency": {
+                  "type": "string",
+                  "pattern": "^[A-Z]{3}$"
+                },
+                "amount_minor": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "billing_type": {
+                  "enum": [
+                    "one_time",
+                    "recurring",
+                    "installment",
+                    "trial"
+                  ]
+                },
+                "native_price_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "schedule": {
+                  "type": "array",
+                  "items": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "title": "Schedule row",
+                    "properties": {
+                      "amount_minor": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "due": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "amount_minor",
+                      "due"
+                    ]
+                  }
+                },
+                "terms_source": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "approval_status": {
+                  "enum": [
+                    "provided",
+                    "recommended_unapproved",
+                    "approved",
+                    "unknown"
+                  ]
+                }
+              },
+              "required": [
+                "price_choice_id",
+                "currency",
+                "amount_minor",
+                "billing_type",
+                "native_price_id",
+                "schedule",
+                "approval_status"
+              ]
+            }
+          },
+          "source_kind": {
+            "enum": [
+              "owner",
+              "existing_verified_catalog",
+              "recommendation",
+              "test_fixture"
+            ]
+          },
+          "source_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "test_only": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "offer_id",
+          "slot",
+          "display_name",
+          "deliverables",
+          "exclusions",
+          "entitlement_ids",
+          "requires",
+          "excludes",
+          "native_product_id",
+          "prices",
+          "source_kind",
+          "source_ref",
+          "test_only"
+        ]
+      }
+    },
+    "extras": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "title": "Extra-offer flags",
+      "properties": {
+        "upsell_1": {
+          "type": "boolean"
+        },
+        "downsell_1": {
+          "type": "boolean"
+        },
+        "upsell_2": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "upsell_1",
+        "downsell_1",
+        "upsell_2"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "upsell_1": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "downsell_1": {
+                "const": false
+              },
+              "upsell_2": {
+                "const": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    "bump_enabled": {
+      "type": "boolean"
+    },
+    "image_provider": {
+      "enum": [
+        "kie",
+        "agnes",
+        "other_explicit"
+      ]
+    },
+    "source_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "test_only": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "location_id",
+    "launch_id",
+    "revision",
+    "journey_mode",
+    "status",
+    "brand_ref",
+    "brand_hash",
+    "route_graph_ref",
+    "route_graph_hash",
+    "plan_approval_ref",
+    "offers",
+    "extras",
+    "bump_enabled",
+    "image_provider",
+    "source_refs",
+    "test_only"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "approved",
+              "building"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "plan_approval_ref": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ]
+}

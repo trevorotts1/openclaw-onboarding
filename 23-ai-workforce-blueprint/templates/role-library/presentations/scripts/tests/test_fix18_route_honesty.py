@@ -70,17 +70,20 @@ LIMIT_20, RESERVE_20 = cap.ACCOUNT_LIMITS[(OLLAMA, TIER_20)]
 LIMIT_100, RESERVE_100 = cap.ACCOUNT_LIMITS[(OLLAMA, TIER_100)]
 _DS_CAPS = sorted(n for (p, _pl), n in cap.CAP_TABLE.items()
                   if p == "deepseek-direct")
-DS_SPAN = f"{_DS_CAPS[0]} to {_DS_CAPS[-1]}"
 
 # The mandated copy, carried as literals HERE so a module-side copy edit
-# fails this file instead of drifting. The DeepSeek span is the only
-# computed part, and it comes from CAP_TABLE, never a typed number.
+# fails this file instead of drifting. Until the owner ruling of
+# 2026-10-15 the DeepSeek part was computed from CAP_TABLE (the span the
+# table carried, 500 to 2500) and quoted as a cap far above deck scale;
+# the ruling settled that DeepSeek Direct has NO provider cap, so the
+# recommendation is now one full literal that quotes no number for
+# either recommended route, and _DS_CAPS above must stay empty (pinned
+# by test_no_deepseek_cap_exists_to_quote below).
 EXPECTED_RECOMMENDATION = (
     "Recommendation: for best results, use OpenRouter or DeepSeek "
     "Direct. Neither route holds a deck back with a provider "
-    "concurrency cap: OpenRouter has no provider concurrency cap at "
-    f"all, and DeepSeek Direct's cap ({DS_SPAN} at once) is far above "
-    "any deck this engine builds, so on those routes your machine is "
+    "concurrency cap: OpenRouter and DeepSeek Direct have no provider "
+    "concurrency cap at all, so on those routes your machine is "
     "the only limit."
 )
 EXPECTED_SPEED_WARNING = (
@@ -201,6 +204,18 @@ def test_recommendation_matches_the_mandated_copy_verbatim(tmp_path):
     assert "for best results, use OpenRouter or DeepSeek Direct" in text
     assert "no provider concurrency cap at all" in text
     assert "your machine is the only limit" in text
+
+
+def test_no_deepseek_cap_exists_to_quote():
+    """Owner ruling 2026-10-15 (EXEC-DS): DeepSeek Direct has NO provider
+    cap. The table rows the old copy read its span from are gone and
+    deepseek-direct stands in NO_CAP_PROVIDERS; if a row ever comes back
+    this fails before any copy can quote it as a cap again."""
+    assert _DS_CAPS == []
+    assert cap.PROVIDER_DEEPSEEK_DIRECT in cap.NO_CAP_PROVIDERS
+    text = rh.recommendation_text(cap)
+    assert "DeepSeek Direct's cap" not in text
+    assert "2500" not in text and "500" not in text
 
 
 def test_speed_warning_verbatim_and_no_fabricated_multiplier(tmp_path):

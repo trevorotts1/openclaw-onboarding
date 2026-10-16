@@ -1,0 +1,43 @@
+{
+  "schema_version": "2.0",
+  "id": "falls-02",
+  "component_id": "C08",
+  "component_version": "1.0.0",
+  "engine": "remotion",
+  "layout_variant": "landscape",
+  "duration_frames": 180,
+  "asset_ids": [],
+  "data_path": "dataset.json",
+  "design_path": "design.json",
+  "copy": {
+    "headline": "The cash balance walks below zero",
+    "disclosure": "Illustrative example"
+  },
+  "motion": {
+    "kind": "waterfall_steps",
+    "start_frame": 15,
+    "end_frame_exclusive": 75,
+    "hold_to_frame_exclusive": 180,
+    "overshoot_data": false
+  },
+  "semantic_motion_assertions": [
+    {
+      "id": "falls-02-bounds",
+      "kind": "timeline_bounds",
+      "subject_ids": [
+        "falls-02"
+      ],
+      "frame": 75,
+      "expected_values": [],
+      "tolerance": 0,
+      "unit": "frames",
+      "evidence": [
+        "geometry"
+      ]
+    }
+  ],
+  "contribution_colors": {
+    "positive": "#2F7D4F",
+    "negative": "#B03A2E"
+  }
+}

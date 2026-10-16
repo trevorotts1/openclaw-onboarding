@@ -1,0 +1,62 @@
+{
+  "items": [
+    {
+      "id": "q-avoided-conversation",
+      "purpose": "The seat's owned question. Every card starts here; avoidance is the primary signal this seat reads.",
+      "question": "What difficult conversation or vulnerable action is being avoided here, and what is the avoidance costing?"
+    },
+    {
+      "id": "q-boundaries-clear",
+      "purpose": "Tests the Boundaries element, following the self-check recorded in the supplementary notes: clarity about what is okay and not okay.",
+      "question": "Were the boundaries in this situation stated clearly enough that everyone knew what was okay and what was not okay?",
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c017"
+      ]
+    },
+    {
+      "id": "q-reliability-record",
+      "purpose": "Tests the Reliability element against the observable record rather than intentions.",
+      "question": "What was said would happen, and what observably happened?",
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c008"
+      ]
+    },
+    {
+      "id": "q-accountability-amends",
+      "purpose": "Tests the Accountability element: separates an apology from a repair.",
+      "question": "What corrective action follows the apology, owned by whom and due when?",
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c008"
+      ]
+    },
+    {
+      "id": "q-vault-check",
+      "purpose": "Tests the Vault element before any option that involves disclosure.",
+      "question": "Whose information would this share, and is it ours to share?",
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c008"
+      ]
+    },
+    {
+      "id": "q-expectations-examined",
+      "purpose": "Applies the examined-versus-stealth expectation test recorded in the notes' decision logic.",
+      "question": "Is this expectation examined and expressed, or stealth and unexamined?",
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c016"
+      ]
+    },
+    {
+      "id": "q-emotion-named",
+      "purpose": "Applies emotional granularity: precise naming first, and the self-versus-behavior judgment distinction from the notes.",
+      "question": "What is the specific emotion here, named precisely, and is the judgment aimed at a behavior or at a person's worth?",
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c013",
+        "ev-brene-brown-atlas-of-the-heart-c019"
+      ]
+    }
+  ],
+  "note": "Signature questions for this seat. Questions tied to recorded concepts cite their evidence units; the owned question and its protocol questions are the seat's own operating questions.",
+  "pack_owner_unit": "CWE-019",
+  "seat_id": "brene-brown",
+  "status": "built"
+}

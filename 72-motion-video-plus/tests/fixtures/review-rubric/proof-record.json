@@ -1,0 +1,14 @@
+{
+  "assertions": [],
+  "case_id": "fixture-case",
+  "category": null,
+  "component_id": "C05",
+  "exit_code": 0,
+  "findings": [],
+  "item": "MG-032",
+  "job_id": "fixture-review-job",
+  "kind": "motion_proof_record",
+  "scene_id": "bar-01",
+  "schema_version": "1.0",
+  "verdict": "pass"
+}

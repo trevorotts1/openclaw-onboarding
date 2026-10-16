@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "item": "MG-039",
+  "kind": "standalone_placement_metadata",
+  "job_id": "fixture-standalone-silent",
+  "mode": "standalone_video",
+  "placement": "full_frame",
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "fps": 30,
+  "total_frames": 405,
+  "video_profile": "h264_opaque",
+  "poster_frame": 390,
+  "playback": {
+    "start": "automatic",
+    "repeat": "once",
+    "end": "hold_final"
+  },
+  "publishing": "No hosted platform and no upload integration: publishing stays in the existing owning workflow. This record and the delivery record are the authorized destination for this build."
+}

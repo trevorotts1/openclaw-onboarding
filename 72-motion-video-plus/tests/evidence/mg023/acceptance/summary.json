@@ -1,0 +1,12 @@
+{
+  "allOk": true,
+  "examples": {
+    "failure-vocabulary": true,
+    "inherited": true,
+    "musicsfx": true,
+    "noaudio": true,
+    "ownmix": true,
+    "synthown": true
+  },
+  "item": "MG-023"
+}

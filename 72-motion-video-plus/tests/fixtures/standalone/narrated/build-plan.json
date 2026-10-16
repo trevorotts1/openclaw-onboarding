@@ -1,0 +1,91 @@
+{
+  "schema_version": "1.0",
+  "item": "MG-039",
+  "kind": "standalone_build_plan",
+  "job_id": "fixture-standalone-narrated",
+  "scenes": [
+    {
+      "id": "open-reveal",
+      "role": "opening",
+      "shot_scale": "wide"
+    },
+    {
+      "id": "detail-zoom",
+      "role": "development",
+      "shot_scale": "close"
+    },
+    {
+      "id": "proof-chart",
+      "role": "proof_peak",
+      "shot_scale": "medium"
+    },
+    {
+      "id": "final-state",
+      "role": "ending",
+      "shot_scale": "medium"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t-open-detail",
+      "from_scene_id": "open-reveal",
+      "to_scene_id": "detail-zoom",
+      "frames": 15,
+      "owner_scene_id": "open-reveal"
+    },
+    {
+      "id": "t-detail-proof",
+      "from_scene_id": "detail-zoom",
+      "to_scene_id": "proof-chart",
+      "frames": 15,
+      "owner_scene_id": "detail-zoom"
+    },
+    {
+      "id": "t-proof-final",
+      "from_scene_id": "proof-chart",
+      "to_scene_id": "final-state",
+      "frames": 15,
+      "owner_scene_id": "proof-chart"
+    }
+  ],
+  "poster": {
+    "frame": 390,
+    "rule": "Directive Section 17.2: the poster is a stable readable proof or final state. The declared poster frame must land inside the ending scene's designed hold (at or after its hold_start cue, before the program end) and outside every transition overlap; it is extracted from the assembled final MP4 and measured (dimensions and mean luminance) before registration."
+  },
+  "audio": {
+    "narration_tones_hz": {
+      "open-reveal": 300,
+      "detail-zoom": 380,
+      "proof-chart": 470,
+      "final-state": 560
+    },
+    "narration_amplitude": 0.5,
+    "music": {
+      "kind": "supplied",
+      "file": "music.wav",
+      "generation": {
+        "tones_hz": [
+          110,
+          165,
+          220
+        ],
+        "amplitude_each": 0.22,
+        "lowpass_hz": 900
+      }
+    },
+    "sfx": [
+      {
+        "id": "sfx-proof",
+        "scene_id": "proof-chart",
+        "frame": 225,
+        "tone_hz": 880,
+        "amplitude": 0.5,
+        "duration_seconds": 0.25
+      }
+    ],
+    "loudness_target": {
+      "integratedLufs": -14.0,
+      "truePeakDb": -1.0
+    }
+  }
+}

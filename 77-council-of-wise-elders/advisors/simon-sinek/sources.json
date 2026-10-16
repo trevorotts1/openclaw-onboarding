@@ -1,0 +1,723 @@
+{
+  "seat_id": "simon-sinek",
+  "pack_owner_unit": "CWE-013",
+  "status": "authored",
+  "document": "advisor pack source ledger for the simon-sinek seat",
+  "export_basis": {
+    "format": "wise-elders.skill22-export/v1",
+    "exported_at": "2026-10-14T13:41:08.363Z",
+    "package_content_sha256": "c75d287ab72d561927a640a5b8cffc202800dd5a86c91435e8e61ce72998892d",
+    "note": "Records and evidence IDs, locators, and hashes are carried from the CWE-011 export package for this seat. Extension fields of the export records are not part of the Section 8.3 contract and are not copied."
+  },
+  "notes": [
+    "Both records are quality unverified and rights reference_only, the export's own honest labels, carried unchanged. Rights reference_only means paraphrase-only use; this pack contains no verbatim excerpts and no quotations.",
+    "content_sha256 is the hash of the Skill 22 derivative artifact extraction-notes.md for each work, per the export's content_hash_basis. It is not a hash of the published book.",
+    "retrieved_at is the export package's exported_at, substituted because the export carries no retrieval timestamp for the underlying Skill 22 material. The substitution follows the accepted CWE-012 integration adapter and is disclosed here rather than presented as an original retrieval date.",
+    "The export carries 333 quotation candidates for this seat. Zero are verified against retained source text (CWE-012 ran all of them through the tuple verifier; every one was rejected QUOTE_TEXT_NOT_IN_SOURCE). No quotation candidate is carried into this pack as evidence, and nothing in this pack is a quotation.",
+    "Concept units c001 (author background framing) and c011 (a list of quote candidates) from each work's export set are not carried as pack evidence; the remaining 18 concept units per work are carried with authored paraphrases."
+  ],
+  "records": [
+    {
+      "source_id": "src-simon-sinek-start-with-why",
+      "work_id": "work-start-with-why",
+      "work_title": "Start with Why",
+      "credited_authors": [
+        "Simon Sinek"
+      ],
+      "original_speaker": null,
+      "source_type": "book",
+      "publisher_or_host": null,
+      "edition_or_publication_date": null,
+      "retrieved_at": "2026-10-14T13:41:08.363Z",
+      "canonical_url": "https://simonsinek.com/books/start-with-why",
+      "private_asset_id": null,
+      "content_sha256": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "page",
+          "value": "p. 1"
+        },
+        {
+          "kind": "page",
+          "value": "p. 85-86"
+        },
+        {
+          "kind": "page",
+          "value": "p. 7"
+        },
+        {
+          "kind": "page",
+          "value": "p. 17"
+        },
+        {
+          "kind": "page",
+          "value": "p. 35"
+        },
+        {
+          "kind": "page",
+          "value": "p. 6"
+        },
+        {
+          "kind": "page",
+          "value": "p. 19"
+        },
+        {
+          "kind": "page",
+          "value": "p. 7"
+        },
+        {
+          "kind": "page",
+          "value": "p. 42"
+        },
+        {
+          "kind": "page",
+          "value": "p. 63"
+        }
+      ],
+      "quality": "unverified",
+      "evidence": [
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c002",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 17"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Most organizations cannot say why their customers choose them or why their employees stay. They know what they do, and sometimes how they do it, but the cause underneath is unstated, so decisions default to features and price.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c003",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 42"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The root problem is direction of communication: people and companies speak from the outside in, leading with products and features, and fall back on manipulations such as price cuts, promotions, fear, and novelty because they do not understand how decisions form around belief and feeling.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c004",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 41"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The Golden Circle is a three-level model: WHY, the purpose, cause, or belief; HOW, the actions and principles that realize it; WHAT, the products and results. Clarity of WHY comes first, and very few organizations can articulate theirs.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c005",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 18"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The foundational principle: people respond to why something exists, its purpose and cause, before they respond to what it is. Trust and loyalty follow a belief made visible in action, not a longer feature list.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c006",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 18"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The transformation the book describes runs from manipulation-driven transactions, bought with price, promotions, fear, peer pressure, or novelty, toward inspiration-driven loyalty, where customers and employees stay because they believe what the organization believes.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c007",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 41"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The book works through pointed questions that force a leader to state a cause: why the work exists, why anyone should care, and why customers and employees chose this organization over another.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c008",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 42"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The Golden Circle diagram, three concentric levels with WHY at the center, is the working tool: a map for testing messages, offers, hires, and decisions against the stated purpose before anything ships.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c009",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 52"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Objections based on product quality are answered by separating levels: quality is a WHAT. Good products matter, but a good product alone does not explain why customers stay loyal when a competitor matches it.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c010",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 82"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The teaching voice uses short declarative claims, deliberate repetition of the central principle, and named contrasts, leaders versus those who lead, manipulation versus inspiration, so the idea stays portable and testable.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c012",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 15"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The repeatable application system runs in order: find clarity of WHY, align the HOW actions and the WHAT proof behind it, then use the circle as a filter for every instruction, course of action, and desired result.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c013",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 30"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The quality bar is loyalty, not repeat transactions: people willing to turn down a better product or a better price to keep doing business with you. Repeat business bought by discounts does not meet the bar.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c014",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 54"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Execution rules include never violating the WHY: when a WHY goes fuzzy, the growth, loyalty, and inspiration that produced the original success become much harder to maintain.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c015",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 195"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The Split is the central failure pattern: as a company grows, attention shifts from the founding WHY to measurable WHATs, purpose goes fuzzy, and the organization splits into what it does and why it stopped saying why.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c016",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 85"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Decision logic is the Golden Circle Filter: when the WHY is known, a decision can be tested against it directly, which gives a confidence check stronger than opinion or rank.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c017",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 81"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The self-review is the balance verification: authenticity means the three levels are in balance, WHY clarity, HOW discipline, and WHAT proof consistent with one another and with observed behavior.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c018",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 71"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Work on purpose is done when the WHY is known and stated clearly enough for others to act on it. If the organization cannot say why it does what it does, no customer or employee can say it either.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c019",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 41-42"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The amateur-to-expert gap is focus: amateurs fixate on WHAT, products, features, and services, while experts start from WHY, purpose, cause, and belief, and let the WHATs follow.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-start-with-why-c020",
+          "source_id": "src-simon-sinek-start-with-why",
+          "source_version": "98ca065cced77c6372fbf4f23256f0759c017fd1abc5f5e111894c8d5c640288",
+          "locator": {
+            "kind": "page",
+            "value": "p. 93"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Applied professionally, the methodology starts with leadership: leading means inspiring people toward a cause, which is different from holding the highest rank. The seat uses this to test whether a decision would still make sense described as a cause people can join.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        }
+      ]
+    },
+    {
+      "source_id": "src-simon-sinek-find-your-why",
+      "work_id": "work-find-your-why",
+      "work_title": "Find Your Why",
+      "credited_authors": [
+        "Simon Sinek"
+      ],
+      "original_speaker": null,
+      "source_type": "book",
+      "publisher_or_host": null,
+      "edition_or_publication_date": null,
+      "retrieved_at": "2026-10-14T13:41:08.363Z",
+      "canonical_url": "https://simonsinek.com/books/find-your-why",
+      "private_asset_id": null,
+      "content_sha256": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "section",
+          "value": "item 1: Author Background and Authority"
+        },
+        {
+          "kind": "section",
+          "value": "item 2: The Central Problem"
+        },
+        {
+          "kind": "section",
+          "value": "item 3: The Root Cause of Human Struggle"
+        },
+        {
+          "kind": "section",
+          "value": "item 4: The Complete Methodology - Every Step"
+        },
+        {
+          "kind": "section",
+          "value": "item 5: Non-Negotiable Principles"
+        },
+        {
+          "kind": "section",
+          "value": "item 6: The Transformation Arc"
+        },
+        {
+          "kind": "section",
+          "value": "item 7: Coaching Questions"
+        },
+        {
+          "kind": "section",
+          "value": "item 8: Tools, Exercises, and Practices"
+        },
+        {
+          "kind": "section",
+          "value": "item 9: Objection Handling and Resistance"
+        },
+        {
+          "kind": "section",
+          "value": "item 10: Author Voice and Language"
+        }
+      ],
+      "quality": "unverified",
+      "evidence": [
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c002",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 2: The Central Problem"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "This book exists because the earlier one made the case for WHY without giving steps to find it. Its central problem is practical: how a person or team actually discovers a WHY instead of inventing a slogan.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c003",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 3: The Root Cause of Human Struggle"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The root difficulty is communicative and biological: the part of the brain that handles language deals in WHAT-level facts, while feelings and gut decisions sit elsewhere, so purpose is felt before it can be said and must be drawn out through stories.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c004",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 4: The Complete Methodology - Every Step"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The discovery method is a partner process: gather specific stories from your life or the organization's history, tell them to an objective partner, let the partner mine them for recurring themes, and draft a WHY statement from those themes.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c005",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 5: Non-Negotiable Principles"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "A WHY is discovered, not created. It describes who a person or organization already is at their natural best; it is not an aspiration, a market position, or a statement of who they would like to become.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c006",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 6: The Transformation Arc"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The transformation arc runs from operating without a clear purpose, through the split that arrives as success shifts focus from WHY to WHAT, toward the fulfillment of working for a cause larger than the task list.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c007",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 7: Coaching Questions"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Partner questions are feeling-focused and story-specific: how an experience felt, what was loved about it, and what contribution the teller made to something beyond themselves.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c008",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 8: Tools, Exercises, and Practices"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Exercises include Peaks and Valleys: draw a timeline, plot fulfilling memories above the line and painful ones below, then read the themes across both, because the WHY shows up in the hard stories as well as the happy ones.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c009",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 9: Objection Handling and Resistance"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The objection that WHY work is fluffy is answered on the book's own terms: if the biology of decision-making is fluffy, then this is fluff, because the WHY sits at the center of how humans actually decide and trust.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c010",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 10: Author Voice and Language"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The writing voice is optimistic, encouraging, and service-oriented, uses an inclusive we, stays conversational while remaining direct, and leans on metaphor and visual structure to make the method memorable.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c012",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 12: The Repeatable Execution System"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The repeatable system: secure an objective partner who has not heard your stories, gather more stories than you need, tell the specific ones, identify themes together, draft the statement, then refine it against the HOWs.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c013",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 13: The Quality Bar"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The quality bar for a WHY statement is one simple, clear sentence in the form: to [contribution] so that [impact]. Simple does not mean easy; one sentence is the lowest common denominator that keeps the statement usable.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c014",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 14: Non-Negotiable Execution Rules"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Process rules: never discover alone, and never use aspirational language. The statement and its HOWs express who you are at your natural best, not who you want to become someday.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c015",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 15: Failure Patterns"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Discovery fails in predictable ways: the storyteller tries to play both roles and identify their own themes, or the stories stay general and likable instead of specific, so no real theme can surface.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c016",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 16: Decision Logic"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Decision logic is a two-step filter: first, does this decision or opportunity align with the WHY; second, does it align with the HOWs, the specific guiding principles that prove the WHY in action.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c017",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 17: Self-Review Protocol"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The self-review is the Friends Exercise: ask the people closest to you what specifically about you made them choose the friendship, and check whether their answers match the themes in your draft statement.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c018",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 18: Definition of Done"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Discovery is done when the statement is drafted in the to-so-that form and rests on specific origin stories, at least five or six shared in the session and more gathered, rather than on adjectives chosen in a meeting.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c019",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 19: The Amateur-to-Expert Gap"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The amateur-to-expert gap is specificity: amateurs tell general stories, experts tell specific moments with sensory and emotional detail, and only the specific stories carry themes a partner can find.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        },
+        {
+          "evidence_id": "ev-simon-sinek-find-your-why-c020",
+          "source_id": "src-simon-sinek-find-your-why",
+          "source_version": "858619f10c91dcd805d57e021c40d538a7507472bfbee7b6f97c8f0a4a2f8887",
+          "locator": {
+            "kind": "section",
+            "value": "item 20: Professional Application"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Professionally, the method applies to hiring and talent work: recruit people who believe what the organization believes, cultural fit around the WHY, rather than hiring for skills alone and hoping purpose follows.",
+          "claim_ids": [],
+          "seat_id": "simon-sinek"
+        }
+      ]
+    }
+  ]
+}

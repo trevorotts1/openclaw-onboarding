@@ -1,0 +1,43 @@
+{
+ "skill": "78",
+ "slug": "signature-product-selection",
+ "name": "signature-product-selection",
+ "client_facing": true,
+ "description": "Builds the Signature Product Selection page for a launch with multiple meaningful packages: exact offer comparison, inclusions/exclusions, price and billing-schedule clarity, and a validated selection handed to native checkout. Invoked only when the approved launch has meaningful options; one simple offer skips it.",
+ "departments": [
+  "web-development",
+  "marketing",
+  "funnels"
+ ],
+ "roles": [
+  {
+   "dept": "web-development",
+   "primary": true,
+   "slug": "funnel-builder-specialist"
+  },
+  {
+   "dept": "web-development",
+   "primary": false,
+   "slug": "landing-page-specialist"
+  },
+  {
+   "dept": "marketing",
+   "primary": false,
+   "slug": "conversion-copywriter"
+  },
+  {
+   "dept": "funnels",
+   "primary": false,
+   "slug": "ghl-funnel-build-specialist"
+  }
+ ],
+ "intent_triggers": [
+  "build a product selection page",
+  "compare my packages",
+  "a page to choose between my packages",
+  "pricing options page for my launch"
+ ],
+ "execution_sops": [
+  "funnel-craft"
+ ]
+}

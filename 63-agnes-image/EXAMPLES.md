@@ -24,7 +24,7 @@ Teach Yourself Protocol first.
 DO NOT PROCEED PAST THIS POINT WITHOUT TYP CONFIRMED.
 
 ══════════════════════════════════════════════════════════════════
-AGNES IMAGE 2.1 FLASH - REAL EXAMPLES
+AGNES IMAGE - REAL EXAMPLES (default model 2.5 Flash)
 ══════════════════════════════════════════════════════════════════
 
 Copy-paste curl commands. Replace YOUR_API_KEY with the AGNES_AI_API_KEY value
@@ -42,7 +42,7 @@ curl https://apihub.agnes-ai.com/v1/images/generations \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "agnes-image-2.1-flash",
+    "model": "agnes-image-2.5-flash",
     "prompt": "A cinematic product hero image for a desktop monitor wallpaper, clean lighting, high detail",
     "size": "2K",
     "ratio": "16:9",
@@ -71,7 +71,7 @@ curl https://apihub.agnes-ai.com/v1/images/generations \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "agnes-image-2.1-flash",
+    "model": "agnes-image-2.5-flash",
     "prompt": "Motivational quote poster: bold white text saying BELIEVE IN YOURSELF on a gradient from deep purple to midnight blue, golden sparkle particles, cinematic feel",
     "size": "2K",
     "ratio": "9:16",
@@ -90,7 +90,7 @@ curl https://apihub.agnes-ai.com/v1/images/generations \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "agnes-image-2.1-flash",
+    "model": "agnes-image-2.5-flash",
     "prompt": "A clean product photo of a glass cube on a white studio background, soft shadows, high detail",
     "size": "1K",
     "ratio": "1:1",
@@ -109,15 +109,16 @@ EXAMPLE 4: IMAGE-TO-IMAGE FROM A PUBLIC URL
 What we are doing: restyle an existing image while preserving its composition.
 The input image goes in extra_body.image. No tags are needed.
 
-NOTE: a reference image is attached, so the prompt MUST carry the
-style-reference-only directive verbatim (SKILL.md, mandatory when any
-reference is attached).
+NOTE: the reference image in this example is a STYLE reference, so the prompt
+MUST carry the style-reference-only directive verbatim (SKILL.md, reference
+purposes). A logo/identity reference would instead carry the preserve-the-mark
+rule, never this directive.
 
 curl https://apihub.agnes-ai.com/v1/images/generations \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "agnes-image-2.1-flash",
+    "model": "agnes-image-2.5-flash",
     "prompt": "Use the attached images only as style reference for color grading, lighting, and composition -- do not copy their subjects, faces, or text. Transform the daytime street into a rain-soaked cyberpunk night with neon reflections, preserving the original street layout, camera angle, and building shapes",
     "size": "2K",
     "ratio": "16:9",
@@ -133,9 +134,10 @@ EXAMPLE 5: IMAGE-TO-IMAGE FROM A LOCAL FILE (DATA URI)
 
 When the source image is on your box (not a public URL), inline it as a Data URI.
 
-NOTE: a reference image is attached, so the prompt MUST carry the
-style-reference-only directive verbatim (SKILL.md, mandatory when any
-reference is attached).
+NOTE: the reference image in this example is a STYLE reference, so the prompt
+MUST carry the style-reference-only directive verbatim (SKILL.md, reference
+purposes). A logo/identity reference would instead carry the preserve-the-mark
+rule, never this directive.
 
 # Build the data URI from a local PNG:
 B64="data:image/png;base64,$(base64 -i input.png | tr -d '\n')"
@@ -144,7 +146,7 @@ curl https://apihub.agnes-ai.com/v1/images/generations \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "agnes-image-2.1-flash",
+    "model": "agnes-image-2.5-flash",
     "prompt": "Use the attached images only as style reference for color grading, lighting, and composition -- do not copy their subjects, faces, or text. Make the object matte black while preserving the original composition",
     "size": "1K",
     "extra_body": {

@@ -1,0 +1,246 @@
+{
+  "item": "MG-037",
+  "title": "Implement the desktop VSL handoff",
+  "commands": {
+    "produce": "python3 scripts/vsl_handoff.py produce tests/fixtures/vsl/handoff-desktop.json --work <work>",
+    "parent_media": "python3 tests/fixtures/vsl/make_parent_media.py <dir>",
+    "assemble": "python3 scripts/vsl_handoff.py assemble-parent tests/fixtures/vsl/handoff-desktop.json --return-dir <return> --media-spec <spec> --out <final.mp4> --work <work>",
+    "motion_proof": "critique_bundle.py build (insert, beats at case checkpoints) + node scripts/vsl-proof.mjs --case <case> --video <insert.mp4> --coverage <coverage> --job-dir <staged package>",
+    "qc_insert": "python3 <wt-mg034>/72-motion-video-plus/scripts/qc.py check --job-dir <staged package> --plan <plan.json> --coverage <coverage> --motion-proof <record> (qc.py source: MG-034 worktree commit 5aa290b06, not yet merged into this branch)",
+    "qc_vsl": "python3 <wt-mg034>/72-motion-video-plus/scripts/qc.py check --plan <parent plan.json> --media <media.json> --final <final-vsl.mp4> --coverage <coverage> --approved-intervals <work>/qc-approved-intervals.json"
+  },
+  "return_package": {
+    "insert_mp4_sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+    "insert_mp4_bytes": 62659,
+    "poster_sha256": "8bd9efd480e36ecf6ddca0bd7299ce6e271c927546c42adb43123c573a756b4a",
+    "poster_frame": 150,
+    "engine": "remotion",
+    "timing": {
+      "slot": {
+        "start_frame": 900,
+        "end_frame_exclusive": 1080
+      },
+      "cue_id": "fixture-cue",
+      "cue_frame": 900,
+      "insert_duration_frames": 180,
+      "placed_start_frame": 900,
+      "placed_end_frame_exclusive": 1080,
+      "compiled_timeline_path": "compiled-timeline.json",
+      "sidecar_path": "timeline-sidecar.json"
+    },
+    "approval_authority_status": "not_verified"
+  },
+  "assembly": {
+    "verdict": "pass",
+    "assembled_sha256": "024ef6f53c71ac41fbf6e034f67a25c118f29efe14e2d4fe92916e48295bc3b8",
+    "decoded_frames": 1440,
+    "plan_total_frames": 1440,
+    "duration_seconds": 48.0,
+    "decoded_audio_samples": 2304000,
+    "plan_total_samples": 2304000,
+    "aac_padding_samples_observed": 0,
+    "cue": {
+      "id": "fixture-cue",
+      "resolved_frame": 900,
+      "slot_start_frame": 900,
+      "first_frame_delta": 0
+    },
+    "checks": {
+      "plan_totals": {
+        "verdict": "pass",
+        "observed": {
+          "plan_total_frames": 1440,
+          "decoded_frames": 1440,
+          "plan_total_samples": 2304000,
+          "decoded_audio_samples": 2304000,
+          "duration_seconds": 48.0
+        }
+      },
+      "cue_resolved": {
+        "verdict": "pass",
+        "observed": {
+          "cue_id": "fixture-cue",
+          "resolved_frame": 900,
+          "slot_start_frame": 900,
+          "handoff_cue_frame": 900
+        }
+      },
+      "insert_first_frame": {
+        "verdict": "pass",
+        "observed": {
+          "parent_frame": 900,
+          "bar_widths": [
+            0,
+            0,
+            0
+          ],
+          "expected": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "boundary_switch": {
+        "verdict": "pass",
+        "observed": {
+          "mean_abs_diff_frames_899_900": 126.261
+        }
+      },
+      "insert_motion_in_place": {
+        "verdict": "pass",
+        "observed": {
+          "mid_parent_frame": 945,
+          "mid_widths": [
+            240,
+            360,
+            600
+          ],
+          "mid_expected": [
+            240.0,
+            360.0,
+            600.0
+          ],
+          "final_parent_frame": 975,
+          "final_widths": [
+            480,
+            720,
+            1200
+          ],
+          "final_expected": [
+            480.0,
+            720.0,
+            1200.0
+          ],
+          "tolerance_px": 3
+        }
+      },
+      "audio_registry": {
+        "verdict": "pass",
+        "observed": {
+          "input_kinds": [
+            "scene",
+            "scene",
+            "scene",
+            "narration",
+            "narration",
+            "narration",
+            "music",
+            "canvas"
+          ],
+          "narration_inputs": 3,
+          "music_inputs": 1,
+          "insert_stream_types": [
+            "video"
+          ]
+        }
+      },
+      "narration_presence": {
+        "verdict": "pass",
+        "observed": {
+          "narr-intro": {
+            "present": true,
+            "bandRatio": 1.336,
+            "outputRmsDbfs": -16.04
+          },
+          "narr-cue": {
+            "present": true,
+            "bandRatio": 1.217,
+            "outputRmsDbfs": -15.58
+          },
+          "narr-outro": {
+            "present": true,
+            "bandRatio": 1.337,
+            "outputRmsDbfs": -16.14
+          }
+        }
+      },
+      "final_words": {
+        "verdict": "pass",
+        "observed": {
+          "segment": "narr-outro",
+          "presentAtPlannedEnd": true,
+          "bandRatio": 1.044,
+          "outputTailRmsDbfs": -19.29
+        }
+      },
+      "loudness": {
+        "verdict": "pass",
+        "observed": {
+          "integratedLufs": -14.03,
+          "truePeakDb": -1.2,
+          "target": {
+            "integratedLufs": -14.0,
+            "truePeakDb": -1.0
+          },
+          "integratedDeltaLufs": -0.03
+        }
+      },
+      "assembler_verification": {
+        "verdict": "pass",
+        "observed": {
+          "assemble_exit_code": 0,
+          "note": "the shipped assembler's own encoded-output verification (narration presence, final words, loudness finish) ran inside plan mode and the run succeeded"
+        }
+      }
+    }
+  },
+  "motion_proof": {
+    "verdict": "pass",
+    "category": null,
+    "assertions": [
+      {
+        "frame": 0,
+        "verdict": "pass"
+      },
+      {
+        "frame": 45,
+        "verdict": "pass"
+      },
+      {
+        "frame": 75,
+        "verdict": "pass"
+      },
+      {
+        "frame": 179,
+        "verdict": "pass"
+      }
+    ],
+    "video_sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+    "coverage_verdict": "complete"
+  },
+  "qc_insert_package_lane": {
+    "verdict": "fail",
+    "exit_code": 6,
+    "summary": {
+      "total": 27,
+      "pass": 18,
+      "fail": 1,
+      "skipped_with_reason": 8,
+      "not_run": 0,
+      "failed_checks": [
+        "package.fonts"
+      ],
+      "mandatory_not_run": []
+    },
+    "sole_failure": "package.fonts QC_FONT_UNRESOLVED: the gate compares the assets family alias 'fixture-sans' with fontconfig families; the runtime resolves the alias through its registry to Liberation Sans (installed, and the adapter refuses to render otherwise). Diagnostic run with only the alias string replaced by the resolved family in an assets copy: verdict pass, 19 pass, 0 fail (qc-insert-diagnostic.json). Recorded as a cross-item tension for the MG-034 owner; the package record was not restated."
+  },
+  "qc_assembled_vsl_plan_lane": {
+    "verdict": "pass",
+    "exit_code": 0,
+    "summary": {
+      "total": 27,
+      "pass": 20,
+      "fail": 0,
+      "skipped_with_reason": 7,
+      "not_run": 0,
+      "failed_checks": [],
+      "mandatory_not_run": []
+    }
+  },
+  "notes": [
+    "The insert MP4 hash equals the deterministic C05 fixture render hash recorded by MG-032 and reviewed by MG-033 (1d151ffb...), confirming the produce path renders the shipped component through the shipped dispatcher.",
+    "Assembly used hard cuts at the slot boundaries: the parent granted zero handle frames, so the insert's first frame lands exactly on the cue frame; fades live only in parent-granted handles per the compiled plan.",
+    "Evidence generated under heavy multi-crew box contention; all figures are from the recorded artifacts, not from run transcripts."
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "descriptor": "skill77.component-descriptor/v1",
+  "component": "nine99-distribution",
+  "role": "skill",
+  "repository": "999-setup",
+  "commit": "60efc20ec2a273b26c78d911394967f0390db120",
+  "skill_version": "v1.0.0",
+  "contract_package_version": "wise-elders.core/1.0.0",
+  "schema_versions": {
+    "session": "wise-elders.session/v1",
+    "brief": "wise-elders.brief/v1",
+    "card": "wise-elders.card/v1",
+    "verdict": "wise-elders.verdict/v1",
+    "grant": "wise-elders.run-grant/v1",
+    "preview": "wise-elders.run-preview/v1",
+    "event": "wise-elders.event/v1",
+    "diagnostic_policy": "wise-elders.diagnostic-retention-policy/v1",
+    "endpoint": "wise-elders.endpoint-contract/v1",
+    "session_state": "wise-elders.session-state/v1",
+    "job_checkpoint": "wise-elders.job-checkpoint/v1",
+    "settings": "wise-elders.settings/v1",
+    "approval": "wise-elders.approval/v1",
+    "operation_receipt": "wise-elders.operation-receipt/v1"
+  },
+  "endpoint_registry_contract": "wise-elders.endpoint-contract/v1",
+  "authority_modes": [
+    "standalone",
+    "managed"
+  ],
+  "canonical_source": {
+    "repository": "trevorotts1/openclaw-onboarding",
+    "source_commit": "b25d8419a2abb593262d19ffb513197c04ef843f",
+    "canonical_aggregate_sha256": "6b523e97b3b27daeb529bf798e6525065e4967337d2182d0880afcc1690e8dbf",
+    "canonical_file_count": 309
+  },
+  "canonical_archive": {
+    "file": "council-of-wise-elders.skill",
+    "sha256": "cdfdb8a6d903f79f101a8950666bbfe412d1e6ae1bc91a75134c080e5814552c",
+    "bytes": 979759
+  },
+  "tree_identity": {
+    "kind": "distribution",
+    "recorded_aggregate_sha256": "0c11a84dbaef9bcfeac3f804079a3c04d5c27e9b63be015eef955ac5d19edd71",
+    "recorded_file_count": 310,
+    "computed_aggregate_sha256": "0c11a84dbaef9bcfeac3f804079a3c04d5c27e9b63be015eef955ac5d19edd71",
+    "computed_file_count": 310
+  },
+  "intentional_distribution_differences": {
+    "count": 5,
+    "kinds": [
+      "private_scope_items_dropped",
+      "sentences_scrubbed",
+      "generated_archive_not_vendored",
+      "file_added",
+      "manifest_regenerated"
+    ]
+  }
+}

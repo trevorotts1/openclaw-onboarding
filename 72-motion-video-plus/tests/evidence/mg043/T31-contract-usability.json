@@ -1,0 +1,50 @@
+{
+  "test": "T31",
+  "status": "pass",
+  "started_at": "2026-10-14T23:05:12.207102+00:00",
+  "finished_at": "2026-10-14T23:05:21.913826+00:00",
+  "spec_workspace": "/home/hatch/workspace/skill72-v2/spec",
+  "directive": "/home/hatch/workspace/user/files/BLACKCEO_SKILL_72_MOTION_GRAPHICS_V2_EXECUTION_DIRECTIVE_v1_1.md",
+  "checks": [
+    {
+      "id": "extractor_clean_path",
+      "status": "pass",
+      "detail": "extraction helper ran in a clean path and produced 50 items and all four mode fixtures"
+    },
+    {
+      "id": "extractor_matches_spec_workspace",
+      "status": "pass",
+      "detail": "clean extraction and the supplied spec workspace name the same 50 items"
+    },
+    {
+      "id": "python_fixture_verdicts",
+      "status": "pass",
+      "detail": "Python contract layer validates all four mode fixtures clean"
+    },
+    {
+      "id": "ts_fixture_verdicts",
+      "status": "pass",
+      "detail": "TypeScript corpus runner validates all four mode fixtures clean (15/15 corpus)"
+    },
+    {
+      "id": "python_ts_agreement",
+      "status": "pass",
+      "detail": "shared mutation (canvas width 1919) yields MG_MODE_MISMATCH as the first category in both the Python and TypeScript layers"
+    },
+    {
+      "id": "documented_cli_motion_contracts",
+      "status": "pass",
+      "detail": "scripts/motion_contracts.py --help runs and documents the validate subcommand"
+    },
+    {
+      "id": "documented_cli_run_acceptance",
+      "status": "pass",
+      "detail": "tests/run_acceptance.py --help documents --test, --spec-workspace, and --evidence-dir"
+    },
+    {
+      "id": "documented_commands_in_directive",
+      "status": "pass",
+      "detail": "directive 18.6 documents exactly the T28/T31 commands this runner implements"
+    }
+  ]
+}

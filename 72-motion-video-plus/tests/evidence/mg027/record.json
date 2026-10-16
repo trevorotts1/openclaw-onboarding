@@ -1,0 +1,67 @@
+{
+  "item": "MG-027",
+  "defect": "D-RESUME-KEY",
+  "generated_at": "2026-10-14T22:07:05.092Z",
+  "phases": {
+    "setup": {
+      "adapter_version": "4.0.535",
+      "runtime_lock_id": "lock-314fc289b233ca9e",
+      "compiler_version": "mg021-timeline/1.0",
+      "timing_hash": "3e434f0e753466f03f03d74b7e64456e55c7de7c801bee4ed0126406621fa2d6",
+      "timing_total_frames": 360
+    },
+    "key_derivation": {
+      "scene_a_key": "766ac515ed2dccc2bd4616e94475286b52117c0f4164b693542415e9f11d273c",
+      "scene_b_key": "94269db34dec506f4124d1a7639dff784d1a9bbdfecfa0551590d0930888e1a0",
+      "job_key": "e4e9bae3133b0b6e1b3cd46009c0bf88b97c2916cbbdbe1e9104183eab2ae07c"
+    },
+    "state_store": {
+      "full_generation": 4,
+      "recovered_generation": 3
+    },
+    "interrupt_resume": {
+      "scene_a_key": "766ac515ed2dccc2bd4616e94475286b52117c0f4164b693542415e9f11d273c",
+      "scene_b_key": "94269db34dec506f4124d1a7639dff784d1a9bbdfecfa0551590d0930888e1a0",
+      "scene_a_artifact_sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+      "program_frames": 360
+    },
+    "asset_change": {
+      "old_scene_b_key": "94269db34dec506f4124d1a7639dff784d1a9bbdfecfa0551590d0930888e1a0",
+      "new_scene_b_key": "05c370d699c095776014a1606661607093f8df52b3750acfd060f1b8b5349832"
+    },
+    "corruption": {
+      "scene_a_renders": 2,
+      "scene_b_renders": 3
+    },
+    "data_change_no_leak": {
+      "scene_b_key_after_data_change": "ebf6ef6df5611ae06eeb4768b68c34525586783ddd7fc08f6179ab97262e8805",
+      "frame75_before": "4754d70d277f838620cb8a5b66f80e956dfe318fe598dc119b66d95f401f3210",
+      "frame75_after": "0fbdbcf83c9465711a7083db52e59ff05ac96d82b114df44600ddc2ea592c4b8"
+    },
+    "chunk_resume": {
+      "scene_frames_key": "8f1d410a46bed42525c410692d314e99d1294000cb1cf810c631c6adf022de6a",
+      "stills_rendered_total": 30,
+      "segment_probe": {
+        "kind": "video",
+        "width": 1920,
+        "height": 1080,
+        "fpsNumerator": 30,
+        "fpsDenominator": 1,
+        "frames": 30
+      }
+    },
+    "failure_bounds": {
+      "failure_record_lengths_by_attempt": [
+        1,
+        2,
+        3,
+        3
+      ],
+      "log_tail_cap": 1000
+    }
+  },
+  "counts": {
+    "passed": 49,
+    "failed": 0
+  }
+}

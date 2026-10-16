@@ -1,0 +1,40 @@
+{
+  "schema_version": "2.0",
+  "id": "trend-02",
+  "component_id": "C06",
+  "component_version": "1.0.0",
+  "engine": "remotion",
+  "layout_variant": "landscape",
+  "duration_frames": 180,
+  "asset_ids": [],
+  "data_path": "dataset.json",
+  "design_path": "design.json",
+  "copy": {
+    "headline": "Net flow swings before the annual prepay peak",
+    "disclosure": "Illustrative example"
+  },
+  "motion": {
+    "kind": "line_trend_reveal",
+    "start_frame": 15,
+    "end_frame_exclusive": 75,
+    "hold_to_frame_exclusive": 180,
+    "overshoot_data": false
+  },
+  "semantic_motion_assertions": [
+    {
+      "id": "trend-02-bounds",
+      "kind": "timeline_bounds",
+      "subject_ids": [
+        "trend-02"
+      ],
+      "frame": 75,
+      "expected_values": [],
+      "tolerance": 0,
+      "unit": "frames",
+      "evidence": [
+        "geometry"
+      ]
+    }
+  ],
+  "focus_row_id": null
+}

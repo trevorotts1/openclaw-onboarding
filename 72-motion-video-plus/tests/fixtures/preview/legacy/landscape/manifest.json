@@ -1,0 +1,12 @@
+{
+ "fps": 30,
+ "height": 1080,
+ "scenes": [
+  {
+   "duration_seconds": 3,
+   "file": "scene.html",
+   "id": "legacy-landscape"
+  }
+ ],
+ "width": 1920
+}

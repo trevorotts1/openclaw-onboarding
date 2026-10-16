@@ -1,0 +1,168 @@
+{
+  "kind": "cache",
+  "item": "MG-045",
+  "cacheDir": "/home/hatch/workspace/skill72-v2/wt-mg045/.scratch/mg045-benchmarks/cache",
+  "machine": {
+    "totalMemMB": 7935,
+    "freeMemMB": 3392,
+    "cpuCount": 2,
+    "platform": "linux x64",
+    "nodeVersion": "v24.20.0",
+    "measuredAt": "2026-10-15T05:57:36.139Z",
+    "loadAvg": [
+      7.12,
+      7.89,
+      5.97
+    ]
+  },
+  "runtime": {
+    "lockId": "lock-314fc289b233ca9e",
+    "remotion": "4.0.535",
+    "hyperframes": "0.8.155",
+    "lockTimestamp": "2026-10-15T04:45:41.764Z"
+  },
+  "jobs": [
+    {
+      "jobId": "fixture-powerpoint-graphic",
+      "sceneId": "bar-01",
+      "durationFrames": 180
+    },
+    {
+      "jobId": "mg045-cache-standalone",
+      "sceneId": "bar-01",
+      "durationFrames": 180
+    }
+  ],
+  "executions": [
+    {
+      "name": "cold",
+      "startedAtIso": "2026-10-15T05:57:36.140Z",
+      "wallMs": 40549,
+      "deriveMs": 124,
+      "sessionMs": 40424,
+      "scenes": [
+        {
+          "sceneId": "fixture-powerpoint-graphic:scene-a",
+          "key": "bb9a7cf49dc0138a6bea736685f2fdddac775993ecf28ac12d2dee4275a5a951",
+          "action": "rendered",
+          "renderMs": 16855
+        },
+        {
+          "sceneId": "mg045-cache-standalone:scene-b",
+          "key": "09f48a5b4dde8d6c4a5fb6da672944c393bfab4bf17fcb763a967448cdbf204e",
+          "action": "rendered",
+          "renderMs": 20995
+        }
+      ],
+      "rendererCalls": [
+        "fixture-powerpoint-graphic:scene-a",
+        "mg045-cache-standalone:scene-b"
+      ],
+      "failures": 0,
+      "error": null
+    },
+    {
+      "name": "warm",
+      "startedAtIso": "2026-10-15T05:58:16.689Z",
+      "wallMs": 1314,
+      "deriveMs": 53,
+      "sessionMs": 1261,
+      "scenes": [
+        {
+          "sceneId": "fixture-powerpoint-graphic:scene-a",
+          "key": "bb9a7cf49dc0138a6bea736685f2fdddac775993ecf28ac12d2dee4275a5a951",
+          "action": "reused",
+          "renderMs": 0
+        },
+        {
+          "sceneId": "mg045-cache-standalone:scene-b",
+          "key": "09f48a5b4dde8d6c4a5fb6da672944c393bfab4bf17fcb763a967448cdbf204e",
+          "action": "reused",
+          "renderMs": 0
+        }
+      ],
+      "rendererCalls": [],
+      "failures": 0,
+      "error": null
+    },
+    {
+      "name": "partial",
+      "startedAtIso": "2026-10-15T05:58:18.003Z",
+      "wallMs": 24351,
+      "deriveMs": 21,
+      "sessionMs": 24331,
+      "scenes": [
+        {
+          "sceneId": "fixture-powerpoint-graphic:scene-a",
+          "key": "bb9a7cf49dc0138a6bea736685f2fdddac775993ecf28ac12d2dee4275a5a951",
+          "action": "reused",
+          "renderMs": 0
+        },
+        {
+          "sceneId": "mg045-cache-standalone:scene-b",
+          "key": "38c46dcd7edd50a7c977c5aca4106d046ff67879f1a51ea07c11cb7b51d3f928",
+          "action": "rendered",
+          "renderMs": 22288
+        }
+      ],
+      "rendererCalls": [
+        "mg045-cache-standalone:scene-b"
+      ],
+      "failures": 0,
+      "error": null
+    }
+  ],
+  "savings": {
+    "coldRenderMs": 37850,
+    "warmRenderMs": 0,
+    "warmNetMs": 39235,
+    "coldSessionWallMs": 40549,
+    "warmSessionWallMs": 1314,
+    "partialReusedScene": "fixture-powerpoint-graphic:scene-a",
+    "partialSavedRenderMs": 16855,
+    "perStage": [
+      {
+        "stage": "render (includes the adapter's internal encode)",
+        "coldMs": 37850,
+        "warmMs": 0,
+        "savedMs": 37850,
+        "basis": "renderer wall time inside CachedRenderSession.run; on a warm hit the renderer is never invoked, so the whole render stage is saved"
+      },
+      {
+        "stage": "encode (standalone)",
+        "coldMs": null,
+        "warmMs": null,
+        "savedMs": 0,
+        "basis": "no standalone encode exists in the cache path; the adapter's encode is inside renderFinal and its saving is counted once, in the render stage, never twice"
+      },
+      {
+        "stage": "compile (timeline) and asset preparation (key input hashing)",
+        "coldMs": 124,
+        "warmMs": 53,
+        "savedMs": 0,
+        "basis": "unit derivation runs on every execution by design: the cache can only know a hit after the inputs are hashed. Measured cost repeats; savings are zero and are reported as zero"
+      },
+      {
+        "stage": "QC",
+        "coldMs": null,
+        "warmMs": null,
+        "savedMs": 0,
+        "basis": "the cache session performs no QC; there is nothing to save and nothing is claimed"
+      },
+      {
+        "stage": "stills and preview",
+        "coldMs": null,
+        "warmMs": null,
+        "savedMs": 0,
+        "basis": "the cache session renders finals only; stills and previews are not served by it and no savings are claimed for them"
+      }
+    ]
+  },
+  "failures": [],
+  "sampledResources": {
+    "peakRssMB": 1326,
+    "peakDiskBytes": 2039951,
+    "wallMs": 66399,
+    "timedOut": false
+  }
+}

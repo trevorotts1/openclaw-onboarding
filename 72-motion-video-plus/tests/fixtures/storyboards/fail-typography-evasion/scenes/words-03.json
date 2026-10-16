@@ -1,0 +1,19 @@
+{
+  "id": "words-03",
+  "semantic_motion_assertions": [
+    {
+      "id": "line-3-legible",
+      "kind": "text_readability",
+      "subject_ids": [
+        "line-3"
+      ],
+      "frame": 30,
+      "expected_values": [],
+      "tolerance": 0,
+      "unit": "normalized",
+      "evidence": [
+        "decoded_frame"
+      ]
+    }
+  ]
+}

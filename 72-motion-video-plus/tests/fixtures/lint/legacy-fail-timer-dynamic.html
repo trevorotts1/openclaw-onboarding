@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Computed-access timer legacy scene (MG-030 lint fixture)</title>
+<style>
+  html, body { margin: 0; background: #ffffff; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+           font-family: sans-serif; color: #14213d; }
+  .bar { position: absolute; left: 360px; height: 90px; background: #2a9d8f; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="bar" id="bar1" style="top: 285px;"></div>
+</div>
+<script>
+window.__sceneDuration = 6;
+window.__choreography = {"intent": "continuous_data_change", "behaviors": ["linear"], "data_marks": true};
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function lerp(a, b, p) { return a + (b - a) * p; }
+window.__setTime = function (t) {
+  var p = clamp01((t - 0.5) / 3);
+  document.getElementById("bar1").style.width = lerp(0, 820, p) + "px";
+  window["set" + "Timeout"](function () {}, 400);
+};
+window.__setTime(0);
+</script>
+</body>
+</html>

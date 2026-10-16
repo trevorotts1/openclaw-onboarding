@@ -1,0 +1,312 @@
+{
+  "defaults": {
+    "ceilings": {
+      "max_input_tokens": null,
+      "max_money": {
+        "amount_minor": 100000,
+        "currency": "USD"
+      },
+      "max_output_repairs": 9,
+      "max_output_tokens": null,
+      "max_provider_requests": 50,
+      "max_transport_retries": 8
+    },
+    "currency": "USD",
+    "estimate_minor": 100,
+    "lease_epoch": 0
+  },
+  "note": "CWE-045 cross-repo parity scenarios for the ONE canonical RunAuthorizationService (CWE-049). This file exists byte-identically in the ONB runtime (runtime/tests/scenarios/) and in Command Center (tests/fixtures/); both runners pin its sha256 and assert every step outcome against the expectations recorded here. Outcomes are canonical: ok with the named fields, or a typed refusal code. Ids, timestamps, and hashes never appear in outcomes.",
+  "scenarios": [
+    {
+      "id": "lifecycle-replay",
+      "steps": [
+        {
+          "do": "preview",
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "do": "approve",
+          "expect": {
+            "ok": true,
+            "status": "active"
+          }
+        },
+        {
+          "do": "resolve",
+          "expect": {
+            "found": true,
+            "ok": true,
+            "status": "active"
+          }
+        },
+        {
+          "do": "admit",
+          "expect": {
+            "ok": true,
+            "replayed": false
+          },
+          "operation_id": "op-1"
+        },
+        {
+          "do": "admit",
+          "expect": {
+            "ok": true,
+            "replayed": true
+          },
+          "operation_id": "op-1"
+        },
+        {
+          "do": "count_reservations",
+          "expect": {
+            "count": 1,
+            "ok": true
+          }
+        },
+        {
+          "do": "consume",
+          "expect": {
+            "ok": true
+          },
+          "operation_id": "op-1",
+          "outcome": "settled"
+        }
+      ]
+    },
+    {
+      "id": "expired-preview",
+      "steps": [
+        {
+          "do": "preview",
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "do": "advance_clock_ms",
+          "ms": 900001
+        },
+        {
+          "do": "approve",
+          "expect": {
+            "code": "RUN_PREVIEW_EXPIRED",
+            "ok": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "provider-request-ceiling",
+      "steps": [
+        {
+          "ceilings": {
+            "max_provider_requests": 1
+          },
+          "do": "preview",
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "do": "approve",
+          "expect": {
+            "ok": true,
+            "status": "active"
+          }
+        },
+        {
+          "do": "admit",
+          "expect": {
+            "ok": true,
+            "replayed": false
+          },
+          "operation_id": "op-1"
+        },
+        {
+          "do": "admit",
+          "expect": {
+            "code": "BUDGET_EXHAUSTED",
+            "ok": false
+          },
+          "operation_id": "op-2"
+        }
+      ]
+    },
+    {
+      "id": "revoked-grant",
+      "steps": [
+        {
+          "do": "preview",
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "do": "approve",
+          "expect": {
+            "ok": true,
+            "status": "active"
+          }
+        },
+        {
+          "do": "revoke",
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "do": "resolve",
+          "expect": {
+            "found": false,
+            "ok": true
+          }
+        },
+        {
+          "do": "admit",
+          "expect": {
+            "code": "RUN_GRANT_INACTIVE",
+            "ok": false
+          },
+          "operation_id": "op-1"
+        }
+      ]
+    },
+    {
+      "id": "cross-scope-admission",
+      "steps": [
+        {
+          "do": "preview",
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "do": "approve",
+          "expect": {
+            "ok": true,
+            "status": "active"
+          }
+        },
+        {
+          "do": "admit",
+          "expect": {
+            "code": "RUN_GRANT_NOT_FOUND",
+            "ok": false
+          },
+          "operation_id": "op-1",
+          "scope": "other"
+        }
+      ]
+    },
+    {
+      "id": "double-settle",
+      "steps": [
+        {
+          "do": "preview",
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "do": "approve",
+          "expect": {
+            "ok": true,
+            "status": "active"
+          }
+        },
+        {
+          "do": "admit",
+          "expect": {
+            "ok": true,
+            "replayed": false
+          },
+          "operation_id": "op-1"
+        },
+        {
+          "do": "consume",
+          "expect": {
+            "ok": true
+          },
+          "operation_id": "op-1",
+          "outcome": "settled"
+        },
+        {
+          "do": "consume",
+          "expect": {
+            "code": "BUDGET_RESERVATION_FINALIZED",
+            "ok": false
+          },
+          "operation_id": "op-1",
+          "outcome": "settled"
+        }
+      ]
+    },
+    {
+      "id": "probe-kind-fence",
+      "steps": [
+        {
+          "do": "preview",
+          "expect": {
+            "ok": true
+          },
+          "purpose": "capability_probe"
+        },
+        {
+          "do": "approve",
+          "expect": {
+            "ok": true,
+            "status": "active"
+          }
+        },
+        {
+          "do": "admit",
+          "expect": {
+            "ok": true,
+            "replayed": false
+          },
+          "kind": "provider_request",
+          "operation_id": "op-1"
+        },
+        {
+          "do": "admit",
+          "expect": {
+            "code": "RUN_GRANT_KIND_NOT_ALLOWED",
+            "ok": false
+          },
+          "kind": "output_repair",
+          "operation_id": "op-2",
+          "original_operation_id": "op-1"
+        }
+      ]
+    },
+    {
+      "id": "admit-purpose-mismatch",
+      "steps": [
+        {
+          "do": "preview",
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "do": "approve",
+          "expect": {
+            "ok": true,
+            "status": "active"
+          }
+        },
+        {
+          "do": "admit",
+          "expect": {
+            "code": "RUN_GRANT_PURPOSE_MISMATCH",
+            "ok": false
+          },
+          "operation_id": "op-1",
+          "purpose": "capability_probe"
+        }
+      ]
+    }
+  ],
+  "schema": "wise-elders.run-authorization-parity/v1"
+}
