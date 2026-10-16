@@ -1,0 +1,1261 @@
+{
+  "seat_id": "russell-brunson",
+  "pack_owner_unit": "CWE-017",
+  "status": "authored",
+  "note": "Source ledger for the Russell Brunson pack, built from the CWE-011 Skill 22 export package (wise-elders.skill22-export/v1, exported 2026-10-14). content_sha256 on each full record is the SHA-256 of the Skill 22 derivative artifact the export hashed (extraction-notes.md, or persona-blueprint.md for Traffic Secrets); originals were never hashed into or copied into the export or this pack. retrieved_at carries the Skill 22 set's own retrieval date where the set records one; where it records none, retrieved_at is 2026-10-14, the date this pack retrieved the derivative set through the CWE-011 export. Quality is unverified for every present record and rights are reference_only (paraphrase only) throughout, per the CWE-012 acceptance conditions: no seat qualifies above bibliographic_only. The export carries 94 quotation candidates for this seat; 0 are verified against retained text, so this pack embeds no quotation evidence and quotes Russell Brunson nowhere. One typographic normalization is applied to copied source data: em dash and en dash characters in titles, locators, and paraphrase text are folded to hyphens, the same folding the CWE-012 validator documents for text comparison, and the package house rule bars em dash characters in package files. No words are changed.",
+  "records": [
+    {
+      "title": "DotCom Secrets",
+      "basis": "foundational book (required anchor, Section 7.6)",
+      "record_status": "bibliographic_only",
+      "verification_status": "not_ingested",
+      "status": "absent",
+      "note": "Required anchor named in Section 7.6. No Skill 22 persona package exists for this work (supply gap, confirmed by the CWE-011 export). No content from this work has been ingested, and no quotation, concept, or locator is claimed from it anywhere in this pack."
+    },
+    {
+      "title": "Expert Secrets",
+      "basis": "foundational book (required anchor, Section 7.6)",
+      "record_status": "bibliographic_only",
+      "verification_status": "not_ingested",
+      "status": "absent",
+      "note": "Required anchor named in Section 7.6. No Skill 22 persona package exists for this work (supply gap, confirmed by the CWE-011 export). No content from this work has been ingested, and no quotation, concept, or locator is claimed from it anywhere in this pack."
+    },
+    {
+      "title": "Network Marketing Secrets - The Hidden Funnel Strategy",
+      "basis": "supplementary book (Skill 22 set present)",
+      "record_status": "full_record_held_in_build_internal_export",
+      "verification_status": "provenance_unverified",
+      "status": "present_private_scope",
+      "allowed_scope": "user_private",
+      "export_source_id": "src-russell-brunson-network-marketing-secrets",
+      "retained_text_sha256": "91e87325a69d392acff6537359c2b311e0bfaa01df631f7ec64e416b89608ecd",
+      "note": "The full Section 8.3 record for this work is held in the build-internal CWE-011 export package (wise-elders.skill22-export/v1) with allowed_scope user_private and the warning flag rights_flag_source_record_names_pirate_mirror_domain. Per the CWE-012 acceptance conditions it is usable as private seat source during the build only: it is NOT embedded as a full record in this shared pack, no evidence units from it are embedded here, and no pack artifact derived from it is distribution-ready. Items in this pack derived from it are tagged scope private_scope with their export evidence IDs listed as private_evidence_refs."
+    },
+    {
+      "source_id": "src-russell-brunson-the-marketing-secrets-blackbook",
+      "work_id": "work-the-marketing-secrets-blackbook",
+      "work_title": "The Marketing Secrets Blackbook",
+      "credited_authors": [
+        "Russell Brunson"
+      ],
+      "original_speaker": null,
+      "source_type": "book",
+      "publisher_or_host": "SuccessEtc.com, LLC",
+      "edition_or_publication_date": "2018",
+      "retrieved_at": "2026-10-14",
+      "canonical_url": null,
+      "private_asset_id": null,
+      "content_sha256": "17c7a4f98cb0f1a05e080a9dd1f9a75e96a330729665ecc7ee6938da624dabb3",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "section",
+          "value": "item 1: LENS A - Coaching Methodology (items 1-11)"
+        },
+        {
+          "kind": "section",
+          "value": "item 2: LENS B - Agent Governance / Execution Frameworks (items 12-20)"
+        },
+        {
+          "kind": "section",
+          "value": "item 3: Named concepts / proper nouns harvested"
+        }
+      ],
+      "quality": "unverified",
+      "evidence": [
+        {
+          "evidence_id": "ev-russell-brunson-the-marketing-secrets-blackbook-c001",
+          "source_id": "src-russell-brunson-the-marketing-secrets-blackbook",
+          "source_version": "17c7a4f98cb0f1a05e080a9dd1f9a75e96a330729665ecc7ee6938da624dabb3",
+          "locator": {
+            "kind": "section",
+            "value": "item 1: LENS A - Coaching Methodology (items 1-11)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "1. Marketing is the founder's job and the lifeblood of the business. \"Outsourcing marketing is like outsourcing sex\" (Secret 2); marketing is the chicken AND the egg - the cause of growth, not the effect (Secret 3).",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-marketing-secrets-blackbook-c002",
+          "source_id": "src-russell-brunson-the-marketing-secrets-blackbook",
+          "source_version": "17c7a4f98cb0f1a05e080a9dd1f9a75e96a330729665ecc7ee6938da624dabb3",
+          "locator": {
+            "kind": "section",
+            "value": "item 2: LENS B - Agent Governance / Execution Frameworks (items 12-20)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "12. The Value Ladder. Organize offers into ascending price/value steps; each solves one problem and agitates the next; value slightly exceeds price so customers ascend.",
+          "claim_ids": [
+            "fw-value-ladder"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-marketing-secrets-blackbook-c003",
+          "source_id": "src-russell-brunson-the-marketing-secrets-blackbook",
+          "source_version": "17c7a4f98cb0f1a05e080a9dd1f9a75e96a330729665ecc7ee6938da624dabb3",
+          "locator": {
+            "kind": "section",
+            "value": "item 3: Named concepts / proper nouns harvested"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Value Ladder, One Big Domino, Attractive Character, Hero's Two Journeys (Mike Hauge), Five Turning Points of Conflict, Dream 100, Opportunity Switch, Tripwire, Order Bump, OTO/downsell, Free + Shipping, Shrink the Funnel/Extend the Value, the Sequence/indoctrination, the Frame, Food-Court-Proof, Polarity (Dan Kennedy), Consumption (\"Wash, Rinse, Repeat\"), Continuity, KPIs, FunnelScripts (Jim Ed...",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        }
+      ]
+    },
+    {
+      "source_id": "src-russell-brunson-lead-funnels",
+      "work_id": "work-lead-funnels",
+      "work_title": "Lead Funnels",
+      "credited_authors": [
+        "Russell Brunson"
+      ],
+      "original_speaker": null,
+      "source_type": "book",
+      "publisher_or_host": null,
+      "edition_or_publication_date": null,
+      "retrieved_at": "2026-10-14",
+      "canonical_url": null,
+      "private_asset_id": null,
+      "content_sha256": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "section",
+          "value": "item 1: Central Belief - \"The money is in the list\""
+        },
+        {
+          "kind": "section",
+          "value": "item 2: The transformation Brunson coaches - leads → relationship → ascension"
+        },
+        {
+          "kind": "section",
+          "value": "item 3: Core mental model - the 5-part Lead Funnel"
+        },
+        {
+          "kind": "section",
+          "value": "item 4: Pain over pleasure (Myron Golden / NLP)"
+        },
+        {
+          "kind": "section",
+          "value": "item 5: Curiosity & the Hook"
+        },
+        {
+          "kind": "section",
+          "value": "item 6: Marketing Math as a coaching benchmark"
+        },
+        {
+          "kind": "section",
+          "value": "item 7: Done is better than perfect / speed of creation"
+        },
+        {
+          "kind": "section",
+          "value": "item 8: Publish daily - document the journey"
+        },
+        {
+          "kind": "section",
+          "value": "item 9: Test your material / find your hooks"
+        },
+        {
+          "kind": "section",
+          "value": "item 10: Funnel hacking - model, don't clone"
+        }
+      ],
+      "quality": "unverified",
+      "evidence": [
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c001",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 1: Central Belief - \"The money is in the list\""
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "\"The only actual asset inside of your business is your customer list.\" The list is the only salable asset (eBay bought Skype for the 60M users; Facebook bought Instagram for the 30M users, not the code).",
+          "claim_ids": [
+            "rule-owned-audience"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c002",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 2: The transformation Brunson coaches - leads → relationship → ascension"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The book promises a specific before/after: by the end, the reader can \"attract leads, build trust, grow a list of leads and customers, build relationships with your list, convert leads into customers, recoup your ad costs, offer your customers additional opportunities… and ascend customers up your value ladder.",
+          "claim_ids": [
+            "fw-value-ladder"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c003",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 3: Core mental model - the 5-part Lead Funnel"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Lead Magnet → Landing Page → Thank You Page → Sales Page → Follow-Up Funnel. Each part has ONE job: Lead Magnet attracts to build value; Landing Page exchanges value to build the email list; Thank You Page fulfills the promise to build trust; Sales Page offers a product to build the customer list and recoup ad cost; Follow-Up Funnel communicates to build relationship.",
+          "claim_ids": [
+            "fw-5-part-lead-funnel"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c004",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 4: Pain over pleasure (Myron Golden / NLP)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "\"The majority of humans on this planet… make their decisions moving away from pain. However, entrepreneurs usually make their decisions moving toward pleasure.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c005",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 5: Curiosity & the Hook"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Every winning asset carries a \"hook\" - a curiosity gap. Bad: \"I'll show you how to lose weight\" (vague, said before). Good: \"how I lost 32 pounds while eating hot dogs, hamburgers, and ice cream\" (\"That doesn't make sense.",
+          "claim_ids": [
+            "fw-hook-story-offer"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c006",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 6: Marketing Math as a coaching benchmark"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "\"Each name on your email list ≈ at least $1/month.\" Do it poorly = $1/name/month; do it well (build relationship) = $3, $5, $10, even $50/name/month.",
+          "claim_ids": [
+            "fw-follow-up-and-measurement"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c007",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 7: Done is better than perfect / speed of creation"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "\"You need to get your stuff to 80% done, and then go! Repeat after me: Done is better than perfect!\" Build a whole bunch of lead magnets fast - \"you have no idea what people are going to respond to.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c008",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 8: Publish daily - document the journey"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Publish every single day (blog / podcast / vlog - pick one; \"do one, publish three\"). \"Document the journey\" - you only need to be \"one or two steps in front of them.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c009",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 9: Test your material / find your hooks"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Like a comedian refining jokes in dive bars: publish, watch which stories and headlines resonate, \"let your audience tell you what they need and want.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c010",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 10: Funnel hacking - model, don't clone"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "\"That's what funnel hackers do: we model.\" Brunson's whole method began by funnel hacking Double Your Dating - going through a competitor's funnel as a customer while watching every step as a marketer (\"see the rest of the iceberg below the ocean\").",
+          "claim_ids": [
+            "fw-model-dont-clone",
+            "q-proven-recipe"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c011",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 11: Serve first, sell second (relationship before ROI)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The Marketing Secrets Blackbook funnel sells nothing on the back end - it just builds relationship via the podcast. \"If you focus on building a relationship, the money will follow.",
+          "claim_ids": [
+            "rule-owned-audience"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c012",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 12: The non-negotiable 5-part structure (execution standard)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Any lead-gen deliverable MUST contain the five parts in order, each doing its one job. Skipping the Thank-You-Page fulfillment (\"bait-and-switch where you say 'Buy this product and then I'll give you what you wanted'\") is explicitly \"the worst thing you can do.",
+          "claim_ids": [
+            "fw-5-part-lead-funnel",
+            "rule-fulfill-before-pitch"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c013",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 13: Hook / Story / Offer as the universal QC lens"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "All 114 swipe examples are decomposed into HOOK → STORY → OFFER → THANK YOU PAGE. This is the deployable scoring rubric for any lead-funnel asset: every asset must have a curiosity HOOK, a STORY that frames the problem/curiosity, a clear OFFER (the exchange), and a fulfillment step.",
+          "claim_ids": [
+            "fw-5-part-lead-funnel",
+            "fw-hook-story-offer"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c014",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 14: The 3 Cardinal Rules of a Landing Page (decision logic)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "1) Keep it simple (headline + image of the lead magnet + opt-in box; \"no fancy design\"). 2) Build curiosity (the hook). 3) Tell them what to do (\"To get [lead magnet], simply put in your email address and I'll send it right away\").",
+          "claim_ids": [
+            "fw-5-part-lead-funnel"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c015",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 15: The 9 fast ways to create an info product (production playbook)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "TEXT: (1) crowd-sourced books (Chicken Soup model; Brunson's 30 Days = 30 authors), (2) example/swipe books (108 split tests; 74 Funnel Swipe File), (3) public-domain books (Gutenberg/eBay pre-1923; Think and Grow Rich rebrand).",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c016",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 16: Self-Liquidating Offer (SLO) + break-even logic (financial decision table)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Put an SLO on the sales page so \"the product you sell on your thank you page should immediately recoup your ad costs\" → free leads forever.",
+          "claim_ids": [
+            "fw-break-even-front-end",
+            "rule-front-end-break-even"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c017",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 17: Follow-Up Funnel = multi-channel automated sequence (orchestration rule)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "A follow-up funnel is \"Message 1, Message 2, Message 3…\" - NOT just an email campaign. Channels: email, Facebook Messenger, desktop push, text/SMS, retargeting.",
+          "claim_ids": [
+            "fw-follow-up-and-measurement",
+            "q-follow-up"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c018",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 18: RFMS Score (lead-quality scoring system)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Each contact gets a Recency, Frequency, Monetary value, Social action score (4 bands each). Recency = how recently they engaged; Frequency = how often they buy; Monetary = total spend; Social = whether they gave a real social-login email (\"worth 80 times more than… a throwaway email\").",
+          "claim_ids": [
+            "fw-follow-up-and-measurement"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c019",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 19: The Value Ladder / ascension (routing logic)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The lead funnel is the entry point of a larger value ladder: free lead magnet → first offer → upsells → high-ticket → coaching/Inner Circle.",
+          "claim_ids": [
+            "fw-value-ladder"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-lead-funnels-c020",
+          "source_id": "src-russell-brunson-lead-funnels",
+          "source_version": "f7cbd5298c6502e1e818ea6668e66b5503621b21544053bcb8354e8dddb71a9d",
+          "locator": {
+            "kind": "section",
+            "value": "item 20: \"What this persona would never allow\" (guardrails)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Never bait-and-switch (always fulfill the promise on the thank you page first). Never build a complex landing page (complexity kills conversion).",
+          "claim_ids": [
+            "rule-fulfill-before-pitch"
+          ],
+          "seat_id": "russell-brunson"
+        }
+      ]
+    },
+    {
+      "source_id": "src-russell-brunson-traffic-secrets",
+      "work_id": "work-traffic-secrets",
+      "work_title": "Traffic Secrets",
+      "credited_authors": [
+        "Russell Brunson"
+      ],
+      "original_speaker": null,
+      "source_type": "book",
+      "publisher_or_host": null,
+      "edition_or_publication_date": null,
+      "retrieved_at": "2026-10-14",
+      "canonical_url": "https://www.trafficsecrets.com/",
+      "private_asset_id": null,
+      "content_sha256": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "section",
+          "value": "Section 1 - Author Intelligence"
+        },
+        {
+          "kind": "section",
+          "value": "Section 2 - Core Methodology"
+        },
+        {
+          "kind": "section",
+          "value": "Section 3 - Coaching Framework"
+        },
+        {
+          "kind": "section",
+          "value": "Section 4 - Agent Governance Framework"
+        },
+        {
+          "kind": "section",
+          "value": "Section 5 - Foundational Principles"
+        },
+        {
+          "kind": "section",
+          "value": "Section 6 - Problem-Solution Map"
+        },
+        {
+          "kind": "section",
+          "value": "Section 7 - Trigger Detection System"
+        },
+        {
+          "kind": "section",
+          "value": "Section 8 - Voice and Language"
+        },
+        {
+          "kind": "section",
+          "value": "Section 9 - Quote Library"
+        },
+        {
+          "kind": "section",
+          "value": "Section 10 - Question Library"
+        }
+      ],
+      "quality": "unverified",
+      "evidence": [
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c001",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 1 - Author Intelligence"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Russell Brunson is the co-founder of ClickFunnels and, after DotCom Secrets (the funnels) and Expert Secrets (the message), wrote Traffic Secrets to solve the one problem that kills more funnels than bad copy ever will: nobody is walking in the door.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c002",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 2 - Core Methodology"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "System Name: The Dream 100 Traffic System (governance name: Traffic Acquisition & Ownership Architecture) Full step-by-step reproduction of every framework below lives in PLAYBOOK-APPENDIX.",
+          "claim_ids": [
+            "fw-dream-100"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c003",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 3 - Coaching Framework"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Framework Name: The Dream-100 Coaching Arc Entry Point (First Move): \"Before we talk about traffic, tell me about ONE person - your single dream customer.",
+          "claim_ids": [
+            "q-one-dream-customer",
+            "rule-who-before-where"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c004",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 4 - Agent Governance Framework"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Governance Name: Traffic Acquisition Execution Standard (TAES) What This Governs: How AI specialists and agents plan, build, and run traffic acquisition - Dream 100 list-building and outreach, paid-ad targeting and creative, organic/social publishing, influencer and JV/integration outreach, SEO/content distribution, platform-specific publishing plans, and the funnels/sequences that convert rent...",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c005",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 5 - Foundational Principles"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Coaching Principles 1. Who Before Where, Where Before How - name the dream customer, then find their congregations. 2. They're Already in a Stadium - you don't create an audience; you redirect one that exists.",
+          "claim_ids": [
+            "fw-dream-100",
+            "q-one-dream-customer",
+            "rule-who-before-where"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c006",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 6 - Problem-Solution Map"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Human problem: Owners can't get predictable traffic because they never named WHO their dream customer is or WHERE that person already gathers - and they rent every click instead of owning a list.",
+          "claim_ids": [
+            "fw-dream-100",
+            "q-where-congregating",
+            "rule-who-before-where"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c007",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 7 - Trigger Detection System"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "7A - Coaching Mode Triggers Keyword triggers (15): \"need more traffic,\" \"how do I get traffic,\" \"ads aren't working,\" \"my reach dropped,\" \"the algorithm changed,\" \"how do I find my audience,\" \"who is my customer,\" \"influencer marketing,\" \"how do I get on podcasts,\" \"grow my following,\" \"scale my ads,\" \"I rely on one platform,\" \"I have no email list,\" \"how do I go viral,\" \"fill my funnel\" Emotio...",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c008",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 8 - Voice and Language"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Coaching voice: story-first, warm, plain-spoken, relationship-obsessed. Uses the \"stadium\" image, the \"Dream 100\" map, and his own PPC-wipeout scar to teach why owned beats rented.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c009",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 9 - Quote Library"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Attribution Rule: Direct verbatim quotes cite the author. All other methodology language is delivered in-agent voice. The author's name is not used unprompted outside direct citation.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c010",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 10 - Question Library"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Coaching Questions Diagnostic (7): 1. Who is your ONE dream customer, described as a specific person? 2. Where is that person already congregating online, by name?",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c011",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 11 - Tools, Exercises, and Execution Frameworks"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Coaching Tools and Exercises 1) Dream Customer Card - What it is: A one-card portrait of the single dream customer (pain, language, fears, where they gather).",
+          "claim_ids": [
+            "fw-dream-100",
+            "q-where-congregating"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c012",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 12 - Objections, Resistance, and Failure Modes"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Coaching - Objections Table (6) - say-this rebuttals reproduced in PLAYBOOK-APPENDIX.md §C10-C14 Objection What It Really Means Response --------- \"My niche is too small to find an audience.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c013",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 13 - Session and Task Structure"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "13A - Coaching Session Structure Session type: Multi-session arc (5-7 sessions) Long-term arc: - Session 1: Who+Where audit (dream customer + congregations) - Session 2: Dream 100 build + prioritization - Session 3: Work your way in (earned relationships, reciprocity) - Session 4: Buy your way in (paid targeting + ad creative) - Session 5: Hook-Story-Offer + funnel that captures - Session 6: Co...",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c014",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Section 14 - Routing Rules and Scope Limits"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Routing Rules Coaching activation threshold: 70+ confidence with a traffic/audience keyword + emotional or behavioral trigger Task activation conditions: marketing/social/paid-media/SEO/PR department + Dream-100/outreach/ad-targeting/publishing/distribution task type Tie-breaker rule: if the request is \"get/scale traffic, find the audience, or fill the funnel with the right people,\" Traffic Sec...",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-traffic-secrets-c015",
+          "source_id": "src-russell-brunson-traffic-secrets",
+          "source_version": "02afc468a66bbbc7af6da54afd6fd7ff3aa788214c38d2b854b6740e3523c278",
+          "locator": {
+            "kind": "section",
+            "value": "Self-Rating"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- Completeness: 10/10 - Coaching framework quality: 9/10 - Governance framework quality: 10/10 - Specificity: 9/10 (grounded in the book's real frameworks - three traffic types, the Dream 100, work-in/buy-in, Hook-Story-Offer, the Attractive Character, convert-to-owned, fill-your-funnel) - Voice distinctiveness: 9/10 - Appendix cross-referencing: 10/10 (every named framework/recipe/script/formu...",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        }
+      ]
+    },
+    {
+      "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+      "work_id": "work-the-funnel-hackers-cookbook",
+      "work_title": "The Funnel Hacker's Cookbook",
+      "credited_authors": [
+        "Russell Brunson"
+      ],
+      "original_speaker": null,
+      "source_type": "book",
+      "publisher_or_host": null,
+      "edition_or_publication_date": "2017",
+      "retrieved_at": "2026-10-14",
+      "canonical_url": null,
+      "private_asset_id": null,
+      "content_sha256": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+      "rights_status": "reference_only",
+      "allowed_scope": "shared_pack",
+      "locators": [
+        {
+          "kind": "section",
+          "value": "item 1: Author Background and Authority"
+        },
+        {
+          "kind": "section",
+          "value": "item 2: The Central Problem (Coaching Lens)"
+        },
+        {
+          "kind": "section",
+          "value": "item 3: The Root Cause of Human Struggle"
+        },
+        {
+          "kind": "section",
+          "value": "item 4: The Complete Methodology - Every Step"
+        },
+        {
+          "kind": "section",
+          "value": "item 5: Non-Negotiable Principles"
+        },
+        {
+          "kind": "section",
+          "value": "item 6: The Transformation Arc"
+        },
+        {
+          "kind": "section",
+          "value": "item 7: Coaching Questions (for the founder)"
+        },
+        {
+          "kind": "section",
+          "value": "item 8: Tools, Exercises, and Practices"
+        },
+        {
+          "kind": "section",
+          "value": "item 9: Objection Handling and Resistance (Coaching)"
+        },
+        {
+          "kind": "section",
+          "value": "item 10: Author Voice and Language"
+        }
+      ],
+      "quality": "unverified",
+      "evidence": [
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c001",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 1: Author Background and Authority"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Russell Brunson is the co-founder of ClickFunnels and the most widely-followed funnel-building teacher in direct-response marketing.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c002",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 2: The Central Problem (Coaching Lens)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Founders stare at a blank canvas and freeze. They have an offer but no idea which funnel to build, what pages it needs, or what order the pages go in.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c003",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 3: The Root Cause of Human Struggle"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "People treat funnels as art when they are architecture. The root cause is starting from scratch instead of starting from a proven structure, and confusing \"different\" with \"better.",
+          "claim_ids": [
+            "fw-model-dont-clone",
+            "q-proven-recipe"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c004",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 4: The Complete Methodology - Every Step"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The building-block hierarchy (the master mental model): ELEMENTS PAGES FUNNELS.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c005",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 5: Non-Negotiable Principles"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "1. Start from a proven recipe, not a blank page. The 22 funnels are \"the foundation of all good funnels.\" 2. The funnel type must match the goal.",
+          "claim_ids": [
+            "fw-break-even-front-end",
+            "q-break-even-or-profit",
+            "rule-front-end-break-even"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c006",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 6: The Transformation Arc"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "From \"I have an offer and a blank ClickFunnels editor and no idea what to build\" → to \"I can name the right funnel recipe for any goal, assemble its pages and elements from memory, and ship a complete, launch-ready funnel fast - then stack funnels to ascend customers up a value ladder.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c007",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 7: Coaching Questions (for the founder)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- \"What's the single action you want this funnel to get - an email, a sale, a webinar registration, or a follow?\" (chooses the funnel category) - \"Which of the 22 recipes already does what you're trying to do?",
+          "claim_ids": [
+            "q-single-action"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c008",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 8: Tools, Exercises, and Practices"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- The \"In Your Business\" exercise: for any funnel, ask \"If I were selling as an Author/Coach... Professional Services...",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c009",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 9: Objection Handling and Resistance (Coaching)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- \"I want mine to look different.\" → \"Different isn't better. These templates are tested and proven; we rarely deviate. Customize the offer, not the structure.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c010",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 10: Author Voice and Language"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Plainspoken, practical, generous, energetic. Heavy on cooking and Lego metaphors (\"ingredients,\" \"recipes,\" \"this is a different type of cake,\" \"playing with Legos\").",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c011",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 11: Direct Quotes"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- \"After you understand the elements and pages, building the funnels is like playing Legos.\" - \"Elements are all the ingredients that go into your pages.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c012",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 12: The Repeatable Execution System (Governance Lens)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "A funnel-building specialist agent must execute as a recipe-follower, not an inventor: 1. Classify the goal into one of 4 funnel categories (Lead / Buyer / Event / Other).",
+          "claim_ids": [
+            "fw-model-dont-clone",
+            "q-single-action",
+            "rule-one-client-one-action"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c013",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 13: The Quality Bar (what \"good\" looks like)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "A funnel is correct when: (a) the funnel type matches the stated goal; (b) every page the recipe requires is present and in the right order; (c) each page has exactly one clear action; (d) required elements are present (e.",
+          "claim_ids": [
+            "rule-one-client-one-action"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c014",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 14: Non-Negotiable Execution Rules"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "1. Never ship a funnel whose type doesn't match its goal. (A sales page is not a lead funnel.) 2. Never invent a structure when a proven recipe covers the case.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c015",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 15: Failure Patterns (what amateurs do wrong)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- Blank-canvas building: inventing a bespoke funnel instead of selecting a proven recipe. - Goal/type mismatch: building a sales-letter funnel when the goal was lead capture, or a home page when they needed a squeeze.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c016",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 16: Decision Logic (when to use which)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "- Goal is email / lead / application → Lead Funnel. Cold audience + curiosity hook → Squeeze. Need to pre-frame/indoctrinate first → Reverse Squeeze.",
+          "claim_ids": [
+            "fw-model-dont-clone"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c017",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 17: Self-Review Protocol (before delivery)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Agent asks, page by page: Does the funnel type match the goal? Are all required pages present and ordered? Does each page have one action?",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c018",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 18: Definition of Done"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "The funnel type matches the goal; every prescribed page is present in the correct order; each page drives a single action with its required elements; monetization (bump/OTO/downsell) is wired after purchase; follow-up automation covers every drop-off; the front end is structured to break even and feed the next funnel in the stack; and the recipe has been adapted to the client's specific offer a...",
+          "claim_ids": [
+            "fw-break-even-front-end",
+            "rule-front-end-break-even",
+            "rule-one-client-one-action"
+          ],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c019",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 19: The Amateur-to-Expert Gap"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "1. Blank canvas vs. proven recipe: Amateurs invent; experts select and adapt one of the 22 tested funnels. 2. Pretty vs.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        },
+        {
+          "evidence_id": "ev-russell-brunson-the-funnel-hackers-cookbook-c020",
+          "source_id": "src-russell-brunson-the-funnel-hackers-cookbook",
+          "source_version": "ff1922b4806528b3f1e8f0ea13d52dd7c6bd3ea1be5a69a3395e32d0736804d9",
+          "locator": {
+            "kind": "section",
+            "value": "item 20: Professional Application (departments / roles / skills)"
+          },
+          "kind": "concept",
+          "mark": "paraphrase",
+          "original_speaker": null,
+          "excerpt": null,
+          "paraphrase": "Most directly governs Skill 6 (06-ghl-install-pages) funnel/page building and the Funnel Builder Specialist (Web Development) role: this book is the structural recipe layer that tells Skill 6 which funnel to build, what pages, in what order, and which elements per page.",
+          "claim_ids": [],
+          "seat_id": "russell-brunson"
+        }
+      ]
+    }
+  ]
+}

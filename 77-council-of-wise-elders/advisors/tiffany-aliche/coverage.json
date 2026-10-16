@@ -1,0 +1,70 @@
+{
+  "seat_id": "tiffany-aliche",
+  "pack_owner_unit": "CWE-016",
+  "status": "authored",
+  "qualification": "bibliographic_only",
+  "qualification_basis": "Computed by the CWE-012 coverage gate over this pack's own records and evidence: the one present record has quality unverified (not primary_substantive), so zero concepts count as gate-traceable and the substantive gate is not met. Under the CWE-012 acceptance conditions, no seat currently qualifies above bibliographic_only, and this pack claims nothing higher.",
+  "required_minimum": "For each book anchor: at least three independently traceable concepts plus one application case, each linked to a verified source record. Seats grounded in interviews or documented teaching meet the equivalent bar per anchor named in sources.json.",
+  "claimed_titles": [
+    "Get Good with Money",
+    "Documented financial-wholeness teaching"
+  ],
+  "covered": {
+    "concepts": 0,
+    "application_cases": 0
+  },
+  "works": [
+    {
+      "work_title": "Get Good with Money",
+      "anchor_role": "anchor",
+      "status": "present",
+      "coverage_label_as_exported": "partial_blueprint_only",
+      "work_class_under_cwe012_gate": "bibliographic_only",
+      "gate_met": false,
+      "gate_traceable_concepts": 0,
+      "gate_application_cases": 0,
+      "blueprint_concept_units_retained": 14,
+      "blueprint_application_case_candidates": 3,
+      "application_case_note": "The export's coverage records three application-case candidate headings inside the blueprint (its sample-responses section). They are headings inside a derivative blueprint, not located application cases against a verified source record, so they count as zero toward the gate.",
+      "quote_candidates": 0,
+      "verified_quotations": 0,
+      "locators_available": {
+        "page": 0,
+        "timestamp": 0,
+        "section": 14
+      },
+      "gaps": [
+        "blueprint only: no extraction layer, no page locators, no quote candidates emitted",
+        "quality unverified and lawful-access provenance unverified, exactly as the CWE-011 export records it"
+      ]
+    },
+    {
+      "work_title": "Documented financial-wholeness teaching",
+      "anchor_role": "anchor",
+      "status": "absent",
+      "coverage_label_as_exported": "missing",
+      "work_class_under_cwe012_gate": "bibliographic_only",
+      "gate_met": false,
+      "gate_traceable_concepts": 0,
+      "gate_application_cases": 0,
+      "blueprint_concept_units_retained": 0,
+      "quote_candidates": 0,
+      "verified_quotations": 0,
+      "gaps": [
+        "no Skill 22 persona package exists for this work (supply gap)"
+      ]
+    }
+  ],
+  "provenance": {
+    "origin": "CWE-011 export package for seat tiffany-aliche, accepted by CWE-012",
+    "package_content_sha256": "c62f2564fbabb22e36536432d2f0b9d7c248377b11f21e4046bce76ed72b7fef",
+    "present_source_artifact": "persona-blueprint.md (Skill 22 derivative artifact), sha256 4b0ca33a2953330e590e90eacc9f608e41145d7920637ee3f7bafc60a743cd4c",
+    "provenance_state": "single derived document with no extraction layer; content is grounded at concept level only"
+  },
+  "honest_notes": [
+    "This seat qualifies bibliographic_only. Nothing in this pack may be presented as substantive or source-grounded teaching until provenance-verified material exists.",
+    "The fourteen retained concept units are paraphrases of blueprint section summaries produced by the CWE-011 bridge. They ground the pack's concepts; they are not extracted book text and carry section locators only because no page locators exist.",
+    "Zero quotations are verified for this seat. Quote candidates are never upgraded, and this pack contains no text presented as the author's words.",
+    "The second required foundation, Documented financial-wholeness teaching, is absent. The pack does not fabricate a replacement."
+  ]
+}
