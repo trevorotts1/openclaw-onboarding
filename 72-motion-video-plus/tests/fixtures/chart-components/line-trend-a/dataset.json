@@ -1,0 +1,48 @@
+{
+  "schema_version": "2.0",
+  "id": "trend-signups",
+  "kind": "illustrative",
+  "source_note": "Illustrative fixture data for engineering tests. Values are not client or business-performance evidence.",
+  "units": "signups",
+  "domain": [
+    0,
+    60
+  ],
+  "scale_type": "linear",
+  "missing_value_policy": "error",
+  "display_rounding": {
+    "decimals": 0
+  },
+  "rows": [
+    {
+      "id": "jan",
+      "label": "January",
+      "value": 12
+    },
+    {
+      "id": "feb",
+      "label": "February",
+      "value": 24
+    },
+    {
+      "id": "mar",
+      "label": "March",
+      "value": 18
+    },
+    {
+      "id": "apr",
+      "label": "April",
+      "value": 36
+    },
+    {
+      "id": "may",
+      "label": "May",
+      "value": 48
+    },
+    {
+      "id": "jun",
+      "label": "June",
+      "value": 60
+    }
+  ]
+}

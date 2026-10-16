@@ -2,6 +2,8 @@
 
 The rules every later step relies on. Read them, then read `references/motion-grammar.md` for the full design constitution.
 
+Scope: the render contract, sound rules, and review loop in this chapter are the production rules of the legacy compatibility path (HTML scenes under the `__setTime` contract). On the canonical V2 path, the stage gates in `INSTRUCTIONS.md` govern production; the look rules below remain shared craft through `references/motion-grammar.md`.
+
 ## Render contract
 
 - Every scene is a pure function of time: `window.__setTime(t)` paints frame t, in any order, cold or after any other frame.
@@ -22,7 +24,7 @@ The rules every later step relies on. Read them, then read `references/motion-gr
 
 ## Loop before showing anything
 
-1. Render the preview cut and the critique bundle, and look at them.
-2. A fresh critic scores the 8 criteria in `references/critique-protocol.md`.
-3. Fix the 3 worst problems. Repeat for at least 3 rounds, until every score is 8 or higher.
+1. Render the preview cut and build the complete-runtime critique bundle (MG-031: coverage verdict `complete`, covered plus omitted runtime accounting for exactly 100 percent; the bundle tool never prints PASS), and look at them.
+2. A fresh, independent critic scores the eight dimensions in `references/critique-protocol.md` from that bundle, with evidence bound to every score.
+3. Fix defects worst cause first. There is no minimum round count and correction is capped at five rounds; a `ship` verdict requires every applicable dimension at 9 or higher with no unresolved critical defect, and a claimed 10 is refused against an uncalibrated reference. Records are validated on write (`scripts/review_rubric.py`); the dashboard renders from the records.
 4. Only then does the full-quality render start.

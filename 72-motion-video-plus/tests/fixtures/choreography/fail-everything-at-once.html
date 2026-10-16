@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Everything at once scene</title>
+<style>
+  html, body { margin: 0; background: #ffffff; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+           font-family: sans-serif; color: #14213d; perspective: 800px; }
+  #hero { position: absolute; left: 560px; top: 300px; width: 800px; height: 480px;
+           background: #2a9d8f; font-size: 60px; color: #ffffff;
+           text-align: center; line-height: 480px;
+           mask-image: linear-gradient(to right, black 60%, transparent); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="hero">Big reveal</div>
+</div>
+<script>
+window.__sceneDuration = 6;
+window.__choreography = {"intent": "decisive_reveal", "behaviors": ["linear", "eased", "spring", "dissolve", "mask", "depth"]};
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function lerp(a, b, p) { return a + (b - a) * p; }
+function easeInOutCubic(p) { return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; }
+function spring(p) { return 1 - Math.cos(p * 9) * Math.exp(-p * 4); }
+window.__setTime = function (t) {
+  var p = clamp01(t / 4);
+  var el = document.getElementById("hero");
+  var x = lerp(-300, 0, easeInOutCubic(p)) * spring(p);
+  el.style.transform = "rotateY(" + (30 - 30 * p) + "deg) translateX(" + x + "px)";
+  el.style.opacity = String(0.4 + 0.6 * p);
+};
+window.__setTime(0);
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "schema_version": "2.0",
+  "assets": [
+    {
+      "id": "mentor-desk-illustration",
+      "path": "media/mentor-desk.png",
+      "sha256": "211b9e1f1e63ae1444b1fd6d63b0dd361ca81f9dd019b1def95b261618cf70f6",
+      "kind": "image",
+      "usage": "embed_original",
+      "rights_ref": "fixture-rights-local-generation"
+    }
+  ],
+  "font_requirements": [
+    {
+      "font_id": "fixture-sans",
+      "required_weight": 700
+    }
+  ]
+}

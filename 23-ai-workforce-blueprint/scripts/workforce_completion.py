@@ -37,7 +37,7 @@ def require_build_identity(state):
 # names in verify-wiring.sh NON_ROLE_DIR_NAMES; its content containers (sops/,
 # roles/, devils-advocate/, templates/, assets/) stay in the digest.
 DEPT_RUNTIME_DIRS=frozenset({'memory','conversational-logs','logs','artifacts','runs','scripts',
-                             'intake','intake-miniapp','fish-audio','release-matrix','contract'})
+                             'intake','fish-audio','release-matrix','contract'})
 # v1 hashed every .md/.json under the tree. Evidence recorded without a
 # digestVersion is re-checked with v1, so no already-verified build flips on update.
 DIGEST_VERSION=2

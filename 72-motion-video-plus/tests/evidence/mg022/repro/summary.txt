@@ -1,0 +1,7 @@
+MG-022 defect reproduction summary (against pre-repair assemble.sh)
+fixtures: ffmpeg lavfi synthetic segments, 1.5s each, 30 fps, 640x360
+
+D-ASSEMBLE-TUPLE: REPRODUCED (exit=1)
+D-ASSEMBLE-SINGLE-SCENE-FILTER: REPRODUCED (exit=8)
+D-ASSEMBLE-AUDIO-INDEX: REPRODUCED (exit=234)
+D-ASSEMBLE-SHORTEST-SFX-DRIFT: REPRODUCED (output duration=2.500000, drift analysis in scenario-c-analysis.txt)

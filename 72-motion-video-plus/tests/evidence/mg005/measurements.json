@@ -1,0 +1,124 @@
+{
+  "adapter": "hyperframes",
+  "directive_item": "MG-005",
+  "generated_by": "runtime/tests/run-hyperframes.ts",
+  "font": {
+    "alias": "font-fixture-sans",
+    "cssFamily": "FixtureSans",
+    "files": [
+      {
+        "weight": 400,
+        "path": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "sha256": "4659bc0c58c5028dd488ec928d41d9265db43d9b669fc14ca8b0832daca7b144"
+      },
+      {
+        "weight": 700,
+        "path": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "sha256": "3973aa5054fb467dd5627245d3dc82e37bf16fe075756156a570455871351582"
+      }
+    ]
+  },
+  "subject_asset": {
+    "svg": "authored in run-hyperframes.ts (SUBJECT_SVG)",
+    "asset": {
+      "path": "/home/hatch/workspace/skill72-v2/repo/72-motion-video-plus/tests/evidence/mg005/work/assets-src/subject.svg",
+      "kind": "svg",
+      "sha256": "b5dfb9fa7ed796a9a5e3d4f61fb95d706e089f8effa454770bce469727d6f134"
+    },
+    "rasterizer": "PNG rasterization via the headless Chrome --screenshot flag did not complete in this sandbox (Command failed: /home/hatch/workspace/skill72-v2/repo/shared-utils/motion-render-runtime/.runtime/versions/lock-314fc289); the authored SVG is used as the composition asset directly (Hyperframes rasterizes SVG natively at capture)"
+  },
+  "probe": {
+    "status": "ready",
+    "detail": "Hyperframes CLI 0.8.155 launched from the shared runtime install lock-314fc289b233ca9e; runtime lock /home/hatch/workspace/skill72-v2/repo/shared-utils/motion-render-runtime/.runtime/runtime-lock.json records a hyperframes pass at 2026-10-14T13:18:48.575Z.",
+    "runtime": {
+      "engine": "hyperframes",
+      "engineVersion": "0.8.155",
+      "runtimeLockId": "lock-314fc289b233ca9e",
+      "nodeVersion": "v24.20.0",
+      "platform": "linux x64",
+      "probedAt": "2026-10-14T13:18:48.575Z"
+    }
+  },
+  "c05_proof_states": [
+    "assertion half-reveal at frame 45 (30 fps): measured bar widths [240, 360, 600], expected [240, 360, 600], decoded tolerance 2 px (declared 1 px): PASS",
+    "assertion final-ratios at frame 75 (30 fps): measured bar widths [480, 720, 1200], expected [480, 720, 1200], decoded tolerance 2 px (declared 1 px): PASS"
+  ],
+  "c05_hold": {
+    "frame150": [
+      480,
+      720,
+      1200
+    ],
+    "frame179": [
+      480,
+      720,
+      1200
+    ],
+    "expected": [
+      480,
+      720,
+      1200
+    ]
+  },
+  "c05_renders": {
+    "preview": {
+      "path": "/home/hatch/workspace/skill72-v2/repo/72-motion-video-plus/tests/evidence/mg005/work/c05-job/renders/hyperframes/preview.mp4",
+      "sha256": "355381944161d96d745557f774a43bbe82843331cb233089e669a63b59dd0370",
+      "frames": 180
+    },
+    "final": {
+      "path": "/home/hatch/workspace/skill72-v2/repo/72-motion-video-plus/tests/evidence/mg005/work/c05-job/renders/hyperframes/final.mp4",
+      "sha256": "18f7d3f728f19fc2959439a282ba821df7df12480618d83f8e3afccb65ec6dba",
+      "frames": 180
+    },
+    "rendering_mode": "local"
+  },
+  "c01_reveal": {
+    "observations": [
+      "assertion reveal-initial at frame 0: subject \"work-crate\" revealed fraction 0.000 (raw color fraction 0.000, hold reference 0.160), expected within [0, 0.02]: PASS",
+      "assertion reveal-proof at frame 60: subject \"work-crate\" revealed fraction 0.625 (raw color fraction 0.100, hold reference 0.160), expected within [0.4, 0.85]: PASS",
+      "assertion reveal-final at frame 149: subject \"work-crate\" revealed fraction 1.000 (raw color fraction 0.160, hold reference 0.160), expected within [0.97, 1]: PASS"
+    ]
+  },
+  "c01_clip": {
+    "path": "/home/hatch/workspace/skill72-v2/repo/72-motion-video-plus/tests/evidence/mg005/work/reveal-job/renders/hyperframes/final.mp4",
+    "sha256": "c4766e50b33ce6f92a94373b789deade1612303e172b8d3e777f8733940a5f4f",
+    "frames": 150,
+    "note": "full-fps clip of the reveal scene (M10 evidence)"
+  },
+  "nested": {
+    "chipEarly": 0,
+    "chipLate": 0.9379712643678161,
+    "subjEarly": 0.14614032258064516,
+    "subjLate": 0.14614032258064516
+  },
+  "media_timing": [
+    {
+      "frame": 45,
+      "mediaTime": 1.5,
+      "dominant": "#2563EB",
+      "fraction": 1
+    },
+    {
+      "frame": 105,
+      "mediaTime": 3.5,
+      "dominant": "#16A34A",
+      "fraction": 1
+    },
+    {
+      "frame": 140,
+      "mediaTime": 4.67,
+      "dominant": "#9333EA",
+      "fraction": 1
+    }
+  ],
+  "cancellation": {
+    "category": "MG_CANCELLED",
+    "exitClass": 8
+  },
+  "cases": {
+    "passed": 13,
+    "failed": 0,
+    "total": 13
+  }
+}

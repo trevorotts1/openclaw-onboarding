@@ -45,3 +45,10 @@ Because `video` already owns client-facing skills and already participates in th
 ## 4. Routing note
 
 A plain "make me a promo video" request now has three method-specific owners: Skill 72 (code-driven motion graphics), Skill 67 (AI video-model generation), Skill 47 (documentary montage). Update conflicting legacy routing so method, not just intent, selects the skill.
+
+## 5. Caller references reconciled by MG-042
+
+- Skill 47 (`47-movie-producer/SKILL.md`, `47-movie-producer/INSTRUCTIONS.md`): the file inventory and handoff boundaries name the shipped motion bridges, `47-movie-producer/scripts/vsl_handoff.py` (returned inserts) and `47-movie-producer/scripts/motion_status.py` (status, board, and attestation transport under `72-motion-video-plus/references/status-and-delivery.md`).
+- Skill 45 (`45-design-intelligence-library/SKILL.md`): the scope section names the one legal crossing with Skill 72, the explicit style-analysis bridge in `72-motion-video-plus/references/design-intelligence-bridge.md`. Skill 45 performs no motion work and Skill 72 never re-scores a style card.
+- Presentation roles: the governed-motion audit (SOP 9.5 in the pptx-assembly specialist's SOPs) already states the shipped contract, including PowerPoint playback as UNVERIFIED on every platform; MG-042 verified it against `references/integration-contracts.md` and changed nothing there.
+- The map entry's description (this file's step 2 object, mirrored in the canonical map) is the managed guidance every generated role block derives from; `72-motion-video-plus/scripts/check_authority.py` fails if the two copies drift or the obsolete V1 description returns.

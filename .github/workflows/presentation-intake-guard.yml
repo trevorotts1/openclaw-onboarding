@@ -2,15 +2,14 @@ name: presentation-intake-guard
 # FIX-PLAN Item 14 (B10 reconciliation S4): this guard covers the LIVE
 # intake app (intake/interview-app, whose deployed-r2 tree is what
 # production runs), not the deprecated intake-miniapp it was named after.
-# The miniapp tree keeps only its two quarantine steps below until the
-# gated D5 deletion (S10, Trevor's explicit go): its test_worker.mjs and
-# test_tenant.mjs are the only CI coverage of the worker lib.js/tenant.js
-# the deployed worker carries byte-identical copies of.
+# The deprecated intake-miniapp tree was deleted under the gated D5
+# deletion (B10 S10, Trevor's explicit go, 2026-10-15), and its two
+# quarantine steps went with it; S7 had already made the deployed-r2
+# copies of lib.js and tenant.js canonical.
 on:
   push:
     branches: [main]
     paths:
-      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp/**
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/**
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
       - tests/unit/u054-interview-a11y.test.sh
@@ -18,7 +17,6 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp/**
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app/**
       - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
       - tests/unit/u054-interview-a11y.test.sh
@@ -83,11 +81,3 @@ jobs:
         continue-on-error: true
         working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake/interview-app
         run: python3 test/test_intake_writer_run_mode.py
-      # Quarantine (until the gated D5 deletion): the only CI coverage of
-      # the worker lib.js / tenant.js the live worker runs copies of.
-      - name: Quarantined miniapp worker tests (deprecated tree)
-        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp
-        run: node --test test/test_worker.mjs
-      - name: Quarantined miniapp tenant tests (deprecated tree)
-        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp
-        run: node --test test/test_tenant.mjs

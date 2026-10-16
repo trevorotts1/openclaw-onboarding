@@ -1,7 +1,7 @@
 ---
 name: design-intelligence-library
 description: Design Intelligence Unit (DIU) — a self-contained image-style analysis and generation system. Ships a 12-dimension style analysis protocol, style-card library with 3 prompt tiers (SHORT/MEDIUM/LONG), deterministic deck generation via Style Rotation Engine, personal photo shoot mode with identity-lock guarantees, and a fidelity-test protocol (≥4.0 avg, 3-strike escalation). Routes across 7 image-generation endpoints (GPT-Image 2.5 T2I/I2I, Nano Banana 2, Seedream 4.5 T2I/Edit, Ideogram V3, Wan 2.7). Five specialist roles + extended Brainstorming Buddy + gatekeeper (Chief Design Officer) + operating rules. Skill 07 (Kie.ai) prerequisite.
-version: 2.2.2
+version: 2.2.3
 ---
 
 # Skill 45: Design Intelligence Library
@@ -41,6 +41,8 @@ End state: a human says *"Use style FB-003 to advertise [product] with [headline
 **Webinar, funnel, sales, and audience presentation decks are NOT owned by Skill 45.** They are owned by the **Presentations department** and governed by `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` plus the presentations role library. The DIU **Style Rotation Engine** (`PPT-ANALYSIS-SOP.md` §3B) serves **brand / strategy / campaign / pitch / internal decks only**: visual-style-driven multi-slide systems, not communication-driven webinar funnels.
 
 This boundary is enforced, not advisory: the Deck Systems Specialist's SOP 9.5 [SOP-DIU-611] explicitly FORBIDS webinar/funnel/audience decks from routing through the DIU Rotation Engine (`presentations/00-START-HERE.md`). Skill 45 and the Presentations dept are **two separate systems joined by one explicit crossing**: the Presentations Brand Steward MAY submit a reference deck to the DIU Style Analyst for a PPT-tier style card, whose ID is then handed to the Presentations Slide Image Creator. That is the ONLY legal handoff. A webinar/audience deck never runs end-to-end through Skill 45.
+
+**Motion graphics (Skill 72) crossing, stated the same way:** Skill 45 performs no motion design, and Skill 72 performs no style analysis. The one legal crossing between them is the explicit bridge documented from the Skill 72 side in `72-motion-video-plus/references/design-intelligence-bridge.md`: a Skill 72 job sends named reference media (with hashes and, for real-person imagery, a recorded consent basis) to a Style Analyst, and a style card comes back in Skill 45's own terms, cited by card ID. A card is analysis only (`state: analysis_only`); it is never a design approval, and Skill 72 never re-scores a card or averages its fidelity numbers into a motion score.
 
 ---
 

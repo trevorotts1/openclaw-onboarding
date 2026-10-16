@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.0",
+  "handoff_id": "handoff-vsl-mobile-fixture",
+  "insert_job_id": "fixture-vsl-mobile",
+  "narration": {
+    "asset_ref": "fixture-parent-audio",
+    "parent_audio_ref": "fixture-parent-audio",
+    "same_approved_narration": true,
+    "cue": {
+      "id": "fixture-cue",
+      "segment_id": "narr-cue",
+      "word_index": 0,
+      "word_start_sample": 1440000,
+      "resolved_frame": 900,
+      "slot_start_frame": 900,
+      "resolution_method": "word startSample x fps / sample_rate, sample-exact integer arithmetic at 48000 Hz (the resolution the shipped compiler records as the sidecar cue anchor)"
+    },
+    "cue_segment_covers_slot": true,
+    "compiled_total_frames": 180,
+    "slot_length_frames": 180,
+    "parent_total_frames": 1440,
+    "verdict": "pass"
+  },
+  "text": {
+    "canvas": {
+      "width": 1080,
+      "height": 1920
+    },
+    "elements": [
+      {
+        "element": "headline",
+        "role": "headline",
+        "authored_px": 112,
+        "floor_px": 96,
+        "effective_px": 112,
+        "verdict": "pass"
+      },
+      {
+        "element": "category_labels",
+        "role": "chart_category_label",
+        "authored_px": 60,
+        "floor_px": 54,
+        "effective_px": 60,
+        "verdict": "pass"
+      },
+      {
+        "element": "values",
+        "role": "chart_value",
+        "authored_px": 64,
+        "floor_px": 60,
+        "effective_px": 64,
+        "verdict": "pass"
+      },
+      {
+        "element": "disclosure",
+        "role": "disclosure",
+        "authored_px": 48,
+        "floor_px": 40,
+        "effective_px": 48,
+        "verdict": "pass"
+      }
+    ],
+    "verdict": "pass"
+  },
+  "captions": {
+    "profile": {
+      "font_size_px": 64,
+      "placement": "lower_third",
+      "role": "essential_support"
+    },
+    "entries": [
+      {
+        "id": "cap-intro",
+        "role": "essential_support",
+        "floor_px": 54,
+        "effective_px": 64,
+        "verdict": "pass"
+      },
+      {
+        "id": "cap-cue",
+        "role": "essential_support",
+        "floor_px": 54,
+        "effective_px": 64,
+        "verdict": "pass"
+      },
+      {
+        "id": "cap-outro",
+        "role": "essential_support",
+        "floor_px": 54,
+        "effective_px": 64,
+        "verdict": "pass"
+      }
+    ],
+    "verdict": "pass"
+  },
+  "verdict": "pass"
+}

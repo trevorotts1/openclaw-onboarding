@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Linear chart scene</title>
+<style>
+  html, body { margin: 0; background: #ffffff; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+           font-family: sans-serif; color: #14213d; }
+  .bar { position: absolute; left: 360px; height: 90px; background: #2a9d8f; }
+  .bar.b2 { background: #e9c46a; }
+  .bar.b3 { background: #e76f51; }
+  .label { position: absolute; left: 180px; font-size: 44px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="label" style="top: 300px;">Q1</div>
+  <div class="label" style="top: 470px;">Q2</div>
+  <div class="label" style="top: 640px;">Q3</div>
+  <div class="bar b1" id="bar1" style="top: 285px;"></div>
+  <div class="bar b2" id="bar2" style="top: 455px;"></div>
+  <div class="bar b3" id="bar3" style="top: 625px;"></div>
+</div>
+<script>
+window.__sceneDuration = 6;
+window.__choreography = {"intent": "continuous_data_change", "behaviors": ["linear"], "data_marks": true};
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function lerp(a, b, p) { return a + (b - a) * p; }
+var finals = [820, 1150, 640];
+window.__setTime = function (t) {
+  var p = clamp01((t - 0.5) / 3);
+  for (var i = 0; i < 3; i++) {
+    var el = document.getElementById("bar" + (i + 1));
+    el.style.width = lerp(0, finals[i], p) + "px";
+  }
+};
+window.__setTime(0);
+</script>
+</body>
+</html>

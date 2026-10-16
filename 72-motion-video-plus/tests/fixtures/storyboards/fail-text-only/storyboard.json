@@ -1,0 +1,84 @@
+{
+  "schema_version": "2.0",
+  "id": "story-text-only",
+  "beats": [
+    {
+      "id": "beat-words-1",
+      "scene_id": "words-01",
+      "job": "Explain by narration text",
+      "viewer_question": "What does the text say?",
+      "intended_understanding": "The viewer reads the explanation.",
+      "visual_verb": "reveal",
+      "subject_ids": [
+        "line-1"
+      ],
+      "representation": "typography",
+      "explanatory": true,
+      "initial_state": "Blank.",
+      "transformation": "A line of text fades in.",
+      "proof_state": "The line is on screen.",
+      "final_state": "The line holds.",
+      "asset_ids": [],
+      "data_ids": [],
+      "essential_text": [
+        "Explanation line 1"
+      ],
+      "proof_frames": [
+        30
+      ],
+      "typography_only_exception": "Author prefers a text treatment for this beat."
+    },
+    {
+      "id": "beat-words-2",
+      "scene_id": "words-02",
+      "job": "Explain by narration text",
+      "viewer_question": "What does the text say?",
+      "intended_understanding": "The viewer reads the explanation.",
+      "visual_verb": "reveal",
+      "subject_ids": [
+        "line-2"
+      ],
+      "representation": "typography",
+      "explanatory": true,
+      "initial_state": "Blank.",
+      "transformation": "A line of text fades in.",
+      "proof_state": "The line is on screen.",
+      "final_state": "The line holds.",
+      "asset_ids": [],
+      "data_ids": [],
+      "essential_text": [
+        "Explanation line 2"
+      ],
+      "proof_frames": [
+        30
+      ],
+      "typography_only_exception": "Author prefers a text treatment for this beat."
+    },
+    {
+      "id": "beat-words-3",
+      "scene_id": "words-03",
+      "job": "Explain by narration text",
+      "viewer_question": "What does the text say?",
+      "intended_understanding": "The viewer reads the explanation.",
+      "visual_verb": "reveal",
+      "subject_ids": [
+        "line-3"
+      ],
+      "representation": "typography",
+      "explanatory": true,
+      "initial_state": "Blank.",
+      "transformation": "A line of text fades in.",
+      "proof_state": "The line is on screen.",
+      "final_state": "The line holds.",
+      "asset_ids": [],
+      "data_ids": [],
+      "essential_text": [
+        "Explanation line 3"
+      ],
+      "proof_frames": [
+        30
+      ],
+      "typography_only_exception": "Author prefers a text treatment for this beat."
+    }
+  ]
+}

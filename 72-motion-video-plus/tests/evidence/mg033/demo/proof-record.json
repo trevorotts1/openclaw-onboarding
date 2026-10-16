@@ -1,0 +1,144 @@
+{
+  "schema_version": "1.0",
+  "kind": "motion_proof_record",
+  "item": "MG-032",
+  "case_id": "c05-bar-reveal-landscape",
+  "job_id": "fixture-powerpoint-graphic",
+  "scene_id": "bar-01",
+  "component_id": "C05",
+  "verdict": "pass",
+  "category": null,
+  "exit_code": 0,
+  "bindings": {
+    "video_sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+    "coverage_job_id": "fixture-powerpoint-graphic",
+    "coverage_verdict": "complete",
+    "review_label": null,
+    "review_engine": null
+  },
+  "assertions": [
+    {
+      "role": "initial",
+      "frame": 0,
+      "expected": [
+        0,
+        0,
+        0
+      ],
+      "geometry_measured": [
+        0,
+        0,
+        0
+      ],
+      "raster_measured": [
+        0,
+        0,
+        0
+      ],
+      "verdict": "pass",
+      "detail": "bar widths agree three ways at frame 0: spec derivation, component geometry, and decoded raster all read [0, 0, 0]"
+    },
+    {
+      "role": "proof",
+      "frame": 45,
+      "expected": [
+        240,
+        360,
+        600
+      ],
+      "geometry_measured": [
+        240,
+        360,
+        600
+      ],
+      "raster_measured": [
+        240,
+        360,
+        600
+      ],
+      "verdict": "pass",
+      "detail": "bar widths agree three ways at frame 45: spec derivation, component geometry, and decoded raster all read [240, 360, 600]"
+    },
+    {
+      "role": "final",
+      "frame": 75,
+      "expected": [
+        480,
+        720,
+        1200
+      ],
+      "geometry_measured": [
+        480,
+        720,
+        1200
+      ],
+      "raster_measured": [
+        480,
+        720,
+        1200
+      ],
+      "verdict": "pass",
+      "detail": "bar widths agree three ways at frame 75: spec derivation, component geometry, and decoded raster all read [480, 720, 1200]"
+    },
+    {
+      "role": "hold",
+      "frame": 179,
+      "expected": [
+        480,
+        720,
+        1200
+      ],
+      "geometry_measured": [
+        480,
+        720,
+        1200
+      ],
+      "raster_measured": [
+        480,
+        720,
+        1200
+      ],
+      "verdict": "pass",
+      "detail": "bar widths agree three ways at frame 179: spec derivation, component geometry, and decoded raster all read [480, 720, 1200]"
+    }
+  ],
+  "occlusion": null,
+  "context_change": {
+    "mean_abs_diff": 0.04,
+    "frames": [
+      0,
+      75
+    ]
+  },
+  "clip": {
+    "path": "clip.mp4",
+    "frames": 60,
+    "fps": "30/1",
+    "sha256": "f819d2bfc4d5199934dad0918b9954ff60ba1139cc23d04740f5c2352a537bb7"
+  },
+  "frames": [
+    {
+      "frame": 0,
+      "path": "frames/f0.png",
+      "sha256": "e82ea5dfa0be7a2ed37b82bd546b9b8391fde517bc86c81b0aef339dac0cacba"
+    },
+    {
+      "frame": 45,
+      "path": "frames/f45.png",
+      "sha256": "31365a2ef5c093f10a50e2036c885046b7fbe4480a88a4ed48160ac59b12f7d0"
+    },
+    {
+      "frame": 75,
+      "path": "frames/f75.png",
+      "sha256": "85b5eeb5062a01db27848afaf612910e2af0ac1c60c6adfe3891e872db2672f3"
+    },
+    {
+      "frame": 179,
+      "path": "frames/f179.png",
+      "sha256": "c55c6331b02af2502f0b1a6796226d76d8d9e95d1d5786d06f07aa4750c14152"
+    }
+  ],
+  "human_verdict": null,
+  "findings": [],
+  "generated_at": "2026-10-15T03:01:20.568Z"
+}

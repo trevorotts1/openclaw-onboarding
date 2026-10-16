@@ -1,0 +1,1401 @@
+{
+ "schema_version": "1.0",
+ "item": "MG-034",
+ "tool": "qc.py",
+ "tool_version": "1.0.0",
+ "generatedAt": "2026-10-15T04:52:53.329147+00:00",
+ "mode": "package",
+ "job_id": "fixture-powerpoint-graphic",
+ "artifact_path": "renders/final.mp4",
+ "artifact_sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+ "artifact_bytes": 62659,
+ "verdict": "pass",
+ "exit_code": 0,
+ "first_error_category": null,
+ "plan": {
+  "job_id": "fixture-powerpoint-graphic",
+  "fps": 30,
+  "total_frames": 180,
+  "total_samples": 288000,
+  "canvas": [
+   1920,
+   1080
+  ],
+  "audio_mode": "none",
+  "video_profile": "h264_opaque"
+ },
+ "inputs": {
+  "manifest": {
+   "path": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/manifest.json",
+   "sha256": "0e7246b4aeb0645f080d923802b0fef6d2fa66e89a285b4f1ba300359f137c7e"
+  },
+  "plan": {
+   "path": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/timeline.json",
+   "sha256": "5533c067977770418cbcae6f2576d8eae9c6502c49efa71cd768a3c03c391e95"
+  },
+  "sidecar": {
+   "path": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/timeline-sidecar.json",
+   "sha256": "37154df00669586b42cda89edb1a7790e70ed87839eeb36738d11c35f4d48137"
+  },
+  "media": {
+   "path": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/media.json",
+   "sha256": "238dccc53de82970d7ddd1346e3d1caec78efa1fbab78bcf782724db88a2898f"
+  },
+  "coverage": {
+   "path": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/review/fixture-powerpoint-graphic__coverage.json",
+   "sha256": "938fcbaa955e96e93d994e10730efe643006ea4c47b5b130cc1fbc1be1ec8f59"
+  },
+  "assets": {
+   "path": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/assets.json",
+   "sha256": "e1d192ba0c10090a5414f11716c31f3416dfd09d846151aa03168af305a8ee0e"
+  }
+ },
+ "checks": [
+  {
+   "id": "tools.available",
+   "title": "ffmpeg and ffprobe are runnable",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "ffmpeg and ffprobe both answered -version with exit 0",
+   "command": "ffmpeg -version; ffprobe -version",
+   "exit_status": [
+    0,
+    0
+   ],
+   "observed": {
+    "ffmpeg": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers",
+    "ffprobe": "ffprobe version 8.1.2 Copyright (c) 2007-2026 the FFmpeg developers",
+    "tool_paths": {
+     "ffmpeg": "/usr/bin/ffmpeg",
+     "ffprobe": "/usr/bin/ffprobe"
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/timeline.json"
+  },
+  {
+   "id": "inputs.plan",
+   "title": "planned truth loads and agrees",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "compiled timeline and sidecar agree on fps, totals, and job id; MG-023 resolved audio mode none",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "job_id": "fixture-powerpoint-graphic",
+    "fps": 30,
+    "total_frames": 180,
+    "total_samples": 288000,
+    "duration_seconds": 6.0,
+    "audio_mode": "none",
+    "audio_owner": "none",
+    "loudness_target": null,
+    "job_ids": {
+     "timeline": "fixture-powerpoint-graphic",
+     "sidecar": "fixture-powerpoint-graphic",
+     "manifest": "fixture-powerpoint-graphic",
+     "media": null
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/timeline.json"
+  },
+  {
+   "id": "artifact.exists",
+   "title": "final artifact exists",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "final artifact present at 62659 bytes",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "path": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4",
+    "bytes": 62659
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "artifact.hash",
+   "title": "artifact sha256 recorded",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "sha256 of the exact bytes under review is recorded in the report header and binds every other record",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+    "bytes": 62659
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "artifact.probe",
+   "title": "artifact probes cleanly",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "ffprobe parsed the container and found a video stream",
+   "command": "ffprobe -v error -show_streams -show_format -of json /home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4",
+   "exit_status": 0,
+   "observed": {
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264"
+     }
+    ],
+    "format": "mov,mp4,m4a,3gp,3g2,mj2"
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "artifact.decode",
+   "title": "artifact decodes end to end",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "every stream decoded to the end with no error",
+   "command": "ffmpeg -v error -i /home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4 -f null -",
+   "exit_status": 0,
+   "observed": {
+    "error_lines": []
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "plan.dimensions",
+   "title": "final dimensions match the plan canvas",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "artifact dimensions equal the plan canvas 1920x1080",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "expected": {
+     "width": 1920,
+     "height": 1080,
+     "aspect": 1.7778,
+     "source": "manifest.canvas"
+    },
+    "observed": {
+     "width": 1920,
+     "height": 1080,
+     "aspect": 1.7778
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "plan.fps",
+   "title": "final fps matches the plan",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "artifact frame rate matches the compiled plan",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "expected_fps": 30.0,
+    "observed_fps": 30.0,
+    "avg_frame_rate": "30/1"
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "plan.frame_count",
+   "title": "decoded frame count matches the plan",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "decoded frame count equals the compiled total",
+   "command": "ffprobe -v error -show_streams -show_format -of json -count_frames /home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4",
+   "exit_status": 0,
+   "observed": {
+    "expected_frames": 180,
+    "decoded_frames": 180
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "plan.duration",
+   "title": "final duration matches the compiled duration",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "artifact duration is within 0.12s of the compiled duration",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "expected_seconds": 6.0,
+    "observed_seconds": 6.0,
+    "tolerance_seconds": 0.12
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "plan.streams",
+   "title": "stream inventory matches the plan",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "stream inventory matches the resolved plan",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "expected_audio": false,
+    "observed_audio": false,
+    "audio_mode": "none",
+    "streams": [
+     {
+      "index": 0,
+      "codec_type": "video",
+      "codec_name": "h264"
+     }
+    ]
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "audio.decode",
+   "title": "final audio decodes for measurement",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "the artifact has no audio stream; there is no audio to decode (plan.streams judges whether that absence is correct)",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_stream": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "audio.duration",
+   "title": "audio length matches the compiled total samples",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no audio stream to measure; plan.streams judges whether the plan expected one",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_stream": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/timeline.json"
+  },
+  {
+   "id": "audio.clipping",
+   "title": "encoded audio does not clip",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no audio stream; nothing can clip",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_stream": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/timeline.json"
+  },
+  {
+   "id": "audio.loudness",
+   "title": "loudness verified where the mode applies",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "loudness is verified only for an independent final mix (MG-023 mode own); this job's mode is none, so no loudness target exists to fail against. The mode's own promise is judged by audio.mode_promise",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_mode": "none",
+    "loudness_target": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/timeline.json"
+  },
+  {
+   "id": "audio.final_words",
+   "title": "final spoken content is present in the mix",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "the compiled plan places no narration; there is no spoken content to verify",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "placed_narration": []
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/timeline-sidecar.json"
+  },
+  {
+   "id": "audio.score_audible",
+   "title": "the chosen score is audible where nothing speaks",
+   "mandatory": true,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no own-mode score to verify (mode none, music False)",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_mode": "none",
+    "music": null
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/timeline.json"
+  },
+  {
+   "id": "audio.mode_promise",
+   "title": "the artifact keeps its audio mode's promise",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "mode none: the deliverable is silent, as promised (no audio stream)",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "audio_mode": "none",
+    "audio_stream_present": false,
+    "exclusions": []
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "video.black",
+   "title": "no unapproved black intervals",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "no black intervals detected",
+   "command": "ffmpeg -i /home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4 -vf blackdetect=d=0.50:pix_th=0.10 -an -f null -",
+   "exit_status": 0,
+   "observed": {
+    "detected_intervals_frames": [],
+    "approved_dark_intervals_frames": [],
+    "approval_sources": [
+     "timeline event final-hold (hold_start at frame 75, scene bar-01)",
+     "scene spec bar-01 motion hold (source frames 75..180)"
+    ],
+    "uncovered_intervals_frames": [],
+    "threshold": {
+     "min_seconds": 0.5,
+     "pixel_threshold": 0.1
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "video.freeze",
+   "title": "no unapproved frozen intervals",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "no unapproved frozen intervals (1 detected, all covered by plan approvals)",
+   "command": "ffmpeg -i /home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4 -vf freezedetect=n=0.003:d=1.00 -an -f null -",
+   "exit_status": 0,
+   "observed": {
+    "detected_intervals_frames": [
+     [
+      75,
+      180
+     ]
+    ],
+    "approved_freeze_intervals_frames": [
+     [
+      75,
+      180
+     ],
+     [
+      75,
+      180
+     ]
+    ],
+    "approval_sources": [
+     "timeline event final-hold (hold_start at frame 75, scene bar-01)",
+     "scene spec bar-01 motion hold (source frames 75..180)"
+    ],
+    "uncovered_intervals_frames": [],
+    "threshold": {
+     "min_seconds": 1.0,
+     "noise": 0.003
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "video.alpha",
+   "title": "alpha matches the declared export profile",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "artifact alpha agrees with profile h264_opaque",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "video_profile": "h264_opaque",
+    "profile_source": "manifest.delivery",
+    "pix_fmt": "yuv420p",
+    "alpha_pixel_format": false,
+    "alpha_varies": false
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4"
+  },
+  {
+   "id": "review.receipt",
+   "title": "review receipt (MG-031 coverage) binds this artifact",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "coverage record for job fixture-powerpoint-graphic is complete and binds the artifact's exact sha256",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "coverage_path": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/review/fixture-powerpoint-graphic__coverage.json",
+    "record_job_id": "fixture-powerpoint-graphic",
+    "verdict": "complete",
+    "record_video": {
+     "bytes": 62659,
+     "duration_seconds": 6.0,
+     "fps": "30/1",
+     "height": 1080,
+     "path": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/renders/final.mp4",
+     "probed_frames": 180,
+     "sha256": "1d151ffb42d0f95edbde61c271cf1d6bf0d4046af10cbafc4f57807162608a7f",
+     "width": 1920
+    },
+    "review_record": {
+     "label": null,
+     "rough_layout_only": false,
+     "engine": null
+    }
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/review/fixture-powerpoint-graphic__coverage.json"
+  },
+  {
+   "id": "package.assets",
+   "title": "declared assets are present and hash-true",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "all 0 declared assets are present and hash-true",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "assets": [],
+    "assets_path": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/assets.json"
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/assets.json"
+  },
+  {
+   "id": "package.fonts",
+   "title": "declared fonts resolve without substitution",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "every declared font requirement resolves to an installed family or a package font file",
+   "command": "fc-list : family",
+   "exit_status": 0,
+   "observed": {
+    "fonts": [
+     {
+      "id": "font-fixture-sans",
+      "family_alias": "Liberation Sans",
+      "source": "runtime_registry",
+      "status": "resolved"
+     }
+    ],
+    "installed_family_count": 1535
+   },
+   "evidence": "/home/hatch/workspace/skill72-v2/scratch-mg035/job/assets.json"
+  },
+  {
+   "id": "package.lint",
+   "title": "static lint record consumed (MG-030)",
+   "mandatory": false,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no MG-030 lint report was supplied (--lint-report); lint is produced by the runtime lint layer, and QC consumes its record when one exists",
+   "command": null,
+   "exit_status": null,
+   "observed": {},
+   "evidence": null
+  },
+  {
+   "id": "package.motion_proof",
+   "title": "motion-proof record consumed (MG-032)",
+   "mandatory": false,
+   "status": "SKIPPED_WITH_REASON",
+   "code": null,
+   "category": null,
+   "message": "no MG-032 motion-proof record was supplied or found in the job package; when a record exists QC consumes its verdict here",
+   "command": null,
+   "exit_status": null,
+   "observed": {},
+   "evidence": null
+  },
+  {
+   "id": "process.registry",
+   "title": "no live render processes remain registered to this job (MG-029)",
+   "mandatory": true,
+   "status": "PASS",
+   "code": null,
+   "category": null,
+   "message": "no live processes remain registered to job fixture-powerpoint-graphic (201 record(s): 201 finished, 0 stale)",
+   "command": null,
+   "exit_status": null,
+   "observed": {
+    "registry_dir": "/home/hatch/.local/state/motion-render/processes",
+    "registry_file": "/home/hatch/.local/state/motion-render/processes/fixture-powerpoint-graphic.json",
+    "job_id": "fixture-powerpoint-graphic",
+    "registry_job_id": "fixture-powerpoint-graphic",
+    "records_found": 201,
+    "registry_file_present": true,
+    "live_processes": [],
+    "stale_pids": [],
+    "finished_processes": [
+     {
+      "pid": 66331,
+      "state": "exited"
+     },
+     {
+      "pid": 66828,
+      "state": "exited"
+     },
+     {
+      "pid": 67422,
+      "state": "exited"
+     },
+     {
+      "pid": 67875,
+      "state": "exited"
+     },
+     {
+      "pid": 70443,
+      "state": "exited"
+     },
+     {
+      "pid": 70529,
+      "state": "exited"
+     },
+     {
+      "pid": 70711,
+      "state": "exited"
+     },
+     {
+      "pid": 76107,
+      "state": "exited"
+     },
+     {
+      "pid": 90288,
+      "state": "exited"
+     },
+     {
+      "pid": 90697,
+      "state": "exited"
+     },
+     {
+      "pid": 91211,
+      "state": "exited"
+     },
+     {
+      "pid": 91551,
+      "state": "exited"
+     },
+     {
+      "pid": 91827,
+      "state": "exited"
+     },
+     {
+      "pid": 92169,
+      "state": "exited"
+     },
+     {
+      "pid": 92628,
+      "state": "exited"
+     },
+     {
+      "pid": 92732,
+      "state": "exited"
+     },
+     {
+      "pid": 93128,
+      "state": "exited"
+     },
+     {
+      "pid": 93427,
+      "state": "exited"
+     },
+     {
+      "pid": 93865,
+      "state": "exited"
+     },
+     {
+      "pid": 94171,
+      "state": "exited"
+     },
+     {
+      "pid": 94567,
+      "state": "exited"
+     },
+     {
+      "pid": 94958,
+      "state": "exited"
+     },
+     {
+      "pid": 95080,
+      "state": "exited"
+     },
+     {
+      "pid": 95094,
+      "state": "exited"
+     },
+     {
+      "pid": 95115,
+      "state": "exited"
+     },
+     {
+      "pid": 95122,
+      "state": "exited"
+     },
+     {
+      "pid": 95419,
+      "state": "exited"
+     },
+     {
+      "pid": 95465,
+      "state": "exited"
+     },
+     {
+      "pid": 95601,
+      "state": "exited"
+     },
+     {
+      "pid": 95912,
+      "state": "exited"
+     },
+     {
+      "pid": 96097,
+      "state": "exited"
+     },
+     {
+      "pid": 96254,
+      "state": "exited"
+     },
+     {
+      "pid": 96410,
+      "state": "exited"
+     },
+     {
+      "pid": 96623,
+      "state": "exited"
+     },
+     {
+      "pid": 96960,
+      "state": "exited"
+     },
+     {
+      "pid": 97073,
+      "state": "exited"
+     },
+     {
+      "pid": 97363,
+      "state": "exited"
+     },
+     {
+      "pid": 97857,
+      "state": "exited"
+     },
+     {
+      "pid": 98044,
+      "state": "exited"
+     },
+     {
+      "pid": 98424,
+      "state": "exited"
+     },
+     {
+      "pid": 98624,
+      "state": "exited"
+     },
+     {
+      "pid": 98629,
+      "state": "exited"
+     },
+     {
+      "pid": 98638,
+      "state": "exited"
+     },
+     {
+      "pid": 98694,
+      "state": "exited"
+     },
+     {
+      "pid": 100786,
+      "state": "exited"
+     },
+     {
+      "pid": 101014,
+      "state": "exited"
+     },
+     {
+      "pid": 112767,
+      "state": "terminated"
+     },
+     {
+      "pid": 126463,
+      "state": "exited"
+     },
+     {
+      "pid": 129304,
+      "state": "exited"
+     },
+     {
+      "pid": 129713,
+      "state": "exited"
+     },
+     {
+      "pid": 132188,
+      "state": "exited"
+     },
+     {
+      "pid": 135440,
+      "state": "exited"
+     },
+     {
+      "pid": 137860,
+      "state": "exited"
+     },
+     {
+      "pid": 139138,
+      "state": "exited"
+     },
+     {
+      "pid": 139518,
+      "state": "exited"
+     },
+     {
+      "pid": 149964,
+      "state": "exited"
+     },
+     {
+      "pid": 150116,
+      "state": "exited"
+     },
+     {
+      "pid": 150184,
+      "state": "exited"
+     },
+     {
+      "pid": 150833,
+      "state": "exited"
+     },
+     {
+      "pid": 151201,
+      "state": "exited"
+     },
+     {
+      "pid": 151713,
+      "state": "exited"
+     },
+     {
+      "pid": 152024,
+      "state": "exited"
+     },
+     {
+      "pid": 152210,
+      "state": "exited"
+     },
+     {
+      "pid": 153522,
+      "state": "exited"
+     },
+     {
+      "pid": 153531,
+      "state": "exited"
+     },
+     {
+      "pid": 153639,
+      "state": "exited"
+     },
+     {
+      "pid": 155053,
+      "state": "exited"
+     },
+     {
+      "pid": 161024,
+      "state": "exited"
+     },
+     {
+      "pid": 166354,
+      "state": "exited"
+     },
+     {
+      "pid": 166537,
+      "state": "exited"
+     },
+     {
+      "pid": 166621,
+      "state": "exited"
+     },
+     {
+      "pid": 167709,
+      "state": "exited"
+     },
+     {
+      "pid": 167747,
+      "state": "exited"
+     },
+     {
+      "pid": 167766,
+      "state": "exited"
+     },
+     {
+      "pid": 168840,
+      "state": "exited"
+     },
+     {
+      "pid": 168850,
+      "state": "exited"
+     },
+     {
+      "pid": 168955,
+      "state": "exited"
+     },
+     {
+      "pid": 168960,
+      "state": "exited"
+     },
+     {
+      "pid": 169003,
+      "state": "exited"
+     },
+     {
+      "pid": 169711,
+      "state": "exited"
+     },
+     {
+      "pid": 169732,
+      "state": "exited"
+     },
+     {
+      "pid": 180083,
+      "state": "exited"
+     },
+     {
+      "pid": 180143,
+      "state": "exited"
+     },
+     {
+      "pid": 180158,
+      "state": "exited"
+     },
+     {
+      "pid": 180737,
+      "state": "exited"
+     },
+     {
+      "pid": 181101,
+      "state": "exited"
+     },
+     {
+      "pid": 181416,
+      "state": "exited"
+     },
+     {
+      "pid": 181434,
+      "state": "exited"
+     },
+     {
+      "pid": 182070,
+      "state": "exited"
+     },
+     {
+      "pid": 185408,
+      "state": "exited"
+     },
+     {
+      "pid": 187376,
+      "state": "exited"
+     },
+     {
+      "pid": 188667,
+      "state": "exited"
+     },
+     {
+      "pid": 191077,
+      "state": "exited"
+     },
+     {
+      "pid": 194508,
+      "state": "exited"
+     },
+     {
+      "pid": 194958,
+      "state": "exited"
+     },
+     {
+      "pid": 195958,
+      "state": "exited"
+     },
+     {
+      "pid": 2520,
+      "state": "exited"
+     },
+     {
+      "pid": 2778,
+      "state": "exited"
+     },
+     {
+      "pid": 2890,
+      "state": "exited"
+     },
+     {
+      "pid": 4598,
+      "state": "exited"
+     },
+     {
+      "pid": 10111,
+      "state": "exited"
+     },
+     {
+      "pid": 10273,
+      "state": "exited"
+     },
+     {
+      "pid": 10290,
+      "state": "exited"
+     },
+     {
+      "pid": 10854,
+      "state": "exited"
+     },
+     {
+      "pid": 11276,
+      "state": "exited"
+     },
+     {
+      "pid": 11651,
+      "state": "exited"
+     },
+     {
+      "pid": 11980,
+      "state": "exited"
+     },
+     {
+      "pid": 12530,
+      "state": "exited"
+     },
+     {
+      "pid": 13868,
+      "state": "exited"
+     },
+     {
+      "pid": 13870,
+      "state": "exited"
+     },
+     {
+      "pid": 13908,
+      "state": "exited"
+     },
+     {
+      "pid": 14898,
+      "state": "exited"
+     },
+     {
+      "pid": 24308,
+      "state": "exited"
+     },
+     {
+      "pid": 24847,
+      "state": "exited"
+     },
+     {
+      "pid": 24855,
+      "state": "exited"
+     },
+     {
+      "pid": 24864,
+      "state": "exited"
+     },
+     {
+      "pid": 25041,
+      "state": "exited"
+     },
+     {
+      "pid": 25844,
+      "state": "exited"
+     },
+     {
+      "pid": 26347,
+      "state": "exited"
+     },
+     {
+      "pid": 26532,
+      "state": "exited"
+     },
+     {
+      "pid": 26663,
+      "state": "exited"
+     },
+     {
+      "pid": 27608,
+      "state": "exited"
+     },
+     {
+      "pid": 27678,
+      "state": "exited"
+     },
+     {
+      "pid": 27685,
+      "state": "exited"
+     },
+     {
+      "pid": 27749,
+      "state": "exited"
+     },
+     {
+      "pid": 27990,
+      "state": "exited"
+     },
+     {
+      "pid": 28809,
+      "state": "exited"
+     },
+     {
+      "pid": 29247,
+      "state": "exited"
+     },
+     {
+      "pid": 30227,
+      "state": "exited"
+     },
+     {
+      "pid": 31101,
+      "state": "exited"
+     },
+     {
+      "pid": 31781,
+      "state": "exited"
+     },
+     {
+      "pid": 31791,
+      "state": "exited"
+     },
+     {
+      "pid": 31798,
+      "state": "exited"
+     },
+     {
+      "pid": 31968,
+      "state": "exited"
+     },
+     {
+      "pid": 32084,
+      "state": "exited"
+     },
+     {
+      "pid": 32193,
+      "state": "exited"
+     },
+     {
+      "pid": 32290,
+      "state": "exited"
+     },
+     {
+      "pid": 32410,
+      "state": "exited"
+     },
+     {
+      "pid": 32578,
+      "state": "exited"
+     },
+     {
+      "pid": 32580,
+      "state": "exited"
+     },
+     {
+      "pid": 32583,
+      "state": "exited"
+     },
+     {
+      "pid": 32760,
+      "state": "exited"
+     },
+     {
+      "pid": 38242,
+      "state": "terminated"
+     },
+     {
+      "pid": 39306,
+      "state": "exited"
+     },
+     {
+      "pid": 39482,
+      "state": "exited"
+     },
+     {
+      "pid": 39512,
+      "state": "exited"
+     },
+     {
+      "pid": 39677,
+      "state": "exited"
+     },
+     {
+      "pid": 39678,
+      "state": "exited"
+     },
+     {
+      "pid": 39680,
+      "state": "exited"
+     },
+     {
+      "pid": 39849,
+      "state": "exited"
+     },
+     {
+      "pid": 39850,
+      "state": "exited"
+     },
+     {
+      "pid": 39870,
+      "state": "exited"
+     },
+     {
+      "pid": 39871,
+      "state": "exited"
+     },
+     {
+      "pid": 39901,
+      "state": "exited"
+     },
+     {
+      "pid": 40065,
+      "state": "exited"
+     },
+     {
+      "pid": 40066,
+      "state": "exited"
+     },
+     {
+      "pid": 46581,
+      "state": "exited"
+     },
+     {
+      "pid": 46589,
+      "state": "exited"
+     },
+     {
+      "pid": 46596,
+      "state": "exited"
+     },
+     {
+      "pid": 46761,
+      "state": "exited"
+     },
+     {
+      "pid": 46855,
+      "state": "exited"
+     },
+     {
+      "pid": 47058,
+      "state": "exited"
+     },
+     {
+      "pid": 47059,
+      "state": "exited"
+     },
+     {
+      "pid": 47429,
+      "state": "exited"
+     },
+     {
+      "pid": 51154,
+      "state": "exited"
+     },
+     {
+      "pid": 51256,
+      "state": "exited"
+     },
+     {
+      "pid": 51356,
+      "state": "exited"
+     },
+     {
+      "pid": 51463,
+      "state": "exited"
+     },
+     {
+      "pid": 51564,
+      "state": "exited"
+     },
+     {
+      "pid": 51674,
+      "state": "exited"
+     },
+     {
+      "pid": 51856,
+      "state": "exited"
+     },
+     {
+      "pid": 51950,
+      "state": "exited"
+     },
+     {
+      "pid": 52047,
+      "state": "exited"
+     },
+     {
+      "pid": 52143,
+      "state": "exited"
+     },
+     {
+      "pid": 52238,
+      "state": "exited"
+     },
+     {
+      "pid": 52335,
+      "state": "exited"
+     },
+     {
+      "pid": 52513,
+      "state": "exited"
+     },
+     {
+      "pid": 52607,
+      "state": "exited"
+     },
+     {
+      "pid": 52700,
+      "state": "exited"
+     },
+     {
+      "pid": 52796,
+      "state": "exited"
+     },
+     {
+      "pid": 52889,
+      "state": "exited"
+     },
+     {
+      "pid": 52982,
+      "state": "exited"
+     },
+     {
+      "pid": 53162,
+      "state": "exited"
+     },
+     {
+      "pid": 53257,
+      "state": "exited"
+     },
+     {
+      "pid": 53350,
+      "state": "exited"
+     },
+     {
+      "pid": 53443,
+      "state": "exited"
+     },
+     {
+      "pid": 53539,
+      "state": "exited"
+     },
+     {
+      "pid": 53631,
+      "state": "exited"
+     },
+     {
+      "pid": 65720,
+      "state": "exited"
+     },
+     {
+      "pid": 65733,
+      "state": "exited"
+     },
+     {
+      "pid": 65749,
+      "state": "exited"
+     },
+     {
+      "pid": 65936,
+      "state": "exited"
+     },
+     {
+      "pid": 66054,
+      "state": "exited"
+     },
+     {
+      "pid": 66166,
+      "state": "exited"
+     },
+     {
+      "pid": 66269,
+      "state": "exited"
+     },
+     {
+      "pid": 66388,
+      "state": "exited"
+     },
+     {
+      "pid": 66553,
+      "state": "exited"
+     },
+     {
+      "pid": 66554,
+      "state": "exited"
+     },
+     {
+      "pid": 66556,
+      "state": "exited"
+     },
+     {
+      "pid": 66732,
+      "state": "exited"
+     },
+     {
+      "pid": 69034,
+      "state": "exited"
+     }
+    ],
+    "identity_rule": "MG-029: a running record is live only when the pid is alive and its kernel start-time still equals the recorded ticks (or, when no ticks were recorded, its environment carries the job token)"
+   },
+   "evidence": "/home/hatch/.local/state/motion-render/processes/fixture-powerpoint-graphic.json"
+  }
+ ],
+ "summary": {
+  "total": 27,
+  "pass": 19,
+  "fail": 0,
+  "skipped_with_reason": 8,
+  "not_run": 0,
+  "failed_checks": [],
+  "mandatory_not_run": []
+ }
+}

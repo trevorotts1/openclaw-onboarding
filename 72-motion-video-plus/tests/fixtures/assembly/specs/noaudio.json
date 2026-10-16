@@ -1,0 +1,1 @@
+{"canvas":{"height":180,"width":320},"fps":30,"id":"noaudio","mix":{"ducking":null,"musicVolume":1.0},"music":null,"narration":[],"scenes":[{"color":"red","durationFrames":60,"id":"a"},{"color":"blue","durationFrames":60,"id":"b"}],"sfx":[],"transitions":[{"frames":15,"from":"a","owner":"a","to":"b"}]}

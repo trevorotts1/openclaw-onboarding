@@ -1,0 +1,337 @@
+{
+  "schema_version": "1.0",
+  "item": "MG-039",
+  "kind": "standalone_build_record",
+  "job_id": "fixture-standalone-silent",
+  "package": "/home/hatch/workspace/skill72-v2/wt-mg044/72-motion-video-plus/tests/fixtures/standalone/silent",
+  "steps": {
+    "compile": {
+      "total_frames": 405,
+      "total_samples": 648000,
+      "authored_timeline_matches_compile": true
+    },
+    "contracts": {
+      "findings_total": 43,
+      "c01_divergence_findings": [
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#",
+          "message": "scenes/open-reveal.json fails scene schema: 'asset_ids' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#",
+          "message": "scenes/open-reveal.json fails scene schema: 'data_path' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#",
+          "message": "scenes/open-reveal.json fails scene schema: 'design_path' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#",
+          "message": "scenes/open-reveal.json fails scene schema: 'layout_variant' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#",
+          "message": "scenes/open-reveal.json fails scene schema: Additional properties are not allowed ('asset_file', 'asset_sha256', 'canvas', 'caption_px', 'design', 'font_ref', 'headline_px', 'subject' were unexpected)"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/component_id",
+          "message": "scenes/open-reveal.json fails scene schema: 'C05' was expected"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/copy",
+          "message": "scenes/open-reveal.json fails scene schema: 'disclosure' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/copy",
+          "message": "scenes/open-reveal.json fails scene schema: Additional properties are not allowed ('caption', 'fixture_label' were unexpected)"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/motion",
+          "message": "scenes/open-reveal.json fails scene schema: 'overshoot_data' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/motion/kind",
+          "message": "scenes/open-reveal.json fails scene schema: 'linear_bar_reveal' was expected"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/schema_version",
+          "message": "scenes/open-reveal.json fails scene schema: '2.0' was expected"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/0",
+          "message": "scenes/open-reveal.json fails scene schema: 'evidence' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/0",
+          "message": "scenes/open-reveal.json fails scene schema: 'expected_values' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/0",
+          "message": "scenes/open-reveal.json fails scene schema: 'subject_ids' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/0",
+          "message": "scenes/open-reveal.json fails scene schema: 'tolerance' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/0",
+          "message": "scenes/open-reveal.json fails scene schema: 'unit' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/0",
+          "message": "scenes/open-reveal.json fails scene schema: Additional properties are not allowed ('max_fraction', 'min_fraction' were unexpected)"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/0/kind",
+          "message": "scenes/open-reveal.json fails scene schema: 'subject_reveal' is not one of ['bar_widths', 'subject_identity', 'text_readability', 'timeline_bounds']"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/1",
+          "message": "scenes/open-reveal.json fails scene schema: 'evidence' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/1",
+          "message": "scenes/open-reveal.json fails scene schema: 'expected_values' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/1",
+          "message": "scenes/open-reveal.json fails scene schema: 'subject_ids' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/1",
+          "message": "scenes/open-reveal.json fails scene schema: 'tolerance' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/1",
+          "message": "scenes/open-reveal.json fails scene schema: 'unit' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/1",
+          "message": "scenes/open-reveal.json fails scene schema: Additional properties are not allowed ('max_fraction', 'min_fraction' were unexpected)"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/1/kind",
+          "message": "scenes/open-reveal.json fails scene schema: 'subject_reveal' is not one of ['bar_widths', 'subject_identity', 'text_readability', 'timeline_bounds']"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/2",
+          "message": "scenes/open-reveal.json fails scene schema: 'evidence' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/2",
+          "message": "scenes/open-reveal.json fails scene schema: 'expected_values' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/2",
+          "message": "scenes/open-reveal.json fails scene schema: 'subject_ids' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/2",
+          "message": "scenes/open-reveal.json fails scene schema: 'tolerance' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/2",
+          "message": "scenes/open-reveal.json fails scene schema: 'unit' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/2",
+          "message": "scenes/open-reveal.json fails scene schema: Additional properties are not allowed ('max_fraction', 'min_fraction' were unexpected)"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/open-reveal.json#/semantic_motion_assertions/2/kind",
+          "message": "scenes/open-reveal.json fails scene schema: 'subject_reveal' is not one of ['bar_widths', 'subject_identity', 'text_readability', 'timeline_bounds']"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/detail-zoom.json#",
+          "message": "scenes/detail-zoom.json fails scene schema: 'asset_ids' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/detail-zoom.json#",
+          "message": "scenes/detail-zoom.json fails scene schema: 'data_path' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/detail-zoom.json#",
+          "message": "scenes/detail-zoom.json fails scene schema: 'design_path' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/detail-zoom.json#",
+          "message": "scenes/detail-zoom.json fails scene schema: 'layout_variant' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/detail-zoom.json#",
+          "message": "scenes/detail-zoom.json fails scene schema: 'motion' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/detail-zoom.json#",
+          "message": "scenes/detail-zoom.json fails scene schema: 'semantic_motion_assertions' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/detail-zoom.json#",
+          "message": "scenes/detail-zoom.json fails scene schema: Additional properties are not allowed ('asset_file', 'asset_sha256', 'canvas', 'design', 'detail', 'font_ref', 'headline_px', 'subject', 'variant' were unexpected)"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/detail-zoom.json#/component_id",
+          "message": "scenes/detail-zoom.json fails scene schema: 'C05' was expected"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/detail-zoom.json#/copy",
+          "message": "scenes/detail-zoom.json fails scene schema: 'disclosure' is a required property"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/detail-zoom.json#/copy",
+          "message": "scenes/detail-zoom.json fails scene schema: Additional properties are not allowed ('fixture_label' was unexpected)"
+        },
+        {
+          "category": "MG_SCHEMA_INVALID",
+          "path": "scenes/detail-zoom.json#/schema_version",
+          "message": "scenes/detail-zoom.json fails scene schema: '2.0' was expected"
+        }
+      ],
+      "note": "Findings are confined to the two C01 scene specs: the canonical scene $def is closed on C05 1.0.0 (the MG-017/MG-018 catalog divergence). Every other package file validates clean."
+    },
+    "staging": {
+      "media_scenes": 4,
+      "narrated": false
+    },
+    "render": {
+      "scenes": [
+        {
+          "scene_id": "open-reveal",
+          "engine": "hyperframes",
+          "frames": 90,
+          "routing_reason_code": "explicit_scene"
+        },
+        {
+          "scene_id": "detail-zoom",
+          "engine": "hyperframes",
+          "frames": 90,
+          "routing_reason_code": "explicit_scene"
+        },
+        {
+          "scene_id": "proof-chart",
+          "engine": "remotion",
+          "frames": 150,
+          "routing_reason_code": "explicit_scene"
+        },
+        {
+          "scene_id": "final-state",
+          "engine": "remotion",
+          "frames": 120,
+          "routing_reason_code": "explicit_scene"
+        }
+      ]
+    },
+    "assemble": {
+      "audio_mode": "plan",
+      "audio_qc": null,
+      "decoded_frames": 405,
+      "audio_present": false
+    },
+    "poster": {
+      "frame": 390,
+      "hold_start_frame": 325,
+      "ending_scene": "final-state",
+      "overlaps": [
+        [
+          75,
+          90
+        ],
+        [
+          150,
+          165
+        ],
+        [
+          285,
+          300
+        ]
+      ],
+      "width": 1920,
+      "height": 1080,
+      "mean_luminance": 213.507
+    },
+    "coverage": {
+      "verdict": "complete",
+      "omitted_frames": 0,
+      "samples": 32
+    },
+    "proof": {
+      "verdict": "pass",
+      "scenes": [
+        {
+          "scene_id": "open-reveal",
+          "mechanism": "adapter_inspect_motion",
+          "verdict": "pass"
+        },
+        {
+          "scene_id": "detail-zoom",
+          "mechanism": "adapter_stills_measurement",
+          "verdict": "pass"
+        },
+        {
+          "scene_id": "proof-chart",
+          "mechanism": "mg032_evaluator",
+          "verdict": "pass"
+        },
+        {
+          "scene_id": "final-state",
+          "mechanism": "mg032_evaluator",
+          "verdict": "pass"
+        }
+      ]
+    },
+    "review": {
+      "verdict": "ship",
+      "provisional": true
+    },
+    "qc": {
+      "script": "/home/hatch/workspace/skill72-v2/wt-mg044/72-motion-video-plus/scripts/qc.py",
+      "verdict": "pass",
+      "checks": 27
+    },
+    "packaging": {
+      "assets_registered": 12
+    }
+  }
+}
