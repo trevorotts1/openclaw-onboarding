@@ -2,9 +2,9 @@
   "skill": "council-of-wise-elders",
   "skill_version": "v1.0.0",
   "generated_by": "scripts/build-bundles.mjs",
-  "source_commit": "e38394ee42df57da22659e1f3f4889e5aacc74da",
-  "file_count": 308,
-  "aggregate_sha256": "808199ea67e33ac641bb87bf8be05e4407c92afc1588e2de3e4dd21bcef621fc",
+  "source_commit": "966c7d16a744b8ace408c817adf74f7ef53887ae",
+  "file_count": 309,
+  "aggregate_sha256": "6b523e97b3b27daeb529bf798e6525065e4967337d2182d0880afcc1690e8dbf",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -29,13 +29,13 @@
     },
     {
       "path": "INSTALL.md",
-      "sha256": "0e0e947ce13a5f7006edf9af90073a38c6a3f73f400d6e5cbcee01efba720dbe",
-      "bytes": 11827
+      "sha256": "1ff368c4fa408c05e6d2e260509235924aa337ee79a23be69e3e8b14dc2181b6",
+      "bytes": 12045
     },
     {
       "path": "INSTRUCTIONS.md",
-      "sha256": "0bd197814538cfbce7c38331361daf00006b809cee863abdf6bb5caeb4750bee",
-      "bytes": 4594
+      "sha256": "14f41e8b024efed4430a1a1626dbe8060c9f3aee0f657b7d195064ec8cbe79e0",
+      "bytes": 4749
     },
     {
       "path": "PREREQS.json",
@@ -44,13 +44,13 @@
     },
     {
       "path": "QC.md",
-      "sha256": "3dc60a071dc498d5dca4e2177e3cdefc99c81c874fa122812d5411123a5e4230",
-      "bytes": 3629
+      "sha256": "07cfe25db8920eee0b2548051f61ad9ef32149479b4bce5a5a6b998e325c8e9b",
+      "bytes": 3762
     },
     {
       "path": "SKILL.md",
-      "sha256": "c054061c0e9be813d71899a6f0f7c05a8b6f6d88e205ce1fd644d0e9acbcd6f5",
-      "bytes": 6344
+      "sha256": "b8a47dd527f84aa34633452612c1135ac66f90510e58b207f942b568da29a2c4",
+      "bytes": 6907
     },
     {
       "path": "advisors/brene-brown/briefing.md",
@@ -314,8 +314,8 @@
     },
     {
       "path": "advisors/russell-brunson/coverage.json",
-      "sha256": "8382f707abd346a582b7307d0799f94da7d9222a1691c818efa882e5fc701c2a",
-      "bytes": 4682
+      "sha256": "65a5a13ef2ee479a7c607c393bb23924acb86080500924eafb519e0c4a4527a7",
+      "bytes": 4330
     },
     {
       "path": "advisors/russell-brunson/decision-rules.json",
@@ -414,8 +414,8 @@
     },
     {
       "path": "advisors/td-jakes/coverage.json",
-      "sha256": "f222f27bfaf0f0b5eec09aefbb95ca4b0e8125d23dc7e99cb24c10eac46912f2",
-      "bytes": 3014
+      "sha256": "753e7f35937f91b600e8141013d1b130ec1dc19cbb1711983381c3ba262e9f78",
+      "bytes": 3404
     },
     {
       "path": "advisors/td-jakes/decision-rules.json",
@@ -449,8 +449,8 @@
     },
     {
       "path": "advisors/td-jakes/sources.json",
-      "sha256": "8bdbfd45641972f5bb3deca5face09e28c18e94799b9ca737e7f21377a4ea2ee",
-      "bytes": 14655
+      "sha256": "07d0e716b5291a62dbe3dcf67e8d5646800574a5faf9ada2f521bed796a14214",
+      "bytes": 14956
     },
     {
       "path": "advisors/tiffany-aliche/briefing.md",
@@ -539,8 +539,8 @@
     },
     {
       "path": "references/install-matrix.md",
-      "sha256": "eff0ceb9056f3e8f88ce13c2cc1bcc35429dcb6309163b78165763282391926c",
-      "bytes": 2791
+      "sha256": "73243182c7304fd478e01c2c20e27495476bef567ea1e4dd8c296c4fbd3d9d92",
+      "bytes": 3195
     },
     {
       "path": "references/model-routing.md",
@@ -549,8 +549,8 @@
     },
     {
       "path": "references/protocol.md",
-      "sha256": "68ab484ff74614dbd02d1e1ad9db3d1418f2be2b8dec53d08d352f4f7c1524ad",
-      "bytes": 4224
+      "sha256": "5425acfc02efb7b307d9002bdc0854c42321e72fd0518f7fa327e0395e7683e4",
+      "bytes": 4186
     },
     {
       "path": "references/report-template.md",
@@ -569,13 +569,13 @@
     },
     {
       "path": "references/source-policy.md",
-      "sha256": "36388e8f4292f77f8eb430e1e8394fc4d95e4b3dfb2c1c2ee20669f0ef80f24f",
-      "bytes": 2860
+      "sha256": "d9992cd82f7ac3325b8d3e8b9e099d238fa73b2ec7cfb68baeaf9eec9cdd98d2",
+      "bytes": 3171
     },
     {
       "path": "references/troubleshooting.md",
-      "sha256": "1619d4fdb6b909fbb10d27f3db5520fcd9f9d4408806905a9fd5be6de7000c55",
-      "bytes": 2559
+      "sha256": "fbd324230ad6f0925820f372a205c7005d02ed1137c404af1fa9820021ecb5c1",
+      "bytes": 2574
     },
     {
       "path": "runtime/.gitignore",
@@ -744,8 +744,8 @@
     },
     {
       "path": "runtime/src/cli/report-export.ts",
-      "sha256": "26875b7141723da9b142cc373386b7ddc19c2741c661e36aac8cde229e4711b5",
-      "bytes": 7257
+      "sha256": "75b9e8c052cb899d7de928bb639609783eb4eec7c7769d69441cad03103ceb49",
+      "bytes": 7447
     },
     {
       "path": "runtime/src/cli/route-discovery.ts",
@@ -1009,8 +1009,8 @@
     },
     {
       "path": "runtime/src/protocol/challenge.ts",
-      "sha256": "94d559727bbeeafc24e0dd629036dcd65bfd3097c579c35763e490aea2b588ac",
-      "bytes": 46029
+      "sha256": "d5872d7e608b627a0f5be10784d21e6bedf998db6d731e83d621e15d1b06142b",
+      "bytes": 46604
     },
     {
       "path": "runtime/src/protocol/composition.ts",
@@ -1039,8 +1039,8 @@
     },
     {
       "path": "runtime/src/protocol/opening.ts",
-      "sha256": "c30e4d9ef83b8332665ea3ccfeb8197310eeaefa94736112ab33aa34a8fa8b2f",
-      "bytes": 27360
+      "sha256": "160c6ff49933a2ec088e0796ac7780d202ddb13eee88c18808ddb86df822d2f4",
+      "bytes": 27935
     },
     {
       "path": "runtime/src/protocol/outcomes.ts",
@@ -1049,8 +1049,8 @@
     },
     {
       "path": "runtime/src/protocol/ratification.ts",
-      "sha256": "0f5e1368193ee5f863c3a2e598c4ddfa1d3efb10437044c03b80a733789dceec",
-      "bytes": 66019
+      "sha256": "38613c1b24faf61eb928cead90486b509288e0e83cfd04f49511c27ee9faeee5",
+      "bytes": 67108
     },
     {
       "path": "runtime/src/protocol/session-controls.ts",
@@ -1149,8 +1149,8 @@
     },
     {
       "path": "runtime/src/reports/model.ts",
-      "sha256": "adb3ce1689e206b2823ca374339598c80de18abf9c65e47c53daba40af248163",
-      "bytes": 17609
+      "sha256": "cc41279887b9686ef7ad388ed243f6a59aef885eb553b1510d92bb22274fb204",
+      "bytes": 18189
     },
     {
       "path": "runtime/src/reports/registry.ts",
@@ -1159,13 +1159,13 @@
     },
     {
       "path": "runtime/src/reports/render.ts",
-      "sha256": "ab8b8ff15449aac0bd45db46a666c2b7be3393919e033eb7c72aead7acbc745e",
-      "bytes": 27094
+      "sha256": "8217dbb92d1f217e2e315d3ad532fd3cbca4f45165aef78a994df0287a729e18",
+      "bytes": 27493
     },
     {
       "path": "runtime/src/reports/service.ts",
-      "sha256": "40a00dc522764e4c86961564bf311f4e003282f973fe0a7aef4a58a772c2e8a5",
-      "bytes": 18805
+      "sha256": "bda0e2bbd966e46e403c0008fdc66aa5db6b2cabf1c0cbfb821162f0122573b3",
+      "bytes": 18948
     },
     {
       "path": "runtime/src/scoring/critical-domains.ts",
@@ -1386,6 +1386,11 @@
       "path": "runtime/tests/run-authorization.test.ts",
       "sha256": "70688878abe64ae1f45e30494b7a8bc53807ef5aa40a4b761c137e7617777ef1",
       "bytes": 37043
+    },
+    {
+      "path": "runtime/tests/sample-export-badge.test.ts",
+      "sha256": "86faaa433e31ea6783d86fe9bf165291a6638c8a9c553924d96465632da0a479",
+      "bytes": 9528
     },
     {
       "path": "runtime/tests/scenarios/README.md",
