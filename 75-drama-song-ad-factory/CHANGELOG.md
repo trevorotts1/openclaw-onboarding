@@ -34,6 +34,21 @@ merged tree by their own generators** and verified clean —
 The same two files conflicted when `origin/main` was merged into `#2128` and were
 resolved and regenerated identically on that member branch.
 
+**One more merge-resolution defect, found and fixed on the same evidence.** Taking the
+incoming `_index.json` wholesale also took `main`'s `"version": "27.1.27"`, regressing the
+branch's own repo-release marker while every other marker stayed at `27.1.28`. The
+regenerator preserves `version`, so it survived regeneration and only the instrument caught
+it — `scripts/bump-version.sh --check` went red:
+
+```
+templates/role-library/_index.json [version]   27.1.27   <-- DRIFT
+DRIFT DETECTED — at least one file disagrees with /version.   (rc=1)
+```
+
+Restoring `27.1.28` on the `#2128` member branch (head `c0f912c2b`) and re-merging it here
+turns the instrument green: `bump-version.sh --check` -> "All 10 version markers agree"
+(rc=0), and `qc-assert-repo-consistency.py` -> rc=0, 10/10 dimensions OK.
+
 **Area regressions, run on this batch head (BUILD-PLAN.md "Regression commands per area"):**
 
 - Service: `node --test 75-drama-song-ad-factory/mini-app/service/test/*.test.mjs` -> 111/111 pass; `service/prove/prove_push_optional.mjs` and `prove_service_boundaries.mjs` -> ALL CASES PASSED.
