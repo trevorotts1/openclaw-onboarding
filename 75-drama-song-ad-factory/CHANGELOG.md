@@ -4,6 +4,28 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.61 - 2026-10-16 - BATCH-AGN-24H-O3: W4-proof-U2 accepted platform proof, privacy-repaired receipt
+
+Batch `BATCH-AGN-24H-O3` - the accepted `W4-proof-U2` platform proof lands on
+main with its receipt header privacy-repaired (one batch PR). Window:
+2026-10-15T23:54:34Z - 2026-10-16T23:54:34Z.
+
+- `unit/AGN-924-proof-REPAIR` (W4-proof-U2 privacy repair, AGN-924) -
+  `references/agnes-platform-proof.md`: the TEST-01 container-persistence
+  receipt (single-platform test, same-recipe parallel validation) and the three
+  sourced receipt claims from the accepted head reach main, and every
+  identifier site is swapped for a generic label: line 1's two identity
+  categories become "a client VPS", and the six box-label cells (Instrument,
+  Transport and the client-container rows) become "a client VPS box" and
+  "a-client-vps-box-openclaw-1". Every other byte stays put: capture pointers,
+  recipe wording, dates and every truthful output are preserved - the diff
+  against the accepted copy is exactly 7 lines (line 1 plus those six cells),
+  12 bytes shorter, 319 lines on both sides.
+
+Version `v2.9.60` -> `v2.9.61` (main already carries `v2.9.60` from #2146; this release takes the next patch. G3 gates a skill-content change on that bump). Both the
+`skill-version.txt` file and the `SKILL.md` frontmatter `version:` field carry
+`v2.9.61` in the same commit, so the frontmatter guard holds.
+
 ## v2.9.59 - 2026-10-15 - BATCH-AGN-24H-O: last-24h leftover units
 
 Batch `BATCH-AGN-24H-O` — the four wave-1/wave-2 units that were still open
