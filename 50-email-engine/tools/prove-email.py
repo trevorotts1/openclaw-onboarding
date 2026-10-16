@@ -77,6 +77,8 @@ AF_TYPE_MISMATCH = "AF-EMAIL-TYPE-MISMATCH"
 AF_INTAKE_SPLIT = "AF-EMAIL-INTAKE-SPLIT"
 AF_BRIEF_INCOMPLETE = "AF-EMAIL-BRIEF-INCOMPLETE"
 AF_OVERRIDE_UNLOGGED = "AF-EMAIL-OVERRIDE-UNLOGGED"
+AF_CTA_PLACEMENT = "AF-EMAIL-CTA-PLACEMENT"
+AF_SLOT_TRACE = "AF-EMAIL-SLOT-TRACE"
 
 # ---- SACRED constants (preserved VERBATIM from the corpus) ------------------
 FRAMEWORKS = (
@@ -127,6 +129,64 @@ PREVIEW_EXPECTED = {"landing_page_10": 2, "buyer_type_12": 1, "high_ticket_12": 
 # per-email or locked-brief preview-count override can never lower it (see
 # evaluate_email). Other profiles are untouched.
 SIGNATURE_LAUNCH_TYPE = "signature_launch_landing_10"
+# Canonical ordered part labels for the profile's eight mapped frameworks
+# (grounded in each framework's email-library record). On the Signature Launch
+# profile, sections[] are REQUIRED and must follow this order, so framework
+# structure (the E8 twelve beats, the AIDA and PAS arcs, the 6 W's) is provable
+# on every run instead of only when an author volunteers sections. Labels are
+# matched against the section's leading label (text before a colon, or the
+# whole section string), case-insensitively, as an ordered subsequence.
+PROFILE_PART_ORDER = {
+    "pastor-solutions": ["problem", "amplify", "story", "transformation", "offer", "response"],
+    "features-to-benefit": ["feature", "benefit", "deeper benefit"],
+    "six-ws": ["why", "what", "who", "when", "where", "how"],
+    "before-after-bridge": ["before", "after", "bridge"],
+    "three-b-plan": ["brevity", "blunt", "basic"],
+    "million-dollar-sales": ["attention", "intention", "disqualifier", "credibility",
+                             "context", "cta", "benefits", "testimonial", "cta",
+                             "intention", "cta", "humorous"],
+    "aida": ["attention", "interest", "desire", "action"],
+    "pas": ["problem", "agitate", "solution"],
+}
+# The profile's measurable PASTOR CTA placement rule (beginning / middle / end):
+# the first CTA starts within the first half of the body words and the last CTA
+# starts inside the final quarter.
+CTA_FIRST_MAX_FRACTION = 0.50
+CTA_LAST_MIN_FRACTION = 0.75
+
+
+def _section_label(text):
+    t = (text or "").strip().lower()
+    head = t.split(":", 1)[0] if ":" in t[:48] else t
+    return head.strip()
+
+
+def _sections_follow_order(sections, canonical):
+    """True when the canonical part labels appear in `sections` in order
+    (an ordered subsequence over the sections' leading labels)."""
+    p = 0
+    for s in sections:
+        if p >= len(canonical):
+            break
+        if canonical[p] in _section_label(s):
+            p += 1
+    return p >= len(canonical)
+
+
+def _cta_word_fraction(body, cta):
+    """Fraction of body words before the first occurrence of the CTA text
+    (case-insensitive), or None when the CTA text is absent from the body."""
+    text = (body or "").lower()
+    needle = (cta or "").strip().lower()
+    if not needle:
+        return None
+    pos = text.find(needle)
+    if pos < 0:
+        return None
+    total = len(text.split())
+    if total == 0:
+        return None
+    return len(text[:pos].split()) / total
 
 # ---- required brief fields — DERIVED FROM THE INTAKE CONTRACT (T2-38) --------
 # intake/email-intake-questions.json:6 describes itself as "the authoritative spec
@@ -446,6 +506,37 @@ def evaluate_email(email, ctx):
             if have != want:
                 fails.append((AF_FRAMEWORK_INCOMPLETE,
                               "%s: %s declares %d sections, needs exactly %d" % (tag, framework, have, want)))
+        # Signature Launch profile: sections[] are REQUIRED and ORDERED, so the
+        # framework's structure is provable on every profile run (the generic
+        # engine still treats sections as opt-in for every other profile).
+        if seq_type == SIGNATURE_LAUNCH_TYPE and framework in PROFILE_PART_ORDER:
+            canonical = PROFILE_PART_ORDER[framework]
+            secs = ([s for s in sections if _nonempty_str(s)]
+                    if isinstance(sections, list) else [])
+            if not secs:
+                fails.append((AF_FRAMEWORK_INCOMPLETE,
+                              "%s: profile %s requires structured sections[] for %s "
+                              "(canonical order: %s)"
+                              % (tag, SIGNATURE_LAUNCH_TYPE, framework, " -> ".join(canonical))))
+            elif framework == "features-to-benefit":
+                feats = [s for s in secs if _section_label(s).startswith("feature")]
+                if len(feats) > 3:
+                    fails.append((AF_FRAMEWORK_INCOMPLETE,
+                                  "%s: features-to-benefit carries %d features, maximum 3"
+                                  % (tag, len(feats))))
+                if not _sections_follow_order(secs, canonical):
+                    fails.append((AF_FRAMEWORK_INCOMPLETE,
+                                  "%s: features-to-benefit sections do not complete the "
+                                  "feature -> benefit -> deeper benefit chain in order" % tag))
+            else:
+                if framework not in FRAMEWORK_PARTS and len(secs) != len(canonical):
+                    fails.append((AF_FRAMEWORK_INCOMPLETE,
+                                  "%s: %s declares %d sections, needs exactly %d on this profile"
+                                  % (tag, framework, len(secs), len(canonical))))
+                if not _sections_follow_order(secs, canonical):
+                    fails.append((AF_FRAMEWORK_INCOMPLETE,
+                                  "%s: %s sections are out of canonical order (expected %s)"
+                                  % (tag, framework, " -> ".join(canonical))))
 
     # --- objective validity (AF-EMAIL-OBJECTIVE-INVALID) ---
     if objective not in OBJECTIVES:
@@ -552,6 +643,17 @@ def evaluate_email(email, ctx):
                       "%s: {{contact.first_name}} not placed in a subject%s"
                       % (tag, " (first 40 chars)" if mode != "high_ticket" else "")))
 
+    # Signature Launch profile: a subject or preview that uses the first-name
+    # merge field must declare the approved empty-first-name fallback, so an
+    # empty name renders clean copy instead of broken punctuation.
+    if seq_type == SIGNATURE_LAUNCH_TYPE:
+        uses_merge = any("{{contact.first_name}}" in (s or "")
+                         for s in list(subjects or []) + list(previews or []))
+        if uses_merge and not _nonempty_str(email.get("merge_fallback")):
+            fails.append((AF_FIRSTNAME,
+                          "%s: profile %s requires a non-empty merge_fallback when a subject "
+                          "or preview uses {{contact.first_name}}" % (tag, SIGNATURE_LAUNCH_TYPE)))
+
     # --- formatting (AF-EMAIL-FORMAT) ---
     if _count_emojis(body) > 4:
         fails.append((AF_FORMAT,
@@ -637,6 +739,76 @@ def evaluate_sequence(ledger, brief=None):
                               "E%d: buyer_type %r must be %r for this slot"
                               % (slot, e.get("buyer_type"), want_bt)))
         fails.extend(evaluate_email(e, ctx))
+
+    # Signature Launch profile: slot-level enforcement that needs the whole
+    # sequence in view — PASTOR CTA placement and landing-source traceability.
+    if seq_type == SIGNATURE_LAUNCH_TYPE:
+        by_slot = {}
+        for i, e in enumerate(emails, 1):
+            if isinstance(e, dict):
+                by_slot[e.get("e_slot", i)] = e
+        # CTA placement (AF-EMAIL-CTA-PLACEMENT): PASTOR slots 1-3, first CTA
+        # within the first half of the body words, last CTA inside the final
+        # quarter, every declared CTA present in the body text.
+        for slot in (1, 2, 3):
+            e = by_slot.get(slot)
+            if not e:
+                continue
+            ctas = [c for c in (e.get("ctas") or []) if _nonempty_str(c)]
+            body = e.get("body") or ""
+            fracs = [_cta_word_fraction(body, c) for c in ctas]
+            if ctas and any(f is None for f in fracs):
+                fails.append((AF_CTA_PLACEMENT,
+                              "E%d: a declared CTA does not appear in the body text "
+                              "(placement cannot be proven)" % slot))
+            elif fracs:
+                if fracs[0] > CTA_FIRST_MAX_FRACTION:
+                    fails.append((AF_CTA_PLACEMENT,
+                                  "E%d: first CTA starts at %.0f%% of the body words; the "
+                                  "profile requires it within the first half (beginning)"
+                                  % (slot, fracs[0] * 100)))
+                if fracs[-1] < CTA_LAST_MIN_FRACTION:
+                    fails.append((AF_CTA_PLACEMENT,
+                                  "E%d: last CTA starts at %.0f%% of the body words; the "
+                                  "profile requires it inside the final quarter (end)"
+                                  % (slot, fracs[-1] * 100)))
+        # Slot traceability (AF-EMAIL-SLOT-TRACE): each PASTOR slot owns a
+        # DIFFERENT landing Section 6 pain point; slot 4 traces to landing
+        # sections 8/9/10; slot 5's When is brief-supplied or absent.
+        pain_refs = {}
+        for slot in (1, 2, 3):
+            e = by_slot.get(slot)
+            if not e:
+                continue
+            ref = e.get("pain_ref")
+            if not _nonempty_str(ref):
+                fails.append((AF_SLOT_TRACE,
+                              "E%d: no pain_ref — the slot's landing Section 6 pain point "
+                              "is not traceable" % slot))
+            elif ref in pain_refs:
+                fails.append((AF_SLOT_TRACE,
+                              "E%d: pain_ref %r duplicates E%d — each PASTOR email must own "
+                              "a DIFFERENT Section 6 pain point" % (slot, ref, pain_refs[ref])))
+            else:
+                pain_refs[ref] = slot
+        e4 = by_slot.get(4)
+        if e4 is not None:
+            srcs = {str(s) for s in (e4.get("source_sections") or [])}
+            if not {"8", "9", "10"}.issubset(srcs):
+                fails.append((AF_SLOT_TRACE,
+                              "E4: source_sections %s do not cover landing sections 8, 9 and 10"
+                              % (sorted(srcs) or "[]")))
+        e5 = by_slot.get(5)
+        if e5 is not None:
+            prov = e5.get("when_provenance")
+            if prov not in ("brief", "none"):
+                fails.append((AF_SLOT_TRACE,
+                              "E5: when_provenance must be 'brief' or 'none' (got %r) — the "
+                              "6 W's When is stated only when the brief supplies it" % (prov,)))
+            elif e5.get("deadline") and prov != "brief":
+                fails.append((AF_SLOT_TRACE,
+                              "E5: a deadline is declared but when_provenance is %r — an "
+                              "invented When is forbidden" % (prov,)))
 
     # process integrity — a signed certificate is required before deploy
     if ledger.get("deploy_requested") is True:
@@ -912,11 +1084,55 @@ def _landing_ledger():
     }
 
 
+_SIGNATURE_SECTIONS = {
+    "pastor-solutions": ["Problem", "Amplify", "Story", "Transformation", "Offer", "Response"],
+    "features-to-benefit": ["Feature 1", "Benefit 1", "Deeper Benefit 1",
+                            "Feature 2", "Benefit 2", "Deeper Benefit 2",
+                            "Feature 3", "Benefit 3", "Deeper Benefit 3"],
+    "six-ws": ["Why", "What", "Who", "When", "Where", "How"],
+    "before-after-bridge": ["Before", "After", "Bridge"],
+    "three-b-plan": ["Brevity", "Blunt", "Basic"],
+    "million-dollar-sales": ["Attention Grabber", "Intention Call-Out", "Disqualifier",
+                             "Credibility", "Context", "CTA 1", "Benefits", "Testimonial",
+                             "CTA 2", "Final Intention Call-Out", "Final CTA", "Humorous P.S."],
+    "aida": ["Attention", "Interest", "Desire", "Action"],
+    "pas": ["Problem", "Agitate", "Solution"],
+}
+_FILLER = ("steady progress comes from small promises kept daily and measured "
+           "honestly over time with patience and care for the people involved")
+
+
+def _placed_body(ctas, founder, late=False):
+    """A 150-300 word body with the CTAs embedded in the text. Default layout
+    puts CTA1 in the first third, CTA2 mid-body, CTA3 in the final quarter
+    (the profile's placement rule); late=True bunches all three at the end."""
+    w = _FILLER.split()
+    if late:
+        parts = [" ".join((w * 8)[:150]), ctas[0], ctas[1], ctas[2], founder]
+        return "\n\n".join(parts)
+    parts = [" ".join((w * 3)[:45]), ctas[0], " ".join((w * 4)[:55]), ctas[1],
+             " ".join((w * 3)[:45]), ctas[2], " ".join(w[:10]), founder]
+    return "\n\n".join(parts)
+
+
 def _signature_ledger():
     led = _landing_ledger()
     led["sequence_type"] = SIGNATURE_LAUNCH_TYPE
     led["sequence_id"] = "sequence-signature-launch-landing-10"
     led["profile"] = SIGNATURE_LAUNCH_TYPE
+    pastor_ctas = ["See how it works", "Read the full story", "Claim your spot"]
+    for e in led["emails"]:
+        slot = e.get("e_slot")
+        e["sections"] = list(_SIGNATURE_SECTIONS[e["framework"]])
+        e["merge_fallback"] = "friend"
+        if slot in (1, 2, 3):
+            e["ctas"] = list(pastor_ctas)
+            e["body"] = _placed_body(pastor_ctas, FOUNDER)
+            e["pain_ref"] = "landing.section6.pain.%d" % slot
+        if slot == 4:
+            e["source_sections"] = [8, 9, 10]
+        if slot == 5:
+            e["when_provenance"] = "none"
     return led
 
 
@@ -1079,6 +1295,33 @@ def self_test():
 
     sg = _signature_ledger(); sg["emails"][1]["ctas"] = ["only one CTA"]  # PASTOR floor is 3
     check_fail("signature-pastor-cta", sg, AF_CTA_COUNT)
+
+    # S50-05: profile sections are required and ordered; CTA placement and
+    # slot traceability are enforced (profile-scoped; legacy types unaffected).
+    sg = _signature_ledger(); sg["emails"][8].pop("sections", None)  # E9 AIDA, no sections
+    check_fail("signature-no-sections", sg, AF_FRAMEWORK_INCOMPLETE)
+
+    sg = _signature_ledger(); sg["emails"][8]["sections"] = ["Action", "Desire", "Interest", "Attention"]
+    check_fail("signature-section-order", sg, AF_FRAMEWORK_INCOMPLETE)
+
+    sg = _signature_ledger(); sg["emails"][7]["sections"] = sg["emails"][7]["sections"][:11]  # E8 drops a beat
+    check_fail("signature-md-sales-beats", sg, AF_FRAMEWORK_INCOMPLETE)
+
+    sg = _signature_ledger()
+    sg["emails"][0]["body"] = _placed_body(sg["emails"][0]["ctas"], FOUNDER, late=True)
+    check_fail("signature-cta-placement", sg, AF_CTA_PLACEMENT)
+
+    sg = _signature_ledger(); sg["emails"][1]["pain_ref"] = sg["emails"][0]["pain_ref"]
+    check_fail("signature-pain-dup", sg, AF_SLOT_TRACE)
+
+    sg = _signature_ledger(); sg["emails"][3]["source_sections"] = [8, 9]
+    check_fail("signature-e4-trace", sg, AF_SLOT_TRACE)
+
+    sg = _signature_ledger(); sg["emails"][4]["deadline"] = "Thursday"
+    check_fail("signature-when-invented", sg, AF_SLOT_TRACE)
+
+    sg = _signature_ledger(); sg["emails"][0].pop("merge_fallback", None)
+    check_fail("signature-no-fallback", sg, AF_FIRSTNAME)
 
     hg = _ht12_ledger(); hg["emails"][0].pop("disruptive_elements", None)
     check_fail("disruptive-missing", hg, AF_DISRUPTIVE)

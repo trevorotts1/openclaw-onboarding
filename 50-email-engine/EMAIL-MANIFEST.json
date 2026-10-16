@@ -59,6 +59,7 @@
         "AF-EMAIL-SEQUENCE-MAP", "AF-EMAIL-SEQUENCE-LENGTH", "AF-EMAIL-OBJECTIVE-INVALID",
         "AF-EMAIL-PERSONA-INVALID", "AF-EMAIL-PERSONA-NAMED", "AF-EMAIL-SUBJECT-COUNT",
         "AF-EMAIL-PREVIEW-COUNT", "AF-EMAIL-WORDBAND", "AF-EMAIL-CTA-COUNT",
+        "AF-EMAIL-CTA-PLACEMENT", "AF-EMAIL-SLOT-TRACE",
         "AF-EMAIL-SUBJECT-CHARBAND", "AF-EMAIL-FIRSTNAME-PLACEMENT", "AF-EMAIL-FORMAT",
         "AF-EMAIL-SIGNATURE-PLACEHOLDER", "AF-EMAIL-DISRUPTIVE-MISSING", "AF-EMAIL-OVERRIDE-UNLOGGED"
       ]
@@ -86,7 +87,7 @@
   ],
   "autofails": [
     {"code": "AF-EMAIL-FRAMEWORK-UNKNOWN", "stage": "P1/P3", "level": "email", "trigger": "framework is not one of the 13 canonical framework ids", "enforced_by": "prove-email", "py_symbol": "evaluate_email"},
-    {"code": "AF-EMAIL-FRAMEWORK-INCOMPLETE", "stage": "P2/P3", "level": "email", "trigger": "a supplied sections[] does not match the framework's declared part count (e.g. PASTOR needs 6, Million-Dollar-Sales 12)", "enforced_by": "prove-email", "py_symbol": "FRAMEWORK_PARTS"},
+    {"code": "AF-EMAIL-FRAMEWORK-INCOMPLETE", "stage": "P2/P3", "level": "email", "trigger": "a supplied sections[] does not match the framework's declared part count (e.g. PASTOR needs 6, Million-Dollar-Sales 12); on the signature_launch_landing_10 profile sections[] are REQUIRED on every email and must appear in the framework's canonical part order", "enforced_by": "prove-email", "py_symbol": "FRAMEWORK_PARTS"},
     {"code": "AF-EMAIL-BUYERTYPE-MAP", "stage": "P3", "level": "sequence", "trigger": "in a 12-email sequence a slot's framework or buyer_type does not match the buyer-type -> email# -> framework map, or an invalid buyer_type", "enforced_by": "prove-email", "py_symbol": "TWELVE_MAP"},
     {"code": "AF-EMAIL-SEQUENCE-MAP", "stage": "P3", "level": "sequence", "trigger": "in the 10-email landing-page sequence a slot's framework does not match the landing-page map", "enforced_by": "prove-email", "py_symbol": "LANDING_MAP"},
     {"code": "AF-EMAIL-SEQUENCE-LENGTH", "stage": "P3", "level": "sequence", "trigger": "landing-page != 10 emails / high-ticket|buyer-type != 12 emails, or e_slot values are not the contiguous set 1..N", "enforced_by": "prove-email", "py_symbol": "SEQ_LENGTHS"},
@@ -97,8 +98,10 @@
     {"code": "AF-EMAIL-PREVIEW-COUNT", "stage": "P3", "level": "email", "trigger": "preview count != the sequence's declared count (Convert&Flow master=1 / high-ticket=2)", "enforced_by": "prove-email", "py_symbol": "_expected_previews"},
     {"code": "AF-EMAIL-WORDBAND", "stage": "P3", "level": "email", "trigger": "body outside 150-300 words (or outside a client-exact override that is ECHOED in the LOCKED brief); the 3-B Plan must be < 150", "enforced_by": "prove-email", "py_symbol": "_words"},
     {"code": "AF-EMAIL-CTA-COUNT", "stage": "P3", "level": "email", "trigger": "fewer than 1 CTA (or fewer than 3 for the landing-page PASTOR emails E1-3)", "enforced_by": "prove-email", "py_symbol": "evaluate_email"},
+    {"code": "AF-EMAIL-CTA-PLACEMENT", "stage": "P3", "level": "sequence", "trigger": "signature_launch_landing_10 profile only: a PASTOR slot (E1-E3) CTA is absent from the body text, or the first CTA starts beyond the first half of the body words, or the last CTA starts before the final quarter of the body words (the profile's measurable beginning/middle/end placement rule)", "enforced_by": "prove-email", "py_symbol": "_cta_word_fraction"},
+    {"code": "AF-EMAIL-SLOT-TRACE", "stage": "P3", "level": "sequence", "trigger": "signature_launch_landing_10 profile only: slot traceability is missing or wrong — a PASTOR slot (E1-E3) lacks a pain_ref or two PASTOR slots share one pain_ref (each must own a DIFFERENT landing Section 6 pain point); slot 4 source_sections does not cover landing sections 8, 9 and 10; slot 5 lacks when_provenance (brief|none) or declares a deadline whose when_provenance is not brief (an invented When)", "enforced_by": "prove-email", "py_symbol": "evaluate_sequence"},
     {"code": "AF-EMAIL-SUBJECT-CHARBAND", "stage": "P3", "level": "email", "trigger": "Convert&Flow subject outside 8-12 words or contains a pricing token / high-ticket subject outside 80-87 rendered chars or not exactly one emoji", "enforced_by": "prove-email", "py_symbol": "_subject_words"},
-    {"code": "AF-EMAIL-FIRSTNAME-PLACEMENT", "stage": "P3", "level": "email", "trigger": "{{contact.first_name}} not placed in a subject (first 40 chars for Convert&Flow; present for high-ticket)", "enforced_by": "prove-email", "py_symbol": "evaluate_email"},
+    {"code": "AF-EMAIL-FIRSTNAME-PLACEMENT", "stage": "P3", "level": "email", "trigger": "{{contact.first_name}} not placed in a subject (first 40 chars for Convert&Flow; present for high-ticket); on the signature_launch_landing_10 profile, any subject or preview using the first-name merge field must also declare a non-empty merge_fallback (the approved empty-first-name fallback, so an empty name renders clean copy with no broken punctuation)", "enforced_by": "prove-email", "py_symbol": "evaluate_email"},
     {"code": "AF-EMAIL-FORMAT", "stage": "P3", "level": "email", "trigger": "more than 4 emojis in the body, or a paragraph runs more than 3 sentences without a break", "enforced_by": "prove-email", "py_symbol": "_count_emojis"},
     {"code": "AF-EMAIL-SIGNATURE-PLACEHOLDER", "stage": "P3", "level": "email", "trigger": "a placeholder signature token is present, or the founder's actual name is absent from the close", "enforced_by": "prove-email", "py_symbol": "_PLACEHOLDER_RE"},
     {"code": "AF-EMAIL-DISRUPTIVE-MISSING", "stage": "P3", "level": "email", "trigger": "a high-ticket appointment email carries no disruptive element", "enforced_by": "prove-email", "py_symbol": "evaluate_email"},
