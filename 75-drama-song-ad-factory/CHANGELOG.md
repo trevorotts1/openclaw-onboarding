@@ -4,6 +4,30 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.59 - 2026-10-15 - BATCH-AGN-24H-O: last-24h leftover units
+
+Batch `BATCH-AGN-24H-O` — the four wave-1/wave-2 units that were still open
+against main after batch `#2130` merged, merged together (one version bump and
+one entry for the whole batch). Window: 2026-10-14T23:54:34Z -
+2026-10-15T23:54:34Z.
+
+- `#2099` (`unit/AGN-W1-agnes-core-U9`, W1-agnes-core-U9) — `agnes_transitions`:
+  chained segments, beat-aligned scene changes, crossfades and one soundtrack.
+- `#2089` (`unit/AGN-W1-method-story-U1`, W1-method-story-U1) — `method_plan`:
+  the Story Beat Blueprint and music-cue validator, the gates A-F record and the
+  pace order builder.
+- `#2080` (`unit/AGN-W1-method-trailer-U2`, W1-method-trailer-U2) —
+  `delivery_clips`: trailer file names, end-card trailers and per-trailer
+  destinations in the delivery receipt.
+- `#2108` (`unit/AGN-W2-wiring-U1`, W2-wiring-U1) — `factory next` reads
+  `method.json` and the Agnes answer: purpose routing, permission and platform
+  gates, the trailer stage, Agnes segment jobs as a background job and the
+  runbook rows.
+
+Version `v2.9.58` -> `v2.9.59` (G3 gates a skill-content change on that bump).
+Both the `skill-version.txt` file and the `SKILL.md` frontmatter `version:`
+field carry `v2.9.59` in the same commit, so the frontmatter guard holds.
+
 ## v2.9.53 - 2026-10-14 - INTAKE-FIXES item 12: build hygiene never reaches the client
 
 `#2065` (`unit/SWI-202`, W2-item12-U1) — the doctrine half of SPEC.md item 12. A drift
