@@ -177,15 +177,25 @@ class GoldenSheets(unittest.TestCase):
             self.assertNotIn("_hook_plan", req["input"], name)
 
 
+#: BUILD-PLAN W1-method-song-U1: both pace turns are mandatory and measured on
+#: EVERY run, so a run missing the pace order is refused at dispatch
+#: (PACE_TURNS_REQUIRED). The dispatching request therefore carries one, and
+#: its FINAL style carries both approved directions.
+PACE_ORDER = {"drop": "half-time drop, thin drums",
+              "return": "turn and rise back to the groove",
+              "boundary_s": 15.0, "return_boundary_s": 38.0}
+
+
 def _director_to_dispatch(text, style, title, sid, client, D, beat):
     """Director request -> song_dispatch.run_takes with a mocked generator.
     Returns the request the generator received (raises on any refusal)."""
     from song_dispatch import song_dispatch as SD
     req = MD.build_generate_request(text, style, title, style_id=sid, client_text=client,
-                                    length_s=D, true_at_beat=beat)
+                                    length_s=D, true_at_beat=beat, pace_plan=PACE_ORDER)
     seen = []
     SD.run_takes(dict(req, _hook_plan=req["_hook_plan"]),
-                 {"delivered_s": D, "style_id": sid}, lambda rq: seen.append(rq) or [],
+                 {"delivered_s": D, "style_id": sid, "pace_change": PACE_ORDER},
+                 lambda rq: seen.append(rq) or [],
                  lambda t: {}, lambda t, r: None, client, client,
                  cap_cents=6, cost_cents=6, kie=lambda fn, *a, **k: fn(), style_id=sid)
     return seen[0]
