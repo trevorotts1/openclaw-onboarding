@@ -97,6 +97,16 @@
       "type": "array",
       "items": { "type": "object", "additionalProperties": true },
       "description": "Optional INDEPENDENT transcript export (FIX-S36-47). When present it is AUTHORITATIVE for the one-block check: exactly ONE assistant turn may carry the intake question block (role in assistant|agent|bot AND kind/type in intake|intake_questions|questions|question_block). Absent, the self-attested one-block flags are used and labeled attestation-based."
+    },
+    "intake_mode": {
+      "type": "string",
+      "enum": ["signature_launch"],
+      "description": "Optional; present ONLY on a shared-launch brief produced by tools/launch_intake_adapter.py from the approved S49 launch intake (contract: intake/launch-intake-contract.json). On this path the one-block attestation fields above are NOT carried and the root required set's attestation fields do not apply; prove-email.py verifies launch_provenance instead (AF-EMAIL-LAUNCH-PROVENANCE). Absent on every legacy brief."
+    },
+    "launch_provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The launch brief's provenance block: profile, launch id and revision, the plan document hash, the offer reference, the launch_plan_build approval record binding (subject hash equal to the plan hash, scope covering the build, not revoked), and a per-field provenance entry for every consumed field. Required when intake_mode is signature_launch."
     }
   }
 }
