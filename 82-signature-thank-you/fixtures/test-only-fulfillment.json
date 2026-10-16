@@ -1,0 +1,17 @@
+{
+  "base-a": {
+    "state": "granted",
+    "delivery_url": "https://example.test/access/base-a",
+    "next_action": "access"
+  },
+  "workbook": {
+    "state": "granted",
+    "delivery_url": "https://example.test/access/workbook",
+    "next_action": "access"
+  },
+  "extra-full": {
+    "state": "granted",
+    "delivery_url": "https://example.test/access/extra-full",
+    "next_action": "access"
+  }
+}
