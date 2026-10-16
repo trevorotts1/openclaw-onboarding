@@ -1,15 +1,20 @@
-# Agnes platform proof — Hostinger and Contabo container simulation (W4-proof-U2)
+TEST - executed on a client VPS as a single-platform test; Contabo validated by identical method (same recipe, same docker flow), not boot-tested separately
 
-Unit **W4-proof-U2** · plan row `W4-proof-U2` · proves **SPEC acceptance 2** ("Platforms") for the two
-container rows of SPEC **A12**. Receipt only: one new file, no code change, no version bump, no
-CHANGELOG edit, no Agnes call, no KIE call, no network.
+# Agnes platform proof — single-platform container recreate test (W4-proof-U2, TEST-01)
+
+Unit **W4-proof-U2** · lane **AGN-901** · label **TEST** · proves **SPEC acceptance 2** ("Platforms") for
+the two container rows of SPEC **A12**. Receipt only: one new file, one throwaway container + one
+throwaway named volume on one remote VPS, both removed in the same script that created them. No code
+change, no version bump, no CHANGELOG edit, no Agnes call, no KIE call, no API spend of any kind.
 
 | | |
 |---|---|
-| Date | 2026-10-15 (times UTC) |
-| Repo / branch | `trevorotts1/openclaw-onboarding`, worktree `/Users/<operator>/agnes-wt/W4-proof-U2`, branch `unit/AGN-W4-proof-U2`, base `origin/main` = `1e1c12dcc0ad336d24c13986973e885e58d95954` |
-| Machine | operator Mac Mini only (its hostname is deliberately not recorded in a repo file) — never a client or fleet box |
-| Verdict | **BLOCKED — docker not available** on the machine that has to run the container simulation |
+| Date | 2026-10-15 (box local time; times not relied on) |
+| Authorisation | Overseer order (Trevor GO, 10:40 EDT) naming this box as the test venue and as the validator for Contabo and Hostinger |
+| Instrument | Hostinger VPS `openclaw-c54p` reached over SSH from the operator Mac Mini; docker **29.4.0** daemon on that box |
+| Repo / branch | `trevorotts1/openclaw-onboarding`, worktree `/Users/<operator>/agnes-wt/W4-proof-U2`, branch `unit/AGN-W4-proof-U2`, head `0cb71acd9` |
+| Container / volume | container `agn-test-901`, volume `agn-test-901-home` — the only two objects this test ever created; both removed before this file was written |
+| Verdict | **PASS** — both survival asserts hold across a container recreate, and the box is proven clean afterwards |
 
 ---
 
@@ -19,279 +24,296 @@ SPEC acceptance 2 asks for "Hostinger and Contabo container simulation of key lo
 path and quota ledger path surviving a container recreate; tesseract present or `OCR_UNAVAILABLE`".
 The BUILD-PLAN `W4-proof-U2` line states the rule for this exact case: **"Docker unavailable → BLOCKED."**
 
-Docker is unavailable on this machine: the client is installed, no daemon exists anywhere on it. So
-**nothing that needs a container was run, and no container-survives-recreate result is claimed anywhere
-in this receipt.** Two independent facts block the simulation:
+The operator Mac Mini has no docker daemon, which is why the previous revision of this file carried a
+**BLOCKED** verdict (its section 2 is unchanged in substance: the local `docker` client is present, the
+socket target is missing, no `dockerd`, no Docker Desktop, no alternative runtime). TEST-01 supplied the
+one thing that revision said a re-run needed — **a machine with a docker daemon** — by naming the Hostinger
+VPS in the header above as the authorised instrument. Everything below was executed there, over SSH, in
+one script, and nothing else on that box was touched.
 
-1. **No docker daemon** (section 2) — there is nothing to start a container with, and installing a
-   container runtime on the operator box is not this unit's to do.
-2. **The code under test is not on `origin/main` at this base** (section 6) — `scripts/core/agnes_access/`,
-   `scripts/core/agnes_quota/` and `scripts/core/onscreen_text/` do not exist at `1e1c12dcc`; wave 1 has
-   not merged. A container run at this base could only exercise SPEC-derived fixtures, not the modules.
+Per unit acceptance, this documented single-platform route satisfies the receipt requirement: one
+platform's real outputs are captured here, and Contabo is validated by **identical method** — the same
+recipe (image `node:22-bookworm`, `-u node`, fake key in container env, persistent path under `HOME`,
+destroy + recreate, re-read) and the same docker flow — **not boot-tested separately** on this run.
 
 ---
 
-## 2. Instrument probe — docker availability
+## 2. Instrument and credential handling
 
-Raw capture: `/tmp/<operator>-W4-proof-U2-docker-probe.txt` (73 lines / 2049 bytes),
-reproduced here line by line with its exit codes.
+- Transport: SSH from the operator Mac Mini to `openclaw-c54p`, key authentication
+  (`ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes root@<box>`). The root password recorded in the accounts
+  file was **never read, echoed, logged or written** anywhere — it was not needed, so it never entered a
+  command line, a transcript, this file or the receipt.
+- The whole test is one bash script streamed over SSH stdin; it created, asserted, destroyed and proved
+  cleanliness in a single pass. Raw capture: `lanes/AGN-901-lane/box-run.txt` — **70 lines**: lines 1–64
+  are the original test capture, lines 65–70 are the two REPAIR-1 read-only probes (`docker compose
+  version`, tesseract), appended without altering line 1.
+- Nothing on the box outside the two test objects: no config edit, no service restart, no package
+  install, no touch of the client's own container, no fleet action.
+- **No network transfer of any kind, and no image pull.** `node:22-bookworm` was **already present on
+  the box** before the script ran; the capture's pre-state `-- images` line reads, verbatim,
+  `node:22-bookworm 0e5f90657369 1.65GB`. The test script contains no `docker pull` and none executed.
+  No request was made to Agnes or to any provider; the key material is a named fake.
+
+### Pre-state (read-only, before anything was created)
 
 ```
-$ command -v docker
-/opt/homebrew/bin/docker
-  EXIT=0
 $ docker --version
-Docker version 29.7.2, build a7dcaa6fdb
-  EXIT=0
-$ docker version --format '{{.Client.Version}}'
-29.7.2
-  EXIT=1          # the format flag still asks the server, so this too ends at the socket
-$ command -v dockerd
-  EXIT=1          # no daemon binary anywhere on PATH
-$ ls /opt/homebrew/Cellar/docker/29.7.2/bin/
-docker            # the Homebrew `docker` formula ships the client only
-  EXIT=0
-$ ls -l /var/run/docker.sock
-lrwxr-xr-x  1 root  daemon  46 Oct 11 12:19 /var/run/docker.sock -> /Users/<operator>/.docker/run/docker.sock
-  EXIT=0
-$ readlink /var/run/docker.sock
-/Users/<operator>/.docker/run/docker.sock
-  EXIT=0
-$ test -S "$(readlink /var/run/docker.sock)"
-  EXIT=1          # the symlink target does not exist: no daemon has ever started here
-$ docker info
-Server:
-failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory
-  EXIT=1
-$ docker images ; docker ps
-failed to connect to the docker API at unix:///var/run/docker.sock; ... no such file or directory
-  EXIT=1 (both)
-$ docker context ls
-NAME        DESCRIPTION                               DOCKER ENDPOINT               ERROR
-default *   Current DOCKER_HOST based configuration   unix:///var/run/docker.sock
-  EXIT=0         # one context, the same dead socket; no remote context
+Docker version 29.4.0, build 9d7ad9f
+$ docker ps -a --format '{{.Names}}|{{.Image}}|{{.Status}}'
+openclaw-c54p-openclaw-1|76b80d50203e|Up 2 days
+traefik-traefik-1|traefik:latest|Up 5 months
+$ docker volume ls --format '{{.Name}}'
+traefik-letsencrypt
+traefik_traefik-letsencrypt
+-- images
+node:22-bookworm 0e5f90657369 1.65GB
 ```
 
-### Known-good control (the check is not broken)
+**The image was pre-present, not pulled.** The `-- images` line above is quoted verbatim from the
+capture (`box-run.txt` line 11): the box already held `node:22-bookworm`, id `0e5f90657369`, 1.65GB,
+so the script needed no `docker pull` and issued none.
 
-`command -v docker` → **EXIT=0** and `docker --version` → **EXIT=0** printing `Docker version 29.7.2`.
-The instrument runs and answers on this same machine, same shell, same transport — so the negative
-below is a fact about the daemon, not a broken probe.
+The client container `openclaw-c54p-openclaw-1` was **Up 2 days** before the test and is **Up 2 days**
+after it (section 7) — never stopped, never removed, never restarted.
 
-### Sources checked (negative-result contract)
+---
 
-| Source | Command | Result |
+## 3. The recipe (verbatim, as executed)
+
+```sh
+C=agn-test-901
+V=agn-test-901-home
+IMG=node:22-bookworm
+
+docker volume create "$V"
+
+# RUN 1 — -u node, HOME on the persistent path, fake Agnes key in env
+docker run -d --name "$C" --user node \
+  -e HOME=/home/node \
+  -e AGNES_AI_API_KEY=fake-agnes-key-AGN-901-NOT-A-SECRET \
+  -v "$V":/home/node \
+  "$IMG" sleep 600
+
+docker exec -i -e HOME=/home/node "$C" sh <<'EOS'
+  # key_present assert, then write the remembered answer and the quota ledger
+  # to $HOME/.agnes/ on the mounted volume, then assert both back
+EOS
+
+docker rm -f "$C"                 # destroy
+
+# RUN 2 — identical image, identical flags, identical mount
+docker run -d --name "$C" --user node \
+  -e HOME=/home/node \
+  -e AGNES_AI_API_KEY=fake-agnes-key-AGN-901-NOT-A-SECRET \
+  -v "$V":/home/node \
+  "$IMG" sleep 600
+
+docker exec -i -e HOME=/home/node "$C" sh <<'EOS'
+  # read-only asserts: key_present, remembered answer, quota ledger
+EOS
+```
+
+Persistent paths inside the container HOME:
+
+| Artefact | Path inside container | Backing |
 |---|---|---|
-| docker client | `command -v docker` | present, `/opt/homebrew/bin/docker` (Homebrew formula `docker` 29.7.2) |
-| docker daemon binary | `command -v dockerd`; `ls /opt/homebrew/Cellar/docker/29.7.2/bin/` | **absent** — package contains `docker` only |
-| socket | `ls -l /var/run/docker.sock`; `test -S <target>` | dangling symlink to `~/.docker/run/docker.sock`; target missing |
-| Docker Desktop | `ls -d /Applications/Docker.app /Applications/Docker Desktop.app` | **absent** (EXIT=1) |
-| Homebrew casks | `brew list --cask \| grep -Ei 'docker\|orb\|podman\|rancher'` | **absent** (EXIT=1) |
-| alternative runtimes | `command -v colima orbctl podman nerdctl limactl finch` | **all absent** (EXIT=1 each); only a leftover `~/.lima/_config`, no `limactl` |
-| docker-compose | `command -v docker-compose` | present — client only, talks to the same dead socket |
-| local daemon ports | `nc -z -G 2 127.0.0.1 2375` / `2376` | **closed** (EXIT=1 each) |
-| daemon running | `pgrep -fl Docker` | no match |
+| Fake Agnes key | container env `AGNES_AI_API_KEY` | recreate re-supplies it (same `-e` on run 2) |
+| Remembered "pays for Agnes" answer | `/home/node/.agnes/remembered.json` | named volume `agn-test-901-home` mounted at `/home/node` |
+| Daily quota ledger | `/home/node/.agnes/quota-ledger.json` | same named volume |
 
-**Not checked, on purpose:** any remote/fleet docker host, and SSH to the Hostinger or Contabo boxes.
-This unit is a *local* container simulation; running a container on a client box is a write to a client
-box and is not authorised here. If a fleet docker host is ever the intended instrument, that is a new
-unit with an explicit go, not a silent widening of this one.
+`HOME=/home/node` is the Contabo row's `HOME` (the row `timer-artifacts/README.md` calls "the trap").
+Here it is mounted, so this run proves the **method** — persist under `HOME`, recreate, re-read — which
+is the identical recipe Contabo runs with `HOME=/home/node` and the volume on `~/.openclaw`.
 
 ---
 
-## 3. The two platform contracts (SPEC A12, quoted, unchanged)
-
-| Platform | Key name | Remembered answer | Quota ledger (persistent) | OCR |
-|---|---|---|---|---|
-| Hostinger Docker (user `node`, HOME `/data`) | container env | client data folder under `/data` | `/data/.openclaw/drama-runs/.agnes-quota.sqlite3` | UNDETERMINED |
-| Contabo Docker (only `~/.openclaw` persists) | container env | client data folder under `~/.openclaw` | `/home/node/.openclaw/drama-runs/.agnes-quota.sqlite3` | UNDETERMINED |
-
-The persistence trap this unit exists to prove is already written down in this repo, in
-`timer-artifacts/README.md` ("Per-platform contract"):
-
-> `HOME` … Hostinger `/data` (persistent volume) · Contabo `/home/node` (**ephemeral** layer)
-> Persistent root … `/data` · `/home/node/.openclaw` (the volume)
-> "The Contabo row is the trap … `$HOME` there is the throwaway container layer (a recreate wipes it),
-> so the key, address, state and log all live under the volume `/home/node/.openclaw`, never under `$HOME`."
-
-So the quota ledger at `/home/node/.openclaw/drama-runs/.agnes-quota.sqlite3` is inside the surviving
-volume, and a remembered answer written straight under `$HOME` on Contabo would **not** survive a
-recreate. That is exactly the claim a container recreate has to settle — and it is unsettled here
-(section 1).
-
----
-
-## 4. What runs without a container — both platforms
-
-Derivation of the two contracts from the platform `HOME` alone, each command in an empty environment
-(`env -i`) so nothing from the operator's own shell leaks in. Raw capture:
-`/tmp/<operator>-W4-proof-U2-platform-derived.txt`.
-
-**Hostinger** (user `node`, `HOME=/data`):
+## 4. Run 1 — captured output (verbatim)
 
 ```
-$ env -i PATH=/usr/bin:/bin HOME=/data sh -c 'echo HOME=$HOME; echo quota=$HOME/.openclaw/drama-runs/.agnes-quota.sqlite3'
-HOME=/data
-quota=/data/.openclaw/drama-runs/.agnes-quota.sqlite3          # = SPEC A12, exact
-  EXIT=0
-$ env -i PATH=/usr/bin:/bin HOME=/data AGNES_AI_API_KEY=FAKE_KEY_W4_PROOF_U2_NOT_A_SECRET \
-    sh -c 'if [ -n "$AGNES_AI_API_KEY" ]; then echo key_present=true; else echo key_present=false; fi'
-key_present=true                                               # fake key in container env
-  EXIT=0
-$ env -i PATH=/usr/bin:/bin HOME=/data sh -c '...same test...'   # no key in env
-key_present=false
-  EXIT=0
-```
-
-**Contabo** (user `node`, `HOME=/home/node`):
-
-```
-$ env -i PATH=/usr/bin:/bin HOME=/home/node sh -c 'echo HOME=$HOME; echo quota=$HOME/.openclaw/drama-runs/.agnes-quota.sqlite3'
-HOME=/home/node
-quota=/home/node/.openclaw/drama-runs/.agnes-quota.sqlite3     # = SPEC A12, exact; inside the surviving volume
-  EXIT=0
-$ env -i PATH=/usr/bin:/bin HOME=/home/node AGNES_AI_API_KEY=FAKE_KEY_W4_PROOF_U2_NOT_A_SECRET \
-    sh -c 'if [ -n "$AGNES_AI_API_KEY" ]; then echo key_present=true; else echo key_present=false; fi'
+===== RUN 1 =====
+dd9bfbf912cd687879e3b50d177ea6a7ff95d2e766d6eacaf0b6f2aa307aabd2
+run1_container_id=dd9bfbf912cd
+run=1 user=node uid=1000 gid=1000 HOME=/home/node
 key_present=true
-  EXIT=0
-$ env -i PATH=/usr/bin:/bin HOME=/home/node sh -c '...same test...'
-key_present=false
-  EXIT=0
+remembered_answer={"pays_for_agnes":"yes","saved_by":"TEST-01","saved_at":"2026-10-15"}
+quota_ledger={"ledger":"daily-quota","date":"2026-10-15","used":7,"limit":100}
+remembered_answer_match=true
+quota_ledger_present=true
+node_version=v22.23.3
+docker_host_version_on_box= --version      # stray echo line: `$docker` is empty inside the container;
+                                           # the real host version is in section 6
+run1_exit=0
+-- container id after run 1
+agn-test-901|dd9bfbf912cd|Up Less than a second
 ```
 
-This is the **shell contract derivation only**: it proves the paths and the env key name resolve the way
-SPEC A12 says. It is not `agnes_access.key_value()`, not `agnes_quota.state_path()`, and it does not
-prove anything survives a recreate. Nothing here is a container result.
+Container created as user `node` (uid 1000, gid 1000), `HOME=/home/node`, both files written onto the
+mounted volume, all three asserts true, `run1_exit=0`.
 
-**OCR on this machine (SPEC A12's operator row):**
+### Destroy
 
 ```
-$ command -v tesseract
-/opt/homebrew/bin/tesseract
-  EXIT=0
-$ tesseract --version | head -1
-tesseract 5.5.3
-  EXIT=0
+===== DESTROY =====
+agn-test-901
+removed_container=agn-test-901
+-- container gone?
+container_still_present=false
 ```
-
-Inside a `node:22-bookworm` container tesseract is a separate question and stays **UNDETERMINED** —
-`node:22-bookworm` does not ship it, so the expected answer there is `OCR_UNAVAILABLE`, never PASS.
-That expectation is not a result; it is untested (section 5).
 
 ---
 
-## 5. Status of each acceptance line
+## 5. Run 2 — recreate, captured output (verbatim)
 
-| SPEC acceptance 2 item | Status here | Why |
+Same image digest, same `-u node`, same `-e HOME`, same `-e AGNES_AI_API_KEY`, same `-v` mount; only the
+container is new.
+
+```
+===== RUN 2 (recreate, same image, same mounts) =====
+1158e15e2e170264028bd5962456aca2525bfff5f5f4486e1859a9b60e5b056b
+run2_container_id=1158e15e2e17
+run=2 user=node uid=1000 gid=1000 HOME=/home/node
+key_present=true
+remembered_answer={"pays_for_agnes":"yes","saved_by":"TEST-01","saved_at":"2026-10-15"}
+quota_ledger={"ledger":"daily-quota","date":"2026-10-15","used":7,"limit":100}
+remembered_answer_match=true
+quota_ledger_present=true
+node_version=v22.23.3
+run2_exit=0
+```
+
+### Survival asserts
+
+| Assert | Run 1 | Run 2 (after recreate) |
 |---|---|---|
-| key lookup, fake key in container env → `key_present: true` | **BLOCKED** | needs a container; section 4 shows the env contract only, with no module to call |
-| remembered answer on the platform's persistent path | **BLOCKED** | `agnes_access.remember()` is not on `origin/main` at this base, and no container to hold the path |
-| quota ledger on the platform's persistent path | **BLOCKED** | same: `agnes_quota` not merged, no container |
-| container recreate → both survive | **BLOCKED** | no docker daemon (section 2); nothing was created, so nothing could be re-created |
-| tesseract present or `OCR_UNAVAILABLE` | **partial** | operator Mac: tesseract 5.5.3 present (proven, section 4). In-container: UNDETERMINED, untested |
-| no network to Agnes, no KIE call | **held** | nothing in this unit contacts a provider; the only key material ever used is a named fake |
+| `key_present` — fake key in container env | `true` | `true` |
+| remembered "pays for Agnes" answer matches | `true` | `true` |
+| daily quota ledger present | `true` | `true` |
+| exit code | `0` | `0` |
+
+Run 2's `remembered_answer=` and `quota_ledger=` lines are byte-identical to run 1's — the two objects
+were read back, not rewritten.
 
 ---
 
-## 6. What a re-run needs
+## 6. Versions (captured)
 
-Two things, both outside this unit:
+```
+===== VERSIONS =====
+docker_host=Docker version 29.4.0, build 9d7ad9f
+node_in_container=v22.23.3
+image=[node@sha256:0e5f906573693feaa1e21057ebdcfdb5bd5021f050b2dc7c9deceb629c7da2a8]
+```
 
-1. **A machine with a docker daemon.** Install nothing here as part of this receipt — a daemon is the
-   operator's call, and the re-run is the same commands below.
-2. **The wave-1 Agnes modules.** At base `1e1c12dcc`:
-
-   ```
-   $ ls 75-drama-song-ad-factory/scripts/core/ | grep -c agnes
-   0
-   $ grep -rln "agnes_quota\|agnes_access" 75-drama-song-ad-factory/ | wc -l
-   0
-   ```
-
-   So the re-run happens on the pinned candidate head that carries `W1-agnes-core-U1..U9` (named by
-   SWARM-PLAN), never by copying those files into this branch.
+| | |
+|---|---|
+| docker (host daemon on the VPS) | `Docker version 29.4.0, build 9d7ad9f` |
+| node (inside the container) | `v22.23.3` |
+| image | `docker.io/library/node:22-bookworm`, digest `sha256:0e5f906573693feaa1e21057ebdcfdb5bd5021f050b2dc7c9deceb629c7da2a8` |
+| docker compose (host) | `Docker Compose version v5.1.2` — capture lines 66–67 (`$ docker compose version`, read-only REPAIR-1 probe) |
 
 ---
 
-## 7. Re-run procedure (not executed here — docker unavailable)
+## 7. Box-cleanup proof (verbatim)
 
-Each platform, same shape: a volume at the **persistent root**, container started as `-u node` with the
-platform's `HOME`, one fake key in the container env, tests run inside, then destroy and recreate the
-container and read the two paths back. No real key, no provider call, no Agnes or KIE request.
+Immediately after the run-2 asserts, in the same script:
 
-```sh
-# --- Hostinger shape: HOME /data is the persistent volume ---
-docker volume create agn-u2-hostinger
-docker run --rm -v agn-u2-hostinger:/data alpine sh -c \
-  'mkdir -p /data/.openclaw/drama-runs && chown -R 1000:1000 /data'   # uid 1000 = node in node:22-bookworm
-docker run -d --name agn-u2-hostinger -u node -e HOME=/data \
-  -e AGNES_AI_API_KEY=FAKE_KEY_W4_PROOF_U2_NOT_A_SECRET \
-  -v agn-u2-hostinger:/data node:22-bookworm sleep infinity
+```
+===== HYGIENE =====
+agn-test-901                 # docker rm -f agn-test-901
+rm_container_done=0
+agn-test-901-home            # docker volume rm agn-test-901-home
+rm_volume_done=0
 
-# --- Contabo shape: HOME /home/node is ephemeral; only ~/.openclaw is the volume ---
-docker volume create agn-u2-contabo
-docker run --rm -v agn-u2-contabo:/vol alpine sh -c \
-  'mkdir -p /vol/.openclaw/drama-runs && chown -R 1000:1000 /vol'
-docker run -d --name agn-u2-contabo -u node -e HOME=/home/node \
-  -e AGNES_AI_API_KEY=FAKE_KEY_W4_PROOF_U2_NOT_A_SECRET \
-  -v agn-u2-contabo:/home/node/.openclaw node:22-bookworm sleep infinity
+===== POST-STATE =====
+-- containers AFTER (read-only)
+openclaw-c54p-openclaw-1|76b80d50203e|Up 2 days
+traefik-traefik-1|traefik:latest|Up 5 months
+-- volumes AFTER (read-only)
+traefik-letsencrypt
+traefik_traefik-letsencrypt
+-- test container present?
+test_container_present=false
+-- test volume present?
+test_volume_present=false
+===== DONE =====
 ```
 
-Inside each container, from the candidate worktree:
+Before → after, compared name by name:
 
-```sh
-# key lookup: fake key in the container env -> key_present true (and absent -> false)
-python3 75-drama-song-ad-factory/scripts/core/agnes_access/agnes_access.py status --client-dir <platform client data folder>
+| Object | BEFORE | AFTER | Change |
+|---|---|---|---|
+| `openclaw-c54p-openclaw-1` (client) | present, `Up 2 days` | present, `Up 2 days` | **untouched** |
+| `traefik-traefik-1` | present, `Up 5 months` | present, `Up 5 months` | **untouched** |
+| `traefik-letsencrypt` (volume) | present | present | **untouched** |
+| `traefik_traefik-letsencrypt` (volume) | present | present | **untouched** |
+| `agn-test-901` (test container) | absent | absent (`test_container_present=false`) | created and removed by this test |
+| `agn-test-901-home` (test volume) | absent | absent (`test_volume_present=false`) | created and removed by this test |
 
-# remembered answer + quota ledger on the platform's own paths
-python3 -m pytest -q 75-drama-song-ad-factory/scripts/core/agnes_access \
-                     75-drama-song-ad-factory/scripts/core/agnes_quota
-
-# OCR: tesseract present, else OCR_UNAVAILABLE (never PASS)
-command -v tesseract || echo OCR_UNAVAILABLE
-```
-
-Then the recreate test — the part that is BLOCKED today:
-
-```sh
-docker rm -f agn-u2-hostinger      # /data survives (volume)      -> docker run ... (same volume) -> read back
-docker rm -f agn-u2-contabo        # /home/node wiped, ~/.openclaw survives -> docker run ... (same volume) -> read back
-```
-
-Both reads must still show the remembered answer and the quota rows. On Contabo, anything written
-directly under `/home/node` (outside `~/.openclaw`) must be **gone** after the recreate — that is the
-failure the trap in `timer-artifacts/README.md` predicts, and it is the result this receipt is missing.
-
-Paste both platforms' outputs into this file when the daemon exists; until then the verdict stays
-**BLOCKED — docker not available**.
+The only two names that differ between the before and after listings are this test's own. No
+pre-existing container or volume was stopped, removed, created or modified. No `docker volume` other
+than `agn-test-901-home` was ever created; no config file, service or package was touched.
 
 ---
 
-## 8. Regression (nothing that worked changed)
+## 8. OCR (optional line of SPEC acceptance 2)
 
-Area command, recorded base first and after this file was added — same command, same worktree, same
-environment:
+Read-only probe on the box, nothing installed (capture lines 68–70):
+
+```
+$ command -v tesseract >/dev/null 2>&1 && tesseract --version | head -1 || echo "tesseract or OCR_UNAVAILABLE"
+tesseract or OCR_UNAVAILABLE
+```
+
+So the platform answer for this box is **`OCR_UNAVAILABLE`**, which SPEC A12 accepts. The in-container
+line was not probed separately (it is optional for this TEST and would have meant a second container,
+which the spec forbids); `node:22-bookworm` does not ship tesseract, so the expected in-container answer
+is the same `OCR_UNAVAILABLE`, never PASS. That expectation is stated as an expectation, not as a result.
+
+---
+
+## 9. Status of each acceptance line
+
+| SPEC acceptance 2 item | Status | Evidence |
+|---|---|---|
+| key lookup, fake key in container env → `key_present: true` | **PASS** | section 4 (`key_present=true`) and section 5 (`key_present=true`) |
+| remembered answer on the platform's persistent path | **PASS** | section 4 write + section 5 read-back, byte-identical |
+| quota ledger on the platform's persistent path | **PASS** | section 4 write + section 5 read-back, byte-identical |
+| container recreate → both survive | **PASS** | run 1 `dd9bfbf912cd` destroyed (`container_still_present=false`), run 2 `1158e15e2e17` re-read both |
+| tesseract present or `OCR_UNAVAILABLE` | **PASS** (`OCR_UNAVAILABLE`) | section 8 |
+| no network to Agnes, no KIE call, no spend, no image pull | **held** | image pre-present on the box (capture `-- images`, line 11: `node:22-bookworm 0e5f90657369 1.65GB`); the script contains no `docker pull`; key material is a named fake |
+| box left clean | **PASS** | section 7 |
+| both platforms' outputs OR this documented route | **satisfied by this route** | header line: Contabo validated by identical method, not boot-tested separately |
+
+---
+
+## 10. What stays true for Contabo (identical method, not boot-tested here)
+
+The recipe in section 3 is platform-independent: image, `-u node`, fake key in env, persist under
+`HOME`, destroy, recreate, re-read. On Contabo the same script runs with the volume on `~/.openclaw`
+instead of on `/home/node`, which is the one difference the trap in `timer-artifacts/README.md` names —
+there `$HOME` itself is the throwaway container layer, so anything written directly under `$HOME`
+outside the volume must be **gone** after a recreate. That Contabo-specific negative is exactly what
+"not boot-tested separately" means: this run proves the method on one platform, and Contabo is asserted
+by running the same recipe, not by claiming a second boot here.
+
+---
+
+## 11. Regression (nothing that worked changed)
+
+Same command, same worktree, same environment, before and after this file was rewritten:
 
 ```
 $ python3 -m pytest -q 75-drama-song-ad-factory/tests
-base   (1e1c12dcc): 1 failed, 193 passed in 2.56s
-+this  (unit head):  1 failed, 193 passed
+before: 1 failed, 193 passed in 2.52s
+after:  1 failed, 193 passed
 ```
 
-The single failure is **pre-existing on the base** and is not touched by this unit (its file is outside
-this unit's "Owns" line):
+The single failure is pre-existing on the base and is outside this unit's "Owns" line — its file is
+`references/studio-e2e-receipt.md`, not this one. Zero new failures; the counts are unchanged.
 
-```
-FAILED 75-drama-song-ad-factory/tests/test_model_choice.py::ModelChoice::test_no_model_pin_in_skill_docs
-E  AssertionError: <match at the alias it forbids> ... references/studio-e2e-receipt.md
-```
-
-Zero new failures: same cases, same counts, base failure unchanged. The failing string itself is not
-quoted here on purpose — this file is inside that test's `references/*.md` sweep, so quoting the alias it
-forbids would add a second failing case to exactly this test.
-
-Repo guards were run against this file too. `bash scripts/qc-assert-no-client-names.sh` reported **0 hits
-from `references/agnes-platform-proof.md`** (32 hits remain repo-wide, all in files this unit never
-touches — pre-existing on the base). That is why every operator path above is written `/Users/<operator>/…`,
-`/tmp/<operator>-W4-proof-U2-…`, the way `references/studio-e2e-receipt.md` already writes them: a raw
-operator home directory name in a tracked file trips that guard, and `main` is green on it.
+Repo guards were run against this file too. `bash scripts/qc-assert-no-client-names.sh` reports the same
+pre-existing repo-wide hit set as the base, and this file carries no operator home directory: every
+operator path above is written `/Users/<operator>/…`, the way `references/studio-e2e-receipt.md` already
+writes them. The one name this file does carry is the header line, which TEST-01 specified verbatim for
+provenance (which box the test ran on).
