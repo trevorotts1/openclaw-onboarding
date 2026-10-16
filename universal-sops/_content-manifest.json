@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-16T01:02:26Z",
+  "generated_at": "2026-10-16T01:12:01Z",
   "file_count": 115,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -305,8 +305,8 @@
       "bytes": 147906
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "df4456a4cb575447be405dff8cc8c199abb97febb3046a5065ad97a421ad4079",
-      "bytes": 203830
+      "sha256": "1ba45a4442291f8aac1ea3cadd7ae3fcf0e98979b8426fddb2bbb7894285223f",
+      "bytes": 206085
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
@@ -337,8 +337,8 @@
       "bytes": 11790
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
-      "sha256": "43ed239ad1512767494af987621f0cbb8c4755dd804d7e48af23cade40c5ebd7",
-      "bytes": 14330
+      "sha256": "6af582d6d394d722873c224bf9a046f06cb844caaa62fefe53cf6c14493c486f",
+      "bytes": 14366
     },
     "presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md": {
       "sha256": "e25de3ab9a48754d96f870e5b77043b385c75db254975fb03e085e70a55aba35",
