@@ -1,4 +1,4 @@
-# Agnes Image 2.1 Flash — API Patterns & Request Contract
+# Agnes Image — API Patterns & Request Contract (default model agnes-image-2.5-flash; legacy agnes-image-2.1-flash)
 
 Verification Date: 2026-08-26
 Authority: First-party documentation (`https://wiki.agnes-ai.com/en/docs/agnes-image-21-flash.md`), Spec §10
@@ -32,7 +32,7 @@ The Agnes Image endpoint is **SYNCHRONOUS**:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `model` | string | Yes | Must be `"agnes-image-2.1-flash"`. |
+| `model` | string | Yes | `"agnes-image-2.5-flash"` (default) or an explicit legacy pin `"agnes-image-2.1-flash"`. Text/video model IDs are rejected by this adapter. |
 | `prompt` | string | Yes | Text instruction describing scene or edit. |
 | `size` | string | Yes | Size tier: `"1K"`, `"2K"`, `"3K"`, or `"4K"`. Legacy `"WxH"` strings are accepted but may be normalized. |
 | `ratio` | string | No | Aspect ratio: `"1:1"` (default), `"3:4"`, `"4:3"`, `"16:9"`, `"9:16"`, `"2:3"`, `"3:2"`, `"21:9"`. |

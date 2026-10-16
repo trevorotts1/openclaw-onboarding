@@ -45,7 +45,7 @@ RULE 5: CHECK YOURSELF AGAINST THE CHECKLIST WHEN DONE.
 RULE 6: REPORT WHAT YOU DID.
 
 ══════════════════════════════════════════════════════════════════
-AGNES IMAGE 2.1 FLASH - INSTALLATION GUIDE
+AGNES IMAGE - INSTALLATION GUIDE (default model 2.5 Flash)
 ══════════════════════════════════════════════════════════════════
 
 This skill is an API REFERENCE for an endpoint the fleet already has a key for.
@@ -97,7 +97,7 @@ the SAME response (the endpoint is synchronous):
     -H "Authorization: Bearer $AGNES_AI_API_KEY" \
     -H "Content-Type: application/json" \
     -d '{
-      "model": "agnes-image-2.1-flash",
+      "model": "agnes-image-2.5-flash",
       "prompt": "A simple red circle on a white background",
       "size": "1K",
       "ratio": "1:1",
@@ -146,9 +146,9 @@ WHAT TO ADD TO YOUR CORE FILES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [ADD TO AGENTS.md]
-## Agnes Image 2.1 Flash
+## Agnes Image (default model 2.5 Flash)
 - Synchronous text-to-image and image-to-image. Key: AGNES_AI_API_KEY (existing).
-- Model: agnes-image-2.1-flash. Endpoint: POST https://apihub.agnes-ai.com/v1/images/generations
+- Model: agnes-image-2.5-flash (default); explicit legacy pin agnes-image-2.1-flash. Endpoint: POST https://apihub.agnes-ai.com/v1/images/generations
 - response_format goes in extra_body; image-to-image needs no tags.
 - Full reference: 63-agnes-image/agnes-image-full.md
 
@@ -161,7 +161,7 @@ WHAT TO ADD TO YOUR CORE FILES
 - Full reference: 63-agnes-image/agnes-image-full.md
 
 [ADD TO MEMORY.md]
-## Agnes Image 2.1 Flash - Installed [DATE]
+## Agnes Image - Installed [DATE] (default model 2.5 Flash)
 - Existing AGNES_AI_API_KEY; synchronous image endpoint (no polling)
 - Full reference: 63-agnes-image/agnes-image-full.md
 
