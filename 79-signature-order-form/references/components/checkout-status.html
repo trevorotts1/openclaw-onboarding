@@ -1,0 +1,30 @@
+<!-- S79 checkout status states (doc 09 sections 7 and 8, S79-09 draft).
+     Exactly one state renders at a time, driven by the purchase state
+     machine. Copy comes from the failed/pending requirements in the
+     checkout request (approved references), never invented here. Failed
+     and pending are NOT acceptance or decline, and no state in this file
+     links onward to a paid route; onward routing happens only after a
+     verified native paid event, outside this component. -->
+
+<!-- State: submitting / pending_confirmation -->
+<section class="sig-checkout-status" data-state="pending" role="status">
+  <p>TEST pending copy from the approved pending-state reference. We are confirming your payment with the payment provider. Please do not submit again.</p>
+</section>
+
+<!-- State: failed -->
+<section class="sig-checkout-status" data-state="failed" role="alert">
+  <p class="sig-status-error">TEST failed copy from the approved failed-state reference. Your payment did not complete and you have not been charged for this attempt.</p>
+  <p>When you retry, we first check the payment records so you are never charged twice for the same order.</p>
+</section>
+
+<!-- State: requires_customer_action -->
+<section class="sig-checkout-status" data-state="requires_action" role="alert">
+  <p>TEST customer-action copy from the approved reference. Your payment provider needs one more step from you to finish this payment.</p>
+</section>
+
+<!-- State: paid (confirmation only; entitlement and routing are handled by
+     the purchase automation from the verified native event, not by this
+     component or by any success URL alone). -->
+<section class="sig-checkout-status" data-state="paid" role="status">
+  <p>TEST confirmation copy from the approved reference. Your payment is confirmed.</p>
+</section>
