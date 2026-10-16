@@ -52,6 +52,12 @@ def check(name, cond, detail=""):
 CLIENT = "I am not small. I never was. One seed of truth made me strong. She Found Power in the Climb."
 HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
 HOOK_PLAN = {"true_at_beat": "the_world"}   # FU-HOOK-PLACEMENT: hooks measured from the sheet
+#: BUILD-PLAN W1-method-song-U1: a run missing the pace order is refused at
+#: dispatch with PACE_TURNS_REQUIRED on every run, so this dispatching plan
+#: carries a complete two-seam order and its style carries both directions.
+PACE_ORDER = {"drop": "half-time drop, thin drums",
+              "return": "turn and rise back to the groove",
+              "boundary_s": 15.0, "return_boundary_s": 38.0}
 SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
          {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
          {"tag": "Verse", "delivery": "sung", "lines": ["One seed of truth made me stro-o-ong,"]},
@@ -163,14 +169,22 @@ def test_clear_path_builds_and_is_measured():
 
 # ---- 4. the 999 dispatch seam: G9 headroom allowed, a patch still refused -
 def test_dispatch_allows_headroom_duration():
-    plan = dict(LF.plan(60, (15, 20)), style_id="soul-ballad", hook_plan=HOOK_PLAN)
-    req = R.build_request("soul-ballad", SHEET, CLIENT, "T", plan["delivered_s"], hook_plan=HOOK_PLAN)
+    plan = dict(LF.plan(60, (15, 20)), style_id="soul-ballad", hook_plan=HOOK_PLAN,
+                pace_change=PACE_ORDER)
+    req = R.build_request("soul-ballad", SHEET, CLIENT, "T", plan["delivered_s"], hook_plan=HOOK_PLAN,
+                          pace_plan=PACE_ORDER)
     req["input"]["duration"] = 67.0  # stub take, never real audio
+    # Both pace turns are mandatory and measured on EVERY run, so a take that
+    # is meant to be ACCEPTED here (the duration is what is under test, not the
+    # gear change) carries the measured seam windows like any real export.
     GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 2, "source": "measured"},
                          {"delivery": "sung", "start": 2.5, "end": 45, "source": "measured"},
                          {"delivery": "spoken", "start": 45, "end": 54, "source": "measured"}],
             "detector": "singing_detector 2.0.0", "duration_s": 57.5, "first_sung_s": 2.5,
-            "music_under_speech_ratio": 0.6, "tail_rms_dbfs": -30.0}
+            "music_under_speech_ratio": 0.6, "tail_rms_dbfs": -30.0,
+            "pace_before": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0},
+            "pace_problem": {"onset_rate_per_s": 1.4, "rms_dbfs": -18.5},
+            "pace_after": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0}}
     # FU-HOOK-PLACEMENT: Suno's aligned words carry each section header inline
     # on the section's first word; the always-on hook_placement gate reads them.
     words = []

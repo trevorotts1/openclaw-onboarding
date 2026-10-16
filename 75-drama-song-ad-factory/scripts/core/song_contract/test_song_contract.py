@@ -412,7 +412,13 @@ def test_k_proper_sheet_goes_through_the_director():
     _start()
     import music_director as MD
     import words_fit as W
-    style = R.style_text("rnb-flow", R.parse_lyrics(GOOD))
+    # BUILD-PLAN W1-method-song-U1: a run missing the pace order is refused at
+    # dispatch (PACE_TURNS_REQUIRED) on every run, so the director's style
+    # carries the approved two-seam order and the dispatching plan carries it.
+    pace = {"drop": "half-time drop, thin drums",
+            "return": "turn and rise back to the groove",
+            "boundary_s": 15.0, "return_boundary_s": 38.0}
+    style = R.style_text("rnb-flow", R.parse_lyrics(GOOD), pace_plan=pace)
     names = ("Chanel", "Girl I Got You Masterclass", "GirlIGotYouEvent.com")
     try:
         req = MD.build_generate_request(GOOD, style, "T", style_id="rnb-flow", client_text=CLIENT,
@@ -429,7 +435,8 @@ def test_k_proper_sheet_goes_through_the_director():
         # WW-30: the director's createTask ENVELOPE is what goes to run_takes;
         # the delivered length is read from the nested input.
         SD.run_takes(dict(req, _hook_plan=req["_hook_plan"]),
-                     {"delivered_s": D, "style_id": "rnb-flow"}, lambda rq: seen.append(rq) or [],
+                     {"delivered_s": D, "style_id": "rnb-flow", "pace_change": pace},
+                     lambda rq: seen.append(rq) or [],
                      lambda t: {}, lambda t, r: None, CLIENT, CLIENT, cap_cents=6, cost_cents=6,
                      kie=lambda fn, *a, **k: fn(), style_id="rnb-flow")
         sent = seen[0]["input"]["duration"]
