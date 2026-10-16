@@ -79,6 +79,7 @@ AF_BRIEF_INCOMPLETE = "AF-EMAIL-BRIEF-INCOMPLETE"
 AF_OVERRIDE_UNLOGGED = "AF-EMAIL-OVERRIDE-UNLOGGED"
 AF_CTA_PLACEMENT = "AF-EMAIL-CTA-PLACEMENT"
 AF_SLOT_TRACE = "AF-EMAIL-SLOT-TRACE"
+AF_LABEL_LEAK = "AF-EMAIL-LABEL-LEAK"
 
 # ---- SACRED constants (preserved VERBATIM from the corpus) ------------------
 FRAMEWORKS = (
@@ -153,6 +154,28 @@ PROFILE_PART_ORDER = {
 # starts inside the final quarter.
 CTA_FIRST_MAX_FRACTION = 0.50
 CTA_LAST_MIN_FRACTION = 0.75
+# The label split (spec 13 section 3): the private client-review document labels
+# each email with its framework and labels the body "Email Body:"; the recipient
+# payload carries NONE of that. Review direction: each profile email declares
+# review_label naming its framework (one of these tokens must appear in it).
+# Payload direction: no recipient-visible field may contain production labeling.
+REVIEW_LABEL_TOKENS = {
+    "pastor-solutions": ("pastor",),
+    "features-to-benefit": ("features-to-benefit", "features to benefit"),
+    "six-ws": ("six-ws", "six ws", "6 w"),
+    "before-after-bridge": ("before-after-bridge", "before after bridge"),
+    "three-b-plan": ("three-b", "3-b", "3 b plan"),
+    "million-dollar-sales": ("million dollar",),
+    "aida": ("aida",),
+    "pas": ("pas",),
+}
+LABEL_LEAK_PATTERNS = (
+    ("'Email Body:' label", re.compile(r"email\s+body\s*:", re.I)),
+    ("'Framework:' label", re.compile(r"framework\s*:", re.I)),
+    ("subject/preview line label", re.compile(r"(subject\s+line|preview\s+(text|line))\s*[ab]?\s*:", re.I)),
+    ("framework id", re.compile(r"\b(pastor-solutions|features-to-benefit|six-ws|before-after-bridge|three-b-plan|million-dollar-sales)\b", re.I)),
+    ("slot instruction", re.compile(r"\bslot\s+\d+\b|\bpain\s+point\s+#?\d+\s+from\b", re.I)),
+)
 
 
 def _section_label(text):
@@ -654,6 +677,32 @@ def evaluate_email(email, ctx):
                           "%s: profile %s requires a non-empty merge_fallback when a subject "
                           "or preview uses {{contact.first_name}}" % (tag, SIGNATURE_LAUNCH_TYPE)))
 
+    # Signature Launch profile: the label split, both directions
+    # (AF-EMAIL-LABEL-LEAK). Review direction — the authored record must carry
+    # the framework label the private review document renders from. Payload
+    # direction — no recipient-visible field may carry production labeling.
+    if seq_type == SIGNATURE_LAUNCH_TYPE:
+        tokens = REVIEW_LABEL_TOKENS.get(framework, ())
+        # Normalize punctuation away so the owner's own stylized label
+        # ("P.A.S.T.O.R. V1 (Solutions)") matches its framework token.
+        label = re.sub(r"[^a-z0-9]+", "", (email.get("review_label") or "").lower())
+        if tokens and not any(re.sub(r"[^a-z0-9]+", "", t) in label for t in tokens):
+            fails.append((AF_LABEL_LEAK,
+                          "%s: profile %s requires a review_label naming the framework %r "
+                          "for the private review document (got %r)"
+                          % (tag, SIGNATURE_LAUNCH_TYPE, framework, email.get("review_label"))))
+        payload_fields = (list(subjects or []) + list(previews or [])
+                          + [body or ""] + list(email.get("ctas") or []))
+        for field in payload_fields:
+            if not isinstance(field, str):
+                continue
+            for why, pat in LABEL_LEAK_PATTERNS:
+                if pat.search(field):
+                    fails.append((AF_LABEL_LEAK,
+                                  "%s: recipient payload contains production labeling (%s) — "
+                                  "labels belong to the private review document only" % (tag, why)))
+                    break
+
     # --- formatting (AF-EMAIL-FORMAT) ---
     if _count_emojis(body) > 4:
         fails.append((AF_FORMAT,
@@ -1121,10 +1170,16 @@ def _signature_ledger():
     led["sequence_id"] = "sequence-signature-launch-landing-10"
     led["profile"] = SIGNATURE_LAUNCH_TYPE
     pastor_ctas = ["See how it works", "Read the full story", "Claim your spot"]
+    review_labels = {"pastor-solutions": "P.A.S.T.O.R. V1 (Solutions)",
+                     "features-to-benefit": "Features-to-Benefit",
+                     "six-ws": "The 6 W's", "before-after-bridge": "Before-After-Bridge",
+                     "three-b-plan": "The 3-B Plan", "million-dollar-sales": "Million Dollar Sales",
+                     "aida": "AIDA", "pas": "PAS"}
     for e in led["emails"]:
         slot = e.get("e_slot")
         e["sections"] = list(_SIGNATURE_SECTIONS[e["framework"]])
         e["merge_fallback"] = "friend"
+        e["review_label"] = review_labels[e["framework"]]
         if slot in (1, 2, 3):
             e["ctas"] = list(pastor_ctas)
             e["body"] = _placed_body(pastor_ctas, FOUNDER)
@@ -1322,6 +1377,16 @@ def self_test():
 
     sg = _signature_ledger(); sg["emails"][0].pop("merge_fallback", None)
     check_fail("signature-no-fallback", sg, AF_FIRSTNAME)
+
+    # S50-06: the label split, both directions.
+    sg = _signature_ledger(); sg["emails"][0]["body"] = "Email Body:\n\n" + sg["emails"][0]["body"]
+    check_fail("signature-label-leak", sg, AF_LABEL_LEAK)
+
+    sg = _signature_ledger(); sg["emails"][8]["subjects"] = ["Framework: AIDA in four moves for {{contact.first_name}} today", sg["emails"][8]["subjects"][1]]
+    check_fail("signature-label-subject", sg, AF_LABEL_LEAK)
+
+    sg = _signature_ledger(); sg["emails"][2].pop("review_label", None)
+    check_fail("signature-review-label", sg, AF_LABEL_LEAK)
 
     hg = _ht12_ledger(); hg["emails"][0].pop("disruptive_elements", None)
     check_fail("disruptive-missing", hg, AF_DISRUPTIVE)
