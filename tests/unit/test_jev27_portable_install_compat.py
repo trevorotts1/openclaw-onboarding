@@ -151,7 +151,7 @@ class FreshAndUpdateCopyCore(unittest.TestCase):
     def test_updater_refreshes_shared_utils_wholesale(self):
         src = (_REPO / "update-skills.sh").read_text(encoding="utf-8")
         self.assertIn(
-            'cp -r "$EXTRACTED_DIR/shared-utils/." "$SKILLS_DIR/shared-utils/"',
+            'cp -R "$EXTRACTED_DIR/shared-utils/." "$SKILLS_DIR/shared-utils/"',
             src,
         )
 

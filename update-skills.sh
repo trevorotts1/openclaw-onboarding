@@ -6358,7 +6358,7 @@ PYEOF
     # the "132 loose files dumped into ~/.openclaw/skills/" flatten bug.
     # `cp -r "path/01-skill" dest/` (no trailing slash) copies the dir as a
     # named subdirectory, producing dest/01-skill/ as intended.
-    cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
+    cp -R "${SKILL_DIR%/}" "$SKILLS_DIR/"
     oc_skill_box_state_restore "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
 
     # ENGINE-PIN RE-STAMP (2026-10-13). Skill 59's `verify.sh stamp-pin`
@@ -6408,7 +6408,7 @@ PYEOF
   _SHAREDUTILS_STATUS="ok"
   if [ -d "$EXTRACTED_DIR/shared-utils" ]; then
     mkdir -p "$SKILLS_DIR/shared-utils"
-    cp -r "$EXTRACTED_DIR/shared-utils/." "$SKILLS_DIR/shared-utils/"
+    cp -R "$EXTRACTED_DIR/shared-utils/." "$SKILLS_DIR/shared-utils/"
     chmod +x "$SKILLS_DIR/shared-utils/"*.sh "$SKILLS_DIR/shared-utils/"*.py 2>/dev/null || true
     # v20.0.11: VERIFY the refresh actually landed every source top-level entry.
     # shared-utils/ (incl. sop-embed-once/) is NOT covered by the A3 numbered-skill
@@ -6541,7 +6541,7 @@ PYEOF
     # than it started with, which is how the "✓ universal-sops refreshed" line
     # below came to be printed over a truncated tree.
     oc_remove_tree_guarded "$SKILLS_DIR/universal-sops" "SOP tree"
-    if ! cp -r "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/"; then
+    if ! cp -R "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/"; then
       _UNIVERSALSOPS_STATUS="fail"
     fi
     # PARITY WITH shared-utils (v20.0.11). This tree is rm -rf'd first, so a
@@ -11321,7 +11321,7 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
       # Command Center scripts are the measured source of root-run python on
       # these boxes, so Skill 32 is where root-owned __pycache__ appears first.
       oc_remove_tree_guarded "$SKILLS_DIR/32-command-center-setup" "skill"
-      cp -r "$ONBOARDING_DIR/32-command-center-setup" "$SKILLS_DIR/"
+      cp -R "$ONBOARDING_DIR/32-command-center-setup" "$SKILLS_DIR/"
       command -v obs_set_status >/dev/null 2>&1 && obs_set_status "32-command-center-setup" "downloaded"
     fi
   fi
