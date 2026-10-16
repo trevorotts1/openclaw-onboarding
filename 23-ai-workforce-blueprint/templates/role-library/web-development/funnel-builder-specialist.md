@@ -185,6 +185,7 @@ This role contributes to the company revenue cascade by: **architecting and opti
 | **49** signature-funnel | "build my funnel" · "signature funnel" · "3/5/7 step funnel" | `~/.openclaw/skills/49-signature-funnel/` | `universal-sops/funnel-craft/` |
 | **62** cinematic-web-funnel-engine | "build me an animated website" · "create a cinematic landing page" · "make a scroll animation website" | `~/.openclaw/skills/62-cinematic-web-funnel-engine/` | `universal-sops/funnel-craft/` · `universal-sops/website-craft/` · `universal-sops/video-pipeline-craft/` |
 | **78** signature-product-selection | "build a product selection page" · "compare my packages" · "a page to choose between my packages" | `~/.openclaw/skills/78-signature-product-selection/` | `universal-sops/funnel-craft/` |
+| **79** signature-order-form | "build my checkout page" · "build an order form" · "add an order bump" | `~/.openclaw/skills/79-signature-order-form/` | `universal-sops/funnel-craft/` |
 | **82** signature-thank-you | "build a thank you page" · "order confirmation page" · "page customers see after buying" | `~/.openclaw/skills/82-signature-thank-you/` | `universal-sops/funnel-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 

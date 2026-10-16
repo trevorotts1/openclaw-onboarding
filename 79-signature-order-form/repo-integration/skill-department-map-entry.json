@@ -1,0 +1,43 @@
+{
+ "skill": "79",
+ "slug": "signature-order-form",
+ "name": "signature-order-form",
+ "client_facing": true,
+ "description": "Builds the Signature order form / checkout experience around native Convert & Flow transaction elements, in combined single-offer mode or post-selection mode, including the reusable optional order bump (default unchecked) that modifies the pending order.",
+ "departments": [
+  "web-development",
+  "funnels",
+  "crm"
+ ],
+ "roles": [
+  {
+   "dept": "web-development",
+   "primary": true,
+   "slug": "funnel-builder-specialist"
+  },
+  {
+   "dept": "funnels",
+   "primary": false,
+   "slug": "ghl-funnel-build-specialist"
+  },
+  {
+   "dept": "crm",
+   "primary": false,
+   "slug": "automation-workflow-specialist"
+  },
+  {
+   "dept": "funnels",
+   "primary": false,
+   "slug": "funnel-qa-conversion-verification-specialist"
+  }
+ ],
+ "intent_triggers": [
+  "build my checkout page",
+  "build an order form",
+  "add an order bump",
+  "checkout for my launch"
+ ],
+ "execution_sops": [
+  "funnel-craft"
+ ]
+}

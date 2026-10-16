@@ -123,6 +123,7 @@ You never have to know these by name or type a command. Just say what you want i
 |---|---|
 | "build a workflow" · "automate this" · "an order-bump" · "set up a CRM automation" | Tier-0 GHL operator (caf/convertandflow/ghl CLI) |
 | "write my email sequence" · "nurture emails" · "a welcome series" · "an email campaign" | Email Engine + Superlibrary |
+| "build my checkout page" · "build an order form" · "add an order bump" · "checkout for my launch" | Builds the Signature order form / checkout experience around native Convert & Flow transaction elements, in combined single-offer mode or post-selection mode, including the reusable optional order bump (default unchecked) that modifies the pending order |
 
 You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
 <!-- END DEPT_SKILLS_V1 -->
