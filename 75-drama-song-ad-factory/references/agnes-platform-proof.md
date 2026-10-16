@@ -11,7 +11,7 @@ change, no version bump, no CHANGELOG edit, no Agnes call, no KIE call, no API s
 |---|---|
 | Date | 2026-10-15 (box local time; times not relied on) |
 | Authorisation | Overseer order (Trevor GO, 10:40 EDT) naming this box as the test venue and as the validator for Contabo and Hostinger |
-| Instrument | Hostinger VPS `openclaw-c54p` reached over SSH from the operator Mac Mini; docker **29.4.0** daemon on that box |
+| Instrument | Hostinger VPS `a client VPS box` reached over SSH from the operator Mac Mini; docker **29.4.0** daemon on that box |
 | Repo / branch | `trevorotts1/openclaw-onboarding`, worktree `/Users/<operator>/agnes-wt/W4-proof-U2`, branch `unit/AGN-W4-proof-U2`, head `0cb71acd9` |
 | Container / volume | container `agn-test-901`, volume `agn-test-901-home` — the only two objects this test ever created; both removed before this file was written |
 | Verdict | **PASS** — both survival asserts hold across a container recreate, and the box is proven clean afterwards |
@@ -40,7 +40,7 @@ destroy + recreate, re-read) and the same docker flow — **not boot-tested sepa
 
 ## 2. Instrument and credential handling
 
-- Transport: SSH from the operator Mac Mini to `openclaw-c54p`, key authentication
+- Transport: SSH from the operator Mac Mini to `a client VPS box`, key authentication
   (`ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes root@<box>`). The root password recorded in the accounts
   file was **never read, echoed, logged or written** anywhere — it was not needed, so it never entered a
   command line, a transcript, this file or the receipt.
@@ -61,7 +61,7 @@ destroy + recreate, re-read) and the same docker flow — **not boot-tested sepa
 $ docker --version
 Docker version 29.4.0, build 9d7ad9f
 $ docker ps -a --format '{{.Names}}|{{.Image}}|{{.Status}}'
-openclaw-c54p-openclaw-1|76b80d50203e|Up 2 days
+a-client-vps-box-openclaw-1|76b80d50203e|Up 2 days
 traefik-traefik-1|traefik:latest|Up 5 months
 $ docker volume ls --format '{{.Name}}'
 traefik-letsencrypt
@@ -74,7 +74,7 @@ node:22-bookworm 0e5f90657369 1.65GB
 capture (`box-run.txt` line 11): the box already held `node:22-bookworm`, id `0e5f90657369`, 1.65GB,
 so the script needed no `docker pull` and issued none.
 
-The client container `openclaw-c54p-openclaw-1` was **Up 2 days** before the test and is **Up 2 days**
+The client container `a-client-vps-box-openclaw-1` was **Up 2 days** before the test and is **Up 2 days**
 after it (section 7) — never stopped, never removed, never restarted.
 
 ---
@@ -227,7 +227,7 @@ rm_volume_done=0
 
 ===== POST-STATE =====
 -- containers AFTER (read-only)
-openclaw-c54p-openclaw-1|76b80d50203e|Up 2 days
+a-client-vps-box-openclaw-1|76b80d50203e|Up 2 days
 traefik-traefik-1|traefik:latest|Up 5 months
 -- volumes AFTER (read-only)
 traefik-letsencrypt
@@ -243,7 +243,7 @@ Before → after, compared name by name:
 
 | Object | BEFORE | AFTER | Change |
 |---|---|---|---|
-| `openclaw-c54p-openclaw-1` (client) | present, `Up 2 days` | present, `Up 2 days` | **untouched** |
+| `a-client-vps-box-openclaw-1` (client) | present, `Up 2 days` | present, `Up 2 days` | **untouched** |
 | `traefik-traefik-1` | present, `Up 5 months` | present, `Up 5 months` | **untouched** |
 | `traefik-letsencrypt` (volume) | present | present | **untouched** |
 | `traefik_traefik-letsencrypt` (volume) | present | present | **untouched** |

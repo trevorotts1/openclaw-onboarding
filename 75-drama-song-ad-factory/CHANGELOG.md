@@ -13,11 +13,14 @@ main with its receipt header privacy-repaired (one batch PR). Window:
 - `unit/AGN-924-proof-REPAIR` (W4-proof-U2 privacy repair, AGN-924) -
   `references/agnes-platform-proof.md`: the TEST-01 container-persistence
   receipt (single-platform test, same-recipe parallel validation) and the three
-  sourced receipt claims from the accepted head reach main, and line 1's two
-  identity categories are swapped for the generic form "a client VPS". Nothing
-  else in the receipt moves: capture pointers, recipe wording, dates and every
-  truthful output are preserved - the diff against the accepted copy is exactly
-  line 1 (1c1), 30 bytes shorter, 320 lines unchanged.
+  sourced receipt claims from the accepted head reach main, and every
+  identifier site is swapped for a generic label: line 1's two identity
+  categories become "a client VPS", and the six box-label cells (Instrument,
+  Transport and the client-container rows) become "a client VPS box" and
+  "a-client-vps-box-openclaw-1". Every other byte stays put: capture pointers,
+  recipe wording, dates and every truthful output are preserved - the diff
+  against the accepted copy is exactly 7 lines (line 1 plus those six cells),
+  12 bytes shorter, 319 lines on both sides.
 
 Version `v2.9.60` -> `v2.9.61` (main already carries `v2.9.60` from #2146; this release takes the next patch. G3 gates a skill-content change on that bump). Both the
 `skill-version.txt` file and the `SKILL.md` frontmatter `version:` field carry
