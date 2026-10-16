@@ -1,3 +1,9 @@
+## [v27.1.29]  -  2026-10-16  -  Skill 23 interview links honor issuer expiry and preserve the first completion timestamp for 24-hour grace
+
+- Preserve the original completion timestamp on retries, without inventing timestamps for completed legacy records.
+- Show invitation validity and recovery from the issuer contract, including the additive 24-hour completion-grace capability. Browser sessions remain 30 days.
+- Install this timestamp-preservation update before Command Center v7.6.123. The existing Command Center compatibility pin remains unchanged.
+
 ## [v27.1.28]  -  2026-10-15  -  Upgrade Skill 72 with dual-engine visual storytelling and four delivery modes
 
 ###### What Changed

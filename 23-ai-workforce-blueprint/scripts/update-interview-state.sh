@@ -442,8 +442,15 @@ if phases_complete:
     ]
 progress["lastQuestionAt"] = now
 
+# The invitation grace is anchored to the FIRST completion, not a build-kick
+# retry. Legacy completed records with no timestamp stay unknown: inventing now
+# would reopen their expired access every time --complete is retried.
+already_complete = data.get("interviewComplete") is True or (
+    isinstance(data.get("buildCompletedAt"), str) and bool(data["buildCompletedAt"].strip())
+)
+if not already_complete and not data.get("interviewCompletedAt"):
+    data["interviewCompletedAt"] = now
 data["interviewComplete"] = True
-data["interviewCompletedAt"] = now
 
 # Seed-only-when-absent, matching `if .X == null then .X = <v> else . end`.
 if data.get("departments") is None:
