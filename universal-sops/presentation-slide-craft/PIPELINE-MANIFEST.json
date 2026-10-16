@@ -948,6 +948,38 @@
       ]
     },
     {
+      "id": "P-U-BRIEF-SALES",
+      "order": 4.32,
+      "name": "Upsell Sales + Checkout Page Brief Emit (Item 20 page-brief seam: writes the versioned page-brief JSON the page builder consumes)",
+      "owning_role": "media-librarian-ghl-updater",
+      "produces_artifact": [
+        "working/pages/page-brief-sales.v*.json",
+        "working/pages/page-brief-checkout.v*.json"
+      ],
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/page_brief.py --run-dir {run_dir} --page sales --page checkout"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20,
+      "consumes": [
+        "working/copy/intake.json",
+        "working/upsell/copy/sales.fragment.md",
+        "working/upsell/copy/checkout.fragment.md",
+        "prompts/sales.design.txt",
+        "prompts/checkout.design.txt",
+        "design/sales-design.png",
+        "design/checkout-design.png"
+      ]
+    },
+    {
       "id": "P-U-DESIGN-VSL",
       "order": 4.4,
       "name": "Upsell VSL Page Design (includes email/phone gate form design)",
@@ -998,6 +1030,33 @@
       "heartbeat_minutes": 20,
       "consumes": [
         "prompts/vsl.design.txt"
+      ]
+    },
+    {
+      "id": "P-U-BRIEF-VSL",
+      "order": 4.42,
+      "name": "Upsell VSL Page Brief Emit (Item 20 page-brief seam: writes the versioned page-brief JSON the page builder consumes)",
+      "owning_role": "media-librarian-ghl-updater",
+      "produces_artifact": "working/pages/page-brief-vsl.v*.json",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/page_brief.py --run-dir {run_dir} --page vsl"
+      },
+      "verifier": "phase_verifiers.verify",
+      "heartbeat_minutes": 20,
+      "consumes": [
+        "working/copy/intake.json",
+        "working/upsell/copy/vsl.fragment.md",
+        "working/upsell/vsl-research.md",
+        "prompts/vsl.design.txt",
+        "design/vsl-design.png"
       ]
     },
     {

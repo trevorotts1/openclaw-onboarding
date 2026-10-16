@@ -555,7 +555,7 @@
         "slide-submitter",
         "typography-architect"
       ],
-      "content_sha": "sha256:ec4a68d9925874a6c4cf8a361f41d9f018067b022946ca23368714613233d802",
+      "content_sha": "sha256:094750868a4a22616c8dc6913e6fff7ef51e9e8ecda43832ef606b09e3d7335b",
       "content_hashed_at": "2026-10-15T18:54:46.133493+00:00"
     },
     "product-production": {
@@ -5591,10 +5591,10 @@
       "path": "templates/role-library/presentations/director-of-presentations.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:d645f6e710f123e53b912909ce696b4b02123a7f4ceeeaaa5aa7d70d2640ab78",
-      "render_sha": "sha256:bbb49664778d7256425aba45a5e7b801dfb3bfb51b9ab08198e080ac52a68d1b",
-      "content_version": "1.0.37",
-      "content_hashed_at": "2026-10-15T18:54:46.133493+00:00"
+      "content_sha": "sha256:7834ae7fa8130cbc27d20c41b2e2a30f2cbacfe548fa4cafe9be59419e173439",
+      "render_sha": "sha256:b81588fc1cc07eb3cbbb57138882469300b8593fc0e29cb4755bcc1317f5b0f5",
+      "content_version": "1.0.38",
+      "content_hashed_at": "2026-10-15T22:46:00.010318+00:00"
     },
     {
       "slug": "first-time-onboarding-presentations",
@@ -5703,10 +5703,10 @@
       "path": "templates/role-library/presentations/pptx-assembly-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:eaeed9f0fcace35bbf3d3450d16bbf544a8f3f10fc71932b513165c16e366ac1",
-      "render_sha": "sha256:eaeed9f0fcace35bbf3d3450d16bbf544a8f3f10fc71932b513165c16e366ac1",
-      "content_version": "1.0.20",
-      "content_hashed_at": "2026-10-15T18:54:46.133493+00:00"
+      "content_sha": "sha256:d735be5526ee66c19bd13a8bcf37aa06dacd77d441d6b12d1f9e4a43ed3f581c",
+      "render_sha": "sha256:d735be5526ee66c19bd13a8bcf37aa06dacd77d441d6b12d1f9e4a43ed3f581c",
+      "content_version": "1.0.21",
+      "content_hashed_at": "2026-10-15T22:46:00.010318+00:00"
     },
     {
       "slug": "presenter-coach",
@@ -5799,10 +5799,10 @@
       "path": "templates/role-library/presentations/slide-image-creator.md",
       "capability_class": "GENERATION",
       "vision_flag": false,
-      "content_sha": "sha256:3981904ed4c91476cda403991f74ab9a629c0acb6e7d647d24e627e595c191b5",
-      "render_sha": "sha256:3981904ed4c91476cda403991f74ab9a629c0acb6e7d647d24e627e595c191b5",
-      "content_version": "1.0.33",
-      "content_hashed_at": "2026-10-15T18:54:46.133493+00:00"
+      "content_sha": "sha256:246a4f5c1e3033880c8823e2fe16cefdd13c887b6aa75d88b3eaa34d68a2b1e7",
+      "render_sha": "sha256:246a4f5c1e3033880c8823e2fe16cefdd13c887b6aa75d88b3eaa34d68a2b1e7",
+      "content_version": "1.0.34",
+      "content_hashed_at": "2026-10-15T22:46:00.010318+00:00"
     },
     {
       "slug": "slide-submitter",
@@ -7607,10 +7607,10 @@
       "path": "templates/role-library/presentations/qc-specialist-prompt-presentations.md",
       "capability_class": "JUDGMENT",
       "vision_flag": false,
-      "content_sha": "sha256:aa74003ec3826d199b0ad91649bcd86508f2a7a63a68c800b80c97fd0b8ea27d",
-      "render_sha": "sha256:d8ec4bc73e3a96647225ebd9225b5f47a121587a29e93d3593da63a292253c78",
-      "content_version": "1.0.16",
-      "content_hashed_at": "2026-10-15T18:54:46.133493+00:00"
+      "content_sha": "sha256:01b77325fe3fb6fcfe53c15bed405f48bbe793359511bc1941f3bf3b3ba10c05",
+      "render_sha": "sha256:3f9a63500f6cf2047fe6865e897cd00bff668d483d7085325343e1ba3f2bcede",
+      "content_version": "1.0.17",
+      "content_hashed_at": "2026-10-15T22:46:00.010318+00:00"
     },
     {
       "slug": "qc-specialist-image-presentations",
@@ -10818,7 +10818,7 @@
     "neutral_config_sha": "sha256:e084d023d101ad89a8a1bda5f673fb3e997be2d56e09405afabd93ede944afe9",
     "neutral_date": "2000-01-01",
     "generator": "hash-content-manifest.py",
-    "generated_at": "2026-10-15T18:54:46.133493+00:00",
+    "generated_at": "2026-10-15T22:46:00.010318+00:00",
     "manifest_schema": "1.0"
   },
   "personas": [
