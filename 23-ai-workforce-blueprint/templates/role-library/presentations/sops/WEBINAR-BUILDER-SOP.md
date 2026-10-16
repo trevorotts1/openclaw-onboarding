@@ -27,7 +27,8 @@ Three hard constraints:
 2. **Size** — target < 500 MB, hard cap 900 MB. A ~29 min business-webinar video at CRF 22
    1080p lands ~300-460 MB, inside the GHL 500 MB video-upload ceiling.
 3. **GHL storage** — the mp4 lives in GHL media storage (the v3 video tier), never on the
-   VPS or in Downloads. Local sources are never deleted until the upload is CONFIRMED.
+   VPS or in Downloads. The local delivery-path copy is never deleted: it stays in the
+   delivery path, where the VSL build's video dependency and the client package read it.
 
 The webinar is an ADDITIONAL deliverable. It does NOT replace any of the required build
 deliverables; it rides the same run dir and is uploaded to GHL through the shared media
@@ -72,8 +73,9 @@ It produces:
    fail > 900 MB. A near-static 1080p CRF 22 render lands ~300-420 MB — inside the cap.
 4. **Upload (ghl_media.upload_video):** host the mp4 to GHL via the **v3 video tier**
    (`Version: v3` + `Content-Type: video/mp4`, 500 MB ceiling) into the SAME per-deck GHL
-   media folder as the deck. Record the result in the merged media ledger. Cleanup the
-   local delivery-path copy ONLY after the upload is confirmed.
+   media folder as the deck. Record the result in the merged media ledger. The upload's
+   confirmation (2xx + fileId + a read-only list-back match) is recorded in the record's
+   status only; the local delivery-path copy is NOT cleaned up (see §4).
 
 ## 3. TIMING TRACK
 
@@ -121,10 +123,15 @@ renderer and the verifier:
   is NOT relaxed for a real webinar mp4.
 - **No browser / no UI automation for GHL** — only the REST media path, same as the deck
   upload.
-- **Never delete until confirmed.** The local `*-WEBINAR.mp4` (and chunk mp3s / timing
-  JSON) stay put until the upload is CONFIRMED: HTTP 2xx AND `ghl_media_id` present AND a
-  READ-ONLY list-back finds the entry by fileId/name. Only then is the local copy moved out
-  of the delivery path. No VPS-root / Downloads copy, ever.
+- **The local copy stays.** The local `*-WEBINAR.mp4` (and chunk mp3s / timing
+  JSON) are never moved or deleted, on upload confirmation or otherwise. Confirmation
+  (HTTP 2xx AND `ghl_media_id` present AND a READ-ONLY list-back finds the entry by
+  fileId/name) is recorded in the build record's status only, because the delivery-path
+  file is a live dependency: `P-U-VSL-BUILD`'s `verify_video_dependency()` requires it at
+  `working/delivery/{deck_slug}-WEBINAR.mp4`, and the client package ships it from there.
+  (An earlier draft of this SOP described a cleanup step the executor never implemented;
+  the prose is corrected to the code, FIX-PLAN Item 23, 2026-10-14.) No VPS-root /
+  Downloads copy, ever.
 - **The executor runs ONLY via the canonical entry** (nonce check), mirroring
   `build_deck.py` — a hand-rolled webinar cannot bypass the door.
 - **Operator credits for tests; never a client.** A sample webinar is built on the
