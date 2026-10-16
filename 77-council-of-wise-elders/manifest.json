@@ -2,9 +2,9 @@
   "skill": "council-of-wise-elders",
   "skill_version": "v1.0.0",
   "generated_by": "scripts/build-bundles.mjs",
-  "source_commit": "e84dae9c29ccff44d479db77b21f3cbb3c65ea60",
-  "file_count": 306,
-  "aggregate_sha256": "3c80af05a81cc9d9eaa441ca0a5ade9d76e07e29799e8bb772e84dc4c67faa69",
+  "source_commit": "e38394ee42df57da22659e1f3f4889e5aacc74da",
+  "file_count": 308,
+  "aggregate_sha256": "808199ea67e33ac641bb87bf8be05e4407c92afc1588e2de3e4dd21bcef621fc",
   "hash_method": "SHA-256 per file over sorted relative paths; aggregate is SHA-256 of the lines \"<sha256>  <path>\" joined by newlines with a trailing newline. manifest.json itself and any .skill archive are excluded.",
   "archive": {
     "file": "council-of-wise-elders.skill",
@@ -683,14 +683,19 @@
       "bytes": 5631
     },
     {
+      "path": "runtime/src/cli/card-text.ts",
+      "sha256": "daf059ef24b6bde7e309417663aeed30628a4deaf0385a144779f9d65d3655a0",
+      "bytes": 3339
+    },
+    {
       "path": "runtime/src/cli/dispatcher.ts",
       "sha256": "7df3c1dcac9da6ef14e8c93736f4a403a2c602ee83659aef5a9cddea18fe78f8",
       "bytes": 28715
     },
     {
       "path": "runtime/src/cli/engine.ts",
-      "sha256": "3a27ffb27580652d1b8a9917b76ea0229ae4666c80b73478dbdfe49f3e9e70b1",
-      "bytes": 54229
+      "sha256": "55a87742067f0c44330176f7567b6e0b11215f5886781f4c6bf25c1d72e07d32",
+      "bytes": 61518
     },
     {
       "path": "runtime/src/cli/errors.ts",
@@ -814,8 +819,8 @@
     },
     {
       "path": "runtime/src/contracts/generate.ts",
-      "sha256": "a3477537e29a6ffa2901f42d2690e3a4df827f78e8bbad968469e03bf20df237",
-      "bytes": 3963
+      "sha256": "67b4936d9b9d74744ab307acb105e48b1505f256421d6536aec25924c5ef5820",
+      "bytes": 4910
     },
     {
       "path": "runtime/src/contracts/golden-vectors.ts",
@@ -824,8 +829,8 @@
     },
     {
       "path": "runtime/src/contracts/index.ts",
-      "sha256": "c674a8eb60b6d1be6bedb2812424afc03b0d06220aec88ba976cf08d4b12f260",
-      "bytes": 909
+      "sha256": "6e26ff492a7377f4c002e6509ebd53868700b808d530e944a535f9c7289bd14e",
+      "bytes": 961
     },
     {
       "path": "runtime/src/contracts/primitives.ts",
@@ -1371,6 +1376,11 @@
       "path": "runtime/tests/reports.test.ts",
       "sha256": "85059da8a7096ae278afe62095b15f1afc900627cf3972d8086f544a0c5dc9c3",
       "bytes": 31735
+    },
+    {
+      "path": "runtime/tests/rp0463-live-session.test.ts",
+      "sha256": "cdcac1ca202b71ca6b2bc0ddcea918563f15955b0255009956a31c5d5c5e5323",
+      "bytes": 26324
     },
     {
       "path": "runtime/tests/run-authorization.test.ts",

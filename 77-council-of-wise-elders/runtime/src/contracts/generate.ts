@@ -75,6 +75,31 @@ const SCHEMA_REGISTRY: Record<string, z.ZodType> = {
   EndpointContract: endpointContractSchema,
 };
 
+const CARD_AUTHOR_SCHEMAS = {
+  advisor: advisorCardAuthorSchema,
+  ratification: ratificationCardAuthorSchema,
+  consult: consultCardAuthorSchema,
+} as const;
+
+export type CardAuthorKind = keyof typeof CARD_AUTHOR_SCHEMAS;
+
+/**
+ * The canonical card contract for one card kind, as a JSON Schema
+ * generated from the exact zod author definition the validator
+ * enforces (RP-046-3, DEFECT-046-B Cause 2). A composed provider
+ * request carries this schema so the model is told the precise shape,
+ * including the closed card_kind discriminator, instead of being
+ * asked to guess it. Generated per call from the same definitions as
+ * the committed artifact above; the artifact registry is untouched,
+ * so the committed artifact bytes do not change.
+ */
+export function cardAuthorJsonSchema(kind: CardAuthorKind): unknown {
+  return z.toJSONSchema(CARD_AUTHOR_SCHEMAS[kind], {
+    target: 'draft-2020-12',
+    unrepresentable: 'throw',
+  });
+}
+
 /** Generate the full JSON Schema artifact text (deterministic byte output). */
 export function generateJsonSchemaArtifact(): string {
   const schemas: Record<string, unknown> = {};

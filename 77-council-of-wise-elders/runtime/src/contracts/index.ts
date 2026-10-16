@@ -20,5 +20,10 @@ export * from './state-machine';
 export * from './scoring';
 export * from './diagnostic-retention';
 export * from './golden-vectors';
-export { generateJsonSchemaArtifact, JSON_SCHEMA_ARTIFACT_PATH } from './generate';
+export {
+  generateJsonSchemaArtifact,
+  JSON_SCHEMA_ARTIFACT_PATH,
+  cardAuthorJsonSchema,
+  type CardAuthorKind,
+} from './generate';
 export type * from './types';
