@@ -1,0 +1,155 @@
+{
+  "schema_version": "1.0",
+  "tenant_id": "TEST-TENANT",
+  "location_id": "TEST-LOCATION",
+  "launch_id": "TEST-LAUNCH",
+  "revision": 1,
+  "order_ref": "TEST-ORDER-0001",
+  "order_number": "TEST-ORDER-0001",
+  "journey_id": "TEST-JOURNEY-0001",
+  "confirmation": {
+    "status": "confirmed",
+    "all_set": true,
+    "headline": "You are all set. Your purchase is confirmed."
+  },
+  "items": [
+    {
+      "offer_id": "MAIN-A",
+      "slot": "main",
+      "display_name": "TEST ONLY MAIN-A",
+      "amount_minor": 9700,
+      "currency": "USD",
+      "display_status": "paid",
+      "entitlement_ids": [
+        "base-a"
+      ],
+      "native_line_ref": "TEST-LINE-MAIN-A",
+      "event_id": "TEST-EVT-001",
+      "billing": {
+        "billing_type": "one_time",
+        "recurring_interval": null,
+        "schedule": [],
+        "terms_source": null
+      }
+    },
+    {
+      "offer_id": "BUMP",
+      "slot": "bump",
+      "display_name": "TEST ONLY BUMP",
+      "amount_minor": 2700,
+      "currency": "USD",
+      "display_status": "paid",
+      "entitlement_ids": [
+        "workbook"
+      ],
+      "native_line_ref": "TEST-LINE-BUMP",
+      "event_id": "TEST-EVT-002",
+      "billing": {
+        "billing_type": "one_time",
+        "recurring_interval": null,
+        "schedule": [],
+        "terms_source": null
+      }
+    },
+    {
+      "offer_id": "U1",
+      "slot": "upsell_1",
+      "display_name": "TEST ONLY U1",
+      "amount_minor": 6700,
+      "currency": "USD",
+      "display_status": "paid",
+      "entitlement_ids": [
+        "extra-full"
+      ],
+      "native_line_ref": "TEST-LINE-U1",
+      "event_id": "TEST-EVT-003",
+      "billing": {
+        "billing_type": "one_time",
+        "recurring_interval": null,
+        "schedule": [],
+        "terms_source": null
+      }
+    }
+  ],
+  "totals": {
+    "currency": "USD",
+    "paid_total_minor": 19100,
+    "pending_total_minor": 0
+  },
+  "access_blocks": [
+    {
+      "entitlement_id": "base-a",
+      "offer_id": "MAIN-A",
+      "slot": "main",
+      "next_action": "access",
+      "delivery_url": "https://example.test/access/base-a",
+      "fulfillment_state": "granted"
+    },
+    {
+      "entitlement_id": "workbook",
+      "offer_id": "BUMP",
+      "slot": "bump",
+      "next_action": "access",
+      "delivery_url": "https://example.test/access/workbook",
+      "fulfillment_state": "granted"
+    },
+    {
+      "entitlement_id": "extra-full",
+      "offer_id": "U1",
+      "slot": "upsell_1",
+      "next_action": "access",
+      "delivery_url": "https://example.test/access/extra-full",
+      "fulfillment_state": "granted"
+    }
+  ],
+  "ctas": [
+    {
+      "classification": "access",
+      "label": "Access: TEST ONLY MAIN-A",
+      "offer_id": "MAIN-A",
+      "entitlement_id": "base-a",
+      "initiates_new_charge": false
+    },
+    {
+      "classification": "access",
+      "label": "Access: TEST ONLY BUMP",
+      "offer_id": "BUMP",
+      "entitlement_id": "workbook",
+      "initiates_new_charge": false
+    },
+    {
+      "classification": "access",
+      "label": "Access: TEST ONLY U1",
+      "offer_id": "U1",
+      "entitlement_id": "extra-full",
+      "initiates_new_charge": false
+    },
+    {
+      "classification": "support",
+      "label": "Contact support",
+      "offer_id": null,
+      "entitlement_id": null,
+      "initiates_new_charge": false
+    },
+    {
+      "classification": "manage_purchase",
+      "label": "Manage your purchase",
+      "offer_id": null,
+      "entitlement_id": null,
+      "initiates_new_charge": false
+    }
+  ],
+  "pending_items": [],
+  "failed_items": [],
+  "recommendations": [],
+  "provenance": {
+    "source": "verified_normalized_purchase_snapshot",
+    "built_from_verified_snapshot": true,
+    "event_ids": [
+      "TEST-EVT-001",
+      "TEST-EVT-002",
+      "TEST-EVT-003"
+    ]
+  },
+  "test_only": true
+}

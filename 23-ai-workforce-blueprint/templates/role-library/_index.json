@@ -7383,7 +7383,7 @@
       "path": "templates/role-library/web-development/funnel-builder-specialist.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:2755a8d96fbaf684c040e9bc8d669497a5d7ecedd6505bdc15997a4dad3e5cb6",
+      "content_sha": "sha256:61ed704ace8e60ee87acbf2d92553e738f61a13803e72876957ddd42e8245827",
       "render_sha": "sha256:8210879db8564f5392bc5228f691fd5c9ed510f03f8eb30ad9336b328c895e92",
       "content_version": "1.0.19",
       "content_hashed_at": "2026-10-16T02:01:24.992552+00:00"
@@ -7431,7 +7431,7 @@
       "path": "templates/role-library/web-development/landing-page-specialist.md",
       "capability_class": "HEAVY-REASONING",
       "vision_flag": false,
-      "content_sha": "sha256:a8d2c91a9cf1d2a7f42f8e31e3727f8ea9c165de541bbe18a23dffabc2f3f7c7",
+      "content_sha": "sha256:eab73ebd5625731fdded5edc833ed5daae3e37cceb635ce96ca61b142f9ee8a7",
       "render_sha": "sha256:2ad23d6145f0d19270325076da17fe3a889565bc20973dc649e9ea51ef1f55e4",
       "content_version": "1.0.13",
       "content_hashed_at": "2026-10-16T02:01:24.992552+00:00"
@@ -7975,7 +7975,7 @@
       "path": "templates/role-library/funnels/funnel-qa-conversion-verification-specialist.md",
       "capability_class": "WRITING",
       "vision_flag": false,
-      "content_sha": "sha256:b9b6f16443429522349c7a9cf05061f0620da435cee141726110807ecfbe2970",
+      "content_sha": "sha256:88f0a598600e8955441c49209bf0f8c6735b315ec41110f34faa1dbb8b26e859",
       "render_sha": "sha256:e36594d1f527cf081c4cb395fb4e7638f506fbc4c3e19ad32810a690181f32dd",
       "content_version": "1.0.1",
       "content_hashed_at": "2026-10-16T02:01:24.992552+00:00"
