@@ -59,11 +59,21 @@ turns the instrument green: `bump-version.sh --check` -> "All 10 version markers
 - Skill 75 core: `python3 -m pytest -q 75-drama-song-ad-factory/scripts/core` -> 2272 passed, 4 skipped, 0 failed.
 - `retired-artifacts-ledger-guard` -> `OK: _retired.json in sync with git history (artifacts=54 sops=8 roles=46 departments=17)`, rc=0. `#2119`'s ledger entry records the **real** deleting commit `689404ca2` rather than a synthetic `refs/pull/N/merge` hash, which is why it is stable across merge refs.
 
-**Race recorded as fact:** the launchd merge train opened its own batch PR
-`#2155` (`batch/auto-merge`, head `d7881fd35`) carrying exactly one member,
-`#2137`. At the time this batch was built, `#2137` was still `OPEN` with
-`mergedAt=null`, so it is carried here too; if `#2155` lands `#2137` first, the
-two merges are of the same commit and the second is a no-op.
+**Race recorded as fact — and how it ended.** The launchd merge train opened its
+own batch PR `#2155` (`batch/auto-merge`, head `d7881fd35`, "Merge train: 1 PR(s)
+— #2137") carrying exactly one member, `#2137`. At the time this batch was built,
+`#2137` was still `OPEN` with `mergedAt=null`, so this batch legitimately carried
+it: `git merge-base --is-ancestor efe25c46b HEAD` was YES and it went in as a
+normal `--no-ff` merge commit.
+
+**`#2137` then landed elsewhere first.** `#2155` was merged at 2026-10-16T10:19:33Z
+and `#2137` at 10:19:35Z, taking `main` to `8c3d1ce9a`. `#2137`'s head
+`efe25c46b` is now an ancestor of `main`, so this batch's copy of it is a no-op
+duplicate: the same commit, merged twice, with nothing to reconcile. `origin/main`
+was merged into this branch afterwards (clean, no conflicts) so the PR sits on the
+current `main`, and the remaining three members — `#2128`, `#2143`, `#2119` — are
+the only content this batch still contributes. `#2155` was never touched: not
+closed, not drafted, not commented, not forced.
 
 No behaviour outside SPEC.md was added and no bridge file was touched.
 
