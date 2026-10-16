@@ -10322,9 +10322,9 @@
       "slug": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET",
       "dept": "presentations",
       "path": "templates/role-library/presentations/sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md",
-      "content_sha": "sha256:4eb07f7f022d6bcbf8bcb25342905b928f55a73b1d5c20d753f75726d157cebd",
-      "content_version": "1.0.28",
-      "content_hashed_at": "2026-10-16T02:01:24.992552+00:00"
+      "content_sha": "sha256:5286cf7a45ccef7cd57628a522ee93182086896793c8b0087e2bbdddcbcc43f4",
+      "content_version": "1.0.29",
+      "content_hashed_at": "2026-10-16T05:30:16.737456+00:00"
     },
     {
       "slug": "SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE",
