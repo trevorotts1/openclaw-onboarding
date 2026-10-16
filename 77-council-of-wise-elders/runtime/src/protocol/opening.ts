@@ -80,6 +80,7 @@ import type {
   TransportResponse,
 } from '../cli/host-ports.js';
 import { OPENING_SYSTEM, SEAT_FOCUS } from '../cli/engine.js';
+import { parseCardResponseText } from '../cli/card-text.js';
 import {
   SimulatedCrashError,
   TransportDispatchError,
@@ -419,14 +420,22 @@ export class OpeningRoundExecutor implements OperationExecutorPort {
     // payload that can never validate, so the runner's validation
     // drives the one bounded repair and, failing that, the honest
     // output_validation_failed outcome. It is never committed.
+    // CWE-048 item 13: parse through the shared tolerant card parser
+    // (the same parser RP-046-3 adopted on the managed path). A direct
+    // JSON parse keeps its historical semantics; when it fails or
+    // yields a non-object, a balanced JSON object is located inside
+    // prose-wrapped or fenced output and validated unchanged. A
+    // response with no recoverable object still yields the empty
+    // author payload, so validation drives the same bounded repair.
     let author: Record<string, unknown> = {};
-    try {
-      const parsed: unknown = JSON.parse(response.text);
-      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        author = parsed as Record<string, unknown>;
-      }
-    } catch {
-      author = {};
+    const parsedCard = parseCardResponseText(response.text);
+    if (
+      parsedCard.ok &&
+      parsedCard.value !== null &&
+      typeof parsedCard.value === 'object' &&
+      !Array.isArray(parsedCard.value)
+    ) {
+      author = parsedCard.value as Record<string, unknown>;
     }
 
     const priced = this.deps.priceActual
