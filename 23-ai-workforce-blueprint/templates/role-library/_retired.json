@@ -1,7 +1,7 @@
 {
   "schema": "openclaw/retired-artifacts@2",
-  "generated_at": "2026-10-05T03:46:18.399374+00:00",
-  "source_ref": "3316bac923d71cc62a5ad567d6754767a7dd3bd4",
+  "generated_at": "2026-10-16T09:55:38.418477+00:00",
+  "source_ref": "8dc6c10d7e075c851d0a67474331b2caf84f039e",
   "tracked_trees": [
     "23-ai-workforce-blueprint/templates/role-library"
   ],
@@ -9,9 +9,9 @@
     "content_sha": "sha256 over hash-content-manifest.py normalize_canonical()"
   },
   "counts": {
-    "artifacts": 52,
+    "artifacts": 54,
     "sops": 8,
-    "roles": 44,
+    "roles": 46,
     "departments": 17
   },
   "artifacts": [
@@ -627,6 +627,37 @@
       ],
       "retired_in": "8c77c86c83c184eecb3b4ff5e9fbaeba4074e0cf",
       "retired_at": "2026-09-04T06:20:48-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/presentations/intake-miniapp/DEPLOY.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp/DEPLOY.md",
+      "dept": "presentations",
+      "file": "DEPLOY.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:0dbba097abda5606237e291faf520ebb64cffc9b4fa637b9e46e96a2574c9f23",
+        "sha256:3ad6ab26166f5a243d7894f9cb714d06f3f0cfbe87a7b8a8bb70451300c21eb9",
+        "sha256:68182f3a516298b36810a08807da2c6b6eebd05f8080053920e2b7eec7aaac59"
+      ],
+      "retired_in": "689404ca2ade24c0d9371625e13dd87516028ad0",
+      "retired_at": "2026-10-15T16:05:00Z"
+    },
+    {
+      "lib_path": "templates/role-library/presentations/intake-miniapp/README.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp/README.md",
+      "dept": "presentations",
+      "file": "README.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:254f5800fb792ec50f72f57772cdb71a5aaffb715c22c3f4016f9a2db29de4cd",
+        "sha256:c575a18a57ead7914f64dadddbb5233bd09b172f40922f2498221c800a1ffb63",
+        "sha256:1bde21968a322c952f4328ccccdf7fd29d49918fd29730f1b4786bc79d5d6a13",
+        "sha256:37d75063bd195b52fe60f3d63dd90471d0f8b797291fb60eba9e738ae8038cc8",
+        "sha256:ad0776fd0e49aeda36a7eee6960e3da703807a4110c3ac6cbd99e2331318be9a",
+        "sha256:6d765560f1dd2e2ec75662d2d1055a22c62863370c76fc7c7e7f1979a1c46a49"
+      ],
+      "retired_in": "689404ca2ade24c0d9371625e13dd87516028ad0",
+      "retired_at": "2026-10-15T16:05:00Z"
     },
     {
       "lib_path": "templates/role-library/presentations/sops/deck-discovery-strategist-sops.md",
