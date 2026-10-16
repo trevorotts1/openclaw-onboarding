@@ -6358,7 +6358,7 @@ PYEOF
     # the "132 loose files dumped into ~/.openclaw/skills/" flatten bug.
     # `cp -r "path/01-skill" dest/` (no trailing slash) copies the dir as a
     # named subdirectory, producing dest/01-skill/ as intended.
-    cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"
+    cp -R "${SKILL_DIR%/}" "$SKILLS_DIR/"
     oc_skill_box_state_restore "$SKILL_NAME" "$SKILLS_DIR/$SKILL_NAME" || true
 
     # ENGINE-PIN RE-STAMP (2026-10-13). Skill 59's `verify.sh stamp-pin`
