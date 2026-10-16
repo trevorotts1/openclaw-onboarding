@@ -212,16 +212,50 @@ def test_a_method_run_with_no_pace_order_is_refused_at_dispatch():
     assert "PACE_TURNS_REQUIRED" in str(exc.value), str(exc.value)
 
 
-def test_a_run_without_a_method_block_keeps_its_dispatch_path():
-    """Inert-until-wired (BUILD-PLAN): a run that carries no method block is
-    dispatched exactly as it is today -- its pace gate is now a REQUIRED gate
-    of every take, but it is not refused at dispatch."""
+def test_a_run_without_a_method_block_is_refused_at_dispatch_too():
+    """BUILD-PLAN W1-method-song-U1 (Trevor 2026-10-13): the acceptance says
+    `_pace_required` is True on EVERY run, so a run missing the pace order is
+    refused at dispatch with PACE_TURNS_REQUIRED -- method AND non-method
+    alike. The old non-method exception (dispatch on, gate only) is gone: the
+    two turns are mandatory wherever the run sits. Unrelated method-only
+    behaviour (the first-sung ERM rule, the blueprint anchor names) stays
+    inert-until-wired and is untouched here."""
     req = R.build_request("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN)
+    with pytest.raises(SD.DispatchError) as exc:
+        SD.run_takes(req, dict(PLAN), lambda rq: [], lambda t: {}, lambda t, r: None,
+                     SCRIPT, HOOKTXT, (15, 20), cap_cents=6)
+    assert "PACE_TURNS_REQUIRED" in str(exc.value), str(exc.value)
+
+
+def test_a_non_method_run_with_an_order_reaches_generation():
+    """Known-good control for the refusal above: a run carrying no method
+    block but a complete pace order dispatches, reaches generation, keeps its
+    pace gate required, and the internal _pace_plan never reaches KIE."""
+    order = _pace_order()
+    req = R.build_request("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN,
+                          pace_plan=order)
     sent = []
-    out = SD.run_takes(req, dict(PLAN), lambda rq: sent.append(rq) or [take(15.4), take(15.4)],
+    out = SD.run_takes(req, dict(PLAN, pace_change=order),
+                       lambda rq: sent.append(rq) or [take(15.4), take(15.4)],
                        lambda t: {}, lambda t, r: None, SCRIPT, HOOKTXT, (15, 20), cap_cents=6)
-    assert len(sent) == 1 and out["spent_cents"] == 6, (sent, out)
-    assert "pace_change" in out["receipts"][0]["gates"], out["receipts"][0]["gates"]
+    assert len(sent) == 1, sent
+    assert "_pace_plan" not in sent[0] and "_pace_plan" not in sent[0]["input"], sent[0]
+    assert out["spent_cents"] == 6, out
+    gates = out["receipts"][0]["gates"]
+    assert "pace_change" in gates, gates
+    assert gates["pace_change"]["verdict"] != "PASS"      # no measured pace audio on this fake take
+
+
+def test_a_non_method_plan_judged_directly_with_no_order_blocks_too():
+    """The judge half of the same rule: no order at all may never be read as
+    "nothing to enforce", because that verdict is a PASS."""
+    r = judge(15.4, PLAN)
+    g = r["gates"]["pace_change"]
+    assert g["verdict"] == "UNMEASURED", g
+    assert "PACE_TURNS_REQUIRED" in g["detail"], g
+    assert "pace_change" in r["required_gates"], r["required_gates"]
+    assert "pace_change" in r["flagged"] and "pace_change" not in r["failed"], r
+    assert r["verdict"] != "PASS", r
 
 
 def test_the_same_method_request_with_an_order_reaches_generation():

@@ -39,15 +39,28 @@ SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
 SCRIPT = "One closed door. She Found Power in the Climb. Get the book. Link below."
 HOOKTXT = " ".join(HOOK)
 
+#: BUILD-PLAN W1-method-song-U1: both pace turns are mandatory and measured on
+#: EVERY run, so a run missing the pace order is refused at dispatch
+#: (PACE_TURNS_REQUIRED). Every dispatching fixture here therefore carries a
+#: complete two-seam order, its provider style carries both approved
+#: directions, and its "good" take carries the measured gear change.
+PACE_ORDER = {"drop": "half-time drop, thin drums",
+              "return": "turn and rise back to the groove",
+              "boundary_s": 15.0, "return_boundary_s": 38.0}
+PACE_EVIDENCE = {"pace_before": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0},
+                 "pace_problem": {"onset_rate_per_s": 1.4, "rms_dbfs": -18.5},
+                 "pace_after": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0}}
+
 
 def _req():
-    return R.build_request("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN)
+    return R.build_request("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN,
+                           pace_plan=PACE_ORDER)
 
 
 def _plan(**kw):
     req = _req()
     return dict(LF.plan(60, (15, 20)), sheet_text=req["input"]["lyrics"], style_id="soul-ballad",
-                hook_plan=HOOK_PLAN, **kw)
+                hook_plan=HOOK_PLAN, pace_change=PACE_ORDER, **kw)
 
 
 def _suno_words(lyrics):
@@ -66,7 +79,8 @@ def _good_take(**over):
                          {"delivery": "sung", "start": 2.5, "end": 45, "source": "measured"},
                          {"delivery": "spoken", "start": 45, "end": 54, "source": "measured"}],
             "aligned_words": words, "detector": "singing_detector 2.0.0", "duration_s": 57.5,
-            "music_under_speech_ratio": 0.6, "tail_rms_dbfs": -30.0, "first_sung_s": 2.5}
+            "music_under_speech_ratio": 0.6, "tail_rms_dbfs": -30.0, "first_sung_s": 2.5,
+            **PACE_EVIDENCE}
     take.update(over)
     return take
 
