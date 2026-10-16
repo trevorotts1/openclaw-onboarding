@@ -380,11 +380,14 @@ DEFAULT_CAPABILITY = "authoring"
 # recommendation with its source named, and selectable only among
 # providers the client's own profile owns, consents to and wires.
 CAPABILITY_CANDIDATES: Dict[str, List[Dict[str, Any]]] = {
-    # OPERATOR RULING 2026-09-04: Flash leads on authoring work. Flash's
-    # DeepSeek Direct ceiling is 2500 concurrent vs Pro's 500, so a wide
-    # per-slide fan-out is only reachable on Flash; Pro remains the fallback
-    # for anything Flash cannot serve. reasoning_long and long_synthesis are
-    # deliberately NOT changed -- those classes still never see Flash.
+    # OPERATOR RULING 2026-09-04: Flash leads on authoring work; Pro remains
+    # the fallback for anything Flash cannot serve. reasoning_long and
+    # long_synthesis are deliberately NOT changed -- those classes still
+    # never see Flash. The 2026-09-04 note justified this order by DeepSeek
+    # Direct's per-tier ceilings (Flash 2500 concurrent vs Pro's 500); the
+    # owner ruling of 2026-10-15 removed DeepSeek Direct's provider cap, so
+    # that justification is retired and the order stands as the department
+    # recommendation on its own.
     #
     # NOTE: "allow_flash_fallback" below is INERT. It is declared here and
     # read NOWHERE in this tree (2 occurrences, both declarations, zero
@@ -917,7 +920,7 @@ def plan_report(profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 # FIX 11: Ultra / Standard / Economy modes -- measured-capacity concurrency
 # ---------------------------------------------------------------------------
 # DEFAULT RULING (fix spec, binding): Ultra's operator ceiling is 100
-# concurrent tasks -- even when DeepSeek advertises 500 / 2,500. It is never
+# concurrent tasks -- even when a provider advertises a larger number. It is never
 # raised by provider advertising, never "learned", and only revisited through
 # an explicit config revision with Trevor approval, gated on a REAL 7-day
 # wall-clock operator-box stability window (>=95% of eligible Ultra runs
@@ -1321,7 +1324,7 @@ def mode_concurrency(mode: str, *,
     min(what the probe measures, this) -- an upper bound, stated as one.
 
     Hard ceilings, unchanged: no mode exceeds ULTRA_OPERATOR_CEILING (100) or
-    a lower measured client ceiling -- DeepSeek advertising 500/2,500 changes
+    a lower measured client ceiling -- provider advertising changes
     nothing. FIX 16 adds the per-mode share (ultra ULTRA_OPERATOR_CEILING /
     standard STANDARD_MODE_CEILING), which applies only where the client
     ceiling is a determined fact; an UNMEASURED client answers None
@@ -1350,8 +1353,8 @@ def mode_concurrency(mode: str, *,
             choose, reason = mode_op, (
                 f"client is UNBOUNDED: {m} runs at its share of the operator "
                 f"ceiling -- {mode_op} (ultra {ULTRA_OPERATOR_CEILING} / "
-                f"standard {STANDARD_MODE_CEILING}); provider-advertised "
-                "500/2500 never raises it")
+                f"standard {STANDARD_MODE_CEILING}); provider advertising "
+                "never raises it")
             if not axis_in_force:
                 reason += "." + _cosmetic_axis_notice()
         else:
@@ -1415,8 +1418,10 @@ def mode_ceiling(mode: str, *,
     """The HARD CAP a mode imposes on a concurrency width. A CAP -- never a
     floor, never a target.
 
-    The binding text, unchanged: "Ultra's operator ceiling is 100 concurrent
-    tasks -- even when DeepSeek advertises 500 / 2,500 ... Standard and Economy
+    The binding text, with the owner ruling of 2026-10-15 applied to its
+    DeepSeek example (DeepSeek Direct has no provider cap to advertise):
+    "Ultra's operator ceiling is 100 concurrent
+    tasks -- even when a provider advertises more ... Standard and Economy
     derive from the MEASURED client capacity/cost policy and may never exceed
     the same client/provider ceiling."
     min(the mode's share of ULTRA_OPERATOR_CEILING, the client's MEASURED
