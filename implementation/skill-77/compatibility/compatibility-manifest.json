@@ -110,11 +110,11 @@
     "members": [
       {
         "archive": {
-          "bytes": 979759,
+          "bytes": 979768,
           "file": "council-of-wise-elders.skill",
-          "sha256": "cdfdb8a6d903f79f101a8950666bbfe412d1e6ae1bc91a75134c080e5814552c"
+          "sha256": "ddb60daab8d25e8951c96d2872cc6a775cd2118e97f2c66e97647ef526478fda"
         },
-        "commit": "b25d8419a2abb593262d19ffb513197c04ef843f",
+        "commit": "e68b006b058863bfbb7a024e2d541fa30d912a82",
         "component": "onb-skill",
         "repository": "trevorotts1/openclaw-onboarding",
         "role": "canonical skill tree and portable core",
@@ -125,7 +125,7 @@
         "skill_folder": "77-council-of-wise-elders",
         "skill_version": "v1.0.0",
         "tree_identity": {
-          "aggregate_sha256": "6b523e97b3b27daeb529bf798e6525065e4967337d2182d0880afcc1690e8dbf",
+          "aggregate_sha256": "01a71ba3004b46d21d8f4a1404531e793c102fcaa4ec263f07151ff9f9faeb9c",
           "file_count": 309
         }
       },
