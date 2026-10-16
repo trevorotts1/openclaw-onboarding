@@ -78,6 +78,24 @@
         "auto-fail",
         "baked"
       ]
+    },
+    {
+      "id": "vsl-gauntlet-r-plus-20-gate",
+      "why": "FIX-PLAN Item 23 (2026-10-14): the Gauntlet VSL design's gate rule (gate_time = revelation + 20s, clamped to [180, 480]) is RETIRED. No run artifact identifies a revelation slide, so the rule could only ever run on its flagged fallbacks. The live gate rule is the window-midpoint derivation in VSL-BUILDER-SOP.md section 4 (resolve_gate_timestamp). The retired rule survives only as history in VSL-GAUNTLET-SPEC-NOTE.md and must never re-appear as a live instruction.",
+      "pattern": "(?:revelation\\s*\\+\\s*20|\\bR\\s*\\+\\s*20)",
+      "scope": "**/*.md"
+    },
+    {
+      "id": "vsl-gauntlet-overlay-runtime",
+      "why": "FIX-PLAN Item 23 (2026-10-14): vsl_gate_overlay.js, the Gauntlet design's runtime overlay splice, is RETIRED and archived under presentations/archive/vsl-gauntlet/. The live gate form is the Skill 44 form object (scripts/vsl-gate-form-spec.json) installed by P-U-FORM-GATE and attached on the P-U-GHL-VSL install path. The retired file name must never re-appear as a live integration contract.",
+      "pattern": "vsl_gate_overlay",
+      "scope": "**/*.md"
+    },
+    {
+      "id": "vsl-gauntlet-structure-contract",
+      "why": "FIX-PLAN Item 23 (2026-10-14): structure/vsl_structure.json, the Gauntlet VSL page-structure contract, is RETIRED and archived under presentations/archive/vsl-gauntlet/. The live VSL page is built whole by vsl_builder.py and verified by phase_verifiers._verify_upsell_vsl_build; no structure contract gates it. The retired file must never re-appear as a live authority.",
+      "pattern": "vsl_structure\\.json",
+      "scope": "**/*.md"
     }
   ]
 }

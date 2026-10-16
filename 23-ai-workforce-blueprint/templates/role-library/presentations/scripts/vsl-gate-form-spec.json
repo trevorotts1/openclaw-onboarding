@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "spec": "VSL Email/Phone Gate — Skill-44 FORM object contract",
-  "design_source": "DESIGN-OPUS.md §6.2 / §6.5 (Presentation Collateral Gauntlet)",
+  "design_source": "VSL-BUILDER-SOP.md §4 (live authority); originally DESIGN-OPUS.md §6.2 / §6.5 (Presentation Collateral Gauntlet, retired 2026-10-14, FIX-PLAN Item 23)",
   "owner_skill": "44-convert-and-flow-operator",
   "cli": "caf (PIT-authenticated)",
   "mechanism": "SKILL44_WIDGET -> FORM",
@@ -172,7 +172,7 @@
     "verbatim": true,
     "sri": false,
     "sri_note": "Skill 6 hard rule: the GHL form embed snippet is spliced VERBATIM into the page blob with NO SRI attributes (DESIGN-OPUS §6.2; ghl_form_builder.py 'embed VERBATIM, NO SRI attrs'). The embed token is GHL-native and page-specific; SRI is deliberately NOT applied.",
-    "placement": "gate overlay div (vsl_gate_overlay.js integration contract)",
+    "placement": "gate overlay div in the VSL page built by vsl_builder.py; the embed is spliced into the page blob on the P-U-GHL-VSL install path (the retired vsl_gate_overlay.js runtime splice is not used)",
     "capture": ["embed_code_js", "form_link"],
     "verify": "render_check 200 + snippet tag present in RENDERED DOM (ghl_verify.render_check)"
   },

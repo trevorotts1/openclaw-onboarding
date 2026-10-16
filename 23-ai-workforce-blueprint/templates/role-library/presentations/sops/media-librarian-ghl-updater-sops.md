@@ -413,8 +413,8 @@ missing records.
 **When to run:** `P-U-SALES-BUILD` (order 8.75), `P-U-CHECKOUT-BUILD` (order 8.76),
 `P-U-FORM-CHECKOUT` (order 8.77), and `P-U-VSL-BUILD` (order 8.93) all declare
 `owning_role: media-librarian-ghl-updater` and `sop_refs: ["media-librarian-ghl-updater-sops.md"]`
-in `PIPELINE-MANIFEST.json` (manifest_version 70) -- this entry is that reference resolving to real
-content, not a dead pointer.
+in the live `PIPELINE-MANIFEST.json` (read its version there; this entry does not pin it) -- this
+entry is that reference resolving to real content, not a dead pointer.
 
 **Full procedure lives in two standalone builder SOPs, same directory:**
 - `SALES-CHECKOUT-BUILDER-SOP.md` -- `P-U-SALES-BUILD`, `P-U-CHECKOUT-BUILD`, `P-U-FORM-CHECKOUT`
@@ -426,20 +426,23 @@ content, not a dead pointer.
 **Why these four don't get their own full numbered SOP block here:** they are a genuinely separate
 build (a different deliverable class -- funnel pages, not deck/workbook/webinar assets) with their
 own waiver mechanic, their own executor scripts (`sales_checkout_builder.py`, `vsl_builder.py`), and
-their own push mechanism (`06-ghl-install-pages/tools/ghl_rest_canvas.py`, not this role's usual
-`ghl_media.py`/`ghl_media_push.py` bare-REST media path -- see `SALES-CHECKOUT-BUILDER-SOP.md` §3.4
-for why that distinction matters operationally). Folding that into this file's SOP-9.x numbering would
+their own install discipline (the sales/checkout builder emits its push plan over
+`06-ghl-install-pages/tools/ghl_rest_canvas.py`; the VSL page is installed by `P-U-GHL-VSL`
+through `ghl_external_installer.py` under PRES-011 -- neither is this role's usual
+`ghl_media.py`/`ghl_media_push.py` bare-REST media path; see `SALES-CHECKOUT-BUILDER-SOP.md` §3.4
+and `GHL-EXTERNAL-INSTALLER-SOP.md` for why that distinction matters operationally). Folding that into this file's SOP-9.x numbering would
 bury a distinct capability inside the media-library/upload procedure it isn't part of. The manifest's
 `owning_role` assignment to this role stands because this role is the department's only other
 GHL-push-terminating deliverable owner (`P9.6-WEBINAR-VIDEO`, SOP 9.6 above) -- the same precedent the
 two builder SOPs cite for that choice.
 
-**Status as of this entry (updated at HEAD, manifest_version 70):** the four phases above ARE in
-`PIPELINE-MANIFEST.json` and the executor scripts exist on disk (`scripts/sales_checkout_builder.py`,
-`scripts/checkout_form_builder.py`, and `scripts/vsl_builder.py`, 1,910 lines);
-`phase_verifiers.py` entries and `AF-U-*` autofail-registry rows exist for all four (registry
-parity 62/62). See each builder SOP's own STATUS section for the full, itemized LIVE/PENDING
-breakdown -- do not treat this pointer entry as confirming more than that.
+**Status as of this entry (re-verified 2026-10-14, FIX-PLAN Item 23):** the four phases above ARE
+in the live `PIPELINE-MANIFEST.json`, and `scripts/sales_checkout_builder.py` and
+`scripts/vsl_builder.py` both exist on disk; `phase_verifiers.py` carries registered verifiers
+for all four, and the `AF-U-*` autofail rows exist in the manifest and the MASTER ruleset. The
+VSL design is single (the Wave C executor); the retired Gauntlet design is archived under
+`presentations/archive/vsl-gauntlet/`, with its spec note at `sops/VSL-GAUNTLET-SPEC-NOTE.md`.
+See each builder SOP's own STATUS section for the full, itemized LIVE/PENDING breakdown.
 
 ---
 

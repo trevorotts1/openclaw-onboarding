@@ -14,6 +14,13 @@ import suno_recipe as R  # noqa: E402
 CLIENT = "I am not small. I never was. One seed of truth made me strong. She Found Power in the Climb."
 HOOK = ["I am not sma-a-all", "I ne-ever wa-a-as"]
 HOOK_PLAN = {"true_at_beat": "the_world"}   # FU-HOOK-PLACEMENT: hooks measured from the sheet
+#: BUILD-PLAN W1-method-song-U1: a run missing the pace order is refused at
+#: dispatch with PACE_TURNS_REQUIRED, method run or not, so every dispatching
+#: plan here carries one. This is the generic non-method order: its seams sit
+#: on the arc's pain-turn and solution-arrival beats.
+PACE_ORDER = {"drop": "half-time drop, thin drums",
+              "return": "turn and rise back to the groove",
+              "boundary_s": 15.0, "return_boundary_s": 38.0}
 SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
          {"tag": "Vocalise", "delivery": "sung", "lines": ["Oo-o-o-o-o-oh,"]},
          {"tag": "Verse", "delivery": "sung", "lines": ["One seed of truth made me stro-o-ong,"]},
@@ -21,7 +28,10 @@ SHEET = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."]},
          {"tag": "Hook 2", "delivery": "sung", "lines": HOOK},
          {"tag": "Hook 3", "delivery": "sung", "lines": HOOK},
          {"tag": "Outro", "delivery": "spoken", "lines": ["She Found Power in the Climb. Get the book. Link below."]}]
-req = R.build_request("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN)
+#: WW-23: the FINAL provider style carries BOTH approved pace directions, so
+#: the request is built with the same order the dispatching plan carries.
+req = R.build_request("soul-ballad", SHEET, CLIENT, "T", 58, hook_plan=HOOK_PLAN,
+                      pace_plan=PACE_ORDER)
 INP = req["input"]   # WW-30: directions live in the createTask envelope input
 assert SD.validate_request(req, "soul-ballad", CLIENT, 58) == [], SD.validate_request(req, "soul-ballad", CLIENT, 58)
 # refusals: spoken word in negatives, missing dry negatives, wrong model, style naming spoken twice
@@ -56,7 +66,7 @@ assert SD.refuse_asr("faster-" + "wh" + "isper").startswith("faster-")
 # FU-HOOK-PLACEMENT: the plan carries the sheet sent to Suno, the style and
 # the hook_plan, so the always-on hook_placement gate can measure every take
 plan = dict(LF.plan(60, (15, 20)), sheet_text=INP["lyrics"], style_id="soul-ballad",
-            hook_plan=HOOK_PLAN)
+            hook_plan=HOOK_PLAN, pace_change=PACE_ORDER)
 def _suno_words(lyrics):
     """Aligned words the way Suno returns them: each section header rides
     inline on the section's first word (FU-HOOK-PLACEMENT reads them)."""
@@ -69,12 +79,20 @@ def _suno_words(lyrics):
 
 
 words = [dict(w, startS=i, endS=i + 0.5) for i, w in enumerate(_suno_words(INP["lyrics"]))]
+#: The MEASURED gear change of a fully-measured take (music_qc.pace_change
+#: windows): the drop at the ordered seam and a return to the opening groove at
+#: the second seam. Both turns are required and measured on every run
+#: (BUILD-PLAN W1-method-song-U1), so a "GOOD" take carries them like it
+#: carries its segments and aligned words.
+PACE_EVIDENCE = {"pace_before": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0},
+                 "pace_problem": {"onset_rate_per_s": 1.4, "rms_dbfs": -18.5},
+                 "pace_after": {"onset_rate_per_s": 3.0, "rms_dbfs": -14.0}}
 GOOD = {"segments": [{"delivery": "spoken", "start": 0, "end": 2, "source": "measured"},
                      {"delivery": "sung", "start": 2.5, "end": 45, "source": "measured"},
                      {"delivery": "spoken", "start": 45, "end": 54, "source": "measured"}],
         "aligned_words": [dict(w, startS=3 + i * 1.0, endS=3.5 + i * 1.0) for i, w in enumerate(words)],
         "detector": "singing_detector 2.0.0", "duration_s": 57.5, "music_under_speech_ratio": 0.6,
-        "tail_rms_dbfs": -30.0, "first_sung_s": 2.5}
+        "tail_rms_dbfs": -30.0, "first_sung_s": 2.5, **PACE_EVIDENCE}
 script = "One closed door. She Found Power in the Climb. Get the book. Link below."
 hook = " ".join(HOOK)
 j = SD.judge_take(GOOD, dict(plan, sheet_text=INP["lyrics"]), script, hook, (15, 20))

@@ -138,22 +138,30 @@ SHEET_RNB = [{"tag": "Intro", "delivery": "spoken", "lines": ["One closed door."
                         "And I keep walking toward the morning light now,"]}]
 HOOK_PLAN = {"true_at_beat": "the_world"}
 SPOKEN_RANGE = (15, 20)
+#: BUILD-PLAN W1-method-song-U1: both pace turns are mandatory and measured on
+#: EVERY run, so a run missing the pace order is refused at dispatch
+#: (PACE_TURNS_REQUIRED). Every dispatching fixture here carries one.
+PACE_ORDER = {"drop": "half-time drop, thin drums",
+              "return": "turn and rise back to the groove",
+              "boundary_s": 15.0, "return_boundary_s": 38.0}
 
 
 def _reqs():
-    return SC.build_requests("rnb-flow", SHEET_RNB, CLIENT, "T", 88, hook_plan=HOOK_PLAN)
+    return SC.build_requests("rnb-flow", SHEET_RNB, CLIENT, "T", 88, hook_plan=HOOK_PLAN,
+                             pace_plan=PACE_ORDER)
 
 
 def _plan():
     return {"delivered_s": 88, "style_id": "rnb-flow",
-            "sheet_text": R.render_lyrics(SHEET_RNB, "rnb-flow"), "hook_plan": HOOK_PLAN}
+            "sheet_text": R.render_lyrics(SHEET_RNB, "rnb-flow"), "hook_plan": HOOK_PLAN,
+            "pace_change": PACE_ORDER}
 
 
 def _spec_file(tmp):
     path = os.path.join(tmp, "req.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"style_id": "rnb-flow", "client_text": CLIENT, "title": "T",
-                   "length_s": 88, "hook_plan": HOOK_PLAN,
+                   "length_s": 88, "hook_plan": HOOK_PLAN, "pace_plan": PACE_ORDER,
                    "input": {"lyrics": R.render_lyrics(SHEET_RNB, "rnb-flow"),
                              "style_id": "rnb-flow", "duration": 88, "vocal_gender": "f"}}, f)
     return path
@@ -608,9 +616,15 @@ def test_d1_the_two_audio_gates_are_wired_into_the_take_judge():
     check(plain["gates"]["rap_audio"]["verdict"] == "UNMEASURED"
           and "rap_audio" in plain["flagged"] and plain["verdict"] != "PASS",
           "D2: an unmeasured rap read is flagged and never reaches PASS")
-    check(plain["gates"]["pace_change"]["verdict"] == "PASS"
-          and plain["gates"]["pace_change"]["detail"].startswith("no ordered pace change"),
-          "D2: with no ordered gear change there is nothing to enforce")
+    # BUILD-PLAN W1-method-song-U1 (Trevor 2026-10-13): "nothing to enforce"
+    # used to be a PASS, which let a take with no measured gear change through.
+    # Both turns are mandatory on EVERY run, so the same input now records
+    # UNMEASURED (PACE_TURNS_REQUIRED) and blocks.
+    check(plain["gates"]["pace_change"]["verdict"] == "UNMEASURED"
+          and "PACE_TURNS_REQUIRED" in plain["gates"]["pace_change"]["detail"]
+          and "pace_change" in plain["flagged"] and plain["verdict"] != "PASS",
+          "D2: with no ordered gear change the turn is UNMEASURED and blocks "
+          "(PACE_TURNS_REQUIRED)")
     check(ordered["gates"]["pace_change"]["verdict"] == "UNMEASURED"
           and "pace_change" in ordered["flagged"] and ordered["verdict"] != "PASS",
           "D2: an ordered gear change with no evidence never reaches PASS")

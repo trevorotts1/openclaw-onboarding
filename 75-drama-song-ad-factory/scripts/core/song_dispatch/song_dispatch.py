@@ -306,9 +306,10 @@ def _pace_required(plan, take):
     the ERM drop and the second turn at the Hero Shift (on a run with no
     method block the seams sit on the arc's pain-turn and solution-arrival
     beats). The gate is therefore a REQUIRED gate of every take everywhere --
-    an unmeasured turn can never reach PASS -- and a METHOD run that carries
-    no pace order at all is refused at dispatch (``PACE_TURNS_REQUIRED``, in
-    ``run_takes``) or records the gate UNMEASURED when it is judged directly.
+    an unmeasured turn can never reach PASS -- and ANY run, method or not,
+    that carries no pace order at all is refused at dispatch
+    (``PACE_TURNS_REQUIRED``, in ``run_takes``) or records the gate
+    UNMEASURED when it is judged directly.
     The arguments are kept so no caller changes.
     """
     return True
@@ -501,18 +502,20 @@ def _judge_take_inner(take, plan, script_words, hook_text, spoken_range_pct=None
     # (blocks PASS); evidence that shows no gear change is FAIL. bpm is
     # reported and never grants a PASS.
     #
-    # METHOD C5 (Trevor 2026-10-13): both turns are mandatory, so a METHOD run
-    # that reaches the judge with no order cannot be told "there is nothing to
-    # enforce" -- the gate records UNMEASURED (PACE_TURNS_REQUIRED) and blocks.
-    # A run with no method block keeps today's verdict here (inert-until-wired;
-    # it is refused at dispatch only when it carries a method block).
+    # METHOD C5 (Trevor 2026-10-13, BUILD-PLAN W1-method-song-U1): both turns
+    # are mandatory on EVERY run, so a take that reaches the judge with no
+    # order cannot be told "there is nothing to enforce" -- that verdict is a
+    # PASS, and an unmeasured turn may never reach PASS. The gate records
+    # UNMEASURED (PACE_TURNS_REQUIRED) and blocks, method run or not; every
+    # real run was already refused at dispatch, so this is the direct-judge
+    # seam (and the last line of defence) rather than a second dispatch rule.
     pg = _PC.judge_plan_pace(plan, take.get("pace_before"), take.get("pace_problem"),
                              take.get("pace_after"),
                              envelope=take.get("pace_envelope"),
                              hop_s=take.get("pace_hop_s"),
                              bpm_before=take.get("bpm_before"),
                              bpm_after=take.get("bpm_after"))
-    if _method_plan(plan) and pg.get("applicable") is False:
+    if pg.get("applicable") is False:
         put("pace_change", "UNMEASURED", _pace_turns_required_detail())
     else:
         put("pace_change", pg["verdict"], pg.get("detail") or pg.get("reason_code", ""))
@@ -1037,14 +1040,21 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     #
     # METHOD C5 (Trevor 2026-10-13, METHOD-INTEGRATION F4): BOTH pace turns are
     # mandatory and measured, so "this run ordered no pace change" is no longer
-    # "nothing to enforce": a METHOD run that carries no pace order at all is
-    # refused HERE, at dispatch, before any spend, with PACE_TURNS_REQUIRED --
-    # the ERM drop and the Hero Shift cannot be measured off a take nobody
-    # ordered. A run with no method block keeps its old dispatch path
-    # (inert-until-wired, BUILD-PLAN: every W1 method unit runs only when the
-    # run carries control/method.json); its pace gate is now a REQUIRED gate of
-    # every take (``_pace_required``), so an unmeasured turn blocks it too.
-    if _method_plan(plan) and not plan.get("pace_change"):
+    # "nothing to enforce": a run that carries no pace order at all is refused
+    # HERE, at dispatch, before any spend, with PACE_TURNS_REQUIRED -- the two
+    # turns cannot be measured off a take nobody ordered. BUILD-PLAN
+    # W1-method-song-U1 makes this EVERY run, method or not: `_pace_required`
+    # is True on every run, so the order is as mandatory at dispatch as the
+    # gate is at the judge. A method run names its seams after the blueprint's
+    # own cues (ERM Drop / Hero Shift); a run with no method block names the
+    # arc's pain-turn and solution-arrival beats -- the ORDER is required in
+    # both cases, only its anchor names differ. The first-sung rule and every
+    # other method-only check stay exactly as they are: those run only when
+    # the run carries control/method.json (inert-until-wired).
+    # The order is read the SAME two keys the judge reads (``judge_plan_pace``):
+    # ``pace_change`` (merged from the request's _pace_plan above) or a plan
+    # that carries the runner's own ``_pace_plan`` key (song_choices.cmd_generate).
+    if not (plan.get("pace_change") or plan.get("_pace_plan")):
         raise DispatchError(_pace_turns_required_detail())
     pace_errs = _PC.check_pace_plan(plan["pace_change"])
     pace_errs += _SCM.check_pace_style(inp.get("style"), plan["pace_change"])

@@ -1006,7 +1006,27 @@ def _resolve_deck_slug(run_dir: Path) -> str:
 # free version, 73. The Skill 72 batch composes onto that tree here: the
 # merged manifest carries the union of both phase sets (63 phases, including
 # P8.15-MOTION), so this floor takes 73 with it.
-MIN_MANIFEST_VERSION = 73  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 73 -> 74 (PR #2038 refresh, FIX-PLAN Item 23, VSL single-design resolution,
+# 2026-10-15): the Gauntlet VSL design is retired (its files archived out of the
+# live tree); P-U-VSL-BUILD's declared consumes are corrected to what
+# vsl_builder.py actually reads; the AF-U-VSL-BUILD push-receipt trigger the
+# registered verifier never enforced is removed (the builder-side push
+# plan/receipt path is deleted; the VSL install is proven only by P-U-GHL-VSL's
+# PRES-011 receipt); the AF-CAPACITY-UNMEASURED cap prose is conformed to the
+# canonical $100/month = 8; roles[] names media-librarian-ghl-updater's anchor
+# phase (P9.2-GHL-UPLOAD). This branch's claim ran 71 (from base v70), then 72
+# at its first refresh; PR #2040 (Item 26) landed v73 first, so at this
+# refresh's assembly the composed tree takes the next free number, 74, per the
+# standing settlement.
+# 74 -> 75 (Skill 72 batch refresh 9, PR #2128, 2026-10-15): the Skill 72 batch
+# composes onto main's landed v74: phase P8.15-MOTION (MG-036 governed motion
+# audit) joins main's 64-phase set, for a composed 65 phases; the rest of the
+# manifest is main's v74 unchanged. This branch's floor history: its 70 -> 71
+# step carried P8.15-MOTION on the same floor as Item 11 B23, and its 71 -> 73
+# step composed with PR #2040's weave above; PR #2038's refresh then landed 74
+# first, so at this refresh's assembly the composed tree takes the next free
+# number, 75, per the standing settlement.
+MIN_MANIFEST_VERSION = 75  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)

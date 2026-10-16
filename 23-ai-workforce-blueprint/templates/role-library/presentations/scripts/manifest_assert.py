@@ -58,7 +58,9 @@ from typing import Dict, List, Optional, Tuple
 # 69 -> 70 (KIE rule 12): the 9,000-18,000 prompt band is retired from the manifest in favor of the shared enforcer.
 # 70 -> 71 (two changes land on the same floor in the same release): (FIX-PLAN Item 11, B23) fanout phases declare workers and undeclared fanout widths warn at load; (Skill 72 MG-036) phase P8.15-MOTION added. Both mirror the presentation_job/manifest.py bump.
 # 71 -> 73 (PR #2040 refresh, B32 FIX-PLAN Item 26): mirrors the presentation_job/manifest.py bump in the SAME commit: the GIP weave composed onto the landed v71 takes the next free version, 73 (v72 is carried by PR #2038's refresh). The Skill 72 batch composes onto that tree here; the merged manifest carries the union of both phase sets.
-MIN_MANIFEST_VERSION = 73  # PRES-011: mirrors presentation_job/manifest.py, bumped together (U019 step 8)
+# 73 -> 74 (PR #2038 refresh, FIX-PLAN Item 23, VSL single-design resolution, 2026-10-15): mirrors the presentation_job/manifest.py bump in the SAME commit (see the full rationale there). This branch's claim ran 71, then 72 at its first refresh; PR #2040 (Item 26) landed v73 first, so the composed tree takes the next free number, 74, per the standing settlement.
+# 74 -> 75 (Skill 72 batch refresh 9, PR #2128, 2026-10-15): mirrors the presentation_job/manifest.py bump in the SAME commit (see the full rationale there): the Skill 72 batch composes onto the landed v74, phase P8.15-MOTION joining for a composed 65 phases, so the composed tree takes the next free number, 75, per the standing settlement.
+MIN_MANIFEST_VERSION = 75  # PRES-011: mirrors presentation_job/manifest.py, bumped together (U019 step 8)
 MIN_MANIFEST_PHASES = 59
 MIN_AF_SP_CODES = 16
 
