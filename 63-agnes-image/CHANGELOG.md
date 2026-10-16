@@ -4,6 +4,57 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.1.6] - 2026-10-15 - feat: Agnes Image 2.5 Flash becomes the default (Signature Launch S63)
+
+### Why
+The publisher catalog lists `agnes-image-2.5-flash` as the current image
+generation/editing model, with the same endpoint, request/response contract,
+size x ratio dimension table, and pricing as 2.1. The registry entry and the
+SKILL.md default prose landed earlier (v2.1.5, AGN workstream), but the code
+still hard-pinned 2.1: both validators rejected a well-formed 2.5 payload and
+the alias normalizer resolved every generic alias to 2.1. This release makes
+the default real in code and aligns every consumer-facing surface.
+
+### What changed
+- **Default resolution**: new `scripts/resolve_model.py` resolves unpinned and
+  generic requests to `agnes-image-2.5-flash`; explicit `agnes-image-2.1-flash`
+  pins are preserved as legacy behavior with provenance (default / explicit_pin
+  / explicit_alias / ambiguous for stored configs without provenance). Text
+  (`agnes-2.5-flash`) and video (`agnes-video-2.5-flash`) IDs are rejected by
+  this image adapter.
+- **Validators**: `scripts/validate_payload.py` and `scripts/validate_prompt.py`
+  accept both image models (2.5 default), reject text/video IDs with a clear
+  error, and gained self-test fixtures for both. `scripts/normalize_alias.py`
+  maps generic aliases to 2.5 and keeps explicit 2.1 aliases on 2.1.
+- **Registry**: `models.json` entries carry `launch_role` ("default" for 2.5,
+  "legacy" for 2.1) so consumers never guess the default from list order.
+- **New support modules**: `scripts/launch_prompt_policy.py` (named
+  `signature_launch_completeness` launch policy plus the preserved
+  `legacy_house_band` profile), `scripts/provider_receipt.py` (provider-neutral
+  receipt; Agnes receipts carry no task ID and refuse KIE identifiers), and
+  `scripts/response_persist.py` (synchronous response validation, real image
+  sniffing/dimensions, atomic persistence).
+- **Reference purposes (docs)**: SKILL.md and EXAMPLES.md now state the
+  per-reference rule (preserve-the-mark for logo/identity references,
+  style-only directive for style references), matching the corrected rule
+  already coded in `validate_prompt.py` and `references/prompt-policy.md`.
+- **Transport policy (S63-07)**: `scripts/transport.py` enforces credential
+  presence (value never logged), approved-budget preflight with explicit
+  unverified-cost handling, 401/403 stop, bounded 429 backoff and 5xx retry,
+  and ambiguous-timeout handling that never resubmits a paid generation
+  blindly.
+- **Docs/version alignment**: agnes-image-full.md, references, INSTRUCTIONS,
+  INSTALL, EXAMPLES, CORE_UPDATES, QC, wire.sh and qc-agnes-image.sh name 2.5
+  as the default with 2.1 as the explicit legacy pin. `skill-version.txt` and
+  the SKILL.md frontmatter version are both v2.1.6 (the frontmatter had been
+  left at 2.1.2 when the registry bumped to v2.1.5).
+
+### Not changed
+Historical changelog entries below keep their original 2.1 wording. The
+`agnes-image.skill` bundle is repacked at release time from this folder, not
+in this change. No live provider call was made for this change; live smoke
+(S63-10) remains a separately authorized step.
+
 ## [2.1.2] - 2026-09-17 - fix: valid YAML frontmatter version, repacked .skill bundle, backfilled changelog
 
 ### Why

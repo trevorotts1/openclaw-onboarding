@@ -1,7 +1,8 @@
-# QC Checklist: Agnes Image 2.1 Flash
+# QC Checklist: Agnes Image (default model 2.5 Flash)
 
 ## 1. Purpose
-Enables the agent to call the Agnes Image 2.1 Flash endpoint to generate images
+Enables the agent to call the Agnes Image endpoint (default model
+agnes-image-2.5-flash; explicit legacy pin agnes-image-2.1-flash) to generate images
 from text (text-to-image) and to transform existing images (image-to-image),
 using the EXISTING fleet credential AGNES_AI_API_KEY, with correct size tiers,
 aspect ratios, the `response_format`-in-`extra_body` gotcha, and the URL/Base64
@@ -12,10 +13,11 @@ output shape. The image endpoint is synchronous — one request returns the imag
       `EXAMPLES.md`, `INSTALL.md`, `CORE_UPDATES.md`, the full reference
       `agnes-image-full.md`, `PREREQS.json`, `qc-agnes-image.sh`, `models.json`,
       `references/`, `scripts/`, and the `agnes-image.skill` package.
-- [ ] `models.json` exists, validates as valid JSON, and defines `agnes-image-2.1-flash`
+- [ ] `models.json` exists, validates as valid JSON, and defines `agnes-image-2.5-flash`
+      with `launch_role: "default"` and `agnes-image-2.1-flash` with `launch_role: "legacy"`
       with full 8-ratio × 4-tier dimension table and `cap_status: "NOT_PUBLISHED"`.
 - [ ] The full reference documents the correct model name
-      (`agnes-image-2.1-flash`) and endpoint
+      (`agnes-image-2.5-flash`) and endpoint
       (`https://apihub.agnes-ai.com/v1/images/generations`).
 - [ ] The full reference states the two gotchas: `response_format` in
       `extra_body`, and no `tags` for image-to-image.
@@ -41,7 +43,7 @@ output shape. The image endpoint is synchronous — one request returns the imag
 
 ## 5. Functional Checks
 - [ ] Confirm `AGNES_AI_API_KEY` loads into the environment (presence only).
-- [ ] Make one synchronous text-to-image call (model `agnes-image-2.1-flash`,
+- [ ] Make one synchronous text-to-image call (model `agnes-image-2.5-flash`,
       `size` `1K`, `ratio` `1:1`, `extra_body.response_format` `url`) and confirm
       the SAME response carries `data[0].url`.
 - [ ] Confirm the agent can explain: 401 = bad/missing key; 429 = per-tier rate

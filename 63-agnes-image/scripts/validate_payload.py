@@ -5,7 +5,7 @@
 Authority: Spec §10.2-§10.5, §14.
 
 Checks:
-- `model`: required, must be "agnes-image-2.1-flash".
+- `model`: required, must be "agnes-image-2.5-flash" (the default) or an explicit legacy pin "agnes-image-2.1-flash". Text/video model IDs are rejected.
 - `prompt`: required, non-empty string.
 - `size`: required, must be in {"1K", "2K", "3K", "4K"} or legacy exact "WxH" (warns normalized).
 - `ratio`: optional, must be in {"1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"} if provided.
@@ -30,7 +30,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-SUPPORTED_MODELS = {"agnes-image-2.1-flash"}
+SUPPORTED_MODELS = {"agnes-image-2.5-flash", "agnes-image-2.1-flash"}
+NON_IMAGE_MODELS = {"agnes-2.5-flash", "agnes-video-2.5-flash", "agnes-2.0-flash", "agnes-video-2.0-flash"}
 SIZE_TIERS = {"1K", "2K", "3K", "4K"}
 RATIOS = {"1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"}
 VALID_FORMATS = {"url", "b64_json"}
@@ -48,6 +49,8 @@ def validate_payload_data(data: dict) -> Tuple[bool, int, List[str], List[str]]:
     model = data.get("model")
     if not model:
         errors.append("Missing required field: 'model'")
+    elif model in NON_IMAGE_MODELS:
+        errors.append(f"Invalid model '{model}': that is an Agnes text/video model, not an image model. Allowed: {sorted(list(SUPPORTED_MODELS))}")
     elif model not in SUPPORTED_MODELS:
         errors.append(f"Invalid model '{model}'. Allowed: {sorted(list(SUPPORTED_MODELS))}")
 
@@ -181,6 +184,20 @@ def run_self_tests() -> int:
         ({
             "prompt": "A view",
             "size": "1K"
+        }, 2),
+        # 6. Default model agnes-image-2.5-flash -> exit 0
+        ({
+            "model": "agnes-image-2.5-flash",
+            "prompt": "A scenic view",
+            "size": "2K",
+            "ratio": "16:9",
+            "extra_body": {"response_format": "url"}
+        }, 0),
+        # 7. Text model ID in the image adapter -> exit 2
+        ({
+            "model": "agnes-2.5-flash",
+            "prompt": "A scenic view",
+            "size": "2K"
         }, 2),
     ]
 
