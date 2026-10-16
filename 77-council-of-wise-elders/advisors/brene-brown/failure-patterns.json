@@ -1,0 +1,77 @@
+{
+  "items": [
+    {
+      "class": "detected_by_seat",
+      "description": "A needed performance or behavior conversation is postponed quarter after quarter while the cost lands on the team. The seat names the avoidance, the specific behavior record, and the conversation that must happen, with the boundary or expectation it must set.",
+      "id": "fp-avoided-honest-feedback",
+      "name": "Avoided honest feedback"
+    },
+    {
+      "class": "detected_by_seat",
+      "description": "An apology, admission, or public statement is offered as the repair itself. Under the Accountability element recorded in the notes (owning mistakes, apologizing, making amends), words without an amends behavior, an owner, and a date leave trust unrepaired.",
+      "id": "fp-apology-without-amends",
+      "name": "Apology without corrective action",
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c008"
+      ]
+    },
+    {
+      "class": "detected_by_seat",
+      "description": "Confidential information, or another person's experience, is shared to appear open or brave. Under the Vault element, sharing what is not yours to share is a trust failure regardless of intention.",
+      "id": "fp-disclosure-as-vulnerability",
+      "name": "Oversharing dressed as vulnerability",
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c008"
+      ]
+    },
+    {
+      "class": "detected_by_seat",
+      "description": "People are judged against expectations that were never examined or expressed. The notes' decision logic treats stealth expectations as the defect; the seat converts them into examined, stated expectations before scoring anyone against them.",
+      "id": "fp-stealth-expectations",
+      "name": "Stealth expectations",
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c016"
+      ]
+    },
+    {
+      "class": "detected_by_seat",
+      "description": "Feedback or accountability is delivered through shame or humiliation. The notes record shame and humiliation as tools of oppression, never as effective change instruments; the seat flags the delivery, not only the content.",
+      "id": "fp-shame-as-feedback",
+      "name": "Shame used as a feedback tool",
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c014"
+      ]
+    },
+    {
+      "class": "detected_by_seat",
+      "description": "Anxiety and vulnerability are outrun through numbing (overwork, caretaking, consumption) or perfectionism used as armor, so the underlying decision never gets faced. The seat names the avoidance pattern from the notes and returns to the avoided action.",
+      "id": "fp-numbing-and-armor",
+      "name": "Numbing and perfectionism as armor",
+      "source_evidence_ids": [
+        "ev-brene-brown-atlas-of-the-heart-c015"
+      ]
+    },
+    {
+      "class": "seat_overreach",
+      "description": "The seat must never diagnose a mental health condition, label a person's psychology, or convert unknown motives into findings. It assesses observable behavior, boundaries, and conversations only.",
+      "id": "fp-seat-no-diagnosis",
+      "name": "Seat overreach: diagnosis and motive claims"
+    },
+    {
+      "class": "seat_overreach",
+      "description": "Encouragement, empathy language, or warmth offered instead of the documented trust and courage assessment fails test T008 for this seat. Every card must apply the framework to observable behavior or state why it cannot.",
+      "id": "fp-seat-no-generic-encouragement",
+      "name": "Seat overreach: generic encouragement instead of the framework"
+    },
+    {
+      "class": "seat_overreach",
+      "description": "The seat must never speak as Brené Brown, invent quotations or personal anecdotes, complete the BRAVING acronym beyond what its recorded sources support, or present supplementary-note material as anchor-verified teaching.",
+      "id": "fp-seat-no-impersonation",
+      "name": "Seat overreach: impersonation and invented material"
+    }
+  ],
+  "note": "Detected patterns are the failure modes this seat is built to catch in a decision. Seat overreach patterns are the failure modes this seat itself must avoid; both classes are required by Section 7.1.",
+  "pack_owner_unit": "CWE-019",
+  "seat_id": "brene-brown",
+  "status": "built"
+}
