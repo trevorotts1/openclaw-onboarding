@@ -98,6 +98,8 @@ import {
 export interface ReportExportContextInput {
   /** Host-supplied display date for the report header. */
   report_date: string;
+  /** True when the session is a shipped sample session (F-047-1 badge). */
+  sample?: boolean;
   session_mode?: string | null;
   route_display?: string;
   seat_qualifications?: Partial<Record<SeatId, string>>;
@@ -292,6 +294,7 @@ export class ReportExportService {
 
     const context: ReportContext = {
       report_date: request.context.report_date,
+      sample: request.context.sample === true,
       session_mode: request.context.session_mode ?? null,
       route_display: request.context.route_display ?? DEFAULT_ROUTE_DISPLAY,
       seat_qualifications: request.context.seat_qualifications ?? {},

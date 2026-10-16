@@ -161,7 +161,12 @@ export async function exportVerdictReport(args: {
       final_cards: await args.store.listCards(args.session.spec.session_id),
       current_verdict_revision: args.verdict.verdict_revision,
       formats: [FORMAT_MAP[args.format]],
-      context: { report_date: args.exportedAt.slice(0, 10) },
+      context: {
+        report_date: args.exportedAt.slice(0, 10),
+        // F-047-1 (CWE-048): the stored session's sample flag rides into
+        // the export so sample exports carry the SAMPLE badge.
+        sample: args.session.sample,
+      },
       exported_at: args.exportedAt,
     });
     const artifact = result.artifacts[0];

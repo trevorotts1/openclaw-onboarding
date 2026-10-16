@@ -107,10 +107,17 @@ export function renderMarkdown(model: Record<string, unknown>): string {
   if (model.redacted === true) {
     lines.push(`Redacted report: yes (profile ${asString(model.redaction_profile_id)})`);
   }
+  if (model.sample === true) {
+    lines.push('Sample session: SAMPLE');
+  }
   lines.push('');
   lines.push(`> ${asString(model.simulation_label)}`);
   lines.push('');
   lines.push(`> ${asString(model.authorization_notice)}`);
+  if (model.sample === true) {
+    lines.push('');
+    lines.push(`> ${asString(model.sample_notice)}`);
+  }
   lines.push('');
 
   const consult = model.consult as Record<string, unknown> | null;
@@ -373,8 +380,14 @@ export function renderPrintHtml(model: Record<string, unknown>): string {
   if (model.redacted === true) {
     out.push(`<p class="meta">Redacted report: yes (profile ${escapeHtml(asString(model.redaction_profile_id))})</p>`);
   }
+  if (model.sample === true) {
+    out.push('<p class="meta">Sample session: SAMPLE</p>');
+  }
   out.push(`<p class="label">${escapeHtml(asString(model.simulation_label))}</p>`);
   out.push(`<p class="label">${escapeHtml(asString(model.authorization_notice))}</p>`);
+  if (model.sample === true) {
+    out.push(`<p class="label">${escapeHtml(asString(model.sample_notice))}</p>`);
+  }
 
   const consult = model.consult as Record<string, unknown> | null;
   if (consult) {

@@ -66,6 +66,13 @@ export interface ReportContext {
   /** Session mode as recorded by the host; null when not recorded. */
   session_mode: string | null;
   /**
+   * True when the exported session is one of the shipped sample
+   * sessions (the stored session's sample flag, carried into the export
+   * by the host; CWE-048 F-047-1). Sample exports carry the SAMPLE
+   * badge on every rendered surface.
+   */
+  sample?: boolean;
+  /**
    * Selected/observed route as the host records it. When the host does
    * not independently expose the underlying model identity, the
    * CWE-028 hidden-identity statement is the honest default.
@@ -87,6 +94,9 @@ export const SIMULATION_LABEL =
 
 export const AUTHORIZATION_NOTICE =
   'Authorization boundary: this report records an advisory council verdict only. It is not an action-plan approval and not an execution authorization. Any action proposal listed here requires its own separate approvals before anything is executed; a council verdict is never an execution credential.';
+
+export const SAMPLE_NOTICE =
+  'SAMPLE: this report was exported from one of the shipped sample sessions. Its content is sample material shipped with the package, not a verdict on a real decision.';
 
 const DISPLAY_NAME_BY_SEAT: Readonly<Record<SeatId, string>> = Object.fromEntries(
   SEAT_ROSTER.map((entry) => [entry.seat_id, entry.display_name]),
@@ -409,6 +419,8 @@ export function buildReportModel(input: ReportModelInput): Record<string, unknow
     report_date: context.report_date,
     display_timezone: brief.display_timezone,
     session_mode: context.session_mode,
+    sample: context.sample === true,
+    sample_notice: context.sample === true ? SAMPLE_NOTICE : null,
     route_display: context.route_display,
     protocol_version: CONTRACT_PACKAGE_VERSION,
     source_pack_versions: packVersions,
