@@ -4,7 +4,7 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
-## v2.9.60 - 2026-10-16 - BATCH-AGN-24H-O3: W4-proof-U2 accepted platform proof, privacy-repaired receipt
+## v2.9.61 - 2026-10-16 - BATCH-AGN-24H-O3: W4-proof-U2 accepted platform proof, privacy-repaired receipt
 
 Batch `BATCH-AGN-24H-O3` - the accepted `W4-proof-U2` platform proof lands on
 main with its receipt header privacy-repaired (one batch PR). Window:
@@ -19,9 +19,9 @@ main with its receipt header privacy-repaired (one batch PR). Window:
   truthful output are preserved - the diff against the accepted copy is exactly
   line 1 (1c1), 30 bytes shorter, 320 lines unchanged.
 
-Version `v2.9.59` -> `v2.9.60` (G3 gates a skill-content change on that bump). Both the
+Version `v2.9.60` -> `v2.9.61` (main already carries `v2.9.60` from #2146; this release takes the next patch. G3 gates a skill-content change on that bump). Both the
 `skill-version.txt` file and the `SKILL.md` frontmatter `version:` field carry
-`v2.9.60` in the same commit, so the frontmatter guard holds.
+`v2.9.61` in the same commit, so the frontmatter guard holds.
 
 ## v2.9.59 - 2026-10-15 - BATCH-AGN-24H-O: last-24h leftover units
 
