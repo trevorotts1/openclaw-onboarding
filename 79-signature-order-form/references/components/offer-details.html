@@ -1,0 +1,13 @@
+<!-- S79 offer details / price display component (doc 09 sections 3 and 10,
+     doc 16 component). Values are produced by work/display/quote_display.py
+     from verified native price records and audited before render. TEST only. -->
+<section class="sig-offer-details" aria-labelledby="offer-heading">
+  <h3 id="offer-heading">Your order</h3>
+  <p class="sig-price-line"><span>TEST Main Offer A</span><span>USD 97.00</span></p>
+  <p class="sig-price-line sig-due-now"><span>Due today</span><span>USD 97.00</span></p>
+  <!-- Future installments list: rendered only when the verified price has a schedule. -->
+  <ul class="sig-schedule" aria-label="Future payments"></ul>
+  <!-- Disclosure lines: tax, shipping and discount policy references, trial
+       and renewal terms, rendered from the verified price record. -->
+  <div class="sig-disclosures"></div>
+</section>
