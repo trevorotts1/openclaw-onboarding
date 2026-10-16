@@ -479,7 +479,7 @@ def _self_test() -> int:
                 "source_kind": "owner", "source_ref": "self-test",
                 "test_only": True}
 
-    def launch(offers, extras=None, mode="single_simple", status="approved",
+    def plan_launch(offers, extras=None, mode="single_simple", status="approved",
                bump=False) -> Dict[str, Any]:
         return {"schema_version": "1.0", "tenant_id": "T", "location_id": "L",
                 "launch_id": "X", "revision": 1, "journey_mode": mode,
@@ -492,39 +492,39 @@ def _self_test() -> int:
                 "bump_enabled": bump, "image_provider": "agnes",
                 "source_refs": [], "test_only": True}
 
-    good = launch([offer("M", "main")])
+    good = plan_launch([offer("M", "main")])
     say(validate_launch(good) == [], "minimal approved single_simple plan validates")
 
-    bad = launch([offer("M", "main", amt=None, status="approved")])
+    bad = plan_launch([offer("M", "main", amt=None, status="approved")])
     say(validate_launch(bad) != [], "null amount with status approved is refused")
-    bad = launch([offer("M", "main", amt=0, status="unknown")])
+    bad = plan_launch([offer("M", "main", amt=0, status="unknown")])
     say(validate_launch(bad) != [], "amount present with status unknown is refused")
-    bad = launch([offer("M", "main", amt=10.5)])
+    bad = plan_launch([offer("M", "main", amt=10.5)])
     say(validate_launch(bad) != [], "float amount_minor is refused (no float dollars)")
-    bad = launch([offer("M", "main", amt=None, status="unknown")])
+    bad = plan_launch([offer("M", "main", amt=None, status="unknown")])
     say(validate_launch(bad) != [], "approved launch with an unknown price is refused")
-    covered = launch([offer("M", "main", status="recommended_unapproved")])
+    covered = plan_launch([offer("M", "main", status="recommended_unapproved")])
     say(validate_launch(covered) == [],
         "a recommended price inside an approved record is covered by the plan "
         "approval that binds the whole plan hash")
-    bad = launch([offer("M", "main")],
+    bad = plan_launch([offer("M", "main")],
                  extras={"upsell_1": True, "downsell_1": False, "upsell_2": False})
     say(validate_launch(bad) != [], "enabled U1 with no U1 offer is refused")
-    bad = launch([offer("M", "main"), offer("U1", "upsell_1")])
+    bad = plan_launch([offer("M", "main"), offer("U1", "upsell_1")])
     say(validate_launch(bad) != [], "U1 offer defined while U1 disabled is refused")
-    bad = launch([offer("M", "main"),
+    bad = plan_launch([offer("M", "main"),
                   offer("U1", "upsell_1"), offer("D1", "downsell_1")],
                  extras={"upsell_1": True, "downsell_1": True, "upsell_2": False})
     say(validate_launch(bad) != [], "U1/D1 without declared mutual exclusion is refused")
-    good2 = launch([offer("M", "main"),
+    good2 = plan_launch([offer("M", "main"),
                     offer("U1", "upsell_1", excludes=["D1"]),
                     offer("D1", "downsell_1", excludes=["U1"])],
                    extras={"upsell_1": True, "downsell_1": True, "upsell_2": False})
     say(validate_launch(good2) == [], "U1/D1 with declared exclusion validates")
-    bad = launch([offer("M", "main", ents=["a", "b"]),
+    bad = plan_launch([offer("M", "main", ents=["a", "b"]),
                   offer("B", "bump", ents=["a"])], bump=True)
     say(validate_launch(bad) != [], "bump duplicating main entitlements is refused")
-    pre = launch([offer("M", "main", status="recommended_unapproved")],
+    pre = plan_launch([offer("M", "main", status="recommended_unapproved")],
                  status="awaiting_plan_approval")
     say(validate_launch(pre) == [],
         "pre-approval record with recommended_unapproved prices validates")
