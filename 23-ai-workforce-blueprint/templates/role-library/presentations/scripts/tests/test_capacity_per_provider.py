@@ -98,30 +98,33 @@ def _deepseek_box(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 def test_plan_answer_for_one_provider_never_caps_another(monkeypatch, tmp_path):
     """THE regression. A DeepSeek-routed box whose client answered the Ollama
-    plan question must still dispatch DeepSeek routes at DeepSeek's ceiling.
+    plan question must still dispatch DeepSeek routes at DeepSeek's own
+    capacity: UNBOUNDED, since the owner ruling of 2026-10-15 (DeepSeek
+    Direct has NO provider cap).
 
     MUTATION CAUGHT ON PRISTINE eaedc0633: record_plan_answer() wrote
     capacity_override.json, detection step (a) read it first, and probe()
     answered `ollama-cloud / 8` for a box whose primary route is DeepSeek
-    Flash / 2500."""
+    Flash (then measured at its 2500 table row; UNBOUNDED since the
+    2026-10-15 ruling)."""
     cfg = _isolate(monkeypatch, tmp_path)
     _deepseek_box(monkeypatch, tmp_path)
 
     before = capacity.probe(cfg)
     assert before["provider"] == "deepseek-direct", before
-    assert before["available"] == 2500, before
+    assert capacity.is_unbounded(before["available"]), before
 
     resource_profile.record_plan_answer("ollama-cloud", "$100/month", cfg)
 
     after = capacity.probe(cfg)
     assert after["provider"] == "deepseek-direct", after
-    assert after["available"] == 2500, after
+    assert capacity.is_unbounded(after["available"]), after
 
     # ...and each provider still answers for ITSELF.
     assert capacity.probe(cfg, provider="ollama-cloud")["available"] == 8
-    assert capacity.probe(
+    assert capacity.is_unbounded(capacity.probe(
         cfg, provider="deepseek-direct", model="deepseek-flash"
-    )["available"] == 2500
+    )["available"])
 
 
 def test_the_probe_says_which_provider_it_was_asked_about(monkeypatch, tmp_path):
@@ -198,7 +201,7 @@ def test_legacy_v1_override_is_scoped_to_its_provider(monkeypatch, tmp_path):
 
     primary = capacity.probe(cfg)
     assert primary["provider"] == "deepseek-direct", primary
-    assert primary["available"] == 2500, primary
+    assert capacity.is_unbounded(primary["available"]), primary
 
     scoped = capacity.probe(cfg, provider="ollama-cloud")
     assert scoped["available"] == 8, scoped
@@ -229,7 +232,9 @@ def test_v2_override_holds_several_providers_and_only_lowers(
         monkeypatch, tmp_path):
     """The self-throttle survives as a PER-PROVIDER declaration: ollama-cloud
     throttled to 5 (below its $100 row of 8, so honoured) while deepseek-direct
-    declares 9999 (above its Flash row of 2500, so clamped down). Neither
+    declares 9999 (a self-throttle on a no-cap provider since the owner
+    ruling of 2026-10-15, so honoured verbatim; through the 2026-09-04
+    interval it was clamped down to its Flash row of 2500). Neither
     statement touches the other provider.
 
     MUTATION CAUGHT ON PRISTINE eaedc0633: read_override() understood only the
@@ -253,7 +258,7 @@ def test_v2_override_holds_several_providers_and_only_lowers(
     assert capacity.probe(cfg)["available"] != capacity.DEFAULT_CONSERVATIVE
 
     assert capacity.probe(cfg, provider="ollama-cloud")["available"] == 5
-    assert capacity.probe(cfg, provider="deepseek-direct")["available"] == 2500
+    assert capacity.probe(cfg, provider="deepseek-direct")["available"] == 9999
 
 
 def test_declare_capacity_merges_and_never_clobbers_another_provider(

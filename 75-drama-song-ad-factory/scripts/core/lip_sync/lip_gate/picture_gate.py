@@ -4,9 +4,15 @@ Why: the 30-Day Reset close-up (face 28% of frame, smile 0.62) and the Perfect
 Daughter close-up (face 34%, teeth, roll -7.8 deg) went to paid Kling lip-sync
 unmeasured. The check existed on paper only. Now:
 
-  gate_picture(path)   measure -> ONE free local crop if the face is too small ->
-                       up to MAX_PAID_REGENS paid regenerations for a FAIL a
-                       crop cannot fix -> receipt per picture tried -> refuse.
+  gate_picture(path)   measure -> the free face-crop ladder when a close-up
+                       shows 0 faces (trial C) -> ONE free local crop if the
+                       face is too small -> up to MAX_PAID_REGENS paid
+                       regenerations for a FAIL a crop cannot fix -> receipt
+                       per picture tried -> refuse.
+                       no_smile=True (wired method / Agnes runs; inert until
+                       then) adds the teeth-smile remake hook: a smiling
+                       close-up is remade for free up to MAX_REMAKES times and
+                       is NEVER sent to lip-sync smiling.
   make_regenerate()    the default paid regeneration: gpt-image-2
                        image-to-image from the 3D character, dispatched
                        through kie_dispatch (ledger + cap + load_governor).
@@ -24,6 +30,13 @@ tiny face, a side profile, a strong tilt, a wide-open mouth, a very soft image.
 Smile, teeth, a smaller face, a mild tilt or turn are FLAGS, never a paid
 regeneration on their own. Calibrated on the Trevor-approved Kiesett version 2
 and the client's lip-sync pictures (the table is in the PR body).
+
+Trevor 2026-10-13, one exception to that loosening and only for a lip-sync
+shot: a smiling picture is NEVER sent to lip-sync. A run that wires the hook
+passes no_smile=True (and remake=, free on the Agnes path / a cheap still on
+the KIE path); the picture is remade up to MAX_REMAKES times and refused
+LIPSYNC_SOURCE_SMILING for a human pick after that. Without no_smile every
+other shot keeps today's behaviour: a smile is a flag and goes through.
 
 Fail closed everywhere: mediapipe missing, face model missing, unreadable image,
 0 or 2+ faces, any number over a FAIL limit -> verdict FAIL / refusal.
@@ -69,7 +82,15 @@ FLAG_LIP_GAP_PCT = 1.0          # lip gap / face height (the teeth check)
 FLAG_SHARPNESS = 100.0
 CROP_TARGET_FACE_PCT = 38.0     # the free crop aims here
 MAX_FREE_CROPS = 1              # one free local crop for a too-small face
+# Free face-crop ladder, rung by rung, BEFORE any paid regeneration: 0 faces on
+# the full frame (trial C: a 2K cartoon close-up) but the same picture ACCEPTed
+# as a 1040-px upper-centre 9:16 crop of 1472. Widths are of the frame width,
+# each cut 9:16 with its top edge in the upper third (upper_centre_crop).
+CROP_LADDER_WIDTHS = (0.70, 0.60, 0.80)
 MAX_PAID_REGENS = 2             # Trevor's 2-try rule, then refuse
+MAX_REMAKES = 3                 # teeth-smile remake tries, then a human pick
+SMILING_CODE = "LIPSYNC_SOURCE_SMILING"
+SMILING_FLAGS = frozenset({"SMILE"})   # a smile with or without visible teeth
 REGEN_MODEL = "gpt-image-2-image-to-image"
 REGEN_PROMPT = "neutral expression, lips closed, facing camera, head level"
 # ============================================================================
@@ -172,6 +193,28 @@ def default_receipt_dir(path):
     return os.path.join(os.path.dirname(os.path.abspath(path)), ".lipgate")
 
 
+def upper_centre_crop(path, out_path, width_frac):
+    """One rung of the free face-crop ladder: a 9:16 crop of `width_frac` of the
+    frame width, horizontally centred, its top edge at the upper third of the
+    slack so the head end of the frame survives. Returns out_path, or None when
+    the source cannot hold such a crop (never pads or invents pixels, and None
+    when OpenCV is missing: the ladder simply runs out)."""
+    try:
+        import cv2
+    except Exception:
+        return None
+    img = cv2.imread(path)
+    if img is None:
+        return None
+    H, W = img.shape[:2]
+    cw = int(round(W * width_frac))
+    ch = int(round(cw * 16.0 / 9.0))                        # 9:16, like crop_to_face
+    if cw < 1 or ch < 1 or ch > H:
+        return None
+    left, top = (W - cw) // 2, (H - ch) // 3
+    return out_path if cv2.imwrite(out_path, img[top:top + ch, left:left + cw]) else None
+
+
 
 
 def _measure_all(cur, measure):
@@ -187,7 +230,8 @@ def _measure_all(cur, measure):
 
 
 def gate_picture(path, receipt_dir=None, measure=None, crop=None,
-                 regenerate=None, max_regens=MAX_PAID_REGENS):
+                 regenerate=None, max_regens=MAX_PAID_REGENS,
+                 ladder=None, no_smile=False, remake=None, max_remakes=MAX_REMAKES):
     """Measure one close-up; fix it; write a receipt per picture tried.
     Returns {"verdict", "image", "sha256", "numbers", "reasons", "flags",
     "attempts"} for the FINAL picture (its path is "image"; use it, not the
@@ -195,32 +239,81 @@ def gate_picture(path, receipt_dir=None, measure=None, crop=None,
     Kling) or FAIL.
 
     Auto-fix, only for a FAIL, in this order:
+      0. The free face-crop ladder when the picture shows 0 faces: up to
+         len(CROP_LADDER_WIDTHS) upper-centre 9:16 crops, before any paid
+         regeneration. The crop that passes is the returned "image", so
+         upload_measured() binds those exact bytes.
       1. ONE free local crop (MAX_FREE_CROPS) when the face is too small.
       2. Up to MAX_PAID_REGENS paid regenerations for any other FAIL a crop
          cannot fix. regenerate(path, prompt) -> new_path. Use
          make_regenerate(): it goes through kie_dispatch (ledger, author cap,
          load_governor.kie_request). None = no paid fix.
       3. Then refuse (verdict FAIL).
-    A flag (smile, teeth, small face, mild tilt) never triggers a crop or a
-    paid regeneration.
-    measure(path) -> numbers      default picture_measure.measure
-    crop(path, out) -> out|None   default picture_measure.crop_to_face (free)
+    A flag (teeth, small face, mild tilt) never triggers a crop or a paid
+    regeneration.
+
+    no_smile=True (Trevor 2026-10-13; the wired method / Agnes runs; inert
+    until then) adds the teeth-smile hook for the lip-sync SHOT ONLY: a close-up
+    whose smile flag is raised is remade up to max_remakes times through
+    remake(path, prompt) -> new_path (free on the Agnes path, a cheap still on
+    the KIE path; use REGEN_PROMPT, new seed) and is NEVER accepted smiling.
+    No remake callable, or still smiling after max_remakes tries, = verdict
+    FAIL with LIPSYNC_SOURCE_SMILING for a human pick.
+    measure(path) -> numbers        default picture_measure.measure
+    crop(path, out) -> out|None     default picture_measure.crop_to_face (free)
+    ladder(path, out, width) -> out|None   default upper_centre_crop (free)
     """
     measure = measure or PM.measure
     crop = crop or (lambda p, o: PM.crop_to_face(p, o, CROP_TARGET_FACE_PCT))
+    ladder = ladder or upper_centre_crop
     rdir = receipt_dir or default_receipt_dir(path)
-    attempts, cur, crops, regens = [], path, 0, 0
+    root = os.path.splitext(path)[0]                # rung names never nest
+    attempts, cur, crops, regens, remakes, rung = [], path, 0, 0, 0, 0
     while True:
         sha = sha256_file(cur)
         nums, reasons, flags = _measure_all(cur, measure)
         codes = {c for c, _ in reasons}
+        smiling = no_smile and bool({c for c, _ in flags} & SMILING_FLAGS)
         verdict = FAIL if reasons else FLAGGED if flags else PASS
+        refused_smile = False
+        if smiling and verdict in ACCEPTED:
+            if remake is None or remakes >= max_remakes:
+                refused_smile = True                         # never a smiling face
+                why = ("no remake callable" if remake is None else
+                       "still smiling after %d remakes" % max_remakes)
+                reasons = reasons + [(SMILING_CODE,
+                                      "smiling close-up is not sent to lip-sync "
+                                      "(%s); pick a neutral picture" % why)]
+                verdict = FAIL
         attempts.append({"image": cur, "sha256": sha, "numbers": nums,
                          "verdict": verdict, "reasons": [list(x) for x in reasons],
                          "flags": [list(x) for x in flags]})
         rec = write_receipt(cur, sha, verdict, nums, reasons, flags, attempts, rdir)
+        if refused_smile:
+            return dict(rec, image=cur)
+        if smiling and verdict in ACCEPTED:                  # free remake, capped
+            remakes += 1
+            try:
+                cur = remake(cur, REGEN_PROMPT)
+            except Exception as exc:                         # refuse, loudly
+                reasons = reasons + [("REMAKE_FAILED", "%s: %s" % (type(exc).__name__, exc))]
+                attempts = attempts + [dict(attempts[-1], verdict=FAIL,
+                                            reasons=[list(x) for x in reasons])]
+                return dict(write_receipt(cur, sha, FAIL, nums, reasons, flags,
+                                          attempts, rdir), image=cur)
+            continue
         if verdict in ACCEPTED or codes & NO_REGEN_CODES:
             return dict(rec, image=cur)
+        if nums.get("face_count") == 0 and rung < len(CROP_LADDER_WIDTHS):
+            rung += 1                                        # free, local, capped
+            out = root + "-ladder%d.png" % rung
+            try:
+                made = ladder(cur, out, CROP_LADDER_WIDTHS[rung - 1])
+            except Exception:                                # next rung
+                made = None
+            if made:
+                cur = made
+                continue
         small = "FACE_SIZE" in codes and nums.get("face_h_pct", 100) < MIN_FACE_HEIGHT_PCT
         if small and crops < MAX_FREE_CROPS:
             crops += 1                                      # free, local, once

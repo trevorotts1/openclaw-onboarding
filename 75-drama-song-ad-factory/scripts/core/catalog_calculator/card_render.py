@@ -24,9 +24,11 @@ import sys
 try:  # package import (core.catalog_calculator)
     from .extensions import price_card_ext
     from .extensions import base_bridge
+    from . import agnes_price
 except ImportError:  # script import from inside this directory
     from extensions import price_card_ext                 # type: ignore
     from extensions import base_bridge                    # type: ignore
+    import agnes_price                                   # type: ignore
 
 try:
     from choice_card.looks import looks as LOOKS
@@ -120,10 +122,20 @@ def price_envelope(card, price_fn, state_store=None, run_id=None, catalog=None):
     return env, m
 
 
-def quote(n, length_label):
+def quote(n, length_label, agnes=False, price_fn=None):
     """Question price for option n at the chosen length: the card's own total
-    with its 20% redo allowance, in dollars (None if the card cannot price it)."""
-    env, _m = price_envelope({"length": length_label, "video_model": n}, None)
+    with its 20% redo allowance, in dollars (None if the card cannot price it).
+
+    ``agnes=True`` quotes an Agnes card (SPEC A9): its only money lines are the
+    song and the lip-sync close-ups, so it needs a Skill 74 ``price_fn`` —
+    with none there is no total at all, never a made-up number."""
+    if not agnes:
+        env, _m = price_envelope({"length": length_label, "video_model": n}, None)
+        card = env.get("card") if env.get("state") == "ok" else None
+        return card["spending_limit_usd"] if card else None
+    if price_fn is None:
+        return None
+    env = agnes_price.envelope({"length": length_label, "agnes": "yes"}, price_fn)
     card = env.get("card") if env.get("state") == "ok" else None
     return card["spending_limit_usd"] if card else None
 
@@ -170,6 +182,11 @@ def render(card, price_fn, state_store=None, run_id=None):
     FU-U11: when the card carries a book plan (``book_plan``), the Book shots
     APPROVAL BLOCK is appended -- approvals and notices, never a new choice.
 
+    SPEC A9: a card that says ``agnes == "yes"`` is priced by
+    ``agnes_price.envelope`` -- song and lip-sync only -- and its video and
+    picture lines read "included in your Agnes plan" with no figure, plus the
+    one Agnes video-time line. Every other card renders exactly as before.
+
     Returns (text, priced_ok). The card always renders every row; a card
     whose price cannot be read says "Price unavailable" on the total and is
     safe to show, and approval must stay blocked (fail closed, 4.4).
@@ -181,11 +198,15 @@ def render(card, price_fn, state_store=None, run_id=None):
     total = None
     envelope = None
     song_extra = None
+    agnes = card.get("agnes") == "yes"
 
     if price_fn is not None:
         # The shipped catalog is data in the repo, never an operator path.
         try:
-            envelope, _m = price_envelope(card, price_fn, state_store, run_id)
+            if agnes:
+                envelope = agnes_price.envelope(card, price_fn)
+            else:
+                envelope, _m = price_envelope(card, price_fn, state_store, run_id)
             ok_card = envelope.get("card") if envelope.get("state") == "ok" else None
             if ok_card:
                 priced_ok = True
@@ -203,9 +224,19 @@ def render(card, price_fn, state_store=None, run_id=None):
         row_dollars = None
 
     for row in CARD_ROWS:
-        figure = "$%.2f" % row_dollars[row] if (row_dollars and row in row_dollars) else ""
+        if agnes and row in agnes_price.INCLUDED_ROWS:
+            figure = "included in your Agnes plan"    # no figure on an Agnes line
+        else:
+            figure = "$%.2f" % row_dollars[row] if (row_dollars and row in row_dollars) else ""
         lines.append("  %-12s %s%s" % (row + ":", values[row],
                                        ("   " + figure) if figure else ""))
+
+    if agnes:
+        n, _why = agnes_price.video_seconds(card)
+        if n is not None:
+            lines.append("  %-12s %s" % ("Agnes video time:",
+                                         "about %d of your %d seconds today"
+                                         % (n, agnes_price.DAILY_VIDEO_S)))
 
     if card.get("song_choices"):
         lines.append("  %-12s 3 labelled versions to choose from (2 extra songs%s), nothing else starts until you pick"

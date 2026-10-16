@@ -454,9 +454,13 @@ def _dept(tmp_path):
 def test_declare_capacity_for_a_named_provider_never_parks(monkeypatch,
                                                            tmp_path):
     """MEASURED defect: the hard-coded `{provider: deepseek-direct,
-    max_concurrent: N}` record PARKS (deepseek-direct is a cap-table provider
-    since 2026-09-04, and a cap-table provider with no plan is
-    _resolve_override case 2). The declaration must resolve MEASURED."""
+    max_concurrent: N}` record PARKED through the 2026-09-04 interval
+    (deepseek-direct was a cap-table provider then, and a cap-table provider
+    with no plan is _resolve_override case 2). Since the owner ruling of
+    2026-10-15 deepseek-direct is a no-cap provider, so the declaration
+    resolves MEASURED through case 0 instead; the tier label is still
+    resolved from the model slug and recorded. The declaration must resolve
+    MEASURED either way."""
     cfg = _env(monkeypatch, tmp_path, _two_provider_profile())
 
     path = dispatcher.ensure_capacity_override(
@@ -495,12 +499,17 @@ def test_declare_capacity_refuses_when_no_provider_can_be_established(
 
 def test_declare_capacity_refuses_a_cap_table_provider_with_no_plan(
         monkeypatch, tmp_path):
-    """The exact record Fable measured as PARKED is never written again."""
+    """The exact record shape Fable measured as PARKED is never written
+    again. The subject is ollama-cloud: it is the one structural cap-table
+    provider left since the owner ruling of 2026-10-15 returned
+    deepseek-direct (this test's original subject) to NO_CAP_PROVIDERS,
+    where a declaration with no plan is a plain self-throttle and never
+    PARKs."""
     cfg = _env(monkeypatch, tmp_path, _two_provider_profile())
 
     with pytest.raises(dispatcher.CapacityDeclarationRefused) as exc:
         dispatcher.ensure_capacity_override(_dept(tmp_path), max_concurrent=100,
-                                            provider="deepseek-direct")
+                                            provider="ollama-cloud")
 
     assert not (cfg / capacity.OVERRIDE_FILENAME).exists()
     assert "PARK" in str(exc.value).upper(), exc.value

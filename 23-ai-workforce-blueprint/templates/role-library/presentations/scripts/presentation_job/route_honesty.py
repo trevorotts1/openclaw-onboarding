@@ -19,9 +19,9 @@ Ollama, the client sees ONCE a plain-terms statement carrying three things:
   (c) THE STANDING RECOMMENDATION (owner ruling 2026-10-13, mandated copy
       intent, not a plan option): for best results, use OpenRouter or
       DeepSeek Direct, with the reason -- neither route holds a deck back
-      with a provider concurrency cap (OpenRouter has none at all;
-      DeepSeek Direct's cap, read from the same CAP_TABLE, sits far above
-      deck scale), so on those routes the machine is the only limit.
+      with a provider concurrency cap (owner ruling of 2026-10-15:
+      DeepSeek Direct has NO provider cap, and OpenRouter has none at
+      all), so on those routes the machine is the only limit.
 
 WHAT THIS MODULE NEVER DOES
 ---------------------------
@@ -384,22 +384,18 @@ def _ceiling_sentence(row: Dict[str, Any]) -> str:
 
 
 def recommendation_text(cap: Any) -> str:
-    """THE mandated recommendation (owner ruling 2026-10-13), rendered with
-    the DeepSeek Direct numbers read from CAP_TABLE at render time."""
-    ds_caps = sorted(
-        n for (p, _plan), n in cap.CAP_TABLE.items() if p == "deepseek-direct")
-    if len(ds_caps) >= 2:
-        ds_span = f"{ds_caps[0]} to {ds_caps[-1]}"
-    elif ds_caps:
-        ds_span = f"{ds_caps[0]}"
-    else:  # pragma: no cover - the table always carries DeepSeek rows today
-        ds_span = "hundreds"
+    """THE mandated recommendation (owner ruling 2026-10-13), with the
+    reason settled by the owner ruling of 2026-10-15: DeepSeek Direct has
+    NO provider cap, so the copy quotes no DeepSeek number at all. Until
+    that ruling this function read the DeepSeek span (500 to 2500) out of
+    CAP_TABLE at render time and quoted it as a cap far above deck scale;
+    that reading is retired. `cap` stays in the signature for the render
+    path's call shape; nothing in this copy is read from it."""
     return (
         "Recommendation: for best results, use OpenRouter or DeepSeek "
         "Direct. Neither route holds a deck back with a provider "
-        "concurrency cap: OpenRouter has no provider concurrency cap at "
-        f"all, and DeepSeek Direct's cap ({ds_span} at once) is far above "
-        "any deck this engine builds, so on those routes your machine is "
+        "concurrency cap: OpenRouter and DeepSeek Direct have no provider "
+        "concurrency cap at all, so on those routes your machine is "
         "the only limit."
     )
 
