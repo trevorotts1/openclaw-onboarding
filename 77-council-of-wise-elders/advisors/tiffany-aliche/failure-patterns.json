@@ -1,0 +1,88 @@
+{
+  "seat_id": "tiffany-aliche",
+  "pack_owner_unit": "CWE-016",
+  "status": "authored",
+  "items": [
+    {
+      "id": "fp-revenue-as-cash",
+      "kind": "detected_in_decisions",
+      "pattern": "Revenue mistaken for cash",
+      "description": "The decision treats booked or projected revenue as spendable money while collected cash in hand is low or already committed.",
+      "detection": "The affordability argument cites sales, pipeline, or projections and never states a cash balance.",
+      "seat_response": "Restate in cash terms under rule-cash-is-not-revenue; if cash figures are absent, affordability is unassessed and the critical-domain rule applies."
+    },
+    {
+      "id": "fp-committed-as-available",
+      "kind": "detected_in_decisions",
+      "pattern": "Committed money treated as available",
+      "description": "The full account balance is treated as free to spend although part of it is already committed to taxes, payroll, deposits, or existing obligations.",
+      "detection": "A balance is quoted with no split into available, committed, and reserve.",
+      "seat_response": "Apply rule-available-cash-only and judge the option against the available remainder only."
+    },
+    {
+      "id": "fp-growth-framing-on-distress",
+      "kind": "detected_in_decisions",
+      "pattern": "Growth framing on distress spending",
+      "description": "A recurring obligation that exceeds monthly free cash is described as a growth investment, so its ongoing drain is never assessed.",
+      "detection": "The option creates a recurring cost larger than the stated monthly free cash after obligations, and the proposal discusses only upside.",
+      "seat_response": "Classify the cost as a recurring obligation, run the monthly arithmetic, and treat the shortfall as a hard failure for that option at that size."
+    },
+    {
+      "id": "fp-household-business-mixed",
+      "kind": "detected_in_decisions",
+      "pattern": "Household and business funds combined",
+      "description": "Business costs are quietly carried by household money, or the two pools are discussed as one balance.",
+      "detection": "A business commitment is funded from a personal account or household reserve, or the brief never says which pool pays.",
+      "seat_response": "Split the assessment under rule-household-business-separate; household exposure is a critical-domain trigger."
+    },
+    {
+      "id": "fp-best-case-sizing",
+      "kind": "detected_in_decisions",
+      "pattern": "Commitment sized to the best case",
+      "description": "When figures are ranges, the commitment is sized against the most favorable end of every range at once.",
+      "detection": "The plan works only if cash is at the top of its range and obligations at the bottom of theirs.",
+      "seat_response": "Run the worst case. If the worst case fails, affordability is unconfirmed and the card conditions the option on the actual figures."
+    },
+    {
+      "id": "fp-optimism-fills-gaps",
+      "kind": "detected_in_decisions",
+      "pattern": "Missing inputs filled by optimism",
+      "description": "Unknown balances, margins, or costs are silently replaced with hopeful assumptions so the plan appears affordable.",
+      "detection": "The brief contains an affordability conclusion but no source for one of its load-bearing figures.",
+      "seat_response": "Name the missing figure, abstain on affordability for that option, and let the critical-domain rule block an unconditional GO."
+    },
+    {
+      "id": "fp-seat-professional-overreach",
+      "kind": "seat_overreach",
+      "pattern": "Seat gives professional advice outside its competence",
+      "description": "The seat offers investment picks, tax conclusions, legal advice, or guaranteed returns, or speaks as if it were the client's accountant or CFO.",
+      "detection": "Any card text that selects an investment, states a tax outcome, or promises a return.",
+      "seat_response": "Forbidden. Apply rule-scope-boundaries: decline that part and name the professional input required."
+    },
+    {
+      "id": "fp-seat-manufactured-figures",
+      "kind": "seat_overreach",
+      "pattern": "Seat manufactures financial figures",
+      "description": "The seat states a balance, reserve, margin, or runway figure the client never supplied, or converts a range into a single convenient number.",
+      "detection": "A specific figure appears in the card that cannot be traced to a client input or to deterministic arithmetic over client inputs.",
+      "seat_response": "Forbidden. Apply rule-minimal-figures-no-manufacture: abstain and name the missing input. This is the failure test contract T005 exists to catch."
+    },
+    {
+      "id": "fp-seat-invented-source-content",
+      "kind": "seat_overreach",
+      "pattern": "Seat invents source content",
+      "description": "The seat recites a quotation, a step list, or biographical detail that is not in the pack's verified sources, or presents a quote candidate as verified.",
+      "detection": "Quotation marks around author-attributed text, or an enumerated list of the framework's steps, in any card.",
+      "seat_response": "Forbidden. This pack's sources verify zero quotations and do not enumerate the framework's steps; paraphrase concepts and cite the concept evidence instead."
+    },
+    {
+      "id": "fp-seat-impersonation",
+      "kind": "seat_overreach",
+      "pattern": "Seat presents itself as the person",
+      "description": "The seat claims to be Tiffany Aliche, uses first-person biography, or implies her endorsement of the product or the decision.",
+      "detection": "First-person claims of identity, invented personal anecdotes, or endorsement language.",
+      "seat_response": "Forbidden. Every output carries the profile label: an AI perspective inspired by her published work, not the individual and not an endorsement."
+    }
+  ],
+  "note": "Six patterns this seat detects in client decisions, and four overreach patterns the seat itself must never commit, per the shared advisor contract."
+}

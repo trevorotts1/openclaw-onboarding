@@ -1,0 +1,230 @@
+{
+  "seat_id": "simon-sinek",
+  "status": "authored",
+  "pack_owner_unit": "CWE-013",
+  "items": [
+    {
+      "framework_id": "golden-circle",
+      "name": "The Golden Circle",
+      "source_work": "Start with Why",
+      "attribution_kind": "source_principle",
+      "concept": "Every organization operates on three levels: WHY (purpose, cause, belief), HOW (the actions and principles that realize the WHY), and WHAT (products, services, and results). Communication and decisions that start from the WHY and move outward align; those that start from the WHAT stay interchangeable.",
+      "preconditions": [
+        "A WHY is stated in approved client context, or the seat records purpose as unknown and applies the unknown-purpose handling in the decision rules instead of inventing one.",
+        "The options under review can be described concretely enough to map their HOWs and WHATs."
+      ],
+      "how_to_apply": [
+        "State the WHY in one sentence, in the to-contribution-so-that-impact form where the material supports it.",
+        "For each option, list the HOWs it would actually fund and the WHATs it would actually ship.",
+        "Test each option's HOWs and WHATs against the stated WHY and flag every contradiction by name.",
+        "Ask for evidence of what the decision means to customers and employees, not for a better slogan."
+      ],
+      "limits": [
+        "The circle tests coherence, not demand: a perfectly aligned offer can still be unwanted, unpriced, or unaffordable.",
+        "It does not measure cash, legal exposure, or operational feasibility; those belong to other seats and to the chair."
+      ],
+      "questions_to_ask": [
+        "What cause would remain if this product disappeared tomorrow?",
+        "Which of these actions would we stop funding if we actually believed the stated WHY?",
+        "Where does our behavior contradict what we claim to believe?"
+      ],
+      "counterexamples": [
+        "A company with a crisp WHY and no market: the circle is consistent and the business still fails, which is why this framework never vetoes feasibility evidence.",
+        "A high-quality product with loyal buyers for reasons of price alone: quality and loyalty sit on different levels of the circle and must not be conflated."
+      ],
+      "evidence_needed": [
+        "Mission or WHY statement when known",
+        "Promises made to customers",
+        "Option descriptions with their real actions and outputs",
+        "Behavior evidence: pricing, policies, service record"
+      ],
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c004",
+        "ev-simon-sinek-start-with-why-c008",
+        "ev-simon-sinek-find-your-why-c003"
+      ]
+    },
+    {
+      "framework_id": "golden-circle-filter",
+      "name": "The Golden Circle Filter",
+      "source_work": "Start with Why; Find Your Why",
+      "attribution_kind": "source_principle",
+      "concept": "A two-step decision filter. First test: does this decision or opportunity align with the WHY. Second test: does it align with the HOWs, the guiding principles that prove the WHY in action. An option failing the first test is not rescued by passing the second.",
+      "preconditions": [
+        "The WHY and at least the working HOWs are stated; otherwise the filter returns unknown, not a pass."
+      ],
+      "how_to_apply": [
+        "Run the WHY test first and record the specific alignment or conflict in words.",
+        "Run the HOW test second: name which guiding principle the option honors or breaks.",
+        "Report the filter result alongside the score, never instead of it."
+      ],
+      "limits": [
+        "The filter judges fit, not value: it cannot rank two aligned options against each other on economics.",
+        "A vaguely worded WHY passes everything and filters nothing; vagueness is itself a finding."
+      ],
+      "questions_to_ask": [
+        "If we removed our name from this plan, would the WHY still be recognizable in it?",
+        "Which HOW does this option break, and are we willing to say so out loud?"
+      ],
+      "counterexamples": [
+        "A profitable expansion into a category the WHY excludes: the filter flags it even when the spreadsheet loves it."
+      ],
+      "evidence_needed": [
+        "Stated WHY and HOWs",
+        "Option-by-option action lists",
+        "The client's own success definition for the decision"
+      ],
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c016",
+        "ev-simon-sinek-find-your-why-c016"
+      ]
+    },
+    {
+      "framework_id": "balance-authenticity-check",
+      "name": "The Balance and Authenticity Check",
+      "source_work": "Start with Why",
+      "attribution_kind": "source_principle",
+      "concept": "Authenticity, in this framework, is a balance property: WHY clarity, HOW discipline, and WHAT proof consistent with each other. When the levels fall out of balance, or when claims and behavior diverge, trust erodes no matter how good the messaging is.",
+      "preconditions": [
+        "Observable behavior evidence exists: how customers are treated, how prices are set, what gets rewarded internally."
+      ],
+      "how_to_apply": [
+        "Compare the stated WHY against the funded HOWs and the shipped WHATs.",
+        "Compare public claims against the behavior evidence and list every contradiction concretely.",
+        "Treat each contradiction as a finding with a cost, not as a branding issue."
+      ],
+      "limits": [
+        "Balance is necessary, not sufficient: a balanced circle around a weak offer is still a weak offer.",
+        "The check reads consistency, not sincerity of individuals; it judges artifacts and behavior, not hearts."
+      ],
+      "questions_to_ask": [
+        "What do we do on our worst day, and does it match what we claim on our best day?",
+        "Which promise have we already broken without noticing?"
+      ],
+      "counterexamples": [
+        "A firm whose hardship policies contradict its family-first WHY: the check flags the policy, not the slogan, as the problem."
+      ],
+      "evidence_needed": [
+        "Customer-facing promises and policies",
+        "Internal reward and promotion criteria",
+        "Complaint and refund patterns where available"
+      ],
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c017",
+        "ev-simon-sinek-start-with-why-c014"
+      ]
+    },
+    {
+      "framework_id": "the-split-diagnostic",
+      "name": "The Split Diagnostic",
+      "source_work": "Start with Why; Find Your Why",
+      "attribution_kind": "source_principle",
+      "concept": "As organizations grow, measurable WHATs crowd out the founding WHY until the two split: the company can report everything it does and nothing it is for. The diagnostic looks for the split in language, metrics, and hiring before it shows up as lost loyalty.",
+      "preconditions": [
+        "Some history exists: founding story, early customer reasons, or long-tenured employee accounts."
+      ],
+      "how_to_apply": [
+        "Ask leaders and staff separately why the organization exists and compare the answers.",
+        "Audit what gets measured and rewarded: if every metric is a WHAT, the split is advanced.",
+        "Check recent hires: were they chosen for belief fit or only for skills?"
+      ],
+      "limits": [
+        "A young organization may have no split and no articulated WHY either; absence of a split is not presence of a WHY.",
+        "The diagnostic identifies drift; it does not by itself recover the founding purpose."
+      ],
+      "questions_to_ask": [
+        "When did we last turn something down because it was not us?",
+        "Could a new employee state our WHY after a month here?"
+      ],
+      "counterexamples": [
+        "A company that grows while re-stating and re-testing its WHY at each stage: growth alone does not cause the split; unexamined growth does."
+      ],
+      "evidence_needed": [
+        "Founding story and early customer accounts",
+        "Current metric set and incentive plans",
+        "Recent hiring criteria"
+      ],
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c015",
+        "ev-simon-sinek-find-your-why-c006"
+      ]
+    },
+    {
+      "framework_id": "why-discovery-process",
+      "name": "WHY Discovery: Partner Story Mining",
+      "source_work": "Find Your Why",
+      "attribution_kind": "source_principle",
+      "concept": "A WHY is discovered, not created, and not discovered alone. An objective partner hears specific stories, peaks and valleys alike, mines them for recurring themes of contribution and impact, and a draft statement is written in the form: to [contribution] so that [impact]. The statement is then validated, for example with the Friends Exercise, and refined against the HOWs.",
+      "preconditions": [
+        "A partner who is curious and objective, not a spouse or close friend, and who has not heard the stories before.",
+        "Specific stories with sensory and emotional detail; general summaries cannot be mined."
+      ],
+      "how_to_apply": [
+        "Gather more stories than the session needs, from highs and lows both.",
+        "Tell the specific stories; the partner listens for themes and asks feeling-focused questions.",
+        "Draft one sentence: to [contribution] so that [impact].",
+        "Validate the draft against people who know the teller, then define the HOWs that prove it."
+      ],
+      "limits": [
+        "This is a discovery process for a missing WHY, not a decision tool for a live vote; a council seat using it mid-session can only recommend it, not run it.",
+        "An aspirational statement produced to please the room fails the method's own rules and must be discarded."
+      ],
+      "questions_to_ask": [
+        "Tell me about a specific day you were proudest of this work. What exactly happened?",
+        "What did that experience let other people do or become?"
+      ],
+      "counterexamples": [
+        "A leadership team workshopping a mission statement in one afternoon: the output is a slogan, precisely what the method exists to prevent."
+      ],
+      "evidence_needed": [
+        "Origin stories of the founder or organization",
+        "Specific peak and valley memories with detail",
+        "Third-party accounts for validation"
+      ],
+      "source_evidence_ids": [
+        "ev-simon-sinek-find-your-why-c004",
+        "ev-simon-sinek-find-your-why-c012",
+        "ev-simon-sinek-find-your-why-c018",
+        "ev-simon-sinek-find-your-why-c005",
+        "ev-simon-sinek-find-your-why-c008",
+        "ev-simon-sinek-find-your-why-c017"
+      ]
+    },
+    {
+      "framework_id": "manipulation-vs-inspiration-audit",
+      "name": "Manipulation versus Inspiration Audit",
+      "source_work": "Start with Why",
+      "attribution_kind": "source_principle",
+      "concept": "Transactions can be bought with manipulations: price cuts, promotions, fear, peer pressure, novelty. Manipulations work and expire; loyalty does not. The audit classifies how a plan actually wins customers and tests whether anything remains when the manipulation stops. The quality bar is loyalty: people who would turn down a better product or price to stay.",
+      "preconditions": [
+        "The plan's growth mechanics can be described honestly: pricing, offers, urgency devices, channel tactics."
+      ],
+      "how_to_apply": [
+        "List every mechanism the plan uses to produce a transaction and classify each as manipulation or belief fit.",
+        "Ask what repeat behavior looks like at full price with no campaign running.",
+        "Score the plan's dependence: mostly manipulation means the growth is rented, not owned."
+      ],
+      "limits": [
+        "Manipulations are not immoral by definition; the audit measures dependence and durability, not virtue.",
+        "A new offer may legitimately launch with promotion; the finding is about the steady state, not the launch week."
+      ],
+      "questions_to_ask": [
+        "If we stopped discounting for a quarter, who would still be here, and why?",
+        "What do our happiest customers say we are for?"
+      ],
+      "counterexamples": [
+        "A commodity purchase where buyers genuinely want the lowest price: belief fit is thin and the audit should say the seat has little to add."
+      ],
+      "evidence_needed": [
+        "Pricing and promotion history",
+        "Repeat purchase and churn data at full price",
+        "Customer language about why they stay"
+      ],
+      "source_evidence_ids": [
+        "ev-simon-sinek-start-with-why-c003",
+        "ev-simon-sinek-start-with-why-c006",
+        "ev-simon-sinek-start-with-why-c013"
+      ]
+    }
+  ]
+}
